@@ -1,0 +1,9 @@
+{
+  "name": "hello-secret",
+  "version": "1.0.0",
+  "description": "Secrets Manager basic usage sample for Node",
+  "license": "ISC",
+  "scripts": {
+    "run" : "node hello.js"
+  }
+}
