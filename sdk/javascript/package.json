@@ -4,6 +4,7 @@
   "description": "Keeper Secrets Manages Javascript SDK",
   "browser": "dist/index.es.js",
   "main": "dist/index.cjs.js",
+  "types": "dist/node/index.d.ts",
   "repository": "https://github.com/Keeper-Security/secrets-manager",
   "author": "saldoukhov@keepersecurity.com",
   "license": "ISC",
@@ -13,8 +14,12 @@
     "test": "jest"
   },
   "devDependencies": {
+    "@babel/core": "^7.13.10",
+    "@babel/preset-env": "^7.13.12",
+    "@babel/preset-typescript": "^7.13.0",
     "@types/jest": "^26.0.22",
     "@types/node": "^14.14.36",
+    "babel-jest": "^26.6.3",
     "jest": "^26.6.3",
     "rollup": "^2.42.4",
     "rollup-plugin-sourcemaps": "^0.6.3",

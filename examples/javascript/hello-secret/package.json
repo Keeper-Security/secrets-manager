@@ -5,5 +5,8 @@
   "license": "ISC",
   "scripts": {
     "run" : "node hello.js"
+  },
+  "dependencies": {
+    "keeper-secrets-manager": "^0.1.0"
   }
 }

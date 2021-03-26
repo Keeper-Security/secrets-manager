@@ -1,3 +1,5 @@
+import {hello} from '../';
+
 test('Does it work', () => {
-    expect(3).toBe(3);
+    expect(hello()).toBe('hi secrets manager');
 })
