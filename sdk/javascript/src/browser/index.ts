@@ -1,8 +1,10 @@
+import {browserPlatform} from "./browserPlatform"
+import {connectPlatform} from "../platform"
+import {initialize} from '../keeper'
+
+connectPlatform(browserPlatform)
+initialize()
+
 export * from '../keeper'
-
-import {connectPlatform} from "../platform";
-import {browserPlatform} from "./browserPlatform";
-
-connectPlatform(browserPlatform);
 
 
