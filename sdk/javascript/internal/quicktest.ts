@@ -9,7 +9,8 @@ initialize()
 
 async function test() {
     const response = await getSecret(null, {
-        url: 'https://local.keepersecurity.com/api/rest/sm/v1/get_secret'
+        url: 'https://local.keepersecurity.com/api/rest/sm/v1/get_secret',
+        clientSecret: 'MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgqPnfWS6ZCcw_Ck39AMgDfMGAMta2sxTQeNHQa123JUWhRANCAASE53TMecnKpiywT83g0I9tMdLsJqO2AYDmp6nRJQhWcgEKURGVEeE429oyDMPyRW-XNCZKl7L8e1PEnaADkQj7'
     })
     console.log(Buffer.from(response.data).toString())
 }

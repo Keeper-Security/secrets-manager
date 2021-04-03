@@ -15,3 +15,11 @@ export function webSafe64ToBytes(source: string): Uint8Array {
 export function webSafe64FromBytes(source: Uint8Array): string {
     return webSafe64(platform.bytesToBase64(source))
 }
+
+// converts private key for prime256v1 curve in der/pkcs8 to raw private/public keys
+export function privateKeyToRaw(key: Uint8Array): { privateKey: Uint8Array; publicKey: Uint8Array } {
+    return {
+        privateKey: key.slice(36, 68),
+        publicKey: key.slice(73)
+    }
+}

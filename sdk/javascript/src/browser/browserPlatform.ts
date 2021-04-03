@@ -30,11 +30,10 @@ export const browserPlatform: Platform = class {
         return data
     }
 
-    static async generateKeyPair(): Promise<{ privateKey: string; publicKey: string }> {
+    static async generateKeyPair(): Promise<Uint8Array> {
         const ecdh = await crypto.subtle.generateKey({name: 'ECDH', namedCurve: 'P-256'}, true, ['deriveBits'])
-        const privateKey = await crypto.subtle.exportKey('jwk', ecdh.privateKey)
-        const publicKey = await crypto.subtle.exportKey('raw', ecdh.publicKey)
-        return {publicKey: webSafe64FromBytes(Buffer.from(publicKey)), privateKey: privateKey.d}
+        const privateKey = await crypto.subtle.exportKey('pkcs8', ecdh.privateKey)
+        return new Uint8Array(privateKey);
     }
 
     static async aesEncrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array> {
@@ -48,10 +47,19 @@ export const browserPlatform: Platform = class {
     }
 
     static async publicEncrypt(data: Uint8Array, key: Uint8Array, id?: Uint8Array): Promise<Uint8Array> {
-        const ephemeralKeyPair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])
+        const ephemeralKeyPair = await crypto.subtle.generateKey({
+            name: 'ECDH',
+            namedCurve: 'P-256'
+        }, true, ['deriveBits'])
         const ephemeralPublicKey = await crypto.subtle.exportKey('raw', ephemeralKeyPair.publicKey)
-        const recipientPublicKey = await crypto.subtle.importKey('raw', key, { name: 'ECDH', namedCurve: 'P-256' }, true, [])
-        const sharedSecret = await crypto.subtle.deriveBits({ name: 'ECDH', public: recipientPublicKey }, ephemeralKeyPair.privateKey, 256)
+        const recipientPublicKey = await crypto.subtle.importKey('raw', key, {
+            name: 'ECDH',
+            namedCurve: 'P-256'
+        }, true, [])
+        const sharedSecret = await crypto.subtle.deriveBits({
+            name: 'ECDH',
+            public: recipientPublicKey
+        }, ephemeralKeyPair.privateKey, 256)
         const idBytes = id || new Uint8Array()
         const sharedSecretCombined = new Uint8Array(sharedSecret.byteLength + idBytes.byteLength)
         sharedSecretCombined.set(new Uint8Array(sharedSecret), 0)
@@ -62,6 +70,22 @@ export const browserPlatform: Platform = class {
         result.set(new Uint8Array(ephemeralPublicKey), 0)
         result.set(new Uint8Array(cipherText), ephemeralPublicKey.byteLength)
         return result
+    }
+
+    static async sign(data: Uint8Array, privateKey: Uint8Array): Promise<Uint8Array> {
+        let key = await crypto.subtle.importKey("pkcs8",
+            privateKey,
+            {
+                name: 'ECDSA',
+                namedCurve: 'P-256'
+            },
+            false,
+            ["sign"]);
+        let signature = await crypto.subtle.sign({
+            name: 'ECDSA',
+            hash: 'SHA-256'
+        }, key, data);
+        return new Uint8Array(signature);
     }
 
     static async post(

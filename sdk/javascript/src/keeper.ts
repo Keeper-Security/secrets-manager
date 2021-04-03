@@ -1,14 +1,15 @@
 import {platform} from './platform'
-import {webSafe64ToBytes} from './utils';
+import {privateKeyToRaw, webSafe64FromBytes, webSafe64ToBytes} from './utils';
+import {createPrivateKey} from 'crypto';
 
 export function initialize() {
     keeperPublicKeys = [
-        webSafe64ToBytes('BLX7FK7OUkjdIDsQnhGCVH_Hi98khXsl8dl9u9qm8iHkCYv6MJp9nv5mlCglJr_hsMvlIRmG9sUZsKHBClwLLHo'),
-        webSafe64ToBytes('BLX7FK7OUkjdIDsQnhGCVH_Hi98khXsl8dl9u9qm8iHkCYv6MJp9nv5mlCglJr_hsMvlIRmG9sUZsKHBClwLLHo'),
-        webSafe64ToBytes('BLX7FK7OUkjdIDsQnhGCVH_Hi98khXsl8dl9u9qm8iHkCYv6MJp9nv5mlCglJr_hsMvlIRmG9sUZsKHBClwLLHo'),
-        webSafe64ToBytes('BLX7FK7OUkjdIDsQnhGCVH_Hi98khXsl8dl9u9qm8iHkCYv6MJp9nv5mlCglJr_hsMvlIRmG9sUZsKHBClwLLHo'),
-        webSafe64ToBytes('BLX7FK7OUkjdIDsQnhGCVH_Hi98khXsl8dl9u9qm8iHkCYv6MJp9nv5mlCglJr_hsMvlIRmG9sUZsKHBClwLLHo'),
-        webSafe64ToBytes('BLX7FK7OUkjdIDsQnhGCVH_Hi98khXsl8dl9u9qm8iHkCYv6MJp9nv5mlCglJr_hsMvlIRmG9sUZsKHBClwLLHo'),
+        webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
+        webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
+        webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
+        webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
+        webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
+        webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
     ]
 }
 
@@ -58,7 +59,7 @@ async function preparePayload(options: ClientConfiguration, transmissionKey: Tra
         throw new Error('device configuration mode is not implemented yet')
     } else {
         const ecdh = await platform.generateKeyPair()
-        payload.publicKey = ecdh.publicKey
+        payload.publicKey = options.clientSecret
         // deviceConfig.publicKey = ecdh.publicKey
         // deviceConfig.privateKey = ecdh.privateKey
     }
@@ -71,9 +72,13 @@ async function preparePayload(options: ClientConfiguration, transmissionKey: Tra
 export const getSecret = async (secretUid: Uint8Array, options: ClientConfiguration): Promise<any> => {
     const transmissionKey = await generateTransmissionKey(1)
     const payload = await preparePayload(options, transmissionKey)
+    const signatureBase = Uint8Array.of(...transmissionKey.encryptedKey, ...payload)
+    const privateKey = webSafe64ToBytes(options.clientSecret)
+    let signature = await platform.sign(signatureBase, privateKey)
     let response = await platform.post(options.url, payload, {
         PublicKeyId: transmissionKey.publicKeyId.toString(),
-        TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey)
+        TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
+        Signature: platform.bytesToBase64(signature)
     })
     if (response.statusCode !== 200) {
         throw new Error(platform.bytesToString(response.data))

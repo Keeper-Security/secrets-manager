@@ -1,7 +1,14 @@
 import {KeeperHttpResponse, Platform} from "../platform"
 import {request, RequestOptions} from 'https';
-import {randomBytes, createCipheriv, createECDH, createHash} from 'crypto';
-import {webSafe64FromBytes} from '../utils';
+import {
+    createCipheriv,
+    createECDH,
+    createHash,
+    createPrivateKey,
+    createSign,
+    generateKeyPair,
+    randomBytes
+} from 'crypto';
 
 export const nodePlatform: Platform = class {
 
@@ -25,12 +32,20 @@ export const nodePlatform: Platform = class {
         return randomBytes(length);
     }
 
-    static async generateKeyPair(): Promise<{ privateKey: string; publicKey: string }> {
-        const ecdh = createECDH('prime256v1')
-        ecdh.generateKeys()
-        return Promise.resolve({
-            privateKey: webSafe64FromBytes(ecdh.getPrivateKey()),
-            publicKey: webSafe64FromBytes(ecdh.getPublicKey())
+    static async generateKeyPair(): Promise<Uint8Array> {
+        return new Promise<Uint8Array>((resolve, reject) => {
+            generateKeyPair('ec', {
+                namedCurve: 'prime256v1'
+            }, (err, publicKey, privateKey) => {
+                if (err) {
+                    reject(err)
+                } else {
+                    resolve(privateKey.export({
+                        format: 'der',
+                        type: 'pkcs8'
+                    }))
+                }
+            });
         })
     }
 
@@ -54,10 +69,22 @@ export const nodePlatform: Platform = class {
         return Buffer.concat([ephemeralPublicKey, encryptedData])
     }
 
+    static sign(data: Uint8Array, privateKey: Uint8Array): Promise<Uint8Array> {
+        const key = createPrivateKey({
+            key: Buffer.from(privateKey),
+            format: 'der',
+            type: 'pkcs8',
+        })
+        const sign = createSign('SHA256')
+        sign.update(data)
+        const sig = sign.sign(key)
+        return Promise.resolve(sig)
+    }
+
     static post(
         url: string,
         payload: Uint8Array,
-        headers?: {[key: string]: string}
+        headers?: { [key: string]: string }
     ): Promise<KeeperHttpResponse> {
         return new Promise<KeeperHttpResponse>((resolve) => {
             const options: RequestOptions = {
