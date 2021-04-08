@@ -36,7 +36,7 @@ export const browserPlatform: Platform = class {
         return new Uint8Array(privateKey);
     }
 
-    static async aesEncrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array> {
+    static async encrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array> {
         let _key = await crypto.subtle.importKey("raw", key, "AES-GCM", true, ["encrypt"]);
         let iv = browserPlatform.getRandomBytes(12);
         let res = await crypto.subtle.encrypt({
@@ -44,6 +44,22 @@ export const browserPlatform: Platform = class {
             iv: iv
         }, _key, data);
         return Uint8Array.of(...iv, ...new Uint8Array(res))
+    }
+
+    static async decrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array> {
+        let _key = await crypto.subtle.importKey("raw", key, "AES-GCM", true, ["decrypt"]);
+        let iv = data.subarray(0, 12);
+        let encrypted = data.subarray(12);
+        let res = await crypto.subtle.decrypt({
+            name: "AES-GCM",
+            iv: iv
+        }, _key, encrypted);
+        return new Uint8Array(res);
+    }
+
+    static async hash(data: Uint8Array): Promise<Uint8Array> {
+        const hash = await crypto.subtle.digest('SHA-256', data)
+        return new Uint8Array(hash)
     }
 
     static async publicEncrypt(data: Uint8Array, key: Uint8Array, id?: Uint8Array): Promise<Uint8Array> {
@@ -65,7 +81,7 @@ export const browserPlatform: Platform = class {
         sharedSecretCombined.set(new Uint8Array(sharedSecret), 0)
         sharedSecretCombined.set(idBytes, sharedSecret.byteLength)
         const symmetricKey = await crypto.subtle.digest('SHA-256', sharedSecretCombined)
-        const cipherText = await browserPlatform.aesEncrypt(data, new Uint8Array(symmetricKey))
+        const cipherText = await browserPlatform.encrypt(data, new Uint8Array(symmetricKey))
         const result = new Uint8Array(ephemeralPublicKey.byteLength + cipherText.byteLength)
         result.set(new Uint8Array(ephemeralPublicKey), 0)
         result.set(new Uint8Array(cipherText), ephemeralPublicKey.byteLength)

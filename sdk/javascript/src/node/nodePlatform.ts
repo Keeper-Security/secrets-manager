@@ -1,7 +1,7 @@
 import {KeeperHttpResponse, Platform} from "../platform"
 import {request, RequestOptions} from 'https';
 import {
-    createCipheriv,
+    createCipheriv, createDecipheriv,
     createECDH,
     createHash,
     createPrivateKey,
@@ -49,13 +49,27 @@ export const nodePlatform: Platform = class {
         })
     }
 
-    static aesEncrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array> {
+    static encrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array> {
         let iv = randomBytes(12);
         let cipher = createCipheriv("aes-256-gcm", key, iv);
         let encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
         const tag = cipher.getAuthTag();
         let result = Buffer.concat([iv, encrypted, tag]);
         return Promise.resolve(result);
+    }
+
+    static decrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array> {
+        let iv = data.subarray(0, 12);
+        let encrypted = data.subarray(12, data.length - 16);
+        let tag = data.subarray(data.length - 16);
+        let cipher = createDecipheriv("aes-256-gcm", key, iv);
+        cipher.setAuthTag(tag);
+        return Promise.resolve(Buffer.concat([cipher.update(encrypted), cipher.final()]));
+    }
+
+    static hash(data: Uint8Array): Promise<Uint8Array> {
+        const hash = createHash("SHA256").update(data).digest()
+        return Promise.resolve(hash)
     }
 
     static async publicEncrypt(data: Uint8Array, key: Uint8Array, id?: Uint8Array): Promise<Uint8Array> {
@@ -65,7 +79,7 @@ export const nodePlatform: Platform = class {
         const sharedSecret = ecdh.computeSecret(key)
         const sharedSecretCombined = Buffer.concat([sharedSecret, id || new Uint8Array()])
         const symmetricKey = createHash("SHA256").update(sharedSecretCombined).digest()
-        const encryptedData = await nodePlatform.aesEncrypt(data, symmetricKey)
+        const encryptedData = await nodePlatform.encrypt(data, symmetricKey)
         return Buffer.concat([ephemeralPublicKey, encryptedData])
     }
 

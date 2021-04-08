@@ -1,6 +1,10 @@
 import {platform} from './platform'
-import {privateKeyToRaw, webSafe64FromBytes, webSafe64ToBytes} from './utils';
-import {createPrivateKey} from 'crypto';
+import {privateKeyToRaw, webSafe64ToBytes} from './utils';
+
+export const KEY_URL = 'url'
+export const KEY_ID = 'id'
+export const KEY_ENCRYPTION_KEY = 'encryptionKey'
+export const KEY_PRIVATE_KEY = 'privateKey'
 
 export function initialize() {
     keeperPublicKeys = [
@@ -15,19 +19,28 @@ export function initialize() {
 
 let keeperPublicKeys: Uint8Array[]
 
-export type ClientConfiguration = {
-    url: string;
-    clientSecret?: string;
-}
-
-type Payload = {
-    publicKey?: string
+export type KeyValueStorage = {
+    getValue(key: string): string | null;
+    saveValue(key: string, value: string): void;
 }
 
 type TransmissionKey = {
     key: Uint8Array
     publicKeyId: number
     encryptedKey: Uint8Array
+}
+
+type ExecutionContext = {
+    transmissionKey: TransmissionKey
+    id: Uint8Array
+    encryptionKey: Uint8Array
+    privateKey: Uint8Array
+}
+
+type Payload = {
+    clientVersion: string
+    id?: string
+    publicKey?: string
 }
 
 export async function generateTransmissionKey(keyNumber: number): Promise<TransmissionKey> {
@@ -40,48 +53,73 @@ export async function generateTransmissionKey(keyNumber: number): Promise<Transm
     }
 }
 
-export type KeeperHost = 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au'
+// export type KeeperHost = 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au'
 
-export const createClientConfiguration = (host: KeeperHost): ClientConfiguration => ({
-    url: `https://${host}/api/v2/`
-});
+// export const createClientConfiguration = (host: KeeperHost): ClientConfiguration => ({
+//     url: `https://${host}/api/v2/`
+// });
 
-// client secret:
-// 1. one time token
-// 2. private key
-// 3. nothing
-
-async function preparePayload(options: ClientConfiguration, transmissionKey: TransmissionKey): Promise<Uint8Array> {
-
-    const payload: Payload = {}
-
-    if (options.clientSecret && options.clientSecret.startsWith('device:')) {
-        throw new Error('device configuration mode is not implemented yet')
-    } else {
-        const ecdh = await platform.generateKeyPair()
-        payload.publicKey = options.clientSecret
-        // deviceConfig.publicKey = ecdh.publicKey
-        // deviceConfig.privateKey = ecdh.privateKey
+async function prepareContext(storage: KeyValueStorage): Promise<ExecutionContext> {
+    const transmissionKey = await generateTransmissionKey(1)
+    const clientId = platform.base64ToBytes(storage.getValue(KEY_ID))
+    const encryptionKey = platform.base64ToBytes(storage.getValue(KEY_ENCRYPTION_KEY))
+    const privateKey = storage.getValue(KEY_PRIVATE_KEY)
+    let privateKeyDer
+    if (clientId.length === 32) { // BAT
+        if (privateKey) {
+            privateKeyDer = platform.base64ToBytes(privateKey)
+        } else {
+            privateKeyDer = await platform.generateKeyPair()
+            storage.saveValue(KEY_PRIVATE_KEY, platform.bytesToBase64(privateKeyDer))
+        }
+    } else { // EDK, must have private key
+        privateKeyDer = platform.base64ToBytes(privateKey)
     }
-
-    const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
-    const encryptedPayload = await platform.aesEncrypt(payloadBytes, transmissionKey.key)
-    return encryptedPayload
+    return {
+        transmissionKey: transmissionKey,
+        id: clientId,
+        encryptionKey: encryptionKey,
+        privateKey: privateKeyDer
+    }
 }
 
-export const getSecret = async (secretUid: Uint8Array, options: ClientConfiguration): Promise<any> => {
-    const transmissionKey = await generateTransmissionKey(1)
-    const payload = await preparePayload(options, transmissionKey)
-    const signatureBase = Uint8Array.of(...transmissionKey.encryptedKey, ...payload)
-    const privateKey = webSafe64ToBytes(options.clientSecret)
-    let signature = await platform.sign(signatureBase, privateKey)
-    let response = await platform.post(options.url, payload, {
-        PublicKeyId: transmissionKey.publicKeyId.toString(),
-        TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
-        Signature: platform.bytesToBase64(signature)
-    })
-    if (response.statusCode !== 200) {
-        throw new Error(platform.bytesToString(response.data))
+async function preparePayload(context: ExecutionContext): Promise<{ payload: Uint8Array, signature: Uint8Array }> {
+    const payload: Payload = {
+        clientVersion: 'w15.0.0', // TODO generate client version for SM
     }
-    return response
-};
+    if (context.id.length === 32) { // BAT
+        payload.id = platform.bytesToBase64(context.id)
+        const rawKeys = privateKeyToRaw(context.privateKey)
+        payload.publicKey = platform.bytesToBase64(rawKeys.publicKey)
+    } else { // EDK
+        payload.id = platform.bytesToBase64(context.id)
+    }
+    const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
+    const encryptedPayload = await platform.encrypt(payloadBytes, context.transmissionKey.key)
+    const signatureBase = Uint8Array.of(...context.transmissionKey.encryptedKey, ...encryptedPayload)
+    const signature = await platform.sign(signatureBase, context.privateKey)
+    return { payload: encryptedPayload, signature }
+}
+
+export const getSecret = async (secretUid: Uint8Array, storage: KeyValueStorage): Promise<any> => {
+    const context = await prepareContext(storage)
+    const { payload, signature } = await preparePayload(context)
+    const httpResponse = await platform.post(storage.getValue(KEY_URL), payload, {
+        PublicKeyId: context.transmissionKey.publicKeyId.toString(),
+        TransmissionKey: platform.bytesToBase64(context.transmissionKey.encryptedKey),
+        Authorization: `Signature ${platform.bytesToBase64(signature)}`
+    })
+    if (httpResponse.statusCode !== 200) {
+        throw new Error(platform.bytesToString(httpResponse.data))
+    }
+    const decryptedResponse = await platform.decrypt(httpResponse.data, context.transmissionKey.key)
+    const response = JSON.parse(platform.bytesToString(decryptedResponse))
+    if (response.applicationToken) {
+        storage.saveValue(KEY_ID, response.applicationToken)
+    }
+    const encryptedSecretKey = webSafe64ToBytes(response.secretKey)
+    const secretKey = await platform.decrypt(encryptedSecretKey, context.encryptionKey)
+    const secretBytes = webSafe64ToBytes(response.secret)
+    const secret = await platform.decrypt(secretBytes, secretKey)
+    return JSON.parse(platform.bytesToString(secret))
+}

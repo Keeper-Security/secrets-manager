@@ -8,7 +8,9 @@ export type Platform = {
 //  cryptography
     getRandomBytes(length: number): Uint8Array;
     generateKeyPair(): Promise<Uint8Array>
-    aesEncrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array>;
+    encrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array>
+    decrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array>
+    hash(data: Uint8Array): Promise<Uint8Array>
     publicEncrypt(data: Uint8Array, key: Uint8Array, id?: Uint8Array): Promise<Uint8Array>
     sign(data: Uint8Array, privateKey: Uint8Array): Promise<Uint8Array>
 
