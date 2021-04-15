@@ -1,4 +1,4 @@
-import {getSecret, initialize, KEY_BINDING_KEY, KEY_ID, KEY_URL, KeyValueStorage} from '../src/keeper';
+import {getSecrets, initialize, KEY_BINDING_KEY, KEY_ID, KEY_URL, KeyValueStorage} from '../src/keeper';
 import {nodePlatform} from '../src/node/nodePlatform';
 import {connectPlatform, platform} from '../src/platform';
 import * as fs from 'fs';
@@ -10,7 +10,7 @@ connectPlatform(nodePlatform)
 initialize()
 
 const configFileName = 'client-config.json'
-const bindingKey = 'LU4tfHXMyRhLqTLWkBv_33bDSG2oDKtkQFvp3GiUK7U'
+const bindingKey = 'EIfhBPBJ_tzndyMABcfqCbqa1ZqSWJ0fqiHv27P_UkQ'
 
 async function test() {
     const kvs = new TestKeyValueStorage()
@@ -22,7 +22,7 @@ async function test() {
         const encryptionKeyHash = await platform.hash(webSafe64ToBytes(bindingKey))
         kvs.saveValue(KEY_ID, platform.bytesToBase64(encryptionKeyHash))
     }
-    const response = await getSecret(kvs)
+    const response = await getSecrets(kvs)
     console.log(response)
 }
 

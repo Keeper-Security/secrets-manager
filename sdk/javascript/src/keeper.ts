@@ -45,11 +45,22 @@ type Payload = {
     publicKey?: string
 }
 
+type SecretsManagerResponseFolder = {
+    folderUid: string
+    folderKey: string
+    records: SecretsManagerResponseRecord[]
+}
+
+type SecretsManagerResponseRecord = {
+    recordUid: string
+    recordKey: string
+    data: string
+}
+
 type SecretsManagerResponse = {
     applicationToken: string
-    secretUid: string
-    secretKey: string
-    secret: string
+    folder: SecretsManagerResponseFolder
+    record: SecretsManagerResponseRecord
 }
 
 export const generateTransmissionKey = async (keyNumber: number): Promise<TransmissionKey> => {
@@ -120,7 +131,7 @@ export const clearBindingKey = async (storage: KeyValueStorage): Promise<void> =
     // const { payload, signature } = await preparePayload(context)
 }
 
-export const getKeyAndSecret = async (storage: KeyValueStorage): Promise<{ secretKey: Uint8Array, encryptedSecret: string, justBound: boolean }> => {
+export const fetchAndDecryptSecrets = async (storage: KeyValueStorage): Promise<{ secrets: any[], justBound: boolean }> => {
     const context = await prepareContext(storage)
     const { payload, signature } = await preparePayload(context)
     const httpResponse = await platform.post(storage.getValue(KEY_URL), payload, {
@@ -139,30 +150,49 @@ export const getKeyAndSecret = async (storage: KeyValueStorage): Promise<{ secre
     console.log(response)
 
     let secretKey: Uint8Array
+    const secrets = []
     let justBound = false
     if (context.secretKey) {
         secretKey = context.secretKey
     }
     else {
-        const encryptedSecretKey = webSafe64ToBytes(response.secretKey)
-        secretKey = await platform.decrypt(encryptedSecretKey, context.bindingKey)
-        storage.saveValue(KEY_SECRET_KEY, platform.bytesToBase64(secretKey))
         justBound = true
+        const encryptedSecretKey = response.record
+            ? response.record.recordKey
+            : response.folder
+                ? response.folder.folderKey
+                : undefined
+        if (!encryptedSecretKey) {
+            throw new Error('Invalid response from Keeper')
+        }
+        secretKey = await platform.decrypt(platform.base64ToBytes(encryptedSecretKey), context.bindingKey)
+        storage.saveValue(KEY_SECRET_KEY, platform.bytesToBase64(secretKey))
     }
-    return { secretKey, encryptedSecret: response.secret, justBound }
+    if (response.record) {
+        const secretBytes = platform.base64ToBytes(response.record.data)
+        const secret = await platform.decrypt(secretBytes, secretKey)
+        secrets.push(JSON.parse(platform.bytesToString(secret)))
+    } else if (response.folder) {
+        for (const record of response.folder.records) {
+            const encryptedRecordKey = platform.base64ToBytes(record.recordKey)
+            const recordKey = await platform.decrypt(encryptedRecordKey, secretKey)
+            const secretBytes = platform.base64ToBytes(record.data)
+            const secret = await platform.decrypt(secretBytes, recordKey)
+            secrets.push(JSON.parse(platform.bytesToString(secret)))
+        }
+    }
+    return { secrets, justBound }
 }
 
-export const getSecret = async (storage: KeyValueStorage): Promise<any> => {
-    const { secretKey, encryptedSecret, justBound } = await getKeyAndSecret(storage)
+export const getSecrets = async (storage: KeyValueStorage): Promise<any[]> => {
+    const { secrets, justBound } = await fetchAndDecryptSecrets(storage)
     if (justBound) {
         try {
-            await getKeyAndSecret(storage)
+            await fetchAndDecryptSecrets(storage)
         }
         catch (e) {
             console.error(e)
         }
     }
-    const secretBytes = webSafe64ToBytes(encryptedSecret)
-    const secret = await platform.decrypt(secretBytes, secretKey)
-    return JSON.parse(platform.bytesToString(secret))
+    return secrets
 }
