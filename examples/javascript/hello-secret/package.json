@@ -7,6 +7,7 @@
     "run" : "node hello.js"
   },
   "dependencies": {
-    "keeper-secrets-manager": "^0.1.0"
+    "@keeper/secrets-manager-core": "^0.1.0",
+    "@keeper/secrets-manager-aws": "^0.1.0"
   }
 }

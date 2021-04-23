@@ -1,22 +1,16 @@
 import {KeeperHttpResponse, Platform} from "../platform"
-import {webSafe64FromBytes} from '../utils';
 
 export const browserPlatform: Platform = class {
 
     static bytesToBase64(data: Uint8Array): string {
-        if (!data)
-            return null;
         return btoa(browserPlatform.bytesToString(data));
     }
 
     static base64ToBytes(data: string): Uint8Array {
-        //@ts-ignore
         return Uint8Array.from(atob(data), c => c.charCodeAt(0))
     }
 
     static bytesToString(data: Uint8Array): string {
-        if (!data)
-            return null;
         return String.fromCharCode(...data);
     }
 

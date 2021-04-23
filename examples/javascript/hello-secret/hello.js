@@ -1,8 +1,12 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 
-const getSecret = require('keeper-secrets-manager').getSecret
+const getSecrets = require('@keeper/secrets-manager-core').getSecrets
+const initializeStorage = require('@keeper/secrets-manager-core').initializeStorage
+const awsKeyValueStorage = require('@keeper/secrets-manager-aws').awsKeyValueStorage
 
-getSecret(null, {    url: 'https://local.keepersecurity.com/api/rest/sm/v1/get_secret'})
+const bindingKey = 'YORS3cDrUGHkPhUkczAYYqoSCEuUH_GKBa2n0k2VKbY'
+
+initializeStorage(awsKeyValueStorage, bindingKey, 'local.keepersecurity.com')
+    .then(_ => getSecrets(awsKeyValueStorage))
     .then(x => console.log(x))
     .finally()
-

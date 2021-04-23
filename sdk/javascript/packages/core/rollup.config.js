@@ -34,7 +34,7 @@ export default [
         ],
         external: [
             ...Object.keys(pkg.dependencies || {}),
-            "crypto", "constants", "https", "protobufjs/minimal"
+            "crypto", "constants", "https"
         ],
         plugins: [
             typescript({

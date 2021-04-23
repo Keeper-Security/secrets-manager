@@ -1,8 +1,12 @@
-import {getSecrets, initialize, KEY_BINDING_KEY, KEY_ID, KEY_URL, KeyValueStorage} from '../src/keeper';
+import {
+    getSecrets,
+    initialize,
+    initializeStorage,
+    KeyValueStorage
+} from '../src/keeper';
 import {nodePlatform} from '../src/node/nodePlatform';
-import {connectPlatform, platform} from '../src/platform';
+import {connectPlatform} from '../src/platform';
 import * as fs from 'fs';
-import {webSafe64ToBytes} from '../src/utils';
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 
@@ -10,18 +14,11 @@ connectPlatform(nodePlatform)
 initialize()
 
 const configFileName = 'client-config.json'
-const bindingKey = 'EIfhBPBJ_tzndyMABcfqCbqa1ZqSWJ0fqiHv27P_UkQ'
+const bindingKey = 'K95axR5yF2QBXRauVVVgeEi7BocHxqPJYUk9dJj0t_4'
 
 async function test() {
     const kvs = new TestKeyValueStorage()
-    if (!kvs.getValue(KEY_URL)) {
-        kvs.saveValue(KEY_URL, 'https://local.keepersecurity.com/api/rest/sm/v1/get_secret')
-    }
-    if (!kvs.getValue(KEY_ID)) {
-        kvs.saveValue(KEY_BINDING_KEY, bindingKey)
-        const encryptionKeyHash = await platform.hash(webSafe64ToBytes(bindingKey))
-        kvs.saveValue(KEY_ID, platform.bytesToBase64(encryptionKeyHash))
-    }
+    await initializeStorage(kvs, bindingKey, 'local.keepersecurity.com')
     const response = await getSecrets(kvs)
     console.log(response)
 }
@@ -41,20 +38,20 @@ export class TestKeyValueStorage implements KeyValueStorage {
         fs.writeFileSync(configFileName, JSON.stringify(storage, null, 2))
     }
 
-    getValue(key: string): string | null {
+    getValue(key: string): Promise<string | undefined> {
         const storage = this.readStorage()
         const keyParts = key.split('/')
         let obj = storage
         for (const part of keyParts) {
             obj = obj[part]
             if (!obj) {
-                return null
+                return Promise.resolve(undefined)
             }
         }
-        return obj.toString();
+        return Promise.resolve(obj.toString());
     }
 
-    saveValue(key: string, value: string): void {
+    saveValue(key: string, value: string): Promise<void> {
         const storage = this.readStorage()
         const keyParts = key.split('/')
         let obj = storage
@@ -66,6 +63,24 @@ export class TestKeyValueStorage implements KeyValueStorage {
         }
         obj[keyParts.slice(-1)[0]] = value
         this.saveStorage(storage)
+        return Promise.resolve()
+    }
+
+    clearValues(keys: string[]): Promise<void> {
+        const storage = this.readStorage()
+        for (const key of keys) {
+            const keyParts = key.split('/')
+            let obj = storage
+            for (const part of keyParts.slice(0, -1)) {
+                if (!obj[part]) {
+                    obj[part] = {}
+                }
+                obj = obj[part]
+            }
+            delete obj[keyParts.slice(-1)[0]]
+        }
+        this.saveStorage(storage)
+        return Promise.resolve()
     }
 }
 

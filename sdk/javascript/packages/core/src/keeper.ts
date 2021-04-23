@@ -1,11 +1,11 @@
 import {platform} from './platform'
 import {privateKeyToRaw, webSafe64ToBytes} from './utils';
 
-export const KEY_URL = 'url'
-export const KEY_ID = 'id'
-export const KEY_BINDING_KEY = 'bindingKey'
-export const KEY_SECRET_KEY = 'secretKey'
-export const KEY_PRIVATE_KEY = 'privateKey'
+const KEY_URL = 'url'
+const KEY_ID = 'id'
+const KEY_BINDING_KEY = 'bindingKey'
+const KEY_SECRET_KEY = 'secretKey'
+const KEY_PRIVATE_KEY = 'privateKey'
 
 export const initialize = () => {
     keeperPublicKeys = [
@@ -21,8 +21,9 @@ export const initialize = () => {
 let keeperPublicKeys: Uint8Array[]
 
 export type KeyValueStorage = {
-    getValue(key: string): string | null;
-    saveValue(key: string, value: string): void;
+    getValue(key: string): Promise<string | undefined>;
+    saveValue(key: string, value: string): Promise<void>;
+    clearValues(keys: string[]): Promise<void>;
 }
 
 type TransmissionKey = {
@@ -81,23 +82,37 @@ export const generateTransmissionKey = async (keyNumber: number): Promise<Transm
 
 const prepareContext = async (storage: KeyValueStorage): Promise<ExecutionContext> => {
     const transmissionKey = await generateTransmissionKey(1)
-    const clientId = platform.base64ToBytes(storage.getValue(KEY_ID))
-    const secretKeyString = storage.getValue(KEY_SECRET_KEY)
-    const secretKey = secretKeyString
-        ? platform.base64ToBytes(secretKeyString)
-        : undefined
-    const bindingKey = secretKey ? undefined : platform.base64ToBytes(storage.getValue(KEY_BINDING_KEY))
-    const privateKey = storage.getValue(KEY_PRIVATE_KEY)
+    const id = await storage.getValue(KEY_ID)
+    if (!id) {
+        throw new Error('Client ID is missing from the configuration')
+    }
+    const clientId = platform.base64ToBytes(id)
+    let secretKey
+    let bindingKey
+    const secretKeyString = await storage.getValue(KEY_SECRET_KEY)
+    if (secretKeyString) {
+        secretKey = platform.base64ToBytes(secretKeyString)
+    } else {
+        const bindingKeyString = await storage.getValue(KEY_BINDING_KEY)
+        if (!bindingKeyString) {
+            throw new Error('Binding key is missing from the configuration')
+        }
+        bindingKey = platform.base64ToBytes(bindingKeyString)
+    }
+    const privateKeyString = await storage.getValue(KEY_PRIVATE_KEY)
     let privateKeyDer
     if (clientId.length === 32) { // BAT
-        if (privateKey) {
-            privateKeyDer = platform.base64ToBytes(privateKey)
+        if (privateKeyString) {
+            privateKeyDer = platform.base64ToBytes(privateKeyString)
         } else {
             privateKeyDer = await platform.generateKeyPair()
-            storage.saveValue(KEY_PRIVATE_KEY, platform.bytesToBase64(privateKeyDer))
+            await storage.saveValue(KEY_PRIVATE_KEY, platform.bytesToBase64(privateKeyDer))
         }
     } else { // EDK, must have private key
-        privateKeyDer = platform.base64ToBytes(privateKey)
+        if (!privateKeyString) {
+            throw new Error('Private key is missing from the configuration')
+        }
+        privateKeyDer = platform.base64ToBytes(privateKeyString)
     }
     return {
         transmissionKey: transmissionKey,
@@ -126,15 +141,14 @@ const preparePayload = async (context: ExecutionContext): Promise<{ payload: Uin
     return { payload: encryptedPayload, signature }
 };
 
-export const clearBindingKey = async (storage: KeyValueStorage): Promise<void> => {
-    const encryptionKey = platform.getRandomBytes(32)
-    // const { payload, signature } = await preparePayload(context)
-}
-
 export const fetchAndDecryptSecrets = async (storage: KeyValueStorage): Promise<{ secrets: any[], justBound: boolean }> => {
     const context = await prepareContext(storage)
     const { payload, signature } = await preparePayload(context)
-    const httpResponse = await platform.post(storage.getValue(KEY_URL), payload, {
+    const url = await storage.getValue(KEY_URL)
+    if (!url) {
+        throw new Error('url is missing from the configuration')
+    }
+    const httpResponse = await platform.post(url, payload, {
         PublicKeyId: context.transmissionKey.publicKeyId.toString(),
         TransmissionKey: platform.bytesToBase64(context.transmissionKey.encryptedKey),
         Authorization: `Signature ${platform.bytesToBase64(signature)}`
@@ -145,12 +159,11 @@ export const fetchAndDecryptSecrets = async (storage: KeyValueStorage): Promise<
     const decryptedResponse = await platform.decrypt(httpResponse.data, context.transmissionKey.key)
     const response = JSON.parse(platform.bytesToString(decryptedResponse)) as SecretsManagerResponse
     if (response.applicationToken) {
-        storage.saveValue(KEY_ID, response.applicationToken)
+        await storage.saveValue(KEY_ID, response.applicationToken)
     }
-    console.log(response)
 
     let secretKey: Uint8Array
-    const secrets = []
+    const secrets: any[] = []
     let justBound = false
     if (context.secretKey) {
         secretKey = context.secretKey
@@ -166,7 +179,7 @@ export const fetchAndDecryptSecrets = async (storage: KeyValueStorage): Promise<
             throw new Error('Invalid response from Keeper')
         }
         secretKey = await platform.decrypt(platform.base64ToBytes(encryptedSecretKey), context.bindingKey)
-        storage.saveValue(KEY_SECRET_KEY, platform.bytesToBase64(secretKey))
+        await storage.saveValue(KEY_SECRET_KEY, platform.bytesToBase64(secretKey))
     }
     if (response.record) {
         const secretBytes = platform.base64ToBytes(response.record.data)
@@ -183,6 +196,22 @@ export const fetchAndDecryptSecrets = async (storage: KeyValueStorage): Promise<
     }
     return { secrets, justBound }
 }
+
+export const initializeStorage = async (storage: KeyValueStorage, bindingKey: string, domain: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
+    const url = await storage.getValue(KEY_URL)
+    if (!url) {
+        await storage.saveValue(KEY_URL, `https://${domain}/api/rest/sm/v1/get_secret`)
+    }
+    const existingBindingKey = await storage.getValue(KEY_BINDING_KEY)
+    if (existingBindingKey !== bindingKey) {
+        if (existingBindingKey) {  // binding key has changed, need to reset the rest of keys
+            await storage.clearValues([KEY_SECRET_KEY, KEY_PRIVATE_KEY])
+        }
+        await storage.saveValue(KEY_BINDING_KEY, bindingKey)
+        const encryptionKeyHash = await platform.hash(webSafe64ToBytes(bindingKey))
+        await storage.saveValue(KEY_ID, platform.bytesToBase64(encryptionKeyHash))
+    }
+};
 
 export const getSecrets = async (storage: KeyValueStorage): Promise<any[]> => {
     const { secrets, justBound } = await fetchAndDecryptSecrets(storage)
