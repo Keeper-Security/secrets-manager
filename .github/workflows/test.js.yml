@@ -13,7 +13,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: ./sdk/javascript
+        working-directory: ./sdk/javascript/packages/core
 
     strategy:
       matrix:
