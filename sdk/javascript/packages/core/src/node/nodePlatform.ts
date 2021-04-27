@@ -95,6 +95,24 @@ export const nodePlatform: Platform = class {
         return Promise.resolve(sig)
     }
 
+    static get(
+        url: string,
+        headers?: { [key: string]: string }
+    ): Promise<KeeperHttpResponse> {
+        return new Promise<KeeperHttpResponse>((resolve) => {
+            let get = request(url, {
+                method: "get",
+                headers: {
+                    "User-Agent": `Node/${process.version}`,
+                    ...headers
+                }
+            }, (res) => {
+                fetchData(res, resolve)
+            });
+            get.end()
+        })
+    }
+
     static post(
         url: string,
         payload: Uint8Array,
@@ -120,7 +138,6 @@ export const nodePlatform: Platform = class {
             post.end()
         })
     }
-
 }
 
 function fetchData(res, resolve) {

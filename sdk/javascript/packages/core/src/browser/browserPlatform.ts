@@ -98,6 +98,19 @@ export const browserPlatform: Platform = class {
         return new Uint8Array(signature);
     }
 
+    static async get(url: string, headers: any): Promise<KeeperHttpResponse> {
+        let resp = await fetch(url, {
+            method: "GET",
+            headers: Object.entries(headers),
+        });
+        let body = await resp.arrayBuffer();
+        return {
+            statusCode: resp.status,
+            headers: resp.headers,
+            data: new Uint8Array(body)
+        }
+    }
+
     static async post(
         url: string,
         request: Uint8Array | string,

@@ -15,6 +15,7 @@ export type Platform = {
     sign(data: Uint8Array, privateKey: Uint8Array): Promise<Uint8Array>
 
 //  network
+    get(url: string, headers: any): Promise<KeeperHttpResponse>;
     post(url: string, request: Uint8Array, headers?: { [key: string]: string }): Promise<KeeperHttpResponse>
 }
 
