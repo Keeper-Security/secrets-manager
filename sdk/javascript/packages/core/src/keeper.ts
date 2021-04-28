@@ -1,5 +1,5 @@
 import {platform} from './platform'
-import {privateKeyToRaw, webSafe64ToBytes} from './utils';
+import {privateKeyToRaw, webSafe64FromBytes, webSafe64ToBytes} from './utils';
 import {inspect} from 'util';
 
 const KEY_URL = 'url'
@@ -45,6 +45,8 @@ type Payload = {
     clientVersion: string
     id?: string
     publicKey?: string
+    recordUid?: string
+    data?: string
 }
 
 type SecretsManagerResponseFolder = {
@@ -74,6 +76,8 @@ type SecretsManagerResponse = {
 }
 
 type KeeperRecord = {
+    recordUid: string
+    recordKey: Uint8Array
     data: any
     files?: KeeperFile[]
 }
@@ -144,6 +148,14 @@ const prepareContext = async (storage: KeyValueStorage): Promise<ExecutionContex
     }
 };
 
+const encryptAndSignPayload = async (context: ExecutionContext, payload: Payload): Promise<{ payload: Uint8Array, signature: Uint8Array }> => {
+    const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
+    const encryptedPayload = await platform.encrypt(payloadBytes, context.transmissionKey.key)
+    const signatureBase = Uint8Array.of(...context.transmissionKey.encryptedKey, ...encryptedPayload)
+    const signature = await platform.sign(signatureBase, context.privateKey)
+    return {payload: encryptedPayload, signature}
+};
+
 const preparePayload = async (context: ExecutionContext): Promise<{ payload: Uint8Array, signature: Uint8Array }> => {
     const payload: Payload = {
         clientVersion: 'w15.0.0', // TODO generate client version for SM
@@ -155,11 +167,23 @@ const preparePayload = async (context: ExecutionContext): Promise<{ payload: Uin
     } else { // EDK
         payload.id = platform.bytesToBase64(context.id)
     }
-    const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
-    const encryptedPayload = await platform.encrypt(payloadBytes, context.transmissionKey.key)
-    const signatureBase = Uint8Array.of(...context.transmissionKey.encryptedKey, ...encryptedPayload)
-    const signature = await platform.sign(signatureBase, context.privateKey)
-    return { payload: encryptedPayload, signature }
+    return encryptAndSignPayload(context, payload)
+};
+
+const prepareUpdatePayload = async (context: ExecutionContext, record: KeeperRecord): Promise<{ payload: Uint8Array, signature: Uint8Array }> => {
+    const payload: Payload = {
+        clientVersion: 'w15.0.0', // TODO generate client version for SM
+    }
+    if (context.id.length === 32) { // BAT
+        throw new Error('For updates, client must be authenticated by device token only')
+    } else { // EDK
+        payload.id = platform.bytesToBase64(context.id)
+    }
+    payload.recordUid = record.recordUid
+    const recordBytes = platform.stringToBytes(JSON.stringify(record.data))
+    const encryptedRecord = await platform.encrypt(recordBytes, record.recordKey)
+    payload.data = webSafe64FromBytes(encryptedRecord)
+    return encryptAndSignPayload(context, payload)
 };
 
 export const fetchAndDecryptSecrets = async (storage: KeyValueStorage): Promise<{ secrets: any[], justBound: boolean }> => {
@@ -169,7 +193,7 @@ export const fetchAndDecryptSecrets = async (storage: KeyValueStorage): Promise<
     if (!url) {
         throw new Error('url is missing from the configuration')
     }
-    const httpResponse = await platform.post(url, payload, {
+    const httpResponse = await platform.post(url + '/get_secret', payload, {
         PublicKeyId: context.transmissionKey.publicKeyId.toString(),
         TransmissionKey: platform.bytesToBase64(context.transmissionKey.encryptedKey),
         Authorization: `Signature ${platform.bytesToBase64(signature)}`
@@ -179,7 +203,6 @@ export const fetchAndDecryptSecrets = async (storage: KeyValueStorage): Promise<
     }
     const decryptedResponse = await platform.decrypt(httpResponse.data, context.transmissionKey.key)
     const response = JSON.parse(platform.bytesToString(decryptedResponse)) as SecretsManagerResponse
-    console.log(inspect(response, false, 6))
     if (response.applicationToken) {
         await storage.saveValue(KEY_ID, response.applicationToken)
     }
@@ -219,6 +242,8 @@ export const fetchAndDecryptSecrets = async (storage: KeyValueStorage): Promise<
 async function decryptRecord(record: SecretsManagerResponseRecord, recordKey: Uint8Array): Promise<KeeperRecord> {
     const decryptedRecord = await platform.decrypt(platform.base64ToBytes(record.data), recordKey)
     const keeperRecord: KeeperRecord = {
+        recordUid: record.recordUid,
+        recordKey: recordKey,
         data: JSON.parse(platform.bytesToString(decryptedRecord))
     }
     if (record.files) {
@@ -240,7 +265,7 @@ async function decryptRecord(record: SecretsManagerResponseRecord, recordKey: Ui
 export const initializeStorage = async (storage: KeyValueStorage, bindingKey: string, domain: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
     const url = await storage.getValue(KEY_URL)
     if (!url) {
-        await storage.saveValue(KEY_URL, `https://${domain}/api/rest/sm/v1/get_secret`)
+        await storage.saveValue(KEY_URL, `https://${domain}/api/rest/sm/v1`)
     }
     const existingBindingKey = await storage.getValue(KEY_BINDING_KEY)
     if (existingBindingKey !== bindingKey) {
@@ -264,6 +289,23 @@ export const getSecrets = async (storage: KeyValueStorage): Promise<KeeperRecord
         }
     }
     return secrets
+}
+
+export const updateSecret = async (storage: KeyValueStorage, record: KeeperRecord): Promise<void> => {
+    const context = await prepareContext(storage)
+    const { payload, signature } = await prepareUpdatePayload(context, record)
+    const url = await storage.getValue(KEY_URL)
+    if (!url) {
+        throw new Error('url is missing from the configuration')
+    }
+    const httpResponse = await platform.post(url + '/update_secret', payload, {
+        PublicKeyId: context.transmissionKey.publicKeyId.toString(),
+        TransmissionKey: platform.bytesToBase64(context.transmissionKey.encryptedKey),
+        Authorization: `Signature ${platform.bytesToBase64(signature)}`
+    })
+    if (httpResponse.statusCode !== 200) {
+        throw new Error(platform.bytesToString(httpResponse.data))
+    }
 }
 
 export const downloadFile = async (file: KeeperFile): Promise<Uint8Array> => {

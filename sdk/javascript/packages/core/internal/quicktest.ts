@@ -3,7 +3,7 @@ import {
     getSecrets,
     initialize,
     initializeStorage,
-    KeyValueStorage
+    KeyValueStorage, updateSecret
 } from '../src/keeper';
 import {nodePlatform} from '../src/node/nodePlatform';
 import {connectPlatform} from '../src/platform';
@@ -15,16 +15,19 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 connectPlatform(nodePlatform)
 initialize()
 
-const configFileName = 'client-config.json'
-const bindingKey = 'R8fbuIObsv6LRZ5LN9VnMPmafdoJwTURjXzT240LCKg'
+const configFileName = 'client-config-admin+rtu1.json'
+const bindingKey = 'gurunR8L9EUA1YTTyBzkna63nH7rnF69qncBO0FScpk'
 
 async function test() {
     const kvs = new TestKeyValueStorage()
     await initializeStorage(kvs, bindingKey, 'local.keepersecurity.com')
     const response = await getSecrets(kvs)
     console.log(inspect(response, false, 6))
-    const fileData = await downloadFile(response[0].files![0])
-    console.log(fileData)
+
+    response[0].data.title = response[0].data.title + '+'
+    await updateSecret(kvs, response[0])
+    // const fileData = await downloadFile(response[0].files![0])
+    // console.log(fileData)
 }
 
 export class TestKeyValueStorage implements KeyValueStorage {
