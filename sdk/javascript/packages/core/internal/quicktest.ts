@@ -15,8 +15,8 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 connectPlatform(nodePlatform)
 initialize()
 
-const configFileName = 'client-config-admin+rtu1.json'
-const bindingKey = 'gurunR8L9EUA1YTTyBzkna63nH7rnF69qncBO0FScpk'
+const configFileName = 'client-config-admin+rte.json'
+const bindingKey = 'zlinJfxD3Mn2Etwkwt-KGDyflL-0MiWi_NeM9_02I6c'
 
 async function test() {
     const kvs = new TestKeyValueStorage()
@@ -24,8 +24,8 @@ async function test() {
     const response = await getSecrets(kvs)
     console.log(inspect(response, false, 6))
 
-    response[0].data.title = response[0].data.title + '+'
-    await updateSecret(kvs, response[0])
+    // response[0].data.title = response[0].data.title + '+'
+    // await updateSecret(kvs, response[0])
     // const fileData = await downloadFile(response[0].files![0])
     // console.log(fileData)
 }
