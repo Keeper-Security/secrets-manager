@@ -1,8 +1,8 @@
 import hashlib
 import logging
 import os
+
 import requests
-from keepercommandersm.logger import CustomFormatter
 from requests import HTTPError
 
 from keeper_globals import keeper_server_public_key_raw_string, keeper_commander_sm_client_id
@@ -14,7 +14,8 @@ from keepercommandersm.storage import FileKeyValueStorage, KeyValueStorage
 from keepercommandersm.utils import bytes_to_url_safe_str, base64_to_bytes, sign, \
     extract_public_key_bytes, dict_to_json, url_safe_str_to_bytes, encrypt_aes, der_base64_private_key_to_private_key, \
     string_to_bytes, decrypt_aes, byte_to_string, json_to_dict, \
-    public_encrypt, generate_private_key_der, decrypt_record
+    public_encrypt, generate_private_key_der
+
 
 class Commander:
 
@@ -82,7 +83,7 @@ class Commander:
     @staticmethod
     def load_secret_key(local_config):
 
-        "Returns client_id from the environt variable, config file, or in the code"
+        """Returns client_id from the environment variable, config file, or in the code"""
 
         # Case 1: Environment Variable
         env_secret_key = os.getenv('KEEPER_SECRET_KEY')

@@ -21,7 +21,7 @@ install_requires = [
 
 setup(
     name="keepersecuritysm",
-    version='0.0.1a2',
+    version='0.0.2a',
     description="Keeper Commander Secrets Management for Python 3",
     long_description=long_description,
     long_description_content_type="text/x-rst",

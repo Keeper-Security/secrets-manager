@@ -31,6 +31,7 @@ if __name__ == '__main__':
     for r in all_records:
 
         print(r)
+        print("\tPassword: %s" % r.password)
 
         for f in r.files:
             print("\t\t-> %s" % f )
@@ -39,22 +40,21 @@ if __name__ == '__main__':
 
     rec_to_update = all_records[0]
 
-    raw_json = rec_to_update.raw_json
-    raw_dict = json_to_dict(raw_json)
 
-    fields = raw_dict['fields']
+    # raw_json = rec_to_update.raw_json
+    # raw_dict = json_to_dict(raw_json)
 
-
-    password_field = next((item for item in fields if item["type"] == "password"), None)
-
-    password_field['value'] = ["New Password-" + str(datetime.now())]
-
-    updated_raw_json = dict_to_json(raw_dict)
-
-    rec_to_update.raw_json = updated_raw_json
+    # fields = raw_dict['fields']
 
 
-
-    rec_to_update.uid = None
-
-    Commander.save(rec_to_update)
+    # password_field = next((item for item in fields if item["type"] == "password"), None)
+    #
+    # password_field['value'] = ["New Password-" + str(datetime.now())]
+    #
+    # updated_raw_json = dict_to_json(raw_dict)
+    #
+    # rec_to_update.raw_json = updated_raw_json
+    #
+    # rec_to_update.uid = None
+    #
+    # Commander.save(rec_to_update)

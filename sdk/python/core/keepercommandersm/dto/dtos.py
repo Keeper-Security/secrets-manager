@@ -25,6 +25,7 @@ class Record:
         self.files = []
         self.raw_json = None
         self.dict = {}
+        self.password = None
 
         self.uid = base64_to_str(record_dict.get('recordUid'))
 
@@ -53,6 +54,15 @@ class Record:
                 file = KeeperFile(f, self.record_key_bytes)
 
                 self.files.append(file)
+
+        # password (if `login` type)
+        if self.type == 'login':
+
+            fields = self.dict.get('fields')
+
+            password_field = next((item for item in fields if item["type"] == "password"), None)
+
+            self.password = password_field.get('value')[0]
 
     def __str__(self):
         return 'Record: uid=%s, type: %s, title: %s, files count: %s' % (self.uid, self.type, self.title, str(len(self.files)))

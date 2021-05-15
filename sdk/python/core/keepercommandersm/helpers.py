@@ -17,14 +17,14 @@ from keepercommandersm.configkeys import ConfigKeys
 from keepercommandersm.storage import KeyValueStorage
 
 
-def get_server(code_server, config_file: KeyValueStorage):
+def get_server(code_server, config_store: KeyValueStorage):
 
     env_server = os.getenv('KEEPER_SERVER')
 
     if env_server:
         server_to_use = env_server
-    elif config_file.get(ConfigKeys.KEY_SERVER):
-        server_to_use = config_file.get(ConfigKeys.KEY_SERVER)
+    elif config_store.get(ConfigKeys.KEY_SERVER):
+        server_to_use = config_store.get(ConfigKeys.KEY_SERVER)
     elif code_server:
         server_to_use = code_server
     else:
@@ -34,7 +34,7 @@ def get_server(code_server, config_file: KeyValueStorage):
         # Server key was supplied
         server_to_return = keeper_servers.get(server_to_use)
     else:
-        # Looks like a URL
+        # Looks like an URL
         # Un-parsing URL to get only domain:
         if 'http' not in server_to_use:
             server_to_use = 'https://%s' % server_to_use
