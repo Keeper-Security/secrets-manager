@@ -1,6 +1,30 @@
 
 
-## Intro
+## 1. Obtain you One-Time Secret Key
+Keeper Commander authenticates your API requests using advanced encryption that used locally stored private key, device id and client id.
+To register your device and generate private key you will need to generate a One-Time Secret Key via Web Vault or Keeper Commander CLI.
+
+### Via Web Vault
+TBD:
+
+### Via Keeper Commander CLI
+Login to Keeper Commander CLI and perform following:
+1. Create Application
+    ```bash
+   $ app-share --app [NAME] --secret [UID]
+    ```
+   
+    - `--app` - Name of the Application.
+    - `--secret` - Record UID or Shared Folder UID
+    
+1. Create client
+    ```bash
+   $ app-client [NAME]
+    ```
+
+### Install
+TBD
+
 ### Quick Start
 
 ```python
@@ -9,10 +33,12 @@ from keepercommandersm import Commander
 
 # Establish connection
 # One time secrets generated via Web Vault or Commander CLI
-Commander.secret_key = `s3cr3t-keyKU-LX_ksOKIA5VTC-4Ak2O-Um22oyDHzs`
+Commander.secret_key = `s3cr3t - keyKU - LX_ksOKIA5VTC - 4
+Ak2O - Um22oyDHzs
+`
 
 # Retrieve all password records
-all_records = Commander.get_all()
+all_records = Commander.all()
 
 # Get password from first record:
 password = all_records[0].password
@@ -52,6 +78,42 @@ Listed in priority order
 
 
 
-# Publish to PyPi
+## Adding more records or share folders to the Application
 
+### Via Web Vault
 TBD
+
+### Via Commander CLI
+```bash
+app-share --app [NAME] --secret [UID2]
+```
+
+## Configuration storage
+Storage is managed in ...
+### Types of storages
+- File storage - Default
+- Cloud Storages
+    - AWS <br/>Import TBD `pip install keepercommanderintegration-aws`
+    - Azure <br/>Import TBD `pip install keepercommanderintegration-azure`
+    - GCP <br/>Import TBD `pip install keepercommanderintegration-gcp`
+    - GitHub Actions <br/>Import TBD `pip install keepercommanderintegration-gha`
+    - Custom <br/>Implement your own `KeyValueStorage` class
+
+## Available operations
+
+### Retrieve secret(s)
+
+```python
+from keepercommandersm import Commander
+
+all_secrets = Commander.all()
+```
+### Update secret
+
+```python
+secret_to_update = all_secrets[0]
+
+secret_to_update.password = 'NewPassword123$'
+
+Commander.save(secret_to_update)
+```

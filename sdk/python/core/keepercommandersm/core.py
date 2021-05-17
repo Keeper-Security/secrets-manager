@@ -93,7 +93,6 @@ class Commander:
         if env_secret_key:
             current_secret_key= env_secret_key
 
-
         # Case 2: Code
         if not current_secret_key:
             code_secret_key = Commander.secret_key
@@ -153,7 +152,6 @@ class Commander:
             else:
                 raise Exception("No decrypt keys are present")
 
-
         # PRIVATE KEY
 
         private_key_str = config_storage.get(ConfigKeys.KEY_PRIVATE_KEY)
@@ -163,7 +161,6 @@ class Commander:
         else:
             private_key_der = generate_private_key_der()
             config_storage.set(ConfigKeys.KEY_PRIVATE_KEY, bytes_to_url_safe_str(private_key_der))
-
 
         return {
             'transmissionKey': transmission_key,
@@ -243,12 +240,12 @@ class Commander:
         payload_data = payload['payload']
         signature = payload['signature']
 
-        request_headers = {}
-        request_headers['Content-Type'] = 'application/octet-stream'
-        request_headers['Content-Length'] = str(len(payload_data))
-        request_headers['PublicKeyId'] = str(context.get('transmissionKey').get('publicKeyId'))
-        request_headers['TransmissionKey'] = bytes_to_url_safe_str(context.get('transmissionKey').get('encryptedKey'))
-        request_headers['Authorization'] = 'Signature %s' % bytes_to_url_safe_str(signature)
+        request_headers = {
+            'Content-Type': 'application/octet-stream', 'Content-Length': str(len(payload_data)),
+            'PublicKeyId': str(context.get('transmissionKey').get('publicKeyId')),
+            'TransmissionKey': bytes_to_url_safe_str(context.get('transmissionKey').get('encryptedKey')),
+            'Authorization': 'Signature %s' % bytes_to_url_safe_str(signature)
+        }
 
         keeper_server = helpers.get_server(Commander.server, config)
 
@@ -297,12 +294,10 @@ class Commander:
                 record = Record(r, secret_key)
                 records.append(record)
 
-
         if folders_resp:
             for f in folders_resp:
                 folder = Folder(f, secret_key)
                 records.extend(folder.records)
-
 
         return {
             'records': records,
@@ -310,8 +305,10 @@ class Commander:
         }
 
     @staticmethod
-    def get_all():
-
+    def all():
+        """
+        Retrieve all records associated with the given application
+        """
         records_resp = Commander.fetch()
 
         just_bound = records_resp.get('justBound')
@@ -324,9 +321,32 @@ class Commander:
         return records
 
     @staticmethod
+    def get(uid_or_title, is_case_sensitive=True):
+        """
+        Retrieve all records associated with the given application
+        """
+        all_records = Commander.all()
+
+        found_records = []
+
+        for rec in all_records:
+
+            rec_title = rec.title.lower() if is_case_sensitive else rec.title
+
+            if rec.uid == uid_or_title or rec_title == (uid_or_title.lower() if is_case_sensitive else is_case_sensitive):
+                found_records.append(rec)
+
+        if len(found_records) == 0:
+            return None
+        elif len(found_records) > 1:
+            logging.warning("More than 2 records were found for %s. Returning only the first one" % uid_or_title)
+
+        return found_records[0]
+
+    @staticmethod
     def save(record):
         """
-        Create new or update a record
+        Save updated secret values
         """
 
         logging.info("Updating record uid: %s" % record.uid)
@@ -342,10 +362,11 @@ class Commander:
 
         keeper_server = helpers.get_server(Commander.server, config)
 
-        request_headers = {}
-        request_headers['PublicKeyId'] = str(context.get('transmissionKey').get('publicKeyId'))
-        request_headers['TransmissionKey'] = bytes_to_url_safe_str(context.get('transmissionKey').get('encryptedKey'))
-        request_headers['Authorization'] = 'Signature %s' % bytes_to_url_safe_str(signature)
+        request_headers = {
+            'PublicKeyId': str(context.get('transmissionKey').get('publicKeyId')),
+            'TransmissionKey': bytes_to_url_safe_str(context.get('transmissionKey').get('encryptedKey')),
+            'Authorization': 'Signature %s' % bytes_to_url_safe_str(signature)
+        }
 
         rs = requests.post(
             'https://%s/api/rest/sm/v1/update_secret' % keeper_server,

@@ -22,7 +22,7 @@ if __name__ == '__main__':
 
     Commander.secret_key = 'eqHArsbplcKU-LX_ksOKIA5VTC-4Ak2O-Um22oyDHzs'
 
-    all_records = Commander.get_all()
+    all_records = Commander.all()
 
 
 
@@ -37,6 +37,10 @@ if __name__ == '__main__':
             print("\t\t-> %s" % f )
 
             f.save_file("/Users/mustinov/Downloads/_v2/___" + f.name, True)
+
+    found_by_uid = Commander.get('id1-CORRECT REC FILE IN FOLDER 1')
+
+    print(found_by_uid)
 
     rec_to_update = all_records[0]
 
