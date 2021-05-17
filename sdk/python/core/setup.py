@@ -12,7 +12,6 @@ os.chdir(here)
 with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
-
 install_requires = [
     'cryptography',
     'pycryptodomex>=3.7.2',
@@ -21,10 +20,10 @@ install_requires = [
 
 setup(
     name="keepersecuritysm",
-    version='0.0.2a',
+    version='0.0.4a',
     description="Keeper Commander Secrets Management for Python 3",
     long_description=long_description,
-    long_description_content_type="text/x-rst",
+    long_description_content_type="text/markdown",
     author="Keeper Security",
     author_email="ops@keepersecurity.com",
     url="https://github.com/Keeper-Security/secrets-manager",
