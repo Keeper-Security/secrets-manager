@@ -17,10 +17,10 @@ from keepercommandersm.utils import json_to_dict, dict_to_json
 if __name__ == '__main__':
 
     Commander.server = 'https://dev.keepersecurity.com'
-    Commander.config = FileKeyValueStorage("config-id1.json")
+    Commander.config = FileKeyValueStorage("config-id2.json")
     Commander.verify_ssl_certs = False
 
-    Commander.secret_key = 'eqHArsbplcKU-LX_ksOKIA5VTC-4Ak2O-Um22oyDHzs'
+    Commander.secret_key = 'KmsOqSq-aB0l7VraWHBHhMaZC2HYDDY5rJIgaP3qD7E'
 
     all_records = Commander.all()
 
@@ -33,32 +33,32 @@ if __name__ == '__main__':
         print(r)
         print("\tPassword: %s" % r.password)
 
+        count = 0
         for f in r.files:
-            print("\t\t-> %s" % f )
+            count = count + 1
+            print("\t\tfile %s -> name: %s" % (count, f))
 
             f.save_file("/Users/mustinov/Downloads/_v2/___" + f.name, True)
 
     found_by_uid = Commander.get('id1-CORRECT REC FILE IN FOLDER 1')
-
-    print(found_by_uid)
+    if found_by_uid:
+        print(found_by_uid)
 
     rec_to_update = all_records[0]
 
+    raw_json = rec_to_update.raw_json
+    raw_dict = json_to_dict(raw_json)
 
-    # raw_json = rec_to_update.raw_json
-    # raw_dict = json_to_dict(raw_json)
+    fields = raw_dict['fields']
 
-    # fields = raw_dict['fields']
+    password_field = next((item for item in fields if item["type"] == "password"), None)
 
+    password_field['value'] = ["New Password from SDK Test -" + str(datetime.now())]
 
-    # password_field = next((item for item in fields if item["type"] == "password"), None)
-    #
-    # password_field['value'] = ["New Password-" + str(datetime.now())]
-    #
-    # updated_raw_json = dict_to_json(raw_dict)
-    #
-    # rec_to_update.raw_json = updated_raw_json
+    updated_raw_json = dict_to_json(raw_dict)
+
+    rec_to_update.raw_json = updated_raw_json
     #
     # rec_to_update.uid = None
-    #
-    # Commander.save(rec_to_update)
+
+    Commander.save(rec_to_update)

@@ -177,4 +177,4 @@ class KeeperFile:
         return True
 
     def __str__(self):
-        return "%s" % self.name
+        return "[KeeperFile - name: %s, title: %s]" % (self.name, self.title)

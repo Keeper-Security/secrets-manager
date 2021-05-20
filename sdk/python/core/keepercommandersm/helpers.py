@@ -12,8 +12,8 @@ import logging
 import os
 from urllib.parse import urlparse
 
-from keeper_globals import keeper_servers
 from keepercommandersm.configkeys import ConfigKeys
+from keepercommandersm.keeper_globals import keeper_servers
 from keepercommandersm.storage import KeyValueStorage
 
 

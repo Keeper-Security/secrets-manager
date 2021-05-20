@@ -2,8 +2,6 @@ import os
 from codecs import open
 from setuptools import setup, find_packages
 
-import keepercommandersm
-
 here = os.path.abspath(os.path.dirname(__file__))
 
 os.chdir(here)
@@ -20,7 +18,7 @@ install_requires = [
 
 setup(
     name="keepersecuritysm",
-    version='0.0.4a',
+    version='0.0.6a',
     description="Keeper Commander Secrets Management for Python 3",
     long_description=long_description,
     long_description_content_type="text/markdown",

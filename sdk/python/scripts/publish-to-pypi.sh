@@ -6,13 +6,11 @@ source venv/bin/activate
 
 pip install -r requirements.txt
 
-echo "---------------------------"
-echo "ENTER LOCAL USER PASSWORD"
-echo "---------------------------"
 
 pip install -e .
 rm -rf dist *config*.json
-sudo pip install twine
+
+pip install twine
 python3 setup.py sdist bdist_wheel
 
 twine check dist/*

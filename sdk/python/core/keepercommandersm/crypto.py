@@ -69,7 +69,7 @@ class CryptoUtils:
         return cipher.encrypt(data)
 
 
-if __name__ == '__main__':
-
-    pk = CryptoUtils.generate_encryption_key_bytes()
-    print(pk)
+# if __name__ == '__main__':
+#
+    # pk = CryptoUtils.generate_encryption_key_bytes()
+    # print(pk)
