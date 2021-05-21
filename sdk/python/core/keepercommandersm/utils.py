@@ -10,16 +10,16 @@
 #
 import base64
 import json
+import logging
 import os
 from json import JSONDecodeError
 from sys import platform as _platform
-import logging
 
 from Cryptodome.Cipher import AES, PKCS1_v1_5
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.serialization import load_der_private_key, load_der_public_key, load_pem_public_key
+from cryptography.hazmat.primitives.serialization import load_der_private_key
 
 ENCODING = 'UTF-8'
 
@@ -138,8 +138,6 @@ def generate_new_ecc_key():
     curve = ec.SECP256R1()
     ephemeral_key = ec.generate_private_key(curve, default_backend())
     return ephemeral_key
-
-
 
 
 def encrypt_rsa(data, rsa_key):
@@ -280,15 +278,3 @@ def sign(data, private_key):
         ec.ECDSA(hashes.SHA256())
     )
     return signature
-
-# def get_private_ecc_key_from_config(storage: KeyValueStorage):
-#
-#     private_key_str = storage.get('privateKey')
-#
-#     encryption_key_int = url_safe_str_to_int(private_key_str)
-#
-#     private_key = ec.derive_private_key(encryption_key_int, ec.SECP256R1(), default_backend())
-#
-#     return private_key
-
-# def convert_der_to_private_key(der):

@@ -16,17 +16,13 @@ from keepercommandersm.utils import json_to_dict, dict_to_json
 
 if __name__ == '__main__':
 
-    Commander.server = 'https://dev.keepersecurity.com'
+    Commander.server = 'https://local.keepersecurity.com'
     Commander.config = FileKeyValueStorage("config-id2.json")
     Commander.verify_ssl_certs = False
 
     Commander.secret_key = 'KmsOqSq-aB0l7VraWHBHhMaZC2HYDDY5rJIgaP3qD7E'
 
     all_records = Commander.all()
-
-
-
-
 
     for r in all_records:
 
