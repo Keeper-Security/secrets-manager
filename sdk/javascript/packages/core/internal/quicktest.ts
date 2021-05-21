@@ -16,11 +16,12 @@ connectPlatform(nodePlatform)
 initialize()
 
 const configFileName = 'client-config-admin+rte.json'
-const clientKey = 'XeFrANSvGSdHlzdaQ01gvyc00bY8LV4vdTKo1iioPlY'
+const clientKey = 'HC5aooIvPREFklD8x1v7AtT0YakXpUx7lY-wBdpINXQ'
 
 async function test() {
     const kvs = new TestKeyValueStorage()
     await initializeStorage(kvs, clientKey, 'local.keepersecurity.com')
+    // const response = await getSecrets(kvs, ['i3v4ehaoB-Bwsb7bbbek2g'])
     const response = await getSecrets(kvs)
     console.log(inspect(response, false, 6))
 
