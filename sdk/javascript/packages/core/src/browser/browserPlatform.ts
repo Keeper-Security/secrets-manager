@@ -95,7 +95,7 @@ export const browserPlatform: Platform = class {
             name: 'ECDSA',
             hash: 'SHA-256'
         }, key, data);
-        return new Uint8Array(signature);
+        return new Uint8Array(p1363ToDER(Buffer.from(signature)))
     }
 
     static async get(url: string, headers: any): Promise<KeeperHttpResponse> {
@@ -132,4 +132,58 @@ export const browserPlatform: Platform = class {
             data: new Uint8Array(body)
         }
     }
+}
+
+// derived from https://github.com/litert/signatures.js
+function p1363ToDER(p1363: Buffer): Buffer {
+    let base = 0;
+    let r: Buffer;
+    let s: Buffer;
+    const hL = p1363.length / 2;
+    /**
+     * Prepend a 0x00 byte to R or S if it starts with a byte larger than 0x79.
+     *
+     * Because a integer starts with a byte larger than 0x79 means negative.
+     *
+     * @see https://bitcointalk.org/index.php?topic=215205.msg2258789#msg2258789
+     */
+    r = ecdsaRecoverRS(p1363.slice(0, hL));
+    s = ecdsaRecoverRS(p1363.slice(hL));
+    /**
+     * Using long form length if it's larger than 0x7F.
+     *
+     * @see https://stackoverflow.com/a/47099047
+     */
+    if (4 + s.length + r.length > 0x7f) {
+        base++;
+    }
+    const der = Buffer.alloc(base + 6 + s.length + r.length);
+    if (base) {
+        der[1] = 0x81;
+    }
+    der[0] = 0x30;
+    der[base + 1] = 4 + s.length + r.length;
+    der[base + r.length + 4] = der[base + 2] = 0x02;
+    der[base + r.length + 5] = s.length;
+    der[base + 3] = r.length;
+    r.copy(der, base + 4);
+    s.copy(der, base + 6 + r.length);
+    return der;
+}
+
+function ecdsaRecoverRS(input: Buffer): Buffer {
+    let start: number = 0;
+    while (input[start] === 0) {
+        start++;
+    }
+    if (input[start] <= 0x7F) {
+        return input.slice(start);
+    }
+    if (start > 0) {
+        return input.slice(start - 1);
+    }
+    let output = Buffer.alloc(input.length + 1);
+    input.copy(output, 1);
+    output[0] = 0;
+    return output;
 }

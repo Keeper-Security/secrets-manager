@@ -1,23 +1,20 @@
-import React, {useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import './App.css';
-import {getSecrets, KeyValueStorage} from '@keeper/secrets-manager-core'
+import {initializeStorage, getSecrets} from '@keeper/secrets-manager-core'
+import {indexedDbValueStorage} from './keyValueStorage';
+
+const clientKey = 'SQw45mt-2OmGtQXi6EO-d2_0bZ0dLOIulrOfYeEF-bY'
 
 const Secrets = (props: any) => {
-    const db = indexedDB.open('secrets', 1)
-    if (db != null) {
-        // @ts-ignore
-        const transaction = db.transaction(['secrets'], 'readwrite');
-        const objectStore = transaction.objectStore('secrets')
-        objectStore.add()
-    }
-    const [secrets, setSecrets] = React.useState("");
-    React.useEffect(() => {
-        const fetchUser = async () => {
-            const response = await fetch("https://jsonplaceholder.typicode.com/todos/1");
-            const { title } = await response.json();
-            setSecrets(title);
+    const [secrets, setSecrets] = useState('');
+    useEffect(() => {
+        const fetchSecret = async () => {
+            await initializeStorage(indexedDbValueStorage, clientKey, 'local.keepersecurity.com')
+            const secrets = await getSecrets(indexedDbValueStorage)
+            console.log(secrets)
+            setSecrets(JSON.stringify(secrets));
         };
-        fetchUser().then();
+        fetchSecret().then();
     }, []);
 
     return (

@@ -34,7 +34,7 @@ type TransmissionKey = {
 
 type ExecutionContext = {
     transmissionKey: TransmissionKey
-    clientId: Uint8Array
+    clientId: string
     clientKey: Uint8Array
     isBound: boolean
     privateKey: Uint8Array
@@ -121,7 +121,6 @@ const prepareContext = async (storage: KeyValueStorage): Promise<ExecutionContex
     if (!clientId) {
         throw new Error('Client Token is missing from the configuration')
     }
-    const clientIdBytes = platform.base64ToBytes(clientId)
     let secretKey
     let isBound = false
     const appKeyString = await storage.getValue(KEY_APP_KEY)
@@ -132,7 +131,7 @@ const prepareContext = async (storage: KeyValueStorage): Promise<ExecutionContex
     else {
         const secretKeyString = await storage.getValue(KEY_CLIENT_KEY)
         if (secretKeyString) {
-            secretKey = platform.base64ToBytes(secretKeyString)
+            secretKey = webSafe64ToBytes(secretKeyString)
         } else {
             throw new Error("No decrypt keys are present")
         }
@@ -147,7 +146,7 @@ const prepareContext = async (storage: KeyValueStorage): Promise<ExecutionContex
     }
     return {
         transmissionKey: transmissionKey,
-        clientId: clientIdBytes,
+        clientId: clientId,
         clientKey: secretKey,
         isBound: isBound,
         privateKey: privateKeyDer
@@ -165,7 +164,7 @@ const encryptAndSignPayload = async (context: ExecutionContext, payload: GetPayl
 const prepareGetPayload = async (context: ExecutionContext, recordsFilter?: string[]): Promise<{ payload: Uint8Array; signature: Uint8Array }> => {
     const payload: GetPayload = {
         clientVersion: 'w15.0.0', // TODO generate client version for SM
-        clientId: platform.bytesToBase64(context.clientId)
+        clientId: context.clientId
     }
     if (!context.isBound) {
         const rawKeys = privateKeyToRaw(context.privateKey)
@@ -180,7 +179,7 @@ const prepareGetPayload = async (context: ExecutionContext, recordsFilter?: stri
 const prepareUpdatePayload = async (context: ExecutionContext, record: KeeperRecord): Promise<{ payload: Uint8Array, signature: Uint8Array }> => {
     const payload: UpdatePayload = {
         clientVersion: 'w15.0.0', // TODO generate client version for SM
-        clientId: platform.bytesToBase64(context.clientId)
+        clientId: context.clientId
     }
     if (!context.clientKey) {
         throw new Error('For creates and updates, client must be authenticated by device token only')
