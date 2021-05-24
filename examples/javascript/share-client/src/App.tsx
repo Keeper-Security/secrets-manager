@@ -1,6 +1,6 @@
 import {useEffect, useState} from 'react';
 import './App.css';
-import {initializeStorage, getSecrets} from '@keeper/secrets-manager-core'
+import {getClientId, initializeStorage, getSecrets} from '@keeper/secrets-manager-core'
 import {indexedDbValueStorage} from './keyValueStorage';
 
 const PrettyPrintJson = (data: any) =>
@@ -14,13 +14,11 @@ const Secrets = (props: any) => {
     useEffect(() => {
         const fetchSecret = async () => {
             const clientKey = window.location.pathname.slice(1)
-            const storage = indexedDbValueStorage(clientKey)
+            const clientId = await getClientId(clientKey)
+            const storage = indexedDbValueStorage(clientId)
             await initializeStorage(storage, clientKey, 'local.keepersecurity.com')
             try {
                 const secrets = await getSecrets(storage)
-                for (let record of secrets.records) {
-                    record.recordKey = new Uint8Array()
-                }
                 setSecrets(secrets);
             }
             catch (e) {

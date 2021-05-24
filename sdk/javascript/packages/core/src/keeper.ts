@@ -1,8 +1,10 @@
 import {KeeperHttpResponse, KeyValueStorage, platform} from './platform'
 import {webSafe64FromBytes, webSafe64ToBytes} from './utils';
+
 export {KeyValueStorage} from './platform'
 
 const KEY_URL = 'url' // base url for the Secrets Manager service
+const KEY_TRANSMISSION_KEY = 'transmissionKey'
 const KEY_CLIENT_ID = 'clientId'
 const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the client before public key
 const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
@@ -22,7 +24,6 @@ export const initialize = () => {
 let keeperPublicKeys: Uint8Array[]
 
 type TransmissionKey = {
-    key: Uint8Array
     publicKeyId: number
     encryptedKey: Uint8Array
 }
@@ -30,8 +31,6 @@ type TransmissionKey = {
 type ExecutionContext = {
     transmissionKey: TransmissionKey
     clientId: string
-    clientKey: Uint8Array
-    isBound: boolean
 }
 
 type GetPayload = {
@@ -62,6 +61,7 @@ type SecretsManagerResponseRecord = {
 }
 
 type SecretsManagerResponseFile = {
+    fileUid: string
     fileKey: string
     data: string
     url: string
@@ -76,24 +76,17 @@ type SecretsManagerResponse = {
 
 export type KeeperSecrets = {
     records: KeeperRecord[]
-    folders: KeeperFolder[]
 }
 
 export type KeeperRecord = {
     recordUid: string
     folderUid?: string
-    recordKey: Uint8Array
     data: any
     files?: KeeperFile[]
 }
 
-export type KeeperFolder = {
-    folderUid: string
-    folderKey: Uint8Array
-}
-
 export type KeeperFile = {
-    fileKey: Uint8Array
+    fileUid: string
     data: any
     url?: string
     thumbnailUrl?: string
@@ -101,10 +94,10 @@ export type KeeperFile = {
 
 export const generateTransmissionKey = async (keyNumber: number): Promise<TransmissionKey> => {
     const transmissionKey = platform.getRandomBytes(32)
+    await platform.importKey(KEY_TRANSMISSION_KEY, transmissionKey)
     const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[keyNumber - 1])
     return {
         publicKeyId: keyNumber,
-        key: transmissionKey,
         encryptedKey: encryptedKey
     }
 };
@@ -113,38 +106,17 @@ const prepareContext = async (storage: KeyValueStorage): Promise<ExecutionContex
     const transmissionKey = await generateTransmissionKey(1)
     const clientId = await storage.getValue<string>(KEY_CLIENT_ID)
     if (!clientId) {
-        throw new Error('Client Token is missing from the configuration')
-    }
-    let secretKey
-    let isBound = false
-    const appKeyString = await storage.getValue<string>(KEY_APP_KEY)
-    if (appKeyString) {
-        secretKey = platform.base64ToBytes(appKeyString)
-        isBound = true
-    }
-    else {
-        const secretKeyString = await storage.getValue<string>(KEY_CLIENT_KEY)
-        if (secretKeyString) {
-            secretKey = webSafe64ToBytes(secretKeyString)
-        } else {
-            throw new Error("No decrypt keys are present")
-        }
-    }
-    const privateKey = await storage.getValue(KEY_PRIVATE_KEY)
-    if (!privateKey) {
-        await platform.generatePrivateKey(KEY_PRIVATE_KEY, storage)
+        throw new Error('Client Id is missing from the configuration')
     }
     return {
         transmissionKey: transmissionKey,
-        clientId: clientId,
-        clientKey: secretKey,
-        isBound: isBound,
+        clientId: clientId
     }
 };
 
 const encryptAndSignPayload = async (storage: KeyValueStorage, context: ExecutionContext, payload: GetPayload | UpdatePayload): Promise<{ payload: Uint8Array, signature: Uint8Array }> => {
     const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
-    const encryptedPayload = await platform.encrypt(payloadBytes, context.transmissionKey.key)
+    const encryptedPayload = await platform.encrypt(payloadBytes, KEY_TRANSMISSION_KEY, storage)
     const signatureBase = Uint8Array.of(...context.transmissionKey.encryptedKey, ...encryptedPayload)
     const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
     return {payload: encryptedPayload, signature}
@@ -155,7 +127,8 @@ const prepareGetPayload = async (storage: KeyValueStorage, context: ExecutionCon
         clientVersion: 'w15.0.0', // TODO generate client version for SM
         clientId: context.clientId
     }
-    if (!context.isBound) {
+    const appKey = await storage.getValue(KEY_APP_KEY)
+    if (!appKey) {
         const publicKey = await platform.exportPublicKey(KEY_PRIVATE_KEY, storage)
         payload.publicKey = platform.bytesToBase64(publicKey)
     }
@@ -170,12 +143,9 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, context: Execution
         clientVersion: 'w15.0.0', // TODO generate client version for SM
         clientId: context.clientId
     }
-    if (!context.clientKey) {
-        throw new Error('For creates and updates, client must be authenticated by device token only')
-    }
     payload.recordUid = record.recordUid
     const recordBytes = platform.stringToBytes(JSON.stringify(record.data))
-    const encryptedRecord = await platform.encrypt(recordBytes, record.recordKey)
+    const encryptedRecord = await platform.encrypt(recordBytes, record.recordUid)
     payload.data = webSafe64FromBytes(encryptedRecord)
     return encryptAndSignPayload(storage, context, payload)
 };
@@ -197,20 +167,19 @@ const postQuery = async (storage: KeyValueStorage, path: string, transmissionKey
     return httpResponse
 };
 
-const decryptRecord = async (record: SecretsManagerResponseRecord, recordKey: Uint8Array): Promise<KeeperRecord> => {
-    const decryptedRecord = await platform.decrypt(platform.base64ToBytes(record.data), recordKey)
+const decryptRecord = async (record: SecretsManagerResponseRecord): Promise<KeeperRecord> => {
+    const decryptedRecord = await platform.decrypt(platform.base64ToBytes(record.data), record.recordUid)
     const keeperRecord: KeeperRecord = {
         recordUid: record.recordUid,
-        recordKey: recordKey,
         data: JSON.parse(platform.bytesToString(decryptedRecord))
     }
     if (record.files) {
         keeperRecord.files = []
         for (const file of record.files) {
-            const fileKey = await platform.decrypt(platform.base64ToBytes(file.fileKey), recordKey)
-            const decryptedFile = await platform.decrypt(platform.base64ToBytes(file.data), fileKey)
+            await platform.unwrap(platform.base64ToBytes(file.fileKey), file.fileUid, record.recordUid)
+            const decryptedFile = await platform.decrypt(platform.base64ToBytes(file.data), file.fileUid)
             keeperRecord.files.push({
-                fileKey: fileKey,
+                fileUid: file.fileUid,
                 data: JSON.parse(platform.bytesToString(decryptedFile)),
                 url: file.url,
                 thumbnailUrl: file.thumbnailUrl
@@ -224,65 +193,59 @@ const fetchAndDecryptSecrets = async (storage: KeyValueStorage, recordsFilter?: 
     const context = await prepareContext(storage)
     const { payload, signature } = await prepareGetPayload(storage, context, recordsFilter)
     const httpResponse = await postQuery(storage, 'get_secret', context.transmissionKey, payload, signature)
-    const decryptedResponse = await platform.decrypt(httpResponse.data, context.transmissionKey.key)
+    const decryptedResponse = await platform.decrypt(httpResponse.data, KEY_TRANSMISSION_KEY)
     const response = JSON.parse(platform.bytesToString(decryptedResponse)) as SecretsManagerResponse
 
-    let secretKey: Uint8Array
     const records: KeeperRecord[] = []
-    const folders: KeeperFolder[] = []
     let justBound = false
     if (response.encryptedAppKey) {
         justBound = true
-        secretKey = await platform.decrypt(platform.base64ToBytes(response.encryptedAppKey), context.clientKey)
-        await storage.saveValue(KEY_APP_KEY, platform.bytesToBase64(secretKey))
-    }
-    else {
-        secretKey = context.clientKey
+        await platform.unwrap(platform.base64ToBytes(response.encryptedAppKey), KEY_APP_KEY, KEY_CLIENT_KEY, storage)
     }
     if (response.records) {
         for (const record of response.records) {
-            const recordKey = await platform.decrypt(platform.base64ToBytes(record.recordKey), secretKey)
-            const decryptedRecord = await decryptRecord(record, recordKey)
+            await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, KEY_APP_KEY, storage, true)
+            const decryptedRecord = await decryptRecord(record)
             records.push(decryptedRecord)
         }
     }
     if (response.folders) {
         for (const folder of response.folders) {
-            const folderKey = await platform.decrypt(platform.base64ToBytes(folder.folderKey), secretKey)
-            folders.push({
-                folderUid: folder.folderUid,
-                folderKey: folderKey
-            })
+            await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
             for (const record of folder.records) {
-                const recordKey = await platform.decrypt(platform.base64ToBytes(record.recordKey), folderKey)
-                const decryptedRecord = await decryptRecord(record, recordKey)
+                await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, folder.folderUid)
+                const decryptedRecord = await decryptRecord(record)
                 decryptedRecord.folderUid = folder.folderUid
                 records.push(decryptedRecord)
             }
         }
     }
     const secrets: KeeperSecrets = {
-        records: records,
-        folders: folders
+        records: records
     }
     return { secrets, justBound }
 }
 
+export const getClientId = async (clientKey: string): Promise<string> => {
+    const clientKeyHash = await platform.hash(webSafe64ToBytes(clientKey))
+    return platform.bytesToBase64(clientKeyHash)
+}
+
 export const initializeStorage = async (storage: KeyValueStorage, clientKey: string, domain: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
-    const url = await storage.getValue(KEY_URL)
-    if (!url) {
-        await storage.saveValue(KEY_URL, `https://${domain}/api/rest/sm/v1`)
+    const clientKeyBytes = webSafe64ToBytes(clientKey)
+    const clientKeyHash = await platform.hash(clientKeyBytes)
+    const clientId = platform.bytesToBase64(clientKeyHash)
+    const existingClientId = await storage.getValue<string>(KEY_CLIENT_ID)
+    if (existingClientId && existingClientId === clientId) {
+        return  // the storage is already initialised
     }
-    const existingClientKey = await storage.getValue(KEY_CLIENT_KEY)
-    if (existingClientKey !== clientKey) {
-        if (existingClientKey) {  // client id has changed, need to reset the rest of keys
-            console.log('Client Key has changed, resetting the keys...')
-            await storage.clearValues([KEY_CLIENT_KEY, KEY_APP_KEY, KEY_PRIVATE_KEY])
-        }
-        await storage.saveValue(KEY_CLIENT_KEY, clientKey)
-        const clientId = await platform.hash(webSafe64ToBytes(clientKey))
-        await storage.saveValue(KEY_CLIENT_ID, platform.bytesToBase64(clientId))
+    if (existingClientId) {
+        throw new Error(`The storage is already initialized with a different client Id (${existingClientId})`)
     }
+    await storage.saveValue(KEY_URL, `https://${domain}/api/rest/sm/v1`)
+    await storage.saveValue(KEY_CLIENT_ID, clientId)
+    await platform.importKey(KEY_CLIENT_KEY, clientKeyBytes, storage)
+    await platform.generatePrivateKey(KEY_PRIVATE_KEY, storage)
 };
 
 export const getSecrets = async (storage: KeyValueStorage, recordsFilter?: string[]): Promise<KeeperSecrets> => {
@@ -306,11 +269,10 @@ export const updateSecret = async (storage: KeyValueStorage, record: KeeperRecor
 
 export const downloadFile = async (file: KeeperFile): Promise<Uint8Array> => {
     const fileResponse = await platform.get(file.url!, {})
-    return platform.decrypt(fileResponse.data, file.fileKey);
+    return platform.decrypt(fileResponse.data, file.fileUid);
 };
 
 export const downloadThumbnail = async (file: KeeperFile): Promise<Uint8Array> => {
     const fileResponse = await platform.get(file.thumbnailUrl!, {})
-    return platform.decrypt(fileResponse.data, file.fileKey);
+    return platform.decrypt(fileResponse.data, file.fileUid);
 };
-

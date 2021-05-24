@@ -52,12 +52,18 @@ async function generatePrivateKey(keyId: string, storage: KeyValueStorage): Prom
     await storage.saveValue(keyId, bytesToBase64(privateKeyDer))
 }
 
+let cachedPrivateKey: Uint8Array
+
 const loadPrivateKey = async (keyId: string, storage: KeyValueStorage): Promise<Uint8Array> => {
+    if (cachedPrivateKey) {
+        return cachedPrivateKey
+    }
     const privateKeyDerString = await storage.getValue<string>(keyId)
     if (!privateKeyDerString) {
         throw new Error('Unable to load the private key')
     }
-    return base64ToBytes(privateKeyDerString)
+    cachedPrivateKey = base64ToBytes(privateKeyDerString)
+    return cachedPrivateKey
 }
 // extracts public raw from private key for prime256v1 curve in der/pkcs8
 // privateKey: key.slice(36, 68)
@@ -68,7 +74,21 @@ async function exportPublicKey(keyId: string, storage: KeyValueStorage): Promise
     return privateDerToPublicRaw(privateKeyDer)
 }
 
-function encrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array> {
+const importKey = async (keyId: string, key: Uint8Array, storage?: KeyValueStorage): Promise<void> => {
+    throw new Error('not implemented')
+}
+
+function encrypt(data: Uint8Array, keyId: string, storage?: KeyValueStorage): Promise<Uint8Array> {
+    throw new Error('not implemented')
+    // let iv = randomBytes(12);
+    // let cipher = createCipheriv("aes-256-gcm", key, iv);
+    // let encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+    // const tag = cipher.getAuthTag();
+    // let result = Buffer.concat([iv, encrypted, tag]);
+    // return Promise.resolve(result);
+}
+
+function _encrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array> {
     let iv = randomBytes(12);
     let cipher = createCipheriv("aes-256-gcm", key, iv);
     let encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
@@ -77,13 +97,18 @@ function encrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array> {
     return Promise.resolve(result);
 }
 
-function decrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array> {
-    let iv = data.subarray(0, 12);
-    let encrypted = data.subarray(12, data.length - 16);
-    let tag = data.subarray(data.length - 16);
-    let cipher = createDecipheriv("aes-256-gcm", key, iv);
-    cipher.setAuthTag(tag);
-    return Promise.resolve(Buffer.concat([cipher.update(encrypted), cipher.final()]));
+const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean): Promise<void> => {
+    throw new Error('not implemented')
+}
+
+function decrypt(data: Uint8Array, keyId: string, storage?: KeyValueStorage): Promise<Uint8Array> {
+    throw new Error('not implemented')
+    // let iv = data.subarray(0, 12);
+    // let encrypted = data.subarray(12, data.length - 16);
+    // let tag = data.subarray(data.length - 16);
+    // let cipher = createDecipheriv("aes-256-gcm", key, iv);
+    // cipher.setAuthTag(tag);
+    // return Promise.resolve(Buffer.concat([cipher.update(encrypted), cipher.final()]));
 }
 
 function hash(data: Uint8Array): Promise<Uint8Array> {
@@ -98,7 +123,7 @@ async function publicEncrypt(data: Uint8Array, key: Uint8Array, id?: Uint8Array)
     const sharedSecret = ecdh.computeSecret(key)
     const sharedSecretCombined = Buffer.concat([sharedSecret, id || new Uint8Array()])
     const symmetricKey = createHash("SHA256").update(sharedSecretCombined).digest()
-    const encryptedData = await nodePlatform.encrypt(data, symmetricKey)
+    const encryptedData = await _encrypt(data, symmetricKey)
     return Buffer.concat([ephemeralPublicKey, encryptedData])
 }
 
@@ -167,6 +192,8 @@ export const nodePlatform: Platform = {
     getRandomBytes: getRandomBytes,
     generatePrivateKey: generatePrivateKey,
     exportPublicKey: exportPublicKey,
+    importKey: importKey,
+    unwrap: unwrap,
     encrypt: encrypt,
     decrypt: decrypt,
     hash: hash,

@@ -1,6 +1,6 @@
-import {KeeperHttpResponse, KeyValueStorage, Platform} from "../platform"
+import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
 
-const bytesToBase64 = (data: Uint8Array): string => btoa(browserPlatform.bytesToString(data));
+const bytesToBase64 = (data: Uint8Array): string => btoa(bytesToString(data));
 
 const base64ToBytes = (data: string): Uint8Array => Uint8Array.from(atob(data), c => c.charCodeAt(0));
 
@@ -9,23 +9,48 @@ const bytesToString = (data: Uint8Array): string => String.fromCharCode(...data)
 const stringToBytes = (data: string): Uint8Array => new TextEncoder().encode(data);
 
 const getRandomBytes = (length: number): Uint8Array => {
-    let data = new Uint8Array(length)
+    const data = new Uint8Array(length)
     crypto.getRandomValues(data)
     return data
 };
 
-const generatePrivateKey = async (keyId: string, storage: KeyValueStorage): Promise<void> => {
-    const pair = await crypto.subtle.generateKey({name: 'ECDSA', namedCurve: 'P-256'}, false, ['sign', 'verify'])
-    await storage.saveValue(keyId, pair)
-};
+const privateKeyCache: Record<string, CryptoKeyPair> = {}
 
 const loadPrivateKey = async (keyId: string, storage: KeyValueStorage): Promise<CryptoKeyPair> => {
+    const cachedPrivateKey = privateKeyCache[keyId]
+    if (cachedPrivateKey) {
+        return cachedPrivateKey
+    }
     const keyPair = await storage.getValue<CryptoKeyPair>(keyId)
     if (!keyPair) {
-        throw new Error('Unable to load the private key')
+        throw new Error(`Unable to load the private key ${keyId}`)
     }
+    privateKeyCache[keyId] = keyPair
     return keyPair
 }
+
+const keyCache: Record<string, CryptoKey> = {}
+
+const loadKey = async (keyId: string, storage?: KeyValueStorage): Promise<CryptoKey> => {
+    const cachedKey = keyCache[keyId]
+    if (cachedKey) {
+        return cachedKey
+    }
+    const key = storage
+        ? await storage.getValue<CryptoKey>(keyId)
+        : undefined
+    if (!key) {
+        throw new Error(`Unable to load the key ${keyId}`)
+    }
+    keyCache[keyId] = key
+    return key
+}
+
+const generatePrivateKey = async (keyId: string, storage: KeyValueStorage): Promise<void> => {
+    const keyPair = await crypto.subtle.generateKey({name: 'ECDSA', namedCurve: 'P-256'}, false, ['sign', 'verify'])
+    privateKeyCache[keyId] = keyPair
+    await storage.saveValue(keyId, keyPair)
+};
 
 const exportPublicKey = async (keyId: string, storage: KeyValueStorage): Promise<Uint8Array> => {
     const keyPair = await loadPrivateKey(keyId, storage)
@@ -97,22 +122,71 @@ const sign = async (data: Uint8Array, keyId: string, storage: KeyValueStorage): 
     return new Uint8Array(p1363ToDER(Buffer.from(signature)))
 };
 
-const encrypt = async (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
-    let _key = await crypto.subtle.importKey("raw", key, "AES-GCM", true, ["encrypt"]);
-    let iv = browserPlatform.getRandomBytes(12);
-    let res = await crypto.subtle.encrypt({
-        name: "AES-GCM",
+const importKey = async (keyId: string, key: Uint8Array, storage?: KeyValueStorage): Promise<void> => {
+    const _key = await crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['encrypt', 'decrypt', 'unwrapKey']);
+    keyCache[keyId] = _key
+    if (storage) {
+        await storage.saveValue(keyId, _key)
+    }
+}
+
+const encrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage): Promise<Uint8Array> => {
+    const key = await loadKey(keyId, storage)
+    const iv = getRandomBytes(12);
+    const res = await crypto.subtle.encrypt({
+        name: 'AES-GCM',
+        iv: iv
+    }, key, data);
+    return Uint8Array.of(...iv, ...new Uint8Array(res))
+};
+
+const _encrypt = async (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
+    const _key = await crypto.subtle.importKey("raw", key, "AES-GCM", false, ['encrypt']);
+    const iv = getRandomBytes(12);
+    const res = await crypto.subtle.encrypt({
+        name: 'AES-GCM',
         iv: iv
     }, _key, data);
     return Uint8Array.of(...iv, ...new Uint8Array(res))
 };
 
-const decrypt = async (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
-    let _key = await crypto.subtle.importKey("raw", key, "AES-GCM", true, ["decrypt"]);
-    let iv = data.subarray(0, 12);
-    let encrypted = data.subarray(12);
-    let res = await crypto.subtle.decrypt({
-        name: "AES-GCM",
+const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean): Promise<void> => {
+    const unwrappingKey = await loadKey(unwrappingKeyId, storage)
+    if (!unwrappingKey.usages.includes('unwrapKey')) {
+        throw new Error(`Key ${unwrappingKeyId} is not suitable for unwrapping`)
+    }
+    const unwrappedKey = await crypto.subtle.unwrapKey('raw', key.subarray(12), unwrappingKey,
+        {
+            iv: key.subarray(0, 12),
+            name: 'AES-GCM'
+        },
+        'AES-GCM', false, ['encrypt', 'decrypt', 'unwrapKey'])
+    keyCache[keyId] = unwrappedKey
+    if (memoryOnly) {
+        return
+    }
+    if (storage) {
+        await storage.saveValue(keyId, unwrappedKey)
+    }
+}
+
+const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage): Promise<Uint8Array> => {
+    const key = await loadKey(keyId, storage)
+    const iv = data.subarray(0, 12);
+    const encrypted = data.subarray(12);
+    const res = await crypto.subtle.decrypt({
+        name: 'AES-GCM',
+        iv: iv
+    }, key, encrypted);
+    return new Uint8Array(res);
+};
+
+const _decrypt = async (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
+    const _key = await crypto.subtle.importKey("raw", key, "AES-GCM", false, ["decrypt"]);
+    const iv = data.subarray(0, 12);
+    const encrypted = data.subarray(12);
+    const res = await crypto.subtle.decrypt({
+        name: 'AES-GCM',
         iv: iv
     }, _key, encrypted);
     return new Uint8Array(res);
@@ -142,7 +216,7 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
     sharedSecretCombined.set(new Uint8Array(sharedSecret), 0)
     sharedSecretCombined.set(idBytes, sharedSecret.byteLength)
     const symmetricKey = await crypto.subtle.digest('SHA-256', sharedSecretCombined)
-    const cipherText = await browserPlatform.encrypt(data, new Uint8Array(symmetricKey))
+    const cipherText = await _encrypt(data, new Uint8Array(symmetricKey))
     const result = new Uint8Array(ephemeralPublicKey.byteLength + cipherText.byteLength)
     result.set(new Uint8Array(ephemeralPublicKey), 0)
     result.set(new Uint8Array(cipherText), ephemeralPublicKey.byteLength)
@@ -150,11 +224,11 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
 };
 
 const get = async (url: string, headers: any): Promise<KeeperHttpResponse> => {
-    let resp = await fetch(url, {
-        method: "GET",
+    const resp = await fetch(url, {
+        method: 'GET',
         headers: Object.entries(headers),
     });
-    let body = await resp.arrayBuffer();
+    const body = await resp.arrayBuffer();
     return {
         statusCode: resp.status,
         headers: resp.headers,
@@ -167,16 +241,16 @@ const post = async (
     request: Uint8Array | string,
     headers?: { [key: string]: string }
 ): Promise<KeeperHttpResponse> => {
-    let resp = await fetch(url, {
-        method: "POST",
+    const resp = await fetch(url, {
+        method: 'POST',
         headers: new Headers({
-            "Content-Type": "application/octet-stream",
-            "Content-Length": String(request.length),
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': String(request.length),
             ...headers
         }),
         body: request,
     });
-    let body = await resp.arrayBuffer();
+    const body = await resp.arrayBuffer();
     return {
         statusCode: resp.status,
         headers: resp.headers,
@@ -192,6 +266,8 @@ export const browserPlatform: Platform = {
     getRandomBytes: getRandomBytes,
     generatePrivateKey: generatePrivateKey,
     exportPublicKey: exportPublicKey,
+    importKey: importKey,
+    unwrap: unwrap,
     encrypt: encrypt,
     decrypt: decrypt,
     hash: hash,
