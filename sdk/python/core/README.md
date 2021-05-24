@@ -33,8 +33,7 @@ from keepercommandersm import Commander
 
 # Establish connection
 # One time secrets generated via Web Vault or Commander CLI
-Commander.secret_key = `s3cr3t - keyKU - LX_ksOKIA5VTC - 4
-Ak2O - Um22oyDHzs
+Commander.secret_key = 's3cr3t-keyKU-LX_ksOKIA5VTC-4Ak2O-Um22oyDHzs'
 `
 
 # Retrieve all password records
