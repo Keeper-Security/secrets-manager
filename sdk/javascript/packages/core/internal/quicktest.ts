@@ -16,7 +16,7 @@ connectPlatform(nodePlatform)
 initialize()
 
 const configFileName = 'client-config-admin+rte.json'
-const clientKey = 'HC5aooIvPREFklD8x1v7AtT0YakXpUx7lY-wBdpINXQ'
+const clientKey = '7bffFjokTWtnftui32EUNKIvCTziWK28eeN49pWsVkU'
 
 async function test() {
     const kvs = new TestKeyValueStorage()
@@ -46,7 +46,7 @@ export class TestKeyValueStorage implements KeyValueStorage {
         fs.writeFileSync(configFileName, JSON.stringify(storage, null, 2))
     }
 
-    getValue(key: string): Promise<string | undefined> {
+    getValue(key: string): Promise<any | undefined> {
         const storage = this.readStorage()
         const keyParts = key.split('/')
         let obj = storage
@@ -59,7 +59,7 @@ export class TestKeyValueStorage implements KeyValueStorage {
         return Promise.resolve(obj.toString());
     }
 
-    saveValue(key: string, value: string): Promise<void> {
+    saveValue(key: string, value: any): Promise<void> {
         const storage = this.readStorage()
         const keyParts = key.split('/')
         let obj = storage

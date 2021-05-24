@@ -3,33 +3,41 @@ import './App.css';
 import {initializeStorage, getSecrets} from '@keeper/secrets-manager-core'
 import {indexedDbValueStorage} from './keyValueStorage';
 
-const clientKey = 'SQw45mt-2OmGtQXi6EO-d2_0bZ0dLOIulrOfYeEF-bY'
+const PrettyPrintJson = (data: any) =>
+    <div className='secrets'><pre>{
+        JSON.stringify(data, null, 2)}</pre>
+    </div>
+
 
 const Secrets = (props: any) => {
-    const [secrets, setSecrets] = useState('');
+    const [secrets, setSecrets] = useState<any>('');
     useEffect(() => {
         const fetchSecret = async () => {
-            await initializeStorage(indexedDbValueStorage, clientKey, 'local.keepersecurity.com')
-            const secrets = await getSecrets(indexedDbValueStorage)
-            console.log(secrets)
-            setSecrets(JSON.stringify(secrets));
+            const clientKey = window.location.pathname.slice(1)
+            const storage = indexedDbValueStorage(clientKey)
+            await initializeStorage(storage, clientKey, 'local.keepersecurity.com')
+            try {
+                const secrets = await getSecrets(storage)
+                for (let record of secrets.records) {
+                    record.recordKey = new Uint8Array()
+                }
+                setSecrets(secrets);
+            }
+            catch (e) {
+                setSecrets(JSON.parse(e.message));
+            }
         };
         fetchSecret().then();
     }, []);
-
     return (
-        <div>
-            <p>{secrets}</p>
-        </div>
+        <PrettyPrintJson data={secrets}/>
     );
 };
 
 function App() {
     return (
         <div className="App">
-            <header className="App-header">
-                <Secrets/>
-            </header>
+            <Secrets/>
         </div>
     );
 }

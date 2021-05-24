@@ -6,17 +6,24 @@ export type Platform = {
     stringToBytes(data: string): Uint8Array
 
 //  cryptography
-    getRandomBytes(length: number): Uint8Array;
-    generateKeyPair(): Promise<Uint8Array>
+    getRandomBytes(length: number): Uint8Array
+    generatePrivateKey(keyId: string, storage: KeyValueStorage): Promise<void>
+    exportPublicKey(keyId: string, storage: KeyValueStorage): Promise<Uint8Array>
+    sign(data: Uint8Array, keyId: string, storage: KeyValueStorage): Promise<Uint8Array>
+    publicEncrypt(data: Uint8Array, key: Uint8Array, id?: Uint8Array): Promise<Uint8Array>
     encrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array>
     decrypt(data: Uint8Array, key: Uint8Array): Promise<Uint8Array>
     hash(data: Uint8Array): Promise<Uint8Array>
-    publicEncrypt(data: Uint8Array, key: Uint8Array, id?: Uint8Array): Promise<Uint8Array>
-    sign(data: Uint8Array, privateKey: Uint8Array): Promise<Uint8Array>
 
 //  network
     get(url: string, headers: any): Promise<KeeperHttpResponse>;
     post(url: string, request: Uint8Array, headers?: { [key: string]: string }): Promise<KeeperHttpResponse>
+}
+
+export type KeyValueStorage = {
+    getValue<T>(key: string): Promise<T | undefined>;
+    saveValue<T>(key: string, value: T): Promise<void>;
+    clearValues(keys: string[]): Promise<void>;
 }
 
 export type KeeperHttpResponse = {
