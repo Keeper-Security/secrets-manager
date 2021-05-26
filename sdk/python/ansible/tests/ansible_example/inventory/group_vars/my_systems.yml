@@ -1,0 +1,11 @@
+---
+tmp_dir: /tmp/ansible_test
+keeper_app_key: hDlYsYMPNJMhJb7d_Ca4u1yl5RSUzCvuIsFx32h7t04
+keeper_client_id: 2TSs3IwYNQeTtTYIywfRSeCZ2Ohc_TWipumChOAeLXdcMachYA38ukhh61XlyJbBOxCaP3virpueJVUyytGomQ
+keeper_client_key: f5XKLQlbtdn7AHquN48_w_3FdBv61mAyUGMt0MAsoGY
+keeper_private_key: "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgQnZL3Q-qC-xbRCgjOPsX4rSooFmGM8PLgedR5insDEGhRANCAAQkodmnFdy4GyEP5lp7PTd6kqu3g1Gaw10uevxE9DgPHLsVeDyZERIKsVSlRq73iEubsGcXZnDU9mJqmLidXTGl"
+keeper_server: dev.keepersecurity.com
+uid: TRd_567FkHy-CeGsAzs8aA
+password_uid: TRd_567FkHy-CeGsAzs8aA
+file_uid: A_7YpGBUgRTeDEQLhVRo0Q
+file_name: nailing it.mp4

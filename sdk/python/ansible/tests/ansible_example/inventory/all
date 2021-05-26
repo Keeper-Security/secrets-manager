@@ -1,0 +1,3 @@
+[my_systems]
+localhost:222 ansible_user=test
+        
