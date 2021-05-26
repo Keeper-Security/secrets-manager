@@ -72,7 +72,7 @@ const p1363ToDER = (p1363: Buffer): Buffer => {
         if (start > 0) {
             return input.slice(start - 1);
         }
-        let output = Buffer.alloc(input.length + 1);
+        const output = Buffer.alloc(input.length + 1);
         input.copy(output, 1);
         output[0] = 0;
         return output;
@@ -115,7 +115,7 @@ const p1363ToDER = (p1363: Buffer): Buffer => {
 
 const sign = async (data: Uint8Array, keyId: string, storage: KeyValueStorage): Promise<Uint8Array> => {
     const keyPair = await loadPrivateKey(keyId, storage)
-    let signature = await crypto.subtle.sign({
+    const signature = await crypto.subtle.sign({
         name: 'ECDSA',
         hash: 'SHA-256'
     }, keyPair.privateKey, data);
@@ -141,7 +141,7 @@ const encrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorag
 };
 
 const _encrypt = async (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
-    const _key = await crypto.subtle.importKey("raw", key, "AES-GCM", false, ['encrypt']);
+    const _key = await crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['encrypt']);
     const iv = getRandomBytes(12);
     const res = await crypto.subtle.encrypt({
         name: 'AES-GCM',
@@ -178,17 +178,6 @@ const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorag
         name: 'AES-GCM',
         iv: iv
     }, key, encrypted);
-    return new Uint8Array(res);
-};
-
-const _decrypt = async (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
-    const _key = await crypto.subtle.importKey("raw", key, "AES-GCM", false, ["decrypt"]);
-    const iv = data.subarray(0, 12);
-    const encrypted = data.subarray(12);
-    const res = await crypto.subtle.decrypt({
-        name: 'AES-GCM',
-        iv: iv
-    }, _key, encrypted);
     return new Uint8Array(res);
 };
 

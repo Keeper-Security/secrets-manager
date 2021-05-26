@@ -27,7 +27,7 @@ async function test() {
 
     // response[0].data.title = response[0].data.title + '+'
     // await updateSecret(kvs, response[0])
-    // const fileData = await downloadFile(response[0].files![0])
+    // const fileData = await downloadFile(response.records[0].files![0])
     // console.log(fileData)
 }
 
