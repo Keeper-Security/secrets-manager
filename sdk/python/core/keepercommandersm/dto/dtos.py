@@ -65,7 +65,7 @@ class Record:
             self.password = password_field.get('value')[0]
 
     def __str__(self):
-        return 'Record: uid=%s, type: %s, title: %s, files count: %s' % (self.uid, self.type, self.title, str(len(self.files)))
+        return '[Record: uid=%s, type: %s, title: %s, files count: %s]' % (self.uid, self.type, self.title, str(len(self.files)))
 
 
 class Folder:

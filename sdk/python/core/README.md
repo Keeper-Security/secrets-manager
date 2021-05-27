@@ -33,11 +33,10 @@ from keepercommandersm import Commander
 
 # Establish connection
 # One time secrets generated via Web Vault or Commander CLI
-Commander.secret_key = 's3cr3t-keyKU-LX_ksOKIA5VTC-4Ak2O-Um22oyDHzs'
-`
+Commander.secret_key = `MmzGdls-rDG39vgqgFD1HL70h0_L_sKQOdI0qwXU3JI`
 
 # Retrieve all password records
-all_records = Commander.all()
+all_records = Commander.get_records()
 
 # Get password from first record:
 password = all_records[0].password

@@ -34,6 +34,9 @@ class KeyValueStorage:
     def contains(self, key: ConfigKeys):
         pass
 
+    def is_empty(self):
+        pass
+
 
 class FileKeyValueStorage(KeyValueStorage):
     """ File based implementation of the key value storage"""
@@ -53,7 +56,7 @@ class FileKeyValueStorage(KeyValueStorage):
 
                     config = json.load(config_file)
                 except JSONDecodeError:
-                    logging.debug("Looks like config file is empty.")
+                    logging.warning("Looks like config file is empty.")
 
                     config = {}
                     self.save_storage(config)
@@ -113,9 +116,14 @@ class FileKeyValueStorage(KeyValueStorage):
 
     def create_config_file_if_missing(self):
         if not os.path.exists(self.default_config_file_location):
-            # write json values to file: https://realpython.com/python-json/
+
             f = open(self.default_config_file_location, "w+")
             f.close()
+
+    def is_empty(self):
+        config = self.read_storage()
+
+        return not config
 
 
 class InMemoryKeyValueStorage(KeyValueStorage):

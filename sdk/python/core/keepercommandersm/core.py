@@ -8,6 +8,7 @@ from requests import HTTPError
 from keepercommandersm import utils, helpers
 from keepercommandersm.configkeys import ConfigKeys
 from keepercommandersm.dto.dtos import Folder, Record
+from keepercommandersm.dto.payload import GetPayload, UpdatePayload, Context, TransmissionKey
 from keepercommandersm.exceptions import KeeperError, KeeperAccessDenied
 from keepercommandersm.keeper_globals import keeper_server_public_key_raw_string, keeper_commander_sm_client_id
 from keepercommandersm.storage import FileKeyValueStorage, KeyValueStorage
@@ -108,6 +109,8 @@ class Commander:
                 current_secret_key = config_secret_key
                 logging.info("Secret key found in configuration file")
 
+        # if not current_secret_key:
+
         return current_secret_key
 
     @staticmethod
@@ -118,11 +121,7 @@ class Commander:
 
         encrypted_key = public_encrypt(transmission_key, server_public_raw_key_bytes)
 
-        return {
-            'publicKeyId': key_number,
-            'key': transmission_key,
-            'encryptedKey': encrypted_key
-        }
+        return TransmissionKey(key_number, transmission_key,  encrypted_key)
 
     @staticmethod
     def prepare_context(config_storage):
@@ -163,30 +162,28 @@ class Commander:
             private_key_der = generate_private_key_der()
             config_storage.set(ConfigKeys.KEY_PRIVATE_KEY, bytes_to_url_safe_str(private_key_der))
 
-        return {
-            'transmissionKey': transmission_key,
-            'clientId': client_id_bytes,
-            'clientKey': secret_key,
-            'isBound': is_bound,
-            'privateKey': private_key_der
-        }
+        return Context(
+                    transmission_key,
+                    client_id_bytes,
+                    secret_key,
+                    is_bound,
+                    private_key_der
+                )
 
     @staticmethod
-    def encrypt_and_sign(context, payload):
+    def encrypt_and_sign_payload(context, payload):
 
-        if isinstance(payload, str):
-            payload_bytes = string_to_bytes(payload)
-        elif isinstance(payload, dict):
-            payload_json_str = dict_to_json(payload)
-            payload_bytes = string_to_bytes(payload_json_str)
-        else:
-            payload_bytes = payload
+        if not (isinstance(payload, GetPayload) or isinstance(payload, UpdatePayload)):
+            raise Exception('Unknown payload type "%s"' % payload.__class__.__name__)
 
-        encrypted_payload = encrypt_aes(payload_bytes, context.get('transmissionKey').get('key'))
+        payload_json_str = dict_to_json(payload.__dict__)
+        payload_bytes = string_to_bytes(payload_json_str)
 
-        encrypted_key = context.get('transmissionKey').get('encryptedKey')
+        encrypted_payload = encrypt_aes(payload_bytes, context.transmissionKey.key)
+
+        encrypted_key = context.transmissionKey.encryptedKey
         signature_base = encrypted_key + encrypted_payload
-        signature = sign(signature_base, der_base64_private_key_to_private_key(context.get('privateKey')))
+        signature = sign(signature_base, der_base64_private_key_to_private_key(context.privateKey))
 
         return {
             'payload':  encrypted_payload,
@@ -194,43 +191,45 @@ class Commander:
         }
 
     @staticmethod
-    def prepare_payload(context):
+    def prepare_get_payload(context, records_filter):
 
-        payload_data = {
-            'clientVersion': keeper_commander_sm_client_id,
-            'clientId': bytes_to_url_safe_str(context['clientId']) + "="
-        }
+        payload = GetPayload()
 
-        if not context.get('isBound'):
+        payload.clientVersion = keeper_commander_sm_client_id
+        payload.clientId = bytes_to_url_safe_str(context.clientId) + "="
 
-            public_key_bytes = extract_public_key_bytes(context.get('privateKey'))
+        if not context.isBound:
+
+            public_key_bytes = extract_public_key_bytes(context.privateKey)
             public_key_base64 = bytes_to_url_safe_str(public_key_bytes)
-            payload_data['publicKey'] = public_key_base64 + "="     # passed once when binding
+            payload.publicKey = public_key_base64 + "="     # passed once when binding
 
-        return Commander.encrypt_and_sign(context, payload_data)
+        if records_filter:
+            payload.requestedRecords = records_filter
+
+        return Commander.encrypt_and_sign_payload(context, payload)
 
     @staticmethod
     def prepare_update_payload(context, record):
+        payload = UpdatePayload()
 
-        payload = {
-            'clientVersion': keeper_commander_sm_client_id,
-            'clientId': bytes_to_url_safe_str(context.get('clientId')) + "="
-        }
+        payload.clientVersion = keeper_commander_sm_client_id
+        payload.clientId = bytes_to_url_safe_str(context.clientId) + "="
 
-        if not context.get('clientKey'):   # BAT
+        if not context.clientKey:   # BAT
             raise KeeperError("To save and update, client must be authenticated by device token only")
 
-        payload['recordUid'] = record.uid                       # for update, uid of the record
+        payload.recordUid = record.uid                       # for update, uid of the record
 
         raw_json_bytes = string_to_bytes(record.raw_json) # TODO: This is where we need to get JSON of the updated Record
         encrypted_raw_json_bytes = encrypt_aes(raw_json_bytes, record.record_key_bytes)
         encrypted_raw_json_bytes_str = bytes_to_url_safe_str(encrypted_raw_json_bytes)
-        payload['data'] = encrypted_raw_json_bytes_str          # for create and update, the record data
+        payload.data = encrypted_raw_json_bytes_str          # for create and update, the record data
 
-        return Commander.encrypt_and_sign(context, payload)
+        return Commander.encrypt_and_sign_payload(context, payload)
 
     @staticmethod
-    def post_query(path, transmission_key, payload_and_signature):
+    def __post_query(path, transmission_key, payload_and_signature):
 
         keeper_server = helpers.get_server(Commander.server, Commander.config)
 
@@ -239,8 +238,8 @@ class Commander:
 
         request_headers = {
             'Content-Type': 'application/octet-stream', 'Content-Length': str(len(payload)),
-            'PublicKeyId': str(transmission_key.get('publicKeyId')),
-            'TransmissionKey': bytes_to_url_safe_str(transmission_key.get('encryptedKey')),
+            'PublicKeyId': str(transmission_key.publicKeyId),
+            'TransmissionKey': bytes_to_url_safe_str(transmission_key.encryptedKey),
             'Authorization': 'Signature %s' % bytes_to_url_safe_str(signature)
         }
 
@@ -254,17 +253,17 @@ class Commander:
         return rs
 
     @staticmethod
-    def fetch():
+    def fetch(record_filter=None):
 
         Commander.__init()
 
         config = Commander.config
         context = Commander.prepare_context(config)
-        payload_and_signature = Commander.prepare_payload(context)
+        payload_and_signature = Commander.prepare_get_payload(context, records_filter=record_filter)
 
-        rs = Commander.post_query(
+        rs = Commander.__post_query(
             'get_secret',
-            context.get('transmissionKey'),
+            context.transmissionKey,
             payload_and_signature
         )
 
@@ -280,7 +279,7 @@ class Commander:
 
                 raise HTTPError()
 
-        decrypted_response_bytes = decrypt_aes(rs.content, context.get('transmissionKey').get('key'))
+        decrypted_response_bytes = decrypt_aes(rs.content, context.transmissionKey.key)
         decrypted_response_str = byte_to_string(decrypted_response_bytes)
         decrypted_response_dict = json_to_dict(decrypted_response_str)
 
@@ -292,10 +291,10 @@ class Commander:
             just_bound = True
 
             encrypted_master_key = url_safe_str_to_bytes(decrypted_response_dict.get('encryptedAppKey'))
-            secret_key = decrypt_aes(encrypted_master_key, context.get('clientKey'))
+            secret_key = decrypt_aes(encrypted_master_key, context.clientKey)
             Commander.config.set(ConfigKeys.KEY_APP_KEY, bytes_to_url_safe_str(secret_key))
         else:
-            secret_key = context.get('clientKey')
+            secret_key = context.clientKey
 
         records_resp = decrypted_response_dict.get('records')
         folders_resp = decrypted_response_dict.get('folders')
@@ -316,43 +315,20 @@ class Commander:
         }
 
     @staticmethod
-    def all():
+    def get_records(uids=None):
         """
         Retrieve all records associated with the given application
         """
-        records_resp = Commander.fetch()
+        records_resp = Commander.fetch(uids)
 
         just_bound = records_resp.get('justBound')
 
         if just_bound:
-            records_resp = Commander.fetch()
+            records_resp = Commander.fetch(uids)
 
         records = records_resp.get('records') or []
 
         return records
-
-    @staticmethod
-    def get(uid_or_title, is_case_sensitive=True):
-        """
-        Retrieve all records associated with the given application
-        """
-        all_records = Commander.all()
-
-        found_records = []
-
-        for rec in all_records:
-
-            rec_title = rec.title.lower() if is_case_sensitive else rec.title
-
-            if rec.uid == uid_or_title or rec_title == (uid_or_title.lower() if is_case_sensitive else is_case_sensitive):
-                found_records.append(rec)
-
-        if len(found_records) == 0:
-            return None
-        elif len(found_records) > 1:
-            logging.warning("More than 2 records were found for %s. Returning only the first one" % uid_or_title)
-
-        return found_records[0]
 
     @staticmethod
     def save(record):
@@ -368,9 +344,9 @@ class Commander:
 
         payload_and_signature = Commander.prepare_update_payload(context, record)
 
-        rs = Commander.post_query(
+        rs = Commander.__post_query(
             'update_secret',
-            context.get('transmissionKey'),
+            context.transmissionKey,
             payload_and_signature
         )
 
