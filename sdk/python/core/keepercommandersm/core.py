@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import logging
 import os
 
@@ -14,13 +15,13 @@ from keepercommandersm.keeper_globals import keeper_server_public_key_raw_string
 from keepercommandersm.storage import FileKeyValueStorage, KeyValueStorage
 from keepercommandersm.utils import bytes_to_url_safe_str, base64_to_bytes, sign, \
     extract_public_key_bytes, dict_to_json, url_safe_str_to_bytes, encrypt_aes, der_base64_private_key_to_private_key, \
-    string_to_bytes, decrypt_aes, byte_to_string, json_to_dict, \
+    string_to_bytes, decrypt_aes, bytes_to_string, json_to_dict, \
     public_encrypt, generate_private_key_der
 
 
 class Commander:
 
-    secret_key = None
+    client_key = None
     server = None
     verify_ssl_certs = True
 
@@ -46,7 +47,8 @@ class Commander:
             local_config = Commander.config
 
         existing_secret_key = Commander.load_secret_key(local_config)
-        existing_secret_key_hash = bytes_to_url_safe_str(hashlib.sha256(url_safe_str_to_bytes(existing_secret_key)).digest())
+        existing_secret_key_bytes = url_safe_str_to_bytes(existing_secret_key)
+        existing_secret_key_hash = bytes_to_url_safe_str(hmac.digest(b'', existing_secret_key_bytes, 'sha512'))
 
         client_id = local_config.get(ConfigKeys.KEY_CLIENT_ID)
         private_key = local_config.get(ConfigKeys.KEY_PRIVATE_KEY)
@@ -74,10 +76,10 @@ class Commander:
 
         Commander.config = local_config
 
-    @staticmethod
-    def check_secret_key_against_current_client_id(current_client_id, secret_key):
-
-        current_client_id_hash_str = bytes_to_url_safe_str(hashlib.sha256(url_safe_str_to_bytes(current_client_id)).digest())
+    # @staticmethod
+    # def check_secret_key_against_current_client_id(current_client_id, secret_key):
+    #
+    #     current_client_id_hash_str = bytes_to_url_safe_str(hashlib.sha256(url_safe_str_to_bytes(current_client_id)).digest())
 
     @staticmethod
     def load_secret_key(local_config):
@@ -95,7 +97,7 @@ class Commander:
 
         # Case 2: Code
         if not current_secret_key:
-            code_secret_key = Commander.secret_key
+            code_secret_key = Commander.client_key
 
             if code_secret_key:
                 current_secret_key = code_secret_key
@@ -280,7 +282,7 @@ class Commander:
                 raise HTTPError()
 
         decrypted_response_bytes = decrypt_aes(rs.content, context.transmissionKey.key)
-        decrypted_response_str = byte_to_string(decrypted_response_bytes)
+        decrypted_response_str = bytes_to_string(decrypted_response_bytes)
         decrypted_response_dict = json_to_dict(decrypted_response_str)
 
         records = []
@@ -315,7 +317,7 @@ class Commander:
         }
 
     @staticmethod
-    def get_records(uids=None):
+    def get_secrets(uids=None):
         """
         Retrieve all records associated with the given application
         """
@@ -325,6 +327,8 @@ class Commander:
 
         if just_bound:
             records_resp = Commander.fetch(uids)
+
+        # TODO: Erase client key because we are already bound
 
         records = records_resp.get('records') or []
 

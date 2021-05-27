@@ -13,7 +13,7 @@ import os
 import requests
 
 from keepercommandersm.exceptions import KeeperError
-from keepercommandersm.utils import base64_to_bytes, decrypt_aes, decrypt_record, base64_to_str, json_to_dict
+from keepercommandersm.utils import base64_to_bytes, decrypt_aes, decrypt_record, json_to_dict
 
 
 class Record:
@@ -27,7 +27,7 @@ class Record:
         self.dict = {}
         self.password = None
 
-        self.uid = base64_to_str(record_dict.get('recordUid'))
+        self.uid = record_dict.get('recordUid')
 
         if 'recordKey' in record_dict and record_dict.get('recordKey'):
             # Folder Share
@@ -78,7 +78,7 @@ class Folder:
         if not folder.get('folderUid'):
             raise Exception("Not a folder")
 
-        folder_uid = base64_to_str(folder.get('folderUid'))
+        folder_uid = folder.get('folderUid')
         folder_key_enc = folder.get('folderKey')
         folder_key = decrypt_aes(base64_to_bytes(folder_key_enc), secret_key)
         folder_records = folder.get('records')

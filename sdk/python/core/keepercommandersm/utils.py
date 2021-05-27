@@ -37,7 +37,7 @@ def get_os():
         return _platform
 
 
-def byte_to_string(b):
+def bytes_to_string(b):
     return b.decode(ENCODING)
 
 
@@ -53,13 +53,6 @@ def base64_to_bytes(s):
     bbytes = base64.urlsafe_b64decode(s + '==')
 
     return bbytes
-
-
-def base64_to_str(uid_base64):
-
-    uid_bytes = base64_to_bytes(uid_base64)
-
-    return base64.urlsafe_b64encode(uid_bytes).decode().rstrip('=')
 
 
 def string_to_bytes(s):
@@ -234,7 +227,7 @@ def decrypt_record(data, secret_key):
         data = base64_to_bytes(data)
 
     record = decrypt_aes(data, secret_key)
-    record_json = byte_to_string(record)
+    record_json = bytes_to_string(record)
     return record_json
 
 

@@ -17,12 +17,12 @@ from keepercommandersm.utils import json_to_dict, dict_to_json
 if __name__ == '__main__':
 
     Commander.server = 'https://dev.keepersecurity.com'
-    Commander.config = FileKeyValueStorage("config-jw1.json")
+    Commander.config = FileKeyValueStorage("config-jw2.json")
     Commander.verify_ssl_certs = False
 
-    Commander.secret_key = 'MmzGdls-rDG59vgqgFD1HL70h0_L_sKQOdI0qwXU3JI'
+    Commander.client_key = 'X6SE-CWdqfV6z2-tpXPj1Ps0lFnAFNxiWt2ZAIRxnzI'
 
-    all_records = Commander.get_records()
+    all_records = Commander.get_secrets()
 
     for r in all_records:
 
@@ -59,5 +59,7 @@ if __name__ == '__main__':
         print("No records w/ password field was found")
 
     print("Get only one record")
-    JW_F1_R1 = Commander.get_records(['EG6KdJaaLG7esRZbMnfbFA'])
+
+    JW_F1_R1 = Commander.get_secrets(['EG6KdJaaLG7esRZbMnfbFA'])
+
     print(JW_F1_R1)
