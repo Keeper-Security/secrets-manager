@@ -23,9 +23,13 @@ export type Platform = {
 }
 
 export type KeyValueStorage = {
-    getValue<T>(key: string): Promise<T | undefined>;
-    saveValue<T>(key: string, value: T): Promise<void>;
-    clearValues(keys: string[]): Promise<void>;
+    getString(key: string): Promise<string | undefined>;
+    saveString<T>(key: string, value: string): Promise<void>;
+    getBytes(key: string): Promise<Uint8Array | undefined>;
+    saveBytes<T>(key: string, value: Uint8Array): Promise<void>;
+    delete(key): Promise<void>
+    getObject?<T>(key: string): Promise<T | undefined>;
+    saveObject?<T>(key: string, value: T): Promise<void>;
 }
 
 export type KeeperHttpResponse = {

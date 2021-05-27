@@ -1,5 +1,6 @@
 import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
-import {request, RequestOptions} from 'https';
+import {privateDerToPublicRaw} from '../utils'
+import {request, RequestOptions} from 'https'
 import {
     createCipheriv,
     createDecipheriv,
@@ -9,17 +10,17 @@ import {
     createSign,
     generateKeyPair,
     randomBytes
-} from 'crypto';
+} from 'crypto'
 
-const bytesToBase64 = (data: Uint8Array): string => Buffer.from(data).toString('base64');
+const bytesToBase64 = (data: Uint8Array): string => Buffer.from(data).toString('base64')
 
-const base64ToBytes = (data: string): Uint8Array => Buffer.from(data, 'base64');
+const base64ToBytes = (data: string): Uint8Array => Buffer.from(data, 'base64')
 
-const bytesToString = (data: Uint8Array): string => Buffer.from(data).toString();
+const bytesToString = (data: Uint8Array): string => Buffer.from(data).toString()
 
-const stringToBytes = (data: string): Uint8Array => Buffer.from(data);
+const stringToBytes = (data: string): Uint8Array => Buffer.from(data)
 
-const getRandomBytes = (length: number): Uint8Array => randomBytes(length);
+const getRandomBytes = (length: number): Uint8Array => randomBytes(length)
 
 const keyCache: Record<string, Uint8Array> = {}
 
@@ -28,13 +29,12 @@ const loadKey = async (keyId: string, storage?: KeyValueStorage): Promise<Uint8A
     if (cachedKey) {
         return cachedKey
     }
-    const keyString = storage
-        ? await storage.getValue<string>(keyId)
+    const keyBytes = storage
+        ? await storage.getBytes(keyId)
         : undefined
-    if (!keyString) {
+    if (!keyBytes) {
         throw new Error(`Unable to load the key ${keyId}`)
     }
-    const keyBytes = base64ToBytes(keyString)
     keyCache[keyId] = keyBytes
     return keyBytes
 }
@@ -51,23 +51,19 @@ const generateKeeperKeyPair = async (): Promise<Uint8Array> => new Promise<Uint8
                 type: 'pkcs8'
             }))
         }
-    });
-});
+    })
+})
 
 const generatePrivateKey = async (keyId: string, storage: KeyValueStorage): Promise<void> => {
     const privateKeyDer = await generateKeeperKeyPair()
     keyCache[keyId] = privateKeyDer
-    await storage.saveValue(keyId, bytesToBase64(privateKeyDer))
-};
-
-// extracts public raw from private key for prime256v1 curve in der/pkcs8
-// privateKey: key.slice(36, 68)
-const privateDerToPublicRaw = (key: Uint8Array): Uint8Array => key.slice(73)
+    await storage.saveBytes(keyId, privateKeyDer)
+}
 
 const exportPublicKey = async (keyId: string, storage: KeyValueStorage): Promise<Uint8Array> => {
     const privateKeyDer = await loadKey(keyId, storage)
     return privateDerToPublicRaw(privateKeyDer)
-};
+}
 
 const sign = async (data: Uint8Array, keyId: string, storage: KeyValueStorage): Promise<Uint8Array> => {
     const privateKeyDer = await loadKey(keyId, storage)
@@ -80,41 +76,41 @@ const sign = async (data: Uint8Array, keyId: string, storage: KeyValueStorage): 
     sign.update(data)
     const sig = sign.sign(key)
     return Promise.resolve(sig)
-};
+}
 
 const importKey = async (keyId: string, key: Uint8Array, storage?: KeyValueStorage): Promise<void> => {
     keyCache[keyId] = key
     if (storage) {
-        await storage.saveValue(keyId, key)
+        await storage.saveBytes(keyId, key)
     }
 }
 
 const encrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage): Promise<Uint8Array> => {
     const key = await loadKey(keyId, storage)
-    const iv = getRandomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', key, iv);
-    const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
-    const tag = cipher.getAuthTag();
+    const iv = getRandomBytes(12)
+    const cipher = createCipheriv('aes-256-gcm', key, iv)
+    const encrypted = Buffer.concat([cipher.update(data), cipher.final()])
+    const tag = cipher.getAuthTag()
     return Buffer.concat([iv, encrypted, tag])
-};
+}
 
 const _encrypt = (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
-    const iv = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', key, iv);
-    const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
-    const tag = cipher.getAuthTag();
-    const result = Buffer.concat([iv, encrypted, tag]);
-    return Promise.resolve(result);
-};
+    const iv = randomBytes(12)
+    const cipher = createCipheriv('aes-256-gcm', key, iv)
+    const encrypted = Buffer.concat([cipher.update(data), cipher.final()])
+    const tag = cipher.getAuthTag()
+    const result = Buffer.concat([iv, encrypted, tag])
+    return Promise.resolve(result)
+}
 
 const _decrypt = (data: Uint8Array, key: Uint8Array): Uint8Array => {
-    const iv = data.subarray(0, 12);
-    const encrypted = data.subarray(12, data.length - 16);
-    const tag = data.subarray(data.length - 16);
-    const cipher = createDecipheriv('aes-256-gcm', key, iv);
-    cipher.setAuthTag(tag);
-    return Buffer.concat([cipher.update(encrypted), cipher.final()]);
-};
+    const iv = data.subarray(0, 12)
+    const encrypted = data.subarray(12, data.length - 16)
+    const tag = data.subarray(data.length - 16)
+    const cipher = createDecipheriv('aes-256-gcm', key, iv)
+    cipher.setAuthTag(tag)
+    return Buffer.concat([cipher.update(encrypted), cipher.final()])
+}
 
 const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean): Promise<void> => {
     const unwrappingKey = await loadKey(unwrappingKeyId, storage)
@@ -124,14 +120,14 @@ const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, s
         return
     }
     if (storage) {
-        await storage.saveValue(keyId, unwrappedKey)
+        await storage.saveBytes(keyId, unwrappedKey)
     }
 }
 
 const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage): Promise<Uint8Array> => {
     const key = await loadKey(keyId, storage)
     return _decrypt(data, key)
-};
+}
 
 function hash(data: Uint8Array): Promise<Uint8Array> {
     const hash = createHash('SHA256').update(data).digest()
@@ -147,7 +143,7 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
     const symmetricKey = createHash('SHA256').update(sharedSecretCombined).digest()
     const encryptedData = await _encrypt(data, symmetricKey)
     return Buffer.concat([ephemeralPublicKey, encryptedData])
-};
+}
 
 const fetchData = (res, resolve) => {
     const retVal = {
@@ -163,7 +159,7 @@ const fetchData = (res, resolve) => {
     res.on('end', () => {
         resolve(retVal)
     })
-};
+}
 
 const get = (
     url: string,
@@ -177,9 +173,9 @@ const get = (
         }
     }, (res) => {
         fetchData(res, resolve)
-    });
+    })
     get.end()
-});
+})
 
 const post = (
     url: string,
@@ -200,10 +196,10 @@ const post = (
         },
     }, (res) => {
         fetchData(res, resolve)
-    });
+    })
     post.write(payload)
     post.end()
-});
+})
 
 export const nodePlatform: Platform = {
     bytesToBase64: bytesToBase64,

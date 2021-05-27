@@ -13,9 +13,9 @@ const Secrets = (props: any) => {
     const [secrets, setSecrets] = useState<any>('');
     useEffect(() => {
         const fetchSecret = async () => {
-            const clientKey = window.location.pathname.slice(1)
+            const clientKey = window.location.hash.slice(1)
             const clientId = await getClientId(clientKey)
-            const storage = indexedDbValueStorage(clientId)
+            const storage = indexedDbValueStorage(clientId, true)
             await initializeStorage(storage, clientKey, 'local.keepersecurity.com')
             try {
                 const secrets = await getSecrets(storage)
