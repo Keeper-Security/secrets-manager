@@ -129,14 +129,33 @@ class FileKeyValueStorage(KeyValueStorage):
 class InMemoryKeyValueStorage(KeyValueStorage):
     """ File based implementation of the key value storage"""
 
+    def __init__(self, config=None):
+
+        self.config = {}
+
+        if config is None:
+            config = {}
+
+        for key in config:
+            self.config[ConfigKeys.get_enum(key)] = config[key]
+
     def read_storage(self):
         pass
 
     def save_storage(self):
         pass
 
-    def get_value(self, key):
-        pass
+    def get(self, key: ConfigKeys):
+        return self.config.get(key)
 
-    def set_value(self, key, value):
-        pass
+    def set(self, key: ConfigKeys, value):
+        self.config[key] = value
+
+    def delete(self, key: ConfigKeys):
+        self.config.pop(key, None)
+
+    def delete_all(self):
+        self.config = {}
+
+    def contains(self, key: ConfigKeys):
+        return key in self.config

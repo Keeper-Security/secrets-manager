@@ -21,3 +21,11 @@ class ConfigKeys(Enum):
     KEY_BINDING_TOKEN = 'bat'
     KEY_BINDING_KEY = 'bindingKey'
     KEY_SERVER = 'server'
+
+    @classmethod
+    def get_enum(cls, value):
+        for e in cls:
+            # Check if the value passed is the value of the enum key, or the enum key itself.
+            if e.value == value or e == value:
+                return e
+        return None
