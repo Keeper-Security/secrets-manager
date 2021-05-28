@@ -18,3 +18,4 @@ twine check dist/*
 # Configuration for PyPi API Tokne is located in ~/.pypirc
 twine upload -r pypi dist/*
 
+rm -rf dist build

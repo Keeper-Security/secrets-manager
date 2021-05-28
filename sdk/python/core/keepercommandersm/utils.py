@@ -81,8 +81,9 @@ def json_to_dict(json_str):
 
     try:
         resp = json.loads(json_str)
-    except JSONDecodeError:
-        resp = json_str
+    except JSONDecodeError as jsonDecErr:
+        logging.warning(jsonDecErr)
+        resp = None
 
     return resp
 

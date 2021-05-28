@@ -6,8 +6,9 @@ import json
 import errno
 from json import JSONDecodeError
 
+from keepercommandersm import exceptions
 from keepercommandersm.configkeys import ConfigKeys
-from keepercommandersm.utils import ENCODING
+from keepercommandersm.utils import ENCODING, json_to_dict
 
 
 class KeyValueStorage:
@@ -135,6 +136,11 @@ class InMemoryKeyValueStorage(KeyValueStorage):
 
         if config is None:
             config = {}
+
+        elif isinstance(config, str):
+            config = json_to_dict(config)
+            if not config:
+                raise exceptions.KeeperError("Could not load config data")
 
         for key in config:
             self.config[ConfigKeys.get_enum(key)] = config[key]
