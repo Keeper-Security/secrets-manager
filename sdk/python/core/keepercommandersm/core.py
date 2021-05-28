@@ -48,7 +48,7 @@ class Commander:
 
         existing_secret_key = Commander.load_secret_key(local_config)
         existing_secret_key_bytes = url_safe_str_to_bytes(existing_secret_key)
-        existing_secret_key_hash = bytes_to_url_safe_str(hmac.digest(b'', existing_secret_key_bytes, 'sha512'))
+        existing_secret_key_hash = bytes_to_url_safe_str(hmac.digest(existing_secret_key_bytes, b'KEEPER_SECRETS_MANAGER_CLIENT_ID', 'sha512'))
 
         client_id = local_config.get(ConfigKeys.KEY_CLIENT_ID)
         private_key = local_config.get(ConfigKeys.KEY_PRIVATE_KEY)
