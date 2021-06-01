@@ -5,7 +5,7 @@ import {
     createCipheriv,
     createDecipheriv,
     createECDH,
-    createHash,
+    createHash, createHmac,
     createPrivateKey,
     createSign,
     generateKeyPair,
@@ -129,8 +129,8 @@ const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorag
     return _decrypt(data, key)
 }
 
-function hash(data: Uint8Array): Promise<Uint8Array> {
-    const hash = createHash('SHA256').update(data).digest()
+function hash(data: Uint8Array, tag: string): Promise<Uint8Array> {
+    const hash = createHmac('sha512', data).update('KEEPER_SECRETS_MANAGER_CLIENT_ID').digest()
     return Promise.resolve(hash)
 }
 
@@ -164,7 +164,7 @@ const fetchData = (res, resolve) => {
 const get = (
     url: string,
     headers?: { [key: string]: string }
-): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve) => {
+): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
     const get = request(url, {
         method: 'get',
         headers: {
@@ -174,6 +174,7 @@ const get = (
     }, (res) => {
         fetchData(res, resolve)
     })
+    get.on('error', reject)
     get.end()
 })
 
@@ -181,7 +182,7 @@ const post = (
     url: string,
     payload: Uint8Array,
     headers?: { [key: string]: string }
-): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve) => {
+): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
     const options: RequestOptions = {
         rejectUnauthorized: false
     }
@@ -197,6 +198,7 @@ const post = (
     }, (res) => {
         fetchData(res, resolve)
     })
+    post.on('error', reject)
     post.write(payload)
     post.end()
 })

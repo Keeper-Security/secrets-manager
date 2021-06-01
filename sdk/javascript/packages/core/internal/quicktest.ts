@@ -16,7 +16,7 @@ connectPlatform(nodePlatform)
 initialize()
 
 const configFileName = 'client-config-admin+rte.json'
-const clientKey = 'R9tsWYmFZywTsXs5Iwoj-jj9CNuca7343Fi3jT260KY'
+const clientKey = '73KZUbkejwEzwLVQ7F7VK-BZd7mE_4fM5mmGRxD8iNs'
 
 async function test() {
     const kvs = testKeyValueStorage(configFileName)

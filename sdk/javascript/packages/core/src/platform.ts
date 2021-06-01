@@ -15,7 +15,7 @@ export type Platform = {
     unwrap(key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean): Promise<void>
     encrypt(data: Uint8Array, keyId: string, storage?: KeyValueStorage): Promise<Uint8Array>
     decrypt(data: Uint8Array, keyId: string, storage?: KeyValueStorage): Promise<Uint8Array>
-    hash(data: Uint8Array): Promise<Uint8Array>
+    hash(data: Uint8Array, tag: string): Promise<Uint8Array>
 
 //  network
     get(url: string, headers: any): Promise<KeeperHttpResponse>;

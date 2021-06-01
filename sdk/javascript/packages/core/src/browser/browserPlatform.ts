@@ -232,9 +232,15 @@ const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorag
     return new Uint8Array(res)
 }
 
-const hash = async (data: Uint8Array): Promise<Uint8Array> => {
-    const hash = await crypto.subtle.digest('SHA-256', data)
-    return new Uint8Array(hash)
+const hash = async (data: Uint8Array, tag: string): Promise<Uint8Array> => {
+    const key = await crypto.subtle.generateKey({
+        name: 'HMAC',
+        hash: {
+            name: 'SHA-512'
+        }
+    }, false, ['sign'])
+    const signature = await crypto.subtle.sign('HMAC', key, stringToBytes(tag))
+    return new Uint8Array(signature)
 }
 
 const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array): Promise<Uint8Array> => {

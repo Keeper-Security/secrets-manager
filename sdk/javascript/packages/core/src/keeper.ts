@@ -227,14 +227,16 @@ const fetchAndDecryptSecrets = async (storage: KeyValueStorage, recordsFilter?: 
     return { secrets, justBound }
 }
 
+const clientIdHashTag = 'KEEPER_SECRETS_MANAGER_CLIENT_ID'
+
 export const getClientId = async (clientKey: string): Promise<string> => {
-    const clientKeyHash = await platform.hash(webSafe64ToBytes(clientKey))
+    const clientKeyHash = await platform.hash(webSafe64ToBytes(clientKey), clientIdHashTag)
     return platform.bytesToBase64(clientKeyHash)
 }
 
 export const initializeStorage = async (storage: KeyValueStorage, clientKey: string, domain: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
     const clientKeyBytes = webSafe64ToBytes(clientKey)
-    const clientKeyHash = await platform.hash(clientKeyBytes)
+    const clientKeyHash = await platform.hash(clientKeyBytes, clientIdHashTag)
     const clientId = platform.bytesToBase64(clientKeyHash)
     const existingClientId = await storage.getString(KEY_CLIENT_ID)
     if (existingClientId && existingClientId === clientId) {
