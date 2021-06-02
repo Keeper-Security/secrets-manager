@@ -15,12 +15,12 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 connectPlatform(nodePlatform)
 initialize()
 
-const configFileName = 'client-config-admin+rte.json'
-const clientKey = '73KZUbkejwEzwLVQ7F7VK-BZd7mE_4fM5mmGRxD8iNs'
+const configFileName = 'client-config-admin+rte1.json'
+const clientKey = '_gbplLNFVAEX87qiuYKX3lgyvRZdeaCNZAgzSiXoAx0'
 
 async function test() {
     const kvs = testKeyValueStorage(configFileName)
-    await initializeStorage(kvs, clientKey, 'local.keepersecurity.com')
+    await initializeStorage(kvs, clientKey, 'dev.keepersecurity.com')
     // const response = await getSecrets(kvs, ['i3v4ehaoB-Bwsb7bbbek2g'])
     const response = await getSecrets(kvs)
     console.log(inspect(response, false, 6))
@@ -31,7 +31,7 @@ async function test() {
     // console.log(fileData)
 }
 
-export const testKeyValueStorage = (configName: string): KeyValueStorage => {
+const testKeyValueStorage = (configName: string): KeyValueStorage => {
 
     const readStorage = (): any => {
         try {

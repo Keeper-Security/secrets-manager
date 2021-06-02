@@ -6,5 +6,6 @@ connectPlatform(nodePlatform)
 initialize()
 
 export * from '../keeper'
+export * from '../platform'
 
 
