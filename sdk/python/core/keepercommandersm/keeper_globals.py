@@ -9,7 +9,7 @@
 # Contact: ops@keepersecurity.com
 #
 
-keeper_commander_sm_client_id = 'c15.99.0'
+keeper_commander_sm_client_id = 'w15.0.0'
 keeper_server_public_key_raw_string = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
 
 keeper_servers = {

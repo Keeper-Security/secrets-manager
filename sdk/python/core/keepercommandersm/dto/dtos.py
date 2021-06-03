@@ -64,6 +64,19 @@ class Record:
 
             self.password = password_field.get('value')[0]
 
+    def find_file_by_title(self, title):
+        """Finds file by file title"""
+
+        found_file = next((f for f in self.files if f.title == title), None)
+
+        return found_file
+
+    def download_file_by_title(self, title, path, ):
+
+        found_file = self.find_file_by_title(title)
+
+        found_file.save_file(path)
+
     def __str__(self):
         return '[Record: uid=%s, type: %s, title: %s, files count: %s]' % (self.uid, self.type, self.title, str(len(self.files)))
 
