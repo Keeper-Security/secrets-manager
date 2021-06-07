@@ -2,6 +2,8 @@
 
 ![Javascript](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.js.yml/badge.svg)
 
+![Java](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.java.yml/badge.svg)
+
 Monorepo for secrets manager sdk's and tools
 
 
