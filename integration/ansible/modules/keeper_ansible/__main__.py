@@ -1,3 +1,15 @@
+#  _  __
+# | |/ /___ ___ _ __  ___ _ _ ®
+# | ' </ -_) -_) '_ \/ -_) '_|
+# |_|\_\___\___| .__/\___|_|
+#              |_|
+#
+# Keeper Commander
+# Copyright 2021 Keeper Security Inc.
+# Contact: ops@keepersecurity.com
+#
+
+
 from . import KeeperAnsible, KeeperFieldType
 import argparse
 
@@ -20,8 +32,6 @@ if args.keeper_config_file is not None:
     task_args["keeper_config_file"] = args.keeper_config_file
 if args.keeper_server is not None:
     task_args["keeper_server"] = args.keeper_server
-
-print("TASK ARGS", task_args)
 
 keeper_ansible = KeeperAnsible(task_args)
 

@@ -11,7 +11,6 @@
 
 from keepercommandersm import Commander
 from keepercommandersm.storage import FileKeyValueStorage, InMemoryKeyValueStorage
-from keepercommandersm.utils import json_to_dict
 from ansible.utils.display import Display
 from ansible.errors import AnsibleError
 import os
@@ -47,6 +46,11 @@ class KeeperAnsible:
     CLIENT_KEY_ENV = "KEEPER_SECRET_KEY"
     CONFIG_CLIENT_KEY = "clientKey"
     FORCE_CONFIG_FILE = "force_config_write"
+    KEY_SSL_VERIFY = "verify_ssl_certs"
+
+    @staticmethod
+    def get_client(**kwargs):
+        return Commander(**kwargs)
 
     def __init__(self, task_vars):
 
@@ -62,6 +66,10 @@ class KeeperAnsible:
         try:
 
             keeper_config_file_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CONFIG_FILE_SUFFIX)
+            keeper_verify_ssl_certs = KeeperAnsible.keeper_key(KeeperAnsible.KEY_SSL_VERIFY)
+
+            # By default we want to check SSL certs, allow to be controlled via vars and also environmental vars
+            verify_ssl_certs = task_vars.get(keeper_verify_ssl_certs, os.environ.get("PYTHONHTTPSVERIFY", True))
 
             # If the config location is defined, or a file exists at the default location.
             config_file = task_vars.get(keeper_config_file_key)
@@ -70,8 +78,8 @@ class KeeperAnsible:
 
             if os.path.isfile(config_file) is True:
                 display.debug("Loading keeper config file file {}.".format(config_file))
-                self.client = Commander(
-                    config_file_location=config_file
+                self.client = KeeperAnsible.get_client(
+                    config=FileKeyValueStorage(config_file_location=config_file)
                 )
 
             # Else config values in the Ansible variable.
@@ -89,8 +97,6 @@ class KeeperAnsible:
                 # If the secret client key is in the environment, override the Ansible var.
                 if os.environ.get(KeeperAnsible.CLIENT_KEY_ENV) is not None:
                     config_dict[KeeperAnsible.CONFIG_CLIENT_KEY] = os.environ.get(KeeperAnsible.CLIENT_KEY_ENV)
-
-                print("CONFIG", config_dict)
 
                 # If no variables were passed in throw an error.
                 if len(config_dict) == 0:
@@ -119,10 +125,11 @@ class KeeperAnsible:
                     config_instance = FileKeyValueStorage(config_file_location=config_file)
                     config_instance.read_storage()
 
-                self.client = Commander(config=config_instance)
+                self.client = KeeperAnsible.get_client(
+                    config=config_instance,
+                    verify_ssl_certs=verify_ssl_certs
+                )
 
-            # Load and cache all the records
-            self.client.get_secrets()
         except Exception as err:
             raise Exception("Keeper Ansible error: {}".format(err))
 
@@ -132,7 +139,6 @@ class KeeperAnsible:
 
     def get_record(self, uid):
 
-        records = []
         try:
             records = self.client.get_secrets([uid])
             if records is None or len(records) == 0:
@@ -147,39 +153,22 @@ class KeeperAnsible:
         record = self.get_record(uid)
 
         values = None
-        found = False
-
-        if field_type == KeeperFieldType.FIELD or field_type == KeeperFieldType.CUSTOM_FIELD:
-
-            raw_dict = json_to_dict(record.raw_json)
-
-            raw_dict_key = "fields"
-            if field_type == KeeperFieldType.CUSTOM_FIELD:
-                raw_dict_key = "custom"
-
-            lc_key = key.lower()
-            fields = raw_dict.get(raw_dict_key, [])
-            for field_item in fields:
-                lc_field_keys = field_item.get('type').lower()
-                if lc_field_keys == lc_key:
-                    values = field_item.get("value")
-                    found = True
-                    break
-
+        if field_type == KeeperFieldType.FIELD:
+            values = record.field(key)
+        elif field_type == KeeperFieldType.CUSTOM_FIELD:
+            values = record.custom_field(key)
         elif field_type == KeeperFieldType.FILE:
-            for file in record.files:
-                if file.name.lower() == key.lower():
-                    values = [file.get_file_data()]
-                    found = True
-                    break
+            file = record.find_file_by_title(key)
+            if file is not None:
+                values = [file.get_file_data()]
         else:
             raise AnsibleError("Cannot get_value. The field type ENUM of {} is invalid.".format(field_type))
 
-        if not found:
+        if values is None:
             raise AnsibleError("Cannot find key {} in the record for uid {} and field_type {}".format(key, uid,
                                                                                                       field_type.name))
 
-        if values is None or len(values) == 0:
+        if len(values) == 0:
             display.debug("The value for uid {}, field_type {}, key {} was None or was an empty list.".format(
                 uid, field_type.name, key))
             return None
@@ -196,23 +185,11 @@ class KeeperAnsible:
         record = self.get_record(uid)
 
         if field_type == KeeperFieldType.FIELD:
-
-            raw_dict = json_to_dict(record.raw_json)
-
-            lc_key = key.lower()
-            fields = raw_dict.get("fields", [])
-            for field_item in fields:
-                lc_field_keys = field_item.get('type').lower()
-                if lc_field_keys == lc_key:
-                    field_item["value"] = [value]
-                    break
-
-            record.raw_json = json.dumps(raw_dict)
-
+            record.field(key, value)
         elif field_type == KeeperFieldType.CUSTOM_FIELD:
-            pass
+            record.custom_field(key, value)
         elif field_type == KeeperFieldType.FILE:
-            pass
+            raise AnsibleError("Cannot save a file from the ansible playbook/role to Keeper.")
         else:
             raise AnsibleError("Cannot set_value. The field type ENUM of {} is invalid.".format(field_type))
 

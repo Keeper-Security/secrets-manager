@@ -6,6 +6,7 @@ from ansible.parsing.dataloader import DataLoader
 from ansible.inventory.manager import InventoryManager
 from ansible.vars.manager import VariableManager
 from ansible.plugins.loader import add_all_plugin_dirs
+from ansible.utils.display import Display
 from keepercommandersm.dto.dtos import Record
 from keepercommandersm.utils import encrypt_aes
 import os
@@ -36,9 +37,6 @@ class AnsibleTestFramework:
 
         old_stdout = sys.stdout
         old_stderr = sys.stderr
-
-        os.environ["ANSIBLE_DEBUG"] = "True"
-        os.environ["ANSIBLE_VERBOSITY"] = "4"
 
         try:
 
@@ -102,6 +100,8 @@ class AnsibleTestFramework:
                 loader=loader,
                 passwords={}
             )
+
+            Display.verbosity = 4
 
             playbook_exec.run()
             stats = playbook_exec._tqm._stats

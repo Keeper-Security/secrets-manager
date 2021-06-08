@@ -55,7 +55,7 @@ class KeeperCopyTest(unittest.TestCase):
         # module for Keeper Ansible and the Keeper SDK.
         self.base_dir = os.path.dirname(os.path.realpath(__file__))
         sys.path.append(os.path.join(self.base_dir, "..", "modules"))
-        sys.path.append(os.path.join(self.base_dir, "..", "..", "core"))
+        sys.path.append(os.path.join(self.base_dir, "..", "..", "..", "..", "sdk", "python", "core"))
 
         self.ansible_base_dir = os.path.join(self.base_dir, "ansible_example")
 
@@ -75,8 +75,6 @@ class KeeperCopyTest(unittest.TestCase):
                 }
             )
             r, out, err = a.run()
-            print("OUT", out)
-            print("ERR", err)
             result = r[0]["localhost"]
             self.assertEqual(result["ok"], 3, "3 things didn't happen")
             self.assertEqual(result["failures"], 0, "failures was n ot 0")

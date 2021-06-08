@@ -12,9 +12,6 @@
 from ansible.plugins.action import ActionBase
 from ansible.errors import AnsibleError
 from keeper_ansible import KeeperAnsible
-from ansible.utils.display import Display
-
-display = Display()
 
 
 class ActionModule(ActionBase):

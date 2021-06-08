@@ -18,16 +18,22 @@
   - name: "Set Password Value"
     keeper_set:
       uid: "{{ uid }}"
-      field: "Password"
+      field: "password"
       value: "{{ new_password }}"
 
   - name: "Get New Password"
     keeper_get:
       uid: "{{ uid }}"
-      field: "Password"
-    register: "my_password"
+      field: "password"
+    register: "my_new_password"
 
   - name: "Print Password"
     debug:
-      msg: "New Password {{ my_password.value }}"
+      msg: "New Password {{ my_new_password.value }}"
       verbosity: 0
+
+  - name: "Restore Password"
+    keeper_set:
+      uid: "{{ uid }}"
+      field: "password"
+      value: "ddd"

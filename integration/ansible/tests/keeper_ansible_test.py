@@ -18,9 +18,9 @@ class KeeperAnsibleTest(unittest.TestCase):
 
         # Add in addition Python libs. This includes the base
         # module for Keeper Ansible and the Keeper SDK.
-        base_dir = os.path.dirname(os.path.realpath(__file__))
-        sys.path.append(os.path.join(base_dir, "..", "modules"))
-        sys.path.append(os.path.join(base_dir, "..", "..", "core"))
+        self.base_dir = os.path.dirname(os.path.realpath(__file__))
+        sys.path.append(os.path.join(self.base_dir, "..", "modules"))
+        sys.path.append(os.path.join(self.base_dir, "..", "..", "..", "..", "sdk", "python", "core"))
 
     @patch("keepercommandersm.Commander.get_secrets", side_effect=mocked_commander_get_secrets)
     def test_config_read_file_json_file(self, mock_get_secrets):
@@ -45,12 +45,13 @@ class KeeperAnsibleTest(unittest.TestCase):
 
             keeper_config_file_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CONFIG_FILE_SUFFIX)
 
-            KeeperAnsible(
+            ka = KeeperAnsible(
                 task_vars={
                     keeper_config_file_key: temp_config.name,
                     "keeper_verify_ssl_certs": False
                 }
             )
+            ka.client.get_secrets()
             mock_get_secrets.assert_called_once()
 
     @patch("keepercommandersm.Commander.get_secrets", side_effect=mocked_commander_get_secrets)
@@ -72,5 +73,6 @@ class KeeperAnsibleTest(unittest.TestCase):
         for key in values:
             task_vars[KeeperAnsible.keeper_key(key)] = values[key]
 
-        KeeperAnsible(task_vars=task_vars)
+        ka = KeeperAnsible(task_vars=task_vars)
+        ka.client.get_secrets()
         mock_get_secrets.assert_called_once()
