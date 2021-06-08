@@ -51,5 +51,3 @@ env.bak/
 venv.bak/
 .python-version
 .pytest_cache
-
-*config*.json
