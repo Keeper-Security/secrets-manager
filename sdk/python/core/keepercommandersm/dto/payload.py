@@ -8,9 +8,10 @@
 
 class Context:
 
-    def __init__(self, transmission_key, client_id):
+    def __init__(self, transmission_key, client_id, client_key):
         self.transmissionKey = transmission_key
         self.clientId = client_id
+        self.clientKey = client_key
 
 
 class TransmissionKey:
