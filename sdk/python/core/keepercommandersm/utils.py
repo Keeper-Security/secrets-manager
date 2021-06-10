@@ -218,6 +218,10 @@ def decrypt_data_aes(data, key):
 
 def decrypt_aes(encrypted_data, key):
     # type: (bytes, bytes) -> bytes
+
+    if isinstance(key, str):
+        key = base64_to_bytes(key)
+
     nonce = encrypted_data[:12]
     cipher = AES.new(key=key, mode=AES.MODE_GCM, nonce=nonce)
     return cipher.decrypt_and_verify(encrypted_data[12:-16], encrypted_data[-16:])
@@ -256,10 +260,18 @@ def decrypt_ec(ecc_private_key, encrypted_data_bag: bytes):
 
 
 def der_base64_private_key_to_private_key(private_key_der_base64):
+
+    if isinstance(private_key_der_base64, str):
+        private_key_der_base64 = base64_to_bytes(private_key_der_base64)
+
     return load_der_private_key(private_key_der_base64, password=None)
 
 
 def extract_public_key_bytes(private_key_der_base64):
+
+    if isinstance(private_key_der_base64, str):
+        private_key_der_base64 = base64_to_bytes(private_key_der_base64)
+
     ec_private_key = der_base64_private_key_to_private_key(private_key_der_base64)
     pub_key = ec_private_key.public_key()
     pub_key_bytes = pub_key.public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)

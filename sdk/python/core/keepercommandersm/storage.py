@@ -140,7 +140,7 @@ class InMemoryKeyValueStorage(KeyValueStorage):
         elif isinstance(config, str):
             config = json_to_dict(config)
             if not config:
-                raise exceptions.KeeperError("Could not load config data")
+                raise exceptions.KeeperError("Could not load config data. Json text size: %s" % str(len(config)))
 
         for key in config:
             self.config[ConfigKeys.get_enum(key)] = config[key]
