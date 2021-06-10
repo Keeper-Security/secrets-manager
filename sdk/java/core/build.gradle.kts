@@ -5,11 +5,11 @@
  */
 
 plugins {
-    // Apply the Kotlin JVM plugin to add support for Kotlin.
-    id("org.jetbrains.kotlin.jvm") version "1.3.61"
-
-    // Apply the java-library plugin for API and implementation separation.
+// Apply the Kotlin JVM plugin to add support for Kotlin.
+//    id("org.jetbrains.kotlin.jvm") version "1.3.61"
     `java-library`
+    kotlin("jvm") version "1.5.10"
+    kotlin("plugin.serialization") version "1.5.10"
 }
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
@@ -21,7 +21,7 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
 repositories {
     // Use jcenter for resolving dependencies.
     // You can declare any Maven/Ivy/file repository here.
-    jcenter()
+    mavenCentral()
 }
 
 dependencies {
@@ -30,6 +30,8 @@ dependencies {
 
     // Use the Kotlin JDK 8 standard library.
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.2.1")
 
     // Use the Kotlin test library.
     testImplementation("org.jetbrains.kotlin:kotlin-test")
