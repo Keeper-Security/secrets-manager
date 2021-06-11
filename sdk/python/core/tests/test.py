@@ -11,18 +11,17 @@
 from datetime import datetime
 
 from keepercommandersm import Commander
-from keepercommandersm.storage import FileKeyValueStorage
 from keepercommandersm.utils import json_to_dict, dict_to_json
 
 if __name__ == '__main__':
 
-    Commander.server = 'https://dev.keepersecurity.com'
-    Commander.config = FileKeyValueStorage("config-jw2.json")
-    Commander.verify_ssl_certs = False
+    c = Commander(
+        server='https://dev.keepersecurity.com',
+        verify_ssl_certs=True,
+        client_key='zidx8w9nVxI8gNzO_Qt8kpgbckutZPdpr4ybhipzDMY'
+    )
 
-    Commander.client_key = 'X6SE-CWdqfV6z2-tpXPj1Ps0lFnAFNxiWt2ZAIRxnzI'
-
-    all_records = Commander.get_secrets()
+    all_records = c.get_secrets()
 
     for r in all_records:
 
@@ -34,7 +33,7 @@ if __name__ == '__main__':
             count = count + 1
             print("\t\tfile %s -> name: %s" % (count, f))
 
-            f.save_file("/Users/mustinov/Downloads/_v2/___" + f.name, True)
+            f.save_file("/tmp/" + f.name, True)
 
     rec_to_update = all_records[0]
 
@@ -54,12 +53,12 @@ if __name__ == '__main__':
         #
         # rec_to_update.uid = None
 
-        Commander.save(rec_to_update)
+        c.save(rec_to_update)
     else:
         print("No records w/ password field was found")
 
     print("Get only one record")
 
-    JW_F1_R1 = Commander.get_secrets(['EG6KdJaaLG7esRZbMnfbFA'])
+    JW_F1_R1 = c.get_secrets(['EG6KdJaaLG7esRZbMnfbFA'])
 
     print(JW_F1_R1)
