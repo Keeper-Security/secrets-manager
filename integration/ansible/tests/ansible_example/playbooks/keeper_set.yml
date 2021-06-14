@@ -1,0 +1,39 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Set
+  hosts: "my_systems"
+
+  tasks:
+  - name: "Get Current Password"
+    keeper_get:
+      uid: "{{ uid }}"
+      field: "Password"
+    register: "my_password"
+
+  - name: "Print Password"
+    debug:
+      msg: "Current Password {{ my_password.value }}"
+      verbosity: 0
+
+  - name: "Set Password Value"
+    keeper_set:
+      uid: "{{ uid }}"
+      field: "password"
+      value: "{{ new_password }}"
+
+  - name: "Get New Password"
+    keeper_get:
+      uid: "{{ uid }}"
+      field: "password"
+    register: "my_new_password"
+
+  - name: "Print Password"
+    debug:
+      msg: "New Password {{ my_new_password.value }}"
+      verbosity: 0
+
+  - name: "Restore Password"
+    keeper_set:
+      uid: "{{ uid }}"
+      field: "password"
+      value: "ddd"

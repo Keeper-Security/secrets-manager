@@ -1,0 +1,19 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Copy
+  hosts: "my_systems"
+
+  tasks:
+  - name: "Copy the password"
+    keeper_copy:
+      uid: "{{ password_uid }}"
+      field: "password"
+      dest: "{{ tmp_dir }}/password"
+      mode: '0600'
+
+  - name: "Copy the file"
+    keeper_copy:
+      uid: "{{ file_uid }}"
+      file: "{{ file_name }}"
+      dest: "{{ tmp_dir }}/video.mp4"
+      mode: '0777'

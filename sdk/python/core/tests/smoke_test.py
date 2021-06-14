@@ -138,7 +138,6 @@ class SmokeTest(unittest.TestCase):
             custom = record.custom_field("My Custom 1", single=True)
             self.assertEqual(custom, "NEW VALUE", "didn't get the correct My Custom 1 value after reiad")
 
-
     def test_403_signature_error(self):
 
             c = Commander(config=InMemoryKeyValueStorage({
