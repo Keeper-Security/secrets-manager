@@ -44,7 +44,11 @@ class FileKeyValueStorage(KeyValueStorage):
 
     default_config_file_location = "client-config.json"
 
-    def __init__(self, config_file_location=default_config_file_location):
+    def __init__(self, config_file_location=None):
+
+        if config_file_location is None:
+            config_file_location = FileKeyValueStorage.default_config_file_location
+
         self.default_config_file_location = config_file_location
 
     def read_storage(self):
@@ -140,7 +144,7 @@ class InMemoryKeyValueStorage(KeyValueStorage):
         elif isinstance(config, str):
             config = json_to_dict(config)
             if not config:
-                raise exceptions.KeeperError("Could not load config data")
+                raise exceptions.KeeperError("Could not load config data. Json text size: %s" % str(len(config)))
 
         for key in config:
             self.config[ConfigKeys.get_enum(key)] = config[key]
@@ -148,7 +152,7 @@ class InMemoryKeyValueStorage(KeyValueStorage):
     def read_storage(self):
         pass
 
-    def save_storage(self):
+    def save_storage(self, updated_config):
         pass
 
     def get(self, key: ConfigKeys):

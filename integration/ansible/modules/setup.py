@@ -1,32 +1,23 @@
 import os
-from codecs import open
 from setuptools import setup, find_packages
 
 here = os.path.abspath(os.path.dirname(__file__))
-
 os.chdir(here)
 
-# Get the long description from the README.md file
-with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
-    long_description = fp.read()
-
 install_requires = [
-    'cryptography',
-    'pycryptodomex>=3.7.2',
-    'requests >= 2.20;python_version >= "3.0"'
+    'keepercommandersm',
+    'ansible'
 ]
 
 setup(
-    name="keepersecuritysm",
-    version='0.0.15a',
-    description="Keeper Commander Secrets Management for Python 3",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
+    name="keeper_ansible",
+    version='0.0.1',
+    description="Base plugin for Keeper Security related Ansible plugins.",
     author="Keeper Security",
     author_email="ops@keepersecurity.com",
     url="https://github.com/Keeper-Security/secrets-manager",
     license="MIT",
-    keywords="Keeper Password Manager SDK",
+    keywords="Keeper Password Manager SDK Ansible",
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
@@ -37,7 +28,7 @@ setup(
         "Source Code": "https://github.com/Keeper-Security/secrets-manager",
     },
     classifiers=[
-        "Development Status :: 2 - Pre-Alpha",
+        "Development Status :: 1 - Planning",
         "Intended Audience :: Developers",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",

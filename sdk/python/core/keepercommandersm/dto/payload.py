@@ -8,12 +8,10 @@
 
 class Context:
 
-    def __init__(self, transmissionKey, clientId, clientKey, isBound, privateKey):
-        self.transmissionKey = transmissionKey
-        self.clientId = clientId
-        self.clientKey = clientKey
-        self.isBound = isBound
-        self.privateKey = privateKey
+    def __init__(self, transmission_key, client_id, client_key):
+        self.transmissionKey = transmission_key
+        self.clientId = client_id
+        self.clientKey = client_key
 
 
 class TransmissionKey:

@@ -1,0 +1,16 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Get
+  hosts: "my_systems"
+
+  tasks:
+  - name: "Get Value"
+    keeper_get:
+      uid: "{{ uid }}"
+      field: "password"
+    register: "my_password"
+
+  - name: "Print Password"
+    debug:
+      var: my_password.value
+      verbosity: 0

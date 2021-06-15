@@ -1,4 +1,3 @@
-import hashlib
 import hmac
 import logging
 import os
@@ -21,11 +20,26 @@ from keepercommandersm.utils import bytes_to_url_safe_str, base64_to_bytes, sign
 
 class Commander:
 
-    client_key = None
-    server = None
-    verify_ssl_certs = True
+    def __init__(self, client_key=None, server=None, verify_ssl_certs=True, config=None):
 
-    config: KeyValueStorage = None
+        self.client_key = client_key
+        self.server = server
+
+        # Accept the env var PYTHONHTTPSVERIFY. Modules like 'requests' already use it.
+        self.verify_ssl_certs = bool(os.environ.get("PYTHONHTTPSVERIFY", verify_ssl_certs))
+
+        if config is None:
+            config = FileKeyValueStorage()
+
+            # If the server is set in the args, make sure it's makes it's way into the config.
+            if server is not None:
+                config.set(ConfigKeys.KEY_SERVER, server)
+
+        self.config: KeyValueStorage = config
+
+        self._init_logger()
+
+        self._init()
 
     @staticmethod
     def _init_logger():
@@ -36,26 +50,24 @@ class Commander:
             format='%(asctime)s | %(name)s | %(levelname)s | %(message)s'
         )
 
-    @staticmethod
-    def __init():
+    def _init(self):
 
-        Commander._init_logger()
-
-        if not Commander.config:
-            local_config = FileKeyValueStorage()    # TODO: Use In-Memory
-        else:
-            local_config = Commander.config
-
-        existing_secret_key = Commander.load_secret_key(local_config)
+        existing_secret_key = self.load_secret_key()
         existing_secret_key_bytes = url_safe_str_to_bytes(existing_secret_key)
-        existing_secret_key_hash = bytes_to_url_safe_str(hmac.digest(existing_secret_key_bytes, b'KEEPER_SECRETS_MANAGER_CLIENT_ID', 'sha512'))
+        existing_secret_key_hash = bytes_to_url_safe_str(hmac.digest(existing_secret_key_bytes,
+                                                                     b'KEEPER_SECRETS_MANAGER_CLIENT_ID', 'sha512'))
 
-        client_id = local_config.get(ConfigKeys.KEY_CLIENT_ID)
-        private_key = local_config.get(ConfigKeys.KEY_PRIVATE_KEY)
+        client_id = self.config.get(ConfigKeys.KEY_CLIENT_ID)
 
         if not existing_secret_key_hash:
-            # Secret key was not supplied (Probably already bound and private key and client id are present?)
-            if not private_key or not client_id:
+            # Secret key was not supplied (Probably already bound and client id is present?)
+            if not client_id:
+                # Instruct user how to bound using commander or web ui
+                raise Exception("Not bound")
+
+        if not existing_secret_key_hash:
+            # Secret key was not supplied (Probably already bound and client id is present?)
+            if not client_id:
                 # Instruct user how to bound using commander or web ui
                 raise Exception("Not bound")
 
@@ -63,26 +75,25 @@ class Commander:
             # Already bound
             logging.debug("Already bound")
         else:
-            local_config.delete(ConfigKeys.KEY_CLIENT_ID)
-            local_config.delete(ConfigKeys.KEY_PRIVATE_KEY)
-            local_config.delete(ConfigKeys.KEY_APP_KEY)
+            self.config.delete(ConfigKeys.KEY_CLIENT_ID)
+            self.config.delete(ConfigKeys.KEY_PRIVATE_KEY)
+            self.config.delete(ConfigKeys.KEY_APP_KEY)
 
-            local_config.set(ConfigKeys.KEY_CLIENT_KEY, existing_secret_key)
-            local_config.set(ConfigKeys.KEY_CLIENT_ID, existing_secret_key_hash )
+            self.config.set(ConfigKeys.KEY_CLIENT_KEY, existing_secret_key)
+            self.config.set(ConfigKeys.KEY_CLIENT_ID, existing_secret_key_hash)
 
-        if not Commander.verify_ssl_certs:
+            private_key_str = self.config.get(ConfigKeys.KEY_PRIVATE_KEY)
+
+            if not private_key_str:
+                private_key_der = generate_private_key_der()
+                self.config.set(ConfigKeys.KEY_PRIVATE_KEY, bytes_to_url_safe_str(private_key_der))
+
+        if not self.verify_ssl_certs:
             logging.warning("WARNING: Running without SSL cert verification. "
-                            "Execute 'Commander.verify_ssl_certs = True' to enable verification.")
+                            "Execute 'Commander(..., verify_ssl_certs=True)' or 'PYTHONHTTPSVERIFY=TRUE' "
+                            "to enable verification.")
 
-        Commander.config = local_config
-
-    # @staticmethod
-    # def check_secret_key_against_current_client_id(current_client_id, secret_key):
-    #
-    #     current_client_id_hash_str = bytes_to_url_safe_str(hashlib.sha256(url_safe_str_to_bytes(current_client_id)).digest())
-
-    @staticmethod
-    def load_secret_key(local_config):
+    def load_secret_key(self):
 
         """Returns client_id from the environment variable, config file, or in the code"""
 
@@ -97,7 +108,7 @@ class Commander:
 
         # Case 2: Code
         if not current_secret_key:
-            code_secret_key = Commander.client_key
+            code_secret_key = self.client_key
 
             if code_secret_key:
                 current_secret_key = code_secret_key
@@ -105,7 +116,7 @@ class Commander:
 
         # Case 3: Config storage
         if not current_secret_key:
-            config_secret_key = local_config.get(ConfigKeys.KEY_CLIENT_KEY)
+            config_secret_key = self.config.get(ConfigKeys.KEY_CLIENT_KEY)
 
             if config_secret_key:
                 current_secret_key = config_secret_key
@@ -123,57 +134,28 @@ class Commander:
 
         encrypted_key = public_encrypt(transmission_key, server_public_raw_key_bytes)
 
-        return TransmissionKey(key_number, transmission_key,  encrypted_key)
+        return TransmissionKey(key_number, transmission_key, encrypted_key)
 
-    @staticmethod
-    def prepare_context(config_storage):
+    def prepare_context(self):
 
         transmission_key = Commander.generate_transmission_key()
+        client_id = self.config.get(ConfigKeys.KEY_CLIENT_ID)
 
-        client_id = config_storage.get(ConfigKeys.KEY_CLIENT_ID)
+        # While not use in the normal operations, it's used for mocking unit tests.
+        secret_key = base64_to_bytes(self.config.get(ConfigKeys.KEY_APP_KEY))
 
         if not client_id:
             raise Exception("Client ID is missing from the configuration")
 
         client_id_bytes = base64_to_bytes(client_id)
 
-        # SECRET KEY
-
-        is_bound = False
-        app_key_str = config_storage.get(ConfigKeys.KEY_APP_KEY)
-
-        if app_key_str:
-            secret_key = base64_to_bytes(app_key_str)
-            is_bound = True
-
-        else:
-            secret_key_str = config_storage.get(ConfigKeys.KEY_CLIENT_KEY)
-
-            if secret_key_str:
-                secret_key = base64_to_bytes(secret_key_str)
-            else:
-                raise Exception("No decrypt keys are present")
-
-        # PRIVATE KEY
-
-        private_key_str = config_storage.get(ConfigKeys.KEY_PRIVATE_KEY)
-
-        if private_key_str:
-            private_key_der = base64_to_bytes(private_key_str)
-        else:
-            private_key_der = generate_private_key_der()
-            config_storage.set(ConfigKeys.KEY_PRIVATE_KEY, bytes_to_url_safe_str(private_key_der))
-
         return Context(
                     transmission_key,
                     client_id_bytes,
-                    secret_key,
-                    is_bound,
-                    private_key_der
+                    secret_key
                 )
 
-    @staticmethod
-    def encrypt_and_sign_payload(context, payload):
+    def encrypt_and_sign_payload(self, context, payload):
 
         if not (isinstance(payload, GetPayload) or isinstance(payload, UpdatePayload)):
             raise Exception('Unknown payload type "%s"' % payload.__class__.__name__)
@@ -185,56 +167,63 @@ class Commander:
 
         encrypted_key = context.transmissionKey.encryptedKey
         signature_base = encrypted_key + encrypted_payload
-        signature = sign(signature_base, der_base64_private_key_to_private_key(context.privateKey))
+
+        pk = der_base64_private_key_to_private_key(self.config.get(ConfigKeys.KEY_PRIVATE_KEY))
+        signature = sign(signature_base, pk)
 
         return {
             'payload':  encrypted_payload,
             'signature': signature
         }
 
-    @staticmethod
-    def prepare_get_payload(context, records_filter):
+    def prepare_get_payload(self, context, records_filter):
 
         payload = GetPayload()
 
         payload.clientVersion = keeper_commander_sm_client_id
         payload.clientId = bytes_to_url_safe_str(context.clientId) + "="
 
-        if not context.isBound:
+        app_key_str = self.config.get(ConfigKeys.KEY_APP_KEY)
 
-            public_key_bytes = extract_public_key_bytes(context.privateKey)
+        if not app_key_str:
+
+            public_key_bytes = extract_public_key_bytes(self.config.get(ConfigKeys.KEY_PRIVATE_KEY))
             public_key_base64 = bytes_to_url_safe_str(public_key_bytes)
-            payload.publicKey = public_key_base64 + "="     # passed once when binding
+            # passed once when binding
+            payload.publicKey = public_key_base64 + "="
 
         if records_filter:
             payload.requestedRecords = records_filter
 
-        return Commander.encrypt_and_sign_payload(context, payload)
+        return self.encrypt_and_sign_payload(context, payload)
 
-    @staticmethod
-    def prepare_update_payload(context, record):
+    def prepare_update_payload(self, context, record):
         payload = UpdatePayload()
 
         payload.clientVersion = keeper_commander_sm_client_id
         payload.clientId = bytes_to_url_safe_str(context.clientId) + "="
 
-        if not context.clientKey:   # BAT
+        if not context.clientKey:
             raise KeeperError("To save and update, client must be authenticated by device token only")
 
-        payload.recordUid = record.uid                       # for update, uid of the record
+        # for update, uid of the record
+        payload.recordUid = record.uid
 
-        raw_json_bytes = string_to_bytes(record.raw_json) # TODO: This is where we need to get JSON of the updated Record
+        # TODO: This is where we need to get JSON of the updated Record
+        raw_json_bytes = string_to_bytes(record.raw_json)
         encrypted_raw_json_bytes = encrypt_aes(raw_json_bytes, record.record_key_bytes)
         encrypted_raw_json_bytes_str = bytes_to_url_safe_str(encrypted_raw_json_bytes)
-        payload.data = encrypted_raw_json_bytes_str          # for create and update, the record data
 
-        return Commander.encrypt_and_sign_payload(context, payload)
+        # for create and update, the record data
+        payload.data = encrypted_raw_json_bytes_str
 
-    @staticmethod
-    def __post_query(path, transmission_key, payload_and_signature):
+        return self.encrypt_and_sign_payload(context, payload)
 
-        keeper_server = helpers.get_server(Commander.server, Commander.config)
+    def _post_query(self, path, context, payload_and_signature):
 
+        keeper_server = helpers.get_server(self.server, self.config)
+
+        transmission_key = context.transmissionKey
         payload = payload_and_signature.get('payload')
         signature = payload_and_signature.get('signature')
 
@@ -249,35 +238,53 @@ class Commander:
             'https://%s/api/rest/sm/v1/%s' % (keeper_server, path),
             headers=request_headers,
             data=payload,
-            verify=Commander.verify_ssl_certs
+            verify=self.verify_ssl_certs
         )
 
         return rs
 
-    @staticmethod
-    def fetch(record_filter=None):
+    def fetch(self, record_filter=None):
 
-        Commander.__init()
+        context = self.prepare_context()
+        payload_and_signature = self.prepare_get_payload(context, records_filter=record_filter)
 
-        config = Commander.config
-        context = Commander.prepare_context(config)
-        payload_and_signature = Commander.prepare_get_payload(context, records_filter=record_filter)
-
-        rs = Commander.__post_query(
+        rs = self._post_query(
             'get_secret',
-            context.transmissionKey,
+            context,
             payload_and_signature
         )
 
         if not rs.ok:
             if rs.status_code == 403:
+                response_dict = json_to_dict(rs.text)
 
-                logging.error("Error: " + str(rs.reason) + " (http error code: " + str(rs.status_code) + ")")
-                raise KeeperAccessDenied("Access denied. One-Time Token cannot be reused.")
+                if response_dict.get('result_code') == 'invalid_client_version':
+                    logging.error("Client version %s was not registered in the backend" % keeper_commander_sm_client_id)
+                    raise KeeperError(response_dict.get('additional_info'))
+                elif 'error' in response_dict:
+                    # Errors:
+                    # 1. error: throttled, message: Due to repeated attempts, your request has been throttled.
+                    # Try again in 2 minutes.
+                    error = ("Error: %s, message=%s" % (
+                        response_dict.get('error'), response_dict.get('message'))) if 'error' in response_dict else None
+
+                    raise KeeperError(error)
+                else:
+                    logging.error("Error code: %s, additional info: %s" % (
+                        (response_dict.get('result_code') or response_dict.get('error')),
+                        (response_dict.get('additional_info') or response_dict.get('message'))
+                    )
+                                  )
+                    raise KeeperAccessDenied("Access denied. One-Time Token cannot be reused.")
+            elif rs.status_code == 400:
+                # Example errors:
+                #   - Error: invalid Invalid secrets manager payload
+                raise KeeperError(rs.text)
             else:
                 resp_dict = json_to_dict(rs.text)
 
-                logging.error("Error: " + str(rs.reason) + " (http error code: " + str(rs.status_code) + ", raw: %s)" % resp_dict)
+                logging.error(
+                    "Error: " + str(rs.reason) + " (http error code: " + str(rs.status_code) + ", raw: %s)" % resp_dict)
 
                 raise HTTPError()
 
@@ -293,10 +300,10 @@ class Commander:
             just_bound = True
 
             encrypted_master_key = url_safe_str_to_bytes(decrypted_response_dict.get('encryptedAppKey'))
-            secret_key = decrypt_aes(encrypted_master_key, context.clientKey)
-            Commander.config.set(ConfigKeys.KEY_APP_KEY, bytes_to_url_safe_str(secret_key))
+            secret_key = decrypt_aes(encrypted_master_key, self.config.get(ConfigKeys.KEY_CLIENT_KEY))
+            self.config.set(ConfigKeys.KEY_APP_KEY, bytes_to_url_safe_str(secret_key))
         else:
-            secret_key = context.clientKey
+            secret_key = base64_to_bytes(self.config.get(ConfigKeys.KEY_APP_KEY))
 
         records_resp = decrypted_response_dict.get('records')
         folders_resp = decrypted_response_dict.get('folders')
@@ -316,17 +323,16 @@ class Commander:
             'justBound': just_bound
         }
 
-    @staticmethod
-    def get_secrets(uids=None):
+    def get_secrets(self, uids=None):
         """
         Retrieve all records associated with the given application
         """
-        records_resp = Commander.fetch(uids)
+        records_resp = self.fetch(uids)
 
         just_bound = records_resp.get('justBound')
 
         if just_bound:
-            records_resp = Commander.fetch(uids)
+            records_resp = self.fetch(uids)
 
         # TODO: Erase client key because we are already bound
 
@@ -334,36 +340,30 @@ class Commander:
 
         return records
 
-    @staticmethod
-    def save(record):
+    def save(self, record):
         """
         Save updated secret values
         """
 
         logging.info("Updating record uid: %s" % record.uid)
 
-        config = Commander.config
+        context = self.prepare_context()
 
-        context = Commander.prepare_context(config)
+        payload_and_signature = self.prepare_update_payload(context, record)
 
-        payload_and_signature = Commander.prepare_update_payload(context, record)
-
-        rs = Commander.__post_query(
+        rs = self._post_query(
             'update_secret',
-            context.transmissionKey,
+            context,
             payload_and_signature
         )
 
         if not rs.ok:
             if rs.status_code == 403:
-
-                logging.error("Error: " + str(rs.reason) + " (http error code: " + str(rs.status_code) + ")")
+                logging.error("Error: {} (http error code: {})".format(rs.reason, rs.status_code))
                 return {}
             else:
                 resp_dict = json_to_dict(rs.text)
-
-                logging.error("Error: " + str(rs.reason) + " (http error code: " + str(rs.status_code) + ", raw: %s)" % resp_dict)
-
+                logging.error("Error: {} (http error code: {}, row: {}".format(rs.reason, rs.status_code, resp_dict))
                 raise HTTPError()
         else:
             return True

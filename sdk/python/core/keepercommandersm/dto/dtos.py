@@ -13,7 +13,7 @@ import os
 import requests
 
 from keepercommandersm.exceptions import KeeperError
-from keepercommandersm.utils import base64_to_bytes, decrypt_aes, decrypt_record, json_to_dict
+from keepercommandersm.utils import base64_to_bytes, decrypt_aes, decrypt_record, json_to_dict, dict_to_json
 
 
 class Record:
@@ -78,7 +78,99 @@ class Record:
         found_file.save_file(path)
 
     def __str__(self):
-        return '[Record: uid=%s, type: %s, title: %s, files count: %s]' % (self.uid, self.type, self.title, str(len(self.files)))
+        return '[Record: uid=%s, type: %s, title: %s, files count: %s]' % (self.uid, self.type, self.title,
+                                                                           str(len(self.files)))
+
+    def _update(self):
+
+        """ Take the values in the diction and update the attributes and raw JSON
+        """
+
+        self.dict["title"] = self.title
+        self.dict["type"] = self.type
+
+        # Find the password in the field and update the password attribute
+        password_field = next((item for item in self.dict["fields"] if item["type"] == "password"), None)
+        self.password = password_field.get('value')[0]
+
+        self.raw_json = dict_to_json(self.dict)
+
+    @staticmethod
+    def _value(values, single):
+
+        if single is True:
+            return values[0]
+        return values
+
+    def field(self, field_type, value=None, single=False):
+
+        found_item = None
+        for item in self.dict.get('fields'):
+            if item["type"] == field_type.lower():
+                found_item = item
+                break
+        if found_item is None:
+            raise ValueError("Cannot find the field {}.".format(field_type))
+
+        if value is None:
+            value = Record._value(found_item["value"], single)
+        else:
+            if type(value) is not list:
+                value = [value]
+            found_item["value"] = value
+            self._update()
+
+        return value
+
+    def custom_field(self, label, value=None, field_type=None, single=False):
+
+        found_item = None
+        for item in self.dict.get('custom'):
+            found = False
+            if item["label"] == label:
+                # We can have duplicate labels, so allow type to be used too.
+                if field_type is not None:
+                    if item["type"] == field_type.lower():
+                        found = True
+                else:
+                    found = True
+            if found is True:
+                found_item = item
+                break
+
+        if found_item is None:
+            raise ValueError("Cannot find the custom field {}, {}.".format(label, field_type))
+
+        if value is None:
+            value = Record._value(found_item["value"], single)
+        else:
+            if type(value) is not list:
+                value = [value]
+            found_item["value"] = value
+            self._update()
+
+        return value
+
+    def print(self):
+
+        print("===")
+        print("Title: {}".format(self.title))
+        print("UID:   {}".format(self.uid))
+        print("Type:  {}".format(self.type))
+        print("")
+        print("Fields")
+        print("------")
+
+        for item in self.dict.get('fields'):
+            if item["type"] in ["fileRef", "oneTimeCode"]:
+                continue
+            print("{} : {}".format(item["type"], ", ".join(item["value"])))
+
+        print("")
+        print("Custom Fields")
+        print("------")
+        for item in self.dict.get('custom'):
+            print("{} ({}) : {}".format(item["label"], item["type"], ", ".join(item["value"])))
 
 
 class Folder:
