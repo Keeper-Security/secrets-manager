@@ -11,6 +11,7 @@
 from datetime import datetime
 
 from keepercommandersm import Commander
+from keepercommandersm.storage import FileKeyValueStorage
 from keepercommandersm.utils import json_to_dict, dict_to_json
 
 if __name__ == '__main__':
