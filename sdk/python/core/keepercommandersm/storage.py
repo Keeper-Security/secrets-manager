@@ -73,6 +73,10 @@ class FileKeyValueStorage(KeyValueStorage):
 
     def save_storage(self, updated_config):
 
+        # If the dictionary is empty, don't write the config.
+        if len(updated_config) == 0:
+            raise ValueError("There are no configuration values. Cannot write an empty config JSON file.")
+
         self.create_config_file_if_missing()
 
         with open(self.default_config_file_location, "w") as write_file:
