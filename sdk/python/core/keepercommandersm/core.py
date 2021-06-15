@@ -263,8 +263,9 @@ class Commander:
                     raise KeeperError(response_dict.get('additional_info'))
                 elif 'error' in response_dict:
                     # Errors:
-                    # 1. error: throttled, message: Due to repeated attempts, your request has been throttled.
-                    # Try again in 2 minutes.
+                    #     1. error: throttled,     message: Due to repeated attempts, your request has been throttled. Try again in 2 minutes.
+                    #     2. error: access_denied, message: Unable to validate application access
+                    #     3. error: access_denied, message: Signature is invalid
                     error = ("Error: %s, message=%s" % (
                         response_dict.get('error'), response_dict.get('message'))) if 'error' in response_dict else None
 
@@ -278,7 +279,8 @@ class Commander:
                     raise KeeperAccessDenied("Access denied. One-Time Token cannot be reused.")
             elif rs.status_code == 400:
                 # Example errors:
-                #   - Error: invalid Invalid secrets manager payload
+                #   - error: invalid,     message Invalid secrets manager payload
+                #   - error: bad_request, message: unable to decrypt the payload
                 raise KeeperError(rs.text)
             else:
                 resp_dict = json_to_dict(rs.text)
