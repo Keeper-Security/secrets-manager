@@ -145,9 +145,12 @@ class Commander:
 
         transmission_key = Commander.generate_transmission_key()
         client_id = self.config.get(ConfigKeys.KEY_CLIENT_ID)
+        secret_key = None
 
         # While not use in the normal operations, it's used for mocking unit tests.
-        secret_key = base64_to_bytes(self.config.get(ConfigKeys.KEY_APP_KEY))
+        app_key = self.config.get(ConfigKeys.KEY_APP_KEY)
+        if app_key is not None:
+            secret_key = base64_to_bytes(app_key)
 
         if not client_id:
             raise Exception("Client ID is missing from the configuration")
