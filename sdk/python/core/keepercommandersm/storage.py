@@ -127,6 +127,7 @@ class FileKeyValueStorage(KeyValueStorage):
         if not os.path.exists(self.default_config_file_location):
 
             f = open(self.default_config_file_location, "w+")
+            f.write(json.dumps({}))
             f.close()
 
     def is_empty(self):
@@ -154,7 +155,13 @@ class InMemoryKeyValueStorage(KeyValueStorage):
             self.config[ConfigKeys.get_enum(key)] = config[key]
 
     def read_storage(self):
-        pass
+
+        # To match what FileKeyValueStorage does, we need to return the enum values as keys instead
+        # of the enum keys
+        dict_config = {}
+        for enum_key in self.config:
+            dict_config[enum_key.value] = self.config[enum_key]
+        return dict_config
 
     def save_storage(self, updated_config):
         pass

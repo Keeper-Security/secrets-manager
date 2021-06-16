@@ -31,9 +31,12 @@ class Commander:
         if config is None:
             config = FileKeyValueStorage()
 
-            # If the server is set in the args, make sure it's makes it's way into the config.
-            if server is not None:
-                config.set(ConfigKeys.KEY_SERVER, server)
+        # If the server or client key are set in the args, make sure they makes it's way into the config. The
+        # will override what is already in the config if they exist.
+        if client_key is not None:
+            config.set(ConfigKeys.KEY_CLIENT_KEY, server)
+        if server is not None:
+            config.set(ConfigKeys.KEY_SERVER, server)
 
         self.config: KeyValueStorage = config
 
@@ -53,6 +56,10 @@ class Commander:
     def _init(self):
 
         existing_secret_key = self.load_secret_key()
+
+        if existing_secret_key is None:
+            raise ValueError("Cannot find the client key in the configuration file.")
+
         existing_secret_key_bytes = url_safe_str_to_bytes(existing_secret_key)
         existing_secret_key_hash = bytes_to_url_safe_str(hmac.digest(existing_secret_key_bytes,
                                                                      b'KEEPER_SECRETS_MANAGER_CLIENT_ID', 'sha512'))
@@ -121,8 +128,6 @@ class Commander:
             if config_secret_key:
                 current_secret_key = config_secret_key
                 logging.info("Secret key found in configuration file")
-
-        # if not current_secret_key:
 
         return current_secret_key
 

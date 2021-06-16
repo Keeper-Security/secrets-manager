@@ -5,7 +5,6 @@ import os
 
 from keepercommandersm.exceptions import KeeperError
 from keepercommandersm.storage import FileKeyValueStorage, InMemoryKeyValueStorage
-from keepercommandersm.configkeys import ConfigKeys
 from keepercommandersm import Commander
 from keepercommandersm import mock
 
@@ -19,18 +18,6 @@ class SmokeTest(unittest.TestCase):
     def tearDown(self):
 
         os.chdir(self.orig_working_dir)
-
-    @unittest.skip
-    def test_get_via_client_key(self):
-
-        with tempfile.NamedTemporaryFile("w", delete=False) as fh:
-            print(fh.name)
-            c = Commander(
-                server="dev.keepersecurity.com",
-                client_key="0DoskBb8YY_glncADq4_ywkKkMrEDlarq3UcEhx8ZHA",
-                config=FileKeyValueStorage(config_file_location=fh.name)
-            )
-            print(c.get_secrets())
 
     def test_the_works(self):
 
@@ -150,48 +137,6 @@ class SmokeTest(unittest.TestCase):
             record = records[0]
             custom = record.custom_field("My Custom 1", single=True)
             self.assertEqual(custom, "NEW VALUE", "didn't get the correct My Custom 1 value after write")
-
-    def test_default_config(self):
-
-        # Attempt get instance without config file. This should fail since the directory will not contain
-        # any config file and there are no env vars to use.
-
-        default_config_name = FileKeyValueStorage.default_config_file_location
-
-        with tempfile.TemporaryDirectory() as temp_dir_name:
-            os.chdir(temp_dir_name)
-            try:
-                c = Commander()
-                self.fail("Found config file, should be missing.")
-            except Exception as err:
-                self.assertRegex(str(err), r'no configuration', "did not get correct exception message.")
-
-        # Get instance using default config file. Create a JSON config file and store under the default file
-        # name. This will pass because the JSON file exists.
-
-        with tempfile.TemporaryDirectory() as temp_dir_name:
-            os.chdir(temp_dir_name)
-            with open(default_config_name, "w") as fh:
-                fh.write(
-                    json.dumps({
-                        "server": "fake.keepersecurity.com",
-                        "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-                        "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpG"
-                                    "ILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-                        "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-                        "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOt"
-                                      "x9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0U"
-                                      "BFTrbET6joq0xCjhKMhHQFaHYI"
-                    })
-                )
-                fh.close()
-            c = Commander()
-            self.assertEqual(c.config.get(ConfigKeys.KEY_SERVER), "fake.keepersecurity.com",
-                             "did not get correct server")
-            self.assertEqual(c.config.get(ConfigKeys.KEY_APP_KEY), "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-                             "did not get correct server")
-
-        os.chdir(self.orig_working_dir)
 
     def test_403_signature_error(self):
 
