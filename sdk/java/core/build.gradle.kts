@@ -5,17 +5,15 @@
  */
 
 plugins {
-// Apply the Kotlin JVM plugin to add support for Kotlin.
-//    id("org.jetbrains.kotlin.jvm") version "1.3.61"
     `java-library`
     kotlin("jvm") version "1.5.10"
     kotlin("plugin.serialization") version "1.5.10"
 }
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-    sourceCompatibility = JavaVersion.VERSION_11.toString()
-    targetCompatibility = JavaVersion.VERSION_11.toString()
-    kotlinOptions.jvmTarget = JavaVersion.VERSION_11.toString()
+    sourceCompatibility = JavaVersion.VERSION_1_8.toString()
+    targetCompatibility = JavaVersion.VERSION_1_8.toString()
+    kotlinOptions.jvmTarget = JavaVersion.VERSION_1_8.toString()
 }
 
 repositories {
@@ -32,6 +30,8 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.2.1")
+
+    implementation(files("libs/bc-fips-1.0.2.1.jar"))
 
     // Use the Kotlin test library.
     testImplementation("org.jetbrains.kotlin:kotlin-test")

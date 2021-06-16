@@ -9,6 +9,7 @@ const KEY_CLIENT_ID = 'clientId'
 const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the client before public key
 const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
+const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
 
 export const initialize = () => {
     keeperPublicKeys = [
@@ -116,7 +117,7 @@ const prepareContext = async (storage: KeyValueStorage): Promise<ExecutionContex
 
 const encryptAndSignPayload = async (storage: KeyValueStorage, context: ExecutionContext, payload: GetPayload | UpdatePayload): Promise<{ payload: Uint8Array, signature: Uint8Array }> => {
     const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
-    const encryptedPayload = await platform.encrypt(payloadBytes, KEY_TRANSMISSION_KEY, storage)
+    const encryptedPayload = await platform.encrypt(payloadBytes, KEY_TRANSMISSION_KEY)
     const signatureBase = Uint8Array.of(...context.transmissionKey.encryptedKey, ...encryptedPayload)
     const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
     return {payload: encryptedPayload, signature}
@@ -227,16 +228,14 @@ const fetchAndDecryptSecrets = async (storage: KeyValueStorage, recordsFilter?: 
     return { secrets, justBound }
 }
 
-const clientIdHashTag = 'KEEPER_SECRETS_MANAGER_CLIENT_ID'
-
 export const getClientId = async (clientKey: string): Promise<string> => {
-    const clientKeyHash = await platform.hash(webSafe64ToBytes(clientKey), clientIdHashTag)
+    const clientKeyHash = await platform.hash(webSafe64ToBytes(clientKey), CLIENT_ID_HASH_TAG)
     return platform.bytesToBase64(clientKeyHash)
 }
 
 export const initializeStorage = async (storage: KeyValueStorage, clientKey: string, domain: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
     const clientKeyBytes = webSafe64ToBytes(clientKey)
-    const clientKeyHash = await platform.hash(clientKeyBytes, clientIdHashTag)
+    const clientKeyHash = await platform.hash(clientKeyBytes, CLIENT_ID_HASH_TAG)
     const clientId = platform.bytesToBase64(clientKeyHash)
     const existingClientId = await storage.getString(KEY_CLIENT_ID)
     if (existingClientId && existingClientId === clientId) {
