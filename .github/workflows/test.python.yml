@@ -1,4 +1,4 @@
-name: Test-Java
+name: Test-Python
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ master ]
 
 jobs:
-  test-java:
+  test-python:
     runs-on: ubuntu-latest
     strategy:
       matrix:
