@@ -9,6 +9,7 @@ const KEY_CLIENT_ID = 'clientId'
 const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the client before public key
 const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
+const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
 
 export const initialize = () => {
     keeperPublicKeys = [
@@ -26,11 +27,6 @@ let keeperPublicKeys: Uint8Array[]
 type TransmissionKey = {
     publicKeyId: number
     encryptedKey: Uint8Array
-}
-
-type ExecutionContext = {
-    transmissionKey: TransmissionKey
-    clientId: string
 }
 
 type GetPayload = {
@@ -102,30 +98,22 @@ export const generateTransmissionKey = async (keyNumber: number): Promise<Transm
     }
 }
 
-const prepareContext = async (storage: KeyValueStorage): Promise<ExecutionContext> => {
-    const transmissionKey = await generateTransmissionKey(1)
-    const clientId = await storage.getString(KEY_CLIENT_ID)
-    if (!clientId) {
-        throw new Error('Client Id is missing from the configuration')
-    }
-    return {
-        transmissionKey: transmissionKey,
-        clientId: clientId
-    }
-}
-
-const encryptAndSignPayload = async (storage: KeyValueStorage, context: ExecutionContext, payload: GetPayload | UpdatePayload): Promise<{ payload: Uint8Array, signature: Uint8Array }> => {
+const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload): Promise<{ payload: Uint8Array, signature: Uint8Array }> => {
     const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
-    const encryptedPayload = await platform.encrypt(payloadBytes, KEY_TRANSMISSION_KEY, storage)
-    const signatureBase = Uint8Array.of(...context.transmissionKey.encryptedKey, ...encryptedPayload)
+    const encryptedPayload = await platform.encrypt(payloadBytes, KEY_TRANSMISSION_KEY)
+    const signatureBase = Uint8Array.of(...transmissionKey.encryptedKey, ...encryptedPayload)
     const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
     return {payload: encryptedPayload, signature}
 }
 
-const prepareGetPayload = async (storage: KeyValueStorage, context: ExecutionContext, recordsFilter?: string[]): Promise<{ payload: Uint8Array, signature: Uint8Array }> => {
+const prepareGetPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, recordsFilter?: string[]): Promise<{ payload: Uint8Array, signature: Uint8Array }> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
     const payload: GetPayload = {
         clientVersion: 'w15.0.0', // TODO generate client version for SM
-        clientId: context.clientId
+        clientId: clientId
     }
     const appKey = await storage.getBytes(KEY_APP_KEY)
     if (!appKey) {
@@ -135,19 +123,23 @@ const prepareGetPayload = async (storage: KeyValueStorage, context: ExecutionCon
     if (recordsFilter) {
         payload.requestedRecords = recordsFilter
     }
-    return encryptAndSignPayload(storage, context, payload)
+    return encryptAndSignPayload(storage, transmissionKey, payload)
 }
 
-const prepareUpdatePayload = async (storage: KeyValueStorage, context: ExecutionContext, record: KeeperRecord): Promise<{ payload: Uint8Array, signature: Uint8Array }> => {
-    const payload: UpdatePayload = {
-        clientVersion: 'w15.0.0', // TODO generate client version for SM
-        clientId: context.clientId
+const prepareUpdatePayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, record: KeeperRecord): Promise<{ payload: Uint8Array, signature: Uint8Array }> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
     }
-    payload.recordUid = record.recordUid
     const recordBytes = platform.stringToBytes(JSON.stringify(record.data))
     const encryptedRecord = await platform.encrypt(recordBytes, record.recordUid)
-    payload.data = webSafe64FromBytes(encryptedRecord)
-    return encryptAndSignPayload(storage, context, payload)
+    const payload: UpdatePayload = {
+        clientVersion: 'w15.0.0', // TODO generate client version for SM
+        clientId: clientId,
+        recordUid: record.recordUid,
+        data: webSafe64FromBytes(encryptedRecord)
+    }
+    return encryptAndSignPayload(storage, transmissionKey, payload)
 }
 
 const postQuery = async (storage: KeyValueStorage, path: string, transmissionKey: TransmissionKey,
@@ -190,9 +182,9 @@ const decryptRecord = async (record: SecretsManagerResponseRecord): Promise<Keep
 }
 
 const fetchAndDecryptSecrets = async (storage: KeyValueStorage, recordsFilter?: string[]): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
-    const context = await prepareContext(storage)
-    const { payload, signature } = await prepareGetPayload(storage, context, recordsFilter)
-    const httpResponse = await postQuery(storage, 'get_secret', context.transmissionKey, payload, signature)
+    const transmissionKey = await generateTransmissionKey(1)
+    const { payload, signature } = await prepareGetPayload(storage, transmissionKey, recordsFilter)
+    const httpResponse = await postQuery(storage, 'get_secret', transmissionKey, payload, signature)
     const decryptedResponse = await platform.decrypt(httpResponse.data, KEY_TRANSMISSION_KEY)
     const response = JSON.parse(platform.bytesToString(decryptedResponse)) as SecretsManagerResponse
 
@@ -227,16 +219,14 @@ const fetchAndDecryptSecrets = async (storage: KeyValueStorage, recordsFilter?: 
     return { secrets, justBound }
 }
 
-const clientIdHashTag = 'KEEPER_SECRETS_MANAGER_CLIENT_ID'
-
 export const getClientId = async (clientKey: string): Promise<string> => {
-    const clientKeyHash = await platform.hash(webSafe64ToBytes(clientKey), clientIdHashTag)
+    const clientKeyHash = await platform.hash(webSafe64ToBytes(clientKey), CLIENT_ID_HASH_TAG)
     return platform.bytesToBase64(clientKeyHash)
 }
 
 export const initializeStorage = async (storage: KeyValueStorage, clientKey: string, domain: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
     const clientKeyBytes = webSafe64ToBytes(clientKey)
-    const clientKeyHash = await platform.hash(clientKeyBytes, clientIdHashTag)
+    const clientKeyHash = await platform.hash(clientKeyBytes, CLIENT_ID_HASH_TAG)
     const clientId = platform.bytesToBase64(clientKeyHash)
     const existingClientId = await storage.getString(KEY_CLIENT_ID)
     if (existingClientId && existingClientId === clientId) {
@@ -265,9 +255,9 @@ export const getSecrets = async (storage: KeyValueStorage, recordsFilter?: strin
 }
 
 export const updateSecret = async (storage: KeyValueStorage, record: KeeperRecord): Promise<void> => {
-    const context = await prepareContext(storage)
-    const { payload, signature } = await prepareUpdatePayload(storage, context, record)
-    await postQuery(storage, 'update_secret', context.transmissionKey, payload, signature)
+    const transmissionKey = await generateTransmissionKey(1)
+    const { payload, signature } = await prepareUpdatePayload(storage, transmissionKey, record)
+    await postQuery(storage, 'update_secret', transmissionKey, payload, signature)
 }
 
 export const downloadFile = async (file: KeeperFile): Promise<Uint8Array> => {

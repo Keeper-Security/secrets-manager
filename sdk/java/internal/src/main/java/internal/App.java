@@ -1,15 +1,15 @@
 package internal;
 
-import com.keepersecurity.secretsManager.core.SecretsManagerKt;
+import java.io.File;
+
+import static com.keepersecurity.secretsManager.core.SecretsManager.*;
 
 public class App {
-    public String getGreeting() {
-        return "Hello world.";
-    }
+
+    public File configFile = new File("config.txt");
 
     public static void main(String[] args) {
-        if (SecretsManagerKt.doSomethingElse()) {
-            System.out.println(new App().getGreeting());
-        }
+
+//        getSecrets();
     }
 }
