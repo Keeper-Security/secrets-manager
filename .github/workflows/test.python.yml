@@ -1,4 +1,4 @@
-name: Test-Java
+name: Test-Python
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ master ]
 
 jobs:
-  test-java:
+  test-python:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -24,9 +24,10 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov
+        python3 -m pip install --upgrade pip
+        python3 -m pip install -r requirements.txt
+        python3 -m pip install pytest pytest-cov
+        python3 -m pip install -e .
     - name: Run tests
       run: |
         pytest
