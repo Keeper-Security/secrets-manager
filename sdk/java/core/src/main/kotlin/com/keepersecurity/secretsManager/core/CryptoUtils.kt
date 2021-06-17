@@ -38,6 +38,10 @@ internal fun webSafe64ToBytes(data: String): ByteArray {
     return Base64.getUrlDecoder().decode(data)
 }
 
+internal fun webSafe64FromBytes(data: ByteArray): String {
+    return Base64.getUrlEncoder().encodeToString(data)
+}
+
 internal fun bytesToString(data: ByteArray): String {
     return String(data)
 }
@@ -87,6 +91,10 @@ internal fun decrypt(data: ByteArray, key: ByteArray): ByteArray {
     val iv = data.copyOfRange(0, 12)
     val cipher = getCipher(Cipher.DECRYPT_MODE, iv, key)
     return cipher.doFinal(data, iv.size, data.size - iv.size)
+}
+
+internal fun decrypt(data: String, key: ByteArray): ByteArray {
+    return decrypt(base64ToBytes(data), key)
 }
 
 internal fun importPrivateKey(rawBytes: ByteArray): PrivateKey {

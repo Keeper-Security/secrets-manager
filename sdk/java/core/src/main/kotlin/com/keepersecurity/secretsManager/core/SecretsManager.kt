@@ -25,6 +25,7 @@ interface KeyValueStorage {
     fun saveString(key: String, value: String)
     fun getBytes(key: String): ByteArray?
     fun saveBytes(key: String, value: ByteArray)
+    fun delete(key: String)
 }
 
 private data class TransmissionKey(val publicKeyId: Int, val key: ByteArray, val encryptedKey: ByteArray)
@@ -38,19 +39,65 @@ private data class GetPayload(
     var requestedRecords: List<String>? = null
 )
 
+@Serializable
+private data class UpdatePayload(
+    val clientVersion: String,
+    val clientId: String,
+    val recordUid: String,
+    val data: String
+)
+
 private data class EncryptedPayload(val payload: ByteArray, val signature: ByteArray)
 
 @Serializable
-private data class SecretsManagerResponseFolder(val folderUid: String, val folderKey: String, val records: List<SecretsManagerResponseRecord>)
+private data class SecretsManagerResponseFolder(
+    val folderUid: String,
+    val folderKey: String,
+    val records: List<SecretsManagerResponseRecord>
+)
 
 @Serializable
-private data class SecretsManagerResponseRecord(val recordUid: String, val recordKey: String, val data: String, val isEditable: Boolean, val files: List<SecretsManagerResponseFile>?)
+private data class SecretsManagerResponseRecord(
+    val recordUid: String,
+    val recordKey: String,
+    val data: String,
+    val isEditable: Boolean,
+    val files: List<SecretsManagerResponseFile>?
+)
 
 @Serializable
-private data class SecretsManagerResponseFile(val fileUid: String, val fileKey: String, val data: String, val url: String, val thumbnailUrl: String?)
+private data class SecretsManagerResponseFile(
+    val fileUid: String,
+    val fileKey: String,
+    val data: String,
+    val url: String,
+    val thumbnailUrl: String?
+)
 
 @Serializable
-private data class SecretsManagerResponse(val encryptedAppKey: String?, val folders: List<SecretsManagerResponseFolder>?, val records: List<SecretsManagerResponseRecord>?)
+private data class SecretsManagerResponse(
+    val encryptedAppKey: String?,
+    val folders: List<SecretsManagerResponseFolder>?,
+    val records: List<SecretsManagerResponseRecord>?
+)
+
+data class KeeperSecrets(val records: List<KeeperRecord>)
+
+data class KeeperRecord(
+    val recordKey: ByteArray,
+    val recordUid: String,
+    var folderUid: String?,
+    val data: JsonObject,
+    var files: List<KeeperFile>?
+)
+
+data class KeeperFile(
+    val fileKey: ByteArray,
+    val fileUid: String,
+    val data: JsonObject,
+    val url: String,
+    val thumbnailUrl: String?
+)
 
 fun initializeStorage(storage: KeyValueStorage, clientKey: String, domain: String) {
     val clientKeyBytes = webSafe64ToBytes(clientKey)
@@ -71,63 +118,116 @@ fun initializeStorage(storage: KeyValueStorage, clientKey: String, domain: Strin
     storage.saveBytes(KEY_PRIVATE_KEY, keyPair.second)
 }
 
-//export const getSecrets = async (storage: KeyValueStorage, recordsFilter?: string[]): Promise<KeeperSecrets> => {
-//    const { secrets, justBound } = await fetchAndDecryptSecrets(storage, recordsFilter)
-//    if (justBound) {
-//        try {
-//            await fetchAndDecryptSecrets(storage, recordsFilter)
-//        }
-//        catch (e) {
-//            console.error(e)
-//        }
-//    }
-//    return secrets
-//}
-
-fun getSecrets(storage: KeyValueStorage, recordsFilter: List<String>? = null) {
-    fetchAndDecryptSecrets(storage, recordsFilter)
+fun getSecrets(storage: KeyValueStorage, recordsFilter: List<String>? = null): KeeperSecrets {
+    val (secrets, justBound) = fetchAndDecryptSecrets(storage, recordsFilter)
+    if (justBound) {
+        try {
+            fetchAndDecryptSecrets(storage, recordsFilter)
+        } catch (e: Exception) {
+            println(e)
+        }
+    }
+    return secrets
 }
 
-//
-//    const records: KeeperRecord[] = []
-//    let justBound = false
-//    if (response.encryptedAppKey) {
-//        justBound = true
-//        await platform.unwrap(platform.base64ToBytes(response.encryptedAppKey), KEY_APP_KEY, KEY_CLIENT_KEY, storage)
-//        await storage.delete(KEY_CLIENT_KEY)
-//    }
-//    if (response.records) {
-//        for (const record of response.records) {
-//            await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, KEY_APP_KEY, storage, true)
-//            const decryptedRecord = await decryptRecord(record)
-//            records.push(decryptedRecord)
-//        }
-//    }
-//    if (response.folders) {
-//        for (const folder of response.folders) {
-//            await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
-//            for (const record of folder.records) {
-//                await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, folder.folderUid)
-//                const decryptedRecord = await decryptRecord(record)
-//                decryptedRecord.folderUid = folder.folderUid
-//                records.push(decryptedRecord)
-//            }
-//        }
-//    }
-//    const secrets: KeeperSecrets = {
-//        records: records
-//    }
-//    return { secrets, justBound }
-//}
+fun updateSecret(storage: KeyValueStorage, record: KeeperRecord) {
+    val transmissionKey = generateTransmissionKey(1)
+    val encryptedPayload = prepareUpdatePayload(storage, transmissionKey, record)
+    postQuery(storage, "update_secret", transmissionKey, encryptedPayload)
+}
 
-private fun fetchAndDecryptSecrets(storage: KeyValueStorage, recordsFilter: List<String>?) {
+fun downloadFile(file: KeeperFile): ByteArray {
+    return downloadFile(file, file.url)
+}
+
+fun downloadThumbnail(file: KeeperFile): ByteArray {
+    if (file.thumbnailUrl == null) {
+        throw Exception("Thumbnail does not exist for the file ${file.fileUid}")
+    }
+    return downloadFile(file, file.thumbnailUrl)
+}
+
+private fun downloadFile(file: KeeperFile, url: String): ByteArray {
+    with(URL(url).openConnection() as HttpsURLConnection) {
+        requestMethod = "GET"
+        val statusCode = responseCode
+        val data = when {
+            errorStream != null -> errorStream.readAllBytes()
+            else -> inputStream.readAllBytes()
+        }
+        if (statusCode != HTTP_OK) {
+            throw Exception(String(data))
+        }
+        return decrypt(data, file.fileKey)
+    }
+}
+
+private fun fetchAndDecryptSecrets(
+    storage: KeyValueStorage,
+    recordsFilter: List<String>?
+): Pair<KeeperSecrets, Boolean> {
     val transmissionKey = generateTransmissionKey(1)
     val encryptedPayload = prepareGetPayload(storage, transmissionKey, recordsFilter)
     val httpResponse = postQuery(storage, "get_secret", transmissionKey, encryptedPayload)
     val decryptedResponse = decrypt(httpResponse.data, transmissionKey.key)
     val jsonString = bytesToString(decryptedResponse)
     val response = Json.decodeFromString<SecretsManagerResponse>(jsonString)
-    println(response)
+    var justBound = false
+    val appKey: ByteArray
+    if (response.encryptedAppKey != null) {
+        justBound = true
+        val clientKey = storage.getBytes(KEY_CLIENT_KEY) ?: throw Exception("Client key is missing from the storage")
+        appKey = decrypt(response.encryptedAppKey, clientKey)
+        storage.saveBytes(KEY_APP_KEY, appKey)
+        storage.delete(KEY_CLIENT_KEY)
+    } else {
+        appKey = storage.getBytes(KEY_APP_KEY) ?: throw Exception("App key is missing from the storage")
+    }
+    val records: MutableList<KeeperRecord> = mutableListOf()
+    if (response.records != null) {
+        response.records.forEach {
+            val recordKey = decrypt(it.recordKey, appKey)
+            val decryptedRecord = decryptRecord(it, recordKey)
+            records.add(decryptedRecord)
+        }
+    }
+    if (response.folders != null) {
+        response.folders.forEach { folder ->
+            val folderKey = decrypt(folder.folderKey, appKey)
+            folder.records.forEach { record ->
+                val recordKey = decrypt(record.recordKey, folderKey)
+                val decryptedRecord = decryptRecord(record, recordKey)
+                decryptedRecord.folderUid = folder.folderUid
+                records.add(decryptedRecord)
+            }
+        }
+    }
+    val secrets = KeeperSecrets(records)
+    return Pair(secrets, justBound)
+}
+
+private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray): KeeperRecord {
+    val decryptedRecord = decrypt(record.data, recordKey)
+    val keeperRecord =
+        KeeperRecord(recordKey, record.recordUid, null, Json.decodeFromString(bytesToString(decryptedRecord)), null)
+    if (record.files != null) {
+        val files: MutableList<KeeperFile> = mutableListOf()
+        record.files.forEach {
+            val fileKey = decrypt(it.fileKey, recordKey)
+            val decryptedFile = decrypt(it.data, fileKey)
+            files.add(
+                KeeperFile(
+                    fileKey,
+                    it.fileUid,
+                    Json.decodeFromString(bytesToString(decryptedFile)),
+                    it.url,
+                    it.thumbnailUrl
+                )
+            )
+        }
+        keeperRecord.files = files
+    }
+    return keeperRecord
 }
 
 private fun prepareGetPayload(
@@ -153,10 +253,22 @@ private fun prepareGetPayload(
     return encryptAndSignPayload(storage, transmissionKey, payload)
 }
 
-private fun encryptAndSignPayload(
+private fun prepareUpdatePayload(
     storage: KeyValueStorage,
     transmissionKey: TransmissionKey,
-    payload: GetPayload
+    record: KeeperRecord
+): EncryptedPayload {
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    val recordBytes = stringToBytes(Json.encodeToString(record.data))
+    val encryptedRecord = encrypt(recordBytes, record.recordKey)
+    val payload = UpdatePayload("w15.0.0", clientId, record.recordUid, webSafe64FromBytes(encryptedRecord))
+    return encryptAndSignPayload(storage, transmissionKey, payload)
+}
+
+private inline fun <reified T> encryptAndSignPayload(
+    storage: KeyValueStorage,
+    transmissionKey: TransmissionKey,
+    payload: T
 ): EncryptedPayload {
     val payloadBytes = stringToBytes(Json.encodeToString(payload))
     val encryptedPayload = encrypt(payloadBytes, transmissionKey.key)
@@ -194,6 +306,7 @@ private fun postQuery(
     }
 }
 
+@Suppress("SpellCheckingInspection")
 private val keeperPublicKeys = listOf(
     webSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
     webSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
@@ -209,6 +322,7 @@ private fun generateTransmissionKey(keyNumber: Int): TransmissionKey {
     return TransmissionKey(keyNumber, transmissionKey, encryptedKey)
 }
 
+// TODO use only for local testing
 private fun trustAllSocketFactory(): SSLSocketFactory {
     val trustAllCerts: Array<TrustManager> = arrayOf(
         object : X509TrustManager {
@@ -237,17 +351,4 @@ private fun trustAllSocketFactory(): SSLSocketFactory {
         e.printStackTrace()
     }
     return sslContext.socketFactory
-}
-
-@Serializable
-data class Project(val name: String, val language: String)
-
-private fun doSomething(): Boolean {
-    val data = Project("kotlinx.serialization", "Kotlin")
-    val string = Json.encodeToString(data)
-    println(string) // {"name":"kotlinx.serialization","language":"Kotlin"}
-    // Deserializing back into objects
-    val obj = Json.decodeFromString<JsonObject>(string)
-    println(obj) // Project(name=kotlinx.serialization, language=Kotlin)
-    return true
 }

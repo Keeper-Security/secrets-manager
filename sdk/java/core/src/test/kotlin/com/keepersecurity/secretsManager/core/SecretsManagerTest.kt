@@ -47,8 +47,14 @@ internal class SecretsManagerTest {
             override fun saveBytes(key: String, value: ByteArray) {
                 saveString(key, bytesToBase64(value))
             }
+
+            override fun delete(key: String) {
+                strings.remove(key)
+                store()
+            }
         }
         initializeStorage(storage, "EvdTdbH1xbHuRcja7QG3wMOyLUbvoQgF9WkkrHTdkh8", "local.keepersecurity.com")
-        getSecrets(storage)
+        val secrets = getSecrets(storage)
+        println(secrets)
     }
 }
