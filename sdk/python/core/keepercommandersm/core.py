@@ -61,8 +61,10 @@ class Commander:
             raise ValueError("Cannot find the client key in the configuration file.")
 
         existing_secret_key_bytes = url_safe_str_to_bytes(existing_secret_key)
-        existing_secret_key_hash = bytes_to_url_safe_str(hmac.digest(existing_secret_key_bytes,
-                                                                     b'KEEPER_SECRETS_MANAGER_CLIENT_ID', 'sha512'))
+        digest = 'sha512'
+        existing_secret_key_hash = bytes_to_url_safe_str(hmac.new(existing_secret_key_bytes,
+                                                                  b'KEEPER_SECRETS_MANAGER_CLIENT_ID',
+                                                                  digest).digest())
 
         client_id = self.config.get(ConfigKeys.KEY_CLIENT_ID)
 
