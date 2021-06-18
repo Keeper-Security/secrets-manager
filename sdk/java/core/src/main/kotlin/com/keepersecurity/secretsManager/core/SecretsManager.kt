@@ -152,8 +152,8 @@ private fun downloadFile(file: KeeperFile, url: String): ByteArray {
         requestMethod = "GET"
         val statusCode = responseCode
         val data = when {
-            errorStream != null -> errorStream.readAllBytes()
-            else -> inputStream.readAllBytes()
+            errorStream != null -> errorStream.readBytes()
+            else -> inputStream.readBytes()
         }
         if (statusCode != HTTP_OK) {
             throw Exception(String(data))
@@ -296,8 +296,8 @@ private fun postQuery(
         outputStream.flush()
         val statusCode = responseCode
         val data = when {
-            errorStream != null -> errorStream.readAllBytes()
-            else -> inputStream.readAllBytes()
+            errorStream != null -> errorStream.readBytes()
+            else -> inputStream.readBytes()
         }
         if (statusCode != HTTP_OK) {
             throw Exception(String(data))

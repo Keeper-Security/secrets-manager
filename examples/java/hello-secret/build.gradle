@@ -15,29 +15,33 @@ plugins {
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
 }
 
 repositories {
+    mavenCentral()
     flatDir {
-        dirs '../core/build/libs'
+        dirs 'libs'
     }
 }
 
 dependencies {
     implementation name: 'core'
+    implementation name: 'bc-fips-1.0.2.1'
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.5.10'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.2.1'
 
-    // Use JUnit Jupiter API for testing.
+//    // Use JUnit Jupiter API for testing.
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.5.2'
-
-    // Use JUnit Jupiter Engine for testing.
+//
+//    // Use JUnit Jupiter Engine for testing.
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.5.2'
 }
 
 application {
     // Define the main class for the application.
-    mainClassName = 'internal.App'
+    mainClassName = 'hello.App'
 }
 
 test {
