@@ -284,26 +284,34 @@ private fun postQuery(
     transmissionKey: TransmissionKey,
     payload: EncryptedPayload
 ): KeeperHttpResponse {
-    val baseUrl = storage.getString(KEY_URL) ?: throw Exception("URL is missing from the storage")
-    with(URL("${baseUrl}/${path}").openConnection() as HttpsURLConnection) {
-        sslSocketFactory = trustAllSocketFactory()
-        requestMethod = "POST"
-        doOutput = true
-        setRequestProperty("PublicKeyId", transmissionKey.publicKeyId.toString())
-        setRequestProperty("TransmissionKey", bytesToBase64(transmissionKey.encryptedKey))
-        setRequestProperty("Authorization", "Signature ${bytesToBase64(payload.signature)}")
-        outputStream.write(payload.payload)
-        outputStream.flush()
-        val statusCode = responseCode
-        val data = when {
-            errorStream != null -> errorStream.readBytes()
-            else -> inputStream.readBytes()
+    var statusCode: Int
+    var data: ByteArray
+    if (TestStubs.queryStubReady()) {
+        val response = TestStubs.queryStub()
+        data = response.first
+        statusCode = response.second
+    } else {
+        val baseUrl = storage.getString(KEY_URL) ?: throw Exception("URL is missing from the storage")
+        with(URL("${baseUrl}/${path}").openConnection() as HttpsURLConnection) {
+            sslSocketFactory = trustAllSocketFactory()
+            requestMethod = "POST"
+            doOutput = true
+            setRequestProperty("PublicKeyId", transmissionKey.publicKeyId.toString())
+            setRequestProperty("TransmissionKey", bytesToBase64(transmissionKey.encryptedKey))
+            setRequestProperty("Authorization", "Signature ${bytesToBase64(payload.signature)}")
+            outputStream.write(payload.payload)
+            outputStream.flush()
+            statusCode = responseCode
+            data = when {
+                errorStream != null -> errorStream.readBytes()
+                else -> inputStream.readBytes()
+            }
         }
-        if (statusCode != HTTP_OK) {
-            throw Exception(String(data))
-        }
-        return KeeperHttpResponse(statusCode, data)
     }
+    if (statusCode != HTTP_OK) {
+        throw Exception(String(data))
+    }
+    return KeeperHttpResponse(statusCode, data)
 }
 
 @Suppress("SpellCheckingInspection")
@@ -317,7 +325,11 @@ private val keeperPublicKeys = listOf(
 )
 
 private fun generateTransmissionKey(keyNumber: Int): TransmissionKey {
-    val transmissionKey = getRandomBytes(32)
+    val transmissionKey = if (TestStubs.transmissionKeyStubReady()) {
+        TestStubs.transmissionKeyStub()
+    } else {
+        getRandomBytes(32)
+    }
     val encryptedKey = publicEncrypt(transmissionKey, keeperPublicKeys[keyNumber - 1])
     return TransmissionKey(keyNumber, transmissionKey, encryptedKey)
 }
@@ -351,4 +363,17 @@ private fun trustAllSocketFactory(): SSLSocketFactory {
         e.printStackTrace()
     }
     return sslContext.socketFactory
+}
+
+internal object TestStubs {
+    lateinit var queryStub: () -> Pair<ByteArray, Int>
+    lateinit var transmissionKeyStub: () -> ByteArray
+
+    fun queryStubReady(): Boolean {
+        return this::queryStub.isInitialized
+    }
+
+    fun transmissionKeyStubReady(): Boolean {
+        return this::transmissionKeyStub.isInitialized
+    }
 }
