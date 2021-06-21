@@ -2,13 +2,14 @@ package com.keepersecurity.secretsManager.core
 
 import java.io.*
 
-class LocalConfigStorage(configName: String) : KeyValueStorage {
+// LocalConfigStorage becomes in memory storage if config name is null
+class LocalConfigStorage(configName: String?) : KeyValueStorage {
 
-    private val file = File(configName)
+    private val file = configName?.let { File(it) }
     private val strings: MutableMap<String, String> = HashMap()
 
     init {
-        if (file.exists()) {
+        if (file != null && file.exists()) {
             val inputStream = BufferedReader(FileReader(file))
             inputStream.lines().forEach {
                 val kv = it.split(": ")
@@ -18,6 +19,7 @@ class LocalConfigStorage(configName: String) : KeyValueStorage {
     }
 
     private fun saveToFile() {
+        if (file == null) return
         val outputStream = BufferedWriter(FileWriter(file))
         for (kv in strings) {
             outputStream.write("${kv.key}: ${kv.value}\n")

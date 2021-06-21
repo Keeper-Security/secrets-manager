@@ -41,7 +41,7 @@ Client is given a one time "Secret Key" which is the encryption key for the Appl
 The Secret Key must be securely passed from the secret owner to the client in some way that does not involve Keeper
 to preserve zero knowledge.
 
-Client uses the SHA256 hash of the Secret Key to obtain the permanent Client ID.
+Client uses the HMAC-SHA512 hash of the Secret Key to obtain the permanent Client ID.
 
 On the first call to the server, client is authenticated by using the Client ID only.
 
@@ -55,7 +55,7 @@ Server keeps sending encrypted master key until receives request from client wit
 
 1. Secret owner creates an "Application" by generating an "Application Master Key" and storing it within Keeper Typed Record.  
 1. Secret owner encrypts the secret key (shared folder or record key) with the master key and attaches the share to the application.
-1. Secret owner generates a random 256-bit **Secret Key** (SK) and calculates an SHA-256 hash of that key (**Client ID** or CID).
+1. Secret owner generates a random 256-bit **Secret Key** (SK) and calculates an HMAC-SHA512 hash of that key (**Client ID** or CID).
 1. Secret owner encrypts the master key with SK and attaches the "client record" that contains encrypted master key and CID to the application. 
 1. Secret owner sends the SK to the client (device or service that needs the secret)
 1. Upon reception of SK, the client calls initializeStorage function, which calculates CID by hashing the SK 
