@@ -6,6 +6,7 @@ import os
 from keepercommandersm.exceptions import KeeperError
 from keepercommandersm.storage import FileKeyValueStorage, InMemoryKeyValueStorage
 from keepercommandersm import Commander
+from keepercommandersm.configkeys import ConfigKeys
 from keepercommandersm import mock
 
 
@@ -168,3 +169,33 @@ class SmokeTest(unittest.TestCase):
             c.get_secrets()
         except KeeperError as err:
             self.assertRegex(err.message, r'Signature is invalid', 'did not get correct error message')
+
+
+    def test_verify_ssl_certs(self):
+
+        config = InMemoryKeyValueStorage()
+        config.set(ConfigKeys.KEY_CLIENT_KEY, 'ABC123')
+
+        os.environ.pop("PYTHONHTTPSVERIFY", None)
+        c = Commander(config=config)
+        self.assertEqual(c.verify_ssl_certs, True, "verify_ssl_certs is not true on 'no args; instance")
+
+        os.environ.pop("PYTHONHTTPSVERIFY", None)
+        c = Commander(config=config, verify_ssl_certs=True)
+        self.assertEqual(c.verify_ssl_certs, True, "verify_ssl_certs is not true on param instance")
+
+        os.environ.pop("PYTHONHTTPSVERIFY", None)
+        c = Commander(config=config, verify_ssl_certs=False)
+        self.assertEqual(c.verify_ssl_certs, False, "verify_ssl_certs is not false on param instance")
+
+        os.environ["PYTHONHTTPSVERIFY"] = "FALSE"
+        c = Commander(config=config)
+        self.assertEqual(c.verify_ssl_certs, False, "verify_ssl_certs is not false on env set (FALSE)")
+
+        os.environ["PYTHONHTTPSVERIFY"] = "NO"
+        c = Commander(config=config)
+        self.assertEqual(c.verify_ssl_certs, False, "verify_ssl_certs is not false on env set (NO)")
+
+        os.environ["PYTHONHTTPSVERIFY"] = "True"
+        c = Commander(config=config)
+        self.assertEqual(c.verify_ssl_certs, True, "verify_ssl_certs is not true on env set (True)")

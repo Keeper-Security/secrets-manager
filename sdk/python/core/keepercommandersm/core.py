@@ -1,6 +1,7 @@
 import hmac
 import logging
 import os
+from  distutils.util import strtobool
 
 import requests
 from requests import HTTPError
@@ -26,7 +27,7 @@ class Commander:
         self.server = server
 
         # Accept the env var PYTHONHTTPSVERIFY. Modules like 'requests' already use it.
-        self.verify_ssl_certs = bool(os.environ.get("PYTHONHTTPSVERIFY", verify_ssl_certs))
+        self.verify_ssl_certs = bool(strtobool(os.environ.get("PYTHONHTTPSVERIFY", str(verify_ssl_certs))))
 
         if config is None:
             config = FileKeyValueStorage()
@@ -34,7 +35,7 @@ class Commander:
         # If the server or client key are set in the args, make sure they makes it's way into the config. The
         # will override what is already in the config if they exist.
         if client_key is not None:
-            config.set(ConfigKeys.KEY_CLIENT_KEY, server)
+            config.set(ConfigKeys.KEY_CLIENT_KEY, client_key)
         if server is not None:
             config.set(ConfigKeys.KEY_SERVER, server)
 
@@ -67,12 +68,6 @@ class Commander:
                                                                   digest).digest())
 
         client_id = self.config.get(ConfigKeys.KEY_CLIENT_ID)
-
-        if not existing_secret_key_hash:
-            # Secret key was not supplied (Probably already bound and client id is present?)
-            if not client_id:
-                # Instruct user how to bound using commander or web ui
-                raise Exception("Not bound")
 
         if not existing_secret_key_hash:
             # Secret key was not supplied (Probably already bound and client id is present?)
