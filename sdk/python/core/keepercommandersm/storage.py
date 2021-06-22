@@ -47,7 +47,8 @@ class FileKeyValueStorage(KeyValueStorage):
     def __init__(self, config_file_location=None):
 
         if config_file_location is None:
-            config_file_location = FileKeyValueStorage.default_config_file_location
+            config_file_location = os.environ.get("KEEPER_CONFIG_FILE",
+                                                  FileKeyValueStorage.default_config_file_location)
 
         self.default_config_file_location = config_file_location
 
@@ -72,10 +73,6 @@ class FileKeyValueStorage(KeyValueStorage):
         return config
 
     def save_storage(self, updated_config):
-
-        # If the dictionary is empty, don't write the config.
-        if len(updated_config) == 0:
-            raise ValueError("There are no configuration values. Cannot write an empty config JSON file.")
 
         self.create_config_file_if_missing()
 
