@@ -3,6 +3,7 @@ import {webSafe64FromBytes, webSafe64ToBytes} from './utils'
 
 export {KeyValueStorage} from './platform'
 
+let packageVersion = '[VI]{version}[/VI]'
 const KEY_URL = 'url' // base url for the Secrets Manager service
 const KEY_TRANSMISSION_KEY = 'transmissionKey'
 const KEY_CLIENT_ID = 'clientId'
@@ -11,7 +12,10 @@ const KEY_APP_KEY = 'appKey' // The application key with which all secrets are e
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
 
-export const initialize = () => {
+export const initialize = (pkgVersion?: string) => {
+    if (pkgVersion) {
+        packageVersion = pkgVersion
+    }
     keeperPublicKeys = [
         webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
         webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
@@ -112,7 +116,7 @@ const prepareGetPayload = async (storage: KeyValueStorage, transmissionKey: Tran
         throw new Error('Client Id is missing from the configuration')
     }
     const payload: GetPayload = {
-        clientVersion: 'w15.0.0', // TODO generate client version for SM
+        clientVersion: 'ms' + packageVersion, // TODO generate client version for SM
         clientId: clientId
     }
     const appKey = await storage.getBytes(KEY_APP_KEY)
@@ -134,7 +138,7 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, transmissionKey: T
     const recordBytes = platform.stringToBytes(JSON.stringify(record.data))
     const encryptedRecord = await platform.encrypt(recordBytes, record.recordUid)
     const payload: UpdatePayload = {
-        clientVersion: 'w15.0.0', // TODO generate client version for SM
+        clientVersion: 'ms' + packageVersion, // TODO generate client version for SM
         clientId: clientId,
         recordUid: record.recordUid,
         data: webSafe64FromBytes(encryptedRecord)
