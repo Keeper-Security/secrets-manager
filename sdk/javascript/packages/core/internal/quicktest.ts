@@ -12,8 +12,9 @@ import {inspect} from 'util';
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 
+const version = require("../package.json").version;
 connectPlatform(nodePlatform)
-initialize()
+initialize(version)
 
 const configFileName = 'client-config-admin+rte.json'
 const clientKey = 'Sl8gZ2A9xbR8RgwT3ylwEU_anb81EMpqnt4oU5vIZMo'

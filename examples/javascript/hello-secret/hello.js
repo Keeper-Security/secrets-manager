@@ -6,7 +6,7 @@ const awsKeyValueStorage = require('@keeper/secrets-manager-aws').awsKeyValueSto
 
 const bindingKey = 'YORS3cDrUGHkPhUkczAYYqoSCEuUH_GKBa2n0k2VKbY'
 
-initializeStorage(awsKeyValueStorage, bindingKey, 'local.keepersecurity.com')
+initializeStorage(awsKeyValueStorage, bindingKey, 'dev.keepersecurity.com')
     .then(_ => getSecrets(awsKeyValueStorage))
     .then(x => console.log(x))
     .finally()
