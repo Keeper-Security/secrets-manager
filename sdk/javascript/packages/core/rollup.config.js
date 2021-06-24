@@ -1,6 +1,7 @@
 import typescript from "rollup-plugin-typescript2"
 import pkg from './package.json'
 import sourcemaps from "rollup-plugin-sourcemaps";
+import versionInjector from "rollup-plugin-version-injector";
 
 export default [
     {
@@ -20,7 +21,8 @@ export default [
             typescript({
                 tsconfig: "tsconfig.rollup.json"
             }),
-            sourcemaps()
+            sourcemaps(),
+            versionInjector()
         ]
     },
     {
@@ -40,7 +42,8 @@ export default [
             typescript({
                 tsconfig: "tsconfig.rollup.json"
             }),
-            sourcemaps()
+            sourcemaps(),
+            versionInjector()
         ]
     }
 ];

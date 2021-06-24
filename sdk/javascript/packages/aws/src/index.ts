@@ -1,10 +1,10 @@
-import {KeyValueStorage} from '@keeper/secrets-manager-core';
+import {KeyValueStorage, platform} from '@keeper/secrets-manager-core';
 import * as AWS from "aws-sdk";
 import {GetParameterRequest, PutParameterRequest, DeleteParametersRequest} from "aws-sdk/clients/ssm";
 
-export const awsKeyValueStorage: KeyValueStorage = {
+export const createAwsKeyValueStorage = (): KeyValueStorage => {
 
-    getValue: (key: string): Promise<string | undefined> => {
+    const getValue = (key: string): Promise<string | undefined> => {
         const ssm = new AWS.SSM();
         const rq: GetParameterRequest = {
             Name: key,
@@ -19,9 +19,9 @@ export const awsKeyValueStorage: KeyValueStorage = {
                 }
             })
         }))
-    },
+    }
 
-    saveValue: (key: string, value: string): Promise<void> => {
+    const saveValue = (key: string, value: any): Promise<void> => {
         const ssm = new AWS.SSM();
         const rq: PutParameterRequest = {
             Name: key,
@@ -38,12 +38,12 @@ export const awsKeyValueStorage: KeyValueStorage = {
                 }
             })
         }))
-    },
+    }
 
-    clearValues: (keys: string[]): Promise<void> => {
+    const clearValue = (key: string): Promise<void> => {
         const ssm = new AWS.SSM();
         const rq: DeleteParametersRequest = {
-            Names: keys,
+            Names: [key],
         }
         return new Promise<void>(((resolve, reject) => {
             ssm.deleteParameters(rq, (err) => {
@@ -55,4 +55,32 @@ export const awsKeyValueStorage: KeyValueStorage = {
             })
         }))
     }
+
+    return {
+        getString: key => getValue(key),
+        saveString: async (key, value) => {
+            await saveValue(key, value)
+            return Promise.resolve()
+        },
+        getBytes: async key => {
+            const bytesString = await getValue(key)
+            if (bytesString) {
+                return Promise.resolve(platform.base64ToBytes(bytesString))
+            } else {
+                return Promise.resolve(undefined)
+            }
+        },
+        saveBytes: async (key, value) => {
+            const bytesString = platform.bytesToBase64(value)
+            await saveValue(key, bytesString)
+            return Promise.resolve()
+        },
+        delete: async (key) => {
+            await clearValue(key)
+            return Promise.resolve()
+        }
+    }
 }
+
+export const awsKeyValueStorage = createAwsKeyValueStorage()
+
