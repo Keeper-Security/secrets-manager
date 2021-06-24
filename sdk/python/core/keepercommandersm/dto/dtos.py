@@ -127,6 +127,12 @@ class Record:
         found_item = None
         for item in self.dict.get('custom'):
             found = False
+
+            # If the user doesn't set the label in the UI, and uses the default, the label will be missing :/
+            # Set the label to the type.
+            if item.get("label") is None:
+                item["label"] = item["type"]
+
             if item["label"] == label:
                 # We can have duplicate labels, so allow type to be used too.
                 if field_type is not None:
