@@ -110,7 +110,7 @@ class Record:
                 found_item = item
                 break
         if found_item is None:
-            raise ValueError("Cannot find the field {}.".format(field_type))
+            raise ValueError("Cannot find the field '{}'.".format(field_type))
 
         if value is None:
             value = Record._value(found_item["value"], single)
@@ -145,7 +145,7 @@ class Record:
                 break
 
         if found_item is None:
-            raise ValueError("Cannot find the custom field {}, {}.".format(label, field_type))
+            raise ValueError("Cannot find the custom field label='{}', field type='{}'.".format(label, field_type))
 
         if value is None:
             value = Record._value(found_item["value"], single)
