@@ -2,6 +2,8 @@ import os
 from codecs import open
 from setuptools import setup, find_packages
 
+import keepercommandersm
+
 here = os.path.abspath(os.path.dirname(__file__))
 
 os.chdir(here)
@@ -18,7 +20,7 @@ install_requires = [
 
 setup(
     name="keepercommandersm",
-    version='0.0.22a',
+    version=keepercommandersm.__version__,
     description="Keeper Commander Secrets Management for Python 3",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -42,9 +44,6 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python",
-        "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.4",
-        "Programming Language :: Python :: 3.5",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
