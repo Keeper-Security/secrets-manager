@@ -16,11 +16,12 @@ public class App {
             return;
         }
         KeyValueStorage storage = new LocalConfigStorage(args[0]);
-        System.out.println(String.format("Local Config Storage opened from the file '%s'", args[0]));
+        System.out.printf("Local Config Storage opened from the file '%s'%n", args[0]);
         try {
             if (args.length > 1) {
-                System.out.println(String.format("Local Config Storage initialized with the Client Key '%s'", args[1]));
+                System.out.printf("Local Config Storage initialized with the Client Key '%s'%n", args[1]);
                 initializeStorage(storage, args[1], "dev.keepersecurity.com");
+//                storage.saveString("allowUnverifiedCertificate", "yes");
             }
             KeeperSecrets secrets = getSecrets(storage, null);
             System.out.println(secrets);
