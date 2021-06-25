@@ -2,14 +2,16 @@
 
 package com.keepersecurity.secretsManager.core
 
-import kotlinx.serialization.*
-import kotlinx.serialization.json.*
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import java.net.HttpURLConnection.HTTP_OK
 import java.net.URL
-import java.security.KeyManagementException
-import java.security.NoSuchAlgorithmException
-import java.security.SecureRandom
+import java.security.*
 import java.security.cert.X509Certificate
+import java.util.jar.Manifest
 import javax.net.ssl.*
 
 private const val KEY_URL = "url" // base url for the Secrets Manager service
@@ -19,6 +21,7 @@ private const val KEY_APP_KEY = "appKey" // The application key with which all s
 private const val KEY_PRIVATE_KEY = "privateKey" // The client's private key
 private const val KEY_PUBLIC_KEY = "publicKey" // The client's public key
 private const val CLIENT_ID_HASH_TAG = "KEEPER_SECRETS_MANAGER_CLIENT_ID" // Tag for hashing the client key to client id
+private const val ALLOW_UNVERIFIED_CERTIFICATE_TAG = "allowUnverifiedCertificate" // Set to "yes" to skip SSL verification
 
 interface KeyValueStorage {
     fun getString(key: String): String?
@@ -116,6 +119,22 @@ fun initializeStorage(storage: KeyValueStorage, clientKey: String, domain: Strin
     val keyPair = generateKeyPair()
     storage.saveBytes(KEY_PUBLIC_KEY, keyPair.first)
     storage.saveBytes(KEY_PRIVATE_KEY, keyPair.second)
+}
+
+internal object ManifestLoader {
+    internal val version: String
+
+    init {
+        val clazz = javaClass
+        val classPath: String = clazz.getResource(clazz.simpleName.toString() + ".class")!!.toString()
+        val libPathEnd = classPath.lastIndexOf("!")
+        version = if (libPathEnd > 0) {
+            val libPath = classPath.substring(0, libPathEnd)
+            val filePath = "$libPath!/META-INF/MANIFEST.MF"
+            val manifest = Manifest(URL(filePath).openStream())
+            manifest.mainAttributes.getValue("Implementation-Version")
+        } else ""
+    }
 }
 
 fun getSecrets(storage: KeyValueStorage, recordsFilter: List<String>? = null): KeeperSecrets {
@@ -237,7 +256,7 @@ private fun prepareGetPayload(
 ): EncryptedPayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val payload = GetPayload(
-        "w15.0.0",
+        "mj${ManifestLoader.version}",
         clientId,
         null,
         null
@@ -261,7 +280,7 @@ private fun prepareUpdatePayload(
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val recordBytes = stringToBytes(Json.encodeToString(record.data))
     val encryptedRecord = encrypt(recordBytes, record.recordKey)
-    val payload = UpdatePayload("w15.0.0", clientId, record.recordUid, webSafe64FromBytes(encryptedRecord))
+    val payload = UpdatePayload("mj${ManifestLoader.version}", clientId, record.recordUid, webSafe64FromBytes(encryptedRecord))
     return encryptAndSignPayload(storage, transmissionKey, payload)
 }
 
@@ -293,7 +312,9 @@ private fun postQuery(
     } else {
         val baseUrl = storage.getString(KEY_URL) ?: throw Exception("URL is missing from the storage")
         with(URL("${baseUrl}/${path}").openConnection() as HttpsURLConnection) {
-            sslSocketFactory = trustAllSocketFactory()
+            if (storage.getString("ALLOW_UNVERIFIED_CERTIFICATE_TAG") == "yes") {
+                sslSocketFactory = trustAllSocketFactory()
+            }
             requestMethod = "POST"
             doOutput = true
             setRequestProperty("PublicKeyId", transmissionKey.publicKeyId.toString())

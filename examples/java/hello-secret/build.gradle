@@ -22,12 +22,12 @@ java {
 repositories {
     mavenCentral()
     flatDir {
-        dirs 'libs'
+        dirs 'libs','../../../sdk/java/core/build/libs'
     }
 }
 
 dependencies {
-    implementation name: 'core'
+    implementation name: 'core-16.0.0'
     implementation name: 'bc-fips-1.0.2.1'
     implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.5.10'
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.2.1'
