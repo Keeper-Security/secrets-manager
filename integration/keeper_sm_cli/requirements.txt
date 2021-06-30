@@ -1,0 +1,4 @@
+keepercommandersm
+click
+jq
+prettytable

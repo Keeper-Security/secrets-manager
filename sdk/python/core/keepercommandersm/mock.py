@@ -142,7 +142,10 @@ class Response:
             res.reason = "OK"
         # Else return the canned content. This is useful to mock errors that return plain or json text.
         else:
-            res._content = self.content
+            content = self.content
+            if type(content) is str:
+                content = content.encode()
+            res._content = content
             res.status_code = self.status_code
             res.reason = self.reason
 
@@ -205,6 +208,7 @@ class File:
 
     def __init__(self, name, title=None, content_type=None, url=None, content=None, last_modified=None):
         self.uid = str(uuid.uuid4())
+        self.secret_used = None
 
         self.name = name
         if title is None:
@@ -224,7 +228,18 @@ class File:
             last_modified = int(time.time())
         self.last_modified = last_modified
 
+    def downloadable_content(self):
+
+        # The dump method will generate the content that the secret manager would return. The
+        # problem is we won't know the secret here. So the dump method needs to be run before
+        # this method is called. The dump method will set the last/only secret used. We need to
+        # encode the content with that secret.
+        if self.secret_used is None:
+            raise ValueError("The file has not be dump'd yet, Secret is unknown.")
+        return encrypt_aes(self.content.encode(), self.secret_used)
+
     def dump(self, secret):
+        self.secret_used = secret
         d = {
             "name": self.name,
             "title": self.title,
