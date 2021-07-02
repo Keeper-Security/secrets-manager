@@ -124,12 +124,12 @@ def secret_list_command(ctx, uid, json):
 
 @click.command(name='get')
 @click.option('--uid', '-u', required=True, type=str, multiple=True)
-@click.option('--jq', type=str, help='Perform JQ query on results.')
+@click.option('--query', '-q', type=str, help='Perform a JSONPath query on results.')
 @click.option('--json', is_flag=True, help='Return secret as JSON')
 @click.option('--raw', is_flag=True, help="Remove quotes on return quote text.")
 @click.option('--force-array', is_flag=True, help="Return secrets as array even if a single record.")
 @click.pass_context
-def secret_get_command(ctx, uid, jq, json, raw, force_array):
+def secret_get_command(ctx, uid, query, json, raw, force_array):
     """Get secret record(s)."""
 
     output = "text"
@@ -138,7 +138,7 @@ def secret_get_command(ctx, uid, jq, json, raw, force_array):
 
     ctx.obj["secret"].query(
         uids=uid,
-        jq_query=jq,
+        jsonpath_query=query,
         output_format=output,
         raw=raw,
         force_array=force_array

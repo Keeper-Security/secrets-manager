@@ -1,5 +1,5 @@
 import json
-import jq
+from jsonpath_ng import jsonpath, parse
 import sys
 from collections import deque
 import prettytable
@@ -138,7 +138,22 @@ class Secret:
         else:
             return records
 
-    def query(self, uids=None, output_format='json', jq_query=None, raw=False, force_array=False):
+    @staticmethod
+    def _get_jsonpath_results(data, expression, force_array=False):
+
+        jsonpath_expression = parse(expression)
+        results = [match.value for match in jsonpath_expression.find(data)]
+        if force_array is False:
+            if len(results) == 1:
+                results = results[0]
+        else:
+            if type(results) is not list:
+                results = [results]
+
+        return results
+
+    def query(self, uids=None, output_format='json', jsonpath_query=None, raw=False, force_array=False,
+              text_join_char='\n'):
 
         records = []
         try:
@@ -151,30 +166,36 @@ class Secret:
         except Exception as err:
             sys.exit("Could not query the records: {}".format(err))
 
-        if jq_query is not None:
+        if jsonpath_query is not None:
 
             # Adjust records here so the JQ query works with the displayed JSON.
             record_list = Secret._adjust_records(records, force_array)
 
             try:
-                jq_results = jq.compile(jq_query).input(record_list)
-                if output_format == 'text':
-                    text_value = jq_results.text()
+                results = self._get_jsonpath_results(record_list, jsonpath_query)
 
-                    # JQ will quote text, we might not want that, if 'raw' is enabled remove the
-                    # start and end quote.
-                    if raw is True:
-                        if text_value.startswith('"') is True:
-                            text_value = text_value[1:]
-                        if text_value.endswith('"') is True:
-                            text_value = text_value[:-1]
-                    self.cli.output(text_value)
+                if output_format == 'text':
+                    allow_raw_convert = True
+                    if type(results) is dict:
+                        results = json.dumps(results)
+                        allow_raw_convert = False
+                    elif type(results) is list:
+                        results = text_join_char.join(results)
+                        allow_raw_convert = False
+
+                    # Only remove quotes if the value was non-dict, non-list
+                    if allow_raw_convert is True and raw is True:
+                        if results.startswith('"') is True:
+                            results = results[1:]
+                        if results.endswith('"') is True:
+                            results = results[:-1]
+                    self.cli.output(results)
                 elif output_format == 'json':
-                    self.cli.output(json.dumps(jq_results.all(), indent=4))
+                    self.cli.output(json.dumps(results, indent=4))
                 else:
-                    return jq_results.all()
+                    return results
             except Exception as err:
-                sys.exit("jq failed: {}".format(err))
+                sys.exit("JSONPath failed: {}".format(err))
         else:
             return self.output_results(records=records, output_format=output_format, force_array=force_array)
 
@@ -187,9 +208,9 @@ class Secret:
             table.add_row([record["uid"], record["type"], record["title"]])
         return table.get_string() + "\n"
 
-    def secret_list(self, uids=None, output_format='json', jq_query=None):
+    def secret_list(self, uids=None, output_format='json'):
 
-        record_dict = self.query(uids=uids, output_format='dict', jq_query=jq_query)
+        record_dict = self.query(uids=uids, output_format='dict')
         if output_format == 'text':
             self.cli.output(self._format_list(record_dict))
         elif output_format == 'json':

@@ -1,4 +1,4 @@
 keepercommandersm
 click
-jq
+jsonpath-ng
 prettytable

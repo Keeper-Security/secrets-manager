@@ -25,10 +25,8 @@ class SecretTest(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         os.chdir(self.temp_dir.name)
 
-        # Init the profile
-        Profile.init(
-            client_key="rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ"
-        )
+        # Because of click/testing.py:278 ResourceWarning: unclosed file <_io.FileIO ...
+        warnings.simplefilter("ignore", ResourceWarning)
 
     def tearDown(self) -> None:
         os.chdir(self.orig_dir)
@@ -144,7 +142,7 @@ class SecretTest(unittest.TestCase):
             runner = CliRunner()
             result = runner.invoke(cli, [
                 'secret', 'get', '-u', one.uid, '--json',
-                '--jq', '.fields[]'
+                '--query', 'fields[*]'
             ], catch_exceptions=False)
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
             fields = json.loads(result.output)
@@ -162,14 +160,18 @@ class SecretTest(unittest.TestCase):
                 tf.close()
 
             # Text Output w/ JQ to stdout (force results to array, then adjust jq to handle arrays)
+
+            # The single record will be converted to an array, so the first JSONPath expression needs to
+            # reference an array.
+
             runner = CliRunner()
             result = runner.invoke(cli, [
                 'secret', 'get', '-u', one.uid,
-                '--jq', '.[].fields[]',
+                '--query', '[*].fields[*].type',
                 '--force-array'
             ], catch_exceptions=True)
             rows = result.output.split("\n")
-            self.assertEqual(4, len(rows), "did not find 4 fields objects")
+            self.assertEqual(4, len(rows), "found 4 rows")
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
 
     def test_download(self):
@@ -240,9 +242,6 @@ class SecretTest(unittest.TestCase):
 
         with patch('keeper_sm_cli.KeeperCli.get_client') as mock_client:
             mock_client.return_value = commander
-
-            # Because of click/testing.py:278 ResourceWarning: unclosed file <_io.FileIO ...
-            warnings.simplefilter("ignore", ResourceWarning)
 
             # Good one
             notation = "keeper://{}/{}/{}".format(one.uid, "field", "login")
