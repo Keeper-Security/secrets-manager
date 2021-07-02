@@ -133,6 +133,10 @@ class Profile:
 
         config = configparser.ConfigParser()
 
+        # We want to flag if we create a INI file. If there is an error, remove it so it
+        # doesn't get picked up if we try again.
+        created_ini = False
+
         # If the ini file doesn't exists, create it with the common profile
         if os.path.exists(ini_file) is False:
             config[Profile.default_profile] = {}
@@ -142,6 +146,7 @@ class Profile:
             }
             with open(ini_file, 'w') as configfile:
                 config.write(configfile)
+            created_ini = True
         else:
             config.read(ini_file)
 
@@ -155,11 +160,16 @@ class Profile:
         # Get the secret records to get the app key. The SDK will add the app key to the config.
         try:
             client.get_secrets()
-        except KeeperError as err:
-            sys.exit("Could not init the profile: {}".format(err.message))
-        except KeeperAccessDenied as err:
+        except (KeeperError, KeeperAccessDenied) as err:
+            # If we just create the INI file and there was an error. Remove it.
+            print("HERE 1")
+            if created_ini is True:
+                os.unlink(ini_file)
             sys.exit("Could not init the profile: {}".format(err.message))
         except Exception as err:
+            print("HERE 1")
+            if created_ini is True:
+                os.unlink(ini_file)
             sys.exit("Could not init the profile: {}".format(err))
 
         config[profile_name] = {

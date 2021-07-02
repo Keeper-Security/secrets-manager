@@ -7,7 +7,7 @@ os.chdir(here)
 install_requires = [
     'keepercommandersm',
     'click',
-    'jq',
+    'jsonpath-ng',
     'prettytable'
 ]
 
