@@ -1,0 +1,4 @@
+keepercommandersm
+click
+jsonpath-ng
+prettytable
