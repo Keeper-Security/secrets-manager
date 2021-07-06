@@ -5,14 +5,14 @@ from click.testing import CliRunner
 from keepercommandersm.core import Commander
 from keepercommandersm.storage import InMemoryKeyValueStorage
 from keepercommandersm import mock
-from ..profile import Profile
-from ..__main__ import cli
+from integration.keeper_sm_cli.keeper_sm_cli.profile import Profile
+from integration.keeper_sm_cli.keeper_sm_cli.__main__ import cli
 import tempfile
 import configparser
 import json
 
 
-class ProfileTest(unittest.TestCase):
+class ExecTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.orig_dir = os.getcwd()
@@ -46,13 +46,16 @@ class ProfileTest(unittest.TestCase):
 
         queue = mock.ResponseQueue(client=commander)
         queue.add_response(res)
+        queue.add_response(res)
+        queue.add_response(res)
 
-        with patch('keeper_sm_cli.KeeperCli.get_client') as mock_client:
+        with patch('integration.keeper_sm_cli.keeper_sm_cli.KeeperCli.get_client') as mock_client:
             mock_client.return_value = commander
 
             default_client_key = "XYZ321"
             runner = CliRunner()
             result = runner.invoke(cli, ['profile', 'init', '-c', default_client_key], catch_exceptions=False)
+            print(result.output)
             self.assertEqual(0, result.exit_code, "did not get a success for default init")
             self.assertTrue(os.path.exists(Profile.default_ini_file), "could not find ini file")
 
@@ -88,7 +91,7 @@ class ProfileTest(unittest.TestCase):
 
             # ------------------------
 
-            result = runner.invoke(cli, ['-p', 'test', 'profile', 'active'], catch_exceptions=False)
+            result = runner.invoke(cli, ['profile', 'active', 'test'], catch_exceptions=False)
             self.assertEqual(0, result.exit_code, "did not get a success on active")
 
             result = runner.invoke(cli, ['profile', 'list', '--json'], catch_exceptions=False)
@@ -102,3 +105,7 @@ class ProfileTest(unittest.TestCase):
             test_item = next((profile for profile in profiles if profile["name"] == "test"), None)
             self.assertIsNotNone(test_item, "could not find default profile in list")
             self.assertTrue(test_item["active"], "test profile is not active")
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -5,9 +5,9 @@ from click.testing import CliRunner
 from keepercommandersm.core import Commander
 from keepercommandersm.storage import InMemoryKeyValueStorage
 from keepercommandersm import mock
-from ..secret import Secret
-from ..profile import Profile
-from ..__main__ import cli
+from integration.keeper_sm_cli.keeper_sm_cli.secret import Secret
+from integration.keeper_sm_cli.keeper_sm_cli.profile import Profile
+from integration.keeper_sm_cli.keeper_sm_cli.__main__ import cli
 import tempfile
 import json
 import re
@@ -64,13 +64,18 @@ class SecretTest(unittest.TestCase):
         }
 
         queue = mock.ResponseQueue(client=commander)
+        queue.add_response(res)
         # JSON Output
         queue.add_response(res)
         # Text Output
         queue.add_response(res)
 
-        with patch('keeper_sm_cli.KeeperCli.get_client') as mock_client:
+        with patch('integration.keeper_sm_cli.keeper_sm_cli.KeeperCli.get_client') as mock_client:
             mock_client.return_value = commander
+
+            Profile.init(
+                client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+            )
 
             # JSON Ouput
             with tempfile.NamedTemporaryFile() as tf:
@@ -121,11 +126,15 @@ class SecretTest(unittest.TestCase):
         # TODO: Add dup custom fields. The problem is the mock record won't let you :(
 
         queue = mock.ResponseQueue(client=commander)
-        for test in range(0, 5):
+        for test in range(0, 6):
             queue.add_response(res)
 
-        with patch('keeper_sm_cli.KeeperCli.get_client') as mock_client:
+        with patch('integration.keeper_sm_cli.keeper_sm_cli.KeeperCli.get_client') as mock_client:
             mock_client.return_value = commander
+
+            Profile.init(
+                client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+            )
 
             # JSON Output to file
             with tempfile.NamedTemporaryFile() as tf:
@@ -194,6 +203,7 @@ class SecretTest(unittest.TestCase):
 
         queue = mock.ResponseQueue(client=commander)
         queue.add_response(res)
+        queue.add_response(res)
 
         def mock_download_get(_):
             mock_res = Response()
@@ -203,8 +213,12 @@ class SecretTest(unittest.TestCase):
             return mock_res
 
         with patch('requests.get', side_effect=mock_download_get) as mock_get:
-            with patch('keeper_sm_cli.KeeperCli.get_client') as mock_client:
+            with patch('integration.keeper_sm_cli.keeper_sm_cli.KeeperCli.get_client') as mock_client:
                 mock_client.return_value = commander
+
+                Profile.init(
+                    client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+                )
 
                 with tempfile.NamedTemporaryFile() as tf:
                     runner = CliRunner()
@@ -239,9 +253,14 @@ class SecretTest(unittest.TestCase):
         queue = mock.ResponseQueue(client=commander)
         queue.add_response(res)
         queue.add_response(res)
+        queue.add_response(res)
 
-        with patch('keeper_sm_cli.KeeperCli.get_client') as mock_client:
+        with patch('integration.keeper_sm_cli.keeper_sm_cli.KeeperCli.get_client') as mock_client:
             mock_client.return_value = commander
+
+            Profile.init(
+                client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+            )
 
             # Good one
             notation = "keeper://{}/{}/{}".format(one.uid, "field", "login")
@@ -292,6 +311,7 @@ class SecretTest(unittest.TestCase):
         one.custom_field("my_custom", "custom1")
 
         queue = mock.ResponseQueue(client=commander)
+        queue.add_response(res)
 
         # The good one
         queue.add_response(res)
@@ -304,8 +324,12 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(mock.Response(content="I hate you and your little dog.", status_code=500))
 
-        with patch('keeper_sm_cli.KeeperCli.get_client') as mock_client:
+        with patch('integration.keeper_sm_cli.keeper_sm_cli.KeeperCli.get_client') as mock_client:
             mock_client.return_value = commander
+
+            Profile.init(
+                client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+            )
 
             # Because of click/testing.py:278 ResourceWarning: unclosed file <_io.FileIO ...
             warnings.simplefilter("ignore", ResourceWarning)
@@ -375,3 +399,7 @@ class SecretTest(unittest.TestCase):
             self.fail("The key/value of 'bad' should have failed.")
         except Exception as err:
             self.assertRegex(str(err), r'The key/value format is invalid', 'did not get correct error message')
+
+
+if __name__ == '__main__':
+    unittest.main()

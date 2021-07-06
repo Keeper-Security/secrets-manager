@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 from keepercommandersm.core import Commander
+import re
 
 
 class Exec:
@@ -49,11 +50,25 @@ class Exec:
     @staticmethod
     def execute(cmd, capture_output=False):
 
+        full_cmd = " ".join(cmd)
+
         if len(cmd) == 0:
             sys.stderr.write("Cannot execute command, it's missing.\n")
             sys.exit(1)
         else:
-            completed = subprocess.run(cmd, capture_output=capture_output)
+            try:
+                completed = subprocess.run(cmd, capture_output=capture_output)
+            except OSError as err:
+                message = str(err)
+                if (re.search(r'WinError 193', message) is not None and
+                        re.search(r'\.ps1', full_cmd, re.IGNORECASE) is not None):
+                    sys.exit("Cannot execute command. If this was a powershell script, please use the command"
+                             " 'powershell {}'".format(full_cmd))
+                else:
+                    sys.exit("Cannot execute command: {}".format(message))
+            except Exception as err:
+                sys.exit("Cannot execute command: {}".format(err))
+
             if completed.returncode != 0:
                 exit(completed.returncode)
             if capture_output is True:

@@ -162,12 +162,10 @@ class Profile:
             client.get_secrets()
         except (KeeperError, KeeperAccessDenied) as err:
             # If we just create the INI file and there was an error. Remove it.
-            print("HERE 1")
             if created_ini is True:
                 os.unlink(ini_file)
             sys.exit("Could not init the profile: {}".format(err.message))
         except Exception as err:
-            print("HERE 1")
             if created_ini is True:
                 os.unlink(ini_file)
             sys.exit("Could not init the profile: {}".format(err))

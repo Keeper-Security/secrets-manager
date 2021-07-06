@@ -2,13 +2,13 @@ import os
 import unittest
 from unittest.mock import patch
 from click.testing import CliRunner
+import tempfile
+import re
 from keepercommandersm.core import Commander
 from keepercommandersm.storage import InMemoryKeyValueStorage
 from keepercommandersm import mock
-from ..__main__ import cli
-from ..profile import Profile
-import tempfile
-import re
+from integration.keeper_sm_cli.keeper_sm_cli.__main__ import cli
+from integration.keeper_sm_cli.keeper_sm_cli.profile import Profile
 
 
 class ProfileTest(unittest.TestCase):
@@ -17,11 +17,6 @@ class ProfileTest(unittest.TestCase):
         self.orig_dir = os.getcwd()
         self.temp_dir = tempfile.TemporaryDirectory()
         os.chdir(self.temp_dir.name)
-
-        # Init the profile
-        Profile.init(
-            client_key="rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ"
-        )
 
     def tearDown(self) -> None:
         os.chdir(self.orig_dir)
@@ -45,9 +40,14 @@ class ProfileTest(unittest.TestCase):
 
         queue = mock.ResponseQueue(client=commander)
         queue.add_response(res)
+        queue.add_response(res)
 
-        with patch('keeper_sm_cli.KeeperCli.get_client') as mock_client:
+        with patch('integration.keeper_sm_cli.keeper_sm_cli.KeeperCli.get_client') as mock_client:
             mock_client.return_value = commander
+
+            Profile.init(
+                client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+            )
 
             # Make a temp shell script
             with tempfile.NamedTemporaryFile() as script:
@@ -75,3 +75,7 @@ class ProfileTest(unittest.TestCase):
                 self.assertIsNotNone(re.search('BLAH', result.output, flags=re.MULTILINE),
                                      "did not find the not one")
                 script.close()
+
+
+if __name__ == '__main__':
+    unittest.main()
