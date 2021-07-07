@@ -4,6 +4,9 @@ from .exec import Exec
 from .secret import Secret
 from .profile import Profile
 import sys
+import os
+import keepercommandersm
+from importlib.metadata import version as meta_version
 
 
 def _get_cli(ini_file=None, profile_name=None, output=None):
@@ -234,11 +237,28 @@ config_command.add_command(config_show_command)
 config_command.add_command(config_log_command)
 
 
+@click.command(name='version')
+@click.pass_context
+def version_command(ctx):
+    """Get module versions and information."""
+    print("Python Version: {}".format(".".join([
+        str(sys.version_info.major),
+        str(sys.version_info.minor),
+        str(sys.version_info.micro)
+    ])))
+    print("Python Install: {}".format(sys.executable))
+    print("CLI Version: {}".format(meta_version('keeper_sm_cli')))
+    print("CLI Install: {}".format(os.path.dirname(os.path.realpath(__file__))))
+    print("SDK Version: {}".format(meta_version('keepercommandersm')))
+    print("SDK Install: {}".format(os.path.dirname(os.path.realpath(keepercommandersm.__file__))))
+    print("Config file: {}".format(ctx.obj["cli"].profile.ini_file))
+
+
 # TOP LEVEL COMMANDS
 cli.add_command(profile_command)
 cli.add_command(secret_command)
 cli.add_command(exec_command)
-cli.add_command(config_command)
+cli.add_command(version_command)
 
 
 def main():
