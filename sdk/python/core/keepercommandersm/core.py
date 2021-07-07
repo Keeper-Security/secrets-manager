@@ -24,8 +24,9 @@ from keepercommandersm.utils import bytes_to_url_safe_str, base64_to_bytes, sign
 class Commander:
 
     notation_prefix = "keeper"
+    log_level = "DEBUG"
 
-    def __init__(self, client_key=None, server=None, verify_ssl_certs=True, config=None):
+    def __init__(self, client_key=None, server=None, verify_ssl_certs=True, config=None, log_level=None):
 
         self.client_key = client_key
         self.server = server
@@ -45,17 +46,23 @@ class Commander:
 
         self.config: KeyValueStorage = config
 
-        self._init_logger()
+        self._init_logger(log_level=log_level)
 
         self._init()
 
     @staticmethod
-    def _init_logger():
+    def _init_logger(log_level=None):
         # Configure logs
 
+        if log_level is None:
+            log_level = Commander.log_level
+
+        # basicConfig will not clobber a user's logging configuration, even the log level
+        # "This function does nothing if the root logger already has handlers configured, unless the keyword argument
+        # force is set to True."
         logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(asctime)s | %(name)s | %(levelname)s | %(message)s'
+            format='%(asctime)s | %(name)s | %(levelname)s | %(message)s',
+            level=getattr(logging, log_level)
         )
 
     def _init(self):
