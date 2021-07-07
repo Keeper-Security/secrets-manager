@@ -24,7 +24,7 @@ class KeeperCli:
 
             # If the profile is not set
             if profile_name is None:
-                profile_name = self.profile.get_default_profile_name()
+                profile_name = self.profile.get_active_profile_name()
 
                 # If we don't have a profile we can't do anything.
                 if profile_name is None:
