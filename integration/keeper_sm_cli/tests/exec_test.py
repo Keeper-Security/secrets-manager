@@ -23,6 +23,7 @@ class ProfileTest(unittest.TestCase):
 
     def test_cmd(self):
 
+        # Log level set in this one, nothing below INFO should appear.
         commander = Commander(config=InMemoryKeyValueStorage({
             "server": "fake.keepersecurity.com",
             "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
@@ -31,7 +32,7 @@ class ProfileTest(unittest.TestCase):
             "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
                           "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
                           "jhKMhHQFaHYI"
-        }))
+        }), log_level="INFO")
 
         res = mock.Response()
         one = res.add_record(title="My Record 1")

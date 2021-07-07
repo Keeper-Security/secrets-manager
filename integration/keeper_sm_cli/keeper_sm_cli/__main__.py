@@ -205,9 +205,40 @@ def exec_command(ctx, capture_output, cmd):
     ex.execute(cmd=cmd, capture_output=capture_output)
 
 
+# CONFIG COMMAND
+@click.group(name='config')
+@click.pass_context
+def config_command(ctx):
+    """Configure the command line tool."""
+    ctx.obj["profile"] = Profile(cli=ctx.obj["cli"])
+    pass
+
+
+@click.command(name='show')
+@click.pass_context
+def config_show_command(ctx):
+    """Show current configuration."""
+    ctx.obj["profile"].show_config()
+
+
+@click.command(name='log')
+@click.option('--level',  type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "NOTSET"]),
+              help="Level of message or error to display")
+@click.pass_context
+def config_log_command(ctx, level):
+    """Set the log level"""
+    ctx.obj["profile"].set_log_level(level)
+
+
+config_command.add_command(config_show_command)
+config_command.add_command(config_log_command)
+
+
+# TOP LEVEL COMMANDS
 cli.add_command(profile_command)
 cli.add_command(secret_command)
 cli.add_command(exec_command)
+cli.add_command(config_command)
 
 
 def main():

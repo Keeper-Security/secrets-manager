@@ -14,6 +14,7 @@ class Profile:
     active_profile_key = "active_profile"
     default_profile = os.environ.get("KEEPER_CLI_PROFILE", "DEFAULT")
     default_ini_file = os.environ.get("KEEPER_INI_FILE", "keeper.ini")
+    log_level_key = "log_level"
 
     def __init__(self, cli, ini_file=None):
 
@@ -113,7 +114,7 @@ class Profile:
         table.hrules = prettytable.HEADER
 
     @staticmethod
-    def init(client_key, ini_file=None, server=None, profile_name=None):
+    def init(client_key, ini_file=None, server=None, profile_name=None, log_level="INFO"):
 
         from . import KeeperCli
 
@@ -141,7 +142,7 @@ class Profile:
         if os.path.exists(ini_file) is False:
             config[Profile.default_profile] = {}
             config[Profile.common_profile] = {
-                "log_level": "WARNING",
+                "log_level": log_level,
                 Profile.active_profile_key: Profile.default_profile
             }
             with open(ini_file, 'w') as configfile:
@@ -155,7 +156,7 @@ class Profile:
         if server is not None:
             config_storage.set(ConfigKeys.KEY_SERVER, server)
 
-        client = KeeperCli.get_client(config=config_storage)
+        client = KeeperCli.get_client(config=config_storage, log_level=log_level)
 
         # Get the secret records to get the app key. The SDK will add the app key to the config.
         try:
@@ -223,3 +224,15 @@ class Profile:
         self.save()
 
         print("{} is now the active profile.".format(profile_name), file=sys.stderr)
+
+    def set_log_level(self, level):
+        common_config = self.get_profile_config(Profile.common_profile)
+        common_config[Profile.log_level_key] = level
+        self.cli.log_level = level
+        self.save()
+
+    def show_config(self):
+        common_config = self.get_profile_config(Profile.common_profile)
+        not_set_text = "-NOT SET-"
+        print("Active Profile: {}".format(common_config.get(Profile.active_profile_key, not_set_text)))
+        print("Log Level: {}".format(common_config.get(Profile.log_level_key, not_set_text)))

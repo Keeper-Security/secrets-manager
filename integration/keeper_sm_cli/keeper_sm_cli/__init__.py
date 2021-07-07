@@ -3,6 +3,7 @@ from keepercommandersm.storage import InMemoryKeyValueStorage
 from keepercommandersm.configkeys import ConfigKeys
 from .profile import Profile
 import sys
+import logging
 
 
 class KeeperCli:
@@ -15,6 +16,8 @@ class KeeperCli:
 
         self.profile = Profile(cli=self, ini_file=ini_file)
         self._client = None
+
+        self._log_level = "INFO"
 
         # If no config file is loaded, then don't init the SDK
         if self.profile.is_loaded is True:
@@ -37,7 +40,15 @@ class KeeperCli:
             config_storage.set(ConfigKeys.KEY_APP_KEY, self.config.get("appKey"))
             config_storage.set(ConfigKeys.KEY_SERVER, self.config.get("server"))
 
-            self._client = self.get_client(config=config_storage)
+            common_profile = self.profile.get_profile_config(Profile.common_profile)
+
+            self._client = self.get_client(
+                config=config_storage,
+                log_level=common_profile.get("log_level", self._log_level)
+            )
+        else:
+            # Set the log level. We don't have the client to set the level, so set it here.
+            self.log_level = self._log_level
 
         # Default to stdout if the output is not set.
         if output is None:
@@ -61,6 +72,21 @@ class KeeperCli:
     @client.setter
     def client(self, value):
         self._client = value
+
+    @property
+    def log_level(self):
+        return self._log_level
+
+    @log_level.setter
+    def log_level(self, value):
+        self.set_log_level(value)
+        self._log_level = value
+
+    @staticmethod
+    def set_log_level(value):
+        logger = logging.getLogger()
+        # Set the log level. Look up the int value using the string.
+        logger.setLevel(getattr(logging, value))
 
     def output(self, msg):
         self.output_fh.write(msg)
