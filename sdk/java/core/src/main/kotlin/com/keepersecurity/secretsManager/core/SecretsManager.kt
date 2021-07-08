@@ -137,7 +137,7 @@ internal object ManifestLoader {
     }
 }
 
-fun getSecrets(storage: KeyValueStorage, recordsFilter: List<String>? = null): KeeperSecrets {
+@JvmOverloads fun getSecrets(storage: KeyValueStorage, recordsFilter: List<String> = emptyList()): KeeperSecrets {
     val (secrets, justBound) = fetchAndDecryptSecrets(storage, recordsFilter)
     if (justBound) {
         try {
@@ -183,7 +183,7 @@ private fun downloadFile(file: KeeperFile, url: String): ByteArray {
 
 private fun fetchAndDecryptSecrets(
     storage: KeyValueStorage,
-    recordsFilter: List<String>?
+    recordsFilter: List<String>
 ): Pair<KeeperSecrets, Boolean> {
     val transmissionKey = generateTransmissionKey(1)
     val encryptedPayload = prepareGetPayload(storage, transmissionKey, recordsFilter)
@@ -227,10 +227,10 @@ private fun fetchAndDecryptSecrets(
 
 private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray): KeeperRecord {
     val decryptedRecord = decrypt(record.data, recordKey)
-    val keeperRecord =
-        KeeperRecord(recordKey, record.recordUid, null, Json.decodeFromString(bytesToString(decryptedRecord)), null)
+
+    val files: MutableList<KeeperFile> = mutableListOf()
+
     if (record.files != null) {
-        val files: MutableList<KeeperFile> = mutableListOf()
         record.files.forEach {
             val fileKey = decrypt(it.fileKey, recordKey)
             val decryptedFile = decrypt(it.data, fileKey)
@@ -244,15 +244,15 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
                 )
             )
         }
-        keeperRecord.files = files
     }
-    return keeperRecord
+
+    return KeeperRecord(recordKey, record.recordUid, null, Json.decodeFromString(bytesToString(decryptedRecord)), files)
 }
 
 private fun prepareGetPayload(
     storage: KeyValueStorage,
     transmissionKey: TransmissionKey,
-    recordsFilter: List<String>?
+    recordsFilter: List<String>
 ): EncryptedPayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val payload = GetPayload(
@@ -266,7 +266,7 @@ private fun prepareGetPayload(
         val publicKey = storage.getBytes(KEY_PUBLIC_KEY) ?: throw Exception("Public key is missing from the storage")
         payload.publicKey = bytesToBase64(publicKey)
     }
-    if (recordsFilter != null) {
+    if (recordsFilter.isNotEmpty()) {
         payload.requestedRecords = recordsFilter
     }
     return encryptAndSignPayload(storage, transmissionKey, payload)
