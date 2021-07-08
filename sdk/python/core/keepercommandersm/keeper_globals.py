@@ -4,12 +4,9 @@
 # |_|\_\___\___| .__/\___|_|
 #              |_|
 #
-# Keeper Commander
+# Keeper Secrets Manager
 # Copyright 2021 Keeper Security Inc.
 # Contact: ops@keepersecurity.com
-#
-import keepercommandersm
-# from keepercommandersm import __version__ as version
 
 # keeper_commander_sm_client_id = 'mp%s' % version  # TODO: use versioning when release to prod
 keeper_commander_sm_client_id = 'mp16.0.0'
