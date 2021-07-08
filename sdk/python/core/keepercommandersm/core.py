@@ -1,7 +1,9 @@
 import hmac
 import logging
 import os
-from  distutils.util import strtobool
+from distutils.util import strtobool
+import re
+import json
 
 import requests
 from requests import HTTPError
@@ -21,7 +23,10 @@ from keepercommandersm.utils import bytes_to_url_safe_str, base64_to_bytes, sign
 
 class Commander:
 
-    def __init__(self, client_key=None, server=None, verify_ssl_certs=True, config=None):
+    notation_prefix = "keeper"
+    log_level = "DEBUG"
+
+    def __init__(self, client_key=None, server=None, verify_ssl_certs=True, config=None, log_level=None):
 
         self.client_key = client_key
         self.server = server
@@ -41,17 +46,23 @@ class Commander:
 
         self.config: KeyValueStorage = config
 
-        self._init_logger()
+        self._init_logger(log_level=log_level)
 
         self._init()
 
     @staticmethod
-    def _init_logger():
+    def _init_logger(log_level=None):
         # Configure logs
 
+        if log_level is None:
+            log_level = Commander.log_level
+
+        # basicConfig will not clobber a user's logging configuration, even the log level
+        # "This function does nothing if the root logger already has handlers configured, unless the keyword argument
+        # force is set to True."
         logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(asctime)s | %(name)s | %(levelname)s | %(message)s'
+            format='%(asctime)s | %(name)s | %(levelname)s | %(message)s',
+            level=getattr(logging, log_level)
         )
 
     def _init(self):
@@ -268,7 +279,8 @@ class Commander:
                     raise KeeperError(response_dict.get('additional_info'))
                 elif 'error' in response_dict:
                     # Errors:
-                    #     1. error: throttled,     message: Due to repeated attempts, your request has been throttled. Try again in 2 minutes.
+                    #     1. error: throttled,     message: Due to repeated attempts, your request has been throttled.
+                    #        Try again in 2 minutes.
                     #     2. error: access_denied, message: Unable to validate application access
                     #     3. error: access_denied, message: Signature is invalid
                     error = ("Error: %s, message=%s" % (
@@ -369,8 +381,142 @@ class Commander:
                 logging.error("Error: {} (http error code: {})".format(rs.reason, rs.status_code))
                 return {}
             else:
-                resp_dict = json_to_dict(rs.text)
-                logging.error("Error: {} (http error code: {}, row: {}".format(rs.reason, rs.status_code, resp_dict))
-                raise HTTPError()
+                error_message = rs.content
+                try:
+                    resp_dict = json_to_dict(rs.text)
+                    error = resp_dict.get("message", error_message)
+                    logging.error("Error: {} (http error code: {}, row: {}".format(rs.reason, rs.status_code,
+                                                                                   resp_dict))
+                except json.JSONDecodeError as _:
+                    logging.error("Error: {} (http error code: {}, message: {}".format(rs.reason, rs.status_code,
+                                                                                       error))
+
+                raise HTTPError(error_message)
         else:
             return True
+
+    def get_notation(self, url):
+
+        """Simple string notation to get a value
+
+        * A system of figures or symbols used in a specialized field to represent numbers, quantities, tones,
+          or values.
+
+        <uid>/<field|custom_field|file>/<label|type>[INDEX][FIELD]
+
+        Example:
+
+            EG6KdJaaLG7esRZbMnfbFA/field/password                => MyPasswprd
+            EG6KdJaaLG7esRZbMnfbFA/field/password[0]             => MyPassword
+            EG6KdJaaLG7esRZbMnfbFA/field/password[]              => ["MyPassword"]
+            EG6KdJaaLG7esRZbMnfbFA/custom_field/name[first]      => John
+            EG6KdJaaLG7esRZbMnfbFA/custom_field/name[last]       => Smitht
+            EG6KdJaaLG7esRZbMnfbFA/custom_field/phone[0][number] => "555-5555555"
+            EG6KdJaaLG7esRZbMnfbFA/custom_field/phone[1][number] => "777-7777777"
+            EG6KdJaaLG7esRZbMnfbFA/custom_field/phone[]          => [{"number": "555-555...}, { "number": "777.....}]
+            EG6KdJaaLG7esRZbMnfbFA/custom_field/phone[0]         => [{"number": "555-555...}]
+
+        """
+
+        # If the URL starts with keeper:// we want to remove it.
+        if url.startswith(Commander.notation_prefix) is True:
+            url_parts = url.split('//')
+            try:
+                url = url_parts[1]
+                if url is None:
+                    # Get the except below handle it
+                    raise ValueError()
+            except IndexError:
+                raise ValueError("Keeper url missing information about the uid, field type, and field key.")
+
+        try:
+            (uid, file_type, key) = url.split('/')
+        except Exception as _:
+            raise ValueError("Could not parse the notation {}. Is it valid?".format(url))
+
+        if uid is None:
+            raise ValueError("UID is missing the in the keeper url.")
+        if file_type is None:
+            raise ValueError("file type is missing the in the keeper url.")
+        if key is None:
+            raise ValueError("file key is missing the in the keeper url.")
+
+        # By default we want to return a single value, which is the first item in the array
+        return_single = True
+        index = 0
+        dict_key = None
+
+        # Check it see if the key has a predicate, possibly with an index.
+        predicate = re.search(r'\[.*]', key)
+        if predicate is not None:
+
+            # If we do, get the predicate and remove the brackets, to get the index if one exists
+            match = predicate.group()
+
+            predicate_parts = match.split("]")
+            while "" in predicate_parts:
+                predicate_parts.remove("")
+
+            if len(predicate_parts) == 0:
+                raise ValueError("The predicate of the notation appears to be invalid. Syntax error?")
+            if len(predicate_parts) > 2:
+                raise ValueError("The predicate of the notation appears to be invalid. Too many [], max 2 allowed.")
+
+            # This will remove the preceding '['
+            first_predicate = predicate_parts[0][1:]
+            if first_predicate is not None:
+                # Is the first predicate an index into an array?
+                if first_predicate.isdigit() is True:
+                    index = int(first_predicate)
+                # Is the first predicate a key to a dictionary?
+                elif re.match(r'^[a-zA-Z0-9_]+$', first_predicate):
+                    dict_key = first_predicate
+                # Else it was an array indicator. Return all the values.
+                else:
+                    return_single = False
+
+            if len(predicate_parts) == 2:
+                if return_single is False:
+                    raise ValueError("If the second [] is a dictionary key, the first [] needs to have any index.")
+                # Remove the preceding '['
+                second_predicate = predicate_parts[1][1:]
+                if second_predicate.isdigit() is True:
+                    raise ValueError("The second [] can only by a key for the dictionary. It cannot be an index.")
+                # Is the first predicate a key to a dictionary?
+                elif re.match(r'^[a-zA-Z0-9_]+$', second_predicate):
+                    dict_key = second_predicate
+                else:
+                    raise ValueError("The second [] must have key for the dictionary. Cannot be blank.")
+
+            # Remove the predicate from the key, if it exists
+            key = re.sub(r'\[.*', '', key)
+
+        records = self.get_secrets([uid])
+        if len(records) == 0:
+            raise ValueError("Could not find a record with the UID {}".format(uid))
+
+        record = records[0]
+
+        if file_type == "field":
+            value = record.field(key, single=False)
+        elif file_type == "custom_field":
+            value = record.custom_field(key, single=False)
+        elif file_type == "file":
+            file = record.find_file_by_title(key)
+            value = file.self.get_file_data()
+        else:
+            raise ValueError("Field type of {} is not value.".format(file_type))
+
+        ret = value
+        if return_single is True:
+            if len(value) == 0:
+                return None
+            try:
+                ret = value[index]
+                if dict_key is not None:
+                    if dict_key not in ret:
+                        raise ValueError("Cannot find the dictionary key {} in the valuye".format(dict_key))
+                    ret = ret[dict_key]
+            except IndexError:
+                raise ValueError("The value at index {} does not exist for {}.".format(index, url))
+        return ret
