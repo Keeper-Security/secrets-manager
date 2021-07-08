@@ -20,7 +20,7 @@ def _get_cli(ini_file=None, profile_name=None, output=None):
 # MAIN GROUP
 @click.group()
 @click.option('--ini-file', type=str, help="INI config file.")
-@click.option('--profile-name', '-p', type=str, help='Config profile', default='DEFAULT')
+@click.option('--profile-name', '-p', type=str, help='Config profile')
 @click.option('--output', '-o', type=str, help='Output [stdout|stderr|filename]', default='stdout')
 @click.pass_context
 def cli(ctx, ini_file, profile_name, output):
@@ -225,12 +225,13 @@ def config_show_command(ctx):
 
 
 @click.command(name='log')
-@click.option('--level',  type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "NOTSET"]),
+@click.option('--level',  '-l', type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "NOTSET"]),
               help="Level of message or error to display")
 @click.pass_context
 def config_log_command(ctx, level):
     """Set the log level"""
-    ctx.obj["profile"].set_log_level(level)
+    if level is not None:
+        ctx.obj["profile"].set_log_level(level)
 
 
 config_command.add_command(config_show_command)
@@ -258,6 +259,7 @@ def version_command(ctx):
 cli.add_command(profile_command)
 cli.add_command(secret_command)
 cli.add_command(exec_command)
+cli.add_command(config_command)
 cli.add_command(version_command)
 
 

@@ -101,9 +101,9 @@ class Profile:
 
         return config[profile_name]
 
-    def get_default_profile_name(self):
-        profile_config = self.get_profile_config(Profile.common_profile)
-        return os.environ.get("KEEPER_CLI_PROFILE", profile_config.get(Profile.active_profile_key))
+    def get_active_profile_name(self):
+        common_config = self.get_profile_config(Profile.common_profile)
+        return os.environ.get("KEEPER_CLI_PROFILE", common_config.get(Profile.active_profile_key))
 
     @staticmethod
     def _table_setup(table):
@@ -191,7 +191,7 @@ class Profile:
     def list_profiles(self, output='text'):
 
         profiles = []
-        active_profile = self.get_default_profile_name()
+        active_profile = self.get_active_profile_name()
         for profile in self.get_config():
             if profile == Profile.common_profile:
                 continue
