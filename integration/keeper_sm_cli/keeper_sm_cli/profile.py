@@ -10,9 +10,9 @@ import json
 
 class Profile:
 
-    common_profile = "common"
+    config_profile = "_config"
     active_profile_key = "active_profile"
-    default_profile = os.environ.get("KEEPER_CLI_PROFILE", "DEFAULT")
+    default_profile = os.environ.get("KEEPER_CLI_PROFILE", "_default")
     default_ini_file = os.environ.get("KEEPER_INI_FILE", "keeper.ini")
     log_level_key = "log_level"
 
@@ -102,7 +102,7 @@ class Profile:
         return config[profile_name]
 
     def get_active_profile_name(self):
-        common_config = self.get_profile_config(Profile.common_profile)
+        common_config = self.get_profile_config(Profile.config_profile)
         return os.environ.get("KEEPER_CLI_PROFILE", common_config.get(Profile.active_profile_key))
 
     @staticmethod
@@ -128,7 +128,7 @@ class Profile:
         if profile_name is None:
             profile_name = os.environ.get("KEEPER_CLI_PROFILE", Profile.default_profile)
 
-        if profile_name == Profile.common_profile:
+        if profile_name == Profile.config_profile:
             raise ValueError("The profile '{}' is a reserved profile name. Cannot not init profile.".format(
                 profile_name))
 
@@ -140,8 +140,14 @@ class Profile:
 
         # If the ini file doesn't exists, create it with the common profile
         if os.path.exists(ini_file) is False:
+            # This section gets applied to all other sections by the config parser. This is left empty.
+            config['DEFAULT'] = {}
+
+            # Create our default section name.
             config[Profile.default_profile] = {}
-            config[Profile.common_profile] = {
+
+            # Create our config section name.
+            config[Profile.config_profile] = {
                 "log_level": log_level,
                 Profile.active_profile_key: Profile.default_profile
             }
@@ -193,7 +199,7 @@ class Profile:
         profiles = []
         active_profile = self.get_active_profile_name()
         for profile in self.get_config():
-            if profile == Profile.common_profile:
+            if profile == Profile.config_profile:
                 continue
             profiles.append({
                 "active": profile == active_profile,
@@ -215,7 +221,7 @@ class Profile:
         return profiles
 
     def set_active(self, profile_name):
-        common_config = self.get_profile_config(Profile.common_profile)
+        common_config = self.get_profile_config(Profile.config_profile)
 
         if profile_name not in self.get_config():
             exit("Cannot set profile {} to active. It does not exists.".format(profile_name))
@@ -226,13 +232,13 @@ class Profile:
         print("{} is now the active profile.".format(profile_name), file=sys.stderr)
 
     def set_log_level(self, level):
-        common_config = self.get_profile_config(Profile.common_profile)
+        common_config = self.get_profile_config(Profile.config_profile)
         common_config[Profile.log_level_key] = level
         self.cli.log_level = level
         self.save()
 
     def show_config(self):
-        common_config = self.get_profile_config(Profile.common_profile)
+        common_config = self.get_profile_config(Profile.config_profile)
         not_set_text = "-NOT SET-"
         print("Active Profile: {}".format(common_config.get(Profile.active_profile_key, not_set_text)))
         print("Log Level: {}".format(common_config.get(Profile.log_level_key, not_set_text)))

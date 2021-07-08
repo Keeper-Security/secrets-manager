@@ -40,7 +40,7 @@ class KeeperCli:
             config_storage.set(ConfigKeys.KEY_APP_KEY, self.config.get("appKey"))
             config_storage.set(ConfigKeys.KEY_SERVER, self.config.get("server"))
 
-            common_profile = self.profile.get_profile_config(Profile.common_profile)
+            common_profile = self.profile.get_profile_config(Profile.config_profile)
 
             self._client = self.get_client(
                 config=config_storage,
