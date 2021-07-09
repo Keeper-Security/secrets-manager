@@ -2,8 +2,25 @@ package com.keepersecurity.secretsManager.core
 
 import java.io.*
 
+fun saveCachedValue(data: ByteArray) {
+    val fos = FileOutputStream("cache.dat")
+    fos.write(data)
+    fos.close()
+}
+
+fun getCachedValue(): ByteArray {
+    try {
+        val fis = FileInputStream("cache.dat")
+        val bytes = fis.readBytes()
+        fis.close()
+        return bytes
+    } catch (e: Exception) {
+        throw Exception("Cached value does not exist")
+    }
+}
+
 // LocalConfigStorage becomes in memory storage if config name is null
-class LocalConfigStorage(configName: String?) : KeyValueStorage {
+class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
 
     private val file = configName?.let { File(it) }
     private val strings: MutableMap<String, String> = HashMap()

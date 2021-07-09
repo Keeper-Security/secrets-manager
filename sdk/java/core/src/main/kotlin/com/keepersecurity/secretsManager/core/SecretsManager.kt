@@ -21,7 +21,6 @@ private const val KEY_APP_KEY = "appKey" // The application key with which all s
 private const val KEY_PRIVATE_KEY = "privateKey" // The client's private key
 private const val KEY_PUBLIC_KEY = "publicKey" // The client's public key
 private const val CLIENT_ID_HASH_TAG = "KEEPER_SECRETS_MANAGER_CLIENT_ID" // Tag for hashing the client key to client id
-private const val ALLOW_UNVERIFIED_CERTIFICATE_TAG = "allowUnverifiedCertificate" // Set to "yes" to skip SSL verification
 
 interface KeyValueStorage {
     fun getString(key: String): String?
@@ -30,9 +29,12 @@ interface KeyValueStorage {
     fun saveBytes(key: String, value: ByteArray)
     fun delete(key: String)
 }
+data class SecretsManagerOptions(val storage: KeyValueStorage, val queryFunction: QueryFunction? = null)
 
-private data class TransmissionKey(val publicKeyId: Int, val key: ByteArray, val encryptedKey: ByteArray)
-private data class KeeperHttpResponse(val statusCode: Int, val data: ByteArray)
+typealias QueryFunction = (url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload) -> KeeperHttpResponse
+
+data class TransmissionKey(val publicKeyId: Int, var key: ByteArray, val encryptedKey: ByteArray)
+data class KeeperHttpResponse(val statusCode: Int, val data: ByteArray)
 
 @Serializable
 private data class GetPayload(
@@ -50,7 +52,7 @@ private data class UpdatePayload(
     val data: String
 )
 
-private data class EncryptedPayload(val payload: ByteArray, val signature: ByteArray)
+data class EncryptedPayload(val payload: ByteArray, val signature: ByteArray)
 
 @Serializable
 private data class SecretsManagerResponseFolder(
@@ -128,20 +130,24 @@ internal object ManifestLoader {
         val clazz = javaClass
         val classPath: String = clazz.getResource(clazz.simpleName.toString() + ".class")!!.toString()
         val libPathEnd = classPath.lastIndexOf("!")
-        version = if (libPathEnd > 0) {
+        val filePath = if (libPathEnd > 0) {
             val libPath = classPath.substring(0, libPathEnd)
-            val filePath = "$libPath!/META-INF/MANIFEST.MF"
-            val manifest = Manifest(URL(filePath).openStream())
-            manifest.mainAttributes.getValue("Implementation-Version")
-        } else ""
+            "$libPath!/META-INF/MANIFEST.MF"
+        } else { // we might be testing
+            val buildPath = classPath.substring(0, classPath.lastIndexOf("build/classes"))
+            "${buildPath}build/tmp/jar/MANIFEST.MF"
+        }
+        val manifest = Manifest(URL(filePath).openStream())
+        version = manifest.mainAttributes.getValue("Implementation-Version")
     }
 }
 
-@JvmOverloads fun getSecrets(storage: KeyValueStorage, recordsFilter: List<String> = emptyList()): KeeperSecrets {
-    val (secrets, justBound) = fetchAndDecryptSecrets(storage, recordsFilter)
+@JvmOverloads
+fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emptyList()): KeeperSecrets {
+    val (secrets, justBound) = fetchAndDecryptSecrets(options, recordsFilter)
     if (justBound) {
         try {
-            fetchAndDecryptSecrets(storage, recordsFilter)
+            fetchAndDecryptSecrets(options, recordsFilter)
         } catch (e: Exception) {
             println(e)
         }
@@ -149,10 +155,10 @@ internal object ManifestLoader {
     return secrets
 }
 
-fun updateSecret(storage: KeyValueStorage, record: KeeperRecord) {
+fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
     val transmissionKey = generateTransmissionKey(1)
-    val encryptedPayload = prepareUpdatePayload(storage, transmissionKey, record)
-    postQuery(storage, "update_secret", transmissionKey, encryptedPayload)
+    val encryptedPayload = prepareUpdatePayload(options.storage, transmissionKey, record)
+    postQuery(options, "update_secret", transmissionKey, encryptedPayload)
 }
 
 fun downloadFile(file: KeeperFile): ByteArray {
@@ -182,13 +188,14 @@ private fun downloadFile(file: KeeperFile, url: String): ByteArray {
 }
 
 private fun fetchAndDecryptSecrets(
-    storage: KeyValueStorage,
+    options: SecretsManagerOptions,
     recordsFilter: List<String>
 ): Pair<KeeperSecrets, Boolean> {
     val transmissionKey = generateTransmissionKey(1)
+    val storage = options.storage
     val encryptedPayload = prepareGetPayload(storage, transmissionKey, recordsFilter)
-    val httpResponse = postQuery(storage, "get_secret", transmissionKey, encryptedPayload)
-    val decryptedResponse = decrypt(httpResponse.data, transmissionKey.key)
+    val responseData = postQuery(options, "get_secret", transmissionKey, encryptedPayload)
+    val decryptedResponse = decrypt(responseData, transmissionKey.key)
     val jsonString = bytesToString(decryptedResponse)
     val response = Json.decodeFromString<SecretsManagerResponse>(jsonString)
     var justBound = false
@@ -280,7 +287,8 @@ private fun prepareUpdatePayload(
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val recordBytes = stringToBytes(Json.encodeToString(record.data))
     val encryptedRecord = encrypt(recordBytes, record.recordKey)
-    val payload = UpdatePayload("mj${ManifestLoader.version}", clientId, record.recordUid, webSafe64FromBytes(encryptedRecord))
+    val payload =
+        UpdatePayload("mj${ManifestLoader.version}", clientId, record.recordUid, webSafe64FromBytes(encryptedRecord))
     return encryptAndSignPayload(storage, transmissionKey, payload)
 }
 
@@ -297,42 +305,67 @@ private inline fun <reified T> encryptAndSignPayload(
     return EncryptedPayload(encryptedPayload, signature)
 }
 
-private fun postQuery(
-    storage: KeyValueStorage,
-    path: String,
+fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload): KeeperHttpResponse {
+    return try {
+        val response = postFunction(url, transmissionKey, payload, false)
+        if (response.statusCode == HTTP_OK) {
+            saveCachedValue(transmissionKey.key + response.data)
+        }
+        response
+    } catch (e: Exception) {
+        val cachedData = getCachedValue()
+        val cachedTransmissionKey = cachedData.copyOfRange(0, 32)
+        transmissionKey.key = cachedTransmissionKey
+        val data = cachedData.copyOfRange(32, cachedData.size)
+        KeeperHttpResponse(HTTP_OK, data)
+    }
+}
+
+fun postFunction(
+    url: String,
     transmissionKey: TransmissionKey,
-    payload: EncryptedPayload
+    payload: EncryptedPayload,
+    allowUnverifiedCertificate: Boolean
 ): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
-    if (TestStubs.queryStubReady()) {
-        val response = TestStubs.queryStub()
-        data = response.first
-        statusCode = response.second
-    } else {
-        val baseUrl = storage.getString(KEY_URL) ?: throw Exception("URL is missing from the storage")
-        with(URL("${baseUrl}/${path}").openConnection() as HttpsURLConnection) {
-            if (storage.getString("ALLOW_UNVERIFIED_CERTIFICATE_TAG") == "yes") {
-                sslSocketFactory = trustAllSocketFactory()
-            }
-            requestMethod = "POST"
-            doOutput = true
-            setRequestProperty("PublicKeyId", transmissionKey.publicKeyId.toString())
-            setRequestProperty("TransmissionKey", bytesToBase64(transmissionKey.encryptedKey))
-            setRequestProperty("Authorization", "Signature ${bytesToBase64(payload.signature)}")
-            outputStream.write(payload.payload)
-            outputStream.flush()
-            statusCode = responseCode
-            data = when {
-                errorStream != null -> errorStream.readBytes()
-                else -> inputStream.readBytes()
-            }
+    with(URL(url).openConnection() as HttpsURLConnection) {
+        if (allowUnverifiedCertificate) {
+            sslSocketFactory = trustAllSocketFactory()
+        }
+        requestMethod = "POST"
+        doOutput = true
+        setRequestProperty("PublicKeyId", transmissionKey.publicKeyId.toString())
+        setRequestProperty("TransmissionKey", bytesToBase64(transmissionKey.encryptedKey))
+        setRequestProperty("Authorization", "Signature ${bytesToBase64(payload.signature)}")
+        outputStream.write(payload.payload)
+        outputStream.flush()
+        statusCode = responseCode
+        data = when {
+            errorStream != null -> errorStream.readBytes()
+            else -> inputStream.readBytes()
         }
     }
-    if (statusCode != HTTP_OK) {
-        throw Exception(String(data))
-    }
     return KeeperHttpResponse(statusCode, data)
+}
+
+private fun postQuery(
+    options: SecretsManagerOptions,
+    path: String,
+    transmissionKey: TransmissionKey,
+    payload: EncryptedPayload
+): ByteArray {
+    val baseUrl = options.storage.getString(KEY_URL) ?: throw Exception("URL is missing from the storage")
+    val url = "${baseUrl}/${path}"
+    val response = if (options.queryFunction == null) {
+        postFunction(url, transmissionKey, payload, false)
+    } else {
+        options.queryFunction.invoke(url, transmissionKey, payload)
+    }
+    if (response.statusCode != HTTP_OK) {
+        throw Exception(String(response.data))
+    }
+    return response.data
 }
 
 @Suppress("SpellCheckingInspection")
@@ -387,12 +420,7 @@ private fun trustAllSocketFactory(): SSLSocketFactory {
 }
 
 internal object TestStubs {
-    lateinit var queryStub: () -> Pair<ByteArray, Int>
     lateinit var transmissionKeyStub: () -> ByteArray
-
-    fun queryStubReady(): Boolean {
-        return this::queryStub.isInitialized
-    }
 
     fun transmissionKeyStubReady(): Boolean {
         return this::transmissionKeyStub.isInitialized
