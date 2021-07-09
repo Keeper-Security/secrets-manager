@@ -1,5 +1,3 @@
-import org.gradle.jvm.tasks.Jar
-
 group = "com.keepersecurity"
 version = "16.0.0"
 
