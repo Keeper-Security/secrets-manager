@@ -24,8 +24,8 @@ class Profile:
 
     config_profile = "_config"
     active_profile_key = "active_profile"
-    default_profile = os.environ.get("KEEPER_CLI_PROFILE", "_default")
-    default_ini_file = os.environ.get("KEEPER_INI_FILE", "keeper.ini")
+    default_profile = os.environ.get("KSM_CLI_PROFILE", "_default")
+    default_ini_file = os.environ.get("KSM_INI_FILE", "keeper.ini")
     log_level_key = "log_level"
 
     def __init__(self, cli, ini_file=None):
@@ -36,13 +36,13 @@ class Profile:
         if ini_file is None:
             ini_file = Profile.find_ini_config()
 
-            # If we can't find it, and the KEEPER_SECRET_KEY env is set, auto create it. We do this because
+            # If we can't find it, and the KSM_SECRET_KEY env is set, auto create it. We do this because
             # this might be a container startup and there is not INI file, but we have passed in the client key.
-            client_key = os.environ.get("KEEPER_SECRET_KEY")
+            client_key = os.environ.get("KSM_SECRET_KEY")
             if client_key is not None:
                 Profile.init(
                     client_key=client_key,
-                    server=os.environ.get("KEEPER_SERVER", "US")
+                    server=os.environ.get("KSM_SERVER", "US")
                 )
                 # Check again for the INI config file
                 ini_file = Profile.find_ini_config()
@@ -80,7 +80,7 @@ class Profile:
         # The last entry is the current working directory.
         not_set = "_NOTSET_"
         dir_locations = [
-            [os.environ.get("KEEPER_INI_DIR", not_set)],
+            [os.environ.get("KSM_INI_DIR", not_set)],
             [os.getcwd()],
 
             # Linux
@@ -115,7 +115,7 @@ class Profile:
 
     def get_active_profile_name(self):
         common_config = self.get_profile_config(Profile.config_profile)
-        return os.environ.get("KEEPER_CLI_PROFILE", common_config.get(Profile.active_profile_key))
+        return os.environ.get("KSM_CLI_PROFILE", common_config.get(Profile.active_profile_key))
 
     @staticmethod
     def _table_setup(table):
@@ -133,12 +133,12 @@ class Profile:
         # If the ini is not set, default the file in the current directory.
         if ini_file is None:
             ini_file = os.path.join(
-                os.environ.get("KEEPER_INI_DIR", os.getcwd()),
+                os.environ.get("KSM_INI_DIR", os.getcwd()),
                 Profile.default_ini_file
             )
 
         if profile_name is None:
-            profile_name = os.environ.get("KEEPER_CLI_PROFILE", Profile.default_profile)
+            profile_name = os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
 
         if profile_name == Profile.config_profile:
             raise ValueError("The profile '{}' is a reserved profile name. Cannot not init profile.".format(

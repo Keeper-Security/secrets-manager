@@ -41,8 +41,11 @@ class Commander:
         self.client_key = client_key
         self.server = server
 
-        # Accept the env var PYTHONHTTPSVERIFY. Modules like 'requests' already use it.
-        self.verify_ssl_certs = bool(strtobool(os.environ.get("PYTHONHTTPSVERIFY", str(verify_ssl_certs))))
+        # Accept the env var KSM_SKIP_VERIFY. Modules like 'requests' already use it.
+        self.verify_ssl_certs = verify_ssl_certs
+        if os.environ.get("KSM_SKIP_VERIFY") is not None:
+            # We need to flip the value of KSM_SKIP_VERIFY, if true, we want verify_ssl_certs to be false.
+            self.verify_ssl_certs = not bool(strtobool(os.environ.get("KSM_SKIP_VERIFY")))
 
         if config is None:
             config = FileKeyValueStorage()
@@ -115,7 +118,7 @@ class Commander:
 
         if not self.verify_ssl_certs:
             logging.warning("WARNING: Running without SSL cert verification. "
-                            "Execute 'Commander(..., verify_ssl_certs=True)' or 'PYTHONHTTPSVERIFY=TRUE' "
+                            "Execute 'Commander(..., verify_ssl_certs=True)' or 'KSM_SKIP_VERIFY=FALSE' "
                             "to enable verification.")
 
     def load_secret_key(self):
@@ -123,7 +126,7 @@ class Commander:
         """Returns client_id from the environment variable, config file, or in the code"""
 
         # Case 1: Environment Variable
-        env_secret_key = os.getenv('KEEPER_SECRET_KEY')
+        env_secret_key = os.getenv('KSM_SECRET_KEY')
 
         current_secret_key = None
 
