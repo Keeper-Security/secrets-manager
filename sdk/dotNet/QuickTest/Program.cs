@@ -4,7 +4,7 @@ using SecretsManager;
 
 namespace QuickTest
 {
-    class LocalConfigStorage : KeyValueStorage
+    class LocalConfigStorage : IKeyValueStorage
     {
         public string GetString(string key)
         {
