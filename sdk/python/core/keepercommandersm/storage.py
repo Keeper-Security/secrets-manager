@@ -57,7 +57,7 @@ class FileKeyValueStorage(KeyValueStorage):
     def __init__(self, config_file_location=None):
 
         if config_file_location is None:
-            config_file_location = os.environ.get("KEEPER_CONFIG_FILE",
+            config_file_location = os.environ.get("KSM_CONFIG_FILE",
                                                   FileKeyValueStorage.default_config_file_location)
 
         self.default_config_file_location = config_file_location
