@@ -1,5 +1,17 @@
+# -*- coding: utf-8 -*-
+#  _  __
+# | |/ /___ ___ _ __  ___ _ _ ®
+# | ' </ -_) -_) '_ \/ -_) '_|
+# |_|\_\___\___| .__/\___|_|
+#              |_|
+#
+# Keeper Secrets Manager
+# Copyright 2021 Keeper Security Inc.
+# Contact: ops@keepersecurity.com
+#
+
 import json
-from jsonpath_ng import jsonpath, parse
+from jsonpath_ng import parse
 import sys
 from collections import deque
 import prettytable

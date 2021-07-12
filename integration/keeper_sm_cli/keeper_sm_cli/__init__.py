@@ -1,9 +1,23 @@
+# -*- coding: utf-8 -*-
+#  _  __
+# | |/ /___ ___ _ __  ___ _ _ ®
+# | ' </ -_) -_) '_ \/ -_) '_|
+# |_|\_\___\___| .__/\___|_|
+#              |_|
+#
+# Keeper Secrets Manager
+# Copyright 2021 Keeper Security Inc.
+# Contact: ops@keepersecurity.com
+#
+
 from keepercommandersm import Commander
 from keepercommandersm.storage import InMemoryKeyValueStorage
 from keepercommandersm.configkeys import ConfigKeys
 from .profile import Profile
 import sys
 import logging
+
+__version__ = "0.0.5"
 
 
 class KeeperCli:
