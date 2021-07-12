@@ -2,8 +2,6 @@ import os
 from codecs import open
 from setuptools import setup, find_packages
 
-import keepercommandersm
-
 here = os.path.abspath(os.path.dirname(__file__))
 
 os.chdir(here)
@@ -13,14 +11,14 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
 install_requires = [
+    'requests',
     'cryptography',
     'pycryptodomex>=3.7.2',
-    'requests >= 2.20;python_version >= "3.0"'
 ]
 
 setup(
     name="keepercommandersm",
-    version=keepercommandersm.__version__,
+    version="0.0.26a0",
     description="Keeper Commander Secrets Management for Python 3",
     long_description=long_description,
     long_description_content_type="text/markdown",

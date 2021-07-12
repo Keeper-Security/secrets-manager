@@ -4,10 +4,10 @@
 # |_|\_\___\___| .__/\___|_|
 #              |_|
 #
-# Keeper Commander
+# Keeper Secrets Manager
 # Copyright 2021 Keeper Security Inc.
 # Contact: ops@keepersecurity.com
-#
+
 import base64
 import json
 import logging

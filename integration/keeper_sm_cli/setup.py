@@ -1,8 +1,11 @@
-import os
 from setuptools import setup, find_packages
+import os
 
 here = os.path.abspath(os.path.dirname(__file__))
-os.chdir(here)
+
+# Get the long description from the README.md file
+with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
+    long_description = f.read()
 
 install_requires = [
     'keepercommandersm',
@@ -13,8 +16,10 @@ install_requires = [
 
 setup(
     name="keeper_sm_cli",
-    version='0.0.2',
+    version="0.0.7a0",
     description="Command line tool for Keeper Secret Manager",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
     author="Keeper Security",
     author_email="ops@keepersecurity.com",
     url="https://github.com/Keeper-Security/secrets-manager",
@@ -26,7 +31,8 @@ setup(
     python_requires='>=3.5',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
-        "Documentation": "https://github.com/Keeper-Security/secrets-manager",
+        "Documentation": "https://app.gitbook.com/"
+                         "@keeper-security/s/commander/integrations/libraries/command-line-interface",
         "Source Code": "https://github.com/Keeper-Security/secrets-manager",
     },
     classifiers=[
@@ -46,6 +52,8 @@ setup(
         "Topic :: Security",
     ],
     entry_points={
-        "console_scripts": ["ksm=keeper_sm_cli.__main__:main"]
+        "console_scripts": [
+            "ksm=keeper_sm_cli.__main__:main"
+        ]
     }
 )
