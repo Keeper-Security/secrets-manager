@@ -1,7 +1,7 @@
 
 
 ## 1. Obtain you One-Time Secret Key
-Keeper Commander authenticates your API requests using advanced encryption that used locally stored private key, device id and client id.
+Keeper Secrets Manager (KSM) authenticates your API requests using advanced encryption that used locally stored private key, device id and client id.
 To register your device and generate private key you will need to generate a One-Time Secret Key via Web Vault or Keeper Commander CLI.
 
 ### Via Web Vault
