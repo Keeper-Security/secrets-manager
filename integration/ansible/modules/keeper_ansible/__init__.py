@@ -43,10 +43,10 @@ class KeeperAnsible:
     KEY_PREFIX = "keeper"
     KEY_CONFIG_FILE_SUFFIX = "config_file"
     ALLOWED_FIELDS = ["field", "custom_field", "file"]
-    CLIENT_KEY_ENV = "KEEPER_SECRET_KEY"
+    CLIENT_KEY_ENV = "KSM_SECRET_KEY"
     CONFIG_CLIENT_KEY = "clientKey"
     FORCE_CONFIG_FILE = "force_config_write"
-    KEY_SSL_VERIFY = "verify_ssl_certs"
+    KEY_SSL_VERIFY_SKIP = "verify_ssl_certs_skip"
 
     @staticmethod
     def get_client(**kwargs):
@@ -66,10 +66,10 @@ class KeeperAnsible:
         try:
 
             keeper_config_file_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CONFIG_FILE_SUFFIX)
-            keeper_verify_ssl_certs = KeeperAnsible.keeper_key(KeeperAnsible.KEY_SSL_VERIFY)
+            keeper_ssl_verify_skip = KeeperAnsible.keeper_key(KeeperAnsible.KEY_SSL_VERIFY_SKIP)
 
-            # By default we want to check SSL certs, allow to be controlled via vars and also environmental vars
-            verify_ssl_certs = task_vars.get(keeper_verify_ssl_certs, os.environ.get("PYTHONHTTPSVERIFY", True))
+            # By default we don't want to skip verify the certs.
+            ssl_certs_skip = task_vars.get(keeper_ssl_verify_skip, False)
 
             # If the config location is defined, or a file exists at the default location.
             config_file = task_vars.get(keeper_config_file_key)
@@ -127,7 +127,7 @@ class KeeperAnsible:
 
                 self.client = KeeperAnsible.get_client(
                     config=config_instance,
-                    verify_ssl_certs=verify_ssl_certs
+                    verify_ssl_certs=not ssl_certs_skip
                 )
 
         except Exception as err:

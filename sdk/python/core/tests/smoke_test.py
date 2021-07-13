@@ -176,26 +176,26 @@ class SmokeTest(unittest.TestCase):
         config = InMemoryKeyValueStorage()
         config.set(ConfigKeys.KEY_CLIENT_KEY, 'ABC123')
 
-        os.environ.pop("PYTHONHTTPSVERIFY", None)
+        os.environ.pop("KSM_SKIP_VERIFY", None)
         c = Commander(config=config)
         self.assertEqual(c.verify_ssl_certs, True, "verify_ssl_certs is not true on 'no args; instance")
 
-        os.environ.pop("PYTHONHTTPSVERIFY", None)
+        os.environ.pop("KSM_SKIP_VERIFY", None)
         c = Commander(config=config, verify_ssl_certs=True)
         self.assertEqual(c.verify_ssl_certs, True, "verify_ssl_certs is not true on param instance")
 
-        os.environ.pop("PYTHONHTTPSVERIFY", None)
+        os.environ.pop("KSM_SKIP_VERIFY", None)
         c = Commander(config=config, verify_ssl_certs=False)
         self.assertEqual(c.verify_ssl_certs, False, "verify_ssl_certs is not false on param instance")
 
-        os.environ["PYTHONHTTPSVERIFY"] = "FALSE"
+        os.environ["KSM_SKIP_VERIFY"] = "FALSE"
         c = Commander(config=config)
-        self.assertEqual(c.verify_ssl_certs, False, "verify_ssl_certs is not false on env set (FALSE)")
+        self.assertEqual(c.verify_ssl_certs, True, "verify_ssl_certs is not false on env set (FALSE)")
 
-        os.environ["PYTHONHTTPSVERIFY"] = "NO"
+        os.environ["KSM_SKIP_VERIFY"] = "NO"
         c = Commander(config=config)
-        self.assertEqual(c.verify_ssl_certs, False, "verify_ssl_certs is not false on env set (NO)")
+        self.assertEqual(c.verify_ssl_certs, True, "verify_ssl_certs is not false on env set (NO)")
 
-        os.environ["PYTHONHTTPSVERIFY"] = "True"
+        os.environ["KSM_SKIP_VERIFY"] = "True"
         c = Commander(config=config)
-        self.assertEqual(c.verify_ssl_certs, True, "verify_ssl_certs is not true on env set (True)")
+        self.assertEqual(c.verify_ssl_certs, False, "verify_ssl_certs is not true on env set (True)")
