@@ -4,7 +4,7 @@
 # |_|\_\___\___| .__/\___|_|
 #              |_|
 #
-# Keeper Commander
+# Keeper Secrets Manager
 # Copyright 2021 Keeper Security Inc.
 # Contact: ops@keepersecurity.com
 #
@@ -18,8 +18,9 @@ if __name__ == '__main__':
 
     c = Commander(
         server='https://dev.keepersecurity.com',
-        verify_ssl_certs=True,
-        client_key='zidx8w9nVxI8gNzO_Qt8kpgbckutZPdpr4ybhipzDMY'
+        client_key='gr8qRQ18eqHreGMgzeq8uJTOZ6vbIP1-Fr-uxibX15M',
+        verify_ssl_certs=False,
+        config=FileKeyValueStorage('config-gr8.json')
     )
 
     all_records = c.get_secrets()
