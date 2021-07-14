@@ -35,9 +35,8 @@ internal class SecretsManagerTest {
         initializeStorage(storage, "VB3sGkzVyRB9Lup6WE7Rx-ETFZxyWR2zqY2b9f2zwBo", "local.keepersecurity.com")
         val options = SecretsManagerOptions(storage, testPostFunction)
         val secrets = getSecrets(options)
-        val password =
-            (((secrets.records[1].data["fields"] as JsonArray)[1] as JsonObject)["value"] as JsonArray)[0].jsonPrimitive
-        assertEquals("N\$B!lkoOrVL1RUNDBvn2", password.content)
+        val password = getRecordField(secrets.records[1], "password")
+        assertEquals("N\$B!lkoOrVL1RUNDBvn2", password)
         try {
             getSecrets(options)
             fail("Did not throw")
