@@ -5,8 +5,7 @@ package com.keepersecurity.secretsManager.core
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.*
 import java.net.HttpURLConnection.HTTP_OK
 import java.net.URL
 import java.security.*
@@ -29,7 +28,11 @@ interface KeyValueStorage {
     fun saveBytes(key: String, value: ByteArray)
     fun delete(key: String)
 }
-data class SecretsManagerOptions(val storage: KeyValueStorage, val queryFunction: QueryFunction? = null)
+
+data class SecretsManagerOptions @JvmOverloads constructor(
+    val storage: KeyValueStorage,
+    val queryFunction: QueryFunction? = null
+)
 
 typealias QueryFunction = (url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload) -> KeeperHttpResponse
 
@@ -86,22 +89,46 @@ private data class SecretsManagerResponse(
     val records: List<SecretsManagerResponseRecord>?
 )
 
+
 data class KeeperSecrets(val records: List<KeeperRecord>)
 
 data class KeeperRecord(
     val recordKey: ByteArray,
     val recordUid: String,
     var folderUid: String?,
-    val data: JsonObject,
+    val data: KeeperRecordData,
     var files: List<KeeperFile>?
 )
 
 data class KeeperFile(
     val fileKey: ByteArray,
     val fileUid: String,
-    val data: JsonObject,
+    val data: KeeperFileData,
     val url: String,
     val thumbnailUrl: String?
+)
+
+@Serializable
+data class KeeperRecordData(
+    val title: String,
+    val type: String,
+    val fields: List<KeeperRecordField>,
+    val custom: List<String>
+)
+
+@Serializable
+data class KeeperRecordField(
+    val type: String,
+    val value: MutableList<String>
+)
+
+@Serializable
+data class KeeperFileData(
+    val title: String,
+    val name: String,
+    val type: String,
+    val size: Long,
+    val lastModified: Long
 )
 
 fun initializeStorage(storage: KeyValueStorage, clientKey: String, domain: String) {
@@ -170,6 +197,16 @@ fun downloadThumbnail(file: KeeperFile): ByteArray {
         throw Exception("Thumbnail does not exist for the file ${file.fileUid}")
     }
     return downloadFile(file, file.thumbnailUrl)
+}
+
+fun getRecordField(record: KeeperRecord, fieldName: String): String {
+    val field = record.data.fields.first { x -> x.type == fieldName }
+    return field.value[0]
+}
+
+fun updateRecordField(record: KeeperRecord, fieldName: String, newValue: String) {
+    val field = record.data.fields.first { x -> x.type == fieldName }
+    field.value[0] = newValue
 }
 
 private fun downloadFile(file: KeeperFile, url: String): ByteArray {
@@ -252,7 +289,6 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
             )
         }
     }
-
     return KeeperRecord(recordKey, record.recordUid, null, Json.decodeFromString(bytesToString(decryptedRecord)), files)
 }
 
@@ -388,7 +424,6 @@ private fun generateTransmissionKey(keyNumber: Int): TransmissionKey {
     return TransmissionKey(keyNumber, transmissionKey, encryptedKey)
 }
 
-// TODO use only for local testing
 private fun trustAllSocketFactory(): SSLSocketFactory {
     val trustAllCerts: Array<TrustManager> = arrayOf(
         object : X509TrustManager {
