@@ -1,10 +1,22 @@
 package hello;
 
+import com.keepersecurity.secretsManager.core.KeeperFile;
+import com.keepersecurity.secretsManager.core.KeeperRecord;
 import com.keepersecurity.secretsManager.core.KeyValueStorage;
 import com.keepersecurity.secretsManager.core.LocalConfigStorage;
 import com.keepersecurity.secretsManager.core.KeeperSecrets;
-import static com.keepersecurity.secretsManager.core.SecretsManager.getSecrets;
+import com.keepersecurity.secretsManager.core.SecretsManagerOptions;
+
 import static com.keepersecurity.secretsManager.core.SecretsManager.initializeStorage;
+import static com.keepersecurity.secretsManager.core.SecretsManager.getSecrets;
+import static com.keepersecurity.secretsManager.core.SecretsManager.updateSecret;
+import static com.keepersecurity.secretsManager.core.SecretsManager.downloadFile;
+import static com.keepersecurity.secretsManager.core.SecretsManager.getRecordField;
+import static com.keepersecurity.secretsManager.core.SecretsManager.updateRecordField;
+
+import java.io.FileOutputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
 
 public class App {
 
@@ -21,10 +33,27 @@ public class App {
             if (args.length > 1) {
                 System.out.printf("Local Config Storage initialized with the Client Key '%s'%n", args[1]);
                 initializeStorage(storage, args[1], "dev.keepersecurity.com");
-//                storage.saveString("allowUnverifiedCertificate", "yes");
             }
-            KeeperSecrets secrets = getSecrets(storage, null);
-            System.out.println(secrets);
+            SecretsManagerOptions options = new SecretsManagerOptions(storage);
+//            KeeperSecrets secrets = getSecrets(options);
+            KeeperSecrets secrets = getSecrets(options, Arrays.asList("UlzQ-jKQTgQcEvpJI9vxxQ"));
+            System.out.println(secrets.getRecords());
+
+            // get the password from the first record
+            KeeperRecord firstRecord = secrets.getRecords().get(0);
+            String firstRecordPassword = getRecordField(firstRecord, "password");
+            System.out.println(firstRecordPassword);
+
+            // download the file from the 3rd record
+            KeeperFile file = secrets.getRecords().get(2).getFiles().get(0);
+            byte[] fileBytes = downloadFile(file);
+            try (FileOutputStream fos = new FileOutputStream(file.getData().getName())) {
+                fos.write(fileBytes);
+            }
+
+            // update the password on the first record
+            updateRecordField(firstRecord, "password", "aP1$t367QOCvL$eM$bG#");
+            updateSecret(options, firstRecord);
         } catch (Exception e) {
             System.out.println(e.getMessage());
         }
