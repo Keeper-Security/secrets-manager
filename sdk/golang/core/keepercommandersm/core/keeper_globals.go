@@ -1,9 +1,8 @@
 package core
 
 const (
-	// keeperCommanderSmClientId      string = "mp" + version // # TODO: use versioning when release to prod
 	version                        string = "0.0.27a0"
-	keeperCommanderSmClientId      string = "mp16.0.0"
+	keeperCommanderSmClientId      string = "mg16.0.0" // Golang client ID starts with "mg" + version
 	keeperServerPublicKeyRawString string = "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"
 )
 
