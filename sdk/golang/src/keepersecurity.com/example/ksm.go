@@ -12,7 +12,7 @@ func main() {
 	klog.SetLogLevel(klog.DebugLevel)
 	klog.Info("Secrets Manager Started")
 
-	// server := "https://dev.keepersecurity.com"
+	// server := "https://keepersecurity.com"
 	// clientKey := "Qgdoj2QYPiILa4wLxse2wMNhjgs8Ung8ol-WXql1qU0"
 	// verifySslCerts := true
 	// c := ksm.NewCommanderFromSettings(clientKey, server, verifySslCerts)
