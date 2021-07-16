@@ -1,4 +1,4 @@
-package core
+package keepercommandersm
 
 type ConfigKey string
 

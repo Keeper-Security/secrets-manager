@@ -1,10 +1,11 @@
-package core
+package keepercommandersm
 
 import (
-	"keepercommandersm/core"
 	"os"
 	"strings"
 	"testing"
+
+	ksm "keepersecurity.com/keepercommandersm"
 )
 
 func TestMissingConfig(t *testing.T) {
@@ -23,7 +24,7 @@ func TestMissingConfig(t *testing.T) {
 	// any config file and there are no env vars to use.
 	tempDirName := t.TempDir()
 	if err := os.Chdir(tempDirName); err == nil {
-		c := core.NewCommander()
+		c := ksm.NewCommander()
 		t.Errorf("Found config file, should be missing. Config is empty: %t", c.Config.IsEmpty())
 	} else {
 		t.Error(err.Error())
@@ -33,7 +34,7 @@ func TestMissingConfig(t *testing.T) {
 func TestDefaultLoadFromJson(t *testing.T) {
 	// Load config from default location and name.
 
-	defaultConfigName := core.DEFAULT_CONFIG_PATH
+	defaultConfigName := ksm.DEFAULT_CONFIG_PATH
 
 	// Make instance using default config file.
 	// Create a JSON config file and store under the default file name.
@@ -50,11 +51,11 @@ func TestDefaultLoadFromJson(t *testing.T) {
 }
 		`
 		if err := os.WriteFile(defaultConfigName, []byte(rawJson), 0644); err == nil {
-			c := core.NewCommander()
-			if c.Config.Get(core.KEY_SERVER) != "fake.keepersecurity.com" {
+			c := ksm.NewCommander()
+			if c.Config.Get(ksm.KEY_SERVER) != "fake.keepersecurity.com" {
 				t.Error("did not get correct server")
 			}
-			if c.Config.Get(core.KEY_APP_KEY) != "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw" {
+			if c.Config.Get(ksm.KEY_APP_KEY) != "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw" {
 				t.Error("did not get correct app key")
 			}
 		} else {
@@ -68,7 +69,7 @@ func TestDefaultLoadFromJson(t *testing.T) {
 func TestOverwriteViaArgs(t *testing.T) {
 	// Load config from default location and name, but overwrite the client key and server
 
-	defaultConfigName := core.DEFAULT_CONFIG_PATH
+	defaultConfigName := ksm.DEFAULT_CONFIG_PATH
 
 	// Make instance using default config file.
 	// Create a JSON config file and store under the default file name.
@@ -85,11 +86,11 @@ func TestOverwriteViaArgs(t *testing.T) {
 		`
 		if err := os.WriteFile(defaultConfigName, []byte(rawJson), 0644); err == nil {
 			// Pass in the client key and server
-			c := core.NewCommanderFromSettings("ABC123", "localhost", true)
-			if c.Config.Get(core.KEY_SERVER) != "localhost" {
+			c := ksm.NewCommanderFromSettings("ABC123", "localhost", true)
+			if c.Config.Get(ksm.KEY_SERVER) != "localhost" {
 				t.Error("did not get correct server")
 			}
-			if c.Config.Get(core.KEY_CLIENT_KEY) != "ABC123" {
+			if c.Config.Get(ksm.KEY_CLIENT_KEY) != "ABC123" {
 				t.Error("did not get correct client key")
 			}
 		} else {
@@ -101,55 +102,55 @@ func TestOverwriteViaArgs(t *testing.T) {
 }
 
 func TestPassInConfig(t *testing.T) {
-	defaultConfigName := core.DEFAULT_CONFIG_PATH
+	defaultConfigName := ksm.DEFAULT_CONFIG_PATH
 
 	// Make instance using default config file.
 	// Create a JSON config file and store under the default file name.
 	// This will pass because the JSON file exists.
 	tempDirName := t.TempDir()
 	if err := os.Chdir(tempDirName); err == nil {
-		config := core.NewFileKeyValueStorage()
-		config.Set(core.KEY_CLIENT_KEY, "MY CLIENT KEY")
-		config.Set(core.KEY_CLIENT_ID, "MY CLIENT ID")
-		config.Set(core.KEY_APP_KEY, "MY APP KEY")
-		config.Set(core.KEY_PRIVATE_KEY, "MY PRIVATE KEY")
+		config := ksm.NewFileKeyValueStorage()
+		config.Set(ksm.KEY_CLIENT_KEY, "MY CLIENT KEY")
+		config.Set(ksm.KEY_CLIENT_ID, "MY CLIENT ID")
+		config.Set(ksm.KEY_APP_KEY, "MY APP KEY")
+		config.Set(ksm.KEY_PRIVATE_KEY, "MY PRIVATE KEY")
 
-		if ok, err := core.PathExists(defaultConfigName); !ok {
+		if ok, err := ksm.PathExists(defaultConfigName); !ok {
 			t.Error("config file is missing. " + err.Error())
 		}
 
 		dictConfig := config.ReadStorage()
 
-		if val, ok := dictConfig[string(core.KEY_CLIENT_KEY)]; !ok || val != "MY CLIENT KEY" {
+		if val, ok := dictConfig[string(ksm.KEY_CLIENT_KEY)]; !ok || val != "MY CLIENT KEY" {
 			t.Error("did not get correct client key")
 		}
-		if val, ok := dictConfig[string(core.KEY_CLIENT_ID)]; !ok || val != "MY CLIENT ID" {
+		if val, ok := dictConfig[string(ksm.KEY_CLIENT_ID)]; !ok || val != "MY CLIENT ID" {
 			t.Error("did not get correct client id")
 		}
-		if val, ok := dictConfig[string(core.KEY_APP_KEY)]; !ok || val != "MY APP KEY" {
+		if val, ok := dictConfig[string(ksm.KEY_APP_KEY)]; !ok || val != "MY APP KEY" {
 			t.Error("did not get correct app key")
 		}
-		if val, ok := dictConfig[string(core.KEY_PRIVATE_KEY)]; !ok || val != "MY PRIVATE KEY" {
+		if val, ok := dictConfig[string(ksm.KEY_PRIVATE_KEY)]; !ok || val != "MY PRIVATE KEY" {
 			t.Error("did not get correct private key")
 		}
 
 		// Pass in the config
-		c := core.NewCommanderFromConfig(config)
+		c := ksm.NewCommanderFromConfig(config)
 
-		if c.Config.Get(core.KEY_CLIENT_KEY) != "MY CLIENT KEY" {
+		if c.Config.Get(ksm.KEY_CLIENT_KEY) != "MY CLIENT KEY" {
 			t.Error("did not get correct client key")
 		}
 
 		// Is not bound, client id and private key will be generated and overwrite existing
-		if c.Config.Get(core.KEY_CLIENT_ID) == "" {
+		if c.Config.Get(ksm.KEY_CLIENT_ID) == "" {
 			t.Error("did not get a client id")
 		}
-		if c.Config.Get(core.KEY_PRIVATE_KEY) == "" {
+		if c.Config.Get(ksm.KEY_PRIVATE_KEY) == "" {
 			t.Error("did not get a private key")
 		}
 
 		// App key should be removed.
-		if c.Config.Get(core.KEY_APP_KEY) != "" {
+		if c.Config.Get(ksm.KEY_APP_KEY) != "" {
 			t.Error("found the app key")
 		}
 	} else {
@@ -158,44 +159,44 @@ func TestPassInConfig(t *testing.T) {
 }
 
 func TestInMemoryConfig(t *testing.T) {
-	config := core.NewMemoryKeyValueStorage()
-	config.Set(core.KEY_CLIENT_KEY, "MY CLIENT KEY")
-	config.Set(core.KEY_CLIENT_ID, "MY CLIENT ID")
-	config.Set(core.KEY_APP_KEY, "MY APP KEY")
-	config.Set(core.KEY_PRIVATE_KEY, "MY PRIVATE KEY")
+	config := ksm.NewMemoryKeyValueStorage()
+	config.Set(ksm.KEY_CLIENT_KEY, "MY CLIENT KEY")
+	config.Set(ksm.KEY_CLIENT_ID, "MY CLIENT ID")
+	config.Set(ksm.KEY_APP_KEY, "MY APP KEY")
+	config.Set(ksm.KEY_PRIVATE_KEY, "MY PRIVATE KEY")
 
 	dictConfig := config.ReadStorage()
 
-	if val, ok := dictConfig[string(core.KEY_CLIENT_KEY)]; !ok || val != "MY CLIENT KEY" {
+	if val, ok := dictConfig[string(ksm.KEY_CLIENT_KEY)]; !ok || val != "MY CLIENT KEY" {
 		t.Error("did not get correct client key")
 	}
-	if val, ok := dictConfig[string(core.KEY_CLIENT_ID)]; !ok || val != "MY CLIENT ID" {
+	if val, ok := dictConfig[string(ksm.KEY_CLIENT_ID)]; !ok || val != "MY CLIENT ID" {
 		t.Error("did not get correct client id")
 	}
-	if val, ok := dictConfig[string(core.KEY_APP_KEY)]; !ok || val != "MY APP KEY" {
+	if val, ok := dictConfig[string(ksm.KEY_APP_KEY)]; !ok || val != "MY APP KEY" {
 		t.Error("did not get correct app key")
 	}
-	if val, ok := dictConfig[string(core.KEY_PRIVATE_KEY)]; !ok || val != "MY PRIVATE KEY" {
+	if val, ok := dictConfig[string(ksm.KEY_PRIVATE_KEY)]; !ok || val != "MY PRIVATE KEY" {
 		t.Error("did not get correct private key")
 	}
 
 	// Pass in the config
-	c := core.NewCommanderFromConfig(config)
+	c := ksm.NewCommanderFromConfig(config)
 
-	if c.Config.Get(core.KEY_CLIENT_KEY) != "MY CLIENT KEY" {
+	if c.Config.Get(ksm.KEY_CLIENT_KEY) != "MY CLIENT KEY" {
 		t.Error("did not get correct client key")
 	}
 
 	// Is not bound, client id and private key will be generated and overwrite existing
-	if c.Config.Get(core.KEY_CLIENT_ID) == "" {
+	if c.Config.Get(ksm.KEY_CLIENT_ID) == "" {
 		t.Error("did not get a client id")
 	}
-	if c.Config.Get(core.KEY_PRIVATE_KEY) == "" {
+	if c.Config.Get(ksm.KEY_PRIVATE_KEY) == "" {
 		t.Error("did not get a private key")
 	}
 
 	// App key should be removed.
-	if c.Config.Get(core.KEY_APP_KEY) != "" {
+	if c.Config.Get(ksm.KEY_APP_KEY) != "" {
 		t.Error("found the app key")
 	}
 }

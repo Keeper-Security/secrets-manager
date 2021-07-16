@@ -1,10 +1,11 @@
-package core
+package keepercommandersm
 
 import (
-	"keepercommandersm/core"
 	"os"
 	"strings"
 	"testing"
+
+	ksm "keepersecurity.com/keepercommandersm"
 )
 
 func TestTheWorks(t *testing.T) {
@@ -22,7 +23,7 @@ func TestTheWorks(t *testing.T) {
 	if f, err := os.CreateTemp("", ""); err == nil {
 		defer os.Remove(f.Name())
 		if err := os.WriteFile(f.Name(), []byte(rawJson), 0644); err == nil {
-			c := core.NewCommanderFromConfig(core.NewFileKeyValueStorage(f.Name()), Ctx)
+			c := ksm.NewCommanderFromConfig(ksm.NewFileKeyValueStorage(f.Name()), Ctx)
 
 			// --------------------------
 			// Add three records, 2 outside a folder, 1 inside folder
@@ -153,8 +154,8 @@ func Test403SignatureError(t *testing.T) {
 	"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
 	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
 }`
-	config := core.NewMemoryKeyValueStorage(rawJson)
-	c := core.NewCommanderFromConfig(config)
+	config := ksm.NewMemoryKeyValueStorage(rawJson)
+	c := ksm.NewCommanderFromConfig(config)
 
 	// Make the error message
 	errorJson := `
@@ -176,36 +177,36 @@ func Test403SignatureError(t *testing.T) {
 }
 
 func TestVerifySslCerts(t *testing.T) {
-	config := core.NewMemoryKeyValueStorage()
-	config.Set(core.KEY_CLIENT_KEY, "ABC123")
+	config := ksm.NewMemoryKeyValueStorage()
+	config.Set(ksm.KEY_CLIENT_KEY, "ABC123")
 
 	os.Setenv("KSM_SKIP_VERIFY", "")
-	if c := core.NewCommanderFromConfig(config); !c.VerifySslCerts {
+	if c := ksm.NewCommanderFromConfig(config); !c.VerifySslCerts {
 		t.Error(" VerifySslCerts is not true on 'no args; instance")
 	}
 
 	os.Setenv("KSM_SKIP_VERIFY", "")
-	if c := core.NewCommanderFromSettings("1234", "EU", true); !c.VerifySslCerts {
+	if c := ksm.NewCommanderFromSettings("1234", "EU", true); !c.VerifySslCerts {
 		t.Error(" VerifySslCerts is not true on param instance")
 	}
 
 	os.Setenv("KSM_SKIP_VERIFY", "")
-	if c := core.NewCommanderFromSettings("1234", "EU", false); c.VerifySslCerts {
+	if c := ksm.NewCommanderFromSettings("1234", "EU", false); c.VerifySslCerts {
 		t.Error(" VerifySslCerts is not false on param instance")
 	}
 
 	os.Setenv("KSM_SKIP_VERIFY", "FALSE")
-	if c := core.NewCommanderFromConfig(config); !c.VerifySslCerts {
+	if c := ksm.NewCommanderFromConfig(config); !c.VerifySslCerts {
 		t.Error(" VerifySslCerts is not false on env set (FALSE)")
 	}
 
 	os.Setenv("KSM_SKIP_VERIFY", "NO")
-	if c := core.NewCommanderFromConfig(config); !c.VerifySslCerts {
+	if c := ksm.NewCommanderFromConfig(config); !c.VerifySslCerts {
 		t.Error(" VerifySslCerts is not false on env set (NO)")
 	}
 
 	os.Setenv("KSM_SKIP_VERIFY", "True")
-	if c := core.NewCommanderFromConfig(config); c.VerifySslCerts {
+	if c := ksm.NewCommanderFromConfig(config); c.VerifySslCerts {
 		t.Error(" VerifySslCerts is not true on env set (True)")
 	}
 }

@@ -1,12 +1,13 @@
-package core
+package keepercommandersm
 
 import (
 	"encoding/json"
 	"fmt"
-	klog "keepercommandersm/core/logger"
 	"os"
 	"path/filepath"
 	"strings"
+
+	klog "keepersecurity.com/keepercommandersm/logger"
 )
 
 const (

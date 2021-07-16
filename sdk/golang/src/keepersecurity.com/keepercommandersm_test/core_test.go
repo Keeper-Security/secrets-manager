@@ -1,20 +1,21 @@
-package core
+package keepercommandersm
 
 import (
-	"keepercommandersm/core"
 	"testing"
+
+	ksm "keepersecurity.com/keepercommandersm"
 )
 
 func TestPrepareContext(t *testing.T) {
-	config := core.NewMemoryKeyValueStorage()
-	config.Set(core.KEY_CLIENT_KEY, "MY CLIENT KEY")
-	config.Set(core.KEY_APP_KEY, "MY APP KEY")
+	config := ksm.NewMemoryKeyValueStorage()
+	config.Set(ksm.KEY_CLIENT_KEY, "MY CLIENT KEY")
+	config.Set(ksm.KEY_APP_KEY, "MY APP KEY")
 
 	// Pass in the config
-	c := core.NewCommanderFromConfig(config)
+	c := ksm.NewCommanderFromConfig(config)
 
 	// There should be no app key
-	if c.Config.Get(core.KEY_APP_KEY) != "" {
+	if c.Config.Get(ksm.KEY_APP_KEY) != "" {
 		t.Error("found the app key")
 	}
 

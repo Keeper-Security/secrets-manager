@@ -1,11 +1,12 @@
-package core
+package keepercommandersm
 
 import (
-	klog "keepercommandersm/core/logger"
 	"net"
 	"net/url"
 	"os"
 	"strings"
+
+	klog "keepersecurity.com/keepercommandersm/logger"
 )
 
 func GetServer(codeServer string, configStore IKeyValueStorage) string {

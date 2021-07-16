@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	"keepercommandersm/core"
-	klog "keepercommandersm/core/logger"
 	"time"
+
+	ksm "keepersecurity.com/keepercommandersm"
+	klog "keepersecurity.com/keepercommandersm/logger"
 )
 
 func main() {
@@ -14,9 +15,9 @@ func main() {
 	// server := "https://dev.keepersecurity.com"
 	// clientKey := "Qgdoj2QYPiILa4wLxse2wMNhjgs8Ung8ol-WXql1qU0"
 	// verifySslCerts := true
-	// c := core.NewCommanderFromSettings(clientKey, server, verifySslCerts)
+	// c := ksm.NewCommanderFromSettings(clientKey, server, verifySslCerts)
 
-	c := core.NewCommanderFromConfig(core.NewFileKeyValueStorage("client-config.json"))
+	c := ksm.NewCommanderFromConfig(ksm.NewFileKeyValueStorage("client-config.json"))
 
 	allRecords, err := c.GetSecrets([]string{})
 	if err != nil {
@@ -44,7 +45,7 @@ func main() {
 		newPassword := fmt.Sprintf("New Password from SDK Test - " + time.Now().Format(time.RFC850))
 		recToUpdate.SetPassword(newPassword)
 
-		updatedRawJson := core.DictToJson(recToUpdate.RecordDict)
+		updatedRawJson := ksm.DictToJson(recToUpdate.RecordDict)
 		recToUpdate.RawJson = updatedRawJson
 
 		if err := c.Save(recToUpdate); err != nil {

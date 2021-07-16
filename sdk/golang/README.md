@@ -40,7 +40,7 @@ import "keepercommandersm/core"
 func main() {
 	// Establish connection
 	// One time secrets generated via Web Vault or Commander CLI
-	c := core.NewCommander()
+	c := ksm.NewCommander()
 	c.ClientKey = "MmzGdls-rDG39vgqgFD1HL70h0_L_sKQOdI0qwXU3JI"
 
 	// Retrieve all password records

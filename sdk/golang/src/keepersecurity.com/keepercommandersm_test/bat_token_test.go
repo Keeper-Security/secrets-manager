@@ -1,18 +1,19 @@
-package core
+package keepercommandersm_test
 
 import (
-	"keepercommandersm/core"
 	"testing"
+
+	ksm "keepersecurity.com/keepercommandersm"
 )
 
 func TestDecryptionWithBatToken(t *testing.T) {
-	secretKey, _ := core.GetRandomBytes(32)
+	secretKey, _ := ksm.GetRandomBytes(32)
 
 	plaintext := "ABC123"
 	plaintextBytes := []byte(plaintext)
-	encrTextBytes, _ := core.EncryptAesGcm(plaintextBytes, secretKey)
+	encrTextBytes, _ := ksm.EncryptAesGcm(plaintextBytes, secretKey)
 
-	decryptedPlaintextBytes, _ := core.Decrypt(encrTextBytes, secretKey)
+	decryptedPlaintextBytes, _ := ksm.Decrypt(encrTextBytes, secretKey)
 	decryptedPlaintext := string(decryptedPlaintextBytes[:])
 
 	if plaintext != decryptedPlaintext {

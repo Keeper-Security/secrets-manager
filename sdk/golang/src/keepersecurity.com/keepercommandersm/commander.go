@@ -1,4 +1,4 @@
-package core
+package keepercommandersm
 
 import (
 	"bytes"
@@ -6,13 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	klog "keepercommandersm/core/logger"
 	"net/http"
 	"os"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
+
+	klog "keepersecurity.com/keepercommandersm/logger"
 )
 
 const CommanderNotationPrefix string = "keeper"

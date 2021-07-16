@@ -1,10 +1,11 @@
-package core
+package keepercommandersm
 
 import (
 	"fmt"
-	"keepercommandersm/core"
 	"strings"
 	"testing"
+
+	ksm "keepersecurity.com/keepercommandersm"
 )
 
 func generateMockresponse(uid string) *MockResponse {
@@ -44,8 +45,8 @@ func TestGetNotation(t *testing.T) {
 		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
 	}
 				`
-	config := core.NewMemoryKeyValueStorage(rawJson)
-	c := core.NewCommanderFromConfig(config, Ctx)
+	config := ksm.NewMemoryKeyValueStorage(rawJson)
+	c := ksm.NewCommanderFromConfig(config, Ctx)
 
 	// --------------------------
 

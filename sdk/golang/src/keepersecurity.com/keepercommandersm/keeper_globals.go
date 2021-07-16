@@ -1,4 +1,4 @@
-package core
+package keepercommandersm
 
 const (
 	version                        string = "0.0.27a0"

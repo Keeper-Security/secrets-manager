@@ -1,13 +1,14 @@
-package core
+package keepercommandersm
 
 import (
 	"fmt"
 	"io"
-	klog "keepercommandersm/core/logger"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+
+	klog "keepersecurity.com/keepercommandersm/logger"
 )
 
 type FieldSectionFlag byte
