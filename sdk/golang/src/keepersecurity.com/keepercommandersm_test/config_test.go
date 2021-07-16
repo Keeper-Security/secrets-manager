@@ -22,6 +22,9 @@ func TestMissingConfig(t *testing.T) {
 
 	// Attempt to get instance without config file. This should fail since the directory will not contain
 	// any config file and there are no env vars to use.
+	if curWD, err := os.Getwd(); err == nil {
+		defer os.Chdir(curWD) // Fix for Windows cleanup error ...being used by another process
+	}
 	tempDirName := t.TempDir()
 	if err := os.Chdir(tempDirName); err == nil {
 		c := ksm.NewCommander()
@@ -39,6 +42,9 @@ func TestDefaultLoadFromJson(t *testing.T) {
 	// Make instance using default config file.
 	// Create a JSON config file and store under the default file name.
 	// This will pass because the JSON file exists.
+	if curWD, err := os.Getwd(); err == nil {
+		defer os.Chdir(curWD) // Fix for Windows cleanup error ...being used by another process
+	}
 	tempDirName := t.TempDir()
 	if err := os.Chdir(tempDirName); err == nil {
 		rawJson := `
@@ -74,6 +80,9 @@ func TestOverwriteViaArgs(t *testing.T) {
 	// Make instance using default config file.
 	// Create a JSON config file and store under the default file name.
 	// This will pass because the JSON file exists.
+	if curWD, err := os.Getwd(); err == nil {
+		defer os.Chdir(curWD) // Fix for Windows cleanup error ...being used by another process
+	}
 	tempDirName := t.TempDir()
 	if err := os.Chdir(tempDirName); err == nil {
 		rawJson := `
@@ -107,6 +116,9 @@ func TestPassInConfig(t *testing.T) {
 	// Make instance using default config file.
 	// Create a JSON config file and store under the default file name.
 	// This will pass because the JSON file exists.
+	if curWD, err := os.Getwd(); err == nil {
+		defer os.Chdir(curWD) // Fix for Windows cleanup error ...being used by another process
+	}
 	tempDirName := t.TempDir()
 	if err := os.Chdir(tempDirName); err == nil {
 		config := ksm.NewFileKeyValueStorage()
