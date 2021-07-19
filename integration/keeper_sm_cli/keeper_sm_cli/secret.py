@@ -34,7 +34,7 @@ class Secret:
     @staticmethod
     def _record_to_dict(record):
         custom_fields = []
-        for custom_field in record.dict.get('custom'):
+        for custom_field in record.dict.get('custom', []):
             field_type = custom_field.get("type")
             value = custom_field.get("value")
             custom_fields.append({

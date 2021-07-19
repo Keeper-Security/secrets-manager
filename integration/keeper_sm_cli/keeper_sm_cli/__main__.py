@@ -29,13 +29,23 @@ def _get_cli(ini_file=None, profile_name=None, output=None):
     )
 
 
+def base_command_help(f):
+    doc = f.__doc__
+    f.__doc__ = "{} Version: {} ".format(doc, meta_version('keeper_sm_cli'))
+    return f
+
+
 # MAIN GROUP
 @click.group()
 @click.option('--ini-file', type=str, help="INI config file.")
 @click.option('--profile-name', '-p', type=str, help='Config profile')
 @click.option('--output', '-o', type=str, help='Output [stdout|stderr|filename]', default='stdout')
 @click.pass_context
+@base_command_help
 def cli(ctx, ini_file, profile_name, output):
+
+    """Keeper Secret Manager CLI
+    """
 
     try:
         ctx.obj = {
@@ -45,10 +55,10 @@ def cli(ctx, ini_file, profile_name, output):
             "output": output
         }
     except FileNotFoundError as _:
-        exit("Could not find the INI file specified on the top level command. If you are running the init"
+        sys.exit("Could not find the INI file specified on the top level command. If you are running the init"
              " sub-command, specify the INI file on the sub-command parameters instead on the top level command.")
     except Exception as err:
-        exit("Could not run the command. Got the error: {}".format(err))
+        sys.exit("Could not run the command. Got the error: {}".format(err))
 
 
 # PROFILE GROUP
@@ -61,12 +71,12 @@ def profile_command():
 
 
 @click.command(name='init')
-@click.option('--client-key', '-c', type=str, required=True, help="The client key.")
+@click.option('--token', '-t', type=str, required=True, help="The One Time Access Token.")
 @click.option('--server', '-s', type=str, default="US", help="Server code or URL.")
 @click.option('--ini-file', type=str, help="INI config file to create.")
 @click.option('--profile-name', '-p', type=str, help='Config profile to create.')
 @click.pass_context
-def profile_init_command(ctx, client_key, server, ini_file, profile_name):
+def profile_init_command(ctx, token, server, ini_file, profile_name):
     """Initialize a profile."""
 
     # Since the top level commands are available for all command, it might be confusing the init command since
@@ -76,7 +86,7 @@ def profile_init_command(ctx, client_key, server, ini_file, profile_name):
               " level command parameter will be ignored for the init sub-command.", file=sys.stderr)
 
     Profile.init(
-        client_key=client_key,
+        client_key=token,
         server=server,
         ini_file=ini_file,
         profile_name=profile_name

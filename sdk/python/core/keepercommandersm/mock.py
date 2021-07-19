@@ -70,7 +70,15 @@ class Response:
 
     """
 
-    def __init__(self, client=None, post_method=None, content=None, status_code=200, reason="OK"):
+    def __init__(self, client=None, post_method=None, content=None, status_code=200, reason="OK", flags=None):
+
+        """
+        Flags is a dictionary where we can turn on/off stuff in the response to fake qwarks from other application and
+        how they might store the data.
+
+        * prune_custom_fields - If there is no custom fields, the 'custom' key is removed from the JSON.
+
+        """
 
         self.client = client
 
@@ -80,6 +88,7 @@ class Response:
         self.content = content
         self.status_code = status_code
         self.reason = reason
+        self.flags = flags
 
         # Monkey patch the _post_query method with a method that will return a
         # requests Response obj.
@@ -117,12 +126,12 @@ class Response:
 
         self.client._post_query = patch
 
-    def dump(self, secret):
+    def dump(self, secret, flags=None):
 
         return {
             "encryptedAppKey": None,
-            "folders": [self.folders[uid].dump(secret=secret) for uid in self.folders],
-            "records": [self.records[uid].dump(secret=secret) for uid in self.records]
+            "folders": [self.folders[uid].dump(secret=secret, flags=flags) for uid in self.folders],
+            "records": [self.records[uid].dump(secret=secret, flags=flags) for uid in self.records]
         }
 
     def instance(self, context):
@@ -143,7 +152,7 @@ class Response:
 
         # If canned content has not be set, the create content from records/folders.
         if self.content is None:
-            json_str = json.dumps(self.dump(secret=context.clientKey))
+            json_str = json.dumps(self.dump(secret=context.clientKey, flags=self.flags))
             content = encrypt_aes(json_str.encode(), context.transmissionKey.key)
             res._content = content
             res.headers["Content-Length"] = str(len(content))
@@ -205,12 +214,12 @@ class Folder:
         self.records[record.uid] = record
         return record
 
-    def dump(self, secret):
+    def dump(self, secret, flags=None):
 
         return {
             "folderUid": self.uid,
             "folderKey": base64.b64encode(encrypt_aes(secret, secret)).decode(),
-            "records": [self.records[uid].dump(secret=secret) for uid in self.records]
+            "records": [self.records[uid].dump(secret=secret, flags=flags) for uid in self.records]
         }
 
 
@@ -248,7 +257,7 @@ class File:
             raise ValueError("The file has not be dump'd yet, Secret is unknown.")
         return encrypt_aes(self.content.encode(), self.secret_used)
 
-    def dump(self, secret):
+    def dump(self, secret, flags=None):
         self.secret_used = secret
         d = {
             "name": self.name,
@@ -304,7 +313,7 @@ class Record:
                 field_type=item["type"],
                 value=item["value"]
             )
-        for item in keeper_record.dict.get("custom"):
+        for item in keeper_record.dict.get("custom", []):
             new_record.custom_field(
                 label=item["label"],
                 field_type=item["type"],
@@ -338,12 +347,12 @@ class Record:
         self.files[file.uid] = file
         return file
 
-    def dump(self, secret):
+    def dump(self, secret, flags=None):
 
         # If no files, the JSON has null
         files = None
         if len(self.files) > 0:
-            files = [self.files[uid].dump(secret=secret) for uid in self.files]
+            files = [self.files[uid].dump(secret=secret, flags=flags) for uid in self.files]
 
         fields = [{"type": "fileRef", "value": [uid for uid in self.files]}]
         for field_type in self._fields:
@@ -361,15 +370,22 @@ class Record:
                     "value": self._custom_fields[label][field_type]
                 })
 
+        record_data = {
+            "title": self.title,
+            "type": self.record_type,
+            "fields": fields,
+            "custom": custom
+        }
+
+        if flags is not None:
+            # Commander will not add a custom key if there is no custom fields. However the UI does.
+            if flags.get("prune_custom_fields", False) is True and len(record_data["custom"]) == 0:
+                record_data.pop("custom", None)
+
         data = {
             "recordUid": self.uid,
             "recordKey": base64.b64encode(encrypt_aes(secret, secret)).decode(),
-            "data": base64.b64encode(encrypt_aes(json.dumps({
-                "title": self.title,
-                "type": self.record_type,
-                "fields": fields,
-                "custom": custom
-            }).encode(), secret)).decode(),
+            "data": base64.b64encode(encrypt_aes(json.dumps(record_data).encode(), secret)).decode(),
             "isEditable": self.is_editable,
             "files": files
         }
