@@ -54,13 +54,13 @@ class ExecTest(unittest.TestCase):
 
             default_client_key = "XYZ321"
             runner = CliRunner()
-            result = runner.invoke(cli, ['profile', 'init', '-c', default_client_key], catch_exceptions=False)
+            result = runner.invoke(cli, ['profile', 'init', '-t', default_client_key], catch_exceptions=False)
             print(result.output)
             self.assertEqual(0, result.exit_code, "did not get a success for default init")
             self.assertTrue(os.path.exists(Profile.default_ini_file), "could not find ini file")
 
             test_client_key = "ABC123"
-            result = runner.invoke(cli, ['profile', 'init', "-p", "test", '-c',
+            result = runner.invoke(cli, ['profile', 'init', "-p", "test", '-t',
                                          test_client_key], catch_exceptions=False)
             self.assertEqual(0, result.exit_code, "did not get a success for test init")
             self.assertTrue(os.path.exists(Profile.default_ini_file), "could not find ini file")

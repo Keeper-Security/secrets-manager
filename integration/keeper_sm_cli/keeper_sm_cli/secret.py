@@ -16,6 +16,7 @@ import sys
 from collections import deque
 import prettytable
 from keepercommandersm.exceptions import KeeperError, KeeperAccessDenied
+import traceback
 
 
 class Secret:
@@ -34,7 +35,7 @@ class Secret:
     @staticmethod
     def _record_to_dict(record):
         custom_fields = []
-        for custom_field in record.dict.get('custom'):
+        for custom_field in record.dict.get('custom', []):
             field_type = custom_field.get("type")
             value = custom_field.get("value")
             custom_fields.append({
@@ -172,10 +173,13 @@ class Secret:
             for record in self.cli.client.get_secrets(uids=uids):
                 records.append(self._record_to_dict(record))
         except KeeperError as err:
+            traceback.print_exc(file=sys.stderr)
             sys.exit("Could not query the records: {}".format(err.message))
         except KeeperAccessDenied as err:
+            traceback.print_exc(file=sys.stderr)
             sys.exit("Could not query the records: {}".format(err.message))
         except Exception as err:
+            traceback.print_exc(file=sys.stderr)
             sys.exit("Could not query the records: {}".format(err))
 
         if jsonpath_query is not None:
