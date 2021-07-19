@@ -16,7 +16,7 @@ install_requires = [
 
 setup(
     name="keeper_sm_cli",
-    version="0.0.10a0",
+    version="0.0.11a0",
     description="Command line tool for Keeper Secret Manager",
     long_description=long_description,
     long_description_content_type="text/markdown",
