@@ -141,7 +141,7 @@ func (c *commander) loadConfig() {
 func (c *commander) LoadSecretKey() string {
 	// Case 1: Environment Variable
 	currentSecretKey := ""
-	if envSecretKey := strings.TrimSpace(os.Getenv("KSM_SECRET_KEY")); envSecretKey != "" {
+	if envSecretKey := strings.TrimSpace(os.Getenv("KSM_TOKEN")); envSecretKey != "" {
 		currentSecretKey = envSecretKey
 		klog.Info("Secret key found in environment variable")
 	}
@@ -413,10 +413,12 @@ func (c *commander) Fetch(recordFilter []string) (records []*Record, justBound b
 	recordsResp := decryptedResponseDict["records"]
 	foldersResp := decryptedResponseDict["folders"]
 
+	recordCount := 0
 	emptyInterfaceSlice := []interface{}{}
 	if recordsResp != nil {
 		if reflect.TypeOf(recordsResp) == reflect.TypeOf(emptyInterfaceSlice) {
 			for _, r := range recordsResp.([]interface{}) {
+				recordCount++
 				record := NewRecordFromJson(r.(map[string]interface{}), secretKey)
 				records = append(records, record)
 			}
@@ -425,9 +427,11 @@ func (c *commander) Fetch(recordFilter []string) (records []*Record, justBound b
 		}
 	}
 
+	folderCount := 0
 	if foldersResp != nil {
 		if reflect.TypeOf(foldersResp) == reflect.TypeOf(emptyInterfaceSlice) {
 			for _, f := range foldersResp.([]interface{}) {
+				folderCount++
 				folder := NewFolderFromJson(f.(map[string]interface{}), secretKey)
 				if f != nil {
 					records = append(records, folder.Records()...)
@@ -439,6 +443,10 @@ func (c *commander) Fetch(recordFilter []string) (records []*Record, justBound b
 			klog.Error("folder JSON is in incorrect format")
 		}
 	}
+
+	klog.Debug(fmt.Sprintf("Individual record count: %d", recordCount))
+	klog.Debug(fmt.Sprintf("Folder count: %d", folderCount))
+	klog.Debug(fmt.Sprintf("Total record count: %d", recordCount+folderCount))
 
 	return records, justBound, nil
 }
