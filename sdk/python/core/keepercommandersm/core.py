@@ -126,7 +126,7 @@ class Commander:
         """Returns client_id from the environment variable, config file, or in the code"""
 
         # Case 1: Environment Variable
-        env_secret_key = os.getenv('KSM_SECRET_KEY')
+        env_secret_key = os.getenv('KSM_TOKEN')
 
         current_secret_key = None
 

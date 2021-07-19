@@ -133,3 +133,56 @@ class NotationTest(unittest.TestCase):
             # Custom field, get last name
             value = c.get_notation("{}/custom_field/name[last]".format(one.uid))
             self.assertEqual("Smith", value, "custom field name, got the last name")
+
+    def test_commander_custom_field(self):
+
+        """ Test how Commander store custom fields
+
+        If no custom fields are added via Commander, the JSON will be missing the "custom" key. Make
+        a record that has no custom field and see if stuff still works.
+
+        """
+
+        with tempfile.NamedTemporaryFile("w") as fh:
+            fh.write(
+                json.dumps({
+                    "server": "fake.keepersecurity.com",
+                    "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
+                    "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26"
+                                "C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
+                    "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
+                    "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9d"
+                                  "jH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbE"
+                                  "T6joq0xCjhKMhHQFaHYI"
+                })
+            )
+            fh.seek(0)
+            c = Commander(config=FileKeyValueStorage(config_file_location=fh.name))
+
+            # --------------------------
+
+            # We want to remove the 'custom' key from the JSON
+            res_1 = mock.Response(flags={
+                "prune_custom_fields": True
+            })
+
+            one = res_1.add_record(title="My Record 1")
+            one.field("login", "My Login 1")
+            one.field("password", "My Password 1")
+
+            res_queue = mock.ResponseQueue(client=c)
+            res_queue.add_response(res_1)
+            res_queue.add_response(res_1)
+
+            # Make sure the mock worked
+            records = c.get_secrets()
+            self.assertEqual(len(records), 1, "didn't get 1 records")
+            self.assertIsNone(records[0].dict.get("custom"), "found 'custom' in the JSON, mock failed")
+
+            try:
+                c.get_notation("{}/custom_field/My Custom 1".format(one.uid))
+                self.fail("Should not have gotten here.")
+            except ValueError as err:
+                self.assertRegex(str(err), r'Cannot find the custom field label', 'did not get correct exception')
+            except Exception as err:
+                self.fail("Didn't get the correct exception message: {}".format(err))
