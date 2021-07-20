@@ -125,7 +125,7 @@ class Record:
     def custom_field(self, label, value=None, field_type=None, single=False):
 
         found_item = None
-        for item in self.dict.get('custom', []):
+        for item in self.dict.get('custom'):
             found = False
 
             # If the user doesn't set the label in the UI, and uses the default, the label will be missing :/
@@ -175,7 +175,7 @@ class Record:
         print("")
         print("Custom Fields")
         print("------")
-        for item in self.dict.get('custom', []):
+        for item in self.dict.get('custom'):
             print("{} ({}) : {}".format(item["label"], item["type"], ", ".join(item["value"])))
 
 

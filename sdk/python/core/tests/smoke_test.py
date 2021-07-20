@@ -170,6 +170,7 @@ class SmokeTest(unittest.TestCase):
         except KeeperError as err:
             self.assertRegex(err.message, r'Signature is invalid', 'did not get correct error message')
 
+
     def test_verify_ssl_certs(self):
 
         config = InMemoryKeyValueStorage()

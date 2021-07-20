@@ -18,7 +18,7 @@ install_requires = [
 
 setup(
     name="keepercommandersm",
-    version="0.0.30a0",
+    version="0.0.27a0",
     description="Keeper Secrets Management for Python 3",
     long_description=long_description,
     long_description_content_type="text/markdown",

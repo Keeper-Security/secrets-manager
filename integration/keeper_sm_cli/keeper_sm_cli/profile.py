@@ -36,9 +36,9 @@ class Profile:
         if ini_file is None:
             ini_file = Profile.find_ini_config()
 
-            # If we can't find it, and the KSM_TOKEN env is set, auto create it. We do this because
+            # If we can't find it, and the KSM_SECRET_KEY env is set, auto create it. We do this because
             # this might be a container startup and there is not INI file, but we have passed in the client key.
-            client_key = os.environ.get("KSM_TOKEN")
+            client_key = os.environ.get("KSM_SECRET_KEY")
             if client_key is not None:
                 Profile.init(
                     client_key=client_key,
@@ -116,12 +116,6 @@ class Profile:
     def get_active_profile_name(self):
         common_config = self.get_profile_config(Profile.config_profile)
         return os.environ.get("KSM_CLI_PROFILE", common_config.get(Profile.active_profile_key))
-
-    def _get_common_config(self, error_prefix):
-        try:
-            return self.get_profile_config(Profile.config_profile)
-        except Exception as err:
-            sys.exit("{} {}".format(error_prefix, err))
 
     @staticmethod
     def _table_setup(table):
@@ -215,37 +209,31 @@ class Profile:
     def list_profiles(self, output='text'):
 
         profiles = []
+        active_profile = self.get_active_profile_name()
+        for profile in self.get_config():
+            if profile == Profile.config_profile:
+                continue
+            profiles.append({
+                "active": profile == active_profile,
+                "name": profile
+            })
 
-        try:
-            active_profile = self.get_active_profile_name()
+        if output == 'text':
+            table = prettytable.PrettyTable()
+            table.field_names = ["Active", "Profile"]
+            Profile._table_setup(table)
 
-            for profile in self.get_config():
-                if profile == Profile.config_profile:
-                    continue
-                profiles.append({
-                    "active": profile == active_profile,
-                    "name": profile
-                })
+            for profile in profiles:
+                table.add_row(["*" if profile["active"] is True else " ", profile["name"]])
 
-            if output == 'text':
-                table = prettytable.PrettyTable()
-                table.field_names = ["Active", "Profile"]
-                Profile._table_setup(table)
-
-                for profile in profiles:
-                    table.add_row(["*" if profile["active"] is True else " ", profile["name"]])
-
-                self.cli.output(table.get_string() + "\n")
-            elif output == 'json':
-                self.cli.output(json.dumps(profiles))
-            return profiles
-
-        except FileNotFoundError as err:
-            sys.exit("Cannot get list of profiles. {}".format(err))
+            # TODO: Why won't this work with self.cli.output
+            self.cli.output(table.get_string() + "\n")
+        elif output == 'json':
+            self.cli.output(json.dumps(profiles))
+        return profiles
 
     def set_active(self, profile_name):
-
-        common_config = self._get_common_config("Cannot set active profile.")
+        common_config = self.get_profile_config(Profile.config_profile)
 
         if profile_name not in self.get_config():
             exit("Cannot set profile {} to active. It does not exists.".format(profile_name))
@@ -256,13 +244,13 @@ class Profile:
         print("{} is now the active profile.".format(profile_name), file=sys.stderr)
 
     def set_log_level(self, level):
-        common_config = self._get_common_config("Cannot set log level.")
+        common_config = self.get_profile_config(Profile.config_profile)
         common_config[Profile.log_level_key] = level
         self.cli.log_level = level
         self.save()
 
     def show_config(self):
-        common_config = self._get_common_config("Cannot show the config.")
+        common_config = self.get_profile_config(Profile.config_profile)
         not_set_text = "-NOT SET-"
         print("Active Profile: {}".format(common_config.get(Profile.active_profile_key, not_set_text)))
         print("Log Level: {}".format(common_config.get(Profile.log_level_key, not_set_text)))

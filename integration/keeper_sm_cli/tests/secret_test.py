@@ -77,7 +77,7 @@ class SecretTest(unittest.TestCase):
                 client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
             )
 
-            # JSON Output
+            # JSON Ouput
             with tempfile.NamedTemporaryFile() as tf:
                 runner = CliRunner()
                 result = runner.invoke(cli, ['-o', tf.name, 'secret', 'list', '--json'], catch_exceptions=False)
@@ -399,55 +399,6 @@ class SecretTest(unittest.TestCase):
             self.fail("The key/value of 'bad' should have failed.")
         except Exception as err:
             self.assertRegex(str(err), r'The key/value format is invalid', 'did not get correct error message')
-
-    def test_commander_record(self):
-
-        """ Test how Commander stores record. Not custom fields, not 'custom' key in the response JSON.
-        """
-
-        commander = Commander(config=InMemoryKeyValueStorage({
-            "server": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
-
-        res = mock.Response(flags={
-            "prune_custom_fields": True
-        })
-
-        one = res.add_record(title="My Record 1")
-        one.field("login", "My Login 1")
-        one.field("password", "My Password 1")
-
-        queue = mock.ResponseQueue(client=commander)
-        # The profile init
-        queue.add_response(res)
-        # The secret get
-        queue.add_response(res)
-
-        with patch('integration.keeper_sm_cli.keeper_sm_cli.KeeperCli.get_client') as mock_client:
-            mock_client.return_value = commander
-
-            Profile.init(
-                client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
-            )
-
-            # JSON Output
-            with tempfile.NamedTemporaryFile() as tf:
-                runner = CliRunner()
-                result = runner.invoke(cli, [
-                    '-o', tf.name,
-                    'secret', 'get', '-u', one.uid, '--json'], catch_exceptions=False)
-                self.assertEqual(0, result.exit_code, "the exit code was not 0")
-                tf.seek(0)
-                secret = json.load(tf)
-                self.assertEqual(dict, type(secret), "record is not a dictionary")
-                self.assertEqual(0, len(secret["custom_fields"]), "custom fields were not empty")
-                tf.close()
 
 
 if __name__ == '__main__':
