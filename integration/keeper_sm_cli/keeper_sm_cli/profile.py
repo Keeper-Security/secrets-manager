@@ -15,6 +15,7 @@ import configparser
 from keepercommandersm.storage import InMemoryKeyValueStorage
 from keepercommandersm.configkeys import ConfigKeys
 from keepercommandersm.exceptions import KeeperError, KeeperAccessDenied
+from .common import table_setup
 import prettytable
 import sys
 import json
@@ -124,14 +125,6 @@ class Profile:
             sys.exit("{} {}".format(error_prefix, err))
 
     @staticmethod
-    def _table_setup(table):
-        table.align = 'l'
-        table.horizontal_char = "="
-        table.vertical_char = " "
-        table.junction_char = " "
-        table.hrules = prettytable.HEADER
-
-    @staticmethod
     def init(client_key, ini_file=None, server=None, profile_name=None, log_level="INFO"):
 
         from . import KeeperCli
@@ -230,7 +223,7 @@ class Profile:
             if output == 'text':
                 table = prettytable.PrettyTable()
                 table.field_names = ["Active", "Profile"]
-                Profile._table_setup(table)
+                table_setup(table)
 
                 for profile in profiles:
                     table.add_row(["*" if profile["active"] is True else " ", profile["name"]])

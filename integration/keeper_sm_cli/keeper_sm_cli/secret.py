@@ -11,37 +11,68 @@
 #
 
 import json
-from jsonpath_ng import parse
+from jsonpath_rw_ext import parse
 import sys
 from collections import deque
 import prettytable
 from keepercommandersm.exceptions import KeeperError, KeeperAccessDenied
+from .common import table_setup
 
 
 class Secret:
 
+    # Type in custom_fields to type in fields dictionary
+    support_ref_types = {
+        "addressRef": "address"
+    }
+
     def __init__(self, cli):
         self.cli = cli
 
-    @staticmethod
-    def _table_setup(table):
-        table.align = 'l'
-        table.horizontal_char = "="
-        table.vertical_char = " "
-        table.junction_char = " "
-        table.hrules = prettytable.HEADER
-
-    @staticmethod
-    def _record_to_dict(record):
+    def _record_to_dict(self, record, load_references=False):
         custom_fields = []
-        for custom_field in record.dict.get('custom', []):
-            field_type = custom_field.get("type")
-            value = custom_field.get("value")
-            custom_fields.append({
-                "label": custom_field.get("label", field_type),
-                "type": field_type,
-                "value": value
-            })
+        raw_custom_fields = record.dict.get('custom', [])
+
+        # If we have custom fields check in any have references that can replace with actual values
+        if len(raw_custom_fields) > 0 and load_references is True:
+
+            # Find all the custom fields that have a reference type and remember their index into the array. We
+            # will use the index into the array to add the real values.
+            index = 0
+            replacement_data = {}
+            for custom_field in raw_custom_fields:
+                field_type = custom_field.get("type")
+                value = custom_field.get("value")
+
+                # If the type of the custom field is a supported reference type then add their value to list
+                # if uid to query. We are doing this in one shot so we don't get throttled.
+                if field_type in Secret.support_ref_types:
+                    for uid in value:
+                        replacement_data[uid] = {"index": index, "type": field_type}
+                    # Make a placeholder for the real values
+                    custom_field["value"] = []
+                index += 1
+
+            # If we have replacement values, then get them and add their values with the real values
+            if len(replacement_data) > 0:
+                real_records = self.cli.client.get_secrets([uid for uid in replacement_data])
+                for real_record in real_records:
+                    if record.uid in replacement_data:
+                        replacement_index = replacement_data[record.uid]["index"]
+                        replacement_type = replacement_data[record.uid]["type"]
+                        replacement_key = Secret.support_ref_types[replacement_type]
+                        real_values = real_record.field(replacement_key)
+                        for value in real_values:
+                            raw_custom_fields[replacement_index]["value"].append(value)
+
+            for custom_field in raw_custom_fields:
+                field_type = custom_field.get("type")
+                value = custom_field.get("value")
+                custom_fields.append({
+                    "label": custom_field.get("label", field_type),
+                    "type": field_type,
+                    "value": value
+                })
 
         ret = {
             "uid": record.uid,
@@ -68,14 +99,14 @@ class Secret:
     @staticmethod
     def _format_record(record_dict):
         ret = ""
-        ret += "Record: {}\n".format(record_dict["uid"])
-        ret += " Title:       {}\n".format(record_dict["title"])
-        ret += " Record type: {}\n".format(record_dict["type"])
+        ret += " Record: {}\n".format(record_dict["uid"])
+        ret += " Title: {}\n".format(record_dict["title"])
+        ret += " Record Type: {}\n".format(record_dict["type"])
         ret += "\n"
 
         table = prettytable.PrettyTable()
         table.field_names = ["Field", "Value"]
-        Secret._table_setup(table)
+        table_setup(table)
         for field in record_dict["fields"]:
             value = field["value"]
             if len(value) == 0:
@@ -85,6 +116,10 @@ class Secret:
             else:
                 value = value[0]
                 value = value.replace('\n', '\\n')
+
+            # Don't show blank value pairs
+            if value == "":
+                continue
             table.add_row([field["type"], value])
         ret += table.get_string() + "\n"
 
@@ -92,7 +127,7 @@ class Secret:
             ret += "\n"
             table = prettytable.PrettyTable()
             table.field_names = ["Custom Field", "Type", "Value"]
-            Secret._table_setup(table)
+            table_setup(table)
 
             problems = []
             seen = {}
@@ -105,6 +140,10 @@ class Secret:
                 else:
                     value = value[0]
                     value = value.replace('\n', '\\n')
+
+                # Don't show blank value pairs
+                if value == "":
+                    continue
 
                 label = field["label"]
                 if field["label"] in seen:
@@ -121,9 +160,10 @@ class Secret:
 
         if len(record_dict["files"]) > 0:
             ret += "\n"
-            table = prettytable.PrettyTable()
-            table.field_names = ["File Name", "Type", "Size"]
-            Secret._table_setup(table)
+            table = prettytable.PrettyTable(["File Name", "Type", "Size"])
+            table_setup(table)
+            table.align["Type"] = 'l'
+            table.align["Size"] = 'r'
             for file in record_dict["files"]:
                 row = [file["title"], file["type"], file["size"]]
                 table.add_row(row)
@@ -165,12 +205,12 @@ class Secret:
         return results
 
     def query(self, uids=None, output_format='json', jsonpath_query=None, raw=False, force_array=False,
-              text_join_char='\n'):
+              text_join_char='\n', load_references=False):
 
         records = []
         try:
             for record in self.cli.client.get_secrets(uids=uids):
-                records.append(self._record_to_dict(record))
+                records.append(self._record_to_dict(record, load_references=load_references))
         except KeeperError as err:
             sys.exit("Could not query the records: {}".format(err.message))
         except KeeperAccessDenied as err:
@@ -215,7 +255,7 @@ class Secret:
     def _format_list(record_dict):
         table = prettytable.PrettyTable()
         table.field_names = ["UID", "Record Type", "Title"]
-        Secret._table_setup(table)
+        table_setup(table)
         for record in record_dict:
             table.add_row([record["uid"], record["type"], record["title"]])
         return table.get_string() + "\n"
@@ -267,7 +307,7 @@ class Secret:
         If a custom label has a '=' the user needs to escape it with a '\' character.
 
         For example, if we had a label like "==TOTAL==", the user would have to escape the '=' like
-        this "\=\=TOTAL\=\='"so not to interfer the key/value separator. The final text would look like
+        this "\=\=TOTAL\=\='"so not to interfere the key/value separator. The final text would look like
 
         =\=TOTAL\=\==VALUE
 

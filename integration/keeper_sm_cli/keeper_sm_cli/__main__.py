@@ -19,6 +19,8 @@ import sys
 import os
 import keepercommandersm
 from importlib.metadata import version as meta_version
+import traceback
+from distutils.util import strtobool
 
 
 def _get_cli(ini_file=None, profile_name=None, output=None):
@@ -166,7 +168,8 @@ def secret_get_command(ctx, uid, query, json, raw, force_array):
         jsonpath_query=query,
         output_format=output,
         raw=raw,
-        force_array=force_array
+        force_array=force_array,
+        load_references=True
     )
 
 
@@ -286,7 +289,13 @@ cli.add_command(version_command)
 
 
 def main():
-    cli(obj={"cli": None})
+    try:
+        cli(obj={"cli": None})
+    except Exception as err:
+        # Set KSM_DEBUG to get a stack trace. Secret env var.
+        if strtobool(os.environ.get("KSM_DEBUG", "FALSE")) == 1:
+            print(traceback.format_exc(), file=sys.stderr)
+        sys.exit("ksm had a problem: {}".format(err))
 
 
 if __name__ == '__main__':
