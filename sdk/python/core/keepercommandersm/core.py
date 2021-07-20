@@ -126,7 +126,7 @@ class Commander:
         """Returns client_id from the environment variable, config file, or in the code"""
 
         # Case 1: Environment Variable
-        env_secret_key = os.getenv('KSM_SECRET_KEY')
+        env_secret_key = os.getenv('KSM_TOKEN')
 
         current_secret_key = None
 
@@ -340,6 +340,9 @@ class Commander:
         records_resp = decrypted_response_dict.get('records')
         folders_resp = decrypted_response_dict.get('folders')
 
+        logging.debug("Individual record count: {}".format(len(records_resp or [])))
+        logging.debug("Folder count: {}".format(len(folders_resp or [])))
+
         if records_resp:
             for r in records_resp:
                 record = Record(r, secret_key)
@@ -349,6 +352,8 @@ class Commander:
             for f in folders_resp:
                 folder = Folder(f, secret_key)
                 records.extend(folder.records)
+
+        logging.debug("Total record count: {}".format(len(records)))
 
         return {
             'records': records,
