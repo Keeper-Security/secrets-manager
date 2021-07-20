@@ -85,9 +85,19 @@ class SmokeTest(unittest.TestCase):
             res_queue.add_response(res_1)
             # Single record
             res_queue.add_response(res_2)
+
             # Save response
             res_queue.add_response(mock.Response(content=""))
-
+            # Save with error
+            # Make the error message
+            error_json = {
+                "path": "https://fake.keepersecurity.com/api/rest/sm/v1/get_secret, POST, python-requests/2.25.1",
+                "additional_info": "",
+                "location": "some location",
+                "error": "access_denied",
+                "message": "You can't update because of spite"
+            }
+            res_queue.add_response(mock.Response(content=json.dumps(error_json).encode(), status_code=403))
             # --------------------------
             # DO THE WORKS
 
@@ -128,6 +138,15 @@ class SmokeTest(unittest.TestCase):
 
             c.save(record)
 
+            # While we are here, save again with error response
+            try:
+                c.save(record)
+                self.fail("The second save should have failed but didn't")
+            except KeeperError as err:
+                self.assertRegex(str(err), r"You can't update", "did not get correct exception message")
+            except Exception as err:
+                self.fail("Did not get correct exception: {}".format(err))
+
             # Take the save record and queue it back up as a response.
             saved_res = mock.Response()
             saved_res.add_record(keeper_record=record)
@@ -138,6 +157,8 @@ class SmokeTest(unittest.TestCase):
             record = records[0]
             custom = record.custom_field("My Custom 1", single=True)
             self.assertEqual(custom, "NEW VALUE", "didn't get the correct My Custom 1 value after write")
+
+
 
     def test_403_signature_error(self):
 

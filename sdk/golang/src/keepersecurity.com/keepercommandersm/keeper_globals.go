@@ -1,7 +1,7 @@
 package keepercommandersm
 
 const (
-	version                        string = "0.0.27a0"
+	version                        string = "0.0.30a0"
 	keeperCommanderSmClientId      string = "mg16.0.0" // Golang client ID starts with "mg" + version
 	keeperServerPublicKeyRawString string = "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"
 )

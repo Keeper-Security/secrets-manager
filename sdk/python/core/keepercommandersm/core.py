@@ -395,20 +395,18 @@ class Commander:
         )
 
         if not rs.ok:
-            if rs.status_code == 403:
-                logging.error("Error: {} (http error code: {})".format(rs.reason, rs.status_code))
-                return {}
-            else:
-                error_message = rs.content
-                try:
-                    resp_dict = json_to_dict(rs.text)
-                    error = resp_dict.get("message", error_message)
-                    logging.error("Error: {} (http error code: {}, row: {}".format(rs.reason, rs.status_code,
-                                                                                   resp_dict))
-                except json.JSONDecodeError as _:
-                    logging.error("Error: {} (http error code: {}, message: {}".format(rs.reason, rs.status_code,
-                                                                                       error))
 
+            error_message = rs.content
+            try:
+                resp_dict = json_to_dict(rs.text)
+                error_message = resp_dict.get("message", error_message)
+                logging.error("Error: {} (http error code: {}, row: {}".format(rs.reason, rs.status_code, resp_dict))
+            except json.JSONDecodeError as _:
+                logging.error("Error: {} (http error code: {}, message: {}".format(rs.reason, rs.status_code,
+                                                                                   error_message))
+            if rs.status_code == 403:
+                raise KeeperError(error_message)
+            else:
                 raise HTTPError(error_message)
         else:
             return True
