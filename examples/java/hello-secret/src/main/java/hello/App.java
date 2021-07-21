@@ -1,22 +1,11 @@
 package hello;
 
-import com.keepersecurity.secretsManager.core.KeeperFile;
-import com.keepersecurity.secretsManager.core.KeeperRecord;
-import com.keepersecurity.secretsManager.core.KeyValueStorage;
-import com.keepersecurity.secretsManager.core.LocalConfigStorage;
-import com.keepersecurity.secretsManager.core.KeeperSecrets;
-import com.keepersecurity.secretsManager.core.SecretsManagerOptions;
-
-import static com.keepersecurity.secretsManager.core.SecretsManager.initializeStorage;
-import static com.keepersecurity.secretsManager.core.SecretsManager.getSecrets;
-import static com.keepersecurity.secretsManager.core.SecretsManager.updateSecret;
-import static com.keepersecurity.secretsManager.core.SecretsManager.downloadFile;
-import static com.keepersecurity.secretsManager.core.SecretsManager.getRecordField;
-import static com.keepersecurity.secretsManager.core.SecretsManager.updateRecordField;
+import com.keepersecurity.secretsManager.core.*;
+import static com.keepersecurity.secretsManager.core.SecretsManager.*;
 
 import java.io.FileOutputStream;
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 public class App {
 
@@ -41,8 +30,8 @@ public class App {
 
             // get the password from the first record
             KeeperRecord firstRecord = secrets.getRecords().get(0);
-            String firstRecordPassword = getRecordField(firstRecord, "password");
-            System.out.println(firstRecordPassword);
+            List<String> firstRecordPassword = ((Password) firstRecord.getData().getField(Password.class)).getValue();
+            System.out.println(firstRecordPassword.get(0));
 
             // download the file from the 3rd record
             KeeperFile file = secrets.getRecords().get(2).getFiles().get(0);
@@ -52,7 +41,7 @@ public class App {
             }
 
             // update the password on the first record
-            updateRecordField(firstRecord, "password", "aP1$t367QOCvL$eM$bG#");
+            firstRecordPassword.replaceAll(x -> "aP1$t367QOCvL$eM$bG#");
             updateSecret(options, firstRecord);
         } catch (Exception e) {
             System.out.println(e.getMessage());
