@@ -449,6 +449,68 @@ class SecretTest(unittest.TestCase):
                 self.assertEqual(0, len(secret["custom_fields"]), "custom fields were not empty")
                 tf.close()
 
+    def test_get_with_replacement(self):
+
+        """This test will replace the addressRef with an actual address
+        """
+
+        commander = Commander(config=InMemoryKeyValueStorage({
+            "server": "fake.keepersecurity.com",
+            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
+            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
+            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
+            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
+                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
+                          "jhKMhHQFaHYI"
+        }))
+
+        profile_init_res = mock.Response()
+        profile_init_record = profile_init_res.add_record(title="Profile Init")
+
+        address_res = mock.Response()
+        address_record = address_res.add_record(title="My Record 1", record_type="address")
+        address_record.field("address", [
+            {
+                "street1": "100 North Main Street",
+                "street2": "Suite 1000",
+                "city": "Middletown",
+                "state": "WI",
+                "zip": "53074",
+                "country": "US"
+            }
+        ])
+
+        login_res = mock.Response()
+        login_record = login_res.add_record(title="My Record 1", record_type="login")
+        login_record.custom_field("My Address", [address_record.uid], field_type='addressRef')
+
+        queue = mock.ResponseQueue(client=commander)
+        queue.add_response(profile_init_res)
+        queue.add_response(login_res)
+        queue.add_response(address_res)
+
+        with patch('integration.keeper_sm_cli.keeper_sm_cli.KeeperCli.get_client') as mock_client:
+            mock_client.return_value = commander
+
+            Profile.init(
+                client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+            )
+
+            # JSON Output to file
+            with tempfile.NamedTemporaryFile() as tf:
+                runner = CliRunner()
+                result = runner.invoke(cli, ['-o', tf.name, 'secret', 'get', '-u', login_record.uid, '--json'],
+                                       catch_exceptions=False)
+                self.assertEqual(0, result.exit_code, "the exit code was not 0")
+                tf.seek(0)
+                secret = json.load(tf)
+                self.assertEqual(login_record.uid, secret["uid"], "didn't get the correct uid for secret")
+
+                address = secret["custom_fields"][0]
+                self.assertEqual(dict, type(address), "address value is not a dict")
+                self.assertEqual("My Address", address["label"], "did not get the addressRef")
+
+                tf.close()
 
 if __name__ == '__main__':
     unittest.main()
