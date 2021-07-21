@@ -11,7 +11,7 @@ from integration.keeper_sm_cli.keeper_sm_cli.__main__ import cli
 from integration.keeper_sm_cli.keeper_sm_cli.profile import Profile
 
 
-class ProfileTest(unittest.TestCase):
+class ExecTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.orig_dir = os.getcwd()
@@ -40,6 +40,11 @@ class ProfileTest(unittest.TestCase):
         one.custom_field("password", "My Password 1")
 
         queue = mock.ResponseQueue(client=commander)
+        # Profile init
+        queue.add_response(res)
+
+        # One for each var ... until we begin to cache.
+        queue.add_response(res)
         queue.add_response(res)
         queue.add_response(res)
 
