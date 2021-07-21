@@ -15,6 +15,7 @@ import sys
 import subprocess
 from keepercommandersm.core import Commander
 import re
+import json
 
 
 class Exec:
@@ -45,19 +46,13 @@ class Exec:
 
         for env_key, env_value in os.environ.items():
             if env_value.startswith(Commander.notation_prefix) is True:
-                parts = env_value.split('//')
-                (uid, file_type, key) = parts[1].split('/')
 
-                if file_type == "field":
-                    value = record_lookup[uid].field(key, single=True)
-                elif file_type == "custom_field":
-                    value = record_lookup[uid].custom_field(key, single=True)
-                elif file_type == "file":
-                    value = record_lookup[uid].download_file_by_title(key)
-                else:
-                    raise ValueError("Field type of {} is not value.".format(file_type))
+                value = self.cli.client.get_notation(env_value)
+                if type(value) is dict or type(value) is list:
+                    value = json.dumps(value)
+
                 os.environ["_" + env_key] = "_" + env_value
-                os.environ[env_key] = value
+                os.environ[env_key] = str(value)
 
     @staticmethod
     def execute(cmd, capture_output=False):
