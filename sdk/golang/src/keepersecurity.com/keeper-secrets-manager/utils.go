@@ -1,4 +1,4 @@
-package keepercommandersm
+package keeper_secrets_manager
 
 import (
 	"crypto/ecdsa"
@@ -19,7 +19,7 @@ import (
 	"runtime"
 	"strings"
 
-	klog "keepersecurity.com/keepercommandersm/logger"
+	klog "keepersecurity.com/keeper-secrets-manager/logger"
 )
 
 // ECDSASignature needed for compatibility with openssl (python > hazmat > openssl > ec > _ecdsa_sig_sign)

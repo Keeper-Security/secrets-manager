@@ -1,9 +1,9 @@
-package keepercommandersm
+package test
 
 import (
 	"testing"
 
-	ksm "keepersecurity.com/keepercommandersm"
+	ksm "keepersecurity.com/keeper-secrets-manager"
 )
 
 func TestPrepareContext(t *testing.T) {

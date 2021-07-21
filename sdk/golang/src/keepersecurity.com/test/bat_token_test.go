@@ -1,9 +1,9 @@
-package keepercommandersm_test
+package test
 
 import (
 	"testing"
 
-	ksm "keepersecurity.com/keepercommandersm"
+	ksm "keepersecurity.com/keeper-secrets-manager"
 )
 
 func TestDecryptionWithBatToken(t *testing.T) {

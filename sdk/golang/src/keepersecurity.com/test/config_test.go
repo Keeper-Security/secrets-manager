@@ -1,11 +1,11 @@
-package keepercommandersm
+package test
 
 import (
 	"os"
 	"strings"
 	"testing"
 
-	ksm "keepersecurity.com/keepercommandersm"
+	ksm "keepersecurity.com/keeper-secrets-manager"
 )
 
 func TestMissingConfig(t *testing.T) {

@@ -1,4 +1,4 @@
-package keepercommandersm
+package keeper_secrets_manager
 
 const (
 	version                        string = "0.0.30a0"

@@ -1,4 +1,4 @@
-package keepercommandersm
+package keeper_secrets_manager
 
 import (
 	"bytes"

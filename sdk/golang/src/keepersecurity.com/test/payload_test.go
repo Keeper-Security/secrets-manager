@@ -1,13 +1,14 @@
-package keepercommandersm
+package test
 
 import (
 	"testing"
 
-	ksm "keepersecurity.com/keepercommandersm"
+	ksm "keepersecurity.com/keeper-secrets-manager"
 )
 
 func TestTransmissionKey(t *testing.T) {
-	c := ksm.NewCommanderFromSettings("1234", "EU", true)
+	config := ksm.NewMemoryKeyValueStorage(`{ "clientKey": "1234", "server": "EU" }`)
+	c := ksm.NewCommanderFromConfig(config)
 	for _, keyNum := range []int{1, 2, 3, 4, 5, 6} {
 		transmissionKey := c.GenerateTransmissionKey(keyNum)
 		if keyNum != transmissionKey.PublicKeyId {

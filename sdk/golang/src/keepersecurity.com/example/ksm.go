@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	ksm "keepersecurity.com/keepercommandersm"
-	klog "keepersecurity.com/keepercommandersm/logger"
+	ksm "keepersecurity.com/keeper-secrets-manager"
+	klog "keepersecurity.com/keeper-secrets-manager/logger"
 )
 
 func main() {

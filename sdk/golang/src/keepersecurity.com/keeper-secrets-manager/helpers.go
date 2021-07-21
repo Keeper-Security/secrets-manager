@@ -1,4 +1,4 @@
-package keepercommandersm
+package keeper_secrets_manager
 
 import (
 	"net"
@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	klog "keepersecurity.com/keepercommandersm/logger"
+	klog "keepersecurity.com/keeper-secrets-manager/logger"
 )
 
 func GetServer(codeServer string, configStore IKeyValueStorage) string {

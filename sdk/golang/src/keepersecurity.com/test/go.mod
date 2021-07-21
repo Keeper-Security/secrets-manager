@@ -1,4 +1,4 @@
-module keepersecurity.com/example
+module keepersecurity.com/test
 
 require keepersecurity.com/keeper-secrets-manager v0.0.0
 

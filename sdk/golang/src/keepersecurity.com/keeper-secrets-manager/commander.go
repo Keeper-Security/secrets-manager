@@ -1,4 +1,4 @@
-package keepercommandersm
+package keeper_secrets_manager
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	klog "keepersecurity.com/keepercommandersm/logger"
+	klog "keepersecurity.com/keeper-secrets-manager/logger"
 )
 
 const CommanderNotationPrefix string = "keeper"
@@ -446,7 +446,7 @@ func (c *commander) Fetch(recordFilter []string) (records []*Record, justBound b
 
 	klog.Debug(fmt.Sprintf("Individual record count: %d", recordCount))
 	klog.Debug(fmt.Sprintf("Folder count: %d", folderCount))
-	klog.Debug(fmt.Sprintf("Total record count: %d", recordCount+folderCount))
+	klog.Debug(fmt.Sprintf("Total record count: %d", len(records)))
 
 	return records, justBound, nil
 }

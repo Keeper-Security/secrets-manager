@@ -1,16 +1,18 @@
-package keepercommandersm
+package test
 
 import (
 	"os"
 	"strings"
 	"testing"
 
-	ksm "keepersecurity.com/keepercommandersm"
+	ksm "keepersecurity.com/keeper-secrets-manager"
 )
 
 func TestTheWorks(t *testing.T) {
 	// Perform a simple get_secrets
 	// This test is mocked to return 3 record (2 records, 1 folder with a record)
+	defer ResetMockResponseQueue()
+
 	rawJson := `
 	{
 		"server": "fake.keepersecurity.com",
@@ -27,7 +29,7 @@ func TestTheWorks(t *testing.T) {
 
 			// --------------------------
 			// Add three records, 2 outside a folder, 1 inside folder
-			res1 := NewMockResponse([]byte{}, 200)
+			res1 := NewMockResponse([]byte{}, 200, nil)
 			one := res1.AddRecord("My Record 1", "", "", nil, nil)
 			one.Field("login", "My Login 1")
 			one.Field("password", "My Password 1")
@@ -50,7 +52,7 @@ func TestTheWorks(t *testing.T) {
 			three.Field("password", "My Password 3")
 
 			// --------------------------
-			res2 := NewMockResponse([]byte{}, 200)
+			res2 := NewMockResponse([]byte{}, 200, nil)
 
 			// Use the existing first record of res1
 			res2.AddRecord("", "", "", one, nil)
@@ -62,7 +64,7 @@ func TestTheWorks(t *testing.T) {
 			// Single record
 			MockResponseQueue.AddMockResponse(res2)
 			// Save response
-			MockResponseQueue.AddMockResponse(NewMockResponse([]byte{}, 200))
+			MockResponseQueue.AddMockResponse(NewMockResponse([]byte{}, 200, nil))
 
 			// --------------------------
 			// DO THE WORKS
@@ -115,7 +117,7 @@ func TestTheWorks(t *testing.T) {
 			c.Save(record)
 
 			// Take the save record and queue it back up as a response.
-			savedRes := NewMockResponse([]byte{}, 200)
+			savedRes := NewMockResponse([]byte{}, 200, nil)
 			savedRes.AddRecord("", "", "", nil, record)
 			MockResponseQueue.AddMockResponse(savedRes)
 
@@ -146,6 +148,7 @@ func Test403SignatureError(t *testing.T) {
 		}
 	}()
 
+	defer ResetMockResponseQueue()
 	rawJson := `
 {
 	"server": "fake.keepersecurity.com",
@@ -167,7 +170,7 @@ func Test403SignatureError(t *testing.T) {
 	"message": "Signature is invalid"
 }`
 
-	MockResponseQueue.AddMockResponse(NewMockResponse([]byte(errorJson), 403))
+	MockResponseQueue.AddMockResponse(NewMockResponse([]byte(errorJson), 403, nil))
 
 	if _, err := c.GetSecrets(nil); err != nil && err.Error() == "Error: access_denied, message=Signature is invalid" {
 		t.Log("Received expected error code 403 'Signature is invalid'")
@@ -186,12 +189,12 @@ func TestVerifySslCerts(t *testing.T) {
 	}
 
 	os.Setenv("KSM_SKIP_VERIFY", "")
-	if c := ksm.NewCommanderFromSettings("1234", "EU", true); !c.VerifySslCerts {
+	if c := ksm.NewCommanderFromFullSetup("1234", "EU", true, config); !c.VerifySslCerts {
 		t.Error(" VerifySslCerts is not true on param instance")
 	}
 
 	os.Setenv("KSM_SKIP_VERIFY", "")
-	if c := ksm.NewCommanderFromSettings("1234", "EU", false); c.VerifySslCerts {
+	if c := ksm.NewCommanderFromFullSetup("1234", "EU", false, config); c.VerifySslCerts {
 		t.Error(" VerifySslCerts is not false on param instance")
 	}
 

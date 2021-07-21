@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: ./sdk/golang/src/keepersecurity.com/keepercommandersm_test/
+        working-directory: ./sdk/golang/src/keepersecurity.com/test/
     steps:
     - name: Install Go
       uses: actions/setup-go@v2

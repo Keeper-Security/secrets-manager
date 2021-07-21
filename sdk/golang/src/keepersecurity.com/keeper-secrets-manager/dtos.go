@@ -1,4 +1,4 @@
-package keepercommandersm
+package keeper_secrets_manager
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	klog "keepersecurity.com/keepercommandersm/logger"
+	klog "keepersecurity.com/keeper-secrets-manager/logger"
 )
 
 type FieldSectionFlag byte

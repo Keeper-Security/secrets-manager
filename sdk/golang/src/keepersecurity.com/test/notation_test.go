@@ -1,15 +1,15 @@
-package keepercommandersm
+package test
 
 import (
 	"fmt"
 	"strings"
 	"testing"
 
-	ksm "keepersecurity.com/keepercommandersm"
+	ksm "keepersecurity.com/keeper-secrets-manager"
 )
 
 func generateMockresponse(uid string) *MockResponse {
-	res1 := NewMockResponse([]byte{}, 200)
+	res1 := NewMockResponse([]byte{}, 200, nil)
 	one := res1.AddRecord("My Record 1", "", uid, nil, nil)
 	one.Field("login", "My Login 1")
 	one.Field("password", "My Password 1")
@@ -36,6 +36,8 @@ func generateMockresponse(uid string) *MockResponse {
 func TestGetNotation(t *testing.T) {
 	// Perform a simple get_secrets
 	// This test is mocked to return 3 record (2 records, 1 folder with a record)
+	defer ResetMockResponseQueue()
+
 	rawJson := `
 	{
 		"server": "fake.keepersecurity.com",
@@ -218,5 +220,52 @@ func TestGetNotation(t *testing.T) {
 	}
 	if !success {
 		t.Error("custom field name, got the last name")
+	}
+}
+
+func TestCommanderCustomField(t *testing.T) {
+	// Test how Commander stores custom fields
+	defer ResetMockResponseQueue()
+
+	// If no custom fields are added via Commander, the JSON will be missing the "custom" key.
+	// Make a record that has no custom fields and see if stuff still works.
+	rawJson := `
+	{
+		"server": "fake.keepersecurity.com",
+		"appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
+		"clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
+		"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
+		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
+	}
+				`
+	config := ksm.NewMemoryKeyValueStorage(rawJson)
+	c := ksm.NewCommanderFromConfig(config, Ctx)
+
+	// --------------------------
+
+	// We want to remove the 'custom' key from the JSON
+	res1 := NewMockResponse([]byte{}, 200, &MockFlags{PruneCustomFields: true})
+	one := res1.AddRecord("My Record 1", "", "", nil, nil)
+	one.Field("login", "My Login 1")
+	one.Field("password", "My Password 1")
+	MockResponseQueue.AddMockResponse(res1)
+
+	res2 := NewMockResponse([]byte{}, 200, &MockFlags{PruneCustomFields: true})
+	two := res2.AddRecord("My Record 2", "", "", nil, nil)
+	two.Field("login", "My Login 2")
+	two.Field("password", "My Password 2")
+	MockResponseQueue.AddMockResponse(res2)
+
+	// Make sure the mock worked
+	records, err := c.GetSecrets([]string{""})
+	if err != nil || len(records) != 1 {
+		t.Error("didn't get 1 records")
+	}
+
+	record := records[0]
+	if cust, ok := record.RecordDict["custom"]; ok {
+		if iCust, ok := cust.([]interface{}); !ok || len(iCust) != 0 {
+			t.Error("found 'custom' in the JSON, mock failed")
+		}
 	}
 }

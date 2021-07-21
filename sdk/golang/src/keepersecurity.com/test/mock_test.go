@@ -1,4 +1,4 @@
-package keepercommandersm
+package test
 
 import (
 	"crypto/rand"
@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	ksm "keepersecurity.com/keepercommandersm"
+	ksm "keepersecurity.com/keeper-secrets-manager"
 )
 
 var (
@@ -23,6 +23,12 @@ var (
 	context           *ksm.Context      = &ksm.Context{}
 	Ctx               **ksm.Context     = &context
 )
+
+func ResetMockResponseQueue() {
+	MockResponseQueue = mockResponseQueue{}
+	context = &ksm.Context{}
+	Ctx = &context
+}
 
 func TestMain(m *testing.M) {
 	s := httptest.NewServer(http.HandlerFunc(Handler))
@@ -37,6 +43,13 @@ func TestMain(m *testing.M) {
 	os.Exit(retCode)
 }
 
+// MockFlags is a group of options where we can turn on/off stuff
+// in the response to fake quarks from other applications
+// and how they might store the data.
+type MockFlags struct {
+	PruneCustomFields bool // If there is no custom fields, the 'custom' key is removed from the JSON.
+}
+
 // MockResponse represents a response for the mock server to serve
 type MockResponse struct {
 	StatusCode int
@@ -46,9 +59,10 @@ type MockResponse struct {
 	Records map[string]interface{}
 	Folders map[string]interface{}
 	Reason  string
+	Flags   *MockFlags
 }
 
-func NewMockResponse(content []byte, statusCode int) *MockResponse {
+func NewMockResponse(content []byte, statusCode int, flags *MockFlags) *MockResponse {
 	// Mock a response from Secret Management Service
 	mockResponse := MockResponse{
 		StatusCode: statusCode,
@@ -57,6 +71,7 @@ func NewMockResponse(content []byte, statusCode int) *MockResponse {
 		Records:    map[string]interface{}{},
 		Folders:    map[string]interface{}{},
 		Reason:     http.StatusText(statusCode),
+		Flags:      flags,
 	}
 
 	mockResponse.Headers.Add("Server", "keeper")
@@ -72,18 +87,18 @@ func NewMockResponse(content []byte, statusCode int) *MockResponse {
 	return &mockResponse
 }
 
-func (m *MockResponse) Dump(secret []byte) map[string]interface{} {
+func (m *MockResponse) Dump(secret []byte, flags *MockFlags) map[string]interface{} {
 	folders := []interface{}{}
 	for _, folder := range m.Folders {
 		fld := folder.(*MockFolder)
-		fldDump := fld.Dump(secret)
+		fldDump := fld.Dump(secret, flags)
 		folders = append(folders, fldDump)
 	}
 
 	records := []interface{}{}
 	for _, record := range m.Records {
 		rec := record.(*MockRecord)
-		recDump := rec.Dump(secret)
+		recDump := rec.Dump(secret, flags)
 		records = append(records, recDump)
 	}
 
@@ -103,14 +118,14 @@ func (m *MockResponse) InstanceSetup(context *ksm.Context) {
 	m.Headers.Add("Date", time.Now().UTC().Format(time.RFC1123))
 	// If canned content has not been set, the create content from records/folders.
 	if len(m.Content) == 0 {
-		jsonStr := ksm.DictToJson(m.Dump(context.ClientKey))
+		jsonStr := ksm.DictToJson(m.Dump(context.ClientKey, m.Flags))
 		if content, err := ksm.EncryptAesGcm([]byte(jsonStr), context.TransmissionKey.Key); err == nil {
 			m.Content = content
 			m.Headers.Add("Content-Length", strconv.Itoa(len(content)))
 			m.StatusCode = 200
 			m.Reason = "OK"
 		} else {
-			log.Println("error necrypting paylod " + err.Error())
+			log.Println("error encrypting paylod " + err.Error())
 		}
 	}
 	// Else return the canned content. This is useful to mock errors that return plain or json text.
@@ -182,7 +197,8 @@ func NewMockHtpServer(t *testing.T) *httptest.Server {
 }
 
 func TestMockHtpServer(t *testing.T) {
-	MockResponseQueue.AddMockResponse(NewMockResponse([]byte("TEST"), 200))
+	defer ResetMockResponseQueue()
+	MockResponseQueue.AddMockResponse(NewMockResponse([]byte("TEST"), 200, nil))
 	if resp, err := http.Get("https://127.0.0.1/test"); err != nil {
 		t.Fatal("failed to send first request:", err)
 	} else if body, err := io.ReadAll(resp.Body); err != nil || string(body) != "TEST" {
@@ -237,14 +253,14 @@ func (f *MockFolder) AddRecord(title, recordType, uid string, record *MockRecord
 	return record
 }
 
-func (f *MockFolder) Dump(secret []byte) map[string]interface{} {
+func (f *MockFolder) Dump(secret []byte, flags *MockFlags) map[string]interface{} {
 	encFolderKey, _ := ksm.EncryptAesGcm(secret, secret)
 	folderKey := ksm.BytesToBase64(encFolderKey)
 
 	records := []interface{}{}
 	for _, record := range f.Records {
 		rec := record.(*MockRecord)
-		recDump := rec.Dump(secret)
+		recDump := rec.Dump(secret, flags)
 		records = append(records, recDump)
 	}
 
@@ -311,7 +327,7 @@ func (f *MockFile) DownloadableContent() []byte {
 	return content
 }
 
-func (f *MockFile) Dump(secret []byte) map[string]interface{} {
+func (f *MockFile) Dump(secret []byte, flags *MockFlags) map[string]interface{} {
 	f.SecretUsed = secret
 
 	d := map[string]interface{}{
@@ -452,7 +468,7 @@ func (r *MockRecord) AddFile(name, title, contentType, url string, content []byt
 	return file
 }
 
-func (r *MockRecord) Dump(secret []byte) map[string]interface{} {
+func (r *MockRecord) Dump(secret []byte, flags *MockFlags) map[string]interface{} {
 	fields := []interface{}{}
 	custom := []interface{}{}
 	files := []interface{}{}
@@ -462,7 +478,7 @@ func (r *MockRecord) Dump(secret []byte) map[string]interface{} {
 		for _, file := range r.Files {
 			f := file.(*MockFile)
 			fileUids = append(fileUids, f.Uid)
-			files = append(files, f.Dump(secret))
+			files = append(files, f.Dump(secret, flags))
 		}
 		fields = append(fields, map[string]interface{}{
 			"type":  "fileRef",
@@ -493,6 +509,12 @@ func (r *MockRecord) Dump(secret []byte) map[string]interface{} {
 		"fields": fields,
 		"custom": custom,
 	}
+
+	// Commander will not add a custom key if there is no custom fields. However the UI does.
+	if flags != nil && flags.PruneCustomFields && len(custom) == 0 {
+		delete(dataMap, "custom")
+	}
+
 	jsonData := ksm.DictToJson(dataMap)
 	encData, _ := ksm.EncryptAesGcm([]byte(jsonData), secret)
 	recordData := ksm.BytesToBase64(encData)

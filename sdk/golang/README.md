@@ -35,7 +35,7 @@ TBD
 package main
 
 // Import Commander
-import "keepercommandersm/core"
+import ksm "keepersecurity.com/keeper-secrets-manager"
 
 func main() {
 	// Establish connection

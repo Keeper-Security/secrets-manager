@@ -1,9 +1,9 @@
-package keepercommandersm
+package keeper_secrets_manager
 
 import (
 	"encoding/json"
 
-	klog "keepersecurity.com/keepercommandersm/logger"
+	klog "keepersecurity.com/keeper-secrets-manager/logger"
 )
 
 type Context struct {
