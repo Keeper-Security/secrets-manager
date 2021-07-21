@@ -57,9 +57,9 @@ class Secret:
             if len(replacement_data) > 0:
                 real_records = self.cli.client.get_secrets([uid for uid in replacement_data])
                 for real_record in real_records:
-                    if record.uid in replacement_data:
-                        replacement_index = replacement_data[record.uid]["index"]
-                        replacement_type = replacement_data[record.uid]["type"]
+                    if real_record.uid in replacement_data:
+                        replacement_index = replacement_data[real_record.uid]["index"]
+                        replacement_type = replacement_data[real_record.uid]["type"]
                         replacement_key = Secret.support_ref_types[replacement_type]
                         real_values = real_record.field(replacement_key)
                         for value in real_values:
