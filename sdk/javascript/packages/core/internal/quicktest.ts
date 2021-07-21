@@ -21,7 +21,7 @@ const clientKey = 'Sl8gZ2A9xbR8RgwT3ylwEU_anb81EMpqnt4oU5vIZMo'
 
 async function test() {
     const kvs = testKeyValueStorage(configFileName)
-    await initializeStorage(kvs, clientKey, 'dev.keepersecurity.com')
+    await initializeStorage(kvs, undefined, 'dev.keepersecurity.com')
     // const response = await getSecrets(kvs, ['i3v4ehaoB-Bwsb7bbbek2g'])
     const response = await getSecrets(kvs)
     console.log(inspect(response, false, 6))

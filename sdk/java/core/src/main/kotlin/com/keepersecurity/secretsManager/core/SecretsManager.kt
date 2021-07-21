@@ -89,7 +89,6 @@ private data class SecretsManagerResponse(
     val records: List<SecretsManagerResponseRecord>?
 )
 
-
 data class KeeperSecrets(val records: List<KeeperRecord>)
 
 data class KeeperRecord(
@@ -106,20 +105,6 @@ data class KeeperFile(
     val data: KeeperFileData,
     val url: String,
     val thumbnailUrl: String?
-)
-
-@Serializable
-data class KeeperRecordData(
-    val title: String,
-    val type: String,
-    val fields: List<KeeperRecordField>,
-    val custom: List<String>
-)
-
-@Serializable
-data class KeeperRecordField(
-    val type: String,
-    val value: MutableList<String>
 )
 
 @Serializable
@@ -197,16 +182,6 @@ fun downloadThumbnail(file: KeeperFile): ByteArray {
         throw Exception("Thumbnail does not exist for the file ${file.fileUid}")
     }
     return downloadFile(file, file.thumbnailUrl)
-}
-
-fun getRecordField(record: KeeperRecord, fieldName: String): String {
-    val field = record.data.fields.first { x -> x.type == fieldName }
-    return field.value[0]
-}
-
-fun updateRecordField(record: KeeperRecord, fieldName: String, newValue: String) {
-    val field = record.data.fields.first { x -> x.type == fieldName }
-    field.value[0] = newValue
 }
 
 private fun downloadFile(file: KeeperFile, url: String): ByteArray {

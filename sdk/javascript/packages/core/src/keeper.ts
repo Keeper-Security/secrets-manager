@@ -228,11 +228,17 @@ export const getClientId = async (clientKey: string): Promise<string> => {
     return platform.bytesToBase64(clientKeyHash)
 }
 
-export const initializeStorage = async (storage: KeyValueStorage, clientKey: string, domain: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
+export const initializeStorage = async (storage: KeyValueStorage, clientKey?: string, domain?: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
+    const existingClientId = await storage.getString(KEY_CLIENT_ID)
+    if (existingClientId && !clientKey) {
+        return
+    }
+    if (!clientKey) {
+        throw new Error(`Need to initialize the storage`)
+    }
     const clientKeyBytes = webSafe64ToBytes(clientKey)
     const clientKeyHash = await platform.hash(clientKeyBytes, CLIENT_ID_HASH_TAG)
     const clientId = platform.bytesToBase64(clientKeyHash)
-    const existingClientId = await storage.getString(KEY_CLIENT_ID)
     if (existingClientId && existingClientId === clientId) {
         return  // the storage is already initialised
     }

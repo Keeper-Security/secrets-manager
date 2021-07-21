@@ -8,6 +8,7 @@ import java.io.File
 import java.io.FileReader
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.fail
 
 internal class SecretsManagerTest {
@@ -35,8 +36,9 @@ internal class SecretsManagerTest {
         initializeStorage(storage, "VB3sGkzVyRB9Lup6WE7Rx-ETFZxyWR2zqY2b9f2zwBo", "local.keepersecurity.com")
         val options = SecretsManagerOptions(storage, testPostFunction)
         val secrets = getSecrets(options)
-        val password = getRecordField(secrets.records[1], "password")
-        assertEquals("N\$B!lkoOrVL1RUNDBvn2", password)
+        val password = secrets.records[1].data.getField<Password>()
+        assertNotNull(password)
+        assertEquals("N\$B!lkoOrVL1RUNDBvn2", password.value[0])
         try {
             getSecrets(options)
             fail("Did not throw")
@@ -54,7 +56,7 @@ internal class SecretsManagerTest {
             payload: EncryptedPayload,
         ) -> KeeperHttpResponse = { url, transmissionKey, payload -> postFunction(url, transmissionKey, payload, true) }
         val storage = LocalConfigStorage("config.txt")
-        initializeStorage(storage, "jU8TePiu3CVtQ5dC7UYDrMX1l9ezR5uPCjMKTdosLRY", "dev.keepersecurity.com")
+        initializeStorage(storage, "D0Tq0GNW44EUtJEAkMoE_eReDqnfHBBBLshdSE65pjk", "dev.keepersecurity.com")
         val options = SecretsManagerOptions(storage, trustAllPostFunction)
 //        val options = SecretsManagerOptions(storage, ::cachingPostFunction)
         val secrets = getSecrets(options)
