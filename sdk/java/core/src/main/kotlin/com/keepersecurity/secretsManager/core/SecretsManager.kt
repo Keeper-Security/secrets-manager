@@ -14,6 +14,7 @@ import java.util.jar.Manifest
 import javax.net.ssl.*
 
 private const val KEY_URL = "url" // base url for the Secrets Manager service
+private const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
 private const val KEY_CLIENT_ID = "clientId"
 private const val KEY_CLIENT_KEY = "clientKey" // The key that is used to identify the client before public key
 private const val KEY_APP_KEY = "appKey" // The application key with which all secrets are encrypted
@@ -36,8 +37,11 @@ data class SecretsManagerOptions @JvmOverloads constructor(
 
 typealias QueryFunction = (url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload) -> KeeperHttpResponse
 
-data class TransmissionKey(val publicKeyId: Int, var key: ByteArray, val encryptedKey: ByteArray)
+data class TransmissionKey(var publicKeyId: Int, var key: ByteArray, val encryptedKey: ByteArray)
 data class KeeperHttpResponse(val statusCode: Int, val data: ByteArray)
+
+@Serializable
+data class KeeperError(val key_id: Int, val error: String)
 
 @Serializable
 private data class GetPayload(
@@ -168,7 +172,7 @@ fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emp
 }
 
 fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
-    val transmissionKey = generateTransmissionKey(1)
+    val transmissionKey = generateTransmissionKey(options.storage)
     val encryptedPayload = prepareUpdatePayload(options.storage, transmissionKey, record)
     postQuery(options, "update_secret", transmissionKey, encryptedPayload)
 }
@@ -203,7 +207,7 @@ private fun fetchAndDecryptSecrets(
     options: SecretsManagerOptions,
     recordsFilter: List<String>
 ): Pair<KeeperSecrets, Boolean> {
-    val transmissionKey = generateTransmissionKey(1)
+    val transmissionKey = generateTransmissionKey(options.storage)
     val storage = options.storage
     val encryptedPayload = prepareGetPayload(storage, transmissionKey, recordsFilter)
     val responseData = postQuery(options, "get_secret", transmissionKey, encryptedPayload)
@@ -360,6 +364,8 @@ fun postFunction(
     return KeeperHttpResponse(statusCode, data)
 }
 
+private val errorMsgJson = Json { ignoreUnknownKeys = true }
+
 private fun postQuery(
     options: SecretsManagerOptions,
     path: String,
@@ -368,15 +374,27 @@ private fun postQuery(
 ): ByteArray {
     val baseUrl = options.storage.getString(KEY_URL) ?: throw Exception("URL is missing from the storage")
     val url = "${baseUrl}/${path}"
-    val response = if (options.queryFunction == null) {
-        postFunction(url, transmissionKey, payload, false)
-    } else {
-        options.queryFunction.invoke(url, transmissionKey, payload)
+    while (true) {
+        val response = if (options.queryFunction == null) {
+            postFunction(url, transmissionKey, payload, false)
+        } else {
+            options.queryFunction.invoke(url, transmissionKey, payload)
+        }
+        if (response.statusCode != HTTP_OK) {
+            val errorMessage = String(response.data)
+            try {
+                val error = errorMsgJson.decodeFromString<KeeperError>(errorMessage)
+                if (error.error == "key") {
+                    transmissionKey.publicKeyId = error.key_id
+                    options.storage.saveString(KEY_SERVER_PUBIC_KEY_ID, error.key_id.toString())
+                    continue
+                }
+            } catch (e: Exception) {
+            }
+            throw Exception(errorMessage)
+        }
+        return response.data
     }
-    if (response.statusCode != HTTP_OK) {
-        throw Exception(String(response.data))
-    }
-    return response.data
 }
 
 @Suppress("SpellCheckingInspection")
@@ -389,12 +407,13 @@ private val keeperPublicKeys = listOf(
     webSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM")
 )
 
-private fun generateTransmissionKey(keyNumber: Int): TransmissionKey {
+private fun generateTransmissionKey(storage: KeyValueStorage): TransmissionKey {
     val transmissionKey = if (TestStubs.transmissionKeyStubReady()) {
         TestStubs.transmissionKeyStub()
     } else {
         getRandomBytes(32)
     }
+    val keyNumber: Int = storage.getString(KEY_SERVER_PUBIC_KEY_ID)?.toInt() ?: 1
     val encryptedKey = publicEncrypt(transmissionKey, keeperPublicKeys[keyNumber - 1])
     return TransmissionKey(keyNumber, transmissionKey, encryptedKey)
 }

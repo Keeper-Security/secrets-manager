@@ -6,6 +6,7 @@ export {KeyValueStorage} from './platform'
 let packageVersion = '[VI]{version}[/VI]'
 const KEY_URL = 'url' // base url for the Secrets Manager service
 const KEY_TRANSMISSION_KEY = 'transmissionKey'
+const KEY_SERVER_PUBIC_KEY_ID = 'serverPublicKeyId'
 const KEY_CLIENT_ID = 'clientId'
 const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the client before public key
 const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
@@ -92,9 +93,16 @@ export type KeeperFile = {
     thumbnailUrl?: string
 }
 
-export const generateTransmissionKey = async (keyNumber: number): Promise<TransmissionKey> => {
+type KeeperError = {
+    error?: string
+    key_id?: number
+}
+
+export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => {
     const transmissionKey = platform.getRandomBytes(32)
     await platform.importKey(KEY_TRANSMISSION_KEY, transmissionKey)
+    const keyNumberString = await storage.getString(KEY_SERVER_PUBIC_KEY_ID)
+    const keyNumber = keyNumberString ? Number(keyNumberString) : 1
     const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[keyNumber - 1])
     return {
         publicKeyId: keyNumber,
@@ -152,15 +160,27 @@ const postQuery = async (storage: KeyValueStorage, path: string, transmissionKey
     if (!url) {
         throw new Error('url is missing from the configuration')
     }
-    const httpResponse = await platform.post(`${url}/${path}`, payload, {
-        PublicKeyId: transmissionKey.publicKeyId.toString(),
-        TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
-        Authorization: `Signature ${platform.bytesToBase64(signature)}`
-    })
-    if (httpResponse.statusCode !== 200) {
-        throw new Error(platform.bytesToString(httpResponse.data))
+    while (true) {
+        const httpResponse = await platform.post(`${url}/${path}`, payload, {
+            PublicKeyId: transmissionKey.publicKeyId.toString(),
+            TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
+            Authorization: `Signature ${platform.bytesToBase64(signature)}`
+        })
+        if (httpResponse.statusCode !== 200) {
+            const errorMessage = platform.bytesToString(httpResponse.data.slice(0, 1000))
+            try {
+                const errorObj: KeeperError = JSON.parse(errorMessage)
+                if (errorObj.error === 'key') {
+                    transmissionKey.publicKeyId = <number>errorObj.key_id
+                    await storage.saveString(KEY_SERVER_PUBIC_KEY_ID, transmissionKey.publicKeyId.toString())
+                    continue
+                }
+            } catch {
+            }
+            throw new Error(errorMessage)
+        }
+        return httpResponse
     }
-    return httpResponse
 }
 
 const decryptRecord = async (record: SecretsManagerResponseRecord): Promise<KeeperRecord> => {
@@ -186,7 +206,7 @@ const decryptRecord = async (record: SecretsManagerResponseRecord): Promise<Keep
 }
 
 const fetchAndDecryptSecrets = async (storage: KeyValueStorage, recordsFilter?: string[]): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
-    const transmissionKey = await generateTransmissionKey(1)
+    const transmissionKey = await generateTransmissionKey(storage)
     const { payload, signature } = await prepareGetPayload(storage, transmissionKey, recordsFilter)
     const httpResponse = await postQuery(storage, 'get_secret', transmissionKey, payload, signature)
     const decryptedResponse = await platform.decrypt(httpResponse.data, KEY_TRANSMISSION_KEY)
@@ -265,7 +285,7 @@ export const getSecrets = async (storage: KeyValueStorage, recordsFilter?: strin
 }
 
 export const updateSecret = async (storage: KeyValueStorage, record: KeeperRecord): Promise<void> => {
-    const transmissionKey = await generateTransmissionKey(1)
+    const transmissionKey = await generateTransmissionKey(storage)
     const { payload, signature } = await prepareUpdatePayload(storage, transmissionKey, record)
     await postQuery(storage, 'update_secret', transmissionKey, payload, signature)
 }
