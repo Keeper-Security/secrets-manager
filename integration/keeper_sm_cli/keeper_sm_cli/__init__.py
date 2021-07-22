@@ -17,8 +17,6 @@ from .profile import Profile
 import sys
 import logging
 
-__version__ = "0.0.5"
-
 
 class KeeperCli:
 
@@ -67,15 +65,7 @@ class KeeperCli:
         # Default to stdout if the output is not set.
         if output is None:
             output = "stdout"
-
-        if output == "stdout":
-            self.output_fh = sys.stdout
-        elif output == "stderr":
-            self.output_fh = sys.stderr
-        elif type(output) is str:
-            self.output_fh = open(output, "w+")
-        else:
-            sys.exit("The output {} is not supported. Cannot display your information.".format(output))
+        self.output_name = output
 
     @property
     def client(self):
@@ -103,5 +93,28 @@ class KeeperCli:
         logger.setLevel(getattr(logging, value))
 
     def output(self, msg):
-        self.output_fh.write(msg)
-        self.output_fh.flush()
+
+        is_file = False
+        is_bytes = type(msg) is bytes
+        if self.output_name == "stdout":
+            output_fh = sys.stdout
+        elif self.output_name == "stderr":
+            output_fh = sys.stderr
+        elif type(self.output_name) is str:
+            output_fh = open(self.output_name, "w+")
+            is_file = True
+        else:
+            sys.exit("The output {} is not supported. Cannot display your information.".format(self.output))
+
+        # Write bytes via the buffer since we do not know the encoding. We can't decode() because it might not
+        # be utf-8.
+        if is_bytes is True:
+            output_fh.buffer.write(msg)
+        else:
+            output_fh.write(msg)
+
+        if is_file is True:
+            output_fh.close()
+        else:
+            # Make sure we push stdout and stderr out.
+            output_fh.flush()

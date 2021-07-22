@@ -519,12 +519,14 @@ class Commander:
             value = record.custom_field(key, single=False)
         elif file_type == "file":
             file = record.find_file_by_title(key)
-            value = file.self.get_file_data()
+            if file is None:
+                raise FileNotFoundError("Cannot find the file {} in record {}.".format(key, uid))
+            value = file.get_file_data()
         else:
             raise ValueError("Field type of {} is not value.".format(file_type))
 
         ret = value
-        if return_single is True:
+        if return_single is True and type(value) is list:
             if len(value) == 0:
                 return None
             try:
