@@ -255,7 +255,12 @@ class File:
         # encode the content with that secret.
         if self.secret_used is None:
             raise ValueError("The file has not be dump'd yet, Secret is unknown.")
-        return encrypt_aes(self.content.encode(), self.secret_used)
+
+        data = self.content
+        if type(data) is not bytes:
+            data = data.encode()
+
+        return encrypt_aes(data, self.secret_used)
 
     def dump(self, secret, flags=None):
         self.secret_used = secret

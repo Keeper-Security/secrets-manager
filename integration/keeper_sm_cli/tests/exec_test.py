@@ -138,7 +138,6 @@ class ExecTest(unittest.TestCase):
                     'exec', '--capture-output', '--inline',
                     script.name, "{}://{}/{}/{}[]".format(Commander.notation_prefix, one.uid, "field", "password")
                 ], catch_exceptions=False)
-                print(result.output)
                 self.assertIsNotNone(re.search('My Login 1', result.output, flags=re.MULTILINE),
                                      "did not find the login")
                 self.assertIsNotNone(re.search('My Password 1', result.output, flags=re.MULTILINE),
