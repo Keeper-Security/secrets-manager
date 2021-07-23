@@ -159,7 +159,7 @@ const postQuery = async (storage: KeyValueStorage, path: string, payload: GetPay
         throw new Error('url is missing from the configuration')
     }
     while (true) {
-        let transmissionKey = await generateTransmissionKey(storage)
+        const transmissionKey = await generateTransmissionKey(storage)
         const {encryptedPayload, signature} = await encryptAndSignPayload(storage, transmissionKey, payload)
         const httpResponse = await platform.post(`${url}/${path}`, encryptedPayload, {
             PublicKeyId: transmissionKey.publicKeyId.toString(),
@@ -172,7 +172,6 @@ const postQuery = async (storage: KeyValueStorage, path: string, payload: GetPay
                 const errorObj: KeeperError = JSON.parse(errorMessage)
                 if (errorObj.error === 'key') {
                     await storage.saveString(KEY_SERVER_PUBIC_KEY_ID, errorObj.key_id!.toString())
-                    transmissionKey = await generateTransmissionKey(storage)
                     continue
                 }
             } catch {
