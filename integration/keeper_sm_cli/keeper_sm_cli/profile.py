@@ -19,6 +19,7 @@ from .common import table_setup
 import prettytable
 import sys
 import json
+import tempfile
 
 
 class Profile:
@@ -247,6 +248,34 @@ class Profile:
         self.save()
 
         print("{} is now the active profile.".format(profile_name), file=sys.stderr)
+
+    def export(self, profile_name=None):
+
+        # If the profile name is not set, use the active profile.
+        if profile_name is None:
+            profile_name = self.get_active_profile_name()
+        profile_config = self.get_profile_config(profile_name)
+
+        export_config = configparser.ConfigParser()
+        export_config[Profile.default_profile] =profile_config
+        export_config[Profile.config_profile] = {
+            "log_level": "WARNING",
+            Profile.active_profile_key: Profile.default_profile
+        }
+
+        # Apparently the config parser doesn't like temp files. So create a
+        # temp file, then open a file for writing and use that to write
+        # the config. Then read the temp file to get our new config.
+        with tempfile.NamedTemporaryFile() as tf:
+
+            with open(tf.name, 'w') as configfile:
+                export_config.write(configfile)
+
+            tf.seek(0)
+            config_str = tf.read()
+            tf.close()
+
+        self.cli.output(config_str)
 
     def set_log_level(self, level):
         common_config = self._get_common_config("Cannot set log level.")

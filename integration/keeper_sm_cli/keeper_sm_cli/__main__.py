@@ -118,9 +118,20 @@ def profile_active_command(ctx, profile_name):
     )
 
 
+@click.command(name='export')
+@click.argument('profile-name', type=str, required=False, nargs=1)
+@click.pass_context
+def profile_export_command(ctx, profile_name):
+    """Set the active profile."""
+    Profile(cli=ctx.obj["cli"]).export(
+        profile_name=profile_name
+    )
+
+
 profile_command.add_command(profile_init_command)
 profile_command.add_command(profile_list_command)
 profile_command.add_command(profile_active_command)
+profile_command.add_command(profile_export_command)
 
 # SECRET GROUP
 
