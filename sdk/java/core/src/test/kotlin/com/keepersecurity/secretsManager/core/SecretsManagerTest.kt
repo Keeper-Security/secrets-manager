@@ -55,8 +55,8 @@ internal class SecretsManagerTest {
             transmissionKey: TransmissionKey,
             payload: EncryptedPayload,
         ) -> KeeperHttpResponse = { url, transmissionKey, payload -> postFunction(url, transmissionKey, payload, true) }
-        val storage = LocalConfigStorage("config.txt")
-        initializeStorage(storage, "D0Tq0GNW44EUtJEAkMoE_eReDqnfHBBBLshdSE65pjk", "dev.keepersecurity.com")
+        val storage = LocalConfigStorage("config-qa.txt")
+        initializeStorage(storage, "ambZefzqJsy6zT683OrX_ydNq-iKc7-b64qgqNsf-XY", "qa.keepersecurity.com")
         val options = SecretsManagerOptions(storage, trustAllPostFunction)
 //        val options = SecretsManagerOptions(storage, ::cachingPostFunction)
         val secrets = getSecrets(options)
