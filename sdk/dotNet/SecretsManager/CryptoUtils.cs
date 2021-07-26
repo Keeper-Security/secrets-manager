@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
+using System.Text;
 using Org.BouncyCastle.Asn1;
 using Org.BouncyCastle.Asn1.X9;
 using Org.BouncyCastle.Crypto;
@@ -23,13 +24,6 @@ namespace SecretsManager
             var curve = ECNamedCurveTable.GetByName("secp256r1");
             ECParameters = new ECDomainParameters(curve.Curve, curve.G, curve.N);
         }
-        
-        public static byte[] GetRandomBytes(int length)
-        {
-            var bytes = new byte[length];
-            RngCsp.NextBytes(bytes);
-            return bytes;
-        }
 
         public static byte[] WebSafe64ToBytes(string data)
         {
@@ -43,7 +37,52 @@ namespace SecretsManager
             base64 = base64.PadRight(base64.Length + (4 - base64.Length % 4) % 4, '=');
             return Convert.FromBase64String(base64);
         }
-        
+
+        public static byte[] StringToBytes(string data)
+        {
+            return Encoding.ASCII.GetBytes(data);
+        }
+
+        public static string BytesToBase64(byte[] data)
+        {
+            return Convert.ToBase64String(data);
+        }
+
+        public static byte[] GetRandomBytes(int length)
+        {
+            var bytes = new byte[length];
+            RngCsp.NextBytes(bytes);
+            return bytes;
+        }
+
+        public static Tuple<byte[], byte[]> GenerateKeyPair()
+        {
+            var keyGeneratorParams = new ECKeyGenerationParameters(ECParameters, RngCsp);
+            var keyGenerator = new ECKeyPairGenerator("EC");
+            keyGenerator.Init(keyGeneratorParams);
+            var keyPair = keyGenerator.GenerateKeyPair();
+            var publicRaw = ((ECPublicKeyParameters) keyPair.Public).Q.GetEncoded();
+            var privateRaw = ExportECPrivateKey((ECPrivateKeyParameters) keyPair.Private);
+            return new Tuple<byte[], byte[]>(publicRaw, privateRaw);
+        }
+
+        private static byte[] ExportECPrivateKey(ECPrivateKeyParameters key)
+        {
+            var privateKey = key.D.ToByteArrayUnsigned();
+            var len = privateKey.Length;
+            if (len >= 32) return privateKey;
+            var pk = new byte[32];
+            Array.Clear(pk, 0, pk.Length);
+            Array.Copy(privateKey, 0, pk, 32 - len, len);
+            return pk;
+        }
+
+        public static byte[] Hash(byte[] data, string tag)
+        {
+            var hmac = new HMACSHA512(data);
+            return hmac.ComputeHash(StringToBytes(tag));
+        }
+
         public static ECPublicKeyParameters ImportPublicKey(byte[] key)
         {
             var point = new X9ECPoint(ECParameters.Curve, new DerOctetString(key)).Point;
@@ -57,7 +96,7 @@ namespace SecretsManager
             var commonSecret = ka.CalculateAgreement(recipientPublicKey).ToByteArrayUnsigned();
             return SHA256.Create().ComputeHash(commonSecret);
         }
-        
+
         public static GcmBlockCipher GetCipher(bool forEncryption, byte[] iv, byte[] key)
         {
             var cipher = new GcmBlockCipher(new AesEngine());
@@ -65,8 +104,8 @@ namespace SecretsManager
             cipher.Init(true, gcmParameterSpec);
             return cipher;
         }
-        
-        public static byte[] EncryptAesV2(byte[] data, byte[] key)
+
+        public static byte[] Encrypt(byte[] data, byte[] key)
         {
             var iv = GetRandomBytes(12);
             var cipher = GetCipher(true, iv, key);
@@ -75,7 +114,7 @@ namespace SecretsManager
             len += cipher.DoFinal(cipherText, len);
             return iv.Concat(cipherText.Take(len)).ToArray();
         }
-        
+
         public static byte[] PublicEncrypt(byte[] data, byte[] keeperPublicKey)
         {
             var keyGenerator = new ECKeyPairGenerator("ECDH");
@@ -83,9 +122,13 @@ namespace SecretsManager
             var ephemeralKeyPair = keyGenerator.GenerateKeyPair();
             var recipientPublicKey = ImportPublicKey(keeperPublicKey);
             var symmetricKey = GetECIESSymmetricKey(ephemeralKeyPair.Private, recipientPublicKey);
-            var encryptedData = EncryptAesV2(data, symmetricKey);
+            var encryptedData = Encrypt(data, symmetricKey);
             return ((ECPublicKeyParameters) ephemeralKeyPair.Public).Q.GetEncoded().Concat(encryptedData).ToArray();
         }
 
+        public static byte[] Sign(byte[] signatureBase, byte[] privateKey)
+        {
+            return new byte[] {1};
+        }
     }
 }

@@ -16,7 +16,7 @@ internal class SecretsManagerTest {
     @Serializable
     data class TestResponse(val transmissionKey: String, val data: String, val statusCode: Int)
 
-    @Test
+    //    @Test
     fun getSecretsE2E() {
         val file = File("../../test_data.json")
         val inputStream = BufferedReader(FileReader(file))
@@ -48,15 +48,15 @@ internal class SecretsManagerTest {
         }
     }
 
-//    @Test // uncomment to debug the integration test
+    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (
             url: String,
             transmissionKey: TransmissionKey,
             payload: EncryptedPayload,
         ) -> KeeperHttpResponse = { url, transmissionKey, payload -> postFunction(url, transmissionKey, payload, true) }
-        val storage = LocalConfigStorage("config-qa.txt")
-        initializeStorage(storage, "ambZefzqJsy6zT683OrX_ydNq-iKc7-b64qgqNsf-XY", "qa.keepersecurity.com")
+        val storage = LocalConfigStorage("config-local.txt")
+        initializeStorage(storage, "kI5mVsDFtt7SvfV5FDMhkj8qqbESUxwVRhnRxiX9jM8", "local.keepersecurity.com")
         val options = SecretsManagerOptions(storage, trustAllPostFunction)
 //        val options = SecretsManagerOptions(storage, ::cachingPostFunction)
         val secrets = getSecrets(options)
