@@ -18,8 +18,8 @@ from .profile import Profile
 import sys
 import os
 import keepercommandersm
-from importlib.metadata import version as meta_version
 import traceback
+import importlib_metadata
 from distutils.util import strtobool
 
 
@@ -33,7 +33,7 @@ def _get_cli(ini_file=None, profile_name=None, output=None):
 
 def base_command_help(f):
     doc = f.__doc__
-    f.__doc__ = "{} Version: {} ".format(doc, meta_version('keeper_sm_cli'))
+    f.__doc__ = "{} Version: {} ".format(doc, importlib_metadata.version("keeper_sm_cli"))
     return f
 
 
@@ -58,7 +58,7 @@ def cli(ctx, ini_file, profile_name, output):
         }
     except FileNotFoundError as _:
         sys.exit("Could not find the INI file specified on the top level command. If you are running the init"
-             " sub-command, specify the INI file on the sub-command parameters instead on the top level command.")
+                 " sub-command, specify the INI file on the sub-command parameters instead on the top level command.")
     except Exception as err:
         sys.exit("Could not run the command. Got the error: {}".format(err))
 
@@ -119,12 +119,29 @@ def profile_active_command(ctx, profile_name):
 
 
 @click.command(name='export')
+@click.option('--key', '-k', type=str, help='Encode config with a key')
 @click.argument('profile-name', type=str, required=False, nargs=1)
 @click.pass_context
-def profile_export_command(ctx, profile_name):
-    """Set the active profile."""
-    Profile(cli=ctx.obj["cli"]).export(
+def profile_export_command(ctx, key, profile_name):
+    """Create a new config file from a profile."""
+    Profile(cli=ctx.obj["cli"]).export_config(
+        key=key,
         profile_name=profile_name
+    )
+
+
+@click.command(name='import')
+@click.option('--key', '-k', type=str, required=True, help='Decode config with a key.')
+@click.option('--output-file', '-f', type=str, required=False,
+              help='Save the import config to a specific file location.')
+@click.argument('enc-config', type=str, required=True, nargs=1)
+@click.pass_context
+def profile_import_command(ctx, key, output_file, enc_config):
+    """Import an encrypted config file."""
+    Profile(cli=ctx.obj["cli"]).import_config(
+        key=key,
+        file=output_file,
+        enc_config=enc_config
     )
 
 
@@ -132,6 +149,7 @@ profile_command.add_command(profile_init_command)
 profile_command.add_command(profile_list_command)
 profile_command.add_command(profile_active_command)
 profile_command.add_command(profile_export_command)
+profile_command.add_command(profile_import_command)
 
 # SECRET GROUP
 
@@ -284,9 +302,9 @@ def version_command(ctx):
         str(sys.version_info.micro)
     ])))
     print("Python Install: {}".format(sys.executable))
-    print("CLI Version: {}".format(meta_version('keeper_sm_cli')))
+    print("CLI Version: {}".format(importlib_metadata.version("keeper_sm_cli")))
     print("CLI Install: {}".format(os.path.dirname(os.path.realpath(__file__))))
-    print("SDK Version: {}".format(meta_version('keepercommandersm')))
+    print("SDK Version: {}".format(importlib_metadata.version("keepercommandersm")))
     print("SDK Install: {}".format(os.path.dirname(os.path.realpath(keepercommandersm.__file__))))
     print("Config file: {}".format(ctx.obj["cli"].profile.ini_file))
 

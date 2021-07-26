@@ -15,10 +15,13 @@ import configparser
 from keepercommandersm.storage import InMemoryKeyValueStorage
 from keepercommandersm.configkeys import ConfigKeys
 from keepercommandersm.exceptions import KeeperError, KeeperAccessDenied
+from keepercommandersm.utils import encrypt_aes, decrypt_aes
 from .common import table_setup
 import prettytable
 import sys
 import json
+import base64
+import hashlib
 import tempfile
 
 
@@ -249,7 +252,16 @@ class Profile:
 
         print("{} is now the active profile.".format(profile_name), file=sys.stderr)
 
-    def export(self, profile_name=None):
+    def export_config(self, profile_name=None, key=None):
+
+        """Take a profile from an existing config and make it a stand-alone config.
+
+        This is when you want to pull a single profile from a config and use it
+        someplace else, like inside of a Docker image.
+
+        The key will encrypt, and base64, the config file. While it's nice
+        for security, the real reason was to make a single line string. :)
+        """
 
         # If the profile name is not set, use the active profile.
         if profile_name is None:
@@ -275,7 +287,31 @@ class Profile:
             config_str = tf.read()
             tf.close()
 
+        if key is not None:
+            real_key = hashlib.sha256(key.encode()).digest()
+            ciphertext = encrypt_aes(config_str, real_key)
+            config_str = base64.b64encode(ciphertext)
+
         self.cli.output(config_str)
+
+    @staticmethod
+    def import_config(key, enc_config, file=None):
+
+        """Take base64 AES encrypted config file and unencrypted it back to disk.
+        """
+
+        if file is None:
+            file = Profile.default_ini_file
+
+        real_key = hashlib.sha256(key.encode()).digest()
+        cipher = base64.b64decode(enc_config)
+        config_str = decrypt_aes(cipher, real_key)
+
+        with open(file, "w") as fh:
+            fh.write(config_str.decode())
+            fh.close()
+
+        print("Imported config saved to {}".format(file), file=sys.stderr)
 
     def set_log_level(self, level):
         common_config = self._get_common_config("Cannot set log level.")
