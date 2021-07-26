@@ -3,7 +3,6 @@
 ![Javascript](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.js.yml/badge.svg)
 ![Python](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.python.yml/badge.svg)
 ![Java](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.java.yml/badge.svg)
-![Go](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.go.yml/badge.svg)
 
 Monorepo for secrets manager sdk's and tools
 

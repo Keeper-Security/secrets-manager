@@ -291,6 +291,8 @@ class Secret:
     def get_via_notation(self, notation):
         try:
             value = self.cli.client.get_notation(notation)
+            if type(value) is dict or type(value) is list:
+                value = json.dumps(value)
         except Exception as err:
             sys.exit(err)
 

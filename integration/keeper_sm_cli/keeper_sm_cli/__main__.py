@@ -224,13 +224,13 @@ secret_command.add_command(secret_download_command)
 
 @click.command(name='exec')
 @click.option('--capture-output', is_flag=True, help='Capture the output and display upon cmd exit.')
+@click.option('--inline', is_flag=True, help='Replace include placeholders.')
 @click.argument('cmd', type=str, nargs=-1)
 @click.pass_context
-def exec_command(ctx, capture_output, cmd):
+def exec_command(ctx, capture_output, inline, cmd):
     """Wrap an application and expose secrets in environmental variables."""
     ex = Exec(cli=ctx.obj["cli"])
-    ex.env_replace()
-    ex.execute(cmd=cmd, capture_output=capture_output)
+    ex.execute(cmd=cmd, capture_output=capture_output, inline=inline)
 
 
 # CONFIG COMMAND

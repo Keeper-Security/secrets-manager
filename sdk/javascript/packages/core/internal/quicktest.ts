@@ -16,12 +16,15 @@ const version = require("../package.json").version;
 connectPlatform(nodePlatform)
 initialize(version)
 
-const configFileName = 'client-config-admin+rte.json'
-const clientKey = 'Sl8gZ2A9xbR8RgwT3ylwEU_anb81EMpqnt4oU5vIZMo'
+// const configFileName = 'client-config-admin+rte.json'
+// const clientKey = '122iGmGds8JSRem1aJZN1r8PNiG2a6UyoLa4j60kGcY'
+const configFileName = 'client-config-admin+msp-qa.json'
+const clientKey = 'wz6iSJKgz6Z5eJyOT8lSglUFZVJxhzVZByMNS15eoaw'
 
 async function test() {
     const kvs = testKeyValueStorage(configFileName)
-    await initializeStorage(kvs, clientKey, 'dev.keepersecurity.com')
+    await initializeStorage(kvs)
+    // await initializeStorage(kvs, clientKey, 'qa.keepersecurity.com')
     // const response = await getSecrets(kvs, ['i3v4ehaoB-Bwsb7bbbek2g'])
     const response = await getSecrets(kvs)
     console.log(inspect(response, false, 6))

@@ -12,6 +12,9 @@ import tempfile
 import json
 import re
 import os
+import base64
+import imghdr
+import sys
 from requests import Response
 
 
@@ -290,6 +293,112 @@ class SecretTest(unittest.TestCase):
             self.assertRegex(result.output, r'Cannot find the field', 'got an error for bad field')
             self.assertEqual(1, result.exit_code, "the exit code was not 1")
 
+    def test_notation_file(self):
+
+        commander = Commander(config=InMemoryKeyValueStorage({
+            "server": "fake.keepersecurity.com",
+            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
+            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
+            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
+            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
+                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
+                          "jhKMhHQFaHYI"
+        }))
+
+        # This is a tiny 2x2 PNG image base64 encoded.
+        tiny_png_base64 = \
+            "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAAXNSR0IArs4c6QAAAMJlWElmTU0AKgAAAAgABwESAAMAAAABAAEAAAEa" \
+            "AAUAAAABAAAAYgEbAAUAAAABAAAAagEoAAMAAAABAAIAAAExAAIAAAARAAAAcgEyAAIAAAAUAAAAhIdpAAQAAAABAAAAmAAAAAAAAABI" \
+            "AAAAAQAAAEgAAAABUGl4ZWxtYXRvciAzLjkuOAAAMjAyMTowNzoyMiAxNDowNzo3NgAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAAqAD" \
+            "AAQAAAABAAAAAgAAAAByx + BYAAAACXBIWXMAAAsTAAALEwEAmpwYAAADpmlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPHg6eG1wbW" \
+            "V0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iWE1QIENvcmUgNi4wLjAiPgogICA8cmRmOlJERiB4bWxuczpyZGY9Im" \
+            "h0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiPgogICAgICA8cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD" \
+            "0iIgogICAgICAgICAgICB4bWxuczp0aWZmPSJodHRwOi8vbnMuYWRvYmUuY29tL3RpZmYvMS4wLyIKICAgICAgICAgICAgeG1sbnM6ZX" \
+            "hpZj0iaHR0cDovL25zLmFkb2JlLmNvbS9leGlmLzEuMC8iCiAgICAgICAgICAgIHhtbG5zOnhtcD0iaHR0cDovL25zLmFkb2JlLmNvbS" \
+            "94YXAvMS4wLyI + CiAgICAgICAgIDx0aWZmOkNvbXByZXNzaW9uPjA8L3RpZmY6Q29tcHJlc3Npb24 + CiAgICAgICAgIDx0aWZmOl" \
+            "Jlc29sdXRpb25Vbml0PjI8L3RpZmY6UmVzb2x1dGlvblVuaXQ + CiAgICAgICAgIDx0aWZmOlhSZXNvbHV0aW9uPjcyPC90aWZmOlhS" \
+            "ZXNvbHV0aW9uPgogICAgICAgICA8dGlmZjpZUmVzb2x1dGlvbj43MjwvdGlmZjpZUmVzb2x1dGlvbj4KICAgICAgICAgPHRpZmY6T3Jp" \
+            "ZW50YXRpb24 + MTwvdGlmZjpPcmllbnRhdGlvbj4KICAgICAgICAgPGV4aWY6UGl4ZWxYRGltZW5zaW9uPjI8L2V4aWY6UGl4ZWxYRG" \
+            "ltZW5zaW9uPgogICAgICAgICA8ZXhpZjpDb2xvclNwYWNlPjE8L2V4aWY6Q29sb3JTcGFjZT4KICAgICAgICAgPGV4aWY6UGl4ZWxZRG" \
+            "ltZW5zaW9uPjI8L2V4aWY6UGl4ZWxZRGltZW5zaW9uPgogICAgICAgICA8eG1wOkNyZWF0b3JUb29sPlBpeGVsbWF0b3IgMy45Ljg8L3" \
+            "htcDpDcmVhdG9yVG9vbD4KICAgICAgICAgPHhtcDpNb2RpZnlEYXRlPjIwMjEtMDctMjJUMTQ6MDc6NzY8L3htcDpNb2RpZnlEYXRlPg" \
+            "ogICAgICA8L3JkZjpEZXNjcmlwdGlvbj4KICAgPC9yZGY6UkRGPgo8L3g6eG1wbWV0YT4KPKL2agAAABNJREFUCB1j / M8gy8DAwATE" \
+            "QAAADlwBIHTDGBYAAAAASUVORK5CYII ="
+
+        file_res = mock.Response()
+        file_record = file_res.add_record(title="My File 1", record_type='file')
+        mocked_file_1 = file_record.add_file(
+            name="Tiny Png",
+            content=base64.b64decode(tiny_png_base64),
+            content_type="image/png"
+        )
+        mocked_file_2 = file_record.add_file(
+            name="my_text.txt",
+            content="My Text",
+            content_type="plain/text"
+        )
+
+        queue = mock.ResponseQueue(client=commander)
+        queue.add_response(file_res)
+        queue.add_response(file_res)
+        queue.add_response(file_res)
+        queue.add_response(file_res)
+
+        lookup = {
+            mocked_file_1.uid: mocked_file_1,
+            mocked_file_2.uid: mocked_file_2
+        }
+
+        def mock_download_get(url):
+            uid = url.replace("http://localhost/", "")
+            mock_res = Response()
+            mock_res.status_code = 200
+            mock_res.reason = "OK"
+            mock_res._content = lookup[uid].downloadable_content()
+            mock_res.headers["Content-Type"] = lookup[uid].content_type
+            return mock_res
+
+        with patch('requests.get', side_effect=mock_download_get) as mock_get:
+            with patch('integration.keeper_sm_cli.keeper_sm_cli.KeeperCli.get_client') as mock_client:
+                mock_client.return_value = commander
+
+                Profile.init(
+                    client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+                )
+
+                # Write png to file. This will be binary data.
+                with tempfile.NamedTemporaryFile() as tf:
+                    print("ONE", tf.name)
+                    notation = "keeper://{}/{}/{}".format(file_record.uid, "file", "Tiny Png")
+                    runner = CliRunner()
+                    result = runner.invoke(cli, [
+                        "-o", tf.name,
+                        'secret', 'notation', notation
+                    ], catch_exceptions=False)
+                    self.assertEqual(0, result.exit_code, "the exit code was not 0")
+                    tf.seek(0)
+                    self.assertEqual("png", imghdr.what(tf), "did not get a PNG")
+                    tf.close()
+
+                # Write plain text to file. This should not be binary data.
+                with tempfile.NamedTemporaryFile() as tf:
+                    notation = "keeper://{}/{}/{}".format(file_record.uid, "file", "my_text.txt")
+                    runner = CliRunner()
+                    result = runner.invoke(cli, [
+                        "-o", tf.name,
+                        'secret', 'notation', notation
+                    ], catch_exceptions=False)
+                    self.assertEqual(0, result.exit_code, "the exit code was not 0")
+                    tf.seek(0)
+                    data = tf.read()
+                    # TODO: I hate this. Plain text comes back a binary from mock since it's not going
+                    #  threw a response handler.
+                    self.assertEqual(b'My Text', data, "did not get my text file")
+
+                # TODO: Need to capture to stdout. Can do it, however there is a charset encoding problem.
+                #  The saved file looks like "<89>PNG^M" in the first line if saved. We need to emulated it. Stuff
+                #  like "?PNG" or "�PNG" or "\ufffdPNG" are bad. :(
+
     def test_update(self):
         """Test updating an existing record
         """
@@ -511,6 +620,7 @@ class SecretTest(unittest.TestCase):
                 self.assertEqual("My Address", address["label"], "did not get the addressRef")
 
                 tf.close()
+
 
 if __name__ == '__main__':
     unittest.main()
