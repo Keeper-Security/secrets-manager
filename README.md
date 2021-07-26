@@ -18,8 +18,8 @@ Common use cases for Secrets Manager include:
 - Providing vault access to machines and applications
 
     
-More information about Keeper Secrets Manager, SDKs, tools, and integrations can be found on our official documentation 
-portal https://app.gitbook.com/@keeper-security/s/commander/v/master/secrets-manager/overview
+More information about Keeper Secrets Manager, SDKs, tools, and integrations can be found in our [official documentation 
+portal](https://docs.keeper.io/secrets-manager/secrets-manager/overview)
 
 
 
