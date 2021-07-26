@@ -19,7 +19,7 @@ from keepercommandersm.storage import KeyValueStorage
 
 def get_server(code_server, config_store: KeyValueStorage):
 
-    env_server = os.getenv('KEEPER_SERVER')
+    env_server = os.getenv('KSM_SERVER')
 
     if env_server:
         server_to_use = env_server

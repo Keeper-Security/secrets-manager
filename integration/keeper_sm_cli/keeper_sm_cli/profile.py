@@ -15,17 +15,22 @@ import configparser
 from keepercommandersm.storage import InMemoryKeyValueStorage
 from keepercommandersm.configkeys import ConfigKeys
 from keepercommandersm.exceptions import KeeperError, KeeperAccessDenied
+from keepercommandersm.utils import encrypt_aes, decrypt_aes
+from .common import table_setup
 import prettytable
 import sys
 import json
+import base64
+import hashlib
+import tempfile
 
 
 class Profile:
 
     config_profile = "_config"
     active_profile_key = "active_profile"
-    default_profile = os.environ.get("KEEPER_CLI_PROFILE", "_default")
-    default_ini_file = os.environ.get("KEEPER_INI_FILE", "keeper.ini")
+    default_profile = os.environ.get("KSM_CLI_PROFILE", "_default")
+    default_ini_file = os.environ.get("KSM_INI_FILE", "keeper.ini")
     log_level_key = "log_level"
 
     def __init__(self, cli, ini_file=None):
@@ -36,13 +41,13 @@ class Profile:
         if ini_file is None:
             ini_file = Profile.find_ini_config()
 
-            # If we can't find it, and the KEEPER_SECRET_KEY env is set, auto create it. We do this because
+            # If we can't find it, and the KSM_TOKEN env is set, auto create it. We do this because
             # this might be a container startup and there is not INI file, but we have passed in the client key.
-            client_key = os.environ.get("KEEPER_SECRET_KEY")
+            client_key = os.environ.get("KSM_TOKEN")
             if client_key is not None:
                 Profile.init(
                     client_key=client_key,
-                    server=os.environ.get("KEEPER_SERVER", "US")
+                    server=os.environ.get("KSM_SERVER", "US")
                 )
                 # Check again for the INI config file
                 ini_file = Profile.find_ini_config()
@@ -80,7 +85,7 @@ class Profile:
         # The last entry is the current working directory.
         not_set = "_NOTSET_"
         dir_locations = [
-            [os.environ.get("KEEPER_INI_DIR", not_set)],
+            [os.environ.get("KSM_INI_DIR", not_set)],
             [os.getcwd()],
 
             # Linux
@@ -115,15 +120,13 @@ class Profile:
 
     def get_active_profile_name(self):
         common_config = self.get_profile_config(Profile.config_profile)
-        return os.environ.get("KEEPER_CLI_PROFILE", common_config.get(Profile.active_profile_key))
+        return os.environ.get("KSM_CLI_PROFILE", common_config.get(Profile.active_profile_key))
 
-    @staticmethod
-    def _table_setup(table):
-        table.align = 'l'
-        table.horizontal_char = "="
-        table.vertical_char = " "
-        table.junction_char = " "
-        table.hrules = prettytable.HEADER
+    def _get_common_config(self, error_prefix):
+        try:
+            return self.get_profile_config(Profile.config_profile)
+        except Exception as err:
+            sys.exit("{} {}".format(error_prefix, err))
 
     @staticmethod
     def init(client_key, ini_file=None, server=None, profile_name=None, log_level="INFO"):
@@ -133,12 +136,12 @@ class Profile:
         # If the ini is not set, default the file in the current directory.
         if ini_file is None:
             ini_file = os.path.join(
-                os.environ.get("KEEPER_INI_DIR", os.getcwd()),
+                os.environ.get("KSM_INI_DIR", os.getcwd()),
                 Profile.default_ini_file
             )
 
         if profile_name is None:
-            profile_name = os.environ.get("KEEPER_CLI_PROFILE", Profile.default_profile)
+            profile_name = os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
 
         if profile_name == Profile.config_profile:
             raise ValueError("The profile '{}' is a reserved profile name. Cannot not init profile.".format(
@@ -209,31 +212,37 @@ class Profile:
     def list_profiles(self, output='text'):
 
         profiles = []
-        active_profile = self.get_active_profile_name()
-        for profile in self.get_config():
-            if profile == Profile.config_profile:
-                continue
-            profiles.append({
-                "active": profile == active_profile,
-                "name": profile
-            })
 
-        if output == 'text':
-            table = prettytable.PrettyTable()
-            table.field_names = ["Active", "Profile"]
-            Profile._table_setup(table)
+        try:
+            active_profile = self.get_active_profile_name()
 
-            for profile in profiles:
-                table.add_row(["*" if profile["active"] is True else " ", profile["name"]])
+            for profile in self.get_config():
+                if profile == Profile.config_profile:
+                    continue
+                profiles.append({
+                    "active": profile == active_profile,
+                    "name": profile
+                })
 
-            # TODO: Why won't this work with self.cli.output
-            self.cli.output(table.get_string() + "\n")
-        elif output == 'json':
-            self.cli.output(json.dumps(profiles))
-        return profiles
+            if output == 'text':
+                table = prettytable.PrettyTable()
+                table.field_names = ["Active", "Profile"]
+                table_setup(table)
+
+                for profile in profiles:
+                    table.add_row(["*" if profile["active"] is True else " ", profile["name"]])
+
+                self.cli.output(table.get_string() + "\n")
+            elif output == 'json':
+                self.cli.output(json.dumps(profiles))
+            return profiles
+
+        except FileNotFoundError as err:
+            sys.exit("Cannot get list of profiles. {}".format(err))
 
     def set_active(self, profile_name):
-        common_config = self.get_profile_config(Profile.config_profile)
+
+        common_config = self._get_common_config("Cannot set active profile.")
 
         if profile_name not in self.get_config():
             exit("Cannot set profile {} to active. It does not exists.".format(profile_name))
@@ -243,14 +252,75 @@ class Profile:
 
         print("{} is now the active profile.".format(profile_name), file=sys.stderr)
 
+    def export_config(self, profile_name=None, key=None):
+
+        """Take a profile from an existing config and make it a stand-alone config.
+
+        This is when you want to pull a single profile from a config and use it
+        someplace else, like inside of a Docker image.
+
+        The key will encrypt, and base64, the config file. While it's nice
+        for security, the real reason was to make a single line string. :)
+        """
+
+        # If the profile name is not set, use the active profile.
+        if profile_name is None:
+            profile_name = self.get_active_profile_name()
+        profile_config = self.get_profile_config(profile_name)
+
+        export_config = configparser.ConfigParser()
+        export_config[Profile.default_profile] =profile_config
+        export_config[Profile.config_profile] = {
+            "log_level": "WARNING",
+            Profile.active_profile_key: Profile.default_profile
+        }
+
+        # Apparently the config parser doesn't like temp files. So create a
+        # temp file, then open a file for writing and use that to write
+        # the config. Then read the temp file to get our new config.
+        with tempfile.NamedTemporaryFile() as tf:
+
+            with open(tf.name, 'w') as configfile:
+                export_config.write(configfile)
+
+            tf.seek(0)
+            config_str = tf.read()
+            tf.close()
+
+        if key is not None:
+            real_key = hashlib.sha256(key.encode()).digest()
+            ciphertext = encrypt_aes(config_str, real_key)
+            config_str = base64.b64encode(ciphertext)
+
+        self.cli.output(config_str)
+
+    @staticmethod
+    def import_config(key, enc_config, file=None):
+
+        """Take base64 AES encrypted config file and unencrypted it back to disk.
+        """
+
+        if file is None:
+            file = Profile.default_ini_file
+
+        real_key = hashlib.sha256(key.encode()).digest()
+        cipher = base64.b64decode(enc_config)
+        config_str = decrypt_aes(cipher, real_key)
+
+        with open(file, "w") as fh:
+            fh.write(config_str.decode())
+            fh.close()
+
+        print("Imported config saved to {}".format(file), file=sys.stderr)
+
     def set_log_level(self, level):
-        common_config = self.get_profile_config(Profile.config_profile)
+        common_config = self._get_common_config("Cannot set log level.")
         common_config[Profile.log_level_key] = level
         self.cli.log_level = level
         self.save()
 
     def show_config(self):
-        common_config = self.get_profile_config(Profile.config_profile)
+        common_config = self._get_common_config("Cannot show the config.")
         not_set_text = "-NOT SET-"
         print("Active Profile: {}".format(common_config.get(Profile.active_profile_key, not_set_text)))
         print("Log Level: {}".format(common_config.get(Profile.log_level_key, not_set_text)))

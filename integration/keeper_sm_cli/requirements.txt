@@ -1,4 +1,5 @@
 keepercommandersm
 click
-jsonpath-ng
+jsonpath-rw-ext
 prettytable
+importlib_metadata

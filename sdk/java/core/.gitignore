@@ -4,4 +4,4 @@
 # Ignore Gradle build output directory
 build
 
-/config.txt
+/config*.txt

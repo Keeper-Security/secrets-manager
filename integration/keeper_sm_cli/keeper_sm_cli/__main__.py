@@ -18,7 +18,9 @@ from .profile import Profile
 import sys
 import os
 import keepercommandersm
-from importlib.metadata import version as meta_version
+import traceback
+import importlib_metadata
+from distutils.util import strtobool
 
 
 def _get_cli(ini_file=None, profile_name=None, output=None):
@@ -29,13 +31,23 @@ def _get_cli(ini_file=None, profile_name=None, output=None):
     )
 
 
+def base_command_help(f):
+    doc = f.__doc__
+    f.__doc__ = "{} Version: {} ".format(doc, importlib_metadata.version("keeper_sm_cli"))
+    return f
+
+
 # MAIN GROUP
 @click.group()
 @click.option('--ini-file', type=str, help="INI config file.")
 @click.option('--profile-name', '-p', type=str, help='Config profile')
 @click.option('--output', '-o', type=str, help='Output [stdout|stderr|filename]', default='stdout')
 @click.pass_context
+@base_command_help
 def cli(ctx, ini_file, profile_name, output):
+
+    """Keeper Secret Manager CLI
+    """
 
     try:
         ctx.obj = {
@@ -45,10 +57,10 @@ def cli(ctx, ini_file, profile_name, output):
             "output": output
         }
     except FileNotFoundError as _:
-        exit("Could not find the INI file specified on the top level command. If you are running the init"
-             " sub-command, specify the INI file on the sub-command parameters instead on the top level command.")
+        sys.exit("Could not find the INI file specified on the top level command. If you are running the init"
+                 " sub-command, specify the INI file on the sub-command parameters instead on the top level command.")
     except Exception as err:
-        exit("Could not run the command. Got the error: {}".format(err))
+        sys.exit("Could not run the command. Got the error: {}".format(err))
 
 
 # PROFILE GROUP
@@ -61,12 +73,12 @@ def profile_command():
 
 
 @click.command(name='init')
-@click.option('--client-key', '-c', type=str, required=True, help="The client key.")
+@click.option('--token', '-t', type=str, required=True, help="The One Time Access Token.")
 @click.option('--server', '-s', type=str, default="US", help="Server code or URL.")
 @click.option('--ini-file', type=str, help="INI config file to create.")
 @click.option('--profile-name', '-p', type=str, help='Config profile to create.')
 @click.pass_context
-def profile_init_command(ctx, client_key, server, ini_file, profile_name):
+def profile_init_command(ctx, token, server, ini_file, profile_name):
     """Initialize a profile."""
 
     # Since the top level commands are available for all command, it might be confusing the init command since
@@ -76,7 +88,7 @@ def profile_init_command(ctx, client_key, server, ini_file, profile_name):
               " level command parameter will be ignored for the init sub-command.", file=sys.stderr)
 
     Profile.init(
-        client_key=client_key,
+        client_key=token,
         server=server,
         ini_file=ini_file,
         profile_name=profile_name
@@ -106,9 +118,38 @@ def profile_active_command(ctx, profile_name):
     )
 
 
+@click.command(name='export')
+@click.option('--key', '-k', type=str, help='Encode config with a key')
+@click.argument('profile-name', type=str, required=False, nargs=1)
+@click.pass_context
+def profile_export_command(ctx, key, profile_name):
+    """Create a new config file from a profile."""
+    Profile(cli=ctx.obj["cli"]).export_config(
+        key=key,
+        profile_name=profile_name
+    )
+
+
+@click.command(name='import')
+@click.option('--key', '-k', type=str, required=True, help='Decode config with a key.')
+@click.option('--output-file', '-f', type=str, required=False,
+              help='Save the import config to a specific file location.')
+@click.argument('enc-config', type=str, required=True, nargs=1)
+@click.pass_context
+def profile_import_command(ctx, key, output_file, enc_config):
+    """Import an encrypted config file."""
+    Profile(cli=ctx.obj["cli"]).import_config(
+        key=key,
+        file=output_file,
+        enc_config=enc_config
+    )
+
+
 profile_command.add_command(profile_init_command)
 profile_command.add_command(profile_list_command)
 profile_command.add_command(profile_active_command)
+profile_command.add_command(profile_export_command)
+profile_command.add_command(profile_import_command)
 
 # SECRET GROUP
 
@@ -156,7 +197,8 @@ def secret_get_command(ctx, uid, query, json, raw, force_array):
         jsonpath_query=query,
         output_format=output,
         raw=raw,
-        force_array=force_array
+        force_array=force_array,
+        load_references=True
     )
 
 
@@ -211,13 +253,13 @@ secret_command.add_command(secret_download_command)
 
 @click.command(name='exec')
 @click.option('--capture-output', is_flag=True, help='Capture the output and display upon cmd exit.')
+@click.option('--inline', is_flag=True, help='Replace include placeholders.')
 @click.argument('cmd', type=str, nargs=-1)
 @click.pass_context
-def exec_command(ctx, capture_output, cmd):
+def exec_command(ctx, capture_output, inline, cmd):
     """Wrap an application and expose secrets in environmental variables."""
     ex = Exec(cli=ctx.obj["cli"])
-    ex.env_replace()
-    ex.execute(cmd=cmd, capture_output=capture_output)
+    ex.execute(cmd=cmd, capture_output=capture_output, inline=inline)
 
 
 # CONFIG COMMAND
@@ -260,9 +302,9 @@ def version_command(ctx):
         str(sys.version_info.micro)
     ])))
     print("Python Install: {}".format(sys.executable))
-    print("CLI Version: {}".format(meta_version('keeper_sm_cli')))
+    print("CLI Version: {}".format(importlib_metadata.version("keeper_sm_cli")))
     print("CLI Install: {}".format(os.path.dirname(os.path.realpath(__file__))))
-    print("SDK Version: {}".format(meta_version('keepercommandersm')))
+    print("SDK Version: {}".format(importlib_metadata.version("keepercommandersm")))
     print("SDK Install: {}".format(os.path.dirname(os.path.realpath(keepercommandersm.__file__))))
     print("Config file: {}".format(ctx.obj["cli"].profile.ini_file))
 
@@ -276,7 +318,13 @@ cli.add_command(version_command)
 
 
 def main():
-    cli(obj={"cli": None})
+    try:
+        cli(obj={"cli": None})
+    except Exception as err:
+        # Set KSM_DEBUG to get a stack trace. Secret env var.
+        if strtobool(os.environ.get("KSM_DEBUG", "FALSE")) == 1:
+            print(traceback.format_exc(), file=sys.stderr)
+        sys.exit("ksm had a problem: {}".format(err))
 
 
 if __name__ == '__main__':

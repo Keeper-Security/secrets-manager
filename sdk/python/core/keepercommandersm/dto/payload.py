@@ -30,7 +30,7 @@ class GetPayload:
         self.clientVersion = None
         self.clientId = None
         self.publicKey = None
-        self.requestedRecords = []
+        self.requestedRecords = None
 
 
 class UpdatePayload:

@@ -51,3 +51,13 @@ env.bak/
 venv.bak/
 .python-version
 .pytest_cache
+
+# Vim
+*~
+*.swp
+*.swo
+
+# Don't add Config files
+keeper.ini*
+*config*.json
+

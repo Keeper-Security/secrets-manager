@@ -41,8 +41,11 @@ class Commander:
         self.client_key = client_key
         self.server = server
 
-        # Accept the env var PYTHONHTTPSVERIFY. Modules like 'requests' already use it.
-        self.verify_ssl_certs = bool(strtobool(os.environ.get("PYTHONHTTPSVERIFY", str(verify_ssl_certs))))
+        # Accept the env var KSM_SKIP_VERIFY. Modules like 'requests' already use it.
+        self.verify_ssl_certs = verify_ssl_certs
+        if os.environ.get("KSM_SKIP_VERIFY") is not None:
+            # We need to flip the value of KSM_SKIP_VERIFY, if true, we want verify_ssl_certs to be false.
+            self.verify_ssl_certs = not bool(strtobool(os.environ.get("KSM_SKIP_VERIFY")))
 
         if config is None:
             config = FileKeyValueStorage()
@@ -115,7 +118,7 @@ class Commander:
 
         if not self.verify_ssl_certs:
             logging.warning("WARNING: Running without SSL cert verification. "
-                            "Execute 'Commander(..., verify_ssl_certs=True)' or 'PYTHONHTTPSVERIFY=TRUE' "
+                            "Execute 'Commander(..., verify_ssl_certs=True)' or 'KSM_SKIP_VERIFY=FALSE' "
                             "to enable verification.")
 
     def load_secret_key(self):
@@ -123,7 +126,7 @@ class Commander:
         """Returns client_id from the environment variable, config file, or in the code"""
 
         # Case 1: Environment Variable
-        env_secret_key = os.getenv('KEEPER_SECRET_KEY')
+        env_secret_key = os.getenv('KSM_TOKEN')
 
         current_secret_key = None
 
@@ -337,6 +340,9 @@ class Commander:
         records_resp = decrypted_response_dict.get('records')
         folders_resp = decrypted_response_dict.get('folders')
 
+        logging.debug("Individual record count: {}".format(len(records_resp or [])))
+        logging.debug("Folder count: {}".format(len(folders_resp or [])))
+
         if records_resp:
             for r in records_resp:
                 record = Record(r, secret_key)
@@ -346,6 +352,8 @@ class Commander:
             for f in folders_resp:
                 folder = Folder(f, secret_key)
                 records.extend(folder.records)
+
+        logging.debug("Total record count: {}".format(len(records)))
 
         return {
             'records': records,
@@ -387,20 +395,18 @@ class Commander:
         )
 
         if not rs.ok:
-            if rs.status_code == 403:
-                logging.error("Error: {} (http error code: {})".format(rs.reason, rs.status_code))
-                return {}
-            else:
-                error_message = rs.content
-                try:
-                    resp_dict = json_to_dict(rs.text)
-                    error = resp_dict.get("message", error_message)
-                    logging.error("Error: {} (http error code: {}, row: {}".format(rs.reason, rs.status_code,
-                                                                                   resp_dict))
-                except json.JSONDecodeError as _:
-                    logging.error("Error: {} (http error code: {}, message: {}".format(rs.reason, rs.status_code,
-                                                                                       error))
 
+            error_message = rs.content
+            try:
+                resp_dict = json_to_dict(rs.text)
+                error_message = resp_dict.get("message", error_message)
+                logging.error("Error: {} (http error code: {}, row: {}".format(rs.reason, rs.status_code, resp_dict))
+            except json.JSONDecodeError as _:
+                logging.error("Error: {} (http error code: {}, message: {}".format(rs.reason, rs.status_code,
+                                                                                   error_message))
+            if rs.status_code == 403:
+                raise KeeperError(error_message)
+            else:
                 raise HTTPError(error_message)
         else:
             return True
@@ -513,12 +519,14 @@ class Commander:
             value = record.custom_field(key, single=False)
         elif file_type == "file":
             file = record.find_file_by_title(key)
-            value = file.self.get_file_data()
+            if file is None:
+                raise FileNotFoundError("Cannot find the file {} in record {}.".format(key, uid))
+            value = file.get_file_data()
         else:
             raise ValueError("Field type of {} is not value.".format(file_type))
 
         ret = value
-        if return_single is True:
+        if return_single is True and type(value) is list:
             if len(value) == 0:
                 return None
             try:

@@ -10,13 +10,15 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 install_requires = [
     'keepercommandersm',
     'click',
-    'jsonpath-ng',
-    'prettytable'
+    'jsonpath-rw-ext',
+    'prettytable',
+    'importlib_metadata'
 ]
 
+# Version set in the keeper_sm_cli.version file.
 setup(
     name="keeper_sm_cli",
-    version="0.0.7a0",
+    version="0.0.22a0",
     description="Command line tool for Keeper Secret Manager",
     long_description=long_description,
     long_description_content_type="text/markdown",
