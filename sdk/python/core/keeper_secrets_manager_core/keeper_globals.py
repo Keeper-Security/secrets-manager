@@ -13,7 +13,7 @@ import importlib_metadata
 # Get the version of the keeper secret manager core
 version = "16.0.0"
 try:
-    version = importlib_metadata.version("keeper-secret-manager-core")
+    version = importlib_metadata.version("keeper-secrets-manager-core")
 except importlib_metadata.PackageNotFoundError:
     # In a unit test or development run, not an installed version
     pass

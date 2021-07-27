@@ -13,7 +13,7 @@ class KeeperGetSdkTest(unittest.TestCase):
 
     """Integration test with the SDK
 
-    This test uses the keepercommandersm.mock functions.
+    This test uses the keeper-secrets-manager-core.mock functions.
 
     """
 
@@ -40,16 +40,16 @@ class KeeperGetSdkTest(unittest.TestCase):
             }
         )
 
-        # Get an instance of Commander and use our fake config
-        commander = SecretsManager(config=fake_config)
+        # Get an instance of Secrets Manager and use our fake config
+        secrets_manager = SecretsManager(config=fake_config)
 
         with patch("keeper_secrets_manager_ansible.KeeperAnsible.get_client") as mock_client:
-            mock_client.return_value = commander
+            mock_client.return_value = secrets_manager
 
-            # Pass in our Commander into the queue so it gets patched.
-            queue = mock.ResponseQueue(client=commander)
+            # Pass in our Secrets Manager into the queue so it gets patched.
+            queue = mock.ResponseQueue(client=secrets_manager)
 
-            # Create our response for the Commander mock
+            # Create our response for the Secrets Manager mock
             get_res = mock.Response()
             record = get_res.add_record(title="My Record 1", uid="TRd_567FkHy-CeGsAzs8aA")
             record.field("login", "My Login 1")
@@ -76,8 +76,8 @@ class KeeperGetSdkTest(unittest.TestCase):
             queue.add_response(mock.Response(content="", status_code=200))
 
             # We are unittest mock patching our ansible module. We are replacing the
-            # method that gets an instance of Commander with a mock method that
-            # returns the instance of Commander we got above.
+            # method that gets an instance of Secrets Manager with a mock method that
+            # returns the instance of Secrets Manager we got above.
 
             # Perform the playbook
             with tempfile.TemporaryDirectory() as temp_dir:

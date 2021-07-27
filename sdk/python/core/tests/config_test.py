@@ -29,7 +29,7 @@ class ConfigTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir_name:
             os.chdir(temp_dir_name)
             try:
-                c = SecretsManager()
+                SecretsManager()
                 self.fail("Found config file, should be missing.")
             except Exception as err:
                 self.assertRegex(str(err), r'Cannot find the client key', "did not get correct exception message.")
@@ -94,10 +94,12 @@ class ConfigTest(unittest.TestCase):
                 fh.close()
 
             # Pass in the client key and server
-            c = SecretsManager(client_key="ABC123", hostname='localhost')
+            secrets_manager = SecretsManager(token="ABC123", hostname='localhost')
 
-            self.assertEqual(c.config.get(ConfigKeys.KEY_HOSTNAME), "localhost", "did not get correct server")
-            self.assertEqual(c.config.get(ConfigKeys.KEY_CLIENT_KEY), "ABC123", "did not get correct client key")
+            self.assertEqual(secrets_manager.config.get(ConfigKeys.KEY_HOSTNAME), "localhost",
+                             "did not get correct server")
+            self.assertEqual(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "ABC123",
+                             "did not get correct client key")
 
     def test_pass_in_config(self):
 
@@ -129,16 +131,17 @@ class ConfigTest(unittest.TestCase):
                              "got correct private key")
 
             # Pass in the config
-            c = SecretsManager(config=config)
+            secrets_manager = SecretsManager(config=config)
 
-            self.assertEqual("MY CLIENT KEY", c.config.get(ConfigKeys.KEY_CLIENT_KEY), "got correct client key")
+            self.assertEqual("MY CLIENT KEY", secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY),
+                             "got correct client key")
 
             # Is not bound, client id and private key will be generated and overwrite existing
-            self.assertIsNotNone(c.config.get(ConfigKeys.KEY_CLIENT_ID), "got a client id")
-            self.assertIsNotNone(c.config.get(ConfigKeys.KEY_PRIVATE_KEY), "got a private key")
+            self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_ID), "got a client id")
+            self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_PRIVATE_KEY), "got a private key")
 
             # App key should be removed.
-            self.assertIsNone(c.config.get(ConfigKeys.KEY_APP_KEY), "found the app key")
+            self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_APP_KEY), "found the app key")
 
     def test_in_memory_config(self):
 
@@ -160,13 +163,14 @@ class ConfigTest(unittest.TestCase):
                          "got correct private key")
 
         # Pass in the config
-        c = SecretsManager(config=config)
+        secrets_manager = SecretsManager(config=config)
 
-        self.assertEqual("MY CLIENT KEY", c.config.get(ConfigKeys.KEY_CLIENT_KEY), "got correct client key")
+        self.assertEqual("MY CLIENT KEY", secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY),
+                         "got correct client key")
 
         # Is not bound, client id and private key will be generated and overwrite existing
-        self.assertIsNotNone(c.config.get(ConfigKeys.KEY_CLIENT_ID), "got a client id")
-        self.assertIsNotNone(c.config.get(ConfigKeys.KEY_PRIVATE_KEY), "got a private key")
+        self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_ID), "got a client id")
+        self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_PRIVATE_KEY), "got a private key")
 
         # App key should be removed.
-        self.assertIsNone(c.config.get(ConfigKeys.KEY_APP_KEY), "found the app key")
+        self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_APP_KEY), "found the app key")

@@ -8,7 +8,7 @@ import json
 from keeper_secrets_manager_ansible import KeeperAnsible
 
 
-def mocked_commander_get_secrets():
+def get_secrets():
     return []
 
 
@@ -22,7 +22,7 @@ class KeeperAnsibleTest(unittest.TestCase):
         sys.path.append(os.path.join(self.base_dir, "..", "modules"))
         sys.path.append(os.path.join(self.base_dir, "..", "..", "..", "..", "sdk", "python", "core"))
 
-    @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=mocked_commander_get_secrets)
+    @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
     def test_config_read_file_json_file(self, mock_get_secrets):
 
         """
@@ -54,7 +54,7 @@ class KeeperAnsibleTest(unittest.TestCase):
             ka.client.get_secrets()
             mock_get_secrets.assert_called_once()
 
-    @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=mocked_commander_get_secrets)
+    @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
     def test_config_in_ansible_task_vars(self, mock_get_secrets):
 
         values = {

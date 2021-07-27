@@ -5,12 +5,12 @@ here = os.path.abspath(os.path.dirname(__file__))
 os.chdir(here)
 
 install_requires = [
-    'keeper-secret-manager-ansible',
+    'keeper-secrets-manager-ansible',
     'ansible'
 ]
 
 setup(
-    name="keeper-secret-manager-ansible",
+    name="keeper-secrets-manager-ansible",
     version='0.0.1',
     description="Base plugin for Keeper Security related Ansible plugins.",
     author="Keeper Security",

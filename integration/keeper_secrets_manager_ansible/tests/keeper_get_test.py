@@ -28,7 +28,7 @@ records = {
 }
 
 
-def mocked_commander_get_secrets(*args):
+def mocked_get_secrets(*args):
 
     if len(args) > 0:
         uid = args[0][0]
@@ -70,8 +70,8 @@ class KeeperGetTest(unittest.TestCase):
             self.assertRegex(out, r'password_ddd', "Did not find the password in the stdout")
 
     #@unittest.skip
-    @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=mocked_commander_get_secrets)
-    def test_keeper_get_mock(self, mock_commander_get_secrets):
+    @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=mocked_get_secrets)
+    def test_keeper_get_mock(self, mock_get_secrets):
         self._common()
 
     @unittest.skip

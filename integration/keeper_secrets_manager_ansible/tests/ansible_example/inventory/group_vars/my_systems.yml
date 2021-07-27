@@ -2,9 +2,9 @@
 tmp_dir: /tmp/ansible_test
 keeper_app_key: ej23pYZ8-8JmxPsmA81eNamm_T_xZDWdmCIZCgf7hnA
 keeper_client_id: QVHuoUec9767-L4pc_dzKM7ZLnvDryCPhLk7JjhF8T56FFyOPbzw2wkDzN3jhS_iJ09b2G5O1sAn-D-u7PtILA
-keeper_client_key: zidx8w9nVxI8gNzO_Qt8kpgbckutZPdpr4ybhipzDMY
+keeper_token: zidx8w9nVxI8gNzO_Qt8kpgbckutZPdpr4ybhipzDMY
 keeper_private_key: "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgdYrlxTjjRRLCjh9Du6rM2VCTkO_aJ34HqIAu2o1QyUihRANCAAQyntlOEBAGZCnZ_z5Bz--2stQ530uTIbroCkadvVi996wRn580Pg0u4XjKCssTroHe3rgz8dZE2CHfzFq_swey"
-keeper_server: https://dev.keepersecurity.com
+keeper_hostname: https://dev.keepersecurity.com
 keeper_verify_ssl_certs: False
 uid: TRd_567FkHy-CeGsAzs8aA
 password_uid: TRd_567FkHy-CeGsAzs8aA

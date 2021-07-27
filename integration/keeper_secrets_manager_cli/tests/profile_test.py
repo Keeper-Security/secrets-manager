@@ -27,8 +27,8 @@ class ExecTest(unittest.TestCase):
         """ Test initializing the profile
         """
 
-        commander = SecretsManager(config=InMemoryKeyValueStorage({
-            "server": "fake.keepersecurity.com",
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
+            "hostname": "fake.keepersecurity.com",
             "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
             "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
             "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
@@ -44,24 +44,24 @@ class ExecTest(unittest.TestCase):
         one.field("password", "My Password 1")
         one.custom_field("My Custom 1", "custom1")
 
-        queue = mock.ResponseQueue(client=commander)
+        queue = mock.ResponseQueue(client=secrets_manager)
         queue.add_response(res)
         queue.add_response(res)
         queue.add_response(res)
 
         with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
-            mock_client.return_value = commander
+            mock_client.return_value = secrets_manager
 
-            default_client_key = "XYZ321"
+            default_token = "XYZ321"
             runner = CliRunner()
-            result = runner.invoke(cli, ['profile', 'init', '-t', default_client_key], catch_exceptions=False)
+            result = runner.invoke(cli, ['profile', 'init', '-t', default_token], catch_exceptions=False)
             print(result.output)
             self.assertEqual(0, result.exit_code, "did not get a success for default init")
             self.assertTrue(os.path.exists(Profile.default_ini_file), "could not find ini file")
 
-            test_client_key = "ABC123"
+            test_token = "ABC123"
             result = runner.invoke(cli, ['profile', 'init', "-p", "test", '-t',
-                                         test_client_key], catch_exceptions=False)
+                                         test_token], catch_exceptions=False)
             self.assertEqual(0, result.exit_code, "did not get a success for test init")
             self.assertTrue(os.path.exists(Profile.default_ini_file), "could not find ini file")
 
@@ -71,9 +71,9 @@ class ExecTest(unittest.TestCase):
             self.assertTrue(Profile.default_profile in config, "Could not find the default profile in the config.")
             self.assertTrue("test" in config, "Could not find the test profile in the config.")
 
-            self.assertEqual(default_client_key, config[Profile.default_profile]["clientkey"],
+            self.assertEqual(default_token, config[Profile.default_profile]["clientkey"],
                              "could not find default client key")
-            self.assertEqual(test_client_key, config["test"]["clientkey"], "could not find default client key")
+            self.assertEqual(test_token, config["test"]["clientkey"], "could not find default client key")
 
             # ------------------------
 

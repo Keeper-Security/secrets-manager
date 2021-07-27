@@ -39,8 +39,8 @@ class SecretTest(unittest.TestCase):
         """ Test getting a list if secret records
         """
 
-        commander = SecretsManager(config=InMemoryKeyValueStorage({
-            "server": "fake.keepersecurity.com",
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
+            "hostname": "fake.keepersecurity.com",
             "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
             "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
             "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
@@ -66,7 +66,7 @@ class SecretTest(unittest.TestCase):
             "My Record 2": two.uid,
         }
 
-        queue = mock.ResponseQueue(client=commander)
+        queue = mock.ResponseQueue(client=secrets_manager)
         queue.add_response(res)
         # JSON Output
         queue.add_response(res)
@@ -74,10 +74,10 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
 
         with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
-            mock_client.return_value = commander
+            mock_client.return_value = secrets_manager
 
             Profile.init(
-                client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
             )
 
             # JSON Output
@@ -105,8 +105,8 @@ class SecretTest(unittest.TestCase):
 
     def test_get(self):
 
-        commander = SecretsManager(config=InMemoryKeyValueStorage({
-            "server": "fake.keepersecurity.com",
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
+            "hostname": "fake.keepersecurity.com",
             "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
             "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
             "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
@@ -128,15 +128,15 @@ class SecretTest(unittest.TestCase):
 
         # TODO: Add dup custom fields. The problem is the mock record won't let you :(
 
-        queue = mock.ResponseQueue(client=commander)
+        queue = mock.ResponseQueue(client=secrets_manager)
         for test in range(0, 6):
             queue.add_response(res)
 
         with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
-            mock_client.return_value = commander
+            mock_client.return_value = secrets_manager
 
             Profile.init(
-                client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
             )
 
             # JSON Output to file
@@ -188,8 +188,8 @@ class SecretTest(unittest.TestCase):
 
     def test_download(self):
 
-        commander = SecretsManager(config=InMemoryKeyValueStorage({
-            "server": "fake.keepersecurity.com",
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
+            "hostname": "fake.keepersecurity.com",
             "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
             "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
             "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
@@ -204,7 +204,7 @@ class SecretTest(unittest.TestCase):
         one = res.add_record(title="My Record 1")
         mocked_file = one.add_file("my.mp4", content=mock_content)
 
-        queue = mock.ResponseQueue(client=commander)
+        queue = mock.ResponseQueue(client=secrets_manager)
         queue.add_response(res)
         queue.add_response(res)
 
@@ -217,10 +217,10 @@ class SecretTest(unittest.TestCase):
 
         with patch('requests.get', side_effect=mock_download_get) as mock_get:
             with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
-                mock_client.return_value = commander
+                mock_client.return_value = secrets_manager
 
                 Profile.init(
-                    client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+                    token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
                 )
 
                 with tempfile.NamedTemporaryFile() as tf:
@@ -237,8 +237,8 @@ class SecretTest(unittest.TestCase):
 
     def test_notation(self):
 
-        commander = SecretsManager(config=InMemoryKeyValueStorage({
-            "server": "fake.keepersecurity.com",
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
+            "hostname": "fake.keepersecurity.com",
             "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
             "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
             "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
@@ -253,16 +253,16 @@ class SecretTest(unittest.TestCase):
         one.field("password", "My Password 1")
         one.custom_field("My Custom 1", "custom1")
 
-        queue = mock.ResponseQueue(client=commander)
+        queue = mock.ResponseQueue(client=secrets_manager)
         queue.add_response(res)
         queue.add_response(res)
         queue.add_response(res)
 
         with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
-            mock_client.return_value = commander
+            mock_client.return_value = secrets_manager
 
             Profile.init(
-                client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
             )
 
             # Good one
@@ -295,8 +295,8 @@ class SecretTest(unittest.TestCase):
 
     def test_notation_file(self):
 
-        commander = SecretsManager(config=InMemoryKeyValueStorage({
-            "server": "fake.keepersecurity.com",
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
+            "hostname": "fake.keepersecurity.com",
             "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
             "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
             "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
@@ -338,7 +338,7 @@ class SecretTest(unittest.TestCase):
             content_type="plain/text"
         )
 
-        queue = mock.ResponseQueue(client=commander)
+        queue = mock.ResponseQueue(client=secrets_manager)
         queue.add_response(file_res)
         queue.add_response(file_res)
         queue.add_response(file_res)
@@ -360,10 +360,10 @@ class SecretTest(unittest.TestCase):
 
         with patch('requests.get', side_effect=mock_download_get) as mock_get:
             with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
-                mock_client.return_value = commander
+                mock_client.return_value = secrets_manager
 
                 Profile.init(
-                    client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+                    token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
                 )
 
                 # Write png to file. This will be binary data.
@@ -403,8 +403,8 @@ class SecretTest(unittest.TestCase):
         """Test updating an existing record
         """
 
-        commander = SecretsManager(config=InMemoryKeyValueStorage({
-            "server": "fake.keepersecurity.com",
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
+            "hostname": "fake.keepersecurity.com",
             "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
             "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
             "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
@@ -419,7 +419,7 @@ class SecretTest(unittest.TestCase):
         one.field("password", "My Password 1")
         one.custom_field("my_custom", "custom1")
 
-        queue = mock.ResponseQueue(client=commander)
+        queue = mock.ResponseQueue(client=secrets_manager)
         queue.add_response(res)
 
         # The good one
@@ -434,10 +434,10 @@ class SecretTest(unittest.TestCase):
         queue.add_response(mock.Response(content="I hate you and your little dog.", status_code=500))
 
         with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
-            mock_client.return_value = commander
+            mock_client.return_value = secrets_manager
 
             Profile.init(
-                client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
             )
 
             # Because of click/testing.py:278 ResourceWarning: unclosed file <_io.FileIO ...
@@ -509,13 +509,13 @@ class SecretTest(unittest.TestCase):
         except Exception as err:
             self.assertRegex(str(err), r'The key/value format is invalid', 'did not get correct error message')
 
-    def test_commander_record(self):
+    def test_secrets_manager_record(self):
 
-        """ Test how Commander stores record. Not custom fields, not 'custom' key in the response JSON.
+        """ Test how Secrets Manager stores record. Not custom fields, not 'custom' key in the response JSON.
         """
 
-        commander = SecretsManager(config=InMemoryKeyValueStorage({
-            "server": "fake.keepersecurity.com",
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
+            "hostname": "fake.keepersecurity.com",
             "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
             "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
             "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
@@ -532,17 +532,17 @@ class SecretTest(unittest.TestCase):
         one.field("login", "My Login 1")
         one.field("password", "My Password 1")
 
-        queue = mock.ResponseQueue(client=commander)
+        queue = mock.ResponseQueue(client=secrets_manager)
         # The profile init
         queue.add_response(res)
         # The secret get
         queue.add_response(res)
 
         with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
-            mock_client.return_value = commander
+            mock_client.return_value = secrets_manager
 
             Profile.init(
-                client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
             )
 
             # JSON Output
@@ -563,8 +563,8 @@ class SecretTest(unittest.TestCase):
         """This test will replace the addressRef with an actual address
         """
 
-        commander = SecretsManager(config=InMemoryKeyValueStorage({
-            "server": "fake.keepersecurity.com",
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
+            "hostname": "fake.keepersecurity.com",
             "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
             "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
             "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
@@ -593,16 +593,16 @@ class SecretTest(unittest.TestCase):
         login_record = login_res.add_record(title="My Record 1", record_type="login")
         login_record.custom_field("My Address", [address_record.uid], field_type='addressRef')
 
-        queue = mock.ResponseQueue(client=commander)
+        queue = mock.ResponseQueue(client=secrets_manager)
         queue.add_response(profile_init_res)
         queue.add_response(login_res)
         queue.add_response(address_res)
 
         with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
-            mock_client.return_value = commander
+            mock_client.return_value = secrets_manager
 
             Profile.init(
-                client_key='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
             )
 
             # JSON Output to file

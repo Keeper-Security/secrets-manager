@@ -1,2 +1,2 @@
 ansible
-keepercommandersm
+keeper-secrets-manager-core

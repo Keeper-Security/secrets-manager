@@ -15,7 +15,7 @@ from enum import Enum
 class ConfigKeys(Enum):
     KEY_URL = 'url'                 # base url for the Secrets Manager service
     KEY_CLIENT_ID = 'clientId'
-    KEY_CLIENT_KEY = 'clientKey'    # The key that is used to identify the client before public key
+    KEY_CLIENT_KEY = 'clientKey'    # The key that is used to identify the client before public key. This is token.
     KEY_APP_KEY = 'appKey'          # The application key with which all secrets are encrypted
     KEY_PRIVATE_KEY = 'privateKey'  # The client's private key
 

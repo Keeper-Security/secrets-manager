@@ -41,7 +41,7 @@ records = {
 pickle_file_name = "default_pickle_file"
 
 
-def mocked_commander_get_secrets(*args):
+def get_secrets(*args):
 
     global pickle_file_name
     with open(pickle_file_name, "rb") as fh:
@@ -57,7 +57,7 @@ def mocked_commander_get_secrets(*args):
         return ret
 
 
-def mocked_commander_save(*args):
+def save(*args):
 
     global pickle_file_name
     with open(pickle_file_name, "rb") as fh:
@@ -78,8 +78,6 @@ def mocked_commander_save(*args):
 class KeeperSetTest(unittest.TestCase):
 
     def setUp(self):
-
-
 
         # Add in addition Python libs. This includes the base
         # module for Keeper Ansible and the Keeper SDK.
@@ -131,8 +129,8 @@ class KeeperSetTest(unittest.TestCase):
             self.assertRegex(out, r'New Password NEW PASSWORD', "did not find new password")
 
     #@unittest.skip
-    @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=mocked_commander_get_secrets)
-    @patch("keeper_secrets_manager_core.core.SecretsManager.save", side_effect=mocked_commander_save)
+    @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
+    @patch("keeper_secrets_manager_core.core.SecretsManager.save", side_effect=save)
     def test_keeper_lookup_mock(self, mock_get_secrets, mock_save):
         self._common()
 

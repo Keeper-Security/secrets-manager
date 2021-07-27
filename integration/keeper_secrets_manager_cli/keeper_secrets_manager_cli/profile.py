@@ -43,10 +43,10 @@ class Profile:
 
             # If we can't find it, and the KSM_TOKEN env is set, auto create it. We do this because
             # this might be a container startup and there is not INI file, but we have passed in the client key.
-            client_key = os.environ.get("KSM_TOKEN")
-            if client_key is not None:
+            token = os.environ.get("KSM_TOKEN")
+            if token is not None:
                 Profile.init(
-                    client_key=client_key,
+                    token=token,
                     server=os.environ.get("KSM_HOSTNAME", "US")
                 )
                 # Check again for the INI config file
@@ -130,7 +130,7 @@ class Profile:
             sys.exit("{} {}".format(error_prefix, err))
 
     @staticmethod
-    def init(client_key, ini_file=None, server=None, profile_name=None, log_level="INFO"):
+    def init(token, ini_file=None, server=None, profile_name=None, log_level="INFO"):
 
         from . import KeeperCli
 
@@ -174,7 +174,7 @@ class Profile:
             config.read(ini_file)
 
         config_storage = InMemoryKeyValueStorage()
-        config_storage.set(ConfigKeys.KEY_CLIENT_KEY, client_key)
+        config_storage.set(ConfigKeys.KEY_CLIENT_KEY, token)
         if server is not None:
             config_storage.set(ConfigKeys.KEY_HOSTNAME, server)
 

@@ -4,7 +4,7 @@
 # |_|\_\___\___| .__/\___|_|
 #              |_|
 #
-# Keeper Commander
+# Keeper Secrets Manager
 # Copyright 2021 Keeper Security Inc.
 # Contact: ops@keepersecurity.com
 #
@@ -15,7 +15,7 @@ import argparse
 
 
 parser = argparse.ArgumentParser(description='Simple value retrieval')
-parser.add_argument('--keeper_client_key', metavar='-c', type=str, required=False, help='client key')
+parser.add_argument('--keeper_token', metavar='-t', type=str, required=False, help='client key')
 parser.add_argument('--keeper_config_file', metavar='-cf', type=str, help='config file name', required=False)
 parser.add_argument('--keeper_hostname', metavar='-h', type=str, help='host name', required=False)
 parser.add_argument('--uid', type=str, help='uid or title of record', required=False)
@@ -26,11 +26,11 @@ args = parser.parse_args()
 task_args = {
     "keeper_force_config_write": True
 }
-if args.keeper_client_key is not None:
-    task_args["keeper_client_key"] = args.keeper_client_key
+if args.keeper_token is not None:
+    task_args["keeper_token"] = args.keeper_token
 if args.keeper_config_file is not None:
     task_args["keeper_config_file"] = args.keeper_config_file
-if args.keeper_server is not None:
+if args.keeper_hostname is not None:
     task_args["keeper_hostname"] = args.keeper_hostname
 
 keeper_ansible = KeeperAnsible(task_args)

@@ -37,7 +37,7 @@ def base_command_help(f):
     # Unit test do not know their version
     version = "Unknown"
     try:
-        version = importlib_metadata.version("keeper-secret-manager-cli")
+        version = importlib_metadata.version("keeper-secrets-manager-cli")
     except importlib_metadata.PackageNotFoundError:
         pass
 
@@ -96,7 +96,7 @@ def profile_init_command(ctx, token, hostname, ini_file, profile_name):
               " level command parameter will be ignored for the init sub-command.", file=sys.stderr)
 
     Profile.init(
-        client_key=token,
+        token=token,
         server=hostname,
         ini_file=ini_file,
         profile_name=profile_name
@@ -309,8 +309,8 @@ def version_command(ctx):
     cli_version = "Unknown"
     sdk_version = "Unknown"
     try:
-        sdk_version = importlib_metadata.version("keeper-secret-manager-core")
-        cli_version = importlib_metadata.version("keeper-secret-manager-cli")
+        sdk_version = importlib_metadata.version("keeper-secrets-manager-core")
+        cli_version = importlib_metadata.version("keeper-secrets-manager-cli")
     except importlib_metadata.PackageNotFoundError:
         pass
 

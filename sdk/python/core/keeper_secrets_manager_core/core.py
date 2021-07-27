@@ -23,7 +23,8 @@ from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.dto.dtos import Folder, Record
 from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, Context, TransmissionKey
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
-from keeper_secrets_manager_core.keeper_globals import keeper_server_public_key_raw_string, keeper_commander_sm_client_id
+from keeper_secrets_manager_core.keeper_globals import keeper_server_public_key_raw_string, \
+    keeper_commander_sm_client_id
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage
 from keeper_secrets_manager_core.utils import bytes_to_url_safe_str, base64_to_bytes, sign, \
     extract_public_key_bytes, dict_to_json, url_safe_str_to_bytes, encrypt_aes, der_base64_private_key_to_private_key, \
@@ -36,9 +37,9 @@ class SecretsManager:
     notation_prefix = "keeper"
     log_level = "DEBUG"
 
-    def __init__(self, client_key=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None):
+    def __init__(self, token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None):
 
-        self.client_key = client_key
+        self.token = token
         self.hostname = hostname
 
         # Accept the env var KSM_SKIP_VERIFY. Modules like 'requests' already use it.
@@ -52,8 +53,8 @@ class SecretsManager:
 
         # If the server or client key are set in the args, make sure they makes it's way into the config. The
         # will override what is already in the config if they exist.
-        if client_key is not None:
-            config.set(ConfigKeys.KEY_CLIENT_KEY, client_key)
+        if token is not None:
+            config.set(ConfigKeys.KEY_CLIENT_KEY, token)
         if hostname is not None:
             config.set(ConfigKeys.KEY_HOSTNAME, hostname)
 
@@ -136,7 +137,7 @@ class SecretsManager:
 
         # Case 2: Code
         if not current_secret_key:
-            code_secret_key = self.client_key
+            code_secret_key = self.token
 
             if code_secret_key:
                 current_secret_key = code_secret_key

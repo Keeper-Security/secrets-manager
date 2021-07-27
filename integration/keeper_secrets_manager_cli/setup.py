@@ -8,7 +8,7 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 install_requires = [
-    'keeper-secret-manager-core',
+    'keeper-secrets-manager-core',
     'click',
     'jsonpath-rw-ext',
     'prettytable',
@@ -17,16 +17,16 @@ install_requires = [
 
 # Version set in the keeper_secrets_manager_cli.version file.
 setup(
-    name="keeper-secret-manger-cli",
+    name="keeper-secrets-manger-cli",
     version="0.0.23a0",
-    description="Command line tool for Keeper Secret Manager",
+    description="Command line tool for Keeper Secrets Manager",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Keeper Security",
     author_email="ops@keepersecurity.com",
     url="https://github.com/Keeper-Security/secrets-manager",
     license="MIT",
-    keywords="Keeper Password Secret Manager SDK CLI",
+    keywords="Keeper Password Secrets Manager SDK CLI",
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
@@ -34,7 +34,7 @@ setup(
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
         "Documentation": "https://app.gitbook.com/"
-                         "@keeper-security/s/commander/integrations/libraries/command-line-interface",
+                         "@keeper-security/s/secrets-manager/secrets-manager/secrets-manager-command-line-interface",
         "Source Code": "https://github.com/Keeper-Security/secrets-manager",
     },
     classifiers=[

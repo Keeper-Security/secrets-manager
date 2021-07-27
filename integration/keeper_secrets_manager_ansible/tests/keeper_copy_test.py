@@ -29,7 +29,7 @@ records = {
 }
 
 
-def mocked_commander_get_secrets(*args):
+def get_secrets(*args):
 
     if len(args) > 0:
         uid = args[0][0]
@@ -87,8 +87,8 @@ class KeeperCopyTest(unittest.TestCase):
 
     #@unittest.skip
     @patch("requests.get", side_effect=mocked_requests_get)
-    @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=mocked_commander_get_secrets)
-    def test_keeper_copy_mock(self, mock_commander_get_secrets, mock_request_get):
+    @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
+    def test_keeper_copy_mock(self, mock_get_secrets, mock_request_get):
         self._common()
 
     @unittest.skip

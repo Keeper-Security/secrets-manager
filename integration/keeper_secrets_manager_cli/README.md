@@ -14,7 +14,7 @@ The full documentation can be found on [GitBook](https://app.gitbook.com/@keeper
 
 Install, or update, the module.
 
-    $ pip install -U keeper_secret_manager_cli
+    $ pip install -U keeper_secrets_manager_cli
 
 Create a configuration file for your application.
 

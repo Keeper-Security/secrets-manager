@@ -16,14 +16,14 @@ from keeper_secrets_manager_core.utils import json_to_dict, dict_to_json
 
 if __name__ == '__main__':
 
-    c = SecretsManager(
+    secrets_manager = SecretsManager(
         hostname='https://dev.keepersecurity.com',
-        client_key='hCDFN_tj9Enppq94PgyFqSeWeNvqAt_oDQ8YQnTMpL4',
+        token='hCDFN_tj9Enppq94PgyFqSeWeNvqAt_oDQ8YQnTMpL4',
         verify_ssl_certs=False,
         config=FileKeyValueStorage('config.json')
     )
 
-    all_records = c.get_secrets()
+    all_records = secrets_manager.get_secrets()
 
     for r in all_records:
 
@@ -55,12 +55,12 @@ if __name__ == '__main__':
         #
         # rec_to_update.uid = None
 
-        c.save(rec_to_update)
+        secrets_manager.save(rec_to_update)
     else:
         print("No records w/ password field was found")
 
     print("Get only one record")
 
-    JW_F1_R1 = c.get_secrets(['EG6KdJaaLG7esRZbMnfbFA'])
+    JW_F1_R1 = secrets_manager.get_secrets(['EG6KdJaaLG7esRZbMnfbFA'])
 
     print(JW_F1_R1)
