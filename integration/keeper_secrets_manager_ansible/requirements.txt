@@ -1,0 +1,2 @@
+ansible
+keeper-secrets-manager-core

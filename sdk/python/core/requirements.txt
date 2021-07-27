@@ -3,3 +3,4 @@ cryptography
 pycryptodomex
 requests
 pytest
+importlib_metadata

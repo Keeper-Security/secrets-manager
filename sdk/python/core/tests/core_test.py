@@ -1,8 +1,8 @@
 import unittest
 
-from keepercommandersm.storage import InMemoryKeyValueStorage
-from keepercommandersm.configkeys import ConfigKeys
-from keepercommandersm import Commander
+from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
+from keeper_secrets_manager_core.configkeys import ConfigKeys
+from keeper_secrets_manager_core import SecretsManager
 
 
 class CoreTest(unittest.TestCase):
@@ -13,12 +13,12 @@ class CoreTest(unittest.TestCase):
         config.set(ConfigKeys.KEY_APP_KEY, "MY APP KEY")
 
         # Pass in the config
-        c = Commander(config=config)
+        secrets_manager = SecretsManager(config=config)
 
         # There should be no app key
-        self.assertIsNone(c.config.get(ConfigKeys.KEY_APP_KEY), "found the app key")
+        self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_APP_KEY), "found the app key")
 
-        context = c.prepare_context()
+        context = secrets_manager.prepare_context()
 
         self.assertIsNotNone(context.transmissionKey.key, "did not find a transmission key")
         self.assertIsNotNone(context.clientId, "did nto find a client id")
