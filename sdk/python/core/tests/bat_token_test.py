@@ -2,7 +2,7 @@ import hashlib
 import os
 import unittest
 
-from keepercommandersm.utils import encrypt_aes, decrypt_aes
+from keeper_secrets_manager_core.utils import encrypt_aes, decrypt_aes
 
 
 class BATTokenTest(unittest.TestCase):

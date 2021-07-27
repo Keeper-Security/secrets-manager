@@ -29,14 +29,14 @@ TBD
 
 ```python
 # Import Commander
-from keepercommandersm import Commander
+from keeper_secrets_manager_core import SecretsManager
 
 # Establish connection
 # One time secrets generated via Web Vault or Commander CLI
-Commander.client_key = `MmzGdls-rDG39vgqgFD1HL70h0_L_sKQOdI0qwXU3JI`
+SecretsManager.client_key = `MmzGdls - rDG39vgqgFD1HL70h0_L_sKQOdI0qwXU3JI`
 
 # Retrieve all password records
-all_records = Commander.get_secrets()
+all_records = SecretsManager.get_secrets()
 
 # Get password from first record:
 password = all_records[0].password
@@ -102,9 +102,9 @@ Storage is managed in ...
 ### Retrieve secret(s)
 
 ```python
-from keepercommandersm import Commander
+from keeper_secrets_manager_core import SecretsManager
 
-all_secrets = Commander.get_secrets()
+all_secrets = SecretsManager.get_secrets()
 ```
 ### Update secret
 

@@ -3,9 +3,9 @@ import tempfile
 import json
 import os
 
-from keepercommandersm.storage import FileKeyValueStorage
-from keepercommandersm import Commander
-from keepercommandersm import mock
+from keeper_secrets_manager_core.storage import FileKeyValueStorage
+from keeper_secrets_manager_core import SecretsManager
+from keeper_secrets_manager_core import mock
 
 
 class NotationTest(unittest.TestCase):
@@ -40,7 +40,7 @@ class NotationTest(unittest.TestCase):
                 })
             )
             fh.seek(0)
-            c = Commander(config=FileKeyValueStorage(config_file_location=fh.name))
+            c = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
 
             # --------------------------
             # Add three records, 2 outside a folder, 1 inside folder
@@ -72,7 +72,7 @@ class NotationTest(unittest.TestCase):
             for t in range(0, 14):
                 res_queue.add_response(res_1)
 
-            prefix = Commander.notation_prefix
+            prefix = SecretsManager.notation_prefix
 
             # Simple call. With prefix
             value = c.get_notation("{}://{}/field/login".format(prefix, one.uid))
@@ -157,7 +157,7 @@ class NotationTest(unittest.TestCase):
                 })
             )
             fh.seek(0)
-            c = Commander(config=FileKeyValueStorage(config_file_location=fh.name))
+            c = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
 
             # --------------------------
 

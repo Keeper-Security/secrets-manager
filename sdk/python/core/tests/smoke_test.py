@@ -3,11 +3,11 @@ import tempfile
 import json
 import os
 
-from keepercommandersm.exceptions import KeeperError
-from keepercommandersm.storage import FileKeyValueStorage, InMemoryKeyValueStorage
-from keepercommandersm import Commander
-from keepercommandersm.configkeys import ConfigKeys
-from keepercommandersm import mock
+from keeper_secrets_manager_core.exceptions import KeeperError
+from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
+from keeper_secrets_manager_core import SecretsManager
+from keeper_secrets_manager_core.configkeys import ConfigKeys
+from keeper_secrets_manager_core import mock
 
 
 class SmokeTest(unittest.TestCase):
@@ -42,7 +42,7 @@ class SmokeTest(unittest.TestCase):
                 })
             )
             fh.seek(0)
-            c = Commander(config=FileKeyValueStorage(config_file_location=fh.name))
+            c = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
 
             # --------------------------
             # Add three records, 2 outside a folder, 1 inside folder
@@ -162,7 +162,7 @@ class SmokeTest(unittest.TestCase):
 
     def test_403_signature_error(self):
 
-        c = Commander(config=InMemoryKeyValueStorage({
+        c = SecretsManager(config=InMemoryKeyValueStorage({
             "server": "fake.keepersecurity.com",
             "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
             "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
@@ -197,25 +197,25 @@ class SmokeTest(unittest.TestCase):
         config.set(ConfigKeys.KEY_CLIENT_KEY, 'ABC123')
 
         os.environ.pop("KSM_SKIP_VERIFY", None)
-        c = Commander(config=config)
+        c = SecretsManager(config=config)
         self.assertEqual(c.verify_ssl_certs, True, "verify_ssl_certs is not true on 'no args; instance")
 
         os.environ.pop("KSM_SKIP_VERIFY", None)
-        c = Commander(config=config, verify_ssl_certs=True)
+        c = SecretsManager(config=config, verify_ssl_certs=True)
         self.assertEqual(c.verify_ssl_certs, True, "verify_ssl_certs is not true on param instance")
 
         os.environ.pop("KSM_SKIP_VERIFY", None)
-        c = Commander(config=config, verify_ssl_certs=False)
+        c = SecretsManager(config=config, verify_ssl_certs=False)
         self.assertEqual(c.verify_ssl_certs, False, "verify_ssl_certs is not false on param instance")
 
         os.environ["KSM_SKIP_VERIFY"] = "FALSE"
-        c = Commander(config=config)
+        c = SecretsManager(config=config)
         self.assertEqual(c.verify_ssl_certs, True, "verify_ssl_certs is not false on env set (FALSE)")
 
         os.environ["KSM_SKIP_VERIFY"] = "NO"
-        c = Commander(config=config)
+        c = SecretsManager(config=config)
         self.assertEqual(c.verify_ssl_certs, True, "verify_ssl_certs is not false on env set (NO)")
 
         os.environ["KSM_SKIP_VERIFY"] = "True"
-        c = Commander(config=config)
+        c = SecretsManager(config=config)
         self.assertEqual(c.verify_ssl_certs, False, "verify_ssl_certs is not true on env set (True)")

@@ -1,33 +1,23 @@
 import os
-from codecs import open
 from setuptools import setup, find_packages
 
 here = os.path.abspath(os.path.dirname(__file__))
-
 os.chdir(here)
 
-# Get the long description from the README.md file
-with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
-    long_description = fp.read()
-
 install_requires = [
-    'requests',
-    'cryptography',
-    'pycryptodomex>=3.7.2',
-    'importlib_metadata'
+    'keeper-secret-manager-ansible',
+    'ansible'
 ]
 
 setup(
-    name="keeper-secret-manager-core",
-    version="0.0.32a0",
-    description="Keeper Secrets Management for Python 3",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
+    name="keeper-secret-manager-ansible",
+    version='0.0.1',
+    description="Base plugin for Keeper Security related Ansible plugins.",
     author="Keeper Security",
     author_email="ops@keepersecurity.com",
     url="https://github.com/Keeper-Security/secrets-manager",
     license="MIT",
-    keywords="Keeper Password Manager SDK",
+    keywords="Keeper Password Manager SDK Ansible",
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
@@ -38,11 +28,13 @@ setup(
         "Source Code": "https://github.com/Keeper-Security/secrets-manager",
     },
     classifiers=[
-        "Development Status :: 2 - Pre-Alpha",
+        "Development Status :: 1 - Planning",
         "Intended Audience :: Developers",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.5",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",

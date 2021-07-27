@@ -1,0 +1,4 @@
+keeper-secret-manager-core
+jsonpath-rw-ext
+prettytable
+importlib_metadata

@@ -10,17 +10,17 @@
 #
 from datetime import datetime
 
-from keepercommandersm import Commander
-from keepercommandersm.storage import FileKeyValueStorage
-from keepercommandersm.utils import json_to_dict, dict_to_json
+from keeper_secrets_manager_core import SecretsManager
+from keeper_secrets_manager_core.storage import FileKeyValueStorage
+from keeper_secrets_manager_core.utils import json_to_dict, dict_to_json
 
 if __name__ == '__main__':
 
-    c = Commander(
-        server='https://dev.keepersecurity.com',
-        client_key='gr8qRQ18eqHreGMgzeq8uJTOZ6vbIP1-Fr-uxibX15M',
+    c = SecretsManager(
+        hostname='https://dev.keepersecurity.com',
+        client_key='hCDFN_tj9Enppq94PgyFqSeWeNvqAt_oDQ8YQnTMpL4',
         verify_ssl_certs=False,
-        config=FileKeyValueStorage('config-gr8.json')
+        config=FileKeyValueStorage('config.json')
     )
 
     all_records = c.get_secrets()
