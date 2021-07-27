@@ -10,7 +10,7 @@
 
 import importlib_metadata
 
-# Get the version of the keeper secret manager core
+# Get the version of the keeper secrets manager core
 version = "16.0.0"
 try:
     version = importlib_metadata.version("keeper-secrets-manager-core")
@@ -19,7 +19,7 @@ except importlib_metadata.PackageNotFoundError:
     pass
 except Exception as err:
     raise Exception(err)
-keeper_commander_sm_client_id = "mp{}".format(version)
+keeper_secrets_manager_sdk_client_id = "mp{}".format(version)
 
 keeper_server_public_key_raw_string = \
     'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'

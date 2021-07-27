@@ -87,7 +87,7 @@ class KeeperAnsible:
                 display.debug("Loading keeper config from Ansible vars.")
 
                 config_dict = {}
-                # Convert Ansible variables into the keys used by Secret Manager's config.
+                # Convert Ansible variables into the keys used by Secrets Manager's config.
                 for key in ["url", "client_id", "client_key", "app_key", "private_key", "bat", "binding_key",
                             "hostname"]:
                     keeper_key = KeeperAnsible.keeper_key(key)

@@ -1,8 +1,8 @@
-# Keeper Secret Manager CLI
+# Keeper Secrets Manager CLI
 
 ## Overview
 
-The Keeper Secret Manager command line interface, ksm, is a tool to:
+The Keeper Secrets Manager command line interface, ksm, is a tool to:
 
 * View and update secret records.
 * Replace environmental variable, and inline parameters, used by an application or script.

@@ -24,7 +24,7 @@ from keeper_secrets_manager_core.dto.dtos import Folder, Record
 from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, Context, TransmissionKey
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
 from keeper_secrets_manager_core.keeper_globals import keeper_server_public_key_raw_string, \
-    keeper_commander_sm_client_id
+    keeper_secrets_manager_sdk_client_id
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage
 from keeper_secrets_manager_core.utils import bytes_to_url_safe_str, base64_to_bytes, sign, \
     extract_public_key_bytes, dict_to_json, url_safe_str_to_bytes, encrypt_aes, der_base64_private_key_to_private_key, \
@@ -119,7 +119,7 @@ class SecretsManager:
 
         if not self.verify_ssl_certs:
             logging.warning("WARNING: Running without SSL cert verification. "
-                            "Execute 'Commander(..., verify_ssl_certs=True)' or 'KSM_SKIP_VERIFY=FALSE' "
+                            "Execute 'SecretsManager(..., verify_ssl_certs=True)' or 'KSM_SKIP_VERIFY=FALSE' "
                             "to enable verification.")
 
     def load_secret_key(self):
@@ -210,7 +210,7 @@ class SecretsManager:
 
         payload = GetPayload()
 
-        payload.clientVersion = keeper_commander_sm_client_id
+        payload.clientVersion = keeper_secrets_manager_sdk_client_id
         payload.clientId = bytes_to_url_safe_str(context.clientId) + "="
 
         app_key_str = self.config.get(ConfigKeys.KEY_APP_KEY)
@@ -230,7 +230,7 @@ class SecretsManager:
     def prepare_update_payload(self, context, record):
         payload = UpdatePayload()
 
-        payload.clientVersion = keeper_commander_sm_client_id
+        payload.clientVersion = keeper_secrets_manager_sdk_client_id
         payload.clientId = bytes_to_url_safe_str(context.clientId) + "="
 
         if not context.clientKey:
@@ -289,7 +289,7 @@ class SecretsManager:
                 response_dict = json_to_dict(rs.text)
 
                 if response_dict.get('result_code') == 'invalid_client_version':
-                    logging.error("Client version %s was not registered in the backend" % keeper_commander_sm_client_id)
+                    logging.error("Client version %s was not registered in the backend" % keeper_secrets_manager_sdk_client_id)
                     raise KeeperError(response_dict.get('additional_info'))
                 elif 'error' in response_dict:
                     # Errors:

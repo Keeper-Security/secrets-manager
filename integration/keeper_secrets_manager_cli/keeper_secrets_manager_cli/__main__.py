@@ -54,7 +54,7 @@ def base_command_help(f):
 @base_command_help
 def cli(ctx, ini_file, profile_name, output):
 
-    """Keeper Secret Manager CLI
+    """Keeper Secrets Manager CLI
     """
 
     try:
@@ -82,7 +82,7 @@ def profile_command():
 
 @click.command(name='init')
 @click.option('--token', '-t', type=str, required=True, help="The One Time Access Token.")
-@click.option('--hostname', '-h', type=str, default="US", help="Hostname of secret manager server.")
+@click.option('--hostname', '-h', type=str, default="US", help="Hostname of secrets manager server.")
 @click.option('--ini-file', type=str, help="INI config file to create.")
 @click.option('--profile-name', '-p', type=str, help='Config profile to create.')
 @click.pass_context

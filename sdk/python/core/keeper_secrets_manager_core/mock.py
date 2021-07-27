@@ -56,10 +56,10 @@ class ResponseQueue:
 
 class Response:
 
-    """Mock a response from Secret Management Service
+    """Mock a response from Secrets Manager Service
 
-    commander_instance = Commander()
-    mock_res = MockResponse(client=commander_instance)
+    secrets_manager_instance = SecretManger()
+    mock_res = MockResponse(client=secrets_manager_instance)
     record = mock_res.add_record(title="My Record")
     record.login = "My Login"
     record.password = "My Password"
@@ -108,7 +108,7 @@ class Response:
         }
 
     def patch_post_query(self, patch):
-        """Patch keepercommandersm.core.Commander._post_query
+        """Patch keeper_secrets_manager.core.SecretsManager._post_query
 
         The patch is a method that accept three arguments.
 
@@ -116,13 +116,13 @@ class Response:
           * context - Context instance.
           * payload_and_signature - Dictionary containing encrypted data and signature.
 
-        When Commander posts a message to the Secret Management services, it will call the patch method
+        When SecretsManager posts a message to the Secrets Manager services, it will call the patch method
         instead. The patch method needs to return an instance of the requests Response.
 
         """
 
         if self.client is None:
-            raise ValueError("The commander client has not been set.")
+            raise ValueError("The secrets manager client has not been set.")
 
         self.client._post_query = patch
 
@@ -140,7 +140,7 @@ class Response:
 
         res = Response.instance(context)
 
-        The method requires an instance of keepercommandersm.dto.payload.Context since that
+        The method requires an instance of keeper_secrets_manager_core.dto.payload.Context since that
         information on how to encrypt the response message.
 
         """
@@ -178,7 +178,8 @@ class Response:
             record = Record(title=title, record_type=record_type, uid=uid)
 
         if isinstance(object, Record.__class__) is False:
-            raise ValueError("Record being added to the response is not a keepercommandersm.mock.Record instance.")
+            raise ValueError("Record being added to the response is not a "
+                             "keeper_secrets_manager_core.mock.Record instance.")
 
         self.records[record.uid] = record
         return record
@@ -189,7 +190,8 @@ class Response:
             folder = Folder(uid=uid)
 
         if isinstance(object, Folder.__class__) is False:
-            raise ValueError("Folder being added to the response is not a keepercommandersm.mock.Folder instance.")
+            raise ValueError("Folder being added to the response is not a "
+                             "keeper_secrets_manager_core.mock.Folder instance.")
 
         self.folders[folder.uid] = folder
         return folder
@@ -209,7 +211,8 @@ class Folder:
             record = Record(record_type=record_type, uid=uid, title=title)
 
         if isinstance(object, Record.__class__) is False:
-            raise ValueError("Record being added to the response is not a keepercommandersm.mock.Record instance.")
+            raise ValueError("Record being added to the response is not a "
+                             "keeper_secrets_manager_core.mock.Record instance.")
 
         self.records[record.uid] = record
         return record
@@ -249,7 +252,7 @@ class File:
 
     def downloadable_content(self):
 
-        # The dump method will generate the content that the secret manager would return. The
+        # The dump method will generate the content that the secrets manager would return. The
         # problem is we won't know the secret here. So the dump method needs to be run before
         # this method is called. The dump method will set the last/only secret used. We need to
         # encode the content with that secret.
@@ -383,7 +386,7 @@ class Record:
         }
 
         if flags is not None:
-            # Commander will not add a custom key if there is no custom fields. However the UI does.
+            # SecretsManager will not add a custom key if there is no custom fields. However the UI does.
             if flags.get("prune_custom_fields", False) is True and len(record_data["custom"]) == 0:
                 record_data.pop("custom", None)
 

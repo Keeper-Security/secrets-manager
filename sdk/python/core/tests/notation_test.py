@@ -29,7 +29,7 @@ class NotationTest(unittest.TestCase):
         with tempfile.NamedTemporaryFile("w") as fh:
             fh.write(
                 json.dumps({
-                    "server": "fake.keepersecurity.com",
+                    "hostname": "fake.keepersecurity.com",
                     "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
                     "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26"
                                 "C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
@@ -134,11 +134,11 @@ class NotationTest(unittest.TestCase):
             value = secrets_manager.get_notation("{}/custom_field/name[last]".format(one.uid))
             self.assertEqual("Smith", value, "custom field name, got the last name")
 
-    def test_commander_custom_field(self):
+    def test_secrets_manager_custom_field(self):
 
-        """ Test how Commander store custom fields
+        """ Test how Secrets Manager store custom fields
 
-        If no custom fields are added via Commander, the JSON will be missing the "custom" key. Make
+        If no custom fields are added via Secrets Manager, the JSON will be missing the "custom" key. Make
         a record that has no custom field and see if stuff still works.
 
         """
@@ -146,7 +146,7 @@ class NotationTest(unittest.TestCase):
         with tempfile.NamedTemporaryFile("w") as fh:
             fh.write(
                 json.dumps({
-                    "server": "fake.keepersecurity.com",
+                    "hostname": "fake.keepersecurity.com",
                     "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
                     "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26"
                                 "C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
