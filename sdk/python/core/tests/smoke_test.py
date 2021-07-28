@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 import tempfile
 import json
 import os
@@ -8,6 +9,7 @@ from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKey
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core import mock
+from keeper_secrets_manager_core.keeper_globals import get_client_version
 
 
 class SmokeTest(unittest.TestCase):
@@ -158,39 +160,6 @@ class SmokeTest(unittest.TestCase):
             custom = record.custom_field("My Custom 1", single=True)
             self.assertEqual(custom, "NEW VALUE", "didn't get the correct My Custom 1 value after write")
 
-
-
-    def test_403_signature_error(self):
-
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
-
-        res_queue = mock.ResponseQueue(client=secrets_manager)
-
-        # Make the error message
-        error_json = {
-            "path": "https://fake.keepersecurity.com/api/rest/sm/v1/get_secret, POST, python-requests/2.25.1",
-            "additional_info": "",
-            "location": "default exception manager - api validation exception",
-            "error": "access_denied",
-            "message": "Signature is invalid"
-        }
-
-        res = mock.Response(content=json.dumps(error_json).encode(), status_code=403)
-        res_queue.add_response(res)
-
-        try:
-            secrets_manager.get_secrets()
-        except KeeperError as err:
-            self.assertRegex(err.message, r'Signature is invalid', 'did not get correct error message')
-
     def test_verify_ssl_certs(self):
 
         config = InMemoryKeyValueStorage()
@@ -219,3 +188,19 @@ class SmokeTest(unittest.TestCase):
         os.environ["KSM_SKIP_VERIFY"] = "True"
         secrets_manager = SecretsManager(config=config)
         self.assertEqual(secrets_manager.verify_ssl_certs, False, "verify_ssl_certs is not true on env set (True)")
+
+    def test_client_version(self):
+
+        # Not testing the default. It's can be different per test, local developer, and/or test server
+
+        with patch("importlib_metadata.version") as mock_meta:
+            mock_meta.return_value = "0.1.23a0"
+
+            client_version = get_client_version()
+            self.assertEqual("16.1.23", client_version, "did not get the correct client version from 0.1.23a0")
+
+        with patch("importlib_metadata.version") as mock_meta:
+            mock_meta.return_value = "0.1.24"
+
+            client_version = get_client_version()
+            self.assertEqual("16.1.24", client_version, "did not get the correct client version from 0.1.24")
