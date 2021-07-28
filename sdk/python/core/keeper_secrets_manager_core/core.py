@@ -303,10 +303,10 @@ class SecretsManager:
             # The server wants us to use a different public key.
             elif error == 'key':
                 key_id = response_dict.get("key_id")
-                logging.info("Server has requested we public key {}".format(key_id))
+                logging.info("Server has requested we use public key {}".format(key_id))
 
                 if key_id is None:
-                    raise ValueError("The public key is is blank from the server")
+                    raise ValueError("The public key is blank from the server")
                 elif str(key_id) not in keeper_public_keys:
                     raise ValueError("The public key at {} does not exist in the SDK".format(key_id))
 
