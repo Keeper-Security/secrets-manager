@@ -191,9 +191,7 @@ class SmokeTest(unittest.TestCase):
 
     def test_client_version(self):
 
-        # We are in a test, it should return it's default
-        client_version = get_client_version()
-        self.assertEqual("16.0.0", client_version, "did not get the correct client version")
+        # Not testing the default. It's can be different per test, local developer, and/or test server
 
         with patch("importlib_metadata.version") as mock_meta:
             mock_meta.return_value = "0.1.23a0"
