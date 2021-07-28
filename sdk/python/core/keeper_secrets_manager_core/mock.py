@@ -50,7 +50,7 @@ class ResponseQueue:
         response = self.queue.popleft()
         return response.instance(context)
 
-    def auto_responder_patch(self, path, context, payload_and_signature):
+    def auto_responder_patch(self, _path, context, _payload_and_signature):
         return self.get_response(context)
 
 
@@ -266,6 +266,11 @@ class File:
         return encrypt_aes(data, self.secret_used)
 
     def dump(self, secret, flags=None):
+
+        # No special flags for download. Do this to make PEP8 happy for unused vars.
+        if flags is not None:
+            pass
+
         self.secret_used = secret
         d = {
             "name": self.name,

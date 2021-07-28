@@ -14,7 +14,6 @@ import re
 import os
 import base64
 import imghdr
-import sys
 from requests import Response
 
 
@@ -73,7 +72,8 @@ class SecretTest(unittest.TestCase):
         # Text Output
         queue.add_response(res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+                as mock_client:
             mock_client.return_value = secrets_manager
 
             Profile.init(
@@ -132,7 +132,8 @@ class SecretTest(unittest.TestCase):
         for test in range(0, 6):
             queue.add_response(res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+                as mock_client:
             mock_client.return_value = secrets_manager
 
             Profile.init(
@@ -186,6 +187,51 @@ class SecretTest(unittest.TestCase):
             self.assertEqual(4, len(rows), "found 4 rows")
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
 
+    def test_get_dash_uid(self):
+
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
+            "hostname": "fake.keepersecurity.com",
+            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
+            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
+            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
+            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
+                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
+                          "jhKMhHQFaHYI"
+        }))
+
+        # UID starts with a dash to see if will be treated as a UID or a argument. We want UID :)
+        dash_uid = '-uDASH'
+
+        res = mock.Response()
+        one = res.add_record(title="My Record 1", uid=dash_uid)
+        one.field("login", "My Login 1")
+        one.field("password", "My Password 1")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        # Profile init
+        queue.add_response(res)
+        # Secret get
+        queue.add_response(res)
+
+        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+                as mock_client:
+            mock_client.return_value = secrets_manager
+
+            Profile.init(
+                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+            )
+
+            # JSON Output to file
+            with tempfile.NamedTemporaryFile() as tf:
+                runner = CliRunner()
+                result = runner.invoke(cli, ['-o', tf.name, 'secret', 'get', '-u', one.uid, '--json'],
+                                       catch_exceptions=False)
+                self.assertEqual(0, result.exit_code, "the exit code was not 0")
+                tf.seek(0)
+                secret = json.load(tf)
+                self.assertEqual(dash_uid, secret["uid"], "didn't get the correct uid for secret")
+                tf.close()
+
     def test_download(self):
 
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
@@ -216,7 +262,8 @@ class SecretTest(unittest.TestCase):
             return mock_res
 
         with patch('requests.get', side_effect=mock_download_get) as mock_get:
-            with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+            with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+                    as mock_client:
                 mock_client.return_value = secrets_manager
 
                 Profile.init(
@@ -258,7 +305,8 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+                as mock_client:
             mock_client.return_value = secrets_manager
 
             Profile.init(
@@ -358,8 +406,9 @@ class SecretTest(unittest.TestCase):
             mock_res.headers["Content-Type"] = lookup[uid].content_type
             return mock_res
 
-        with patch('requests.get', side_effect=mock_download_get) as mock_get:
-            with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+        with patch('requests.get', side_effect=mock_download_get) as _:
+            with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+                    as mock_client:
                 mock_client.return_value = secrets_manager
 
                 Profile.init(
@@ -433,7 +482,8 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(mock.Response(content="I hate you and your little dog.", status_code=500))
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+                as mock_client:
             mock_client.return_value = secrets_manager
 
             Profile.init(
@@ -484,12 +534,12 @@ class SecretTest(unittest.TestCase):
         self.assertEqual("bar", value, "key is not bar")
 
         # = in the key
-        key, value = Secret._split_kv("\=foo\==bar")
+        key, value = Secret._split_kv(r"\=foo\==bar")
         self.assertEqual("=foo=", key, "key is not =foo=")
         self.assertEqual("bar", value, "key is not bar, the 2nd")
 
         # = in the key and value
-        key, value = Secret._split_kv("\=foo\==\=bar\=")
+        key, value = Secret._split_kv(r"\=foo\==\=bar\=")
         self.assertEqual("=foo=", key, "key is not =foo=")
         self.assertEqual("=bar=", value, "key is not =bar=")
 
@@ -538,7 +588,8 @@ class SecretTest(unittest.TestCase):
         # The secret get
         queue.add_response(res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+                as mock_client:
             mock_client.return_value = secrets_manager
 
             Profile.init(
@@ -574,7 +625,7 @@ class SecretTest(unittest.TestCase):
         }))
 
         profile_init_res = mock.Response()
-        profile_init_record = profile_init_res.add_record(title="Profile Init")
+        profile_init_res.add_record(title="Profile Init")
 
         address_res = mock.Response()
         address_record = address_res.add_record(title="My Record 1", record_type="address")
@@ -598,7 +649,8 @@ class SecretTest(unittest.TestCase):
         queue.add_response(login_res)
         queue.add_response(address_res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+                as mock_client:
             mock_client.return_value = secrets_manager
 
             Profile.init(

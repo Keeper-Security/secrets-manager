@@ -183,7 +183,6 @@ def hash_of_string(value):
 
 
 def ecies_decrypt(server_public_key, ciphertext, priv_key_data, id=b''):
-    result = None
 
     try:
         # server_public_key = ciphertext[:65]

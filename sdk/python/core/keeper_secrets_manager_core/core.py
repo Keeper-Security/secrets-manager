@@ -289,7 +289,8 @@ class SecretsManager:
                 response_dict = json_to_dict(rs.text)
 
                 if response_dict.get('result_code') == 'invalid_client_version':
-                    logging.error("Client version %s was not registered in the backend" % keeper_secrets_manager_sdk_client_id)
+                    logging.error("Client version %s was not registered in the backend" %
+                                  keeper_secrets_manager_sdk_client_id)
                     raise KeeperError(response_dict.get('additional_info'))
                 elif 'error' in response_dict:
                     # Errors:
