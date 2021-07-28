@@ -4,12 +4,14 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using Org.BouncyCastle.Asn1;
+using Org.BouncyCastle.Asn1.Ocsp;
 using Org.BouncyCastle.Asn1.X9;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Modes;
 using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Math;
 using Org.BouncyCastle.Security;
 
 namespace SecretsManager
@@ -42,10 +44,20 @@ namespace SecretsManager
         {
             return Encoding.ASCII.GetBytes(data);
         }
+        
+        public static string BytesToString(byte[] data)
+        {
+            return Encoding.ASCII.GetString(data);
+        }
 
         public static string BytesToBase64(byte[] data)
         {
             return Convert.ToBase64String(data);
+        }
+        
+        public static byte[] Base64ToBytes(string data)
+        {
+            return Convert.FromBase64String(data);
         }
 
         public static byte[] GetRandomBytes(int length)
@@ -83,10 +95,15 @@ namespace SecretsManager
             return hmac.ComputeHash(StringToBytes(tag));
         }
 
-        public static ECPublicKeyParameters ImportPublicKey(byte[] key)
+        private static ECPublicKeyParameters ImportPublicKey(byte[] key)
         {
             var point = new X9ECPoint(ECParameters.Curve, new DerOctetString(key)).Point;
             return new ECPublicKeyParameters(point, ECParameters);
+        }
+        
+        private static ECPrivateKeyParameters ImportPrivateKey(byte[] key)
+        {
+            return new ECPrivateKeyParameters(new BigInteger(1, key), ECParameters);
         }
 
         private static byte[] GetECIESSymmetricKey(ICipherParameters privateKey, ICipherParameters recipientPublicKey)
@@ -115,20 +132,25 @@ namespace SecretsManager
             return iv.Concat(cipherText.Take(len)).ToArray();
         }
 
-        public static byte[] PublicEncrypt(byte[] data, byte[] keeperPublicKey)
+        public static byte[] PublicEncrypt(byte[] data, byte[] key)
         {
             var keyGenerator = new ECKeyPairGenerator("ECDH");
             keyGenerator.Init(new ECKeyGenerationParameters(ECParameters, RngCsp));
             var ephemeralKeyPair = keyGenerator.GenerateKeyPair();
-            var recipientPublicKey = ImportPublicKey(keeperPublicKey);
+            var recipientPublicKey = ImportPublicKey(key);
             var symmetricKey = GetECIESSymmetricKey(ephemeralKeyPair.Private, recipientPublicKey);
             var encryptedData = Encrypt(data, symmetricKey);
             return ((ECPublicKeyParameters) ephemeralKeyPair.Public).Q.GetEncoded().Concat(encryptedData).ToArray();
         }
 
-        public static byte[] Sign(byte[] signatureBase, byte[] privateKey)
+        public static byte[] Sign(byte[] data, byte[] key)
         {
-            return new byte[] {1};
+            var privateKey = ImportPrivateKey(key);
+            var sig = SignerUtilities.GetSigner("SHA256withECDSA");
+            sig.Init(true, privateKey);
+            sig.BlockUpdate(data, 0, data.Length);
+            var signature = sig.GenerateSignature();
+            return signature;
         }
     }
 }

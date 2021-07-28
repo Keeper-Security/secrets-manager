@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Runtime.Serialization;
 using System.Threading.Tasks;
 
 namespace SecretsManager
@@ -20,12 +22,14 @@ namespace SecretsManager
         }
     }
 
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [DataContract]
     public class GetPayload
     {
-        public string clientVersion { get; }
-        public string clientId { get; }
-        public string publicKey { get; }
-        public string[] requestedRecords { get; }
+        [DataMember] public string clientVersion { get; set; }
+        [DataMember] public string clientId { get; set; }
+        [DataMember] public string publicKey { get; set; }
+        [DataMember] public string[] requestedRecords { get; set; }
 
         public GetPayload(string clientVersion, string clientId, string publicKey, string[] requestedRecords)
         {
@@ -49,11 +53,16 @@ namespace SecretsManager
         static readonly string KEY_HOSTNAME = "hostname"; // base url for the Secrets Manager service
         static readonly string KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId";
         static readonly string KEY_CLIENT_ID = "clientId";
-        static readonly string KEY_CLIENT_KEY = "clientKey"; // The key that is used to identify the client before public key
+
+        static readonly string
+            KEY_CLIENT_KEY = "clientKey"; // The key that is used to identify the client before public key
+
         static readonly string KEY_APP_KEY = "appKey"; // The application key with which all secrets are encrypted
         static readonly string KEY_PRIVATE_KEY = "privateKey"; // The client's private key
         static readonly string KEY_PUBLIC_KEY = "publicKey"; // The client's public key
-        static readonly string CLIENT_ID_HASH_TAG = "KEEPER_SECRETS_MANAGER_CLIENT_ID"; // Tag for hashing the client key to client id
+
+        static readonly string
+            CLIENT_ID_HASH_TAG = "KEEPER_SECRETS_MANAGER_CLIENT_ID"; // Tag for hashing the client key to client id
 
         public static void InitializeStorage(IKeyValueStorage storage, string clientKey, string hostName)
         {
@@ -78,7 +87,8 @@ namespace SecretsManager
 
             if (existingClientId != null)
             {
-                throw new Exception($"The storage is already initialized with a different client Id ({existingClientId})");
+                throw new Exception(
+                    $"The storage is already initialized with a different client Id ({existingClientId})");
             }
 
             storage.SaveString(KEY_HOSTNAME, hostName);
@@ -127,12 +137,18 @@ namespace SecretsManager
 
         private static readonly byte[][] KeeperPublicKeys =
         {
-            CryptoUtils.WebSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
-            CryptoUtils.WebSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
-            CryptoUtils.WebSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
-            CryptoUtils.WebSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
-            CryptoUtils.WebSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
-            CryptoUtils.WebSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
+            CryptoUtils.WebSafe64ToBytes(
+                "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
+            CryptoUtils.WebSafe64ToBytes(
+                "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
+            CryptoUtils.WebSafe64ToBytes(
+                "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
+            CryptoUtils.WebSafe64ToBytes(
+                "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
+            CryptoUtils.WebSafe64ToBytes(
+                "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
+            CryptoUtils.WebSafe64ToBytes(
+                "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
         };
 
         static TransmissionKey GenerateTransmissionKey(IKeyValueStorage storage)
@@ -144,7 +160,8 @@ namespace SecretsManager
             return new TransmissionKey(keyNumber, transmissionKey, encryptedKey);
         }
 
-        private static Tuple<byte[], byte[]> encryptAndSignPayload<T>(IKeyValueStorage storage, TransmissionKey transmissionKey, T payload)
+        private static Tuple<byte[], byte[]> EncryptAndSignPayload<T>(IKeyValueStorage storage,
+            TransmissionKey transmissionKey, T payload)
         {
             var payloadBytes = JsonUtils.SerializeJson(payload);
             var encryptedPayload = CryptoUtils.Encrypt(payloadBytes, transmissionKey.Key);
@@ -161,14 +178,18 @@ namespace SecretsManager
 
         public static async Task<string> PostQuery<T>(IKeyValueStorage storage, string path, T payload)
         {
-            var hostName = "dev.keepersecurity.com";
-            var url = $"https://{hostName}/api/rest/sm/v1/get_secret/{path}";
-            // WebRequest.Create();
+            var hostName = storage.GetString(KEY_HOSTNAME);
+            if (hostName == null)
+            {
+                throw new Exception("hostname is missing from the storage");
+            }
+            var url = $"https://{hostName}/api/rest/sm/v1/{path}";
             var request = (HttpWebRequest) WebRequest.Create(url);
+            request.ServerCertificateValidationCallback += (_, _, _, _) => true;
             while (true)
             {
                 var transmissionKey = GenerateTransmissionKey(storage);
-                var encryptedPayload = encryptAndSignPayload(storage, transmissionKey, payload);
+                var encryptedPayload = EncryptAndSignPayload(storage, transmissionKey, payload);
                 // request.UserAgent = "KeeperSDK.Net/" + ClientVersion;
                 request.ContentType = "application/octet-stream";
                 request.Headers["PublicKeyId"] = transmissionKey.PublicKeyId.ToString();
@@ -189,12 +210,12 @@ namespace SecretsManager
                 }
                 catch (WebException e)
                 {
-                    response = (HttpWebResponse) e.Response;
+                    if (e.Response == null) throw;
                     var errorMsg = await new StreamReader(
-                            response.GetResponseStream() ?? throw new InvalidOperationException("Response was expected but not received"))
+                            ((HttpWebResponse)e.Response).GetResponseStream() ??
+                            throw new InvalidOperationException("Response was expected but not received"))
                         .ReadToEndAsync();
-                    Console.WriteLine(errorMsg);
-                    if (response == null) throw;
+                    throw new Exception(errorMsg);
                 }
 
                 // var client = new HttpClient
