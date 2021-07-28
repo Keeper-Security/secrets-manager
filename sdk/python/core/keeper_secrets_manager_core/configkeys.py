@@ -18,6 +18,7 @@ class ConfigKeys(Enum):
     KEY_CLIENT_KEY = 'clientKey'    # The key that is used to identify the client before public key. This is token.
     KEY_APP_KEY = 'appKey'          # The application key with which all secrets are encrypted
     KEY_PRIVATE_KEY = 'privateKey'  # The client's private key
+    KEY_SERVER_PUBLIC_KEY_ID = 'serverPublicKeyId'  # Which public key should be using?
 
     KEY_BINDING_TOKEN = 'bat'
     KEY_BINDING_KEY = 'bindingKey'

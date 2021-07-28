@@ -22,9 +22,8 @@ from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.dto.dtos import Folder, Record
 from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, Context, TransmissionKey
-from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
-from keeper_secrets_manager_core.keeper_globals import keeper_server_public_key_raw_string, \
-    keeper_secrets_manager_sdk_client_id
+from keeper_secrets_manager_core.exceptions import KeeperError
+from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage
 from keeper_secrets_manager_core.utils import bytes_to_url_safe_str, base64_to_bytes, sign, \
     extract_public_key_bytes, dict_to_json, url_safe_str_to_bytes, encrypt_aes, der_base64_private_key_to_private_key, \
@@ -36,6 +35,7 @@ class SecretsManager:
 
     notation_prefix = "keeper"
     log_level = "DEBUG"
+    default_key_id = "1"
 
     def __init__(self, token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None):
 
@@ -154,18 +154,29 @@ class SecretsManager:
         return current_secret_key
 
     @staticmethod
-    def generate_transmission_key(key_number=1):
+    def generate_transmission_key(key_id):
         transmission_key = utils.generate_random_bytes(32)
 
-        server_public_raw_key_bytes = url_safe_str_to_bytes(keeper_server_public_key_raw_string)
+        if key_id not in keeper_public_keys:
+            ValueError("The public key id {} does not exist.".format(key_id))
+
+        server_public_raw_key_bytes = url_safe_str_to_bytes(keeper_public_keys[key_id])
 
         encrypted_key = public_encrypt(transmission_key, server_public_raw_key_bytes)
 
-        return TransmissionKey(key_number, transmission_key, encrypted_key)
+        return TransmissionKey(key_id, transmission_key, encrypted_key)
 
     def prepare_context(self):
 
-        transmission_key = SecretsManager.generate_transmission_key()
+        # Get the index of the public get we need to use. If not set, set it the default and
+        # save it back into the config
+        key_id = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID)
+        if key_id is None:
+            key_id = SecretsManager.default_key_id
+            self.config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, str(key_id))
+
+        # Generate the transmission key using the public key at the key id index
+        transmission_key = SecretsManager.generate_transmission_key(key_id)
         client_id = self.config.get(ConfigKeys.KEY_CLIENT_ID)
         secret_key = None
 
@@ -273,54 +284,75 @@ class SecretsManager:
 
         return rs
 
+    def handler_http_error(self, rs):
+
+        try:
+            # Decode the JSON content, throw exception if not JSON
+            response_dict = json_to_dict(rs.text)
+            if response_dict is None:
+                raise json.JSONDecodeError("Not JSON", "NONE", 0)
+
+            # Try to get the error from result_code, then from error.
+            error = response_dict.get('result_code', response_dict.get('error'))
+
+            if error == 'invalid_client_version':
+                logging.error("Client version {} was not registered in the backend".format(
+                    keeper_secrets_manager_sdk_client_id))
+                msg = response_dict.get('additional_info')
+
+            # The server wants us to use a different public key.
+            elif error == 'key':
+                key_id = response_dict.get("key_id")
+                logging.info("Server has requested we public key {}".format(key_id))
+
+                if key_id is None:
+                    raise ValueError("The public key is is blank from the server")
+                elif str(key_id) not in keeper_public_keys:
+                    raise ValueError("The public key at {} does not exist in the SDK".format(key_id))
+
+                self.config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, str(key_id))
+
+                # The only non-exception exit from this method
+                return True
+            else:
+                msg = "Error: {}, message={}".format(error, response_dict.get('message', "NA"))
+
+            raise KeeperError(msg)
+
+        except json.JSONDecodeError as _:
+            # The content wasn't JSON. Let the catch-all exception at the end handle it.
+            pass
+        except KeeperError as err:
+            # This was one of our exceptions, just rethrow it.
+            raise err
+        finally:
+            logging.error("Error: {} (http error code {}): {}".format(
+                rs.reason,
+                rs.status_code,
+                rs.text
+            ))
+
+        # This is a unknown error, not one of ours, just throw a HTTPError
+        raise HTTPError(rs.text)
+
     def fetch(self, record_filter=None):
 
         context = self.prepare_context()
         payload_and_signature = self.prepare_get_payload(context, records_filter=record_filter)
 
-        rs = self._post_query(
-            'get_secret',
-            context,
-            payload_and_signature
-        )
+        while True:
+            rs = self._post_query(
+                'get_secret',
+                context,
+                payload_and_signature
+            )
 
-        if not rs.ok:
-            if rs.status_code == 403:
-                response_dict = json_to_dict(rs.text)
+            # If we are ok, then break out of the while loop
+            if rs.ok:
+                break
 
-                if response_dict.get('result_code') == 'invalid_client_version':
-                    logging.error("Client version %s was not registered in the backend" %
-                                  keeper_secrets_manager_sdk_client_id)
-                    raise KeeperError(response_dict.get('additional_info'))
-                elif 'error' in response_dict:
-                    # Errors:
-                    #     1. error: throttled,     message: Due to repeated attempts, your request has been throttled.
-                    #        Try again in 2 minutes.
-                    #     2. error: access_denied, message: Unable to validate application access
-                    #     3. error: access_denied, message: Signature is invalid
-                    error = ("Error: %s, message=%s" % (
-                        response_dict.get('error'), response_dict.get('message'))) if 'error' in response_dict else None
-
-                    raise KeeperError(error)
-                else:
-                    logging.error("Error code: %s, additional info: %s" % (
-                        (response_dict.get('result_code') or response_dict.get('error')),
-                        (response_dict.get('additional_info') or response_dict.get('message'))
-                    )
-                                  )
-                    raise KeeperAccessDenied("Access denied. One-Time Token cannot be reused.")
-            elif rs.status_code == 400:
-                # Example errors:
-                #   - error: invalid,     message Invalid secrets manager payload
-                #   - error: bad_request, message: unable to decrypt the payload
-                raise KeeperError(rs.text)
-            else:
-                resp_dict = json_to_dict(rs.text)
-
-                logging.error(
-                    "Error: " + str(rs.reason) + " (http error code: " + str(rs.status_code) + ", raw: %s)" % resp_dict)
-
-                raise HTTPError()
+            # Handle the error. Handling will throw an exception if it doesn't want us to retry.
+            self.handler_http_error(rs)
 
         decrypted_response_bytes = decrypt_aes(rs.content, context.transmissionKey.key)
         decrypted_response_str = bytes_to_string(decrypted_response_bytes)
@@ -390,28 +422,21 @@ class SecretsManager:
 
         payload_and_signature = self.prepare_update_payload(context, record)
 
-        rs = self._post_query(
-            'update_secret',
-            context,
-            payload_and_signature
-        )
+        while True:
+            rs = self._post_query(
+                'update_secret',
+                context,
+                payload_and_signature
+            )
 
-        if not rs.ok:
+            # If we are ok, then break out of the while loop
+            if rs.ok:
+                break
 
-            error_message = rs.content
-            try:
-                resp_dict = json_to_dict(rs.text)
-                error_message = resp_dict.get("message", error_message)
-                logging.error("Error: {} (http error code: {}, row: {}".format(rs.reason, rs.status_code, resp_dict))
-            except json.JSONDecodeError as _:
-                logging.error("Error: {} (http error code: {}, message: {}".format(rs.reason, rs.status_code,
-                                                                                   error_message))
-            if rs.status_code == 403:
-                raise KeeperError(error_message)
-            else:
-                raise HTTPError(error_message)
-        else:
-            return True
+            # Handle the error. Handling will throw an exception if it doesn't want us to retry.
+            self.handler_http_error(rs)
+
+        return True
 
     def get_notation(self, url):
 
