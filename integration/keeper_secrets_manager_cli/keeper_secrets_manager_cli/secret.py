@@ -266,7 +266,8 @@ class Secret:
         if output_format == 'text':
             self.cli.output(self._format_list(record_dict))
         elif output_format == 'json':
-            records = [{"uid": x["uid"], "title": x["title"], "record_type": x["type"]} for x in record_dict]
+            records = [{"uid": x.get("uid"), "title": x.get("title"), "record_type": x.get("type")}
+                       for x in record_dict]
             self.cli.output(json.dumps(records, indent=4))
 
     def download(self, uid, name, file_output, create_folders=False):

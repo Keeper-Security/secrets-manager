@@ -68,7 +68,8 @@ class ExecTest(unittest.TestCase):
                 script.seek(0)
                 os.chmod(script.name, 0o777)
 
-                os.environ["VAR_ONE"] = "{}://{}/{}/{}".format(SecretsManager.notation_prefix, one.uid, "field", "login")
+                os.environ["VAR_ONE"] = "{}://{}/{}/{}".format(SecretsManager.notation_prefix, one.uid, "field",
+                                                               "login")
                 os.environ["VAR_TWO"] = "{}://{}/{}/{}".format(SecretsManager.notation_prefix, one.uid, "custom_field",
                                                                "password")
                 os.environ["NOT_ONE"] = "BLAH"
@@ -111,7 +112,8 @@ class ExecTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+                as mock_client:
             mock_client.return_value = secrets_manager
 
             Profile.init(
@@ -130,7 +132,8 @@ class ExecTest(unittest.TestCase):
                 script.seek(0)
                 os.chmod(script.name, 0o777)
 
-                os.environ["VAR_ONE"] = "{}://{}/{}/{}".format(SecretsManager.notation_prefix, one.uid, "field", "login")
+                os.environ["VAR_ONE"] = "{}://{}/{}/{}".format(SecretsManager.notation_prefix, one.uid, "field",
+                                                               "login")
                 os.environ["VAR_TWO"] = "{}://{}/{}/{}".format(SecretsManager.notation_prefix, one.uid, "custom_field",
                                                                "password")
 
@@ -145,7 +148,7 @@ class ExecTest(unittest.TestCase):
                                      "did not find the custom field password")
 
                 # For coverage we request the full array value for this one, hence ["PASS"]
-                self.assertIsNotNone(re.search('\["PASS"\]', result.output, flags=re.MULTILINE),
+                self.assertIsNotNone(re.search(r'\["PASS"\]', result.output, flags=re.MULTILINE),
                                      "did not find the field password")
                 script.close()
 

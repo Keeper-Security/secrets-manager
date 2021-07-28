@@ -270,7 +270,7 @@ class Profile:
         profile_config = self.get_profile_config(profile_name)
 
         export_config = configparser.ConfigParser()
-        export_config[Profile.default_profile] =profile_config
+        export_config[Profile.default_profile] = profile_config
         export_config[Profile.config_profile] = {
             "log_level": "WARNING",
             Profile.active_profile_key: Profile.default_profile
