@@ -118,18 +118,35 @@ namespace SecretsManager
         {
             var cipher = new GcmBlockCipher(new AesEngine());
             var gcmParameterSpec = new AeadParameters(new KeyParameter(key), 16 * 8, iv);
-            cipher.Init(true, gcmParameterSpec);
+            cipher.Init(forEncryption, gcmParameterSpec);
             return cipher;
         }
+        
+        private const int IvSize = 12;
 
         public static byte[] Encrypt(byte[] data, byte[] key)
         {
-            var iv = GetRandomBytes(12);
+            var iv = GetRandomBytes(IvSize);
             var cipher = GetCipher(true, iv, key);
             var cipherText = new byte[cipher.GetOutputSize(data.Length)];
             var len = cipher.ProcessBytes(data, 0, data.Length, cipherText, 0);
             len += cipher.DoFinal(cipherText, len);
             return iv.Concat(cipherText.Take(len)).ToArray();
+        }
+
+        public static byte[] Decrypt(byte[] data, byte[] key)
+        {
+            var iv = data.Take(IvSize).ToArray();
+            var cipher = GetCipher(false, iv, key);
+            var decryptedData = new byte[cipher.GetOutputSize(data.Length - IvSize)];
+            var len = cipher.ProcessBytes(data, IvSize, data.Length - IvSize, decryptedData, 0);
+            cipher.DoFinal(decryptedData, len);
+            return decryptedData;
+        }
+
+        public static byte[] Decrypt(string data, byte[] key)
+        {
+            return Decrypt(Base64ToBytes(data), key);
         }
 
         public static byte[] PublicEncrypt(byte[] data, byte[] key)

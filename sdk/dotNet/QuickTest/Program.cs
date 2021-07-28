@@ -25,8 +25,7 @@ namespace QuickTest
             var storage = new LocalConfigStorage("config.txt");
             SecretsManagerClient.InitializeStorage(storage, "3WBJhiyKJ6nlHrRRKfOIowOPrSht40qdSF03erP45LU", "local.keepersecurity.com");
             var resp = await SecretsManagerClient.FetchAndDecryptSecrets(storage);
-            Console.WriteLine(resp);
-            return resp;
+            return "";
         }
     }
 }

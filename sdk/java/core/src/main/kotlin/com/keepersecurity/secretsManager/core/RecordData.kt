@@ -130,3 +130,12 @@ data class Phones(val label: String? = null, val value: List<Phone>) : Field()
 @Serializable
 @SerialName("secret")
 data class HiddenField(val label: String? = null, val value: List<String>) : Field()
+
+@Serializable
+data class KeeperFileData(
+    val title: String,
+    val name: String,
+    val type: String,
+    val size: Long,
+    val lastModified: Long
+)

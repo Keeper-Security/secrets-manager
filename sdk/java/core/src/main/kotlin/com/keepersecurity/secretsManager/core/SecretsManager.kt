@@ -111,15 +111,6 @@ data class KeeperFile(
     val thumbnailUrl: String?
 )
 
-@Serializable
-data class KeeperFileData(
-    val title: String,
-    val name: String,
-    val type: String,
-    val size: Long,
-    val lastModified: Long
-)
-
 fun initializeStorage(storage: KeyValueStorage, clientKey: String? = null, hostName: String? = null) {
     val existingClientId = storage.getString(KEY_CLIENT_ID)
     if (existingClientId != null && clientKey == null) {

@@ -56,5 +56,11 @@ namespace SecretsManager
         {
             SaveString(key, CryptoUtils.BytesToBase64(value));
         }
+
+        public void Delete(string key)
+        {
+            strings.Remove(key);
+            SaveToFile();
+        }
     }
 }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
@@ -8,6 +9,15 @@ using System.Threading.Tasks;
 
 namespace SecretsManager
 {
+    public interface IKeyValueStorage
+    {
+        string GetString(string key);
+        byte[] GetBytes(string key);
+        void SaveString(string key, string value);
+        void SaveBytes(string key, byte[] value);
+        void Delete(string key);
+    }
+
     public class TransmissionKey
     {
         public int PublicKeyId { get; }
@@ -40,12 +50,90 @@ namespace SecretsManager
         }
     }
 
-    public interface IKeyValueStorage
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [DataContract]
+    public class SecretsManagerResponse
     {
-        string GetString(string key);
-        byte[] GetBytes(string key);
-        void SaveString(string key, string value);
-        void SaveBytes(string key, byte[] value);
+        [DataMember] public string encryptedAppKey { get; set; }
+        [DataMember] public SecretsManagerResponseFolder[] folders { get; set; }
+        [DataMember] public SecretsManagerResponseRecord[] records { get; set; }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [DataContract]
+    public class SecretsManagerResponseFolder
+    {
+        [DataMember] public string folderUid { get; set; }
+        [DataMember] public string folderKey { get; set; }
+        [DataMember] public SecretsManagerResponseRecord[] records { get; set; }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [DataContract]
+    public class SecretsManagerResponseRecord
+    {
+        [DataMember] public string recordUid { get; set; }
+        [DataMember] public string recordKey { get; set; }
+        [DataMember] public string data { get; set; }
+        [DataMember] public string isEditable { get; set; }
+        [DataMember] public SecretsManagerResponseFile[] files { get; set; }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [DataContract]
+    public class SecretsManagerResponseFile
+    {
+        [DataMember] public string fileUid { get; set; }
+        [DataMember] public string fileKey { get; set; }
+        [DataMember] public string data { get; set; }
+        [DataMember] public string url { get; set; }
+        [DataMember] public string thumbnailUrl { get; set; }
+    }
+
+    public class KeeperSecrets
+    {
+        public KeeperRecord[] Records { get; set; }
+
+        public KeeperSecrets(KeeperRecord[] records)
+        {
+            Records = records;
+        }
+    }
+
+    public class KeeperRecord
+    {
+        public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, KeeperRecordData data, KeeperFile[] files)
+        {
+            RecordKey = recordKey;
+            RecordUid = recordUid;
+            FolderUid = FolderUid;
+            Data = data;
+            Files = files;
+        }
+
+        public byte[] RecordKey { get; set; }
+        public string RecordUid { get; set; }
+        public string FolderUid { get; set; }
+        public KeeperRecordData Data { get; set; }
+        public KeeperFile[] Files { get; set; }
+    }
+
+    public class KeeperFile
+    {
+        public KeeperFile(byte[] fileKey, string fileUid, KeeperFileData data, string url, string thumbnailUrl)
+        {
+            FileKey = fileKey;
+            FileUid = fileUid;
+            Data = data;
+            Url = url;
+            ThumbnailUrl = thumbnailUrl;
+        }
+
+        public byte[] FileKey { get; set; }
+        public string FileUid { get; set; }
+        public KeeperFileData Data { get; set; }
+        public string Url { get; set; }
+        public string ThumbnailUrl { get; set; }
     }
 
     public static class SecretsManagerClient
@@ -104,11 +192,80 @@ namespace SecretsManager
             return "Secrets";
         }
 
-        public static async Task<string> FetchAndDecryptSecrets(IKeyValueStorage storage, string[] recordsFilter = null)
+        public static async Task<Tuple<KeeperSecrets, bool>> FetchAndDecryptSecrets(IKeyValueStorage storage,
+            string[] recordsFilter = null)
         {
             var payload = PrepareGetPayload(storage, recordsFilter);
-            var httpResponse = await PostQuery(storage, "get_secret", payload);
-            return httpResponse;
+            var responseData = await PostQuery(storage, "get_secret", payload);
+            var response = JsonUtils.ParseJson<SecretsManagerResponse>(responseData);
+            var justBound = false;
+            byte[] appKey;
+            if (response.encryptedAppKey != null)
+            {
+                justBound = true;
+                var clientKey = storage.GetBytes(KEY_CLIENT_KEY);
+                if (clientKey == null)
+                {
+                    throw new Exception("Client key is missing from the storage");
+                }
+
+                appKey = CryptoUtils.Decrypt(response.encryptedAppKey, clientKey);
+                storage.SaveBytes(KEY_APP_KEY, appKey);
+                storage.Delete(KEY_CLIENT_KEY);
+            }
+            else
+            {
+                appKey = storage.GetBytes(KEY_APP_KEY);
+                if (appKey == null)
+                {
+                    throw new Exception("App key is missing from the storage");
+                }
+            }
+
+            var records = new List<KeeperRecord>();
+            if (response.records != null)
+            {
+                foreach (var record in response.records)
+                {
+                    var recordKey = CryptoUtils.Decrypt(record.recordKey, appKey);
+                    var decryptedRecord = DecryptRecord(record, recordKey);
+                    records.Add(decryptedRecord);
+                }
+            }
+
+            if (response.folders != null)
+            {
+                foreach (var folder in response.folders)
+                {
+                    var folderKey = CryptoUtils.Decrypt(folder.folderKey, appKey);
+                    foreach (var record in folder.records)
+                    {
+                        var recordKey = CryptoUtils.Decrypt(record.recordKey, folderKey);
+                        var decryptedRecord = DecryptRecord(record, recordKey, folder.folderUid);
+                        records.Add(decryptedRecord);
+                    }
+                }
+            }
+
+            var secrets = new KeeperSecrets(records.ToArray());
+            return new Tuple<KeeperSecrets, bool>(secrets, justBound);
+        }
+
+        private static KeeperRecord DecryptRecord(SecretsManagerResponseRecord record, byte[] recordKey, string folderUid = null)
+        {
+            var decryptedRecord = CryptoUtils.Decrypt(record.data, recordKey);
+            var files = new List<KeeperFile>();
+            if (record.files != null)
+            {
+                foreach (var file in record.files)
+                {
+                    var fileKey = CryptoUtils.Decrypt(file.fileKey, recordKey);
+                    var decryptedFile = CryptoUtils.Decrypt(file.data, fileKey);
+                    files.Add(new KeeperFile(fileKey, file.fileUid, JsonUtils.ParseJson<KeeperFileData>(decryptedFile), file.url, file.thumbnailUrl));
+                }
+            }
+
+            return new KeeperRecord(recordKey, record.recordUid, folderUid, JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord), files.ToArray());
         }
 
         static GetPayload PrepareGetPayload(IKeyValueStorage storage, string[] recordsFilter)
@@ -176,13 +333,14 @@ namespace SecretsManager
             return new Tuple<byte[], byte[]>(encryptedPayload, signature);
         }
 
-        public static async Task<string> PostQuery<T>(IKeyValueStorage storage, string path, T payload)
+        public static async Task<byte[]> PostQuery<T>(IKeyValueStorage storage, string path, T payload)
         {
             var hostName = storage.GetString(KEY_HOSTNAME);
             if (hostName == null)
             {
                 throw new Exception("hostname is missing from the storage");
             }
+
             var url = $"https://{hostName}/api/rest/sm/v1/{path}";
             var request = (HttpWebRequest) WebRequest.Create(url);
             request.ServerCertificateValidationCallback += (_, _, _, _) => true;
@@ -206,30 +364,27 @@ namespace SecretsManager
                     }
 
                     response = (HttpWebResponse) request.GetResponse();
-                    Console.WriteLine(response);
                 }
                 catch (WebException e)
                 {
                     if (e.Response == null) throw;
                     var errorMsg = await new StreamReader(
-                            ((HttpWebResponse)e.Response).GetResponseStream() ??
+                            ((HttpWebResponse) e.Response).GetResponseStream() ??
                             throw new InvalidOperationException("Response was expected but not received"))
                         .ReadToEndAsync();
                     throw new Exception(errorMsg);
                 }
 
-                // var client = new HttpClient
-                // {
-                //     Timeout = TimeSpan.FromSeconds(10)
-                // };
-                //
-                // var bodyBytes = new ByteArrayContent(payload);
-                // // bodyBytes.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-                //
-                // var response = await client.PostAsync("https://dev.keepersecurity.com/api/rest/sm/v1/get_secret", bodyBytes);
-                // var responseContent = await response.Content.ReadAsStringAsync();
-                // Console.WriteLine(responseContent);
-                return "ok";
+                using var responseStream = response.GetResponseStream();
+                if (responseStream == null)
+                {
+                    throw new Exception("server response does not contain data");
+                }
+
+                using var ms = new MemoryStream();
+                await responseStream.CopyToAsync(ms);
+                var bytes = CryptoUtils.Decrypt(ms.ToArray(), transmissionKey.Key);
+                return bytes;
             }
         }
     }
