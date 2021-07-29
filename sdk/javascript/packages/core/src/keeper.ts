@@ -4,7 +4,7 @@ import {webSafe64FromBytes, webSafe64ToBytes} from './utils'
 export {KeyValueStorage} from './platform'
 
 let packageVersion = '[VI]{version}[/VI]'
-const KEY_URL = 'url' // base url for the Secrets Manager service
+const KEY_HOSTNAME = 'hostname' // base url for the Secrets Manager service
 const KEY_TRANSMISSION_KEY = 'transmissionKey'
 const KEY_SERVER_PUBIC_KEY_ID = 'serverPublicKeyId'
 const KEY_CLIENT_ID = 'clientId'
@@ -154,14 +154,15 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
 }
 
 const postQuery = async (storage: KeyValueStorage, path: string, payload: GetPayload | UpdatePayload): Promise<KeeperHttpResponse> => {
-    const url = await storage.getString(KEY_URL)
-    if (!url) {
-        throw new Error('url is missing from the configuration')
+    const hostName = await storage.getString(KEY_HOSTNAME)
+    if (!hostName) {
+        throw new Error('hostname is missing from the configuration')
     }
+    const url = `https://${hostName}/api/rest/sm/v1/${path}`
     while (true) {
         const transmissionKey = await generateTransmissionKey(storage)
         const {encryptedPayload, signature} = await encryptAndSignPayload(storage, transmissionKey, payload)
-        const httpResponse = await platform.post(`${url}/${path}`, encryptedPayload, {
+        const httpResponse = await platform.post(url, encryptedPayload, {
             PublicKeyId: transmissionKey.publicKeyId.toString(),
             TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
             Authorization: `Signature ${platform.bytesToBase64(signature)}`
@@ -246,24 +247,24 @@ export const getClientId = async (clientKey: string): Promise<string> => {
     return platform.bytesToBase64(clientKeyHash)
 }
 
-export const initializeStorage = async (storage: KeyValueStorage, clientKey?: string, domain?: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
+export const initializeStorage = async (storage: KeyValueStorage, clientKey?: string, hostName?: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
     const existingClientId = await storage.getString(KEY_CLIENT_ID)
     if (existingClientId && !clientKey) {
         return
     }
     if (!clientKey) {
-        throw new Error(`Need to initialize the storage`)
+        throw new Error(`Storage is not initialized`)
     }
     const clientKeyBytes = webSafe64ToBytes(clientKey)
     const clientKeyHash = await platform.hash(clientKeyBytes, CLIENT_ID_HASH_TAG)
     const clientId = platform.bytesToBase64(clientKeyHash)
     if (existingClientId && existingClientId === clientId) {
-        return  // the storage is already initialised
+        return  // the storage is already initialized
     }
     if (existingClientId) {
         throw new Error(`The storage is already initialized with a different client Id (${existingClientId})`)
     }
-    await storage.saveString(KEY_URL, `https://${domain}/api/rest/sm/v1`)
+    await storage.saveString(KEY_HOSTNAME, hostName!)
     await storage.saveString(KEY_CLIENT_ID, clientId)
     await platform.importKey(KEY_CLIENT_KEY, clientKeyBytes, storage)
     await platform.generatePrivateKey(KEY_PRIVATE_KEY, storage)

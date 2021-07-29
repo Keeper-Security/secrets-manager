@@ -13,7 +13,7 @@ import java.security.cert.X509Certificate
 import java.util.jar.Manifest
 import javax.net.ssl.*
 
-private const val KEY_URL = "url" // base url for the Secrets Manager service
+private const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 private const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
 private const val KEY_CLIENT_ID = "clientId"
 private const val KEY_CLIENT_KEY = "clientKey" // The key that is used to identify the client before public key
@@ -111,27 +111,24 @@ data class KeeperFile(
     val thumbnailUrl: String?
 )
 
-@Serializable
-data class KeeperFileData(
-    val title: String,
-    val name: String,
-    val type: String,
-    val size: Long,
-    val lastModified: Long
-)
-
-fun initializeStorage(storage: KeyValueStorage, clientKey: String, domain: String) {
+fun initializeStorage(storage: KeyValueStorage, clientKey: String? = null, hostName: String? = null) {
+    val existingClientId = storage.getString(KEY_CLIENT_ID)
+    if (existingClientId != null && clientKey == null) {
+        return
+    }
+    if (clientKey == null) {
+        throw Exception("Storage is not initialized")
+    }
     val clientKeyBytes = webSafe64ToBytes(clientKey)
     val clientKeyHash = hash(clientKeyBytes, CLIENT_ID_HASH_TAG)
     val clientId = bytesToBase64(clientKeyHash)
-    val existingClientId = storage.getString(KEY_CLIENT_ID)
     if (existingClientId != null && clientId == existingClientId) {
-        return   // the storage is already initialised
+        return   // the storage is already initialized
     }
     if (existingClientId != null) {
         throw Exception("The storage is already initialized with a different client Id (${existingClientId})")
     }
-    storage.saveString(KEY_URL, "https://${domain}/api/rest/sm/v1")
+    storage.saveString(KEY_HOSTNAME, hostName!!)
     storage.saveString(KEY_CLIENT_ID, clientId)
     storage.saveBytes(KEY_CLIENT_KEY, clientKeyBytes)
     val keyPair = generateKeyPair()
@@ -385,8 +382,8 @@ private inline fun <reified T> postQuery(
     path: String,
     payload: T
 ): ByteArray {
-    val baseUrl = options.storage.getString(KEY_URL) ?: throw Exception("URL is missing from the storage")
-    val url = "${baseUrl}/${path}"
+    val hostName = options.storage.getString(KEY_HOSTNAME) ?: throw Exception("hostname is missing from the storage")
+    val url = "https://${hostName}/api/rest/sm/v1/${path}"
     while (true) {
         val transmissionKey = generateTransmissionKey(options.storage)
         val encryptedPayload = encryptAndSignPayload(options.storage, transmissionKey, payload)
