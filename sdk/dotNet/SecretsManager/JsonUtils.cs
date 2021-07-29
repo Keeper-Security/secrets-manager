@@ -1,27 +1,25 @@
-using System.IO;
-using System.Runtime.Serialization.Json;
-using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace SecretsManager
 {
     public static class JsonUtils
     {
+        private static readonly JsonSerializerOptions Options = new()
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
         public static T ParseJson<T>(byte[] json)
         {
-            var serializer = new DataContractJsonSerializer(typeof(T));
-            using var ms = new MemoryStream(json);
-            return (T) serializer.ReadObject(ms);
+            return JsonSerializer.Deserialize<T>(json);
         }
 
         public static byte[] SerializeJson<T>(T obj)
         {
-            var serializer = new DataContractJsonSerializer(typeof(T));
-            using var ms = new MemoryStream();
-            using (var writer = JsonReaderWriterFactory.CreateJsonWriter(ms, Encoding.UTF8, false, true))
-            {
-                serializer.WriteObject(writer, obj);
-            }
-            return ms.ToArray();
+            return CryptoUtils.StringToBytes(JsonSerializer.Serialize(obj, Options));
         }
     }
 }

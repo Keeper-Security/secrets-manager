@@ -4,12 +4,10 @@ using SecretsManager;
 
 namespace QuickTest
 {
-   
     public static class Program
     {
-        static void Main(string[] args)
+        private static void Main()
         {
-            // Console.WriteLine(SecretsManagerClient.GetSecrets());
             try
             {
                 GetSecrets().Wait();
@@ -20,12 +18,17 @@ namespace QuickTest
             }
         }
 
-        static async Task<string> GetSecrets()
+        private static async Task<string> GetSecrets()
         {
             var storage = new LocalConfigStorage("config.txt");
-            SecretsManagerClient.InitializeStorage(storage, "3WBJhiyKJ6nlHrRRKfOIowOPrSht40qdSF03erP45LU", "local.keepersecurity.com");
-            var resp = await SecretsManagerClient.FetchAndDecryptSecrets(storage);
-            return "";
+            SecretsManagerClient.InitializeStorage(storage, "R7bJVTU_xGRDBo-BNRs-WVLTeqX-qNIob8MBw-VNvaw", "dev.keepersecurity.com");
+            var secrets = await SecretsManagerClient.GetSecrets(storage);
+            var password = secrets.Records[0].FieldValue("password").ToString();
+            Console.WriteLine(password);
+            secrets.Records[1].UpdateCustomFieldValue("date", 123123);
+            var serialized = CryptoUtils.BytesToString(JsonUtils.SerializeJson(secrets.Records[1].Data));
+            Console.WriteLine(serialized);
+            return password;
         }
     }
 }

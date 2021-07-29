@@ -16,7 +16,7 @@ internal class SecretsManagerTest {
     @Serializable
     data class TestResponse(val transmissionKey: String, val data: String, val statusCode: Int)
 
-    //    @Test
+    @Test
     fun getSecretsE2E() {
         val file = File("../../test_data.json")
         val inputStream = BufferedReader(FileReader(file))
@@ -48,7 +48,7 @@ internal class SecretsManagerTest {
         }
     }
 
-    @Test // uncomment to debug the integration test
+//    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (
             url: String,

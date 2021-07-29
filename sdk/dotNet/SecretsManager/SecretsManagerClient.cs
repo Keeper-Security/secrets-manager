@@ -4,7 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Runtime.Serialization;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace SecretsManager
@@ -33,13 +33,14 @@ namespace SecretsManager
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [DataContract]
-    public class GetPayload
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    internal class GetPayload
     {
-        [DataMember] public string clientVersion { get; set; }
-        [DataMember] public string clientId { get; set; }
-        [DataMember] public string publicKey { get; set; }
-        [DataMember] public string[] requestedRecords { get; set; }
+        public string clientVersion { get; }
+        public string clientId { get; }
+        public string publicKey { get; }
+        public string[] requestedRecords { get; }
 
         public GetPayload(string clientVersion, string clientId, string publicKey, string[] requestedRecords)
         {
@@ -51,48 +52,54 @@ namespace SecretsManager
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [DataContract]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class SecretsManagerResponse
     {
-        [DataMember] public string encryptedAppKey { get; set; }
-        [DataMember] public SecretsManagerResponseFolder[] folders { get; set; }
-        [DataMember] public SecretsManagerResponseRecord[] records { get; set; }
+        public string encryptedAppKey { get; set; }
+        public SecretsManagerResponseFolder[] folders { get; set; }
+        public SecretsManagerResponseRecord[] records { get; set; }
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [DataContract]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class SecretsManagerResponseFolder
     {
-        [DataMember] public string folderUid { get; set; }
-        [DataMember] public string folderKey { get; set; }
-        [DataMember] public SecretsManagerResponseRecord[] records { get; set; }
+        public string folderUid { get; set; }
+        public string folderKey { get; set; }
+        public SecretsManagerResponseRecord[] records { get; set; }
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [DataContract]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class SecretsManagerResponseRecord
     {
-        [DataMember] public string recordUid { get; set; }
-        [DataMember] public string recordKey { get; set; }
-        [DataMember] public string data { get; set; }
-        [DataMember] public string isEditable { get; set; }
-        [DataMember] public SecretsManagerResponseFile[] files { get; set; }
+        public string recordUid { get; set; }
+        public string recordKey { get; set; }
+        public string data { get; set; }
+        public bool isEditable { get; set; }
+        public SecretsManagerResponseFile[] files { get; set; }
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [DataContract]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class SecretsManagerResponseFile
     {
-        [DataMember] public string fileUid { get; set; }
-        [DataMember] public string fileKey { get; set; }
-        [DataMember] public string data { get; set; }
-        [DataMember] public string url { get; set; }
-        [DataMember] public string thumbnailUrl { get; set; }
+        public string fileUid { get; set; }
+        public string fileKey { get; set; }
+        public string data { get; set; }
+        public string url { get; set; }
+        public string thumbnailUrl { get; set; }
     }
 
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperSecrets
     {
-        public KeeperRecord[] Records { get; set; }
+        public KeeperRecord[] Records { get; }
 
         public KeeperSecrets(KeeperRecord[] records)
         {
@@ -100,24 +107,64 @@ namespace SecretsManager
         }
     }
 
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperRecord
     {
         public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, KeeperRecordData data, KeeperFile[] files)
         {
             RecordKey = recordKey;
             RecordUid = recordUid;
-            FolderUid = FolderUid;
+            FolderUid = folderUid;
             Data = data;
             Files = files;
         }
 
-        public byte[] RecordKey { get; set; }
-        public string RecordUid { get; set; }
-        public string FolderUid { get; set; }
-        public KeeperRecordData Data { get; set; }
-        public KeeperFile[] Files { get; set; }
+        public byte[] RecordKey { get; }
+        public string RecordUid { get; }
+        public string FolderUid { get; }
+        public KeeperRecordData Data { get; }
+        public KeeperFile[] Files { get; }
+
+        private static object GetFieldValueByType(string fieldType, IEnumerable<KeeperRecordField> fields)
+        {
+            return fields.FirstOrDefault(x => x.type == fieldType)?.value[0];
+        }
+
+        private static void UpdateFieldValueForType(string fieldType, object value, IEnumerable<KeeperRecordField> fields)
+        {
+            var field = fields.FirstOrDefault(x => x.type == fieldType);
+            if (field == null)
+            {
+                return;
+            }
+
+            field.value[0] = value;
+        }
+        
+        public object FieldValue(string fieldType)
+        {
+            return GetFieldValueByType(fieldType, Data.fields);
+        }
+        
+        public object CustomFieldValue(string fieldType)
+        {
+            return GetFieldValueByType(fieldType, Data.custom);
+        }
+
+        public void UpdateFieldValue(string fieldType, object value)
+        {
+            UpdateFieldValueForType(fieldType, value, Data.fields);
+        }
+
+        public void UpdateCustomFieldValue(string fieldType, object value)
+        {
+            UpdateFieldValueForType(fieldType, value, Data.custom);
+        }
     }
 
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperFile
     {
         public KeeperFile(byte[] fileKey, string fileUid, KeeperFileData data, string url, string thumbnailUrl)
@@ -129,32 +176,27 @@ namespace SecretsManager
             ThumbnailUrl = thumbnailUrl;
         }
 
-        public byte[] FileKey { get; set; }
-        public string FileUid { get; set; }
-        public KeeperFileData Data { get; set; }
+        public byte[] FileKey { get; }
+        public string FileUid { get; }
+        public KeeperFileData Data { get; }
         public string Url { get; set; }
-        public string ThumbnailUrl { get; set; }
+        public string ThumbnailUrl { get; }
     }
 
     public static class SecretsManagerClient
     {
-        static readonly string KEY_HOSTNAME = "hostname"; // base url for the Secrets Manager service
-        static readonly string KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId";
-        static readonly string KEY_CLIENT_ID = "clientId";
-
-        static readonly string
-            KEY_CLIENT_KEY = "clientKey"; // The key that is used to identify the client before public key
-
-        static readonly string KEY_APP_KEY = "appKey"; // The application key with which all secrets are encrypted
-        static readonly string KEY_PRIVATE_KEY = "privateKey"; // The client's private key
-        static readonly string KEY_PUBLIC_KEY = "publicKey"; // The client's public key
-
-        static readonly string
-            CLIENT_ID_HASH_TAG = "KEEPER_SECRETS_MANAGER_CLIENT_ID"; // Tag for hashing the client key to client id
+        private const string KeyHostname = "hostname"; // base url for the Secrets Manager service
+        private const string KeyServerPubicKeyId = "serverPublicKeyId";
+        private const string KeyClientId = "clientId";
+        private const string KeyClientKey = "clientKey"; // The key that is used to identify the client before public key
+        private const string KeyAppKey = "appKey"; // The application key with which all secrets are encrypted
+        private const string KeyPrivateKey = "privateKey"; // The client's private key
+        private const string KeyPublicKey = "publicKey"; // The client's public key
+        private const string ClientIdHashTag = "KEEPER_SECRETS_MANAGER_CLIENT_ID"; // Tag for hashing the client key to client id
 
         public static void InitializeStorage(IKeyValueStorage storage, string clientKey, string hostName)
         {
-            var existingClientId = storage.GetString(KEY_CLIENT_ID);
+            var existingClientId = storage.GetString(KeyClientId);
             if (existingClientId != null && clientKey == null)
             {
                 return;
@@ -166,7 +208,7 @@ namespace SecretsManager
             }
 
             var clientKeyBytes = CryptoUtils.WebSafe64ToBytes(clientKey);
-            var clientKeyHash = CryptoUtils.Hash(clientKeyBytes, CLIENT_ID_HASH_TAG);
+            var clientKeyHash = CryptoUtils.Hash(clientKeyBytes, ClientIdHashTag);
             var clientId = CryptoUtils.BytesToBase64(clientKeyHash);
             if (existingClientId != null && existingClientId == clientId)
             {
@@ -175,25 +217,36 @@ namespace SecretsManager
 
             if (existingClientId != null)
             {
-                throw new Exception(
-                    $"The storage is already initialized with a different client Id ({existingClientId})");
+                throw new Exception($"The storage is already initialized with a different client Id ({existingClientId})");
             }
 
-            storage.SaveString(KEY_HOSTNAME, hostName);
-            storage.SaveString(KEY_CLIENT_ID, clientId);
-            storage.SaveBytes(KEY_CLIENT_KEY, clientKeyBytes);
-            var keyPair = CryptoUtils.GenerateKeyPair();
-            storage.SaveBytes(KEY_PUBLIC_KEY, keyPair.Item1);
-            storage.SaveBytes(KEY_PRIVATE_KEY, keyPair.Item2);
+            storage.SaveString(KeyHostname, hostName);
+            storage.SaveString(KeyClientId, clientId);
+            storage.SaveBytes(KeyClientKey, clientKeyBytes);
+            var (publicKey, privateKey) = CryptoUtils.GenerateKeyPair();
+            storage.SaveBytes(KeyPublicKey, publicKey);
+            storage.SaveBytes(KeyPrivateKey, privateKey);
         }
 
-        public static string GetSecrets()
+        public static async Task<KeeperSecrets> GetSecrets(IKeyValueStorage storage, string[] recordsFilter = null)
         {
-            return "Secrets";
+            var (keeperSecrets, justBound) = await FetchAndDecryptSecrets(storage, recordsFilter);
+            if (justBound)
+            {
+                try
+                {
+                    await FetchAndDecryptSecrets(storage, recordsFilter);
+                }
+                catch (Exception e)
+                {
+                    Console.Error.WriteLine(e);
+                }
+            }
+
+            return keeperSecrets;
         }
 
-        public static async Task<Tuple<KeeperSecrets, bool>> FetchAndDecryptSecrets(IKeyValueStorage storage,
-            string[] recordsFilter = null)
+        private static async Task<Tuple<KeeperSecrets, bool>> FetchAndDecryptSecrets(IKeyValueStorage storage, string[] recordsFilter)
         {
             var payload = PrepareGetPayload(storage, recordsFilter);
             var responseData = await PostQuery(storage, "get_secret", payload);
@@ -203,19 +256,19 @@ namespace SecretsManager
             if (response.encryptedAppKey != null)
             {
                 justBound = true;
-                var clientKey = storage.GetBytes(KEY_CLIENT_KEY);
+                var clientKey = storage.GetBytes(KeyClientKey);
                 if (clientKey == null)
                 {
                     throw new Exception("Client key is missing from the storage");
                 }
 
                 appKey = CryptoUtils.Decrypt(response.encryptedAppKey, clientKey);
-                storage.SaveBytes(KEY_APP_KEY, appKey);
-                storage.Delete(KEY_CLIENT_KEY);
+                storage.SaveBytes(KeyAppKey, appKey);
+                storage.Delete(KeyClientKey);
             }
             else
             {
-                appKey = storage.GetBytes(KEY_APP_KEY);
+                appKey = storage.GetBytes(KeyAppKey);
                 if (appKey == null)
                 {
                     throw new Exception("App key is missing from the storage");
@@ -268,19 +321,19 @@ namespace SecretsManager
             return new KeeperRecord(recordKey, record.recordUid, folderUid, JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord), files.ToArray());
         }
 
-        static GetPayload PrepareGetPayload(IKeyValueStorage storage, string[] recordsFilter)
+        private static GetPayload PrepareGetPayload(IKeyValueStorage storage, string[] recordsFilter)
         {
-            var clientId = storage.GetString(KEY_CLIENT_ID);
+            var clientId = storage.GetString(KeyClientId);
             if (clientId == null)
             {
                 throw new Exception("Client Id is missing from the configuration");
             }
 
             string publicKey = null;
-            var appKey = storage.GetString(KEY_APP_KEY);
+            var appKey = storage.GetString(KeyAppKey);
             if (appKey == null)
             {
-                var publicKeyBytes = storage.GetBytes(KEY_PUBLIC_KEY);
+                var publicKeyBytes = storage.GetBytes(KeyPublicKey);
                 if (publicKeyBytes == null)
                 {
                     throw new Exception("Public key is missing from the storage");
@@ -292,26 +345,21 @@ namespace SecretsManager
             return new GetPayload("mn16.0.0", clientId, publicKey, recordsFilter);
         }
 
+        [SuppressMessage("ReSharper", "StringLiteralTypo")]
         private static readonly byte[][] KeeperPublicKeys =
         {
-            CryptoUtils.WebSafe64ToBytes(
-                "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
-            CryptoUtils.WebSafe64ToBytes(
-                "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
-            CryptoUtils.WebSafe64ToBytes(
-                "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
-            CryptoUtils.WebSafe64ToBytes(
-                "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
-            CryptoUtils.WebSafe64ToBytes(
-                "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
-            CryptoUtils.WebSafe64ToBytes(
-                "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
+            CryptoUtils.WebSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
+            CryptoUtils.WebSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
+            CryptoUtils.WebSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
+            CryptoUtils.WebSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
+            CryptoUtils.WebSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
+            CryptoUtils.WebSafe64ToBytes("BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"),
         };
 
-        static TransmissionKey GenerateTransmissionKey(IKeyValueStorage storage)
+        private static TransmissionKey GenerateTransmissionKey(IKeyValueStorage storage)
         {
             var transmissionKey = CryptoUtils.GetRandomBytes(32);
-            var keyNumberString = storage.GetString(KEY_SERVER_PUBIC_KEY_ID);
+            var keyNumberString = storage.GetString(KeyServerPubicKeyId);
             var keyNumber = keyNumberString == null ? 1 : int.Parse(keyNumberString);
             var encryptedKey = CryptoUtils.PublicEncrypt(transmissionKey, KeeperPublicKeys[keyNumber - 1]);
             return new TransmissionKey(keyNumber, transmissionKey, encryptedKey);
@@ -322,7 +370,7 @@ namespace SecretsManager
         {
             var payloadBytes = JsonUtils.SerializeJson(payload);
             var encryptedPayload = CryptoUtils.Encrypt(payloadBytes, transmissionKey.Key);
-            var privateKey = storage.GetBytes(KEY_PRIVATE_KEY);
+            var privateKey = storage.GetBytes(KeyPrivateKey);
             if (privateKey == null)
             {
                 throw new Exception("Private key is missing from the storage");
@@ -333,9 +381,9 @@ namespace SecretsManager
             return new Tuple<byte[], byte[]>(encryptedPayload, signature);
         }
 
-        public static async Task<byte[]> PostQuery<T>(IKeyValueStorage storage, string path, T payload)
+        private static async Task<byte[]> PostQuery<T>(IKeyValueStorage storage, string path, T payload)
         {
-            var hostName = storage.GetString(KEY_HOSTNAME);
+            var hostName = storage.GetString(KeyHostname);
             if (hostName == null)
             {
                 throw new Exception("hostname is missing from the storage");
@@ -347,12 +395,12 @@ namespace SecretsManager
             while (true)
             {
                 var transmissionKey = GenerateTransmissionKey(storage);
-                var encryptedPayload = EncryptAndSignPayload(storage, transmissionKey, payload);
+                var (encryptedPayload, signature) = EncryptAndSignPayload(storage, transmissionKey, payload);
                 // request.UserAgent = "KeeperSDK.Net/" + ClientVersion;
                 request.ContentType = "application/octet-stream";
                 request.Headers["PublicKeyId"] = transmissionKey.PublicKeyId.ToString();
                 request.Headers["TransmissionKey"] = CryptoUtils.BytesToBase64(transmissionKey.EncryptedKey);
-                request.Headers["Authorization"] = $"Signature {CryptoUtils.BytesToBase64(encryptedPayload.Item2)}";
+                request.Headers["Authorization"] = $"Signature {CryptoUtils.BytesToBase64(signature)}";
                 request.Method = "POST";
 
                 HttpWebResponse response;
@@ -360,7 +408,7 @@ namespace SecretsManager
                 {
                     using (var requestStream = request.GetRequestStream())
                     {
-                        await requestStream.WriteAsync(encryptedPayload.Item1, 0, encryptedPayload.Item1.Length);
+                        await requestStream.WriteAsync(encryptedPayload, 0, encryptedPayload.Length);
                     }
 
                     response = (HttpWebResponse) request.GetResponse();
@@ -383,8 +431,7 @@ namespace SecretsManager
 
                 using var ms = new MemoryStream();
                 await responseStream.CopyToAsync(ms);
-                var bytes = CryptoUtils.Decrypt(ms.ToArray(), transmissionKey.Key);
-                return bytes;
+                return CryptoUtils.Decrypt(ms.ToArray(), transmissionKey.Key);
             }
         }
     }

@@ -9,8 +9,8 @@ import kotlinx.serialization.Serializable
 data class KeeperRecordData(
     val title: String,
     val type: String,
-    val fields: List<Field>,
-    val custom: List<Field>,
+    val fields: List<KeeperRecordField>,
+    val custom: List<KeeperRecordField>,
     val notes: String? = null
 ) {
     inline fun <reified T> getField(): T? {
@@ -29,7 +29,7 @@ data class KeeperRecordData(
         }
     }
 
-    fun getField(clazz: Class<*>): Any? {
+    fun getField(clazz: Class<out KeeperRecordField>): Any? {
         return try {
             fields.first { x -> x.javaClass == clazz }
         } catch (e: Exception) {
@@ -37,7 +37,7 @@ data class KeeperRecordData(
         }
     }
 
-    fun getCustomField(clazz: Class<*>): Any? {
+    fun getCustomField(clazz: Class<out KeeperRecordField>): Any? {
         return try {
             custom.first { x -> x.javaClass == clazz }
         } catch (e: Exception) {
@@ -47,73 +47,73 @@ data class KeeperRecordData(
 }
 
 @Serializable
-sealed class Field
+sealed class KeeperRecordField
 
 @Serializable
 @SerialName("login")
-data class Login(val value: MutableList<String>) : Field()
+data class Login(val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("password")
-data class Password(val value: MutableList<String>) : Field()
+data class Password(val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("url")
-data class Url(var label: String? = null, val value: MutableList<String>) : Field()
+data class Url(var label: String? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("fileRef")
-data class FileRef(val value: MutableList<String>) : Field()
+data class FileRef(val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("oneTimeCode")
-data class OneTimeCode(val value: MutableList<String>) : Field()
+data class OneTimeCode(val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 data class Name(var first: String? = null, var middle: String? = null, var last: String? = null)
 
 @Serializable
 @SerialName("name")
-data class Names(val label: String? = null, val value: MutableList<Name>) : Field()
+data class Names(val label: String? = null, val value: MutableList<Name>) : KeeperRecordField()
 
 @Serializable
 @SerialName("birthDate")
-data class BirthDate(val value: MutableList<Long>) : Field()
+data class BirthDate(val value: MutableList<Long>) : KeeperRecordField()
 
 @Serializable
 @SerialName("date")
-data class Date(var label: String? = null, val value: MutableList<Long>) : Field()
+data class Date(var label: String? = null, val value: MutableList<Long>) : KeeperRecordField()
 
 @Serializable
 @SerialName("text")
-data class Text(var label: String? = null, var value: MutableList<String>) : Field()
+data class Text(var label: String? = null, var value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 data class SecurityQuestion(var question: String? = null, var answer: String? = null)
 
 @Serializable
 @SerialName("securityQuestion")
-data class SecurityQuestions(var label: String? = null, val value: MutableList<SecurityQuestion>) : Field()
+data class SecurityQuestions(var label: String? = null, val value: MutableList<SecurityQuestion>) : KeeperRecordField()
 
 @Serializable
 @SerialName("multiline")
-data class Multiline(var label: String? = null, val value: MutableList<String>) : Field()
+data class Multiline(var label: String? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("email")
-data class Email(var label: String? = null, val value: MutableList<String>) : Field()
+data class Email(var label: String? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("cardRef")
-data class CardRef(var label: String? = null, val value: MutableList<String>) : Field()
+data class CardRef(var label: String? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("addressRef")
-data class AddressRef(var label: String? = null, val value: MutableList<String>) : Field()
+data class AddressRef(var label: String? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("pinCode")
-data class PinCode(var label: String? = null, val value: MutableList<String>) : Field()
+data class PinCode(var label: String? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 data class Phone(
@@ -125,11 +125,11 @@ data class Phone(
 
 @Serializable
 @SerialName("phone")
-data class Phones(val label: String? = null, val value: List<Phone>) : Field()
+data class Phones(val label: String? = null, val value: List<Phone>) : KeeperRecordField()
 
 @Serializable
 @SerialName("secret")
-data class HiddenField(val label: String? = null, val value: List<String>) : Field()
+data class HiddenField(val label: String? = null, val value: List<String>) : KeeperRecordField()
 
 @Serializable
 data class KeeperFileData(
