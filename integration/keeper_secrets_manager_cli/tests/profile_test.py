@@ -5,8 +5,8 @@ from click.testing import CliRunner
 from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core import mock
-from integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.profile import Profile
-from integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.__main__ import cli
+from keeper_secrets_manager_cli.profile import Profile
+from keeper_secrets_manager_cli.__main__ import cli
 import tempfile
 import configparser
 import json
@@ -49,7 +49,7 @@ class ExecTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
             mock_client.return_value = secrets_manager
 
             default_token = "XYZ321"
