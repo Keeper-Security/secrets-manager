@@ -2,7 +2,7 @@ import hashlib
 import os
 import unittest
 
-from keepercommandersm.utils import encrypt_aes, decrypt_aes
+from keeper_secrets_manager_core.utils import encrypt_aes, decrypt_aes
 
 
 class BATTokenTest(unittest.TestCase):
@@ -16,7 +16,7 @@ class BATTokenTest(unittest.TestCase):
 
         h = hashlib.new('sha256')
         h.update(secret_key)
-        hash = h.digest()
+        h.digest()
 
         decrypted_plain_text_bytes = decrypt_aes(encr_text_bytes, secret_key)
 

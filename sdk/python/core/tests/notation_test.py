@@ -3,9 +3,9 @@ import tempfile
 import json
 import os
 
-from keepercommandersm.storage import FileKeyValueStorage
-from keepercommandersm import Commander
-from keepercommandersm import mock
+from keeper_secrets_manager_core.storage import FileKeyValueStorage
+from keeper_secrets_manager_core import SecretsManager
+from keeper_secrets_manager_core import mock
 
 
 class NotationTest(unittest.TestCase):
@@ -29,7 +29,7 @@ class NotationTest(unittest.TestCase):
         with tempfile.NamedTemporaryFile("w") as fh:
             fh.write(
                 json.dumps({
-                    "server": "fake.keepersecurity.com",
+                    "hostname": "fake.keepersecurity.com",
                     "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
                     "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26"
                                 "C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
@@ -40,7 +40,7 @@ class NotationTest(unittest.TestCase):
                 })
             )
             fh.seek(0)
-            c = Commander(config=FileKeyValueStorage(config_file_location=fh.name))
+            secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
 
             # --------------------------
             # Add three records, 2 outside a folder, 1 inside folder
@@ -66,79 +66,79 @@ class NotationTest(unittest.TestCase):
 
             # --------------------------
 
-            res_queue = mock.ResponseQueue(client=c)
+            res_queue = mock.ResponseQueue(client=secrets_manager)
 
             # Add the same response for each call
             for t in range(0, 14):
                 res_queue.add_response(res_1)
 
-            prefix = Commander.notation_prefix
+            prefix = SecretsManager.notation_prefix
 
             # Simple call. With prefix
-            value = c.get_notation("{}://{}/field/login".format(prefix, one.uid))
+            value = secrets_manager.get_notation("{}://{}/field/login".format(prefix, one.uid))
             self.assertEqual("My Login 1", value, "field login is not correct for simple call w/ prefix")
 
             # Simple call. Without prefix
-            value = c.get_notation("{}/field/login".format(one.uid))
+            value = secrets_manager.get_notation("{}/field/login".format(one.uid))
             self.assertEqual("My Login 1", value, "field login is not correct for simple call w/o prefix")
 
             # Same call, but specifically telling to return value at index 0
-            value = c.get_notation("{}://{}/field/login[0]".format(prefix, one.uid))
+            value = secrets_manager.get_notation("{}://{}/field/login[0]".format(prefix, one.uid))
             self.assertEqual("My Login 1", value, "field login is not correct for predicate of index 0")
 
             # There is only 1 value. Asking for second item should throw an error.
             try:
-                c.get_notation("{}://{}/field/login[1]".format(prefix, one.uid))
+                secrets_manager.get_notation("{}://{}/field/login[1]".format(prefix, one.uid))
                 self.fail("Should not have gotten here.")
             except ValueError as err:
                 self.assertRegex(str(err), r'value at index', 'did not get correct exception')
 
             # We should get an array instead of a single value.
-            value = c.get_notation("{}://{}/field/login[]".format(prefix, one.uid))
+            value = secrets_manager.get_notation("{}://{}/field/login[]".format(prefix, one.uid))
             self.assertEqual(["My Login 1"], value, "field login is not correct for array value")
 
             # Custom field, simple
-            value = c.get_notation("{}://{}/custom_field/My Custom 1".format(prefix, one.uid))
+            value = secrets_manager.get_notation("{}://{}/custom_field/My Custom 1".format(prefix, one.uid))
             self.assertEqual("custom1", value, "custom field My Custom 1 is not correct")
 
             # Custom field, only the first
-            value = c.get_notation("{}://{}/custom_field/My Custom 2".format(prefix, one.uid))
+            value = secrets_manager.get_notation("{}://{}/custom_field/My Custom 2".format(prefix, one.uid))
             self.assertEqual("one", value, "custom field My Custom 1, only the first, is not correct")
 
             # Custom field, get the second value
-            value = c.get_notation("{}://{}/custom_field/My Custom 2[1]".format(prefix, one.uid))
+            value = secrets_manager.get_notation("{}://{}/custom_field/My Custom 2[1]".format(prefix, one.uid))
             self.assertEqual("two", value, "custom field My Custom 1, second value, is not correct")
 
             # Custom field, get the second value
-            value = c.get_notation("{}://{}/custom_field/My Custom 2[]".format(prefix, one.uid))
+            value = secrets_manager.get_notation("{}://{}/custom_field/My Custom 2[]".format(prefix, one.uid))
             self.assertEqual(["one", "two", "three"], value, "custom field My Custom 1, all value, is not correct")
 
             # Custom field, get first phone number
-            value = c.get_notation("{}://{}/custom_field/phone[0][number]".format(prefix, one.uid))
+            value = secrets_manager.get_notation("{}://{}/custom_field/phone[0][number]".format(prefix, one.uid))
             self.assertEqual("555-5555555", value, "custom field phone, did not get first home number")
 
             # Custom field, get second phone number
-            value = c.get_notation("{}://{}/custom_field/phone[1][number]".format(prefix, one.uid))
+            value = secrets_manager.get_notation("{}://{}/custom_field/phone[1][number]".format(prefix, one.uid))
             self.assertEqual("777-7777777", value, "custom field phone, did not get second home number")
 
             # Custom field, get all of the third phone number
-            value = c.get_notation("{}://{}/custom_field/phone[2]".format(prefix, one.uid))
+            value = secrets_manager.get_notation("{}://{}/custom_field/phone[2]".format(prefix, one.uid))
             self.assertEqual({"number": "888-8888888", "ext": "", "type": "Home"}, value,
                              "custom field phone, did not get correct dict for third")
 
             # Custom field, get first name
-            value = c.get_notation("{}/custom_field/name[first]".format(one.uid))
+            value = secrets_manager.get_notation("{}/custom_field/name[first]".format(one.uid))
             self.assertEqual("Jenny", value, "custom field name, got the first name")
 
             # Custom field, get last name
-            value = c.get_notation("{}/custom_field/name[last]".format(one.uid))
+            value = secrets_manager.get_notation("{}/custom_field/name[last]".format(one.uid))
             self.assertEqual("Smith", value, "custom field name, got the last name")
 
-    def test_commander_custom_field(self):
+    def test_secrets_manager_custom_field(self):
 
-        """ Test how Commander store custom fields
+        """ Test how Secrets Manager store custom fields
 
-        If no custom fields are added via Commander, the JSON will be missing the "custom" key. Make
+        If no custom fields are added via Secrets Manager, the JSON will be missing the "custom" key. Make
         a record that has no custom field and see if stuff still works.
 
         """
@@ -146,7 +146,7 @@ class NotationTest(unittest.TestCase):
         with tempfile.NamedTemporaryFile("w") as fh:
             fh.write(
                 json.dumps({
-                    "server": "fake.keepersecurity.com",
+                    "hostname": "fake.keepersecurity.com",
                     "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
                     "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26"
                                 "C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
@@ -157,7 +157,7 @@ class NotationTest(unittest.TestCase):
                 })
             )
             fh.seek(0)
-            c = Commander(config=FileKeyValueStorage(config_file_location=fh.name))
+            secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
 
             # --------------------------
 
@@ -170,17 +170,17 @@ class NotationTest(unittest.TestCase):
             one.field("login", "My Login 1")
             one.field("password", "My Password 1")
 
-            res_queue = mock.ResponseQueue(client=c)
+            res_queue = mock.ResponseQueue(client=secrets_manager)
             res_queue.add_response(res_1)
             res_queue.add_response(res_1)
 
             # Make sure the mock worked
-            records = c.get_secrets()
+            records = secrets_manager.get_secrets()
             self.assertEqual(len(records), 1, "didn't get 1 records")
             self.assertIsNone(records[0].dict.get("custom"), "found 'custom' in the JSON, mock failed")
 
             try:
-                c.get_notation("{}/custom_field/My Custom 1".format(one.uid))
+                secrets_manager.get_notation("{}/custom_field/My Custom 1".format(one.uid))
                 self.fail("Should not have gotten here.")
             except ValueError as err:
                 self.assertRegex(str(err), r'Cannot find the custom field label', 'did not get correct exception')

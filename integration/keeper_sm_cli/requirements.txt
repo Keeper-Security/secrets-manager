@@ -1,5 +1,0 @@
-keepercommandersm
-click
-jsonpath-rw-ext
-prettytable
-importlib_metadata

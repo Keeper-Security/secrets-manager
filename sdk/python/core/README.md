@@ -28,15 +28,15 @@ TBD
 ### Quick Start
 
 ```python
-# Import Commander
-from keepercommandersm import Commander
+# Import Secrets Manager
+from keeper_secrets_manager_core import SecretsManager
 
 # Establish connection
 # One time secrets generated via Web Vault or Commander CLI
-Commander.client_key = `MmzGdls-rDG39vgqgFD1HL70h0_L_sKQOdI0qwXU3JI`
+secrets_manager = SecretsManager(token='MmzGdls - rDG39vgqgFD1HL70h0_L_sKQOdI0qwXU3JI')
 
 # Retrieve all password records
-all_records = Commander.get_secrets()
+all_records = secrets_manager.get_secrets()
 
 # Get password from first record:
 password = all_records[0].password
@@ -102,9 +102,10 @@ Storage is managed in ...
 ### Retrieve secret(s)
 
 ```python
-from keepercommandersm import Commander
+from keeper_secrets_manager_core import SecretsManager
 
-all_secrets = Commander.get_secrets()
+secrets_manager = SecretsManager()
+all_secrets = secrets_manager.get_secrets()
 ```
 ### Update secret
 
@@ -113,5 +114,5 @@ secret_to_update = all_secrets[0]
 
 secret_to_update.password = 'NewPassword123$'
 
-Commander.save(secret_to_update)
+secrets_manager.save(secret_to_update)
 ```
