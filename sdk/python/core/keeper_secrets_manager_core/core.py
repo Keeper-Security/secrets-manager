@@ -29,6 +29,7 @@ from keeper_secrets_manager_core.utils import bytes_to_url_safe_str, base64_to_b
     extract_public_key_bytes, dict_to_json, url_safe_str_to_bytes, encrypt_aes, der_base64_private_key_to_private_key, \
     string_to_bytes, decrypt_aes, bytes_to_string, json_to_dict, \
     public_encrypt, generate_private_key_der
+from events import Events
 
 
 class SecretsManager:
@@ -38,6 +39,9 @@ class SecretsManager:
     default_key_id = "1"
 
     def __init__(self, token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None):
+
+        # Events is used to bubble changes in the SDK up into the integration. If needed.
+        self.events = Events()
 
         self.token = token
         self.hostname = hostname
@@ -63,6 +67,9 @@ class SecretsManager:
         self._init_logger(log_level=log_level)
 
         self._init()
+
+    def add_change_event_fn(self, fn):
+        self.events.on_change += fn
 
     @staticmethod
     def _init_logger(log_level=None):
@@ -311,6 +318,11 @@ class SecretsManager:
                     raise ValueError("The public key at {} does not exist in the SDK".format(key_id))
 
                 self.config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, str(key_id))
+
+                # Indicate that the public key id has change to integrations. They might need
+                # to update their configs.
+                msg = {"type": "public_key_id", "value": str(key_id)}
+                self.events.on_change(msg)
 
                 # The only non-exception exit from this method
                 return True

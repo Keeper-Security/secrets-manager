@@ -89,7 +89,7 @@ class KeeperAnsible:
                 config_dict = {}
                 # Convert Ansible variables into the keys used by Secrets Manager's config.
                 for key in ["url", "client_id", "client_key", "app_key", "private_key", "bat", "binding_key",
-                            "hostname"]:
+                            "hostname", "server_public_key_id"]:
                     keeper_key = KeeperAnsible.keeper_key(key)
                     camel_key = camel_case(key)
                     if keeper_key in task_vars:
@@ -130,9 +130,19 @@ class KeeperAnsible:
                     config=config_instance,
                     verify_ssl_certs=not ssl_certs_skip
                 )
+                self.client.add_change_event_fn(self._change_event)
 
         except Exception as err:
             raise Exception("Keeper Ansible error: {}".format(err))
+
+    @staticmethod
+    def _change_event(self, msg):
+        # Give warnings to the user that some action may need to taken if they are having problems.
+        if msg.get("type") == "public_key_id":
+            display.warning("The Secrets Manager server has asked for public key id {}. You may see 403 errors in "
+                            "your logs. If you are using keeper_* keys, you can set the public key id in your Ansible "
+                            "config by setting keeper_server_public_key_id to {}.".format(msg.get("key_id"),
+                                                                                         msg.get("key_id")))
 
     @staticmethod
     def keeper_key(key):

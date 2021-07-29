@@ -14,7 +14,8 @@ install_requires = [
     'requests',
     'cryptography',
     'pycryptodomex>=3.7.2',
-    'importlib_metadata'
+    'importlib_metadata',
+    'events'
 ]
 
 setup(

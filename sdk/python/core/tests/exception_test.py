@@ -16,6 +16,9 @@ class SmokeTest(unittest.TestCase):
 
         self.orig_working_dir = os.getcwd()
 
+        # Use this for events
+        self.msg = None
+
     def tearDown(self):
 
         os.chdir(self.orig_working_dir)
@@ -94,6 +97,13 @@ class SmokeTest(unittest.TestCase):
                           "jhKMhHQFaHYI"
         }))
 
+        def something_changed(msg):
+            self.msg = msg
+        secrets_manager.add_change_event_fn(something_changed)
+
+        # Add the function to change handler event
+        # secrets_manager.add_change_handler_fn(something_changed)
+
         res_queue = mock.ResponseQueue(client=secrets_manager)
 
         res_1 = mock.Response()
@@ -109,7 +119,11 @@ class SmokeTest(unittest.TestCase):
         # KEY ROTATION ERROR. error needs to be key.
         error_json = {
             "error": "key",
-            "key_id": "2"
+            "key_id": "2",
+
+            # Ugh. The module charset_normalizer attempts, via requests, attempts to detect the charset, but if
+            # the http Response content is too small, you get a warning on stdout instead of stderr.
+            "extra_stuff": "ABC123ZYX654"
         }
 
         res_queue.add_response(res_1)
@@ -126,4 +140,5 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual("2", secrets_manager.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID),
                          "didn't get correct key id")
         self.assertEqual(mock_record_2.uid, records[0].uid, "did not get correct record")
-
+        self.assertEqual("public_key_id", self.msg["type"])
+        self.assertEqual("2", self.msg["value"])

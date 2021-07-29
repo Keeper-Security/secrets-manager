@@ -51,6 +51,8 @@ class KeeperCli:
             config_storage.set(ConfigKeys.KEY_PRIVATE_KEY, self.config.get("privateKey"))
             config_storage.set(ConfigKeys.KEY_APP_KEY, self.config.get("appKey"))
             config_storage.set(ConfigKeys.KEY_HOSTNAME, self.config.get("hostname"))
+            config_storage.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, self.config.get("serverPublicKeyId",
+                               SecretsManager.default_key_id))
 
             common_profile = self.profile.get_profile_config(Profile.config_profile)
 
@@ -58,6 +60,10 @@ class KeeperCli:
                 config=config_storage,
                 log_level=common_profile.get("log_level", self._log_level)
             )
+
+            # Subscribe to the SDK's change event
+            self._client.add_change_event_fn(self._change_event)
+
         else:
             # Set the log level. We don't have the client to set the level, so set it here.
             self.log_level = self._log_level
@@ -66,6 +72,13 @@ class KeeperCli:
         if output is None:
             output = "stdout"
         self.output_name = output
+
+    def _change_event(self, msg):
+        if self.config is not None:
+            # If the server changed desired public key id, update the profile with new key id
+            if msg.get("type") == "public_key_id":
+                self.config[ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID.value] = msg.get("value", 1)
+                self.profile.save()
 
     @property
     def client(self):

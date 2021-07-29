@@ -4,3 +4,4 @@ pycryptodomex
 requests
 pytest
 importlib_metadata
+events

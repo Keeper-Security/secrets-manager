@@ -16,6 +16,7 @@ from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
 from keeper_secrets_manager_core.utils import encrypt_aes, decrypt_aes
+from keeper_secrets_manager_core.core import SecretsManager
 from .common import table_setup
 import prettytable
 import sys
@@ -198,7 +199,8 @@ class Profile:
             "clientId": "",
             "privateKey": "",
             "appKey": "",
-            "hostname": ""
+            "hostname": "",
+            "serverPublicKeyId": SecretsManager.default_key_id
         }
 
         for k, v in config_storage.config.items():
