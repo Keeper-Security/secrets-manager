@@ -10,7 +10,7 @@ from keeper_secrets_manager_core import mock
 from requests import HTTPError
 
 
-class SmokeTest(unittest.TestCase):
+class ExceptionTest(unittest.TestCase):
 
     def setUp(self):
 
