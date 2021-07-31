@@ -13,13 +13,13 @@ import java.security.cert.X509Certificate
 import java.util.jar.Manifest
 import javax.net.ssl.*
 
-private const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
-private const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
-private const val KEY_CLIENT_ID = "clientId"
-private const val KEY_CLIENT_KEY = "clientKey" // The key that is used to identify the client before public key
-private const val KEY_APP_KEY = "appKey" // The application key with which all secrets are encrypted
-private const val KEY_PRIVATE_KEY = "privateKey" // The client's private key
-private const val KEY_PUBLIC_KEY = "publicKey" // The client's public key
+internal const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
+internal const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
+internal const val KEY_CLIENT_ID = "clientId"
+internal const val KEY_CLIENT_KEY = "clientKey" // The key that is used to identify the client before public key
+internal const val KEY_APP_KEY = "appKey" // The application key with which all secrets are encrypted
+internal const val KEY_PRIVATE_KEY = "privateKey" // The client's private key
+internal const val KEY_PUBLIC_KEY = "publicKey" // The client's public key
 private const val CLIENT_ID_HASH_TAG = "KEEPER_SECRETS_MANAGER_CLIENT_ID" // Tag for hashing the client key to client id
 
 interface KeyValueStorage {
