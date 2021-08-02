@@ -143,12 +143,12 @@ publishing {
                     developer {
                         id.set("SergeyAldoukhov")
                         name.set("Sergey Aldoukhov")
-                        email.set("maksim@keepersecurity.com")
+                        email.set("saldoukhov@keepersecurity.com")
                     }
                     developer {
                         id.set("MaksimUstinov")
                         name.set("Maksim Ustinov")
-                        email.set("maksim@keepersecurity.com")
+                        email.set("mustinov@keepersecurity.com")
                     }
 
                 }
