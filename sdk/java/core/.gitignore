@@ -5,3 +5,5 @@
 build
 
 /config*.txt
+
+local.properties
