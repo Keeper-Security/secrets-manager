@@ -272,7 +272,7 @@ class Profile:
         export_config = configparser.ConfigParser()
         export_config[Profile.default_profile] = profile_config
         export_config[Profile.config_profile] = {
-            "log_level": "WARNING",
+            "log_level": "ERROR",
             Profile.active_profile_key: Profile.default_profile
         }
 
