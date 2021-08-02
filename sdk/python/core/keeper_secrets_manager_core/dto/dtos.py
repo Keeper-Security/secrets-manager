@@ -62,7 +62,8 @@ class Record:
 
             password_field = next((item for item in fields if item["type"] == "password"), None)
 
-            self.password = password_field.get('value')[0]
+            if password_field is not None:
+                self.password = password_field.get('value')[0]
 
     def find_file_by_title(self, title):
         """Finds file by file title"""

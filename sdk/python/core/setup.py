@@ -19,7 +19,7 @@ install_requires = [
 
 setup(
     name="keeper-secrets-manager-core",
-    version="0.0.32a0",
+    version="16.0.1",
     description="Keeper Secrets Manager for Python 3",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -31,7 +31,7 @@ setup(
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
-    python_requires='>=3.5',
+    python_requires='>=3.6',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
         "Documentation": "https://github.com/Keeper-Security/secrets-manager",
