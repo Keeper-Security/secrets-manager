@@ -137,7 +137,7 @@ fun initializeStorage(storage: KeyValueStorage, clientKey: String? = null, hostN
 }
 
 internal object ManifestLoader {
-    internal val keeperClientVersion: String
+    internal val version: String
 
     init {
         val clazz = javaClass
@@ -151,8 +151,12 @@ internal object ManifestLoader {
             "${buildPath}build/tmp/jar/MANIFEST.MF"
         }
         val manifest = Manifest(URL(filePath).openStream())
-        keeperClientVersion = "mj${manifest.mainAttributes.getValue("Implementation-Version").replace("-SNAPSHOT", "")}"
+        version = manifest.mainAttributes.getValue("Implementation-Version")
     }
+}
+
+fun toKeeperAppClientString(version: String): String{
+    return "mj${version.replace("-SNAPSHOT", "")}"
 }
 
 @JvmOverloads
@@ -271,7 +275,7 @@ private fun prepareGetPayload(
 ): GetPayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val payload = GetPayload(
-        ManifestLoader.keeperClientVersion,
+        toKeeperAppClientString(ManifestLoader.version),
         clientId,
         null,
         null
@@ -294,7 +298,7 @@ private fun prepareUpdatePayload(
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val recordBytes = stringToBytes(Json.encodeToString(record.data))
     val encryptedRecord = encrypt(recordBytes, record.recordKey)
-    return UpdatePayload(ManifestLoader.keeperClientVersion, clientId, record.recordUid, webSafe64FromBytes(encryptedRecord))
+    return UpdatePayload(toKeeperAppClientString(ManifestLoader.version), clientId, record.recordUid, webSafe64FromBytes(encryptedRecord))
 }
 
 fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload): KeeperHttpResponse {
