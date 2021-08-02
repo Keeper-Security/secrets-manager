@@ -33,7 +33,7 @@ def get_client_version():
         ksm_version = importlib_metadata.version("keeper-secrets-manager-core")
         version_parts = ksm_version.split(".")
         version_minor = version_parts[1]
-        version_revision = re.search(r'^\d+', version_parts[2]).group()
+        version_revision = 0
         version = "{}.{}.{}".format(version_major, version_minor, version_revision)
     except importlib_metadata.PackageNotFoundError:
         # In a unit test or development run, not an installed version. Just use the default.
