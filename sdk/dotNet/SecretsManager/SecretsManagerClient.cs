@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -30,6 +31,13 @@ namespace SecretsManager
             Key = key;
             EncryptedKey = encryptedKey;
         }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    internal class KeeperError
+    {
+        public int key_id { get; set; }
+        public string error { get; set; }
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
@@ -141,12 +149,12 @@ namespace SecretsManager
 
             field.value[0] = value;
         }
-        
+
         public object FieldValue(string fieldType)
         {
             return GetFieldValueByType(fieldType, Data.fields);
         }
-        
+
         public object CustomFieldValue(string fieldType)
         {
             return GetFieldValueByType(fieldType, Data.custom);
@@ -342,7 +350,8 @@ namespace SecretsManager
                 publicKey = CryptoUtils.BytesToBase64(publicKeyBytes);
             }
 
-            return new GetPayload("mn16.0.0", clientId, publicKey, recordsFilter);
+            var version = Assembly.GetExecutingAssembly().GetName().Version;
+            return new GetPayload($"mn{version.Major}.{version.Minor}.{version.Revision}", clientId, publicKey, recordsFilter);
         }
 
         [SuppressMessage("ReSharper", "StringLiteralTypo")]
@@ -390,10 +399,10 @@ namespace SecretsManager
             }
 
             var url = $"https://{hostName}/api/rest/sm/v1/{path}";
-            var request = (HttpWebRequest) WebRequest.Create(url);
-            request.ServerCertificateValidationCallback += (_, _, _, _) => true;
             while (true)
             {
+                var request = (HttpWebRequest) WebRequest.Create(url);
+                request.ServerCertificateValidationCallback += (_, _, _, _) => true;
                 var transmissionKey = GenerateTransmissionKey(storage);
                 var (encryptedPayload, signature) = EncryptAndSignPayload(storage, transmissionKey, payload);
                 // request.UserAgent = "KeeperSDK.Net/" + ClientVersion;
@@ -420,6 +429,20 @@ namespace SecretsManager
                             ((HttpWebResponse) e.Response).GetResponseStream() ??
                             throw new InvalidOperationException("Response was expected but not received"))
                         .ReadToEndAsync();
+                    try
+                    {
+                        var error = JsonSerializer.Deserialize<KeeperError>(errorMsg);
+                        if (error?.error == "key")
+                        {
+                            storage.SaveString(KeyServerPubicKeyId, error.key_id.ToString());
+                            continue;
+                        }
+                    }
+                    catch
+                    {
+                        // ignored
+                    }
+
                     throw new Exception(errorMsg);
                 }
 

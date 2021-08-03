@@ -132,6 +132,17 @@ data class Phones(val label: String? = null, val value: List<Phone>) : KeeperRec
 data class HiddenField(val label: String? = null, val value: List<String>) : KeeperRecordField()
 
 @Serializable
+data class PaymentCard(
+    var cardNumber: String? = null,
+    var cardExpirationDate: String? = null,
+    var cardSecurityCode: String? = null
+)
+
+@Serializable
+@SerialName("paymentCard")
+data class PaymentCards(val label: String? = null, val value: MutableList<PaymentCard>) : KeeperRecordField()
+
+@Serializable
 data class KeeperFileData(
     val title: String,
     val name: String,
@@ -139,13 +150,3 @@ data class KeeperFileData(
     val size: Long,
     val lastModified: Long
 )
-
-@Serializable
-data class PaymentCard(
-    var cardNumber: String? = null,
-    var cardExpirationDate: String? = null,
-    var cardSecurityCode: String? = null
-)
-@Serializable
-@SerialName("paymentCard")
-data class PaymentCards(val label: String? = null, val value: MutableList<PaymentCard>) : KeeperRecordField()

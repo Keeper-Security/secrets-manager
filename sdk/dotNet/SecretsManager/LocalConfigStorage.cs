@@ -1,11 +1,11 @@
-using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
+using System.Text.Json;
+using System.Text.Encodings.Web;
 
 namespace SecretsManager
 {
-    public class LocalConfigStorage: IKeyValueStorage
+    public class LocalConfigStorage : IKeyValueStorage
     {
         private readonly Dictionary<string, string> strings = new();
         private readonly string fileName;
@@ -13,13 +13,25 @@ namespace SecretsManager
         public LocalConfigStorage(string configName = null)
         {
             fileName = configName;
-            if (configName != null && File.Exists(configName))
+            if (fileName == null || !File.Exists(fileName))
+                return;
+            var bytes = File.ReadAllBytes(fileName);
+            var reader = new Utf8JsonReader(bytes);
+            string propertyName = null;
+            while (reader.Read())
             {
-                var lines = File.ReadAllLines(configName);
-                foreach (var line in lines)
+                switch (reader.TokenType)
                 {
-                    var kv = line.Split(new[] {": "}, StringSplitOptions.None);
-                    strings[kv[0]] = kv[1];
+                    case JsonTokenType.PropertyName:
+                        propertyName = reader.GetString();
+                        break;
+                    case JsonTokenType.String:
+                        if (propertyName != null)
+                        {
+                            strings[propertyName] = reader.GetString();
+                        }
+
+                        break;
                 }
             }
         }
@@ -31,8 +43,20 @@ namespace SecretsManager
                 return;
             }
 
-            var lines = strings.Select(x => $"{x.Key}: {x.Value}");
-            File.WriteAllLines(fileName, lines);
+            using var stream = File.Create(fileName);
+            using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions
+            {
+                Indented = true,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            });
+            writer.WriteStartObject();
+            foreach (var kv in strings)
+            {
+                writer.WriteString(kv.Key, kv.Value);
+            }
+
+            writer.WriteEndObject();
+            writer.Flush();
         }
 
         public string GetString(string key)
