@@ -6,25 +6,27 @@ os.chdir(here)
 
 install_requires = [
     'keeper-secrets-manager-ansible',
+    'importlib_metadata',
     'ansible'
 ]
 
 setup(
     name="keeper-secrets-manager-ansible",
-    version='0.0.1',
-    description="Base plugin for Keeper Security related Ansible plugins.",
+    version='0.0.3',
+    description="Keeper Secrets Manager plugins for Ansible.",
     author="Keeper Security",
     author_email="ops@keepersecurity.com",
     url="https://github.com/Keeper-Security/secrets-manager",
     license="MIT",
-    keywords="Keeper Password Manager SDK Ansible",
+    keywords="Keeper Secrets Manager SDK Ansible",
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
     python_requires='>=3.6',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
-        "Documentation": "https://github.com/Keeper-Security/secrets-manager",
+        "Documentation": "https://app.gitbook.com/@keeper-security/s/secrets-manager/secrets-manager/"
+                         "integrations/ansible-plugin",
         "Source Code": "https://github.com/Keeper-Security/secrets-manager",
     },
     classifiers=[
@@ -43,4 +45,9 @@ setup(
         "System :: Systems Administration",
         "Utilities"
     ],
+    entry_points={
+        "console_scripts": [
+            "keeper_ansible=keeper_secrets_manager_ansible.__main__:main"
+        ]
+    }
 )

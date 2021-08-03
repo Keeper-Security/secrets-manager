@@ -1,2 +1,3 @@
 ansible
+importlib_metadata
 keeper-secrets-manager-core

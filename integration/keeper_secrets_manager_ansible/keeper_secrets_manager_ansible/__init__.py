@@ -11,6 +11,7 @@
 
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
+from keeper_secrets_manager_core.configkeys import ConfigKeys
 from ansible.utils.display import Display
 from ansible.errors import AnsibleError
 import os
@@ -48,6 +49,8 @@ class KeeperAnsible:
     CONFIG_CLIENT_KEY = "clientKey"
     FORCE_CONFIG_FILE = "force_config_write"
     KEY_SSL_VERIFY_SKIP = "verify_ssl_certs_skip"
+    KEY_LOG_LEVEL = "log_level"
+    DEFAULT_LOG_LEVEL = "ERROR"
 
     @staticmethod
     def get_client(**kwargs):
@@ -60,11 +63,29 @@ class KeeperAnsible:
         The configuration is mainly read from a JSON file.
         """
 
+        self.config_file = None
+        self.config_created = False
+
         def camel_case(text):
             text = sub(r"([_\-])+", " ", text).title().replace(" ", "")
             return text[0].lower() + text[1:]
 
         try:
+            # Match the SDK log level to Ansible log level
+            log_level_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_LOG_LEVEL)
+            log_level = KeeperAnsible.DEFAULT_LOG_LEVEL
+
+            # If the log level is in the vars then use that value
+            if log_level_key in task_vars:
+                log_level = task_vars[log_level]
+
+            # Else try is give logging level based on the Ansible display level
+            if display.verbosity == 1:
+                # -v
+                log_level = "INFO"
+            elif display.verbosity >= 3:
+                # -vvv
+                log_level = "DEBUG"
 
             keeper_config_file_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CONFIG_FILE_SUFFIX)
             keeper_ssl_verify_skip = KeeperAnsible.keeper_key(KeeperAnsible.KEY_SSL_VERIFY_SKIP)
@@ -73,14 +94,15 @@ class KeeperAnsible:
             ssl_certs_skip = task_vars.get(keeper_ssl_verify_skip, False)
 
             # If the config location is defined, or a file exists at the default location.
-            config_file = task_vars.get(keeper_config_file_key)
-            if config_file is None:
-                config_file = FileKeyValueStorage.default_config_file_location
+            self.config_file = task_vars.get(keeper_config_file_key)
+            if self.config_file is None:
+                self.config_file = FileKeyValueStorage.default_config_file_location
 
-            if os.path.isfile(config_file) is True:
-                display.debug("Loading keeper config file file {}.".format(config_file))
+            if os.path.isfile(self.config_file) is True:
+                display.debug("Loading keeper config file file {}.".format(self.config_file))
                 self.client = KeeperAnsible.get_client(
-                    config=FileKeyValueStorage(config_file_location=config_file)
+                    config=FileKeyValueStorage(config_file_location=self.config_file),
+                    log_level=log_level
                 )
 
             # Else config values in the Ansible variable.
@@ -104,6 +126,8 @@ class KeeperAnsible:
                 # If the secret client key is in the environment, override the Ansible var.
                 if os.environ.get(KeeperAnsible.TOKEN_ENV) is not None:
                     config_dict[KeeperAnsible.CONFIG_CLIENT_KEY] = os.environ.get(KeeperAnsible.TOKEN_ENV)
+                elif token_key in task_vars:
+                    config_dict[KeeperAnsible.CONFIG_CLIENT_KEY] = task_vars[token_key]
 
                 # If no variables were passed in throw an error.
                 if len(config_dict) == 0:
@@ -124,21 +148,32 @@ class KeeperAnsible:
                 if in_memory_storage is True:
                     config_instance = InMemoryKeyValueStorage(config=config_dict)
                 else:
+                    if self.config_file is None:
+                        self.config_file = FileKeyValueStorage.default_config_file_location
+                        self.config_created = True
+                    elif os.path.isfile(self.config_file) is False:
+                        self.config_created = True
+
                     # Write the variables we have to a JSON file.
-                    with open(config_file, "w") as fh:
+                    with open(self.config_file, "w") as fh:
                         json.dump(config_dict, fh, indent=4)
                         fh.close()
 
-                    config_instance = FileKeyValueStorage(config_file_location=config_file)
+                    config_instance = FileKeyValueStorage(config_file_location=self.config_file)
                     config_instance.read_storage()
 
                 self.client = KeeperAnsible.get_client(
                     config=config_instance,
-                    verify_ssl_certs=not ssl_certs_skip
+                    verify_ssl_certs=not ssl_certs_skip,
+                    log_level=log_level
                 )
 
+            # If we don't have an app key, get the secrets to populate one in the config
+            if self.client.config.get(ConfigKeys.KEY_APP_KEY) is None:
+                self.client.get_secrets()
+
         except Exception as err:
-            raise Exception("Keeper Ansible error: {}".format(err))
+            raise AnsibleError("Keeper Ansible error: {}".format(err))
 
     @staticmethod
     def keeper_key(key):
@@ -149,7 +184,7 @@ class KeeperAnsible:
         try:
             records = self.client.get_secrets([uid])
             if records is None or len(records) == 0:
-                raise ValueError("The uid {} was not found in the Keeper Vault.".format(uid))
+                raise ValueError("The uid {} was not found in the Keeper Secrets Manager app.".format(uid))
         except Exception as err:
             raise Exception("Cannot get record: {}".format(err))
 
