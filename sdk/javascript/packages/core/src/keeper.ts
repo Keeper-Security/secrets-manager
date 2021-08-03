@@ -17,17 +17,26 @@ export const initialize = (pkgVersion?: string) => {
     if (pkgVersion) {
         packageVersion = pkgVersion
     }
-    keeperPublicKeys = [
+    const keys = [
         webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
-        webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
-        webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
-        webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
-        webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
-        webSafe64ToBytes('BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'),
+        webSafe64ToBytes("BKnhy0obglZJK-igwthNLdknoSXRrGB-mvFRzyb_L-DKKefWjYdFD2888qN1ROczz4n3keYSfKz9Koj90Z6w_tQ"),
+        webSafe64ToBytes("BAsPQdCpLIGXdWNLdAwx-3J5lNqUtKbaOMV56hUj8VzxE2USLHuHHuKDeno0ymJt-acxWV1xPlBfNUShhRTR77g"),
+        webSafe64ToBytes("BNYIh_Sv03nRZUUJveE8d2mxKLIDXv654UbshaItHrCJhd6cT7pdZ_XwbdyxAOCWMkBb9AZ4t1XRCsM8-wkEBRg"),
+        webSafe64ToBytes("BA6uNfeYSvqagwu4TOY6wFK4JyU5C200vJna0lH4PJ-SzGVXej8l9dElyQ58_ljfPs5Rq6zVVXpdDe8A7Y3WRhk"),
+        webSafe64ToBytes("BMjTIlXfohI8TDymsHxo0DqYysCy7yZGJ80WhgOBR4QUd6LBDA6-_318a-jCGW96zxXKMm8clDTKpE8w75KG-FY"),
+        webSafe64ToBytes("BJBDU1P1H21IwIdT2brKkPqbQR0Zl0TIHf7Bz_OO9jaNgIwydMkxt4GpBmkYoprZ_DHUGOrno2faB7pmTR7HhuI"),
+        webSafe64ToBytes("BJFF8j-dH7pDEw_U347w2CBM6xYM8Dk5fPPAktjib-opOqzvvbsER-WDHM4ONCSBf9O_obAHzCyygxmtpktDuiE"),
+        webSafe64ToBytes("BDKyWBvLbyZ-jMueORl3JwJnnEpCiZdN7yUvT0vOyjwpPBCDf6zfL4RWzvSkhAAFnwOni_1tQSl8dfXHbXqXsQ8"),
+        webSafe64ToBytes("BDXyZZnrl0tc2jdC5I61JjwkjK2kr7uet9tZjt8StTiJTAQQmnVOYBgbtP08PWDbecxnHghx3kJ8QXq1XE68y8c"),
+        webSafe64ToBytes("BFX68cb97m9_sweGdOVavFM3j5ot6gveg6xT4BtGahfGhKib-zdZyO9pwvv1cBda9ahkSzo1BQ4NVXp9qRyqVGU")
     ]
+    let keyNumber = 7
+    for (const key of keys) {
+        keeperPublicKeys[keyNumber++] = key
+    }
 }
 
-let keeperPublicKeys: Uint8Array[]
+let keeperPublicKeys: Record<number, Uint8Array> = {}
 
 type TransmissionKey = {
     publicKeyId: number
@@ -137,8 +146,12 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
     const transmissionKey = platform.getRandomBytes(32)
     await platform.importKey(KEY_TRANSMISSION_KEY, transmissionKey)
     const keyNumberString = await storage.getString(KEY_SERVER_PUBIC_KEY_ID)
-    const keyNumber = keyNumberString ? Number(keyNumberString) : 1
-    const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[keyNumber - 1])
+    const keyNumber = keyNumberString ? Number(keyNumberString) : 7
+    const keeperPublicKey = keeperPublicKeys[keyNumber]
+    if (!keeperPublicKey) {
+        throw new Error(`Key number ${keyNumber} is not supported`)
+    }
+    const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[keyNumber])
     return {
         publicKeyId: keyNumber,
         encryptedKey: encryptedKey
