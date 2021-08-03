@@ -1,4 +1,4 @@
-name: Test-Python
+name: Test-CLI
 
 on:
   push:
@@ -7,27 +7,38 @@ on:
     branches: [ master ]
 
 jobs:
-  test-python:
+  test-cli:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: [3.6, 3.7, 3.8, 3.9]
 
-    defaults:
-      run:
-        working-directory: ./sdk/python/core
     steps:
       - uses: actions/checkout@v2
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v1
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
+      - name: Install SDK dependencies
+        working-directory: ./sdk/python/core
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install -r requirements.txt
           python3 -m pip install pytest pytest-cov
           python3 -m pip install -e .
-      - name: Run tests
+
+      - name: Install SDK for integrations
+        working-directory: ./sdk/python/core
         run: |
-          pytest
+          python3 setup.py build install
+
+      ########## CLI
+
+      - name: Install CLI dependencies
+        working-directory: ./integration/keeper_secrets_manager_cli
+        run: |
+          python3 -m pip install -r requirements.txt
+      - name: Run CLI tests
+        working-directory: ./integration/keeper_secrets_manager_cli
+        run: |
+          PYTHONPATH=$PWD pytest
