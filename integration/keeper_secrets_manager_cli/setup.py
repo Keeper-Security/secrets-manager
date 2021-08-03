@@ -10,8 +10,9 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 install_requires = [
     'keeper-secrets-manager-core',
     'click',
+    'click_help_colors',
     'jsonpath-rw-ext',
-    'prettytable',
+    'colorama',
     'importlib_metadata'
 ]
 

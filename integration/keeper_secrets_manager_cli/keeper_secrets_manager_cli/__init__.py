@@ -13,6 +13,7 @@
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
+from distutils.util import strtobool
 from .profile import Profile
 import sys
 import logging
@@ -24,12 +25,13 @@ class KeeperCli:
     def get_client(**kwargs):
         return SecretsManager(**kwargs)
 
-    def __init__(self, ini_file=None, profile_name=None, output=None):
+    def __init__(self, ini_file=None, profile_name=None, output=None, use_color=None):
 
         self.profile = Profile(cli=self, ini_file=ini_file)
         self._client = None
 
         self._log_level = "INFO"
+        self.use_color = use_color
 
         # If no config file is loaded, then don't init the SDK
         if self.profile.is_loaded is True:
@@ -58,9 +60,13 @@ class KeeperCli:
                 config=config_storage,
                 log_level=common_profile.get("log_level", self._log_level)
             )
+            if self.use_color is None:
+                self.use_color = bool(strtobool(common_profile.get("color", str(True))))
         else:
             # Set the log level. We don't have the client to set the level, so set it here.
             self.log_level = self._log_level
+            if use_color is None:
+                self.use_color = True
 
         # Default to stdout if the output is not set.
         if output is None:

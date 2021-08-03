@@ -11,6 +11,8 @@
 #
 
 import click
+from click_help_colors import HelpColorsGroup, HelpColorsCommand
+from colorama import Fore, Style
 from . import KeeperCli
 from .exec import Exec
 from .secret import Secret
@@ -23,12 +25,8 @@ import importlib_metadata
 from distutils.util import strtobool
 
 
-def _get_cli(ini_file=None, profile_name=None, output=None):
-    return KeeperCli(
-        ini_file=ini_file,
-        profile_name=profile_name,
-        output=output
-    )
+def _get_cli(**kwargs):
+    return KeeperCli(**kwargs)
 
 
 def base_command_help(f):
@@ -41,46 +39,67 @@ def base_command_help(f):
     except importlib_metadata.PackageNotFoundError:
         pass
 
-    f.__doc__ = "{} Version: {} ".format(doc, version)
+    f.__doc__ = "{} Version: {} ".format(
+        Fore.RED + doc + Style.RESET_ALL,
+        Fore.YELLOW + version + Style.RESET_ALL
+    )
     return f
 
 
 # MAIN GROUP
-@click.group()
+@click.group(
+    cls=HelpColorsGroup,
+    help_headers_color='yellow',
+    help_options_color='green'
+)
 @click.option('--ini-file', type=str, help="INI config file.")
 @click.option('--profile-name', '-p', type=str, help='Config profile')
 @click.option('--output', '-o', type=str, help='Output [stdout|stderr|filename]', default='stdout')
+@click.option('--color/--no-color', '-c/-nc', default=None, help="Use color in table views, where applicable.")
 @click.pass_context
 @base_command_help
-def cli(ctx, ini_file, profile_name, output):
+def cli(ctx, ini_file, profile_name, output, color):
 
     """Keeper Secrets Manager CLI
     """
 
     try:
         ctx.obj = {
-            "cli": _get_cli(ini_file=ini_file, profile_name=profile_name, output=output),
+            "cli": _get_cli(ini_file=ini_file, profile_name=profile_name, output=output, use_color=color),
             "ini_file": ini_file,
             "profile_name": profile_name,
-            "output": output
+            "output": output,
+            "use_color": color
         }
     except FileNotFoundError as _:
         sys.exit("Could not find the INI file specified on the top level command. If you are running the init"
                  " sub-command, specify the INI file on the sub-command parameters instead on the top level command.")
     except Exception as err:
+        # Set KSM_DEBUG to get a stack trace. Secret env var.
+        if strtobool(os.environ.get("KSM_DEBUG", "FALSE")) == 1:
+            print(traceback.format_exc(), file=sys.stderr)
         sys.exit("Could not run the command. Got the error: {}".format(err))
 
 
 # PROFILE GROUP
 
 
-@click.group(name='profile')
+@click.group(
+    name='profile',
+    cls=HelpColorsGroup,
+    help_headers_color='yellow',
+    help_options_color='green'
+)
 def profile_command():
     """Commands for profile management."""
     pass
 
 
-@click.command(name='init')
+@click.command(
+    name='init',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.option('--token', '-t', type=str, required=True, help="The One Time Access Token.")
 @click.option('--hostname', '-h', type=str, default="US", help="Hostname of secrets manager server.")
 @click.option('--ini-file', type=str, help="INI config file to create.")
@@ -103,7 +122,11 @@ def profile_init_command(ctx, token, hostname, ini_file, profile_name):
     )
 
 
-@click.command(name='list')
+@click.command(
+    name='list',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.option('--json', is_flag=True, help='Return secret as JSON')
 @click.pass_context
 def profile_list_command(ctx, json):
@@ -116,7 +139,11 @@ def profile_list_command(ctx, json):
     Profile(cli=ctx.obj["cli"]).list_profiles(output=output)
 
 
-@click.command(name='active')
+@click.command(
+    name='active',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.argument('profile-name', type=str, required=True, nargs=1)
 @click.pass_context
 def profile_active_command(ctx, profile_name):
@@ -126,7 +153,11 @@ def profile_active_command(ctx, profile_name):
     )
 
 
-@click.command(name='export')
+@click.command(
+    name='export',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.option('--key', '-k', type=str, help='Encode config with a key')
 @click.argument('profile-name', type=str, required=False, nargs=1)
 @click.pass_context
@@ -138,7 +169,11 @@ def profile_export_command(ctx, key, profile_name):
     )
 
 
-@click.command(name='import')
+@click.command(
+    name='import',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.option('--key', '-k', type=str, required=True, help='Decode config with a key.')
 @click.option('--output-file', '-f', type=str, required=False,
               help='Save the import config to a specific file location.')
@@ -162,14 +197,23 @@ profile_command.add_command(profile_import_command)
 # SECRET GROUP
 
 
-@click.group(name='secret')
+@click.group(
+    name='secret',
+    cls=HelpColorsGroup,
+    help_headers_color='yellow',
+    help_options_color='green'
+)
 @click.pass_context
 def secret_command(ctx):
     """Commands for secrets."""
     ctx.obj["secret"] = Secret(cli=ctx.obj["cli"])
 
 
-@click.command(name='list')
+@click.command(
+    name='list',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.option('--uid', "-u", type=str, multiple=True)
 @click.option('--json', is_flag=True, help='Return secret as JSON')
 @click.pass_context
@@ -183,17 +227,23 @@ def secret_list_command(ctx, uid, json):
     ctx.obj["secret"].secret_list(
         uids=uid,
         output_format=output,
+        use_color=ctx.obj["cli"].use_color
     )
 
 
-@click.command(name='get')
+@click.command(
+    name='get',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.option('--uid', '-u', required=True, type=str, multiple=True)
 @click.option('--query', '-q', type=str, help='Perform a JSONPath query on results.')
 @click.option('--json', is_flag=True, help='Return secret as JSON')
 @click.option('--raw', is_flag=True, help="Remove quotes on return quote text.")
 @click.option('--force-array', is_flag=True, help="Return secrets as array even if a single record.")
+@click.option('--unmask', is_flag=True, help="Show password like values in table views.")
 @click.pass_context
-def secret_get_command(ctx, uid, query, json, raw, force_array):
+def secret_get_command(ctx, uid, query, json, raw, force_array, unmask):
     """Get secret record(s)."""
 
     output = "text"
@@ -206,11 +256,17 @@ def secret_get_command(ctx, uid, query, json, raw, force_array):
         output_format=output,
         raw=raw,
         force_array=force_array,
-        load_references=True
+        load_references=True,
+        unmask=unmask,
+        use_color=ctx.obj["cli"].use_color
     )
 
 
-@click.command(name='notation')
+@click.command(
+    name='notation',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.argument('text', type=str, nargs=1)
 @click.pass_context
 def secret_notation_command(ctx, text):
@@ -218,7 +274,11 @@ def secret_notation_command(ctx, text):
     ctx.obj["secret"].get_via_notation(notation=text)
 
 
-@click.command(name='update')
+@click.command(
+    name='update',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.option('--uid', '-u', required=True, type=str)
 @click.option('--field', type=str, multiple=True)
 @click.option('--custom-field', type=str, multiple=True)
@@ -232,7 +292,11 @@ def secret_update_command(ctx, uid, field, custom_field):
     )
 
 
-@click.command(name='download')
+@click.command(
+    name='download',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.option('--uid', '-u', required=True, type=str, help="UID of the secret.")
 @click.option('--name', required=True, type=str, help='Name of the file to download.')
 @click.option('--file-output', required=True, type=str, help="Where to write the file's content. "
@@ -259,7 +323,11 @@ secret_command.add_command(secret_download_command)
 # EXEC COMMAND
 
 
-@click.command(name='exec')
+@click.command(
+    name='exec',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.option('--capture-output', is_flag=True, help='Capture the output and display upon cmd exit.')
 @click.option('--inline', is_flag=True, help='Replace include placeholders.')
 @click.argument('cmd', type=str, nargs=-1)
@@ -271,7 +339,12 @@ def exec_command(ctx, capture_output, inline, cmd):
 
 
 # CONFIG COMMAND
-@click.group(name='config')
+@click.group(
+    name='config',
+    cls=HelpColorsGroup,
+    help_headers_color='yellow',
+    help_options_color='green'
+)
 @click.pass_context
 def config_command(ctx):
     """Configure the command line tool."""
@@ -279,14 +352,22 @@ def config_command(ctx):
     pass
 
 
-@click.command(name='show')
+@click.command(
+    name='show',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.pass_context
 def config_show_command(ctx):
     """Show current configuration."""
     ctx.obj["profile"].show_config()
 
 
-@click.command(name='log')
+@click.command(
+    name='log',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.option('--level',  '-l', type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "NOTSET"]),
               help="Level of message or error to display")
 @click.pass_context
@@ -296,11 +377,27 @@ def config_log_command(ctx, level):
         ctx.obj["profile"].set_log_level(level)
 
 
+@click.command(
+    name='color',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--enable/--disable', required=True, help="Enable or disable color.")
+@click.pass_context
+def config_log_command(ctx, enable):
+    """Enable or disable color"""
+    ctx.obj["profile"].set_color(enable)
+
+
 config_command.add_command(config_show_command)
 config_command.add_command(config_log_command)
 
 
-@click.command(name='version')
+@click.command(
+    name='version',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
 @click.pass_context
 def version_command(ctx):
     """Get module versions and information."""

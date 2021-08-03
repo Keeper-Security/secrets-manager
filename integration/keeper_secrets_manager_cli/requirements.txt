@@ -1,5 +1,6 @@
 keeper-secrets-manager-core
 jsonpath-rw-ext
-prettytable
+colorama
 importlib_metadata
 click
+click_help_colors
