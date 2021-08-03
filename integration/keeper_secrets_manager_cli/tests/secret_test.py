@@ -5,9 +5,9 @@ from click.testing import CliRunner
 from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core import mock
-from integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.secret import Secret
-from integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.profile import Profile
-from integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.__main__ import cli
+from keeper_secrets_manager_cli.secret import Secret
+from keeper_secrets_manager_cli.profile import Profile
+from keeper_secrets_manager_cli.__main__ import cli
 import tempfile
 import json
 import re
@@ -72,7 +72,7 @@ class SecretTest(unittest.TestCase):
         # Text Output
         queue.add_response(res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
                 as mock_client:
             mock_client.return_value = secrets_manager
 
@@ -132,7 +132,7 @@ class SecretTest(unittest.TestCase):
         for test in range(0, 6):
             queue.add_response(res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
                 as mock_client:
             mock_client.return_value = secrets_manager
 
@@ -213,7 +213,7 @@ class SecretTest(unittest.TestCase):
         # Secret get
         queue.add_response(res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
                 as mock_client:
             mock_client.return_value = secrets_manager
 
@@ -262,7 +262,7 @@ class SecretTest(unittest.TestCase):
             return mock_res
 
         with patch('requests.get', side_effect=mock_download_get) as mock_get:
-            with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+            with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
                     as mock_client:
                 mock_client.return_value = secrets_manager
 
@@ -305,7 +305,7 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
                 as mock_client:
             mock_client.return_value = secrets_manager
 
@@ -407,7 +407,7 @@ class SecretTest(unittest.TestCase):
             return mock_res
 
         with patch('requests.get', side_effect=mock_download_get) as _:
-            with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+            with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
                     as mock_client:
                 mock_client.return_value = secrets_manager
 
@@ -417,7 +417,6 @@ class SecretTest(unittest.TestCase):
 
                 # Write png to file. This will be binary data.
                 with tempfile.NamedTemporaryFile() as tf:
-                    print("ONE", tf.name)
                     notation = "keeper://{}/{}/{}".format(file_record.uid, "file", "Tiny Png")
                     runner = CliRunner()
                     result = runner.invoke(cli, [
@@ -482,7 +481,7 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(mock.Response(content="I hate you and your little dog.", status_code=500))
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
                 as mock_client:
             mock_client.return_value = secrets_manager
 
@@ -588,7 +587,7 @@ class SecretTest(unittest.TestCase):
         # The secret get
         queue.add_response(res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
                 as mock_client:
             mock_client.return_value = secrets_manager
 
@@ -649,7 +648,7 @@ class SecretTest(unittest.TestCase):
         queue.add_response(login_res)
         queue.add_response(address_res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
                 as mock_client:
             mock_client.return_value = secrets_manager
 
