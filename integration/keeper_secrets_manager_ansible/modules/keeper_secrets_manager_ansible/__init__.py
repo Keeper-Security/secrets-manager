@@ -44,6 +44,7 @@ class KeeperAnsible:
     KEY_CONFIG_FILE_SUFFIX = "config_file"
     ALLOWED_FIELDS = ["field", "custom_field", "file"]
     TOKEN_ENV = "KSM_TOKEN"
+    TOKEN_KEY = "token"
     CONFIG_CLIENT_KEY = "clientKey"
     FORCE_CONFIG_FILE = "force_config_write"
     KEY_SSL_VERIFY_SKIP = "verify_ssl_certs_skip"
@@ -94,6 +95,11 @@ class KeeperAnsible:
                     camel_key = camel_case(key)
                     if keeper_key in task_vars:
                         config_dict[camel_key] = task_vars[keeper_key]
+
+                # token is the odd ball. we need it to be client key in the SDK config.
+                token_key = KeeperAnsible.keeper_key(KeeperAnsible.TOKEN_KEY)
+                if token_key in task_vars:
+                    config_dict[KeeperAnsible.CONFIG_CLIENT_KEY] = task_vars[token_key]
 
                 # If the secret client key is in the environment, override the Ansible var.
                 if os.environ.get(KeeperAnsible.TOKEN_ENV) is not None:

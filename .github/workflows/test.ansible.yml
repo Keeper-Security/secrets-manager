@@ -1,0 +1,45 @@
+name: Test-Ansible
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test-ansible:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.6, 3.7, 3.8, 3.9]
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v1
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install SDK dependencies
+        working-directory: ./sdk/python/core
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt
+          python3 -m pip install pytest pytest-cov
+          python3 -m pip install -e .
+
+      - name: Install SDK for integrations
+        working-directory: ./sdk/python/core
+        run: |
+          python3 setup.py build install
+
+      ########## ANSIBLE
+
+      # Test fail on GitHub. Working on better logging to see what the problem is.
+      - name: Install Ansible dependencies
+        working-directory: ./integration/keeper_secrets_manager_ansible
+        run: |
+          python3 -m pip install -r requirements.txt
+      - name: Run Ansible tests
+        working-directory: ./integration/keeper_secrets_manager_ansible
+        run: |
+          PYTHONPATH=$PWD/modules pytest

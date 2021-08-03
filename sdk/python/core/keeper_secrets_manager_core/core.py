@@ -337,10 +337,11 @@ class SecretsManager:
 
     def fetch(self, record_filter=None):
 
-        context = self.prepare_context()
-        payload_and_signature = self.prepare_get_payload(context, records_filter=record_filter)
-
         while True:
+
+            context = self.prepare_context()
+            payload_and_signature = self.prepare_get_payload(context, records_filter=record_filter)
+
             rs = self._post_query(
                 'get_secret',
                 context,
@@ -418,11 +419,11 @@ class SecretsManager:
 
         logging.info("Updating record uid: %s" % record.uid)
 
-        context = self.prepare_context()
-
-        payload_and_signature = self.prepare_update_payload(context, record)
-
         while True:
+
+            context = self.prepare_context()
+            payload_and_signature = self.prepare_update_payload(context, record)
+
             rs = self._post_query(
                 'update_secret',
                 context,

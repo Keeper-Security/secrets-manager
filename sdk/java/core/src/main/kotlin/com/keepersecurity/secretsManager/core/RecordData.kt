@@ -150,3 +150,13 @@ data class KeeperFileData(
     val size: Long,
     val lastModified: Long
 )
+
+@Serializable
+data class PaymentCard(
+    var cardNumber: String? = null,
+    var cardExpirationDate: String? = null,
+    var cardSecurityCode: String? = null
+)
+@Serializable
+@SerialName("paymentCard")
+data class PaymentCards(val label: String? = null, val value: MutableList<PaymentCard>) : KeeperRecordField()

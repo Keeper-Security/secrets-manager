@@ -4,11 +4,12 @@ from unittest.mock import patch
 from click.testing import CliRunner
 import tempfile
 import re
+
 from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core import mock
-from integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.__main__ import cli
-from integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.profile import Profile
+from keeper_secrets_manager_cli.__main__ import cli
+from keeper_secrets_manager_cli.profile import Profile
 
 
 class ExecTest(unittest.TestCase):
@@ -17,9 +18,16 @@ class ExecTest(unittest.TestCase):
         self.orig_dir = os.getcwd()
         self.temp_dir = tempfile.TemporaryDirectory()
         os.chdir(self.temp_dir.name)
+        os.environ["KSM_DEBUG"] = "1"
+        self.delete_me = []
 
     def tearDown(self) -> None:
         os.chdir(self.orig_dir)
+
+        # Github Action does like how I'm doing temp files. So we manually have to delete them. This is to avoid
+        # Cannot execute command: [Errno 26] Text file busy: '/tmp/tmpsp3v5vqb'
+        for item in self.delete_me:
+            os.unlink(item)
 
     def test_cmd(self):
 
@@ -48,7 +56,7 @@ class ExecTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') as \
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as \
                 mock_client:
             mock_client.return_value = secrets_manager
 
@@ -57,7 +65,8 @@ class ExecTest(unittest.TestCase):
             )
 
             # Make a temp shell script
-            with tempfile.NamedTemporaryFile() as script:
+            with tempfile.NamedTemporaryFile(delete=False) as script:
+                self.delete_me.append(script.name)
                 the_script = [
                     "#!/bin/sh",
                     "echo ${VAR_ONE}",
@@ -65,7 +74,7 @@ class ExecTest(unittest.TestCase):
                     "echo ${NOT_ONE}"
                 ]
                 script.write("\n".join(the_script).encode())
-                script.seek(0)
+                script.close()
                 os.chmod(script.name, 0o777)
 
                 os.environ["VAR_ONE"] = "{}://{}/{}/{}".format(SecretsManager.notation_prefix, one.uid, "field",
@@ -76,13 +85,15 @@ class ExecTest(unittest.TestCase):
 
                 runner = CliRunner()
                 result = runner.invoke(cli, ['exec', '--capture-output', script.name], catch_exceptions=False)
+                print("-------------------")
+                print(result.output)
+                print("-------------------")
                 self.assertIsNotNone(re.search('My Login 1', result.output, flags=re.MULTILINE),
                                      "did not find the login")
                 self.assertIsNotNone(re.search('My Password 1', result.output, flags=re.MULTILINE),
                                      "did not find the password")
                 self.assertIsNotNone(re.search('BLAH', result.output, flags=re.MULTILINE),
                                      "did not find the not one")
-                script.close()
 
     def test_cmd_inline(self):
 
@@ -112,7 +123,7 @@ class ExecTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(res)
 
-        with patch('integration.keeper_secrets_manager_cli.keeper_secrets_manager_cli.KeeperCli.get_client') \
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
                 as mock_client:
             mock_client.return_value = secrets_manager
 
@@ -121,7 +132,8 @@ class ExecTest(unittest.TestCase):
             )
 
             # Make a temp shell script
-            with tempfile.NamedTemporaryFile() as script:
+            with tempfile.NamedTemporaryFile(delete=False) as script:
+                self.delete_me.append(script.name)
                 the_script = [
                     "#!/bin/sh",
                     "echo ${VAR_ONE}",
@@ -129,7 +141,7 @@ class ExecTest(unittest.TestCase):
                     "echo ${1}"
                 ]
                 script.write("\n".join(the_script).encode())
-                script.seek(0)
+                script.close()
                 os.chmod(script.name, 0o777)
 
                 os.environ["VAR_ONE"] = "{}://{}/{}/{}".format(SecretsManager.notation_prefix, one.uid, "field",
@@ -142,6 +154,9 @@ class ExecTest(unittest.TestCase):
                     'exec', '--capture-output', '--inline',
                     script.name, "{}://{}/{}/{}[]".format(SecretsManager.notation_prefix, one.uid, "field", "password")
                 ], catch_exceptions=False)
+                print("-------------------")
+                print(result.output)
+                print("-------------------")
                 self.assertIsNotNone(re.search('My Login 1', result.output, flags=re.MULTILINE),
                                      "did not find the login")
                 self.assertIsNotNone(re.search('My Password 1', result.output, flags=re.MULTILINE),
@@ -150,7 +165,6 @@ class ExecTest(unittest.TestCase):
                 # For coverage we request the full array value for this one, hence ["PASS"]
                 self.assertIsNotNone(re.search(r'\["PASS"\]', result.output, flags=re.MULTILINE),
                                      "did not find the field password")
-                script.close()
 
 
 if __name__ == '__main__':

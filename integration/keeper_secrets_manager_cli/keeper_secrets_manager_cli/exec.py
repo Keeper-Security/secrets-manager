@@ -16,6 +16,7 @@ import subprocess
 from keeper_secrets_manager_core.core import SecretsManager
 import re
 import json
+import traceback
 
 
 class Exec:
@@ -39,7 +40,7 @@ class Exec:
 
     def env_replace(self):
 
-        for env_key, env_value in os.environ.items():
+        for env_key, env_value in list(os.environ.items()):
             if env_value.startswith(SecretsManager.notation_prefix) is True:
                 os.environ["_" + env_key] = "_" + env_value
                 os.environ[env_key] = self._get_secret(env_value)
@@ -77,8 +78,16 @@ class Exec:
             if inline is True:
                 cmd = self.inline_replace(cmd)
 
+            # Python 3.6's subprocess.run does not have a capture flag. Instead it used the PIPE with
+            # the stderr parameter.
+            kwargs = {}
+            if (sys.version_info[0] == 3 and sys.version_info[1] < 7 ) and capture_output is True:
+                kwargs["stdout"] = subprocess.PIPE
+            else:
+                kwargs["capture_output"] = capture_output
+
             try:
-                completed = subprocess.run(cmd, capture_output=capture_output)
+                completed = subprocess.run(cmd, **kwargs)
             except OSError as err:
                 message = str(err)
                 if (re.search(r'WinError 193', message) is not None and

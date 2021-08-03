@@ -155,6 +155,10 @@ internal object ManifestLoader {
     }
 }
 
+fun toKeeperAppClientString(version: String): String{
+    return "mj${version.replace("-SNAPSHOT", "")}"
+}
+
 @JvmOverloads
 fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emptyList()): KeeperSecrets {
     val (secrets, justBound) = fetchAndDecryptSecrets(options, recordsFilter)
@@ -271,7 +275,7 @@ private fun prepareGetPayload(
 ): GetPayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val payload = GetPayload(
-        "mj${ManifestLoader.version}",
+        toKeeperAppClientString(ManifestLoader.version),
         clientId,
         null,
         null
@@ -294,7 +298,7 @@ private fun prepareUpdatePayload(
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val recordBytes = stringToBytes(Json.encodeToString(record.data))
     val encryptedRecord = encrypt(recordBytes, record.recordKey)
-    return UpdatePayload("mj${ManifestLoader.version}", clientId, record.recordUid, webSafe64FromBytes(encryptedRecord))
+    return UpdatePayload(toKeeperAppClientString(ManifestLoader.version), clientId, record.recordUid, webSafe64FromBytes(encryptedRecord))
 }
 
 fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload): KeeperHttpResponse {
