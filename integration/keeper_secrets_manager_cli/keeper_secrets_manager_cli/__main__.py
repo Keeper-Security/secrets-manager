@@ -23,6 +23,7 @@ import keeper_secrets_manager_core
 import traceback
 import importlib_metadata
 from distutils.util import strtobool
+from colorama import init
 
 
 def _get_cli(**kwargs):
@@ -403,13 +404,15 @@ def version_command(ctx):
     """Get module versions and information."""
 
     # Unit test do not know their version
-    cli_version = "Unknown"
-    sdk_version = "Unknown"
-    try:
-        sdk_version = importlib_metadata.version("keeper-secrets-manager-core")
-        cli_version = importlib_metadata.version("keeper-secrets-manager-cli")
-    except importlib_metadata.PackageNotFoundError:
-        pass
+    versions = {
+        "keeper-secrets-manager-core": "Unknown",
+        "keeper-secrets-manager-cli": "Unknown"
+    }
+    for module in versions:
+        try:
+            versions[module] = importlib_metadata.version(module)
+        except importlib_metadata.PackageNotFoundError:
+            pass
 
     print("Python Version: {}".format(".".join([
         str(sys.version_info.major),
@@ -417,9 +420,9 @@ def version_command(ctx):
         str(sys.version_info.micro)
     ])))
     print("Python Install: {}".format(sys.executable))
-    print("CLI Version: {}".format(cli_version))
+    print("CLI Version: {}".format(versions["keeper-secrets-manager-cli"]))
     print("CLI Install: {}".format(os.path.dirname(os.path.realpath(__file__))))
-    print("SDK Version: {}".format(sdk_version))
+    print("SDK Version: {}".format(versions["keeper-secrets-manager-core"]))
     print("SDK Install: {}".format(os.path.dirname(os.path.realpath(keeper_secrets_manager_core.__file__))))
     print("Config file: {}".format(ctx.obj["cli"].profile.ini_file))
 
@@ -434,6 +437,8 @@ cli.add_command(version_command)
 
 def main():
     try:
+        # This init colors for Windows. CMD looks great. PS has no yellow :(
+        init()
         cli(obj={"cli": None})
     except Exception as err:
         # Set KSM_DEBUG to get a stack trace. Secret env var.

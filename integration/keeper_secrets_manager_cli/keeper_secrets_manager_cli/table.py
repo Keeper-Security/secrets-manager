@@ -70,7 +70,9 @@ class Table:
             h, w, hp, wp = struct.unpack('HHHH',
                                          fcntl.ioctl(0, termios.TIOCGWINSZ,
                                                      struct.pack('HHHH', 0, 0, 0, 0)))
-        return w, h
+
+        # Remove 1 from with width to be safe.
+        return w - 1, h
 
     def _set_column_width(self, index):
 
