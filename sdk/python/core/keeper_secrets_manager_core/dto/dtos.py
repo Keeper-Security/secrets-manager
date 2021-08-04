@@ -62,7 +62,8 @@ class Record:
 
             password_field = next((item for item in fields if item["type"] == "password"), None)
 
-            if password_field is not None:
+            # If the password field exists and there is a value in the array, then set the password.
+            if password_field is not None and len(password_field.get('value', [])) > 0:
                 self.password = password_field.get('value')[0]
 
     def find_file_by_title(self, title):
