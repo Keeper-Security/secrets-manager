@@ -10,10 +10,11 @@
 # Contact: ops@keepersecurity.com
 #
 
-import fcntl, termios, struct
 from colorama import Style
 from enum import Enum
 import textwrap
+import platform
+import os
 
 
 class ColumnAlign(Enum):
@@ -60,9 +61,15 @@ class Table:
 
     @staticmethod
     def _terminal_width():
-        h, w, hp, wp = struct.unpack('HHHH',
-                                     fcntl.ioctl(0, termios.TIOCGWINSZ,
-                                                 struct.pack('HHHH', 0, 0, 0, 0)))
+
+        w = os.get_terminal_size().columns
+        h = os.get_terminal_size().lines
+
+        if platform.system() != "Windows":
+            import fcntl, termios, struct
+            h, w, hp, wp = struct.unpack('HHHH',
+                                         fcntl.ioctl(0, termios.TIOCGWINSZ,
+                                                     struct.pack('HHHH', 0, 0, 0, 0)))
         return w, h
 
     def _set_column_width(self, index):
