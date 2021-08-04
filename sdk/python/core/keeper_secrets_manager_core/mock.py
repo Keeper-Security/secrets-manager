@@ -394,6 +394,13 @@ class Record:
             # SecretsManager will not add a custom key if there is no custom fields. However the UI does.
             if flags.get("prune_custom_fields", False) is True and len(record_data["custom"]) == 0:
                 record_data.pop("custom", None)
+            # Remove fields if they do not have values.
+            if flags.get("prune_empty_fields", False) is True:
+                new_fields = []
+                for field in record_data["fields"]:
+                    if len(field.get("value")) > 0:
+                        new_fields.append(field)
+                record_data["fields"] = new_fields
 
         data = {
             "recordUid": self.uid,
