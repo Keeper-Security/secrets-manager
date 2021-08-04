@@ -20,6 +20,16 @@ namespace SecretsManager
         void Delete(string key);
     }
 
+    public class SecretsManagerOptions
+    {
+        public IKeyValueStorage Storage { get; }
+
+        public SecretsManagerOptions(IKeyValueStorage storage)
+        {
+            Storage = storage;
+        }
+    }
+
     public class TransmissionKey
     {
         public int PublicKeyId { get; }
@@ -31,6 +41,30 @@ namespace SecretsManager
             PublicKeyId = publicKeyId;
             Key = key;
             EncryptedKey = encryptedKey;
+        }
+    }
+
+    public class KeeperHttpResponse
+    {
+        public byte[] Data { get; }
+        public bool IsError { get; }
+
+        public KeeperHttpResponse(byte[] data, bool isError)
+        {
+            Data = data;
+            IsError = isError;
+        }
+    }
+
+    public class EncryptedPayload
+    {
+        public byte[] Payload { get; }
+        public byte[] Signature { get; }
+
+        public EncryptedPayload(byte[] payload, byte[] signature)
+        {
+            Payload = payload;
+            Signature = signature;
         }
     }
 
@@ -237,14 +271,14 @@ namespace SecretsManager
             storage.SaveBytes(KeyPrivateKey, privateKey);
         }
 
-        public static async Task<KeeperSecrets> GetSecrets(IKeyValueStorage storage, string[] recordsFilter = null)
+        public static async Task<KeeperSecrets> GetSecrets(SecretsManagerOptions options, string[] recordsFilter = null)
         {
-            var (keeperSecrets, justBound) = await FetchAndDecryptSecrets(storage, recordsFilter);
+            var (keeperSecrets, justBound) = await FetchAndDecryptSecrets(options, recordsFilter);
             if (justBound)
             {
                 try
                 {
-                    await FetchAndDecryptSecrets(storage, recordsFilter);
+                    await FetchAndDecryptSecrets(options, recordsFilter);
                 }
                 catch (Exception e)
                 {
@@ -255,10 +289,11 @@ namespace SecretsManager
             return keeperSecrets;
         }
 
-        private static async Task<Tuple<KeeperSecrets, bool>> FetchAndDecryptSecrets(IKeyValueStorage storage, string[] recordsFilter)
+        private static async Task<Tuple<KeeperSecrets, bool>> FetchAndDecryptSecrets(SecretsManagerOptions options, string[] recordsFilter)
         {
+            var storage = options.Storage;
             var payload = PrepareGetPayload(storage, recordsFilter);
-            var responseData = await PostQuery(storage, "get_secret", payload);
+            var responseData = await PostQuery(options, "get_secret", payload);
             var response = JsonUtils.ParseJson<SecretsManagerResponse>(responseData);
             var justBound = false;
             byte[] appKey;
@@ -392,7 +427,7 @@ namespace SecretsManager
             return new TransmissionKey(keyNumber, transmissionKey, encryptedKey);
         }
 
-        private static Tuple<byte[], byte[]> EncryptAndSignPayload<T>(IKeyValueStorage storage,
+        private static EncryptedPayload EncryptAndSignPayload<T>(IKeyValueStorage storage,
             TransmissionKey transmissionKey, T payload)
         {
             var payloadBytes = JsonUtils.SerializeJson(payload);
@@ -405,12 +440,59 @@ namespace SecretsManager
 
             var signatureBase = transmissionKey.EncryptedKey.Concat(encryptedPayload).ToArray();
             var signature = CryptoUtils.Sign(signatureBase, privateKey);
-            return new Tuple<byte[], byte[]>(encryptedPayload, signature);
+            return new EncryptedPayload(encryptedPayload, signature);
         }
 
-        private static async Task<byte[]> PostQuery<T>(IKeyValueStorage storage, string path, T payload)
+        private static async Task<KeeperHttpResponse> PostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload, bool allowUnverifiedCertificate)
         {
-            var hostName = storage.GetString(KeyHostname);
+            static byte[] StreamToBytes(Stream stream)
+            {
+                using var memoryStream = new MemoryStream();
+                stream.CopyTo(memoryStream);
+                return memoryStream.ToArray();
+            }
+
+            var request = (HttpWebRequest)WebRequest.Create(url);
+            if (allowUnverifiedCertificate)
+            {
+                request.ServerCertificateValidationCallback += (_, _, _, _) => true;
+            }
+
+            request.ContentType = "application/octet-stream";
+            request.Headers["PublicKeyId"] = transmissionKey.PublicKeyId.ToString();
+            request.Headers["TransmissionKey"] = CryptoUtils.BytesToBase64(transmissionKey.EncryptedKey);
+            request.Headers["Authorization"] = $"Signature {CryptoUtils.BytesToBase64(payload.Signature)}";
+            request.Method = "POST";
+
+            HttpWebResponse response;
+            try
+            {
+                using (var requestStream = request.GetRequestStream())
+                {
+                    await requestStream.WriteAsync(payload.Payload, 0, payload.Payload.Length);
+                }
+
+                response = (HttpWebResponse)request.GetResponse();
+            }
+            catch (WebException e)
+            {
+                if (e.Response == null) throw;
+                var errorResponseStream = ((HttpWebResponse)e.Response).GetResponseStream();
+                if (errorResponseStream == null)
+                {
+                    throw new InvalidOperationException("Response was expected but not received");
+                }
+
+                return new KeeperHttpResponse(StreamToBytes(errorResponseStream), true);
+            }
+
+            using var responseStream = response.GetResponseStream();
+            return new KeeperHttpResponse(StreamToBytes(responseStream), false);
+        }
+
+        private static async Task<byte[]> PostQuery<T>(SecretsManagerOptions options, string path, T payload)
+        {
+            var hostName = options.Storage.GetString(KeyHostname);
             if (hostName == null)
             {
                 throw new Exception("hostname is missing from the storage");
@@ -419,40 +501,17 @@ namespace SecretsManager
             var url = $"https://{hostName}/api/rest/sm/v1/{path}";
             while (true)
             {
-                var request = (HttpWebRequest) WebRequest.Create(url);
-                request.ServerCertificateValidationCallback += (_, _, _, _) => true;
-                var transmissionKey = GenerateTransmissionKey(storage);
-                var (encryptedPayload, signature) = EncryptAndSignPayload(storage, transmissionKey, payload);
-                // request.UserAgent = "KeeperSDK.Net/" + ClientVersion;
-                request.ContentType = "application/octet-stream";
-                request.Headers["PublicKeyId"] = transmissionKey.PublicKeyId.ToString();
-                request.Headers["TransmissionKey"] = CryptoUtils.BytesToBase64(transmissionKey.EncryptedKey);
-                request.Headers["Authorization"] = $"Signature {CryptoUtils.BytesToBase64(signature)}";
-                request.Method = "POST";
-
-                HttpWebResponse response;
-                try
+                var transmissionKey = GenerateTransmissionKey(options.Storage);
+                var encryptedPayload = EncryptAndSignPayload(options.Storage, transmissionKey, payload);
+                var response = await PostFunction(url, transmissionKey, encryptedPayload, false);
+                if (response.IsError)
                 {
-                    using (var requestStream = request.GetRequestStream())
-                    {
-                        await requestStream.WriteAsync(encryptedPayload, 0, encryptedPayload.Length);
-                    }
-
-                    response = (HttpWebResponse) request.GetResponse();
-                }
-                catch (WebException e)
-                {
-                    if (e.Response == null) throw;
-                    var errorMsg = await new StreamReader(
-                            ((HttpWebResponse) e.Response).GetResponseStream() ??
-                            throw new InvalidOperationException("Response was expected but not received"))
-                        .ReadToEndAsync();
                     try
                     {
-                        var error = JsonSerializer.Deserialize<KeeperError>(errorMsg);
+                        var error = JsonSerializer.Deserialize<KeeperError>(response.Data);
                         if (error?.error == "key")
                         {
-                            storage.SaveString(KeyServerPubicKeyId, error.key_id.ToString());
+                            options.Storage.SaveString(KeyServerPubicKeyId, error.key_id.ToString());
                             continue;
                         }
                     }
@@ -461,18 +520,10 @@ namespace SecretsManager
                         // ignored
                     }
 
-                    throw new Exception(errorMsg);
+                    throw new Exception(CryptoUtils.BytesToString(response.Data));
                 }
 
-                using var responseStream = response.GetResponseStream();
-                if (responseStream == null)
-                {
-                    throw new Exception("server response does not contain data");
-                }
-
-                using var ms = new MemoryStream();
-                await responseStream.CopyToAsync(ms);
-                return CryptoUtils.Decrypt(ms.ToArray(), transmissionKey.Key);
+                return CryptoUtils.Decrypt(response.Data, transmissionKey.Key);
             }
         }
     }

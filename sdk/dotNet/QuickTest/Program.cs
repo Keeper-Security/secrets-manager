@@ -21,8 +21,9 @@ namespace QuickTest
         private static async Task<string> GetSecrets()
         {
             var storage = new LocalConfigStorage("config.json");
-            // SecretsManagerClient.InitializeStorage(storage, "jvoHXRYYdf7cpxFISeqf9O0L4N9Tbr3e1a7wV2a4zPE", "qa.keepersecurity.com");
-            var secrets = await SecretsManagerClient.GetSecrets(storage);
+            SecretsManagerClient.InitializeStorage(storage, "sHD0o4yFny3trdJBz5JKutILElLezHvRuIPHY254o5M", "dev.keepersecurity.com");
+            var options = new SecretsManagerOptions(storage);
+            var secrets = await SecretsManagerClient.GetSecrets(options);
             var password = secrets.Records[0].FieldValue("password").ToString();
             Console.WriteLine(password);
             return password;
