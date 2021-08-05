@@ -35,7 +35,7 @@ class SecretsManager:
 
     notation_prefix = "keeper"
     log_level = "DEBUG"
-    default_key_id = "1"
+    default_key_id = "7"
 
     def __init__(self, token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None):
 
@@ -57,6 +57,16 @@ class SecretsManager:
             config.set(ConfigKeys.KEY_CLIENT_KEY, token)
         if hostname is not None:
             config.set(ConfigKeys.KEY_HOSTNAME, hostname)
+
+        # Make sure our public key id is set and pointing an existing key.
+        if config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID) is None:
+            logging.debug("Setting public key id to the default: {}".format(SecretsManager.default_key_id))
+            config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, SecretsManager.default_key_id)
+        elif config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID) not in keeper_public_keys:
+            logging.debug("Public key id {} does not exists, set to default : {}".format(
+                config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID),
+                SecretsManager.default_key_id))
+            config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, SecretsManager.default_key_id)
 
         self.config: KeyValueStorage = config
 

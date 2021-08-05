@@ -174,3 +174,29 @@ class ConfigTest(unittest.TestCase):
 
         # App key should be removed.
         self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_APP_KEY), "found the app key")
+
+    def test_public_key_id(self):
+
+        config = InMemoryKeyValueStorage()
+        config.set(ConfigKeys.KEY_CLIENT_KEY, "MY CLIENT KEY")
+        config.set(ConfigKeys.KEY_CLIENT_ID, "MY CLIENT ID")
+        config.set(ConfigKeys.KEY_APP_KEY, "MY APP KEY")
+        config.set(ConfigKeys.KEY_PRIVATE_KEY, "MY PRIVATE KEY")
+
+        # Test the default setting of the key id if missing
+        secrets_manager = SecretsManager(config=config)
+        self.assertEqual(
+            SecretsManager.default_key_id,
+            secrets_manager.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID),
+            "the public key is not set the default"
+        )
+
+        # Test if the config is edited and a bad key is entered that we go back to the default.
+        config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, 1_000_000)
+        secrets_manager = SecretsManager(config=config)
+        self.assertEqual(
+            SecretsManager.default_key_id,
+            secrets_manager.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID),
+            "the public key is not set the default after bad key id"
+        )
+
