@@ -22,9 +22,6 @@ class KeeperGetSdkTest(unittest.TestCase):
         # Add in addition Python libs. This includes the base
         # module for Keeper Ansible and the Keeper SDK.
         self.base_dir = os.path.dirname(os.path.realpath(__file__))
-        sys.path.append(os.path.join(self.base_dir, "..", "modules"))
-        sys.path.append(os.path.join(self.base_dir, "..", "..", "..", "..", "sdk", "python", "core"))
-
         self.ansible_base_dir = os.path.join(self.base_dir, "ansible_example")
 
     def test_keeper_update_mock(self):
@@ -63,7 +60,11 @@ class KeeperGetSdkTest(unittest.TestCase):
             record.field("password", "NEW PASSWORD")
             record.custom_field("My Custom 1", "custom1")
 
+            # Initialize
+            queue.add_response(get_res)
+
             # This is for keeper_get
+
             queue.add_response(get_res)
 
             # Save
@@ -92,6 +93,8 @@ class KeeperGetSdkTest(unittest.TestCase):
                     }
                 )
                 r, out, err = a.run()
+                print("OUT", out)
+                print("ERR", err)
                 result = r[0]["localhost"]
                 self.assertEqual(result["ok"], 3, "3 things didn't happen")
                 self.assertEqual(result["failures"], 0, "failures was not 0")

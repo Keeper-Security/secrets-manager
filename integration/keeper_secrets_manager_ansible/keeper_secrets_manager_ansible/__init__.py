@@ -168,10 +168,6 @@ class KeeperAnsible:
                     log_level=log_level
                 )
 
-            # If we don't have an app key, get the secrets to populate one in the config
-            if self.client.config.get(ConfigKeys.KEY_APP_KEY) is None:
-                self.client.get_secrets()
-
         except Exception as err:
             raise AnsibleError("Keeper Ansible error: {}".format(err))
 

@@ -6,6 +6,9 @@ import tempfile
 import json
 
 from keeper_secrets_manager_ansible import KeeperAnsible
+from keeper_secrets_manager_ansible.__main__ import main
+import io
+from contextlib import redirect_stdout
 
 
 def get_secrets():
@@ -19,8 +22,6 @@ class KeeperAnsibleTest(unittest.TestCase):
         # Add in addition Python libs. This includes the base
         # module for Keeper Ansible and the Keeper SDK.
         self.base_dir = os.path.dirname(os.path.realpath(__file__))
-        sys.path.append(os.path.join(self.base_dir, "..", "modules"))
-        sys.path.append(os.path.join(self.base_dir, "..", "..", "..", "..", "sdk", "python", "core"))
 
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
     def test_config_read_file_json_file(self, mock_get_secrets):
@@ -76,3 +77,48 @@ class KeeperAnsibleTest(unittest.TestCase):
         ka = KeeperAnsible(task_vars=task_vars)
         ka.client.get_secrets()
         mock_get_secrets.assert_called_once()
+
+    def test_ansible_cli_version(self):
+
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            main(["--version"])
+        content = stdout.getvalue()
+        self.assertRegex(content, r'DEFAULT_LOOKUP_PLUGIN_PATH', 'did not find expected text')
+
+    def test_ansible_cli_config(self):
+
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            main(["--config"])
+        content = stdout.getvalue()
+        self.assertRegex(content, r'DEFAULT_ACTION_PLUGIN_PATH', 'did not find DEFAULT_ACTION_PLUGIN_PATH')
+        self.assertRegex(content, r'DEFAULT_LOOKUP_PLUGIN_PATH', 'did not find DEFAULT_LOOKUP_PLUGIN_PATH')
+
+        # Test Windows. Future proofing since Ansible doesn't work directly on Windows. :/
+        with patch('platform.system') as mock_system:
+            mock_system.return_value = "Windows"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                main(["--config"])
+            content = stdout.getvalue()
+            self.assertRegex(content, r'set DEFAULT_ACTION_PLUGIN_PATH', 'did not find cmd DEFAULT_ACTION_PLUGIN_PATH')
+            self.assertRegex(content, r'set DEFAULT_LOOKUP_PLUGIN_PATH', 'did not find cmd DEFAULT_LOOKUP_PLUGIN_PATH')
+
+        # Test Windows. Powershell!
+        with patch('platform.system') as mock_system:
+            mock_system.return_value = "Windows"
+
+            # We are testing this on Linux. So the path separator is going to be : instead of ;
+            os.environ["PSModulePath"] = "...\moodules:...\Modules:....\Modules"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                main(["--config"])
+            content = stdout.getvalue()
+            self.assertRegex(content, r'\$env:DEFAULT_ACTION_PLUGIN_PATH',
+                             'did not find PS DEFAULT_ACTION_PLUGIN_PATH')
+            self.assertRegex(content, r'\$env:DEFAULT_LOOKUP_PLUGIN_PATH',
+                             'did not find PS DEFAULT_LOOKUP_PLUGIN_PATH')
+

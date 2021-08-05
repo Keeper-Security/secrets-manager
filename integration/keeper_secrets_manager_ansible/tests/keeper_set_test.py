@@ -82,9 +82,6 @@ class KeeperSetTest(unittest.TestCase):
         # Add in addition Python libs. This includes the base
         # module for Keeper Ansible and the Keeper SDK.
         self.base_dir = os.path.dirname(os.path.realpath(__file__))
-        sys.path.append(os.path.join(self.base_dir, "..", "modules"))
-        sys.path.append(os.path.join(self.base_dir, "..", "..", "..", "..", "sdk", "python", "core"))
-
         self.ansible_base_dir = os.path.join(self.base_dir, "ansible_example")
 
         # Create a temp place to the record files. Delete it in the tear down of the test.
