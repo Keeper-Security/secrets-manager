@@ -1,16 +1,21 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel.Design;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 
+[assembly: InternalsVisibleTo("SecretsManager.Test.Core")]
+
 namespace SecretsManager
 {
+    using QueryFunction = Func<string, TransmissionKey, EncryptedPayload, Task<KeeperHttpResponse>>;
+    using GetRandomBytesFunction = Func<int, byte[]>;
+
     public interface IKeyValueStorage
     {
         string GetString(string key);
@@ -23,10 +28,12 @@ namespace SecretsManager
     public class SecretsManagerOptions
     {
         public IKeyValueStorage Storage { get; }
+        public QueryFunction QueryFunction { get; }
 
-        public SecretsManagerOptions(IKeyValueStorage storage)
+        public SecretsManagerOptions(IKeyValueStorage storage, QueryFunction queryFunction = null)
         {
             Storage = storage;
+            QueryFunction = queryFunction;
         }
     }
 
@@ -415,7 +422,9 @@ namespace SecretsManager
 
         private static TransmissionKey GenerateTransmissionKey(IKeyValueStorage storage)
         {
-            var transmissionKey = CryptoUtils.GetRandomBytes(32);
+            var transmissionKey = TransmissionKeyStub == null
+                ? CryptoUtils.GetRandomBytes(32)
+                : TransmissionKeyStub(32);
             var keyNumberString = storage.GetString(KeyServerPubicKeyId);
             var keyNumber = keyNumberString == null ? 7 : int.Parse(keyNumberString);
             if (!KeeperPublicKeys.TryGetValue(keyNumber, out var keeperPublicKey))
@@ -426,6 +435,10 @@ namespace SecretsManager
             var encryptedKey = CryptoUtils.PublicEncrypt(transmissionKey, keeperPublicKey);
             return new TransmissionKey(keyNumber, transmissionKey, encryptedKey);
         }
+
+        [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+        [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+        internal static GetRandomBytesFunction TransmissionKeyStub { get; set; }
 
         private static EncryptedPayload EncryptAndSignPayload<T>(IKeyValueStorage storage,
             TransmissionKey transmissionKey, T payload)
@@ -443,7 +456,8 @@ namespace SecretsManager
             return new EncryptedPayload(encryptedPayload, signature);
         }
 
-        private static async Task<KeeperHttpResponse> PostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload, bool allowUnverifiedCertificate)
+        [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+        public static async Task<KeeperHttpResponse> PostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload, bool allowUnverifiedCertificate)
         {
             static byte[] StreamToBytes(Stream stream)
             {
@@ -503,7 +517,9 @@ namespace SecretsManager
             {
                 var transmissionKey = GenerateTransmissionKey(options.Storage);
                 var encryptedPayload = EncryptAndSignPayload(options.Storage, transmissionKey, payload);
-                var response = await PostFunction(url, transmissionKey, encryptedPayload, false);
+                var response = options.QueryFunction == null
+                    ? await PostFunction(url, transmissionKey, encryptedPayload, false)
+                    : await options.QueryFunction(url, transmissionKey, encryptedPayload);
                 if (response.IsError)
                 {
                     try

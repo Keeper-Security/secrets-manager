@@ -1,10 +1,8 @@
 using System;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using Org.BouncyCastle.Asn1;
-using Org.BouncyCastle.Asn1.Ocsp;
 using Org.BouncyCastle.Asn1.X9;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Engines;
@@ -114,7 +112,7 @@ namespace SecretsManager
             return SHA256.Create().ComputeHash(commonSecret);
         }
 
-        public static GcmBlockCipher GetCipher(bool forEncryption, byte[] iv, byte[] key)
+        private static GcmBlockCipher GetCipher(bool forEncryption, byte[] iv, byte[] key)
         {
             var cipher = new GcmBlockCipher(new AesEngine());
             var gcmParameterSpec = new AeadParameters(new KeyParameter(key), 16 * 8, iv);
