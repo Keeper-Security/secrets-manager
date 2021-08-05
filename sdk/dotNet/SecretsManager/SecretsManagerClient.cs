@@ -40,7 +40,7 @@ namespace SecretsManager
     public class TransmissionKey
     {
         public int PublicKeyId { get; }
-        public byte[] Key { get; }
+        public byte[] Key { get; set; }
         public byte[] EncryptedKey { get; }
 
         public TransmissionKey(int publicKeyId, byte[] key, byte[] encryptedKey)
@@ -454,6 +454,27 @@ namespace SecretsManager
             var signatureBase = transmissionKey.EncryptedKey.Concat(encryptedPayload).ToArray();
             var signature = CryptoUtils.Sign(signatureBase, privateKey);
             return new EncryptedPayload(encryptedPayload, signature);
+        }
+
+        public static async Task<KeeperHttpResponse> CachingPostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload)
+        {
+            try
+            {
+                var response = await PostFunction(url, transmissionKey, payload, false);
+                if (!response.IsError)
+                {
+                    CacheStorage.SaveCachedValue(transmissionKey.Key.Concat(response.Data).ToArray());
+                }
+                return response;
+            }
+            catch (Exception)
+            {
+                var cachedData = CacheStorage.GetCachedValue();
+                var cachedTransmissionKey = cachedData.Take(32).ToArray();
+                transmissionKey.Key = cachedTransmissionKey;
+                var data = cachedData.Skip(32).ToArray();
+                return new KeeperHttpResponse(data, false);
+            }
         }
 
         [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]

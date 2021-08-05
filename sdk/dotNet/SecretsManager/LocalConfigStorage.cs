@@ -87,4 +87,17 @@ namespace SecretsManager
             SaveToFile();
         }
     }
+
+    public class CacheStorage
+    {
+        public static void SaveCachedValue(byte[] data)
+        {
+            File.WriteAllBytes("cache.dat", data);
+        }
+
+        public static byte[] GetCachedValue()
+        {
+            return File.ReadAllBytes("cache.dat");
+        }
+    }
 }
