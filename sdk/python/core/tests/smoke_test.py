@@ -196,7 +196,7 @@ class SmokeTest(unittest.TestCase):
         with patch("importlib_metadata.version") as mock_meta:
             mock_meta.return_value = "0.1.23a0"
 
-            client_version = get_client_version()
+            client_version = get_client_version(hardcode=False)
             self.assertEqual("16.1.23", client_version, "did not get the correct client version from 0.1.23a0")
 
         with patch("importlib_metadata.version") as mock_meta:
@@ -204,3 +204,6 @@ class SmokeTest(unittest.TestCase):
 
             client_version = get_client_version()
             self.assertEqual("16.2.24", client_version, "did not get the correct client version from 0.2.24")
+
+        client_version = get_client_version(hardcode=True)
+        self.assertEqual("16.0.1", client_version, "did not get the correct client version for hardcoded")
