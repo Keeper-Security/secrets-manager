@@ -62,14 +62,21 @@ class Table:
     @staticmethod
     def _terminal_width():
 
-        w = os.get_terminal_size().columns
-        h = os.get_terminal_size().lines
+        w = 80
+        h = 25
 
-        if platform.system() != "Windows":
-            import fcntl, termios, struct
-            h, w, hp, wp = struct.unpack('HHHH',
-                                         fcntl.ioctl(0, termios.TIOCGWINSZ,
-                                                     struct.pack('HHHH', 0, 0, 0, 0)))
+        # We might be in an environment where is no terminal. (ie testing)
+        try:
+            if platform.system() == "Windows":
+                w = os.get_terminal_size().columns
+                h = os.get_terminal_size().lines
+            else:
+                import fcntl, termios, struct
+                h, w, hp, wp = struct.unpack('HHHH',
+                                             fcntl.ioctl(0, termios.TIOCGWINSZ,
+                                                         struct.pack('HHHH', 0, 0, 0, 0)))
+        except OSError as _:
+            pass
 
         # Remove 1 from with width to be safe.
         return w - 1, h
