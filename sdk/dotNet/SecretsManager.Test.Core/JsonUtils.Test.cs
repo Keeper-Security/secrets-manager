@@ -2,7 +2,7 @@ using NUnit.Framework;
 
 namespace SecretsManager.Test
 {
-    public class Tests
+    public class JsonUtilsTests
     {
         [Test]
         public void ParseAndSerializeShouldNotChangeTheData()
