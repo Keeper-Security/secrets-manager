@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import patch
 import os
-import sys
 from .ansible_test_framework import AnsibleTestFramework, RecordMaker
+import keeper_secrets_manager_ansible.plugins
 import tempfile
 
 
@@ -45,9 +45,6 @@ class KeeperGetTest(unittest.TestCase):
         # Add in addition Python libs. This includes the base
         # module for Keeper Ansible and the Keeper SDK.
         self.base_dir = os.path.dirname(os.path.realpath(__file__))
-        sys.path.append(os.path.join(self.base_dir, "..", "modules"))
-        sys.path.append(os.path.join(self.base_dir, "..", "..", "..", "..", "sdk", "python", "core"))
-
         self.ansible_base_dir = os.path.join(self.base_dir, "ansible_example")
 
     def _common(self):
@@ -56,7 +53,7 @@ class KeeperGetTest(unittest.TestCase):
                 base_dir=self.ansible_base_dir,
                 playbook=os.path.join("playbooks", "keeper_get.yml"),
                 inventory=os.path.join("inventory", "all"),
-                plugin_base_dir=os.path.join(self.base_dir, "..", "plugins"),
+                plugin_base_dir=os.path.join(os.path.dirname(keeper_secrets_manager_ansible.plugins.__file__)),
                 vars={
                     "tmp_dir": temp_dir,
                     "uid": "TRd_567FkHy-CeGsAzs8aA"

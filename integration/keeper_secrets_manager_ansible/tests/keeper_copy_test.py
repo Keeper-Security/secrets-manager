@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import patch
 import os
-import sys
 from .ansible_test_framework import AnsibleTestFramework, RecordMaker
+import keeper_secrets_manager_ansible.plugins
 import tempfile
 from requests import Response
 
@@ -54,9 +54,6 @@ class KeeperCopyTest(unittest.TestCase):
         # Add in addition Python libs. This includes the base
         # module for Keeper Ansible and the Keeper SDK.
         self.base_dir = os.path.dirname(os.path.realpath(__file__))
-        sys.path.append(os.path.join(self.base_dir, "..", "modules"))
-        sys.path.append(os.path.join(self.base_dir, "..", "..", "..", "..", "sdk", "python", "core"))
-
         self.ansible_base_dir = os.path.join(self.base_dir, "ansible_example")
 
     def _common(self):
@@ -66,7 +63,7 @@ class KeeperCopyTest(unittest.TestCase):
                 base_dir=self.ansible_base_dir,
                 playbook=os.path.join("playbooks", "keeper_copy.yml"),
                 inventory=os.path.join("inventory", "all"),
-                plugin_base_dir=os.path.join(self.base_dir, "..", "plugins"),
+                plugin_base_dir=os.path.join(os.path.dirname(keeper_secrets_manager_ansible.plugins.__file__)),
                 vars={
                     "tmp_dir": temp_dir,
                     "password_uid": "TRd_567FkHy-CeGsAzs8aA",
@@ -75,8 +72,6 @@ class KeeperCopyTest(unittest.TestCase):
                 }
             )
             r, out, err = a.run()
-            print("OUT", out)
-            print("ERR", err)
             result = r[0]["localhost"]
             self.assertEqual(result["ok"], 3, "3 things didn't happen")
             self.assertEqual(result["failures"], 0, "failures was n ot 0")

@@ -1,13 +1,14 @@
 ---
-tmp_dir: /tmp/ansible_test
-keeper_app_key: ej23pYZ8-8JmxPsmA81eNamm_T_xZDWdmCIZCgf7hnA
-keeper_client_id: QVHuoUec9767-L4pc_dzKM7ZLnvDryCPhLk7JjhF8T56FFyOPbzw2wkDzN3jhS_iJ09b2G5O1sAn-D-u7PtILA
-keeper_token: zidx8w9nVxI8gNzO_Qt8kpgbckutZPdpr4ybhipzDMY
-keeper_private_key: "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgdYrlxTjjRRLCjh9Du6rM2VCTkO_aJ34HqIAu2o1QyUihRANCAAQyntlOEBAGZCnZ_z5Bz--2stQ530uTIbroCkadvVi996wRn580Pg0u4XjKCssTroHe3rgz8dZE2CHfzFq_swey"
+tmp_dir: /tmp
+keeper_app_key: zhLwBKEIdiXaqVwlpnIXEl6jm_nO7WpPxYhKZv2LPGY
+keeper_client_id: PSuLOZzlr0yW1699ilnAQRklezB3W4Fhb8GhyXZw3UcqtdZ46mS3KD-p0z92VTanWSOgi11IsK9S40DyxTMgag
+keeper_token: LnzftppgfI77XgY6lTroY2ER7QeqQWSbelITJVhCWTc
+keeper_private_key: "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg85jyaGDUCOCh67-1YVqfC1qDz6AQspTsAAsaIzl06hGhRANCAARMZqKCbuUIKKkSt6KuhSA-NtJracKm1dLCCciE2OyWlbEo-ieoccu7zzQrL2GjCzp-1qV57nJMLh0TD08wFmqD"
 keeper_hostname: https://dev.keepersecurity.com
 keeper_verify_ssl_certs: False
-uid: TRd_567FkHy-CeGsAzs8aA
-password_uid: TRd_567FkHy-CeGsAzs8aA
-file_uid: A_7YpGBUgRTeDEQLhVRo0Q
-file_name: nailing it.mp4
+uid: EG6KdJaaLG7esRZbMnfbFA
+password_uid: EG6KdJaaLG7esRZbMnfbFA
+#file_uid: EG6KdJaaLG7esRZbMnfbFA
+file_uid: GmMi9CdZ_HXhF3GiGHg3Wg
+file_name: IMG_0021.jpg
 new_password: "NEW PASSWORD"

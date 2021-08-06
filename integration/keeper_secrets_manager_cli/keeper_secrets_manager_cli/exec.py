@@ -16,7 +16,6 @@ import subprocess
 from keeper_secrets_manager_core.core import SecretsManager
 import re
 import json
-import traceback
 
 
 class Exec:
@@ -81,7 +80,7 @@ class Exec:
             # Python 3.6's subprocess.run does not have a capture flag. Instead it used the PIPE with
             # the stderr parameter.
             kwargs = {}
-            if (sys.version_info[0] == 3 and sys.version_info[1] < 7 ) and capture_output is True:
+            if (sys.version_info[0] == 3 and sys.version_info[1] < 7) and capture_output is True:
                 kwargs["stdout"] = subprocess.PIPE
             else:
                 kwargs["capture_output"] = capture_output

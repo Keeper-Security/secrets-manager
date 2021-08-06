@@ -81,6 +81,11 @@ class SecretsManager:
         if log_level is None:
             log_level = SecretsManager.log_level
 
+        valid_log_levels = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"]
+        if log_level not in valid_log_levels:
+            raise ValueError("Log level {} is invalid. Valid values are: {}".format(log_level,
+                                                                                    ", ".join(valid_log_levels)))
+
         # basicConfig will not clobber a user's logging configuration, even the log level
         # "This function does nothing if the root logger already has handlers configured, unless the keyword argument
         # force is set to True."
