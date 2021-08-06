@@ -84,7 +84,7 @@ class KeeperAnsibleTest(unittest.TestCase):
         with redirect_stdout(stdout):
             main(["--version"])
         content = stdout.getvalue()
-        self.assertRegex(content, r'DEFAULT_LOOKUP_PLUGIN_PATH', 'did not find expected text')
+        self.assertRegex(content, r'ANSIBLE_LOOKUP_PLUGINS', 'did not find expected text')
 
     def test_ansible_cli_config(self):
 
@@ -92,8 +92,8 @@ class KeeperAnsibleTest(unittest.TestCase):
         with redirect_stdout(stdout):
             main(["--config"])
         content = stdout.getvalue()
-        self.assertRegex(content, r'DEFAULT_ACTION_PLUGIN_PATH', 'did not find DEFAULT_ACTION_PLUGIN_PATH')
-        self.assertRegex(content, r'DEFAULT_LOOKUP_PLUGIN_PATH', 'did not find DEFAULT_LOOKUP_PLUGIN_PATH')
+        self.assertRegex(content, r'ANSIBLE_ACTION_PLUGINS', 'did not find ANSIBLE_ACTION_PLUGINS')
+        self.assertRegex(content, r'ANSIBLE_LOOKUP_PLUGINS', 'did not find ANSIBLE_LOOKUP_PLUGINS')
 
         # Test Windows. Future proofing since Ansible doesn't work directly on Windows. :/
         with patch('platform.system') as mock_system:
@@ -103,8 +103,8 @@ class KeeperAnsibleTest(unittest.TestCase):
             with redirect_stdout(stdout):
                 main(["--config"])
             content = stdout.getvalue()
-            self.assertRegex(content, r'set DEFAULT_ACTION_PLUGIN_PATH', 'did not find cmd DEFAULT_ACTION_PLUGIN_PATH')
-            self.assertRegex(content, r'set DEFAULT_LOOKUP_PLUGIN_PATH', 'did not find cmd DEFAULT_LOOKUP_PLUGIN_PATH')
+            self.assertRegex(content, r'set ANSIBLE_ACTION_PLUGINS', 'did not find cmd ANSIBLE_ACTION_PLUGINS')
+            self.assertRegex(content, r'set ANSIBLE_LOOKUP_PLUGINS', 'did not find cmd ANSIBLE_LOOKUP_PLUGINS')
 
         # Test Windows. Powershell!
         with patch('platform.system') as mock_system:
@@ -117,8 +117,8 @@ class KeeperAnsibleTest(unittest.TestCase):
             with redirect_stdout(stdout):
                 main(["--config"])
             content = stdout.getvalue()
-            self.assertRegex(content, r'\$env:DEFAULT_ACTION_PLUGIN_PATH',
-                             'did not find PS DEFAULT_ACTION_PLUGIN_PATH')
-            self.assertRegex(content, r'\$env:DEFAULT_LOOKUP_PLUGIN_PATH',
-                             'did not find PS DEFAULT_LOOKUP_PLUGIN_PATH')
+            self.assertRegex(content, r'\$env:ANSIBLE_ACTION_PLUGINS',
+                             'did not find PS ANSIBLE_ACTION_PLUGINS')
+            self.assertRegex(content, r'\$env:ANSIBLE_LOOKUP_PLUGINS',
+                             'did not find PS ANSIBLE_LOOKUP_PLUGINS')
 
