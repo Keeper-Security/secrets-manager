@@ -35,14 +35,14 @@ def _config():
     if platform.system() == 'Windows':
         is_power_shell = len(os.getenv('PSModulePath', '').split(os.pathsep)) >= 3
         if is_power_shell is True:
-            print('$env:DEFAULT_ACTION_PLUGIN_PATH = "{}"'.format(action_plugin_dir))
-            print('$env:DEFAULT_LOOKUP_PLUGIN_PATH = "{}"'.format(lookup_plugin_dir))
+            print('$env:ANSIBLE_ACTION_PLUGINS = "{}"'.format(action_plugin_dir))
+            print('$env:ANSIBLE_LOOKUP_PLUGINS = "{}"'.format(lookup_plugin_dir))
         else:
-            print('set DEFAULT_ACTION_PLUGIN_PATH={}'.format(action_plugin_dir))
-            print('set DEFAULT_LOOKUP_PLUGIN_PATH={}'.format(lookup_plugin_dir))
+            print('set ANSIBLE_ACTION_PLUGINS={}'.format(action_plugin_dir))
+            print('set ANSIBLE_LOOKUP_PLUGINS={}'.format(lookup_plugin_dir))
     else:
-        print("DEFAULT_ACTION_PLUGIN_PATH={}".format(action_plugin_dir))
-        print("DEFAULT_LOOKUP_PLUGIN_PATH={}".format(lookup_plugin_dir))
+        print("ANSIBLE_ACTION_PLUGINS={}".format(action_plugin_dir))
+        print("ANSIBLE_LOOKUP_PLUGINS={}".format(lookup_plugin_dir))
 
 def _version():
     # Unit test do not know their version
@@ -70,8 +70,8 @@ def _version():
     print("SDK Install: {}".format(os.path.dirname(os.path.realpath(keeper_secrets_manager_core.__file__))))
     print("Ansible Version: {}".format(versions["ansible"]))
     print("Ansible Install: {}".format(os.path.dirname(os.path.realpath(ansible.__file__))))
-    print("DEFAULT_ACTION_PLUGIN_PATH is {}".format(os.environ.get("DEFAULT_ACTION_PLUGIN_PATH", "Not Set")))
-    print("DEFAULT_LOOKUP_PLUGIN_PATH is {}".format(os.environ.get("DEFAULT_LOOKUP_PLUGIN_PATH", "Not Set")))
+    print("ANSIBLE_ACTION_PLUGINS env is {}".format(os.environ.get("ANSIBLE_ACTION_PLUGINS", "Not Set")))
+    print("ANSIBLE_LOOKUP_PLUGINS env is {}".format(os.environ.get("ANSIBLE_LOOKUP_PLUGINS", "Not Set")))
 
 def _init(args):
     task_args = {

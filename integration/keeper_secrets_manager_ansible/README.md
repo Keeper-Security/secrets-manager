@@ -29,8 +29,8 @@ Get plugins directory paths.
     $ keeper_ansible --config
 
     # Below are the directory paths to action and lookup plugins.
-    DEFAULT_ACTION_PLUGIN_PATH=.../site-packages/keeper_secrets_manager_ansible/plugins/action_plugins
-    DEFAULT_LOOKUP_PLUGIN_PATH=.../site-packages/keeper_secrets_manager_ansible/plugins/lookup_plugins
+    ANSIBLE_ACTION_PLUGINS=.../site-packages/keeper_secrets_manager_ansible/plugins/action_plugins
+    ANSIBLE_LOOKUP_PLUGINS=.../site-packages/keeper_secrets_manager_ansible/plugins/lookup_plugins
 
 Either copy the paths into your ansible.cfg.
 

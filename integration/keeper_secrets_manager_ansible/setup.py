@@ -16,7 +16,7 @@ install_requires = [
 
 setup(
     name="keeper-secrets-manager-ansible",
-    version='0.0.6',
+    version='0.0.7',
     description="Keeper Secrets Manager plugins for Ansible.",
     long_description=long_description,
     long_description_content_type="text/markdown",
