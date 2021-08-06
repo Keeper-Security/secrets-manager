@@ -17,6 +17,7 @@ import os
 import platform
 import importlib_metadata
 import keeper_secrets_manager_core
+import logging
 import ansible
 
 
@@ -91,23 +92,24 @@ def _init(args):
     except Exception as err:
         sys.exit("Keeper Ansible had an error: {}".format(err))
 
-def main(cli_args):
+def main(*args):
     parser = argparse.ArgumentParser(description='Ansible config generator')
     parser.add_argument('--keeper_token', metavar='-t', type=str, required=False, help='client key')
     parser.add_argument('--keeper_config_file', metavar='--cf', type=str, help='config file name', required=False)
     parser.add_argument('--keeper_hostname', metavar='--host', type=str, help='host name', required=False)
     parser.add_argument('--config', help='Get configuration information', action='store_true')
     parser.add_argument('--version', help='Get version information', action='store_true')
-    args = parser.parse_args(cli_args)
+    parsed_args = parser.parse_args(*args)
 
     # This is use show the location of the plugin directories
-    if args.config is True:
+    if parsed_args.config is True:
         _config()
-    elif args.version is True:
+    elif parsed_args.version is True:
         _version()
     else:
-        _init(args)
+        _init(parsed_args)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.ERROR)
     main(sys.argv[1:])

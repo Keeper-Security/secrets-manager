@@ -4,16 +4,22 @@ from setuptools import setup, find_packages
 here = os.path.abspath(os.path.dirname(__file__))
 os.chdir(here)
 
+# Get the long description from the README.md file
+with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
+    long_description = fp.read()
+
 install_requires = [
-    'keeper-secrets-manager-ansible',
+    'keeper-secrets-manager-core',
     'importlib_metadata',
     'ansible'
 ]
 
 setup(
     name="keeper-secrets-manager-ansible",
-    version='0.0.3',
+    version='0.0.6',
     description="Keeper Secrets Manager plugins for Ansible.",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
     author="Keeper Security",
     author_email="ops@keepersecurity.com",
     url="https://github.com/Keeper-Security/secrets-manager",
@@ -32,6 +38,7 @@ setup(
     classifiers=[
         "Development Status :: 1 - Planning",
         "Intended Audience :: Developers",
+        "Intended Audience :: System Administrators",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python",
@@ -41,9 +48,8 @@ setup(
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Topic :: Security",
-        "System :: Installation/Setup",
-        "System :: Systems Administration",
-        "Utilities"
+        "Topic :: System :: Installation/Setup",
+        "Topic :: System :: Systems Administration"
     ],
     entry_points={
         "console_scripts": [
