@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 import os
-import sys
+import keeper_secrets_manager_ansible.plugins
 from .ansible_test_framework import AnsibleTestFramework, RecordMaker
 import tempfile
 
@@ -53,7 +53,7 @@ class KeeperLookupTest(unittest.TestCase):
                 base_dir=self.ansible_base_dir,
                 playbook=os.path.join("playbooks", "keeper_lookup.yml"),
                 inventory=os.path.join("inventory", "all"),
-                plugin_base_dir=os.path.join(self.base_dir, "..", "plugins"),
+                plugin_base_dir=os.path.join(os.path.dirname(keeper_secrets_manager_ansible.plugins.__file__)),
                 vars={
                     "tmp_dir": temp_dir,
                     "uid": "TRd_567FkHy-CeGsAzs8aA"
