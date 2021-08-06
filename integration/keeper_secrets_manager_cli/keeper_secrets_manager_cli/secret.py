@@ -14,9 +14,11 @@ import json
 from jsonpath_rw_ext import parse
 import sys
 from collections import deque
-import prettytable
+from colorama import Fore, Style
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
-from .common import table_setup
+from .table import Table, ColumnAlign
+import uuid
+import logging
 
 
 class Secret:
@@ -25,11 +27,37 @@ class Secret:
     support_ref_types = {
         "addressRef": "address"
     }
+    redact_str = "****"
+    redact_placeholder = "___" + str(uuid.uuid4()) + "___"
+    redact_type_list = ['password', 'secret', 'pinCode', 'securityQuestion', 'oneTimeCode']
 
     def __init__(self, cli):
         self.cli = cli
 
-    def _record_to_dict(self, record, load_references=False):
+    @staticmethod
+    def _should_mask(field_dict):
+        return field_dict.get("type") in Secret.redact_type_list
+
+    @staticmethod
+    def _redact_value(value, use_color=True):
+        if type(value) is dict:
+            for key in value:
+                value[key] = Secret._redact_value(value[key], use_color)
+        elif type(value) is list:
+            new_list = []
+            for item in value:
+                new_list.append(Secret._redact_value(item, use_color))
+            value = new_list
+        else:
+            # If we are using color we want to use a unique a placeholder to replace after
+            # we have a string for the entire value.
+            if use_color is True:
+                value = Secret.redact_placeholder
+            else:
+                value = Secret.redact_str
+        return value
+
+    def _record_to_dict(self, record, load_references=False, unmask=False, use_color=True):
         custom_fields = []
         raw_custom_fields = record.dict.get('custom', [])
 
@@ -41,6 +69,12 @@ class Secret:
             index = 0
             replacement_data = {}
             for custom_field in raw_custom_fields:
+
+                # If this is a maskable field and we are not going to unmask there is no need to load in the
+                # reference value.
+                if unmask is False and Secret._should_mask(custom_field):
+                    continue
+
                 field_type = custom_field.get("type")
                 value = custom_field.get("value")
 
@@ -68,6 +102,11 @@ class Secret:
             for custom_field in raw_custom_fields:
                 field_type = custom_field.get("type")
                 value = custom_field.get("value")
+
+                # Should we mask the values?
+                if unmask is False and Secret._should_mask(custom_field):
+                    value = Secret._redact_value(value, use_color)
+
                 custom_fields.append({
                     "label": custom_field.get("label", field_type),
                     "type": field_type,
@@ -81,8 +120,9 @@ class Secret:
             "fields": [
                 {
                     "type": x["type"],
-                    "value": x["value"]
-                } for x in record.dict.get('fields')
+                    "value": Secret._redact_value(x["value"], use_color) if unmask is False and Secret._should_mask(x)
+                    else x["value"]
+                } for x in record.dict.get('fields', [])
             ],
             "custom_fields": custom_fields,
             "files": [{
@@ -97,16 +137,29 @@ class Secret:
         return ret
 
     @staticmethod
-    def _format_record(record_dict):
-        ret = ""
-        ret += " Record: {}\n".format(record_dict["uid"])
-        ret += " Title: {}\n".format(record_dict["title"])
-        ret += " Record Type: {}\n".format(record_dict["type"])
+    def _color_it(value, color=Style.RESET_ALL, use_color=True):
+        if use_color is True:
+            value = color + value + Style.RESET_ALL
+        return value
+
+    @staticmethod
+    def _replace_redact_placeholder(value, use_color=True, reset_color=Style.RESET_ALL):
+        redact_str = Secret.redact_str
+        if use_color is True:
+            redact_str = Fore.RED + redact_str + reset_color
+        return value.replace(Secret.redact_placeholder, redact_str)
+
+    @staticmethod
+    def _format_record(record_dict, use_color=True):
+        ret = "\n"
+        ret += " Record: {}\n".format(Secret._color_it(record_dict["uid"], Fore.YELLOW, use_color))
+        ret += " Title: {}\n".format(Secret._color_it(record_dict["title"], Fore.YELLOW, use_color))
+        ret += " Record Type: {}\n".format(Secret._color_it(record_dict["type"], Fore.YELLOW, use_color))
         ret += "\n"
 
-        table = prettytable.PrettyTable()
-        table.field_names = ["Field", "Value"]
-        table_setup(table)
+        table = Table(use_color=use_color)
+        table.add_column("Field", data_color=Fore.GREEN)
+        table.add_column("Value", data_color=Fore.YELLOW, allow_wrap=True)
         for field in record_dict["fields"]:
             value = field["value"]
             if len(value) == 0:
@@ -117,6 +170,8 @@ class Secret:
                 value = value[0]
                 value = value.replace('\n', '\\n')
 
+            value = Secret._replace_redact_placeholder(value, use_color=use_color, reset_color=Fore.YELLOW)
+
             # Don't show blank value pairs
             if value == "":
                 continue
@@ -125,9 +180,10 @@ class Secret:
 
         if len(record_dict["custom_fields"]) > 0:
             ret += "\n"
-            table = prettytable.PrettyTable()
-            table.field_names = ["Custom Field", "Type", "Value"]
-            table_setup(table)
+            table = Table(use_color=use_color)
+            table.add_column("Custom Field", data_color=Fore.GREEN)
+            table.add_column("Type")
+            table.add_column("Value", data_color=Fore.YELLOW, allow_wrap=True)
 
             problems = []
             seen = {}
@@ -145,6 +201,8 @@ class Secret:
                 if value == "":
                     continue
 
+                value = Secret._replace_redact_placeholder(value, use_color=use_color, reset_color=Fore.YELLOW)
+
                 label = field["label"]
                 if field["label"] in seen:
                     problems.append(field["label"])
@@ -160,12 +218,12 @@ class Secret:
 
         if len(record_dict["files"]) > 0:
             ret += "\n"
-            table = prettytable.PrettyTable(["File Name", "Type", "Size"])
-            table_setup(table)
-            table.align["Type"] = 'l'
-            table.align["Size"] = 'r'
+            table = Table(use_color=use_color)
+            table.add_column("File Name", allow_wrap=True, data_color=Fore.GREEN)
+            table.add_column("Type")
+            table.add_column("Size", align=ColumnAlign.RIGHT)
             for file in record_dict["files"]:
-                row = [file["title"], file["type"], file["size"]]
+                row = [file["title"], file["type"], "{:n}".format(int(file["size"]))]
                 table.add_row(row)
             ret += table.get_string() + "\n"
 
@@ -181,10 +239,10 @@ class Secret:
             records = records[0]
         return records
 
-    def output_results(self, records, output_format, force_array):
+    def output_results(self, records, output_format, force_array, use_color=True):
         if output_format == 'text':
             for record_dict in records:
-                self.cli.output(self._format_record(record_dict))
+                self.cli.output(self._format_record(record_dict, use_color=use_color))
         elif output_format == 'json':
             self.cli.output(json.dumps(Secret._adjust_records(records, force_array), indent=4))
         else:
@@ -205,12 +263,16 @@ class Secret:
         return results
 
     def query(self, uids=None, output_format='json', jsonpath_query=None, raw=False, force_array=False,
-              text_join_char='\n', load_references=False):
+              text_join_char='\n', load_references=False,  unmask=False, use_color=True):
+
+        # If the output is JSON, automatically unmask password-like values.
+        if output_format == 'json':
+            unmask = True
 
         records = []
         try:
             for record in self.cli.client.get_secrets(uids=uids):
-                records.append(self._record_to_dict(record, load_references=load_references))
+                records.append(self._record_to_dict(record, load_references=load_references, unmask=unmask))
         except KeeperError as err:
             sys.exit("Could not query the records: {}".format(err.message))
         except KeeperAccessDenied as err:
@@ -249,22 +311,24 @@ class Secret:
             except Exception as err:
                 sys.exit("JSONPath failed: {}".format(err))
         else:
-            return self.output_results(records=records, output_format=output_format, force_array=force_array)
+            return self.output_results(records=records, output_format=output_format, force_array=force_array,
+                                       use_color=use_color)
 
     @staticmethod
-    def _format_list(record_dict):
-        table = prettytable.PrettyTable()
-        table.field_names = ["UID", "Record Type", "Title"]
-        table_setup(table)
+    def _format_list(record_dict, use_color=True):
+        table = Table(use_color=use_color)
+        table.add_column("UID", data_color=Fore.GREEN)
+        table.add_column("Record Type")
+        table.add_column("Title", data_color=Fore.YELLOW)
         for record in record_dict:
             table.add_row([record["uid"], record["type"], record["title"]])
-        return table.get_string() + "\n"
+        return "\n" + table.get_string() + "\n"
 
-    def secret_list(self, uids=None, output_format='json'):
+    def secret_list(self, uids=None, output_format='json', use_color=True):
 
-        record_dict = self.query(uids=uids, output_format='dict')
+        record_dict = self.query(uids=uids, output_format='dict', unmask=True, use_color=use_color)
         if output_format == 'text':
-            self.cli.output(self._format_list(record_dict))
+            self.cli.output(self._format_list(record_dict, use_color=use_color))
         elif output_format == 'json':
             records = [{"uid": x.get("uid"), "title": x.get("title"), "record_type": x.get("type")}
                        for x in record_dict]

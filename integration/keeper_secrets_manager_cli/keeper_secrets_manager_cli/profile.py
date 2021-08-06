@@ -16,8 +16,8 @@ from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
 from keeper_secrets_manager_core.utils import encrypt_aes, decrypt_aes
-from .common import table_setup
-import prettytable
+from .table import Table, ColumnAlign
+from colorama import Fore
 import sys
 import json
 import base64
@@ -32,6 +32,7 @@ class Profile:
     default_profile = os.environ.get("KSM_CLI_PROFILE", "_default")
     default_ini_file = os.environ.get("KSM_INI_FILE", "keeper.ini")
     log_level_key = "log_level"
+    color_key = "color"
 
     def __init__(self, cli, ini_file=None):
 
@@ -210,7 +211,7 @@ class Profile:
 
         print("Added profile {} to INI config file located at {}".format(profile_name, ini_file), file=sys.stderr)
 
-    def list_profiles(self, output='text'):
+    def list_profiles(self, output='text', use_color=True):
 
         profiles = []
 
@@ -226,14 +227,14 @@ class Profile:
                 })
 
             if output == 'text':
-                table = prettytable.PrettyTable()
-                table.field_names = ["Active", "Profile"]
-                table_setup(table)
+                table = Table(use_color=use_color)
+                table.add_column("Active", align=ColumnAlign.CENTER, data_color=Fore.RED)
+                table.add_column("Profile", data_color=Fore.YELLOW)
 
                 for profile in profiles:
                     table.add_row(["*" if profile["active"] is True else " ", profile["name"]])
 
-                self.cli.output(table.get_string() + "\n")
+                self.cli.output("\n" + table.get_string() + "\n")
             elif output == 'json':
                 self.cli.output(json.dumps(profiles))
             return profiles
@@ -320,8 +321,15 @@ class Profile:
         self.cli.log_level = level
         self.save()
 
+    def set_color(self, on_off):
+        common_config = self._get_common_config("Cannot set log level.")
+        common_config[Profile.color_key] = str(on_off)
+        self.cli.use_color = on_off
+        self.save()
+
     def show_config(self):
         common_config = self._get_common_config("Cannot show the config.")
         not_set_text = "-NOT SET-"
         print("Active Profile: {}".format(common_config.get(Profile.active_profile_key, not_set_text)))
         print("Log Level: {}".format(common_config.get(Profile.log_level_key, not_set_text)))
+        print("Color Enabled: {}".format(common_config.get(Profile.color_key, not_set_text)))
