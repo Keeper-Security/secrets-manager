@@ -36,7 +36,7 @@ export default [
         ],
         external: [
             ...Object.keys(pkg.dependencies || {}),
-            "crypto", "constants", "https"
+            "crypto", "constants", "https", "fs"
         ],
         plugins: [
             typescript({

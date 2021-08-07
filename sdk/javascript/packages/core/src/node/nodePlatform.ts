@@ -1,4 +1,4 @@
-import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
+import {KeeperHttpResponse, KeyValueStorage, Platform, TransmissionKey, EncryptedPayload, platform} from '../platform'
 import {privateDerToPublicRaw} from '../utils'
 import {request, RequestOptions} from 'https'
 import {
@@ -103,18 +103,18 @@ const _encrypt = (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
     return Promise.resolve(result)
 }
 
-const _decrypt = (data: Uint8Array, key: Uint8Array): Uint8Array => {
+const _decrypt = (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
     const iv = data.subarray(0, 12)
     const encrypted = data.subarray(12, data.length - 16)
     const tag = data.subarray(data.length - 16)
     const cipher = createDecipheriv('aes-256-gcm', key, iv)
     cipher.setAuthTag(tag)
-    return Buffer.concat([cipher.update(encrypted), cipher.final()])
+    return Promise.resolve(Buffer.concat([cipher.update(encrypted), cipher.final()]))
 }
 
 const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean): Promise<void> => {
     const unwrappingKey = await loadKey(unwrappingKeyId, storage)
-    const unwrappedKey = _decrypt(key, unwrappingKey)
+    const unwrappedKey = await _decrypt(key, unwrappingKey)
     keyCache[keyId] = unwrappedKey
     if (memoryOnly) {
         return
@@ -129,7 +129,7 @@ const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorag
     return _decrypt(data, key)
 }
 
-function hash(data: Uint8Array, tag: string): Promise<Uint8Array> {
+function hash(data: Uint8Array): Promise<Uint8Array> {
     const hash = createHmac('sha512', data).update('KEEPER_SECRETS_MANAGER_CLIENT_ID').digest()
     return Promise.resolve(hash)
 }
@@ -214,7 +214,9 @@ export const nodePlatform: Platform = {
     importKey: importKey,
     unwrap: unwrap,
     encrypt: encrypt,
+    encryptWithKey: _encrypt,
     decrypt: decrypt,
+    decryptWithKey: _decrypt,
     hash: hash,
     publicEncrypt: publicEncrypt,
     sign: sign,
