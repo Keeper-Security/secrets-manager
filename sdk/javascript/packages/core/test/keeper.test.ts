@@ -1,10 +1,9 @@
 import {
-    generateTransmissionKey,
+    KeeperHttpResponse,
     getSecrets,
     initializeStorage,
-    KeyValueStorage,
     platform,
-    KeeperHttpResponse
+    localConfigStorage, SecretManagerOptions
 } from '../'
 
 import * as fs from 'fs';
@@ -28,57 +27,18 @@ test('Get secrets e2e', async () => {
 
     platform.getRandomBytes = getRandomBytesStub
     platform.post = postStub
-    const kvs = inMemoryStorage()
+    const kvs = localConfigStorage()
     await initializeStorage(kvs, 'VB3sGkzVyRB9Lup6WE7Rx-ETFZxyWR2zqY2b9f2zwBo', 'local.keepersecurity.com')
-    const secrets = await getSecrets(kvs)
+    const options: SecretManagerOptions = {
+        storage: kvs,
+        queryFunction: postStub
+    }
+    const secrets = await getSecrets(options)
     expect(secrets.records[1].data.fields[1].value[0]).toBe('N$B!lkoOrVL1RUNDBvn2')
     try {
-        await getSecrets(kvs)
+        await getSecrets(options)
         fail('Did not throw')
     } catch (e) {
         expect(JSON.parse(e.message).message).toBe('Signature is invalid')
     }
 })
-
-const inMemoryStorage = (): KeyValueStorage => {
-
-    const storage: any = {}
-
-    const getValue = (key: string): any | undefined => {
-        const obj = storage[key]
-        return !obj ? undefined : obj.toString();
-    }
-
-    const saveValue = (key: string, value: any): void => {
-        storage[key] = value
-    }
-
-    const clearValue = (key: string): void => {
-        delete storage[key]
-    }
-
-    return {
-        getString: key => Promise.resolve(getValue(key)),
-        saveString: (key, value) => {
-            saveValue(key, value)
-            return Promise.resolve()
-        },
-        getBytes: key => {
-            const bytesString: string = getValue(key)
-            if (bytesString) {
-                return Promise.resolve(platform.base64ToBytes(bytesString))
-            } else {
-                return Promise.resolve(undefined)
-            }
-        },
-        saveBytes: (key, value) => {
-            const bytesString = platform.bytesToBase64(value)
-            saveValue(key, bytesString)
-            return Promise.resolve()
-        },
-        delete: (key) => {
-            clearValue(key)
-            return Promise.resolve()
-        }
-    }
-}

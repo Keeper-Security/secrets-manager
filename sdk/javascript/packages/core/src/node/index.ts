@@ -7,5 +7,6 @@ initialize()
 
 export * from '../keeper'
 export * from '../platform'
+export * from './localConfigStorage'
 
 

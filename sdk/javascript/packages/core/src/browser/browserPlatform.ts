@@ -195,6 +195,17 @@ const _encrypt = async (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> 
     return Uint8Array.of(...iv, ...new Uint8Array(res))
 }
 
+const _decrypt = async (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
+    const _key = await crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['decrypt'])
+    const iv = data.subarray(0, 12)
+    const encrypted = data.subarray(12)
+    const res = await crypto.subtle.decrypt({
+        name: 'AES-GCM',
+        iv: iv
+    }, _key, encrypted)
+    return new Uint8Array(res)
+}
+
 const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean): Promise<void> => {
     const unwrappingKey = await loadKey(unwrappingKeyId, storage)
     if (!unwrappingKey.usages.includes('unwrapKey')) {
@@ -315,7 +326,9 @@ export const browserPlatform: Platform = {
     importKey: importKey,
     unwrap: unwrap,
     encrypt: encrypt,
+    encryptWithKey: _encrypt,
     decrypt: decrypt,
+    decryptWithKey: _decrypt,
     hash: hash,
     publicEncrypt: publicEncrypt,
     sign: sign,

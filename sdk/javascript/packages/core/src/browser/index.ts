@@ -6,5 +6,6 @@ connectPlatform(browserPlatform)
 initialize()
 
 export * from '../keeper'
+export * from './localConfigStorage'
 
 

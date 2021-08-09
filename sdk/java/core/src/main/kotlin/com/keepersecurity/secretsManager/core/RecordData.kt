@@ -51,11 +51,11 @@ sealed class KeeperRecordField
 
 @Serializable
 @SerialName("login")
-data class Login(val value: MutableList<String>) : KeeperRecordField()
+data class Login(var label: String? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("password")
-data class Password(val value: MutableList<String>) : KeeperRecordField()
+data class Password(var label: String? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("url")
@@ -67,7 +67,7 @@ data class FileRef(val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("oneTimeCode")
-data class OneTimeCode(val value: MutableList<String>) : KeeperRecordField()
+data class OneTimeCode(var label: String? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 data class Name(var first: String? = null, var middle: String? = null, var last: String? = null)
@@ -78,7 +78,7 @@ data class Names(val label: String? = null, val value: MutableList<Name>) : Keep
 
 @Serializable
 @SerialName("birthDate")
-data class BirthDate(val value: MutableList<Long>) : KeeperRecordField()
+data class BirthDate(var label: String? = null, val value: MutableList<Long>) : KeeperRecordField()
 
 @Serializable
 @SerialName("date")
@@ -141,6 +141,16 @@ data class PaymentCard(
 @Serializable
 @SerialName("paymentCard")
 data class PaymentCards(val label: String? = null, val value: MutableList<PaymentCard>) : KeeperRecordField()
+
+@Serializable
+data class KeyPair(
+    val publicKey: String? = null,
+    val privateKey: String? = null,
+)
+
+@Serializable
+@SerialName("keyPair")
+data class KeyPairs(val label: String? = null, val value: MutableList<KeyPair>) : KeeperRecordField()
 
 @Serializable
 data class KeeperFileData(
