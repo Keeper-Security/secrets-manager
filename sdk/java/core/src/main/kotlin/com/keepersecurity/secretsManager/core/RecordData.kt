@@ -10,7 +10,7 @@ data class KeeperRecordData(
     val title: String,
     val type: String,
     val fields: List<KeeperRecordField>,
-    val custom: List<KeeperRecordField>,
+    val custom: List<KeeperRecordField>? = null,
     val notes: String? = null
 ) {
     inline fun <reified T> getField(): T? {
@@ -23,7 +23,7 @@ data class KeeperRecordData(
 
     inline fun <reified T> getCustomField(): T? {
         return try {
-            custom.first { x -> x is T } as T
+            custom?.first { x -> x is T } as T
         } catch (e: Exception) {
             null
         }
@@ -39,7 +39,7 @@ data class KeeperRecordData(
 
     fun getCustomField(clazz: Class<out KeeperRecordField>): Any? {
         return try {
-            custom.first { x -> x.javaClass == clazz }
+            custom?.first { x -> x.javaClass == clazz }
         } catch (e: Exception) {
             null
         }
