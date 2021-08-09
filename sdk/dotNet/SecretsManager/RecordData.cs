@@ -22,6 +22,10 @@ namespace SecretsManager
         public string type { get; set; }
         public string label { get; set; }
         public object[] value { get; set; }
+        public bool required { get; set; }
+        public bool privacyScreen { get; set; }
+        public bool enforceGeneration { get; set; }
+        public object complexity { get; set; }
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
