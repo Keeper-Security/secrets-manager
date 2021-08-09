@@ -8,7 +8,7 @@ namespace SecretsManager
     {
         private static readonly JsonSerializerOptions Options = new()
         {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
 
