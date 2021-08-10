@@ -111,7 +111,8 @@ data class KeeperFile(
     val thumbnailUrl: String?
 )
 
-fun initializeStorage(storage: KeyValueStorage, clientKey: String? = null, hostName: String? = null) {
+@JvmOverloads
+fun initializeStorage(storage: KeyValueStorage, clientKey: String? = null, hostName: String = "keepersecurity.com") {
     val existingClientId = storage.getString(KEY_CLIENT_ID)
     if (existingClientId != null && clientKey == null) {
         return
@@ -128,7 +129,7 @@ fun initializeStorage(storage: KeyValueStorage, clientKey: String? = null, hostN
     if (existingClientId != null) {
         throw Exception("The storage is already initialized with a different client Id (${existingClientId})")
     }
-    storage.saveString(KEY_HOSTNAME, hostName!!)
+    storage.saveString(KEY_HOSTNAME, hostName)
     storage.saveString(KEY_CLIENT_ID, clientId)
     storage.saveBytes(KEY_CLIENT_KEY, clientKeyBytes)
     val keyPair = generateKeyPair()
