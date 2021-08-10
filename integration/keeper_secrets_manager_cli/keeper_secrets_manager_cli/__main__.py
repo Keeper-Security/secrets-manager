@@ -24,6 +24,7 @@ import traceback
 import importlib_metadata
 from distutils.util import strtobool
 from colorama import init
+import logging
 
 
 def _get_cli(**kwargs):
@@ -437,6 +438,11 @@ cli.add_command(version_command)
 
 def main():
     try:
+        # We have to init logging here else the SDK will init it. We handle our own error messages, so
+        # first init the root logger, then disable it.
+        logging.basicConfig(level=logging.CRITICAL)
+        logging.disabled = True
+
         # This init colors for Windows. CMD looks great. PS has no yellow :(
         init()
         cli(obj={"cli": None})

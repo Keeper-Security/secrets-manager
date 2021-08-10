@@ -301,6 +301,7 @@ class SecretsManager:
 
     def handler_http_error(self, rs):
 
+        log_level = logging.ERROR
         try:
             # Decode the JSON content, throw exception if not JSON
             response_dict = json_to_dict(rs.text)
@@ -327,6 +328,10 @@ class SecretsManager:
 
                 self.config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, str(key_id))
 
+                # This is not an error, it's info. Make it so the 'finally' display info about the
+                # key change.
+                log_level = logging.INFO
+
                 # The only non-exception exit from this method
                 return True
             else:
@@ -341,7 +346,7 @@ class SecretsManager:
             # This was one of our exceptions, just rethrow it.
             raise err
         finally:
-            logging.error("Error: {} (http error code {}): {}".format(
+            logging.log(log_level, "Error: {} (http error code {}): {}".format(
                 rs.reason,
                 rs.status_code,
                 rs.text
