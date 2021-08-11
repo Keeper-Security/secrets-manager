@@ -29,14 +29,14 @@ repositories {
 dependencies {
     implementation name: 'core-16.0.0'
     implementation 'org.bouncycastle:bc-fips:1.0.2.1'
-    implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.5.10'
-    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.2.1'
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.5.21'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.2.2'
 
 //    // Use JUnit Jupiter API for testing.
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.5.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.2'
 //
 //    // Use JUnit Jupiter Engine for testing.
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.5.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.2'
 }
 
 application {

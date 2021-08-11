@@ -93,15 +93,37 @@ private data class SecretsManagerResponse(
     val records: List<SecretsManagerResponseRecord>?
 )
 
-data class KeeperSecrets(val records: List<KeeperRecord>)
+data class KeeperSecrets(val records: List<KeeperRecord>) {
+    fun getRecordByUid(recordUid: String): KeeperRecord? {
+        return records.find { it.recordUid == recordUid }
+    }
+}
 
 data class KeeperRecord(
     val recordKey: ByteArray,
     val recordUid: String,
     var folderUid: String?,
     val data: KeeperRecordData,
-    var files: List<KeeperFile>?
-)
+    val files: List<KeeperFile>?
+) {
+    fun getPassword(): String? {
+        val passwordField = data.getField<Password>() ?: return null
+        return passwordField.value[0]
+    }
+
+    fun updatePassword(newPassword: String) {
+        val passwordField = data.getField<Password>() ?: throw Exception("Password field is not present on the record $recordUid")
+        passwordField.value[0] = newPassword
+    }
+
+    fun getFileByName(fileName: String): KeeperFile? {
+        return files?.find { it.data.name == fileName }
+    }
+
+    fun getFileByUid(fileUid: String): KeeperFile? {
+        return files?.find { it.fileUid == fileUid }
+    }
+}
 
 data class KeeperFile(
     val fileKey: ByteArray,
@@ -112,7 +134,7 @@ data class KeeperFile(
 )
 
 @JvmOverloads
-fun initializeStorage(storage: KeyValueStorage, clientKey: String? = null, hostName: String = "keepersecurity.com") {
+fun initializeStorage(storage: KeyValueStorage, clientKey: String? = null, hostName: String? = null) {
     val existingClientId = storage.getString(KEY_CLIENT_ID)
     if (existingClientId != null && clientKey == null) {
         return
@@ -129,7 +151,7 @@ fun initializeStorage(storage: KeyValueStorage, clientKey: String? = null, hostN
     if (existingClientId != null) {
         throw Exception("The storage is already initialized with a different client Id (${existingClientId})")
     }
-    storage.saveString(KEY_HOSTNAME, hostName)
+    storage.saveString(KEY_HOSTNAME, hostName!!)
     storage.saveString(KEY_CLIENT_ID, clientId)
     storage.saveBytes(KEY_CLIENT_KEY, clientKeyBytes)
     val keyPair = generateKeyPair()
@@ -416,6 +438,9 @@ private inline fun <reified T> postQuery(
             } catch (e: Exception) {
             }
             throw Exception(errorMessage)
+        }
+        if (response.data.isEmpty()) {
+            return response.data
         }
         return decrypt(response.data, transmissionKey.key)
     }

@@ -1,5 +1,4 @@
 import org.gradle.api.publish.maven.MavenPublication
-import org.gradle.api.tasks.bundling.Jar
 import org.gradle.kotlin.dsl.`maven-publish`
 import org.gradle.kotlin.dsl.signing
 import java.util.*
@@ -11,8 +10,8 @@ version = "16.0.0-SNAPSHOT"
 
 plugins {
     `java-library`
-    kotlin("jvm") version "1.5.10"
-    kotlin("plugin.serialization") version "1.5.10"
+    kotlin("jvm") version "1.5.21"
+    kotlin("plugin.serialization") version "1.5.21"
     `maven-publish`
     signing
     id("io.github.gradle-nexus.publish-plugin") version "1.1.0"
@@ -38,7 +37,7 @@ dependencies {
     // Use the Kotlin JDK 8 standard library.
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
 
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.2.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.2.2")
 
     implementation(files("libs/bc-fips-1.0.2.1.jar"))
 
@@ -57,24 +56,6 @@ tasks.jar {
         )
     }
 }
-
-//val fatJar = task("fatJar", type = Jar::class) {
-//    baseName = "${project.name}-fat"
-//    manifest {
-//        attributes(
-//            "Implementation-Title" to "Keeper Secrets Manager Client Library with dependencies",
-//            "Implementation-Version" to archiveVersion
-//        )
-//    }
-//    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
-//    with(tasks.jar.get() as CopySpec)
-//}
-//
-//tasks {
-//    "build" {
-//        dependsOn(fatJar)
-//    }
-//}
 
 ext["signing.keyId"] = null
 ext["signing.password"] = null
