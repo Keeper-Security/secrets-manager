@@ -133,25 +133,18 @@ data class KeeperFile(
     val thumbnailUrl: String?
 )
 
-@JvmOverloads
-fun initializeStorage(storage: KeyValueStorage, clientKey: String? = null, hostName: String? = null) {
-    val existingClientId = storage.getString(KEY_CLIENT_ID)
-    if (existingClientId != null && clientKey == null) {
-        return
-    }
-    if (clientKey == null) {
-        throw Exception("Storage is not initialized")
-    }
+fun initializeStorage(storage: KeyValueStorage, clientKey: String, hostName: String) {
     val clientKeyBytes = webSafe64ToBytes(clientKey)
     val clientKeyHash = hash(clientKeyBytes, CLIENT_ID_HASH_TAG)
     val clientId = bytesToBase64(clientKeyHash)
-    if (existingClientId != null && clientId == existingClientId) {
-        return   // the storage is already initialized
-    }
+    val existingClientId = storage.getString(KEY_CLIENT_ID)
     if (existingClientId != null) {
+        if (clientId == existingClientId) {
+            return   // the storage is already initialized
+        }
         throw Exception("The storage is already initialized with a different client Id (${existingClientId})")
     }
-    storage.saveString(KEY_HOSTNAME, hostName!!)
+    storage.saveString(KEY_HOSTNAME, hostName)
     storage.saveString(KEY_CLIENT_ID, clientId)
     storage.saveBytes(KEY_CLIENT_KEY, clientKeyBytes)
     val keyPair = generateKeyPair()
