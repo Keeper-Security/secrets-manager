@@ -24,7 +24,6 @@ const clientKey = 'wz6iSJKgz6Z5eJyOT8lSglUFZVJxhzVZByMNS15eoaw'
 
 async function test() {
     const kvs = localConfigStorage(configFileName)
-    await initializeStorage(kvs)
     // await initializeStorage(kvs, clientKey, 'qa.keepersecurity.com')
     // const response = await getSecrets(kvs, ['i3v4ehaoB-Bwsb7bbbek2g'])
     const options: SecretManagerOptions = {

@@ -5,6 +5,7 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.*
 import java.io.BufferedReader
 import java.io.File
+import java.io.FileOutputStream
 import java.io.FileReader
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -36,9 +37,11 @@ internal class SecretsManagerTest {
         initializeStorage(storage, "VB3sGkzVyRB9Lup6WE7Rx-ETFZxyWR2zqY2b9f2zwBo", "local.keepersecurity.com")
         val options = SecretsManagerOptions(storage, testPostFunction)
         val secrets = getSecrets(options)
-        val password = secrets.records[1].data.getField<Password>()
+        val record = secrets.getRecordByUid("i3v4ehaoB-Bwsb7bbbek2g")
+        assertNotNull(record)
+        val password = record.getPassword()
         assertNotNull(password)
-        assertEquals("N\$B!lkoOrVL1RUNDBvn2", password.value[0])
+        assertEquals("N\$B!lkoOrVL1RUNDBvn2", password)
         try {
             getSecrets(options)
             fail("Did not throw")
@@ -55,11 +58,24 @@ internal class SecretsManagerTest {
             transmissionKey: TransmissionKey,
             payload: EncryptedPayload,
         ) -> KeeperHttpResponse = { url, transmissionKey, payload -> postFunction(url, transmissionKey, payload, true) }
-        val storage = LocalConfigStorage("config-dev.json")
-        initializeStorage(storage, "uUGTIDCnRx20uuHnjeai2sL-rolV-WjFr0ndHl10qJM", "dev.keepersecurity.com")
+        val storage = LocalConfigStorage("config-prod.json")
+        initializeStorage(storage, "W3g-y3PAN2l_8zcmGS0WR27xflB2dTDFWBLYJVGLoTc", "keepersecurity.com")
         val options = SecretsManagerOptions(storage, trustAllPostFunction)
 //        val options = SecretsManagerOptions(storage, ::cachingPostFunction)
         val secrets = getSecrets(options)
-        println(secrets)
+        val record = secrets.records[0]
+        val password = record.getPassword()
+        if (password != null) {
+            println(password)
+//            record.updatePassword("new password")
+//            updateSecret(options, record)
+        }
+        val file = record.getFileByUid("XISgEFjKffxAsjzYCUJ6Bg")
+        if (file != null) {
+            val fileBytes = downloadFile(file)
+            val fos = FileOutputStream(file.data.name)
+            fos.write(fileBytes)
+            fos.close()
+        }
     }
 }

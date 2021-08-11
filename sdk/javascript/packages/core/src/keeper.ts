@@ -263,24 +263,18 @@ export const getClientId = async (clientKey: string): Promise<string> => {
     return platform.bytesToBase64(clientKeyHash)
 }
 
-export const initializeStorage = async (storage: KeyValueStorage, clientKey?: string, hostName?: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
-    const existingClientId = await storage.getString(KEY_CLIENT_ID)
-    if (existingClientId && !clientKey) {
-        return
-    }
-    if (!clientKey) {
-        throw new Error(`Storage is not initialized`)
-    }
+export const initializeStorage = async (storage: KeyValueStorage, clientKey: string, hostName: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
     const clientKeyBytes = webSafe64ToBytes(clientKey)
     const clientKeyHash = await platform.hash(clientKeyBytes, CLIENT_ID_HASH_TAG)
     const clientId = platform.bytesToBase64(clientKeyHash)
-    if (existingClientId && existingClientId === clientId) {
-        return  // the storage is already initialized
-    }
+    const existingClientId = await storage.getString(KEY_CLIENT_ID)
     if (existingClientId) {
+        if (existingClientId === clientId) {
+            return  // the storage is already initialized
+        }
         throw new Error(`The storage is already initialized with a different client Id (${existingClientId})`)
     }
-    await storage.saveString(KEY_HOSTNAME, hostName!)
+    await storage.saveString(KEY_HOSTNAME, hostName)
     await storage.saveString(KEY_CLIENT_ID, clientId)
     await platform.importKey(KEY_CLIENT_KEY, clientKeyBytes, storage)
     await platform.generatePrivateKey(KEY_PRIVATE_KEY, storage)

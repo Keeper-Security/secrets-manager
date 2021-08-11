@@ -246,27 +246,17 @@ namespace SecretsManager
 
         public static void InitializeStorage(IKeyValueStorage storage, string clientKey, string hostName)
         {
-            var existingClientId = storage.GetString(KeyClientId);
-            if (existingClientId != null && clientKey == null)
-            {
-                return;
-            }
-
-            if (clientKey == null)
-            {
-                throw new Exception("Storage is not initialized");
-            }
-
             var clientKeyBytes = CryptoUtils.WebSafe64ToBytes(clientKey);
             var clientKeyHash = CryptoUtils.Hash(clientKeyBytes, ClientIdHashTag);
             var clientId = CryptoUtils.BytesToBase64(clientKeyHash);
-            if (existingClientId != null && existingClientId == clientId)
-            {
-                return; // the storage is already initialized
-            }
-
+            var existingClientId = storage.GetString(KeyClientId);
             if (existingClientId != null)
             {
+                if (existingClientId == clientId)
+                {
+                    return; // the storage is already initialized
+                }
+
                 throw new Exception($"The storage is already initialized with a different client Id ({existingClientId})");
             }
 
@@ -465,6 +455,7 @@ namespace SecretsManager
                 {
                     CacheStorage.SaveCachedValue(transmissionKey.Key.Concat(response.Data).ToArray());
                 }
+
                 return response;
             }
             catch (Exception)
