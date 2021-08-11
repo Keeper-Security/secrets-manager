@@ -21,14 +21,11 @@ java {
 
 repositories {
     mavenCentral()
-    flatDir {
-        dirs '../../../sdk/java/core/build/libs'
-    }
+    maven { url "https://s01.oss.sonatype.org/content/groups/public/" }
 }
 
 dependencies {
-    implementation name: 'core-16.0.0'
-    implementation 'org.bouncycastle:bc-fips:1.0.2.1'
+    implementation 'com.keepersecurity.secrets-manager:core:16.0.1-SNAPSHOT'
     implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.5.10'
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.2.1'
 
