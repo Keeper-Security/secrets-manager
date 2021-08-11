@@ -198,6 +198,10 @@ data class Address(
 data class Addresses(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Address>) : KeeperRecordField()
 
 @Serializable
+@SerialName("licenseNumber")
+data class LicenseNumber(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Host>) : KeeperRecordField()
+
+@Serializable
 data class KeeperFileData(
     val title: String,
     val name: String,

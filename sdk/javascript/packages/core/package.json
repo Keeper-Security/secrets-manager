@@ -15,7 +15,7 @@
     "quicktest": "ts-node internal/quicktest.ts",
     "generate-tests": "ts-node internal/test-generator.ts",
     "prepublish": "rollup -c",
-    "publish-to-npm": "yarn publish"
+    "publish-to-npm": "npm publish"
   },
   "devDependencies": {
     "@babel/core": "^7.13.10",
