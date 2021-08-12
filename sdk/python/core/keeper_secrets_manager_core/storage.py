@@ -18,6 +18,7 @@ from json import JSONDecodeError
 
 from keeper_secrets_manager_core import exceptions
 from keeper_secrets_manager_core.configkeys import ConfigKeys
+from keeper_secrets_manager_core.keeper_globals import logger_name
 from keeper_secrets_manager_core.utils import ENCODING, json_to_dict
 
 
@@ -72,7 +73,7 @@ class FileKeyValueStorage(KeyValueStorage):
 
                     config = json.load(config_file)
                 except JSONDecodeError:
-                    logging.warning("Looks like config file is empty.")
+                    logging.getLogger(logger_name).warning("Looks like config file is empty.")
 
                     config = {}
                     self.save_storage(config)
@@ -109,9 +110,9 @@ class FileKeyValueStorage(KeyValueStorage):
 
         if kv in config:
             del config[kv]
-            logging.debug("Removed key %s" % kv)
+            logging.getLogger(logger_name).debug("Removed key %s" % kv)
         else:
-            logging.warning("No key %s was found in config" % kv)
+            logging.getLogger(logger_name).debug("No key %s was found in config" % kv)
 
         self.save_storage(config)
 

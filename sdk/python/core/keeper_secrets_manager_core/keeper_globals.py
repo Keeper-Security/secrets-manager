@@ -11,6 +11,7 @@
 import importlib_metadata
 import re
 
+logger_name = 'ksm'
 
 def get_client_version(hardcode=False):
     """Get the version of the client
