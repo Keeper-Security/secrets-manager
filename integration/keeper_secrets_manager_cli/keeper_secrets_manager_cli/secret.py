@@ -18,7 +18,6 @@ from colorama import Fore, Style
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
 from .table import Table, ColumnAlign
 import uuid
-import logging
 
 
 class Secret:

@@ -40,7 +40,7 @@ class ExecTest(unittest.TestCase):
             "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
                           "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
                           "jhKMhHQFaHYI"
-        }), log_level="INFO")
+        }))
 
         res = mock.Response()
         one = res.add_record(title="My Record 1")
@@ -106,7 +106,7 @@ class ExecTest(unittest.TestCase):
             "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
                           "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
                           "jhKMhHQFaHYI"
-        }), log_level="INFO")
+        }))
 
         res = mock.Response()
         one = res.add_record(title="My Record 1")

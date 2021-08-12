@@ -31,7 +31,6 @@ class Profile:
     active_profile_key = "active_profile"
     default_profile = os.environ.get("KSM_CLI_PROFILE", "_default")
     default_ini_file = os.environ.get("KSM_INI_FILE", "keeper.ini")
-    log_level_key = "log_level"
     color_key = "color"
 
     def __init__(self, cli, ini_file=None):
@@ -131,7 +130,7 @@ class Profile:
             sys.exit("{} {}".format(error_prefix, err))
 
     @staticmethod
-    def init(token, ini_file=None, server=None, profile_name=None, log_level="INFO"):
+    def init(token, ini_file=None, server=None, profile_name=None):
 
         from . import KeeperCli
 
@@ -165,7 +164,6 @@ class Profile:
 
             # Create our config section name.
             config[Profile.config_profile] = {
-                "log_level": log_level,
                 Profile.active_profile_key: Profile.default_profile
             }
             with open(ini_file, 'w') as configfile:
@@ -179,7 +177,7 @@ class Profile:
         if server is not None:
             config_storage.set(ConfigKeys.KEY_HOSTNAME, server)
 
-        client = KeeperCli.get_client(config=config_storage, log_level=log_level)
+        client = KeeperCli.get_client(config=config_storage)
 
         # Get the secret records to get the app key. The SDK will add the app key to the config.
         try:
@@ -273,7 +271,6 @@ class Profile:
         export_config = configparser.ConfigParser()
         export_config[Profile.default_profile] = profile_config
         export_config[Profile.config_profile] = {
-            "log_level": "ERROR",
             Profile.active_profile_key: Profile.default_profile
         }
 
@@ -315,12 +312,6 @@ class Profile:
 
         print("Imported config saved to {}".format(file), file=sys.stderr)
 
-    def set_log_level(self, level):
-        common_config = self._get_common_config("Cannot set log level.")
-        common_config[Profile.log_level_key] = level
-        self.cli.log_level = level
-        self.save()
-
     def set_color(self, on_off):
         common_config = self._get_common_config("Cannot set log level.")
         common_config[Profile.color_key] = str(on_off)
@@ -331,5 +322,4 @@ class Profile:
         common_config = self._get_common_config("Cannot show the config.")
         not_set_text = "-NOT SET-"
         print("Active Profile: {}".format(common_config.get(Profile.active_profile_key, not_set_text)))
-        print("Log Level: {}".format(common_config.get(Profile.log_level_key, not_set_text)))
         print("Color Enabled: {}".format(common_config.get(Profile.color_key, not_set_text)))

@@ -16,7 +16,7 @@ from keeper_secrets_manager_core.configkeys import ConfigKeys
 from distutils.util import strtobool
 from .profile import Profile
 import sys
-import logging
+import os
 
 
 class KeeperCli:
@@ -30,7 +30,7 @@ class KeeperCli:
         self.profile = Profile(cli=self, ini_file=ini_file)
         self._client = None
 
-        self._log_level = "INFO"
+        self.log_level = os.environ.get("KSM_DEBUG", None)
         self.use_color = use_color
 
         # If no config file is loaded, then don't init the SDK
@@ -58,13 +58,12 @@ class KeeperCli:
 
             self._client = self.get_client(
                 config=config_storage,
-                log_level=common_profile.get("log_level", self._log_level)
+                log_level=self.log_level
             )
             if self.use_color is None:
                 self.use_color = bool(strtobool(common_profile.get("color", str(True))))
         else:
             # Set the log level. We don't have the client to set the level, so set it here.
-            self.log_level = self._log_level
             if use_color is None:
                 self.use_color = True
 
@@ -82,21 +81,6 @@ class KeeperCli:
     @client.setter
     def client(self, value):
         self._client = value
-
-    @property
-    def log_level(self):
-        return self._log_level
-
-    @log_level.setter
-    def log_level(self, value):
-        self.set_log_level(value)
-        self._log_level = value
-
-    @staticmethod
-    def set_log_level(value):
-        logger = logging.getLogger()
-        # Set the log level. Look up the int value using the string.
-        logger.setLevel(getattr(logging, value))
 
     def output(self, msg):
 
