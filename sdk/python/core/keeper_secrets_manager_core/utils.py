@@ -20,6 +20,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import load_der_private_key
+from keeper_secrets_manager_core.keeper_globals import logger_name
 
 ENCODING = 'UTF-8'
 
@@ -82,7 +83,7 @@ def json_to_dict(json_str):
     try:
         resp = json.loads(json_str)
     except JSONDecodeError as jsonDecErr:
-        logging.warning(jsonDecErr)
+        logging.getLogger(logger_name).warning(jsonDecErr)
         resp = None
 
     return resp
@@ -171,7 +172,7 @@ def public_encrypt(data: bytes, server_public_raw_key_bytes: bytes, idz: bytes =
         return eph_public_key + encrypted_data
 
     except Exception as e:
-        logging.warning(e)
+        logging.getLogger(logger_name).warning(e)
         return
 
 

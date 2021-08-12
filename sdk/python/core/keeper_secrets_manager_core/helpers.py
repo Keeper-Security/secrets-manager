@@ -13,7 +13,7 @@ import os
 from urllib.parse import urlparse
 
 from keeper_secrets_manager_core.configkeys import ConfigKeys
-from keeper_secrets_manager_core.keeper_globals import keeper_servers
+from keeper_secrets_manager_core.keeper_globals import keeper_servers, logger_name
 from keeper_secrets_manager_core.storage import KeyValueStorage
 
 
@@ -41,6 +41,6 @@ def get_server(code_server, config_store: KeyValueStorage):
 
         server_to_return = urlparse(server_to_use).netloc
 
-    logging.debug("Keeper hostname %s" % server_to_return)
+    logging.getLogger(logger_name).debug("Keeper hostname %s" % server_to_return)
 
     return server_to_return

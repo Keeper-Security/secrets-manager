@@ -23,7 +23,8 @@ from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.dto.dtos import Folder, Record
 from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, Context, TransmissionKey
 from keeper_secrets_manager_core.exceptions import KeeperError
-from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys
+from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys, \
+    logger_name
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage
 from keeper_secrets_manager_core.utils import bytes_to_url_safe_str, base64_to_bytes, sign, \
     extract_public_key_bytes, dict_to_json, url_safe_str_to_bytes, encrypt_aes, der_base64_private_key_to_private_key, \
@@ -34,13 +35,16 @@ from keeper_secrets_manager_core.utils import bytes_to_url_safe_str, base64_to_b
 class SecretsManager:
 
     notation_prefix = "keeper"
-    log_level = "DEBUG"
     default_key_id = "7"
 
     def __init__(self, token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None):
 
         self.token = token
         self.hostname = hostname
+
+        # Init the log, create a logger for the core.
+        self._init_logger(log_level=log_level)
+        self.logger = logging.getLogger(logger_name)
 
         # Accept the env var KSM_SKIP_VERIFY. Modules like 'requests' already use it.
         self.verify_ssl_certs = verify_ssl_certs
@@ -60,39 +64,48 @@ class SecretsManager:
 
         # Make sure our public key id is set and pointing an existing key.
         if config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID) is None:
-            logging.debug("Setting public key id to the default: {}".format(SecretsManager.default_key_id))
+            self.logger.debug("Setting public key id to the default: {}".format(SecretsManager.default_key_id))
             config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, SecretsManager.default_key_id)
         elif config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID) not in keeper_public_keys:
-            logging.debug("Public key id {} does not exists, set to default : {}".format(
+            self.logger.debug("Public key id {} does not exists, set to default : {}".format(
                 config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID),
                 SecretsManager.default_key_id))
             config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, SecretsManager.default_key_id)
 
         self.config: KeyValueStorage = config
 
-        self._init_logger(log_level=log_level)
-
         self._init()
 
     @staticmethod
     def _init_logger(log_level=None):
-        # Configure logs
 
-        if log_level is None:
-            log_level = SecretsManager.log_level
+        logger = logging.getLogger(logger_name)
 
-        valid_log_levels = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"]
-        if log_level not in valid_log_levels:
-            raise ValueError("Log level {} is invalid. Valid values are: {}".format(log_level,
-                                                                                    ", ".join(valid_log_levels)))
+        # If the log level was passed in, then we want to set up the logging. If not, there is no logging.
+        if log_level is not None:
 
-        # basicConfig will not clobber a user's logging configuration, even the log level
-        # "This function does nothing if the root logger already has handlers configured, unless the keyword argument
-        # force is set to True."
-        logging.basicConfig(
-            format='%(asctime)s | %(name)s | %(levelname)s | %(message)s',
-            level=getattr(logging, log_level)
-        )
+            # If the log level is a string, get the enum value.
+            if type(log_level) is str:
+                valid_log_levels = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"]
+                if log_level not in valid_log_levels:
+                    raise ValueError("Log level {} is invalid. Valid values are: {}".format(
+                        log_level, ", ".join(valid_log_levels)))
+                log_level = getattr(logging, log_level)
+
+            logger.disabled = False
+            logger.setLevel(log_level)
+
+            # If we don't have my handlers, set the logger up with default settings. The handler and formatters
+            # can be set outside of the SDK if an integration or company
+            if len(logger.handlers) == 0:
+                # Default to stderr
+                sh = logging.StreamHandler()
+                sh.setLevel(log_level)
+
+                sh.setFormatter(logging.Formatter("%(asctime)s | %(name)s | %(levelname)s | %(message)s"))
+                logger.addHandler(sh)
+        else:
+            logger.disabled = True
 
     def _init(self):
 
@@ -117,7 +130,7 @@ class SecretsManager:
 
         elif existing_secret_key_hash == client_id:
             # Already bound
-            logging.debug("Already bound")
+            self.logger.debug("Already bound")
         else:
             self.config.delete(ConfigKeys.KEY_CLIENT_ID)
             self.config.delete(ConfigKeys.KEY_PRIVATE_KEY)
@@ -133,9 +146,9 @@ class SecretsManager:
                 self.config.set(ConfigKeys.KEY_PRIVATE_KEY, bytes_to_url_safe_str(private_key_der))
 
         if not self.verify_ssl_certs:
-            logging.warning("WARNING: Running without SSL cert verification. "
-                            "Execute 'SecretsManager(..., verify_ssl_certs=True)' or 'KSM_SKIP_VERIFY=FALSE' "
-                            "to enable verification.")
+            self.logger.warning("WARNING: Running without SSL cert verification. "
+                                "Execute 'SecretsManager(..., verify_ssl_certs=True)' or 'KSM_SKIP_VERIFY=FALSE' "
+                                "to enable verification.")
 
     def load_secret_key(self):
 
@@ -148,7 +161,7 @@ class SecretsManager:
 
         if env_secret_key:
             current_secret_key = env_secret_key
-            logging.info("Secret key found in environment variable")
+            self.logger.info("Secret key found in environment variable")
 
         # Case 2: Code
         if not current_secret_key:
@@ -156,7 +169,7 @@ class SecretsManager:
 
             if code_secret_key:
                 current_secret_key = code_secret_key
-                logging.info("Secret key found in code")
+                self.logger.info("Secret key found in code")
 
         # Case 3: Config storage
         if not current_secret_key:
@@ -164,7 +177,7 @@ class SecretsManager:
 
             if config_secret_key:
                 current_secret_key = config_secret_key
-                logging.info("Secret key found in configuration file")
+                self.logger.info("Secret key found in configuration file")
 
         return current_secret_key
 
@@ -312,14 +325,14 @@ class SecretsManager:
             error = response_dict.get('result_code', response_dict.get('error'))
 
             if error == 'invalid_client_version':
-                logging.error("Client version {} was not registered in the backend".format(
+                self.logger.error("Client version {} was not registered in the backend".format(
                     keeper_secrets_manager_sdk_client_id))
                 msg = response_dict.get('additional_info')
 
             # The server wants us to use a different public key.
             elif error == 'key':
                 key_id = response_dict.get("key_id")
-                logging.info("Server has requested we use public key {}".format(key_id))
+                self.logger.info("Server has requested we use public key {}".format(key_id))
 
                 if key_id is None:
                     raise ValueError("The public key is blank from the server")
@@ -330,7 +343,7 @@ class SecretsManager:
 
                 # This is not an error, it's info. Make it so the 'finally' display info about the
                 # key change.
-                log_level = logging.INFO
+                log_level = logging.DEBUG
 
                 # The only non-exception exit from this method
                 return True
@@ -346,7 +359,7 @@ class SecretsManager:
             # This was one of our exceptions, just rethrow it.
             raise err
         finally:
-            logging.log(log_level, "Error: {} (http error code {}): {}".format(
+            self.logger.log(log_level, "Error: {} (http error code {}): {}".format(
                 rs.reason,
                 rs.status_code,
                 rs.text
@@ -395,8 +408,8 @@ class SecretsManager:
         records_resp = decrypted_response_dict.get('records')
         folders_resp = decrypted_response_dict.get('folders')
 
-        logging.debug("Individual record count: {}".format(len(records_resp or [])))
-        logging.debug("Folder count: {}".format(len(folders_resp or [])))
+        self.logger.debug("Individual record count: {}".format(len(records_resp or [])))
+        self.logger.debug("Folder count: {}".format(len(folders_resp or [])))
 
         if records_resp:
             for r in records_resp:
@@ -408,7 +421,7 @@ class SecretsManager:
                 folder = Folder(f, secret_key)
                 records.extend(folder.records)
 
-        logging.debug("Total record count: {}".format(len(records)))
+        self.logger.debug("Total record count: {}".format(len(records)))
 
         return {
             'records': records,
@@ -437,7 +450,7 @@ class SecretsManager:
         Save updated secret values
         """
 
-        logging.info("Updating record uid: %s" % record.uid)
+        self.logger.info("Updating record uid: %s" % record.uid)
 
         while True:
 
