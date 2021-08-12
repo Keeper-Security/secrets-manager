@@ -24,7 +24,6 @@ import traceback
 import importlib_metadata
 from distutils.util import strtobool
 from colorama import init
-import logging
 
 
 def _get_cli(**kwargs):
@@ -78,7 +77,7 @@ def cli(ctx, ini_file, profile_name, output, color):
                  " sub-command, specify the INI file on the sub-command parameters instead on the top level command.")
     except Exception as err:
         # Set KSM_DEBUG to get a stack trace. Secret env var.
-        if strtobool(os.environ.get("KSM_DEBUG", "FALSE")) == 1:
+        if os.environ.get("KSM_DEBUG") is not None:
             print(traceback.format_exc(), file=sys.stderr)
         sys.exit("Could not run the command. Got the error: {}".format(err))
 
@@ -364,21 +363,6 @@ def config_show_command(ctx):
     """Show current configuration."""
     ctx.obj["profile"].show_config()
 
-
-@click.command(
-    name='log',
-    cls=HelpColorsCommand,
-    help_options_color='blue'
-)
-@click.option('--level',  '-l', type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "NOTSET"]),
-              help="Level of message or error to display")
-@click.pass_context
-def config_log_command(ctx, level):
-    """Set the log level"""
-    if level is not None:
-        ctx.obj["profile"].set_log_level(level)
-
-
 @click.command(
     name='color',
     cls=HelpColorsCommand,
@@ -438,17 +422,12 @@ cli.add_command(version_command)
 
 def main():
     try:
-        # We have to init logging here else the SDK will init it. We handle our own error messages, so
-        # first init the root logger, then disable it.
-        logging.basicConfig(level=logging.CRITICAL)
-        logging.disabled = True
-
         # This init colors for Windows. CMD looks great. PS has no yellow :(
         init()
         cli(obj={"cli": None})
     except Exception as err:
         # Set KSM_DEBUG to get a stack trace. Secret env var.
-        if strtobool(os.environ.get("KSM_DEBUG", "FALSE")) == 1:
+        if os.environ.get("KSM_DEBUG") is not None:
             print(traceback.format_exc(), file=sys.stderr)
         sys.exit("ksm had a problem: {}".format(err))
 
