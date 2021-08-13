@@ -244,7 +244,7 @@ const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorag
 }
 
 const hash = async (data: Uint8Array, tag: string): Promise<Uint8Array> => {
-    const key = await crypto.subtle.generateKey({
+    const key = await crypto.subtle.importKey('raw', data, {
         name: 'HMAC',
         hash: {
             name: 'SHA-512'

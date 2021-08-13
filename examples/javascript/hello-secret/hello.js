@@ -1,12 +1,35 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 
-const getSecrets = require('@keeper/secrets-manager-core').getSecrets
-const initializeStorage = require('@keeper/secrets-manager-core').initializeStorage
-const awsKeyValueStorage = require('@keeper/secrets-manager-aws').awsKeyValueStorage
+const {
+    getSecrets,
+    initializeStorage,
+    localConfigStorage,
+    downloadFile,
+    updateSecret
+} = require('@keeper-security/secrets-manager-core')
+const fs = require("fs")
 
-const bindingKey = 'YORS3cDrUGHkPhUkczAYYqoSCEuUH_GKBa2n0k2VKbY'
+const bindingKey = '9XJIPhkOA40-SFAA2dXQRniqfH-lzj38gec2dDh0u1U'
 
-initializeStorage(awsKeyValueStorage, bindingKey, 'dev.keepersecurity.com')
-    .then(_ => getSecrets(awsKeyValueStorage))
-    .then(x => console.log(x))
-    .finally()
+const getKeeperRecords = async () => {
+    const storage = localConfigStorage("config.json")
+    await initializeStorage(storage, bindingKey, 'keepersecurity.com')
+    const {records} = await getSecrets({storage: storage})
+    // const {records} = await getSecrets({storage: storage}, ['UlzQ-jKQTgQcEvpJI9vxxQ'])
+    console.log(records)
+
+    const firstRecord = records[0]
+    const firstRecordPassword = firstRecord.data.fields.find(x => x.type === 'password')
+    console.log(firstRecordPassword.value[0])
+
+    const file = firstRecord.files.find(x => x.data.name === 'acme.cer')
+    if (file) {
+        const fileBytes = await downloadFile(file)
+        fs.writeFileSync(file.data.name, fileBytes)
+    }
+
+    firstRecordPassword.value[0] = 'aP1$t367QOCvL$eM$bG#'
+    await updateSecret({storage: storage}, firstRecord)
+}
+
+getKeeperRecords().finally()

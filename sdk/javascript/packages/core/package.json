@@ -1,6 +1,6 @@
 {
   "name": "@keeper-security/secrets-manager-core",
-  "version": "16.0.0",
+  "version": "16.0.12",
   "description": "Keeper Secrets Manages Javascript SDK",
   "browser": "dist/index.es.js",
   "main": "dist/index.cjs.js",
@@ -9,14 +9,10 @@
   "author": "saldoukhov@keepersecurity.com",
   "license": "ISC",
   "scripts": {
-    "build": "rollup -c",
-    "link-local": "yarn link",
-    "build-test": "rollup -c && jest",
     "test": "jest",
     "quicktest": "ts-node internal/quicktest.ts",
-    "generate-tests": "ts-node internal/test-generator.ts",
-    "sigtest": "ts-node internal/signature.ts",
-    "publish": "yarn publish"
+    "prepublish": "rollup -c",
+    "publish-to-npm": "npm publish"
   },
   "devDependencies": {
     "@babel/core": "^7.13.10",
