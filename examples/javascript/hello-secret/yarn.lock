@@ -2,7 +2,7 @@
 # yarn lockfile v1
 
 
-"@keeper-security/secrets-manager-core@16.0.9":
-  version "16.0.9"
-  resolved "https://registry.yarnpkg.com/@keeper-security/secrets-manager-core/-/secrets-manager-core-16.0.9.tgz#41e287e5b6e41fb7c9fae5276b5ed8f3abcd610a"
-  integrity sha512-PG3Xu3LwknNEqH6ayOJd1jeZODI2RDPGNScu5oD2+tbBqPMO2AEkOj+QMdKyogtLFGHi/Q2pn101MOARM5F5rg==
+"@keeper-security/secrets-manager-core@16.0.12":
+  version "16.0.12"
+  resolved "https://registry.yarnpkg.com/@keeper-security/secrets-manager-core/-/secrets-manager-core-16.0.12.tgz#882299d4c18ddf828f20566c8f693e446e4a5ab9"
+  integrity sha512-i4ncaRAgPCHqhi+UkrhHvBfNyBT/yEHHXKukXgI/dCKDQWRVJgnkqdd9rSFM35viCD8F2mnPOz9I1VsE6H09MQ==

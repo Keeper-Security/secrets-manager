@@ -7,6 +7,6 @@
     "run" : "node hello.js"
   },
   "dependencies": {
-    "@keeper-security/secrets-manager-core": "16.0.9"
+    "@keeper-security/secrets-manager-core": "16.0.12"
   }
 }
