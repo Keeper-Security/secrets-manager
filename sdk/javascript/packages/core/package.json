@@ -9,11 +9,8 @@
   "author": "saldoukhov@keepersecurity.com",
   "license": "ISC",
   "scripts": {
-    "link-local": "yarn link",
-    "build-test": "rollup -c && jest",
     "test": "jest",
     "quicktest": "ts-node internal/quicktest.ts",
-    "generate-tests": "ts-node internal/test-generator.ts",
     "prepublish": "rollup -c",
     "publish-to-npm": "npm publish"
   },
