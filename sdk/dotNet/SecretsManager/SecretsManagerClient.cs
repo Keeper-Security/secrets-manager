@@ -102,6 +102,27 @@ namespace SecretsManager
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    internal class UpdatePayload
+    {
+        public string clientVersion { get; }
+        public string clientId { get; }
+        public string recordUid { get; }
+        public string data { get; }
+        public long revision { get; }
+
+        public UpdatePayload(string clientVersion, string clientId, string recordUid, string data, long revision)
+        {
+            this.clientVersion = clientVersion;
+            this.clientId = clientId;
+            this.recordUid = recordUid;
+            this.data = data;
+            this.revision = revision;
+        }
+    }
+    
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
     [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class SecretsManagerResponse
@@ -129,6 +150,7 @@ namespace SecretsManager
         public string recordUid { get; set; }
         public string recordKey { get; set; }
         public string data { get; set; }
+        public long revision { get; set; }
         public bool isEditable { get; set; }
         public SecretsManagerResponseFile[] files { get; set; }
     }
@@ -161,12 +183,14 @@ namespace SecretsManager
     [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperRecord
     {
-        public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, KeeperRecordData data, KeeperFile[] files)
+
+        public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, KeeperRecordData data, long revision, KeeperFile[] files)
         {
             RecordKey = recordKey;
             RecordUid = recordUid;
             FolderUid = folderUid;
             Data = data;
+            Revision = revision;
             Files = files;
         }
 
@@ -174,16 +198,17 @@ namespace SecretsManager
         public string RecordUid { get; }
         public string FolderUid { get; }
         public KeeperRecordData Data { get; }
+        public long Revision { get; }
         public KeeperFile[] Files { get; }
 
-        private static object GetFieldValueByType(string fieldType, IEnumerable<KeeperRecordField> fields)
+        public object FieldValue(string fieldType)
         {
-            return fields.FirstOrDefault(x => x.type == fieldType)?.value[0];
+            return Data.fields.Concat(Data.custom ?? new KeeperRecordField[] { }).FirstOrDefault(x => x.type == fieldType)?.value[0];
         }
 
-        private static void UpdateFieldValueForType(string fieldType, object value, IEnumerable<KeeperRecordField> fields)
+        public void UpdateFieldValue(string fieldType, object value)
         {
-            var field = fields.FirstOrDefault(x => x.type == fieldType);
+            var field = Data.fields.Concat(Data.custom ?? new KeeperRecordField[] { }).FirstOrDefault(x => x.type == fieldType);
             if (field == null)
             {
                 return;
@@ -192,24 +217,14 @@ namespace SecretsManager
             field.value[0] = value;
         }
 
-        public object FieldValue(string fieldType)
+        public KeeperFile GetFileByName(string fileName)
         {
-            return GetFieldValueByType(fieldType, Data.fields);
+            return Files.FirstOrDefault(x => x.Data.name == fileName);
         }
 
-        public object CustomFieldValue(string fieldType)
+        public KeeperFile GetFileByUid(string fileUid)
         {
-            return GetFieldValueByType(fieldType, Data.custom);
-        }
-
-        public void UpdateFieldValue(string fieldType, object value)
-        {
-            UpdateFieldValueForType(fieldType, value, Data.fields);
-        }
-
-        public void UpdateCustomFieldValue(string fieldType, object value)
-        {
-            UpdateFieldValueForType(fieldType, value, Data.custom);
+            return Files.FirstOrDefault(x => x.FileUid == fileUid);
         }
     }
 
@@ -286,6 +301,36 @@ namespace SecretsManager
             return keeperSecrets;
         }
 
+        public static async Task UpdateSecret(SecretsManagerOptions options, KeeperRecord record)
+        {
+            var payload = PrepareUpdatePayload(options.Storage, record);
+            await PostQuery(options, "update_secret", payload);
+        }
+
+        public static byte[] DownloadFile(KeeperFile file)
+        {
+            return DownloadFile(file, file.Url);
+        }
+
+        public static byte[] DownloadThumbnail(KeeperFile file)
+        {
+            if (file.ThumbnailUrl == null)
+            {
+                throw new Exception($"Thumbnail does not exist for the file {file.FileUid}");
+            }
+
+            return DownloadFile(file, file.Url);
+        }
+
+        private static byte[] DownloadFile(KeeperFile file, string url)
+        {
+            var request = (HttpWebRequest)WebRequest.Create(url);
+            request.Method = "GET";
+            var response = (HttpWebResponse)request.GetResponse();
+            using var responseStream = response.GetResponseStream();
+            return CryptoUtils.Decrypt(StreamToBytes(responseStream), file.FileKey);
+        }
+
         private static async Task<Tuple<KeeperSecrets, bool>> FetchAndDecryptSecrets(SecretsManagerOptions options, string[] recordsFilter)
         {
             var storage = options.Storage;
@@ -358,8 +403,8 @@ namespace SecretsManager
                     files.Add(new KeeperFile(fileKey, file.fileUid, JsonUtils.ParseJson<KeeperFileData>(decryptedFile), file.url, file.thumbnailUrl));
                 }
             }
-
-            return new KeeperRecord(recordKey, record.recordUid, folderUid, JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord), files.ToArray());
+            
+            return new KeeperRecord(recordKey, record.recordUid, folderUid, JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord), record.revision, files.ToArray());
         }
 
         private static GetPayload PrepareGetPayload(IKeyValueStorage storage, string[] recordsFilter)
@@ -383,8 +428,26 @@ namespace SecretsManager
                 publicKey = CryptoUtils.BytesToBase64(publicKeyBytes);
             }
 
+            return new GetPayload(GetClientVersion(), clientId, publicKey, recordsFilter);
+        }
+
+        private static UpdatePayload PrepareUpdatePayload(IKeyValueStorage storage, KeeperRecord record)
+        {
+            var clientId = storage.GetString(KeyClientId);
+            if (clientId == null)
+            {
+                throw new Exception("Client Id is missing from the configuration");
+            }
+
+            var recordBytes = JsonUtils.SerializeJson(record.Data);
+            var encryptedRecord = CryptoUtils.Encrypt(recordBytes, record.RecordKey);
+            return new UpdatePayload(GetClientVersion(), clientId, record.RecordUid, CryptoUtils.WebSafe64FromBytes(encryptedRecord), record.Revision);
+        }
+
+        private static string GetClientVersion()
+        {
             var version = Assembly.GetExecutingAssembly().GetName().Version;
-            return new GetPayload($"mn{version.Major}.{version.Minor}.{version.Revision}", clientId, publicKey, recordsFilter);
+            return $"mn{version.Major}.{version.Minor}.{version.Revision}";
         }
 
         [SuppressMessage("ReSharper", "StringLiteralTypo")]
@@ -468,16 +531,16 @@ namespace SecretsManager
             }
         }
 
+        private static byte[] StreamToBytes(Stream stream)
+        {
+            using var memoryStream = new MemoryStream();
+            stream.CopyTo(memoryStream);
+            return memoryStream.ToArray();
+        }
+
         [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
         public static async Task<KeeperHttpResponse> PostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload, bool allowUnverifiedCertificate)
         {
-            static byte[] StreamToBytes(Stream stream)
-            {
-                using var memoryStream = new MemoryStream();
-                stream.CopyTo(memoryStream);
-                return memoryStream.ToArray();
-            }
-
             var request = (HttpWebRequest)WebRequest.Create(url);
             if (allowUnverifiedCertificate)
             {
@@ -551,7 +614,9 @@ namespace SecretsManager
                     throw new Exception(CryptoUtils.BytesToString(response.Data));
                 }
 
-                return CryptoUtils.Decrypt(response.Data, transmissionKey.Key);
+                return response.Data.Length == 0 
+                    ? response.Data 
+                    : CryptoUtils.Decrypt(response.Data, transmissionKey.Key);
             }
         }
     }

@@ -10,7 +10,7 @@ public class App {
     public static void main(String[] args) {
         if (args.length == 0) {
             System.out.println("Usage: ./gradlew run --args=\"%config_name% %client_key%\"");
-            System.out.println("F.e. ./gradlew run --args=\"config.txt EvdTdbH1xbHuRcja7QG3wMOyLUbvoQgF9WkkrHTdkh8\"");
+            System.out.println("F.e. ./gradlew run --args=\"config.json EvdTdbH1xbHuRcja7QG3wMOyLUbvoQgF9WkkrHTdkh8\"");
             System.out.println("Use %client_key% only once to initialize the config. For subsequent runs, ./gradlew run --args=%config_name%");
             return;
         }
@@ -19,9 +19,11 @@ public class App {
         try {
             if (args.length > 1) {
                 System.out.printf("Local Config Storage initialized with the Client Key '%s'%n", args[1]);
+                // if your Keeper Account is in other region than US, update the hostname accordingly
                 initializeStorage(storage, args[1], "keepersecurity.com");
             }
             SecretsManagerOptions options = new SecretsManagerOptions(storage);
+//            SecretsManagerOptions options = new SecretsManagerOptions(storage, SecretsManager::cachingPostFunction);
             KeeperSecrets secrets = getSecrets(options);
 //            KeeperSecrets secrets = getSecrets(options, Arrays.asList("UlzQ-jKQTgQcEvpJI9vxxQ"));
             System.out.println(secrets.getRecords());

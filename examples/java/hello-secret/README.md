@@ -13,7 +13,7 @@ Usage:
 ./gradlew run --args="%config_name% %client_key%"
 
 For example: 
-./gradlew run --args="config.txt EvdTdbH1xbHuRcja7QG3wMOyLUbvoQgF9WkkrHTdkh8"
+./gradlew run --args="config.json EvdTdbH1xbHuRcja7QG3wMOyLUbvoQgF9WkkrHTdkh8"
 ```
 
 You need to use client key only once per config name. After config has been initialized, the client key becomes obsolete and can be omitted.

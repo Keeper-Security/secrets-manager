@@ -13,6 +13,7 @@ const bindingKey = '9XJIPhkOA40-SFAA2dXQRniqfH-lzj38gec2dDh0u1U'
 
 const getKeeperRecords = async () => {
     const storage = localConfigStorage("config.json")
+    // if your Keeper Account is in other region than US, update the hostname accordingly
     await initializeStorage(storage, bindingKey, 'keepersecurity.com')
     const {records} = await getSecrets({storage: storage})
     // const {records} = await getSecrets({storage: storage}, ['UlzQ-jKQTgQcEvpJI9vxxQ'])

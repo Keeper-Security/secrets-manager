@@ -18,17 +18,21 @@ namespace QuickTest
             }
         }
 
-        private static async Task<string> GetSecrets()
+        private static async Task GetSecrets()
         {
-            var storage = new LocalConfigStorage("config.json");
+            var storage = new LocalConfigStorage("config-prod1.json");
             // ReSharper disable once StringLiteralTypo
-            SecretsManagerClient.InitializeStorage(storage, "sHD0o4yFny3trdJBz5JKutILElLezHvRuIPHY254o5M", "dev.keepersecurity.com");
+            // SecretsManagerClient.InitializeStorage(storage, "g6lUTlCcFZz15hgIqQ02krBZ3ltv868xRlI1Q3NLcgI", "keepersecurity.com");
             var options = new SecretsManagerOptions(storage);
             // var options = new SecretsManagerOptions(storage, SecretsManagerClient.CachingPostFunction);
             var secrets = await SecretsManagerClient.GetSecrets(options);
-            var password = secrets.Records[0].FieldValue("password").ToString();
+            var firstRecord = secrets.Records[0]; 
+            var password = firstRecord.FieldValue("password").ToString();
             Console.WriteLine(password);
-            return password;
+            // var fileBytes = SecretsManagerClient.DownloadFile(firstRecord.Files[0]);
+            // Console.WriteLine(fileBytes.Length);
+            firstRecord.UpdateFieldValue("password", "111111111");
+            await SecretsManagerClient.UpdateSecret(options, firstRecord);
         }
     }
 }

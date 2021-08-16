@@ -7,6 +7,7 @@ from keeper_secrets_manager_core.utils import json_to_dict, dict_to_json
 if __name__ == '__main__':
 
     secrets_manager = SecretsManager(
+## if your Keeper Account is in other region than US, update the hostname accordingly
         hostname='keepersecurity.com',
         token='<ONE TIME TOKEN>',
         config=FileKeyValueStorage('config2.json')
