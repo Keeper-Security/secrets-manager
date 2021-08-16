@@ -38,6 +38,12 @@ namespace SecretsManager
             return Convert.FromBase64String(base64);
         }
 
+        public static string WebSafe64FromBytes(byte[] data)
+        {
+            var base64 = Convert.ToBase64String(data);
+            return base64.TrimEnd('=').Replace("+", "-").Replace("/", "_");
+        }
+
         public static byte[] StringToBytes(string data)
         {
             return Encoding.ASCII.GetBytes(data);

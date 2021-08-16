@@ -52,8 +52,9 @@ type GetPayload = {
 type UpdatePayload = {
     clientVersion: string
     clientId: string
-    recordUid?: string   // for update, uid of the record
-    data?: string        // for update, the record data
+    recordUid: string
+    data: string
+    revision?: number
 }
 
 type SecretsManagerResponseFolder = {
@@ -66,6 +67,7 @@ type SecretsManagerResponseRecord = {
     recordUid: string
     recordKey: string
     data: string
+    revision: number
     files: SecretsManagerResponseFile[]
 }
 
@@ -91,6 +93,7 @@ export type KeeperRecord = {
     recordUid: string
     folderUid?: string
     data: any
+    revision?: number
     files?: KeeperFile[]
 }
 
@@ -137,7 +140,8 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperReco
         clientVersion: 'ms' + packageVersion, // TODO generate client version for SM
         clientId: clientId,
         recordUid: record.recordUid,
-        data: webSafe64FromBytes(encryptedRecord)
+        data: webSafe64FromBytes(encryptedRecord),
+        revision: record.revision
     }
 }
 
@@ -205,7 +209,8 @@ const decryptRecord = async (record: SecretsManagerResponseRecord): Promise<Keep
     const decryptedRecord = await platform.decrypt(platform.base64ToBytes(record.data), record.recordUid)
     const keeperRecord: KeeperRecord = {
         recordUid: record.recordUid,
-        data: JSON.parse(platform.bytesToString(decryptedRecord))
+        data: JSON.parse(platform.bytesToString(decryptedRecord)),
+        revision: record.revision
     }
     if (record.files) {
         keeperRecord.files = []

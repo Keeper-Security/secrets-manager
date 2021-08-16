@@ -102,6 +102,27 @@ namespace SecretsManager
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    internal class UpdatePayload
+    {
+        public string clientVersion { get; }
+        public string clientId { get; }
+        public string recordUid { get; }
+        public string data { get; }
+        public long revision { get; }
+
+        public UpdatePayload(string clientVersion, string clientId, string recordUid, string data, long revision)
+        {
+            this.clientVersion = clientVersion;
+            this.clientId = clientId;
+            this.recordUid = recordUid;
+            this.data = data;
+            this.revision = revision;
+        }
+    }
+    
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
     [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class SecretsManagerResponse
@@ -129,6 +150,7 @@ namespace SecretsManager
         public string recordUid { get; set; }
         public string recordKey { get; set; }
         public string data { get; set; }
+        public long revision { get; set; }
         public bool isEditable { get; set; }
         public SecretsManagerResponseFile[] files { get; set; }
     }
@@ -161,12 +183,14 @@ namespace SecretsManager
     [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperRecord
     {
-        public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, KeeperRecordData data, KeeperFile[] files)
+
+        public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, KeeperRecordData data, long revision, KeeperFile[] files)
         {
             RecordKey = recordKey;
             RecordUid = recordUid;
             FolderUid = folderUid;
             Data = data;
+            Revision = revision;
             Files = files;
         }
 
@@ -174,6 +198,7 @@ namespace SecretsManager
         public string RecordUid { get; }
         public string FolderUid { get; }
         public KeeperRecordData Data { get; }
+        public long Revision { get; }
         public KeeperFile[] Files { get; }
 
         public object FieldValue(string fieldType)
@@ -276,6 +301,12 @@ namespace SecretsManager
             return keeperSecrets;
         }
 
+        public static async Task UpdateSecret(SecretsManagerOptions options, KeeperRecord record)
+        {
+            var payload = PrepareUpdatePayload(options.Storage, record);
+            await PostQuery(options, "update_secret", payload);
+        }
+
         public static byte[] DownloadFile(KeeperFile file)
         {
             return DownloadFile(file, file.Url);
@@ -295,24 +326,7 @@ namespace SecretsManager
         {
             var request = (HttpWebRequest)WebRequest.Create(url);
             request.Method = "GET";
-
-            HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-            // HttpWebResponse response;
-            // try
-            // {
-            // }
-            // catch (WebException e)
-            // {
-            //     if (e.Response == null) throw;
-            //     var errorResponseStream = ((HttpWebResponse)e.Response).GetResponseStream();
-            //     if (errorResponseStream == null)
-            //     {
-            //         throw new InvalidOperationException("Response was expected but not received");
-            //     }
-            //
-            //     return new KeeperHttpResponse(StreamToBytes(errorResponseStream), true);
-            // }
-
+            var response = (HttpWebResponse)request.GetResponse();
             using var responseStream = response.GetResponseStream();
             return CryptoUtils.Decrypt(StreamToBytes(responseStream), file.FileKey);
         }
@@ -389,8 +403,8 @@ namespace SecretsManager
                     files.Add(new KeeperFile(fileKey, file.fileUid, JsonUtils.ParseJson<KeeperFileData>(decryptedFile), file.url, file.thumbnailUrl));
                 }
             }
-
-            return new KeeperRecord(recordKey, record.recordUid, folderUid, JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord), files.ToArray());
+            
+            return new KeeperRecord(recordKey, record.recordUid, folderUid, JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord), record.revision, files.ToArray());
         }
 
         private static GetPayload PrepareGetPayload(IKeyValueStorage storage, string[] recordsFilter)
@@ -414,8 +428,26 @@ namespace SecretsManager
                 publicKey = CryptoUtils.BytesToBase64(publicKeyBytes);
             }
 
+            return new GetPayload(GetClientVersion(), clientId, publicKey, recordsFilter);
+        }
+
+        private static UpdatePayload PrepareUpdatePayload(IKeyValueStorage storage, KeeperRecord record)
+        {
+            var clientId = storage.GetString(KeyClientId);
+            if (clientId == null)
+            {
+                throw new Exception("Client Id is missing from the configuration");
+            }
+
+            var recordBytes = JsonUtils.SerializeJson(record.Data);
+            var encryptedRecord = CryptoUtils.Encrypt(recordBytes, record.RecordKey);
+            return new UpdatePayload(GetClientVersion(), clientId, record.RecordUid, CryptoUtils.WebSafe64FromBytes(encryptedRecord), record.Revision);
+        }
+
+        private static string GetClientVersion()
+        {
             var version = Assembly.GetExecutingAssembly().GetName().Version;
-            return new GetPayload($"mn{version.Major}.{version.Minor}.{version.Revision}", clientId, publicKey, recordsFilter);
+            return $"mn{version.Major}.{version.Minor}.{version.Revision}";
         }
 
         [SuppressMessage("ReSharper", "StringLiteralTypo")]
@@ -582,7 +614,9 @@ namespace SecretsManager
                     throw new Exception(CryptoUtils.BytesToString(response.Data));
                 }
 
-                return CryptoUtils.Decrypt(response.Data, transmissionKey.Key);
+                return response.Data.Length == 0 
+                    ? response.Data 
+                    : CryptoUtils.Decrypt(response.Data, transmissionKey.Key);
             }
         }
     }

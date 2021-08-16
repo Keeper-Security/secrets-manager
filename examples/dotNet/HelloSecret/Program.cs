@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Threading.Tasks;
 using SecretsManager;
 
@@ -36,22 +37,28 @@ namespace HelloSecret
                 // if your Keeper Account is in other region than US, update the hostname accordingly  
                 SecretsManagerClient.InitializeStorage(storage, clientKey, "keepersecurity.com");
             }
+
             var options = new SecretsManagerOptions(storage);
             // var options = new SecretsManagerOptions(storage, SecretsManagerClient.CachingPostFunction);
             var records = (await SecretsManagerClient.GetSecrets(options)).Records;
+            // var records = (await SecretsManagerClient.GetSecrets(options, new[] { "UlzQ-jKQTgQcEvpJI9vxxQ" })).Records;
             Console.WriteLine($"Received {records.Length} record(s)");
 
             // get the password from the first record
             var firstRecord = records[0];
             var password = records[0].FieldValue("password").ToString();
             Console.WriteLine($"Password: {password}");
-            
+
             // download the file from the 1st record
-            var file = firstRecord.GetFileByName("Serge2014.jpg");
+            var file = firstRecord.GetFileByName("acme.cer");
             if (file != null)
             {
-                // var fileBytes = SecretsManagerClient.
+                var fileBytes = SecretsManagerClient.DownloadFile(file);
+                await File.WriteAllBytesAsync(file.Data.name, fileBytes);
             }
+
+            firstRecord.UpdateFieldValue("password", "aP1$t367QOCvL$eM$bG#");
+            await SecretsManagerClient.UpdateSecret(options, firstRecord);
         }
     }
 }

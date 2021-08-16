@@ -56,7 +56,8 @@ private data class UpdatePayload(
     val clientVersion: String,
     val clientId: String,
     val recordUid: String,
-    val data: String
+    val data: String,
+    val revision: Long? = null
 )
 
 data class EncryptedPayload(val payload: ByteArray, val signature: ByteArray)
@@ -73,6 +74,7 @@ private data class SecretsManagerResponseRecord(
     val recordUid: String,
     val recordKey: String,
     val data: String,
+    val revision: Long? = null,
     val isEditable: Boolean,
     val files: List<SecretsManagerResponseFile>?
 )
@@ -104,6 +106,7 @@ data class KeeperRecord(
     val recordUid: String,
     var folderUid: String?,
     val data: KeeperRecordData,
+    val revision: Long?,
     val files: List<KeeperFile>?
 ) {
     fun getPassword(): String? {
@@ -282,7 +285,7 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
             )
         }
     }
-    return KeeperRecord(recordKey, record.recordUid, null, Json.decodeFromString(bytesToString(decryptedRecord)), files)
+    return KeeperRecord(recordKey, record.recordUid, null, Json.decodeFromString(bytesToString(decryptedRecord)), record.revision, files)
 }
 
 private fun prepareGetPayload(
@@ -314,7 +317,7 @@ private fun prepareUpdatePayload(
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val recordBytes = stringToBytes(Json.encodeToString(record.data))
     val encryptedRecord = encrypt(recordBytes, record.recordKey)
-    return UpdatePayload(toKeeperAppClientString(ManifestLoader.version), clientId, record.recordUid, webSafe64FromBytes(encryptedRecord))
+    return UpdatePayload(toKeeperAppClientString(ManifestLoader.version), clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision)
 }
 
 fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload): KeeperHttpResponse {

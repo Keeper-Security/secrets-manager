@@ -20,7 +20,7 @@ initialize(version)
 // const configFileName = 'client-config-admin+rte.json'
 // const clientKey = '122iGmGds8JSRem1aJZN1r8PNiG2a6UyoLa4j60kGcY'
 const configFileName = 'client-config-prod.json'
-const clientKey = 'wz6iSJKgz6Z5eJyOT8lSglUFZVJxhzVZByMNS15eoaw'
+const clientKey = '9n5Yq2h4uCe-WVV0-jXjOjhETUmhTYU0xkTV3jIHUkw'
 
 async function test() {
     const kvs = localConfigStorage(configFileName)
@@ -30,11 +30,12 @@ async function test() {
         storage: kvs,
         // queryFunction: cachingPostFunction
     }
-    const response = await getSecrets(options)
-    console.log(inspect(response, false, 6))
+    const { records } = await getSecrets(options)
+    console.log(inspect(records, false, 6))
 
-    // response[0].data.title = response[0].data.title + '+'
-    // await updateSecret(kvs, response[0])
+    const firstRecord = records[0]
+    firstRecord.data.title = firstRecord.data.title + '+'
+    await updateSecret(options, firstRecord)
     // const fileData = await downloadFile(response.records[0].files![0])
     // console.log(fileData)
 }
