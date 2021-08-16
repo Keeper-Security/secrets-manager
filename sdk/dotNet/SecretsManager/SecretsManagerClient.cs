@@ -176,14 +176,14 @@ namespace SecretsManager
         public KeeperRecordData Data { get; }
         public KeeperFile[] Files { get; }
 
-        private static object GetFieldValueByType(string fieldType, IEnumerable<KeeperRecordField> fields)
+        public object FieldValue(string fieldType)
         {
-            return fields.FirstOrDefault(x => x.type == fieldType)?.value[0];
+            return Data.fields.Concat(Data.custom ?? new KeeperRecordField[] { }).FirstOrDefault(x => x.type == fieldType)?.value[0];
         }
 
-        private static void UpdateFieldValueForType(string fieldType, object value, IEnumerable<KeeperRecordField> fields)
+        public void UpdateFieldValue(string fieldType, object value)
         {
-            var field = fields.FirstOrDefault(x => x.type == fieldType);
+            var field = Data.fields.Concat(Data.custom ?? new KeeperRecordField[] { }).FirstOrDefault(x => x.type == fieldType);
             if (field == null)
             {
                 return;
@@ -192,24 +192,14 @@ namespace SecretsManager
             field.value[0] = value;
         }
 
-        public object FieldValue(string fieldType)
+        public KeeperFile GetFileByName(string fileName)
         {
-            return GetFieldValueByType(fieldType, Data.fields);
+            return Files.FirstOrDefault(x => x.Data.name == fileName);
         }
 
-        public object CustomFieldValue(string fieldType)
+        public KeeperFile GetFileByUid(string fileUid)
         {
-            return GetFieldValueByType(fieldType, Data.custom);
-        }
-
-        public void UpdateFieldValue(string fieldType, object value)
-        {
-            UpdateFieldValueForType(fieldType, value, Data.fields);
-        }
-
-        public void UpdateCustomFieldValue(string fieldType, object value)
-        {
-            UpdateFieldValueForType(fieldType, value, Data.custom);
+            return Files.FirstOrDefault(x => x.FileUid == fileUid);
         }
     }
 
@@ -284,6 +274,47 @@ namespace SecretsManager
             }
 
             return keeperSecrets;
+        }
+
+        public static byte[] DownloadFile(KeeperFile file)
+        {
+            return DownloadFile(file, file.Url);
+        }
+
+        public static byte[] DownloadThumbnail(KeeperFile file)
+        {
+            if (file.ThumbnailUrl == null)
+            {
+                throw new Exception($"Thumbnail does not exist for the file {file.FileUid}");
+            }
+
+            return DownloadFile(file, file.Url);
+        }
+
+        private static byte[] DownloadFile(KeeperFile file, string url)
+        {
+            var request = (HttpWebRequest)WebRequest.Create(url);
+            request.Method = "GET";
+
+            HttpWebResponse response = (HttpWebResponse)request.GetResponse();
+            // HttpWebResponse response;
+            // try
+            // {
+            // }
+            // catch (WebException e)
+            // {
+            //     if (e.Response == null) throw;
+            //     var errorResponseStream = ((HttpWebResponse)e.Response).GetResponseStream();
+            //     if (errorResponseStream == null)
+            //     {
+            //         throw new InvalidOperationException("Response was expected but not received");
+            //     }
+            //
+            //     return new KeeperHttpResponse(StreamToBytes(errorResponseStream), true);
+            // }
+
+            using var responseStream = response.GetResponseStream();
+            return CryptoUtils.Decrypt(StreamToBytes(responseStream), file.FileKey);
         }
 
         private static async Task<Tuple<KeeperSecrets, bool>> FetchAndDecryptSecrets(SecretsManagerOptions options, string[] recordsFilter)
@@ -468,16 +499,16 @@ namespace SecretsManager
             }
         }
 
+        private static byte[] StreamToBytes(Stream stream)
+        {
+            using var memoryStream = new MemoryStream();
+            stream.CopyTo(memoryStream);
+            return memoryStream.ToArray();
+        }
+
         [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
         public static async Task<KeeperHttpResponse> PostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload, bool allowUnverifiedCertificate)
         {
-            static byte[] StreamToBytes(Stream stream)
-            {
-                using var memoryStream = new MemoryStream();
-                stream.CopyTo(memoryStream);
-                return memoryStream.ToArray();
-            }
-
             var request = (HttpWebRequest)WebRequest.Create(url);
             if (allowUnverifiedCertificate)
             {

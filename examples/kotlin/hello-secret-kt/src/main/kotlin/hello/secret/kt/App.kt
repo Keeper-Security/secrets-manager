@@ -8,18 +8,20 @@ class App
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
         println("Usage: ./gradlew run --args=\"%config_name% %client_key%\"")
-        println("F.e. ./gradlew run --args=\"config.txt EvdTdbH1xbHuRcja7QG3wMOyLUbvoQgF9WkkrHTdkh8\"")
+        println("F.e. ./gradlew run --args=\"config.json EvdTdbH1xbHuRcja7QG3wMOyLUbvoQgF9WkkrHTdkh8\"")
         println("Use %client_key% only once to initialize the config. For subsequent runs, ./gradlew run --args=%config_name%")
         return
     }
     val storage: KeyValueStorage = LocalConfigStorage(args[0])
-    System.out.printf("Local Config Storage opened from the file '%s'%n", args[0])
+    println("Local Config Storage opened from the file ${args[0]}")
     try {
         if (args.size > 1) {
-            System.out.printf("Local Config Storage initialized with the Client Key '%s'%n", args[1])
+            println("Local Config Storage initialized with the Client Key ${args[1]}")
+            // if your Keeper Account is in other region than US, update the hostname accordingly
             initializeStorage(storage, args[1], "keepersecurity.com")
         }
         val options = SecretsManagerOptions(storage)
+//        val options = SecretsManagerOptions(storage, cachingPostFunction)
         val (records) = getSecrets(options)
         //            KeeperSecrets secrets = getSecrets(options, Arrays.asList("UlzQ-jKQTgQcEvpJI9vxxQ"));
         println(records)

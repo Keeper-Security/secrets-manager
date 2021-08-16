@@ -4,6 +4,7 @@ from keeper_secrets_manager_core.storage import FileKeyValueStorage
 if __name__ == '__main__':
 
     secrets_manager = SecretsManager(
+## if your Keeper Account is in other region than US, update the hostname accordingly
         hostname='keepersecurity.com',
         token='<ONE TIME TOKEN>',
         config=FileKeyValueStorage(),
