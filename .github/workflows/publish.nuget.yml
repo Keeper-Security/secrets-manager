@@ -1,4 +1,4 @@
-name: Publish .Net
+name: Publish to NuGet
 on:
   #  release:
   #    types: [created]

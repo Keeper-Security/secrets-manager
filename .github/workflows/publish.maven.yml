@@ -1,4 +1,4 @@
-name: Publish Java
+name: Publish to Maven
 on:
 #  release:
 #    types: [created]
