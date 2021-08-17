@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  publish:
+  publish-dotnet:
     runs-on: ubuntu-latest
     #    environment:
     #      name: prod
