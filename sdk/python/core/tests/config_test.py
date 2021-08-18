@@ -32,7 +32,7 @@ class ConfigTest(unittest.TestCase):
                 SecretsManager()
                 self.fail("Found config file, should be missing.")
             except Exception as err:
-                self.assertRegex(str(err), r'Cannot find the client key', "did not get correct exception message.")
+                self.assertRegex(str(err), r'Cannot locate One Time Token.', "did not get correct exception message.")
 
     def test_default_load_from_json(self):
 
@@ -53,10 +53,10 @@ class ConfigTest(unittest.TestCase):
                         "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
                         "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpG"
                                     "ILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-                        "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
                         "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOt"
                                       "x9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0U"
-                                      "BFTrbET6joq0xCjhKMhHQFaHYI"
+                                      "BFTrbET6joq0xCjhKMhHQFaHYI",
+                        "serverPublicKeyId": "7"
                     })
                 )
                 fh.close()
@@ -88,7 +88,8 @@ class ConfigTest(unittest.TestCase):
                         "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
                         "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOt"
                                       "x9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0U"
-                                      "BFTrbET6joq0xCjhKMhHQFaHYI"
+                                      "BFTrbET6joq0xCjhKMhHQFaHYI",
+                        "serverPublicKeyId": "7"
                     })
                 )
                 fh.close()
@@ -98,8 +99,7 @@ class ConfigTest(unittest.TestCase):
 
             self.assertEqual(secrets_manager.config.get(ConfigKeys.KEY_HOSTNAME), "localhost",
                              "did not get correct server")
-            self.assertEqual(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "ABC123",
-                             "did not get correct client key")
+            self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "Client key is not present")
 
     def test_pass_in_config(self):
 
@@ -133,15 +133,13 @@ class ConfigTest(unittest.TestCase):
             # Pass in the config
             secrets_manager = SecretsManager(config=config)
 
-            self.assertEqual("MY CLIENT KEY", secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY),
-                             "got correct client key")
 
             # Is not bound, client id and private key will be generated and overwrite existing
             self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_ID), "got a client id")
             self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_PRIVATE_KEY), "got a private key")
 
             # App key should be removed.
-            self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_APP_KEY), "found the app key")
+            self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "client key (one time token) was removed successfully")
 
     def test_in_memory_config(self):
 
@@ -165,15 +163,13 @@ class ConfigTest(unittest.TestCase):
         # Pass in the config
         secrets_manager = SecretsManager(config=config)
 
-        self.assertEqual("MY CLIENT KEY", secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY),
-                         "got correct client key")
 
         # Is not bound, client id and private key will be generated and overwrite existing
         self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_ID), "got a client id")
         self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_PRIVATE_KEY), "got a private key")
 
         # App key should be removed.
-        self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_APP_KEY), "found the app key")
+        self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "client key (one time token) was removed successfully")
 
     def test_public_key_id(self):
 

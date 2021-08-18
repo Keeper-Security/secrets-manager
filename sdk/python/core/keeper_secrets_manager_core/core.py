@@ -55,7 +55,7 @@ class SecretsManager:
         if config is None:
             config = FileKeyValueStorage()
 
-        # If the server or client key are set in the args, make sure they makes it's way into the config. The
+        # If the server or client key are set in the args, make sure they makes it's way into the config. They
         # will override what is already in the config if they exist.
         if token is not None:
             config.set(ConfigKeys.KEY_CLIENT_KEY, token)
@@ -109,34 +109,31 @@ class SecretsManager:
 
     def _init(self):
 
-        existing_secret_key = self.load_secret_key()
-
-        if existing_secret_key is None:
-            raise ValueError("Cannot find the client key in the configuration file.")
-
-        existing_secret_key_bytes = url_safe_str_to_bytes(existing_secret_key)
-        digest = 'sha512'
-        existing_secret_key_hash = bytes_to_url_safe_str(hmac.new(existing_secret_key_bytes,
-                                                                  b'KEEPER_SECRETS_MANAGER_CLIENT_ID',
-                                                                  digest).digest())
-
         client_id = self.config.get(ConfigKeys.KEY_CLIENT_ID)
 
-        if not existing_secret_key_hash:
-            # Secret key was not supplied (Probably already bound and client id is present?)
-            if not client_id:
-                # Instruct user how to bound using commander or web ui
-                raise Exception("Not bound")
-
-        elif existing_secret_key_hash == client_id:
-            # Already bound
+        if client_id:
             self.logger.debug("Already bound")
+
+            if self.config.get(ConfigKeys.KEY_CLIENT_KEY):
+                self.config.delete(ConfigKeys.KEY_CLIENT_KEY)
+
         else:
+
+            existing_secret_key = self.load_secret_key()
+
+            if existing_secret_key is None:
+                raise ValueError("Cannot locate One Time Token.")
+
+            existing_secret_key_bytes = url_safe_str_to_bytes(existing_secret_key)
+            digest = 'sha512'
+            existing_secret_key_hash = bytes_to_url_safe_str(hmac.new(existing_secret_key_bytes,
+                                                                      b'KEEPER_SECRETS_MANAGER_CLIENT_ID',
+                                                                      digest).digest())
+
             self.config.delete(ConfigKeys.KEY_CLIENT_ID)
             self.config.delete(ConfigKeys.KEY_PRIVATE_KEY)
             self.config.delete(ConfigKeys.KEY_APP_KEY)
 
-            self.config.set(ConfigKeys.KEY_CLIENT_KEY, existing_secret_key)
             self.config.set(ConfigKeys.KEY_CLIENT_ID, existing_secret_key_hash)
 
             private_key_str = self.config.get(ConfigKeys.KEY_PRIVATE_KEY)
@@ -402,6 +399,9 @@ class SecretsManager:
             encrypted_master_key = url_safe_str_to_bytes(decrypted_response_dict.get('encryptedAppKey'))
             secret_key = decrypt_aes(encrypted_master_key, self.config.get(ConfigKeys.KEY_CLIENT_KEY))
             self.config.set(ConfigKeys.KEY_APP_KEY, bytes_to_url_safe_str(secret_key))
+
+            self.config.delete(ConfigKeys.KEY_CLIENT_KEY)
+
         else:
             secret_key = base64_to_bytes(self.config.get(ConfigKeys.KEY_APP_KEY))
 
