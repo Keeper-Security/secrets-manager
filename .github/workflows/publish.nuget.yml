@@ -39,4 +39,4 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Publish package
-        run: dotnet nuget push ./SecretsManager/bin/Release/*.nupkg
+        run: dotnet nuget push ./SecretsManager/bin/Release/*.nupkg --api-key ${{env.NUGET_AUTH_TOKEN}} --source https://api.nuget.org/v3/index.json
