@@ -1,15 +1,23 @@
 from datetime import datetime
 
 from keeper_secrets_manager_core import SecretsManager
-from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
+from keeper_secrets_manager_core.storage import FileKeyValueStorage
 from keeper_secrets_manager_core.utils import json_to_dict, dict_to_json
 
 if __name__ == '__main__':
 
+    hostname = input("Enter KSM Server\nPress <Enter> to use keepersecurity.com server: ")
+    if not hostname:
+        hostname = "keepersecurity.com"
+
+    token = input("Enter one time token: ")
+    print("Hostname: [" + hostname + "]")
+    print("Token: [" + token + "]")
+
     secrets_manager = SecretsManager(
-## if your Keeper Account is in other region than US, update the hostname accordingly
-        hostname='keepersecurity.com',
-        token='<ONE TIME TOKEN>',
+        ## if your Keeper Account is in other region than US, update the hostname accordingly
+        hostname=hostname,
+        token=token,
         config=FileKeyValueStorage('config2.json')
     )
 

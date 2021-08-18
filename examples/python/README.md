@@ -15,8 +15,8 @@ pip3 install -r requirements.txt
 
 Usage:
 
-```.shell
-python3 hello-ksm.py
+```shell
+python3 hello-ksm-read.py
 ```
 
 You need to use client key only once per config name. After config has been initialized, the client key becomes obsolete and can be omitted.
