@@ -31,7 +31,6 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         var hostname: String? = null,
         var clientId: String? = null,
         var privateKey: String? = null,
-        var publicKey: String? = null,
         var clientKey: String? = null,
         var appKey: String? = null,
         var serverPublicKeyId: String? = null
@@ -48,7 +47,6 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
             optSetFn(KEY_HOSTNAME, config.hostname)
             optSetFn(KEY_CLIENT_ID, config.clientId)
             optSetFn(KEY_PRIVATE_KEY, config.privateKey)
-            optSetFn(KEY_PUBLIC_KEY, config.publicKey)
             optSetFn(KEY_CLIENT_KEY, config.clientKey)
             optSetFn(KEY_APP_KEY, config.appKey)
             optSetFn(KEY_SERVER_PUBIC_KEY_ID, config.serverPublicKeyId)
@@ -62,7 +60,6 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         config.hostname = strings[KEY_HOSTNAME]
         config.clientId = strings[KEY_CLIENT_ID]
         config.privateKey = strings[KEY_PRIVATE_KEY]
-        config.publicKey = strings[KEY_PUBLIC_KEY]
         config.clientKey = strings[KEY_CLIENT_KEY]
         config.appKey = strings[KEY_APP_KEY]
         config.serverPublicKeyId = strings[KEY_SERVER_PUBIC_KEY_ID]
