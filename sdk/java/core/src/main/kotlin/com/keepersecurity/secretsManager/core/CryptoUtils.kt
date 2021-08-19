@@ -103,8 +103,8 @@ internal fun decrypt(data: String, key: ByteArray): ByteArray {
     return decrypt(base64ToBytes(data), key)
 }
 
-internal fun importPrivateKey(rawBytes: ByteArray): ECPrivateKey {
-    val privateKeySpec = ECPrivateKeySpec(BigInteger(1, rawBytes), KeeperCryptoParameters.ecParameterSpec)
+internal fun importPrivateKey(derBytes: ByteArray): ECPrivateKey {
+    val privateKeySpec = ECPrivateKeySpec(BigInteger(1, derBytes.copyOfRange(36, 68)), KeeperCryptoParameters.ecParameterSpec)
     return KeeperCryptoParameters.keyFactory.generatePrivate(privateKeySpec) as ECPrivateKey
 }
 

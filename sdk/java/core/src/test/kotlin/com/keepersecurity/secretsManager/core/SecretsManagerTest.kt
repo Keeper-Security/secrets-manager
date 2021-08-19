@@ -5,7 +5,6 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.*
 import java.io.BufferedReader
 import java.io.File
-import java.io.FileOutputStream
 import java.io.FileReader
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -17,7 +16,7 @@ internal class SecretsManagerTest {
     @Serializable
     data class TestResponse(val transmissionKey: String, val data: String, val statusCode: Int)
 
-//    @Test
+    @Test
     fun getSecretsE2E() {
         val file = File("../../test_data.json")
         val inputStream = BufferedReader(FileReader(file))
@@ -51,15 +50,15 @@ internal class SecretsManagerTest {
         }
     }
 
-    @Test // uncomment to debug the integration test
+//    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (
             url: String,
             transmissionKey: TransmissionKey,
             payload: EncryptedPayload,
         ) -> KeeperHttpResponse = { url, transmissionKey, payload -> postFunction(url, transmissionKey, payload, true) }
-        val storage = LocalConfigStorage("config-prod1.json")
-//        initializeStorage(storage, "W3g-y3PAN2l_8zcmGS0WR27xflB2dTDFWBLYJVGLoTc", "keepersecurity.com")
+        val storage = LocalConfigStorage("config-prod-msp1.json")
+        initializeStorage(storage, "BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw", "keepersecurity.com")
         val options = SecretsManagerOptions(storage, trustAllPostFunction)
 //        val options = SecretsManagerOptions(storage, ::cachingPostFunction)
         val secrets = getSecrets(options)
