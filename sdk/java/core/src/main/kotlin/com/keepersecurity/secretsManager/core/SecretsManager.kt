@@ -19,7 +19,6 @@ const val KEY_CLIENT_ID = "clientId"
 const val KEY_CLIENT_KEY = "clientKey" // The key that is used to identify the client before public key
 const val KEY_APP_KEY = "appKey" // The application key with which all secrets are encrypted
 const val KEY_PRIVATE_KEY = "privateKey" // The client's private key
-const val KEY_PUBLIC_KEY = "publicKey" // The client's public key
 
 private const val CLIENT_ID_HASH_TAG = "KEEPER_SECRETS_MANAGER_CLIENT_ID" // Tag for hashing the client key to client id
 
@@ -151,9 +150,8 @@ fun initializeStorage(storage: KeyValueStorage, clientKey: String, hostName: Str
     storage.saveString(KEY_HOSTNAME, hostName)
     storage.saveString(KEY_CLIENT_ID, clientId)
     storage.saveBytes(KEY_CLIENT_KEY, clientKeyBytes)
-    val keyPair = generateKeyPair()
-    storage.saveBytes(KEY_PUBLIC_KEY, keyPair.first)
-    storage.saveBytes(KEY_PRIVATE_KEY, keyPair.second)
+    val privateKey = generateKeyPair()
+    storage.saveBytes(KEY_PRIVATE_KEY, privateKey)
 }
 
 internal object ManifestLoader {
@@ -302,7 +300,8 @@ private fun prepareGetPayload(
     )
     val appKey = storage.getBytes(KEY_APP_KEY)
     if (appKey == null) {
-        val publicKey = storage.getBytes(KEY_PUBLIC_KEY) ?: throw Exception("Public key is missing from the storage")
+        val privateKey = storage.getBytes(KEY_PRIVATE_KEY) ?: throw Exception("Private key is missing from the storage")
+        val publicKey =  exportPublicKey(privateKey)
         payload.publicKey = bytesToBase64(publicKey)
     }
     if (recordsFilter.isNotEmpty()) {

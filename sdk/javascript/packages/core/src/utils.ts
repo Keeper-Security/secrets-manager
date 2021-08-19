@@ -10,4 +10,4 @@ export const webSafe64FromBytes = (source: Uint8Array): string => webSafe64(plat
 
 // extracts public raw from private key for prime256v1 curve in der/pkcs8
 // privateKey: key.slice(36, 68)
-export const privateDerToPublicRaw = (key: Uint8Array): Uint8Array => key.slice(73)
+export const privateDerToPublicRaw = (key: Uint8Array): Uint8Array => key.slice(-65)

@@ -1,9 +1,11 @@
 package com.keepersecurity.secretsManager.core
 
 import org.bouncycastle.asn1.x9.ECNamedCurveTable
+import org.bouncycastle.asn1.x9.X9ECParameters
 import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider
 import java.math.BigInteger
 import java.security.*
+import java.security.interfaces.ECPrivateKey
 import java.security.spec.*
 import java.util.*
 import javax.crypto.Cipher
@@ -16,10 +18,12 @@ internal object KeeperCryptoParameters {
     internal val provider: BouncyCastleFipsProvider = BouncyCastleFipsProvider()
     internal val keyFactory: KeyFactory
     internal val ecParameterSpec: ECParameterSpec
+    internal val curveParams: X9ECParameters
 
     init {
         Security.addProvider(provider)
         keyFactory = KeyFactory.getInstance("EC", provider)
+        curveParams = ECNamedCurveTable.getByName("secp256r1")
         val parameters = AlgorithmParameters.getInstance("EC")
         parameters.init(ECGenParameterSpec("secp256r1"))
         ecParameterSpec = parameters.getParameterSpec(ECParameterSpec::class.java)
@@ -57,13 +61,15 @@ internal fun getRandomBytes(length: Int): ByteArray {
     return bytes
 }
 
-internal fun generateKeyPair(): Pair<ByteArray, ByteArray> {
+internal fun generateKeyPair(): ByteArray {
     val keyGen = KeyPairGenerator.getInstance("EC", KeeperCryptoParameters.provider)
     keyGen.initialize(ECGenParameterSpec("secp256r1"))
     val keyPair = keyGen.genKeyPair()
-    val publicRaw = with(keyPair.public.encoded) { copyOfRange(26, size) }
-    val privateRaw = keyPair.private.encoded.copyOfRange(36, 68)
-    return Pair(publicRaw, privateRaw)
+    return keyPair.private.encoded
+}
+
+internal fun exportPublicKey(privateKey: ByteArray): ByteArray {
+    return KeeperCryptoParameters.curveParams.g.multiply(importPrivateKey(privateKey).s).encoded
 }
 
 internal fun hash(data: ByteArray, tag: String): ByteArray {
@@ -97,21 +103,14 @@ internal fun decrypt(data: String, key: ByteArray): ByteArray {
     return decrypt(base64ToBytes(data), key)
 }
 
-internal fun importPrivateKey(rawBytes: ByteArray): PrivateKey {
-    val privateKeySpec = ECPrivateKeySpec(BigInteger(1, rawBytes), KeeperCryptoParameters.ecParameterSpec)
-    return KeeperCryptoParameters.keyFactory.generatePrivate(privateKeySpec)
+internal fun importPrivateKey(derBytes: ByteArray): ECPrivateKey {
+    val privateKeySpec = ECPrivateKeySpec(BigInteger(1, derBytes.copyOfRange(36, 68)), KeeperCryptoParameters.ecParameterSpec)
+    return KeeperCryptoParameters.keyFactory.generatePrivate(privateKeySpec) as ECPrivateKey
 }
 
 internal fun importPublicKey(rawBytes: ByteArray): PublicKey {
-    val x = rawBytes.copyOfRange(1, 33)
-    val y = rawBytes.copyOfRange(33, 65)
-    val w = ECNamedCurveTable
-        .getByName("secp256r1")
-        .curve
-        .createPoint(BigInteger(1, x), BigInteger(1, y))
-    val pubKeySpec = ECPublicKeySpec(
-        ECPoint(w.xCoord.toBigInteger(), w.yCoord.toBigInteger()), KeeperCryptoParameters.ecParameterSpec
-    )
+    val q = KeeperCryptoParameters.curveParams.curve.decodePoint(rawBytes)
+    val pubKeySpec = ECPublicKeySpec(ECPoint(q.xCoord.toBigInteger(), q.yCoord.toBigInteger()), KeeperCryptoParameters.ecParameterSpec)
     return KeeperCryptoParameters.keyFactory.generatePublic(pubKeySpec)
 }
 
