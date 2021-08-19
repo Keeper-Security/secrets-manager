@@ -68,8 +68,8 @@ internal fun generateKeyPair(): ByteArray {
     return keyPair.private.encoded
 }
 
-internal fun exportPublicKey(privateKey: ByteArray): ByteArray {
-    return KeeperCryptoParameters.curveParams.g.multiply(importPrivateKey(privateKey).s).encoded
+internal fun exportPublicKey(privateKeyDer: ByteArray): ByteArray {
+    return KeeperCryptoParameters.curveParams.g.multiply(importPrivateKey(privateKeyDer).s).encoded
 }
 
 internal fun hash(data: ByteArray, tag: String): ByteArray {
@@ -103,8 +103,8 @@ internal fun decrypt(data: String, key: ByteArray): ByteArray {
     return decrypt(base64ToBytes(data), key)
 }
 
-internal fun importPrivateKey(derBytes: ByteArray): ECPrivateKey {
-    val privateKeySpec = ECPrivateKeySpec(BigInteger(1, derBytes.copyOfRange(36, 68)), KeeperCryptoParameters.ecParameterSpec)
+internal fun importPrivateKey(privateKeyDer: ByteArray): ECPrivateKey {
+    val privateKeySpec = ECPrivateKeySpec(BigInteger(1, privateKeyDer.copyOfRange(36, 68)), KeeperCryptoParameters.ecParameterSpec)
     return KeeperCryptoParameters.keyFactory.generatePrivate(privateKeySpec) as ECPrivateKey
 }
 
