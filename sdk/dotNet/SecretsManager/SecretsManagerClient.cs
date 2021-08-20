@@ -256,7 +256,6 @@ namespace SecretsManager
         private const string KeyClientKey = "clientKey"; // The key that is used to identify the client before public key
         private const string KeyAppKey = "appKey"; // The application key with which all secrets are encrypted
         private const string KeyPrivateKey = "privateKey"; // The client's private key
-        private const string KeyPublicKey = "publicKey"; // The client's public key
         private const string ClientIdHashTag = "KEEPER_SECRETS_MANAGER_CLIENT_ID"; // Tag for hashing the client key to client id
 
         public static void InitializeStorage(IKeyValueStorage storage, string clientKey, string hostName)
@@ -278,9 +277,7 @@ namespace SecretsManager
             storage.SaveString(KeyHostname, hostName);
             storage.SaveString(KeyClientId, clientId);
             storage.SaveBytes(KeyClientKey, clientKeyBytes);
-            var (publicKey, privateKey) = CryptoUtils.GenerateKeyPair();
-            storage.SaveBytes(KeyPublicKey, publicKey);
-            storage.SaveBytes(KeyPrivateKey, privateKey);
+            storage.SaveBytes(KeyPrivateKey, CryptoUtils.GenerateKeyPair());
         }
 
         public static async Task<KeeperSecrets> GetSecrets(SecretsManagerOptions options, string[] recordsFilter = null)
@@ -419,13 +416,13 @@ namespace SecretsManager
             var appKey = storage.GetString(KeyAppKey);
             if (appKey == null)
             {
-                var publicKeyBytes = storage.GetBytes(KeyPublicKey);
-                if (publicKeyBytes == null)
+                var privateKeyBytes = storage.GetBytes(KeyPrivateKey);
+                if (privateKeyBytes == null)
                 {
                     throw new Exception("Public key is missing from the storage");
                 }
 
-                publicKey = CryptoUtils.BytesToBase64(publicKeyBytes);
+                publicKey = CryptoUtils.BytesToBase64(CryptoUtils.ExportPublicKey(privateKeyBytes));
             }
 
             return new GetPayload(GetClientVersion(), clientId, publicKey, recordsFilter);

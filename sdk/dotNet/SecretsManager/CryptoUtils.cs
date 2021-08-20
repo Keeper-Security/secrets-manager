@@ -10,19 +10,24 @@ using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Modes;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Math;
+using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
 
 namespace SecretsManager
 {
     public static class CryptoUtils
     {
+        private static readonly SecureRandom Rng = new();
+        private static readonly X9ECParameters Curve;
         private static readonly ECDomainParameters ECParameters;
-        private static readonly SecureRandom RngCsp = new SecureRandom();
+        private static readonly ECKeyGenerationParameters KeyGenParams;
 
         static CryptoUtils()
         {
-            var curve = ECNamedCurveTable.GetByName("secp256r1");
-            ECParameters = new ECDomainParameters(curve.Curve, curve.G, curve.N);
+            var curveOid = X9ObjectIdentifiers.Prime256v1;
+            Curve = X962NamedCurves.GetByOid(curveOid);
+            ECParameters = new ECDomainParameters(Curve.Curve, Curve.G, Curve.N);
+            KeyGenParams = new ECKeyGenerationParameters(curveOid, Rng);
         }
 
         public static byte[] WebSafe64ToBytes(string data)
@@ -67,30 +72,21 @@ namespace SecretsManager
         public static byte[] GetRandomBytes(int length)
         {
             var bytes = new byte[length];
-            RngCsp.NextBytes(bytes);
+            Rng.NextBytes(bytes);
             return bytes;
         }
 
-        public static Tuple<byte[], byte[]> GenerateKeyPair()
+        public static byte[] GenerateKeyPair()
         {
-            var keyGeneratorParams = new ECKeyGenerationParameters(ECParameters, RngCsp);
-            var keyGenerator = new ECKeyPairGenerator("EC");
-            keyGenerator.Init(keyGeneratorParams);
+            var keyGenerator = new ECKeyPairGenerator();
+            keyGenerator.Init(KeyGenParams);
             var keyPair = keyGenerator.GenerateKeyPair();
-            var publicRaw = ((ECPublicKeyParameters) keyPair.Public).Q.GetEncoded();
-            var privateRaw = ExportECPrivateKey((ECPrivateKeyParameters) keyPair.Private);
-            return new Tuple<byte[], byte[]>(publicRaw, privateRaw);
+            return PrivateKeyInfoFactory.CreatePrivateKeyInfo(keyPair.Private).GetDerEncoded();
         }
-
-        private static byte[] ExportECPrivateKey(ECPrivateKeyParameters key)
+       
+        public static byte[] ExportPublicKey(byte[] privateKeyDer)
         {
-            var privateKey = key.D.ToByteArrayUnsigned();
-            var len = privateKey.Length;
-            if (len >= 32) return privateKey;
-            var pk = new byte[32];
-            Array.Clear(pk, 0, pk.Length);
-            Array.Copy(privateKey, 0, pk, 32 - len, len);
-            return pk;
+            return Curve.G.Multiply(ImportPrivateKey(privateKeyDer).D).GetEncoded(false);
         }
 
         public static byte[] Hash(byte[] data, string tag)
@@ -105,9 +101,9 @@ namespace SecretsManager
             return new ECPublicKeyParameters(point, ECParameters);
         }
         
-        private static ECPrivateKeyParameters ImportPrivateKey(byte[] key)
+        private static ECPrivateKeyParameters ImportPrivateKey(byte[] privateKeyDer)
         {
-            return new ECPrivateKeyParameters(new BigInteger(1, key), ECParameters);
+            return new ECPrivateKeyParameters(new BigInteger(1, privateKeyDer.Skip(36).Take(32).ToArray()), ECParameters);
         }
 
         private static byte[] GetECIESSymmetricKey(ICipherParameters privateKey, ICipherParameters recipientPublicKey)
@@ -155,8 +151,8 @@ namespace SecretsManager
 
         public static byte[] PublicEncrypt(byte[] data, byte[] key)
         {
-            var keyGenerator = new ECKeyPairGenerator("ECDH");
-            keyGenerator.Init(new ECKeyGenerationParameters(ECParameters, RngCsp));
+            var keyGenerator = new ECKeyPairGenerator();
+            keyGenerator.Init(KeyGenParams);
             var ephemeralKeyPair = keyGenerator.GenerateKeyPair();
             var recipientPublicKey = ImportPublicKey(key);
             var symmetricKey = GetECIESSymmetricKey(ephemeralKeyPair.Private, recipientPublicKey);
