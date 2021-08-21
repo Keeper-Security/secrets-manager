@@ -8,7 +8,7 @@ from ansible.vars.manager import VariableManager
 from ansible.plugins.loader import add_all_plugin_dirs
 from ansible.utils.display import Display
 from keeper_secrets_manager_core.dto.dtos import Record
-from keeper_secrets_manager_core.utils import encrypt_aes
+from keeper_secrets_manager_core.crypto import CryptoUtils
 import os
 import sys
 from io import StringIO
@@ -132,7 +132,7 @@ class RecordMaker:
 
         return Record({
             "recordUid": uid,
-            "data": encrypt_aes(json.dumps({
+            "data": CryptoUtils.encrypt_aes(json.dumps({
                 "title": title,
                 "type": "login",
                 "fields": [
@@ -166,21 +166,21 @@ class RecordMaker:
             file_refs.append(file_uid)
             file_data = {
                 "fileUid": file_uid,
-                "fileKey": base64.b64encode(encrypt_aes(RecordMaker.secret, RecordMaker.secret)).decode(),
-                "data": base64.b64encode(encrypt_aes(data.encode(), RecordMaker.secret)).decode(),
+                "fileKey": base64.b64encode(CryptoUtils.encrypt_aes(RecordMaker.secret, RecordMaker.secret)).decode(),
+                "data": base64.b64encode(CryptoUtils.encrypt_aes(data.encode(), RecordMaker.secret)).decode(),
                 "url": file.get("url", "http://localhost/{}".format(file_uid)),
                 "thumbnailUrl": None
             }
             file_parts.append(file_data)
 
             file_content = file.get("data", "THIS IS FAKE DATA")
-            RecordMaker.url_data[file_data["url"]] = encrypt_aes(file_content.encode(), RecordMaker.secret)
+            RecordMaker.url_data[file_data["url"]] = CryptoUtils.encrypt_aes(file_content.encode(), RecordMaker.secret)
 
         r = None
         try:
             r = Record({
                 "recordUid": uid,
-                "data": encrypt_aes(json.dumps({
+                "data": CryptoUtils.encrypt_aes(json.dumps({
                     "title": title,
                     "type": "file",
                     "fields": [

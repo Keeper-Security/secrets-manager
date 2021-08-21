@@ -19,12 +19,14 @@ jobs:
         uses: actions/setup-python@v1
         with:
           python-version: ${{ matrix.python-version }}
+
+      ########## KSM Python SDK (from source)
+
       - name: Install SDK dependencies
         working-directory: ./sdk/python/core
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install -r requirements.txt
-          python3 -m pip install pytest pytest-cov
           python3 -m pip install -e .
 
       - name: Install SDK for integrations
@@ -38,6 +40,8 @@ jobs:
         working-directory: ./integration/keeper_secrets_manager_cli
         run: |
           python3 -m pip install -r requirements.txt
+          python3 -m pip install pytest pytest-cov
+
       - name: Run CLI tests
         working-directory: ./integration/keeper_secrets_manager_cli
         run: |
