@@ -2,7 +2,7 @@ import hashlib
 import os
 import unittest
 
-from keeper_secrets_manager_core.utils import encrypt_aes, decrypt_aes
+from keeper_secrets_manager_core.crypto import CryptoUtils
 
 
 class BATTokenTest(unittest.TestCase):
@@ -12,13 +12,13 @@ class BATTokenTest(unittest.TestCase):
         secret_key = os.urandom(32)
 
         plain_text_bytes = b"ABC123"
-        encr_text_bytes = encrypt_aes(plain_text_bytes, secret_key)
+        encr_text_bytes = CryptoUtils.encrypt_aes(plain_text_bytes, secret_key)
 
         h = hashlib.new('sha256')
         h.update(secret_key)
         h.digest()
 
-        decrypted_plain_text_bytes = decrypt_aes(encr_text_bytes, secret_key)
+        decrypted_plain_text_bytes = CryptoUtils.decrypt_aes(encr_text_bytes, secret_key)
 
         self.assertEqual(decrypted_plain_text_bytes, plain_text_bytes)
 

@@ -20,16 +20,14 @@ from requests import HTTPError
 
 from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.configkeys import ConfigKeys
+from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.dto.dtos import Folder, Record
 from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, Context, TransmissionKey
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys, \
     logger_name
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage
-from keeper_secrets_manager_core.utils import bytes_to_url_safe_str, base64_to_bytes, sign, \
-    extract_public_key_bytes, dict_to_json, url_safe_str_to_bytes, encrypt_aes, der_base64_private_key_to_private_key, \
-    string_to_bytes, decrypt_aes, bytes_to_string, json_to_dict, \
-    public_encrypt, generate_private_key_der
+from keeper_secrets_manager_core.utils import bytes_to_url_safe_str, base64_to_bytes, dict_to_json, url_safe_str_to_bytes
 
 
 class SecretsManager:
@@ -139,7 +137,7 @@ class SecretsManager:
             private_key_str = self.config.get(ConfigKeys.KEY_PRIVATE_KEY)
 
             if not private_key_str:
-                private_key_der = generate_private_key_der()
+                private_key_der = CryptoUtils.generate_private_key_der()
                 self.config.set(ConfigKeys.KEY_PRIVATE_KEY, bytes_to_url_safe_str(private_key_der))
 
         if not self.verify_ssl_certs:
@@ -187,7 +185,7 @@ class SecretsManager:
 
         server_public_raw_key_bytes = url_safe_str_to_bytes(keeper_public_keys[key_id])
 
-        encrypted_key = public_encrypt(transmission_key, server_public_raw_key_bytes)
+        encrypted_key = CryptoUtils.public_encrypt(transmission_key, server_public_raw_key_bytes)
 
         return TransmissionKey(key_id, transmission_key, encrypted_key)
 
@@ -227,15 +225,15 @@ class SecretsManager:
             raise Exception('Unknown payload type "%s"' % payload.__class__.__name__)
 
         payload_json_str = dict_to_json(payload.__dict__)
-        payload_bytes = string_to_bytes(payload_json_str)
+        payload_bytes = utils.string_to_bytes(payload_json_str)
 
-        encrypted_payload = encrypt_aes(payload_bytes, context.transmissionKey.key)
+        encrypted_payload = CryptoUtils.encrypt_aes(payload_bytes, context.transmissionKey.key)
 
         encrypted_key = context.transmissionKey.encryptedKey
         signature_base = encrypted_key + encrypted_payload
 
-        pk = der_base64_private_key_to_private_key(self.config.get(ConfigKeys.KEY_PRIVATE_KEY))
-        signature = sign(signature_base, pk)
+        pk = CryptoUtils.der_base64_private_key_to_private_key(self.config.get(ConfigKeys.KEY_PRIVATE_KEY))
+        signature = CryptoUtils.sign(signature_base, pk)
 
         return {
             'payload':  encrypted_payload,
@@ -253,7 +251,7 @@ class SecretsManager:
 
         if not app_key_str:
 
-            public_key_bytes = extract_public_key_bytes(self.config.get(ConfigKeys.KEY_PRIVATE_KEY))
+            public_key_bytes = CryptoUtils.extract_public_key_bytes(self.config.get(ConfigKeys.KEY_PRIVATE_KEY))
             public_key_base64 = bytes_to_url_safe_str(public_key_bytes)
             # passed once when binding
             payload.publicKey = public_key_base64 + "="
@@ -276,8 +274,8 @@ class SecretsManager:
         payload.recordUid = record.uid
 
         # TODO: This is where we need to get JSON of the updated Record
-        raw_json_bytes = string_to_bytes(record.raw_json)
-        encrypted_raw_json_bytes = encrypt_aes(raw_json_bytes, record.record_key_bytes)
+        raw_json_bytes = utils.string_to_bytes(record.raw_json)
+        encrypted_raw_json_bytes = CryptoUtils.encrypt_aes(raw_json_bytes, record.record_key_bytes)
         encrypted_raw_json_bytes_str = bytes_to_url_safe_str(encrypted_raw_json_bytes)
 
         # for create and update, the record data
@@ -314,7 +312,7 @@ class SecretsManager:
         log_level = logging.ERROR
         try:
             # Decode the JSON content, throw exception if not JSON
-            response_dict = json_to_dict(rs.text)
+            response_dict = utils.json_to_dict(rs.text)
             if response_dict is None:
                 raise json.JSONDecodeError("Not JSON", "NONE", 0)
 
@@ -385,9 +383,9 @@ class SecretsManager:
             # Handle the error. Handling will throw an exception if it doesn't want us to retry.
             self.handler_http_error(rs)
 
-        decrypted_response_bytes = decrypt_aes(rs.content, context.transmissionKey.key)
-        decrypted_response_str = bytes_to_string(decrypted_response_bytes)
-        decrypted_response_dict = json_to_dict(decrypted_response_str)
+        decrypted_response_bytes = CryptoUtils.decrypt_aes(rs.content, context.transmissionKey.key)
+        decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
+        decrypted_response_dict = utils.json_to_dict(decrypted_response_str)
 
         records = []
 
@@ -397,7 +395,7 @@ class SecretsManager:
             just_bound = True
 
             encrypted_master_key = url_safe_str_to_bytes(decrypted_response_dict.get('encryptedAppKey'))
-            secret_key = decrypt_aes(encrypted_master_key, self.config.get(ConfigKeys.KEY_CLIENT_KEY))
+            secret_key = CryptoUtils.decrypt_aes(encrypted_master_key, self.config.get(ConfigKeys.KEY_CLIENT_KEY))
             self.config.set(ConfigKeys.KEY_APP_KEY, bytes_to_url_safe_str(secret_key))
 
             self.config.delete(ConfigKeys.KEY_CLIENT_KEY)

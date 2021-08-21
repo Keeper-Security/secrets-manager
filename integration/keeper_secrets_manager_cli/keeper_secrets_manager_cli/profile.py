@@ -15,7 +15,7 @@ import configparser
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
-from keeper_secrets_manager_core.utils import encrypt_aes, decrypt_aes
+from keeper_secrets_manager_core.crypto import CryptoUtils
 from .table import Table, ColumnAlign
 from colorama import Fore
 import sys
@@ -288,7 +288,7 @@ class Profile:
 
         if key is not None:
             real_key = hashlib.sha256(key.encode()).digest()
-            ciphertext = encrypt_aes(config_str, real_key)
+            ciphertext = CryptoUtils.encrypt_aes(config_str, real_key)
             config_str = base64.b64encode(ciphertext)
 
         self.cli.output(config_str)
@@ -304,7 +304,7 @@ class Profile:
 
         real_key = hashlib.sha256(key.encode()).digest()
         cipher = base64.b64decode(enc_config)
-        config_str = decrypt_aes(cipher, real_key)
+        config_str = CryptoUtils.decrypt_aes(cipher, real_key)
 
         with open(file, "w") as fh:
             fh.write(config_str.decode())

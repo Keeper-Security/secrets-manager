@@ -7,7 +7,6 @@ from keeper_secrets_manager_core.keeper_globals import logger_name
 import io
 import logging
 import re
-import sys
 from contextlib import redirect_stderr
 
 

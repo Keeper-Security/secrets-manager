@@ -14,7 +14,8 @@ import json
 import time
 from collections import deque
 from requests import Response as RequestResponse
-from keeper_secrets_manager_core.utils import encrypt_aes
+
+from keeper_secrets_manager_core.crypto import CryptoUtils
 
 
 class ResponseQueue:
@@ -153,7 +154,7 @@ class Response:
         # If canned content has not be set, the create content from records/folders.
         if self.content is None:
             json_str = json.dumps(self.dump(secret=context.clientKey, flags=self.flags))
-            content = encrypt_aes(json_str.encode(), context.transmissionKey.key)
+            content = CryptoUtils.encrypt_aes(json_str.encode(), context.transmissionKey.key)
             res._content = content
             res.headers["Content-Length"] = str(len(content))
 
@@ -221,7 +222,7 @@ class Folder:
 
         return {
             "folderUid": self.uid,
-            "folderKey": base64.b64encode(encrypt_aes(secret, secret)).decode(),
+            "folderKey": base64.b64encode(CryptoUtils.encrypt_aes(secret, secret)).decode(),
             "records": [self.records[uid].dump(secret=secret, flags=flags) for uid in self.records]
         }
 
@@ -263,7 +264,7 @@ class File:
         if type(data) is not bytes:
             data = data.encode()
 
-        return encrypt_aes(data, self.secret_used)
+        return CryptoUtils.encrypt_aes(data, self.secret_used)
 
     def dump(self, secret, flags=None):
 
@@ -282,8 +283,8 @@ class File:
         data = json.dumps(d)
         file_data = {
             "fileUid": self.uid,
-            "fileKey": base64.b64encode(encrypt_aes(secret, secret)).decode(),
-            "data": base64.b64encode(encrypt_aes(data.encode(), secret)).decode(),
+            "fileKey": base64.b64encode(CryptoUtils.encrypt_aes(secret, secret)).decode(),
+            "data": base64.b64encode(CryptoUtils.encrypt_aes(data.encode(), secret)).decode(),
             "url": self.url,
             "thumbnailUrl": None
         }
@@ -404,8 +405,8 @@ class Record:
 
         data = {
             "recordUid": self.uid,
-            "recordKey": base64.b64encode(encrypt_aes(secret, secret)).decode(),
-            "data": base64.b64encode(encrypt_aes(json.dumps(record_data).encode(), secret)).decode(),
+            "recordKey": base64.b64encode(CryptoUtils.encrypt_aes(secret, secret)).decode(),
+            "data": base64.b64encode(CryptoUtils.encrypt_aes(json.dumps(record_data).encode(), secret)).decode(),
             "isEditable": self.is_editable,
             "files": files
         }

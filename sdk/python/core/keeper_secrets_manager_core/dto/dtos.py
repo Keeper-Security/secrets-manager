@@ -12,8 +12,9 @@ import os
 
 import requests
 
+from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.exceptions import KeeperError
-from keeper_secrets_manager_core.utils import base64_to_bytes, decrypt_aes, decrypt_record, json_to_dict, dict_to_json
+from keeper_secrets_manager_core import utils
 
 
 class Record:
@@ -32,18 +33,18 @@ class Record:
         if 'recordKey' in record_dict and record_dict.get('recordKey'):
             # Folder Share
             record_key_encrypted_str = record_dict.get('recordKey')
-            record_key_encrypted_bytes = base64_to_bytes(record_key_encrypted_str) if record_key_encrypted_str else None
+            record_key_encrypted_bytes = utils.base64_to_bytes(record_key_encrypted_str) if record_key_encrypted_str else None
 
-            self.record_key_bytes = decrypt_aes(record_key_encrypted_bytes, secret_key)
+            self.record_key_bytes = CryptoUtils.decrypt_aes(record_key_encrypted_bytes, secret_key)
         else:
             # Single Record Share
             self.record_key_bytes = secret_key
 
         record_encrypted_data = record_dict.get('data')
-        record_data_json = decrypt_record(record_encrypted_data, self.record_key_bytes)
+        record_data_json = CryptoUtils.decrypt_record(record_encrypted_data, self.record_key_bytes)
 
         self.raw_json = record_data_json
-        self.dict = json_to_dict(self.raw_json)
+        self.dict = utils.json_to_dict(self.raw_json)
         self.title = self.dict.get('title')
         self.type = self.dict.get('type')
 
@@ -95,7 +96,7 @@ class Record:
         password_field = next((item for item in self.dict["fields"] if item["type"] == "password"), None)
         self.password = password_field.get('value')[0]
 
-        self.raw_json = dict_to_json(self.dict)
+        self.raw_json = utils.dict_to_json(self.dict)
 
     @staticmethod
     def _value(values, single):
@@ -193,7 +194,7 @@ class Folder:
 
         folder_uid = folder.get('folderUid')
         folder_key_enc = folder.get('folderKey')
-        folder_key = decrypt_aes(base64_to_bytes(folder_key_enc), secret_key)
+        folder_key = CryptoUtils.decrypt_aes(utils.base64_to_bytes(folder_key_enc), secret_key)
         folder_records = folder.get('records')
 
         self.uid = folder_uid
@@ -233,8 +234,8 @@ class KeeperFile:
 
     def __decrypt_file_key(self):
         file_key_encrypted_base64 = self.f.get('fileKey')
-        file_key_encrypted = base64_to_bytes(file_key_encrypted_base64)
-        file_key = decrypt_aes(file_key_encrypted, self.record_key_bytes)
+        file_key_encrypted = utils.base64_to_bytes(file_key_encrypted_base64)
+        file_key = CryptoUtils.decrypt_aes(file_key_encrypted, self.record_key_bytes)
         return file_key
 
     def __get_meta(self):
@@ -244,9 +245,9 @@ class KeeperFile:
         if not self.meta_dict:
             file_key = self.__decrypt_file_key()
 
-            meta_json = decrypt_aes(base64_to_bytes(self.f.get('data')), file_key)
+            meta_json = CryptoUtils.decrypt_aes(utils.base64_to_bytes(self.f.get('data')), file_key)
 
-            self.meta_dict = json_to_dict(meta_json)
+            self.meta_dict = utils.json_to_dict(meta_json)
 
         return self.meta_dict
 
@@ -262,7 +263,7 @@ class KeeperFile:
 
             file_encrypted_data = rs.content
 
-            self.file_data = decrypt_aes(file_encrypted_data, file_key)
+            self.file_data = CryptoUtils.decrypt_aes(file_encrypted_data, file_key)
 
         return self.file_data
 
