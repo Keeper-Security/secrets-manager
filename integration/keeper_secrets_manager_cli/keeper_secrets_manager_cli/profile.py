@@ -252,15 +252,13 @@ class Profile:
 
         print("{} is now the active profile.".format(profile_name), file=sys.stderr)
 
-    def export_config(self, profile_name=None, key=None):
+    def export_config(self, profile_name=None, plain=False):
 
         """Take a profile from an existing config and make it a stand-alone config.
 
         This is when you want to pull a single profile from a config and use it
         someplace else, like inside of a Docker image.
 
-        The key will encrypt, and base64, the config file. While it's nice
-        for security, the real reason was to make a single line string. :)
         """
 
         # If the profile name is not set, use the active profile.
@@ -286,25 +284,21 @@ class Profile:
             config_str = tf.read()
             tf.close()
 
-        if key is not None:
-            real_key = hashlib.sha256(key.encode()).digest()
-            ciphertext = CryptoUtils.encrypt_aes(config_str, real_key)
-            config_str = base64.b64encode(ciphertext)
+        if plain is False:
+            config_str = base64.urlsafe_b64encode(config_str)
 
         self.cli.output(config_str)
 
     @staticmethod
-    def import_config(key, enc_config, file=None):
+    def import_config(config_base64, file=None):
 
-        """Take base64 AES encrypted config file and unencrypted it back to disk.
+        """Take base64 AES config file and unencrypted it back to disk.
         """
 
         if file is None:
             file = Profile.default_ini_file
 
-        real_key = hashlib.sha256(key.encode()).digest()
-        cipher = base64.b64decode(enc_config)
-        config_str = CryptoUtils.decrypt_aes(cipher, real_key)
+        config_str = base64.urlsafe_b64decode(config_base64.encode())
 
         with open(file, "w") as fh:
             fh.write(config_str.decode())
