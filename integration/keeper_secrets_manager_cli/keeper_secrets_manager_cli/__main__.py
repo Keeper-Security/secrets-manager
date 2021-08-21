@@ -159,13 +159,13 @@ def profile_active_command(ctx, profile_name):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-@click.option('--key', '-k', type=str, help='Encode config with a key')
+@click.option('--plain', is_flag=True, help='Export the config non-Base64 encoded.')
 @click.argument('profile-name', type=str, required=False, nargs=1)
 @click.pass_context
-def profile_export_command(ctx, key, profile_name):
+def profile_export_command(ctx, plain, profile_name):
     """Create a new config file from a profile."""
     Profile(cli=ctx.obj["cli"]).export_config(
-        key=key,
+        plain=plain,
         profile_name=profile_name
     )
 
@@ -175,19 +175,16 @@ def profile_export_command(ctx, key, profile_name):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-@click.option('--key', '-k', type=str, required=True, help='Decode config with a key.')
 @click.option('--output-file', '-f', type=str, required=False,
-              help='Save the import config to a specific file location.')
-@click.argument('enc-config', type=str, required=True, nargs=1)
+              help='Create the config in a specific file location.')
+@click.argument('config-base64', type=str, required=True, nargs=1)
 @click.pass_context
-def profile_import_command(ctx, key, output_file, enc_config):
+def profile_import_command(ctx, output_file, config_base64):
     """Import an encrypted config file."""
     Profile(cli=ctx.obj["cli"]).import_config(
-        key=key,
         file=output_file,
-        enc_config=enc_config
+        config_base64=config_base64
     )
-
 
 profile_command.add_command(profile_init_command)
 profile_command.add_command(profile_list_command)
