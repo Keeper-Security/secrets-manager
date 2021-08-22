@@ -18,7 +18,6 @@ class ExecTest(unittest.TestCase):
         self.orig_dir = os.getcwd()
         self.temp_dir = tempfile.TemporaryDirectory()
         os.chdir(self.temp_dir.name)
-        os.environ["KSM_DEBUG"] = "1"
         self.delete_me = []
 
     def tearDown(self) -> None:

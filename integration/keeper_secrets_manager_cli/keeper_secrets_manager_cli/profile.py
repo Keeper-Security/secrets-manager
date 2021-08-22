@@ -16,6 +16,7 @@ from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
 from .table import Table, ColumnAlign
+from .export import Export
 from colorama import Fore
 import sys
 import json
@@ -49,6 +50,13 @@ class Profile:
                 )
                 # Check again for the INI config file
                 ini_file = Profile.find_ini_config()
+
+            # Auto generate config file from base64 encode env vars.
+            elif os.environ.get("KSM_CONFIG_BASE64_1") is not None:
+                self._auto_config_from_env_var()
+                ini_file = Profile.find_ini_config()
+
+
         self.ini_file = ini_file
 
         # Lazy load in the config
@@ -57,6 +65,24 @@ class Profile:
 
         if self.ini_file is not None:
             self._load_config()
+
+    @staticmethod
+    def _auto_config_from_env_var():
+
+        """Build config from a Base64 config in environmental variables.
+
+        """
+
+        index = 1
+        while True:
+            config_base64 =  os.environ.get("KSM_CONFIG_BASE64_{}".format(index))
+            if config_base64 is not None:
+                Profile.import_config(
+                    config_base64=config_base64,
+                    profile_name=os.environ.get("KSM_CONFIG_BASE64_DESC_{}".format(index), "App{}".format(index)))
+            else:
+                break
+            index += 1
 
     def _load_config(self):
         if self._config is None:
@@ -128,6 +154,24 @@ class Profile:
             sys.exit("{} {}".format(error_prefix, err))
 
     @staticmethod
+    def _init_config_file(profile_name=None):
+
+        if profile_name is None:
+            profile_name = Profile.default_profile
+
+        config = configparser.ConfigParser()
+
+        # Create our default section name.
+        config[profile_name] = {}
+
+        # Create our config section name.
+        config[Profile.config_profile] = {
+            Profile.active_profile_key: profile_name
+        }
+
+        return config
+
+    @staticmethod
     def init(token, ini_file=None, server=None, profile_name=None):
 
         from . import KeeperCli
@@ -146,28 +190,18 @@ class Profile:
             raise ValueError("The profile '{}' is a reserved profile name. Cannot not init profile.".format(
                 profile_name))
 
-        config = configparser.ConfigParser()
-
         # We want to flag if we create a INI file. If there is an error, remove it so it
         # doesn't get picked up if we try again.
         created_ini = False
 
         # If the ini file doesn't exists, create it with the common profile
         if os.path.exists(ini_file) is False:
-            # This section gets applied to all other sections by the config parser. This is left empty.
-            config['DEFAULT'] = {}
-
-            # Create our default section name.
-            config[Profile.default_profile] = {}
-
-            # Create our config section name.
-            config[Profile.config_profile] = {
-                Profile.active_profile_key: Profile.default_profile
-            }
+            config = Profile._init_config_file()
             with open(ini_file, 'w') as configfile:
                 config.write(configfile)
             created_ini = True
         else:
+            config = configparser.ConfigParser()
             config.read(ini_file)
 
         config_storage = InMemoryKeyValueStorage()
@@ -217,6 +251,8 @@ class Profile:
             for profile in self.get_config():
                 if profile == Profile.config_profile:
                     continue
+                elif profile == "DEFAULT":
+                    continue
                 profiles.append({
                     "active": profile == active_profile,
                     "name": profile
@@ -250,7 +286,7 @@ class Profile:
 
         print("{} is now the active profile.".format(profile_name), file=sys.stderr)
 
-    def export_config(self, profile_name=None, plain=False):
+    def export_config(self, profile_name=None, file_format='ini', plain=False):
 
         """Take a profile from an existing config and make it a stand-alone config.
 
@@ -264,45 +300,65 @@ class Profile:
             profile_name = self.get_active_profile_name()
         profile_config = self.get_profile_config(profile_name)
 
-        export_config = configparser.ConfigParser()
-        export_config[Profile.default_profile] = profile_config
-        export_config[Profile.config_profile] = {
-            Profile.active_profile_key: Profile.default_profile
-        }
-
-        # Apparently the config parser doesn't like temp files. So create a
-        # temp file, then open a file for writing and use that to write
-        # the config. Then read the temp file to get our new config.
-        with tempfile.NamedTemporaryFile() as tf:
-
-            with open(tf.name, 'w') as configfile:
-                export_config.write(configfile)
-
-            tf.seek(0)
-            config_str = tf.read()
-            tf.close()
-
-        if plain is False:
-            config_str = base64.urlsafe_b64encode(config_str)
+        config_str = Export(config=profile_config, file_format=file_format, plain=plain).run()
 
         self.cli.output(config_str)
 
     @staticmethod
-    def import_config(config_base64, file=None):
+    def _import_json_config(config_data, file=None, profile_name=None):
 
-        """Take base64 AES config file and unencrypted it back to disk.
+        if os.path.exists(file) and os.path.isfile(file):
+            config = configparser.ConfigParser()
+            config.read(file)
+        else:
+            config = Profile._init_config_file(profile_name=profile_name)
+
+        if profile_name is None:
+            profile_name = Profile.default_profile
+
+        config[profile_name] = {
+            "clientKey": "",
+            "clientId": "",
+            "privateKey": "",
+            "appKey": "",
+            "hostname": ""
+        }
+
+        for k, v in config_data.items():
+            if v is None:
+                continue
+            config[profile_name][k] = v
+        with open(file, 'w') as configfile:
+            config.write(configfile)
+
+    @staticmethod
+    def import_config(config_base64, file=None, profile_name=None):
+
+        """Take base64 config file and write it back to disk.
         """
 
         if file is None:
             file = Profile.default_ini_file
 
-        config_str = base64.urlsafe_b64decode(config_base64.encode())
+        config_data = base64.urlsafe_b64decode(config_base64.encode())
 
-        with open(file, "w") as fh:
-            fh.write(config_str.decode())
-            fh.close()
+        is_json = False
+        try:
+            config_data = json.loads(config_data)
+            is_json = True
+        except json.JSONDecodeError as _:
+            pass
 
-        print("Imported config saved to {}".format(file), file=sys.stderr)
+        # If a JSON file was import, convert the JSON to a INI.
+        if is_json is True:
+            Profile._import_json_config(config_data, file, profile_name)
+        # Else just save the INI
+        else:
+            with open(file, "w") as fh:
+                fh.write(config_data.decode())
+                fh.close()
+
+        print("Imported config saved to profile {} at {}.".format(profile_name, file), file=sys.stderr)
 
     def set_color(self, on_off):
         common_config = self._get_common_config("Cannot set log level.")
