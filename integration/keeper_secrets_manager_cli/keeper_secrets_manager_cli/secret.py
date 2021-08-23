@@ -72,6 +72,7 @@ class Secret:
                 # If this is a maskable field and we are not going to unmask there is no need to load in the
                 # reference value.
                 if unmask is False and Secret._should_mask(custom_field):
+                    index += 1
                     continue
 
                 field_type = custom_field.get("type")
@@ -261,8 +262,53 @@ class Secret:
 
         return results
 
-    def query(self, uids=None, output_format='json', jsonpath_query=None, raw=False, force_array=False,
+    def _query_field(self, field_key, records):
+
+        if len(records) == 0:
+            sys.exit("No records found. Cannot find field {}.".format(field_key))
+
+        # Can only perform field search on one record. The CLI part prevents this. Just grab the first record.
+        record = records[0]
+        field = None
+        try:
+            field = next((item for item in record["fields"] if item["type"] == field_key), None)
+        except ValueError as _:
+            pass
+        if field is None or len(field) == 0:
+            try:
+                field = next((item for item in record["custom_fields"] if item["label"] == field_key), None)
+            except ValueError as _:
+                pass
+        if field is None:
+            sys.exit("Cannot find the field {} in record {}".format(field_key, record["title"]))
+
+        value = field.get("value", [])
+        if len(value) > 0:
+            value = value[0]
+        if type(value) is not str:
+            value = json.dumps(value)
+
+        print("", file=sys.stderr)
+        self.cli.output(value)
+        print("", file=sys.stderr)
+
+    def _query_jsonpath(self, jsonpath_query, records, force_array, text_join_char, raw):
+        # Adjust records here so the JQ query works with the displayed JSON.
+        record_list = Secret._adjust_records(records, force_array)
+
+        try:
+            results = self._get_jsonpath_results(record_list, jsonpath_query)
+            self.cli.output(json.dumps(results, indent=4))
+        except Exception as err:
+            sys.exit("JSONPath failed: {}".format(err))
+
+    def query(self, uids=None, titles=None, field=None, output_format='json', jsonpath_query=None, raw=False, force_array=False,
               text_join_char='\n', load_references=False,  unmask=False, use_color=True):
+
+        if uids is None:
+            uids = []
+        if titles is None:
+            titles = []
 
         # If the output is JSON, automatically unmask password-like values.
         if output_format == 'json':
@@ -270,8 +316,20 @@ class Secret:
 
         records = []
         try:
-            for record in self.cli.client.get_secrets(uids=uids):
-                records.append(self._record_to_dict(record, load_references=load_references, unmask=unmask))
+            fetch_uids = None
+            if len(titles) == 0:
+                fetch_uids = uids
+
+            for record in self.cli.client.get_secrets(uids=fetch_uids):
+                add_record = False
+                if len(titles) > 0:
+                    if record.title in titles or record.uid in uids:
+                        add_record = True
+                else:
+                    add_record = True
+
+                if add_record is True:
+                    records.append(self._record_to_dict(record, load_references=load_references, unmask=unmask))
         except KeeperError as err:
             sys.exit("Could not query the records: {}".format(err.message))
         except KeeperAccessDenied as err:
@@ -279,36 +337,19 @@ class Secret:
         except Exception as err:
             sys.exit("Could not query the records: {}".format(err))
 
-        if jsonpath_query is not None:
-
-            # Adjust records here so the JQ query works with the displayed JSON.
-            record_list = Secret._adjust_records(records, force_array)
-
-            try:
-                results = self._get_jsonpath_results(record_list, jsonpath_query)
-
-                if output_format == 'text':
-                    allow_raw_convert = True
-                    if type(results) is dict:
-                        results = json.dumps(results)
-                        allow_raw_convert = False
-                    elif type(results) is list:
-                        results = text_join_char.join(results)
-                        allow_raw_convert = False
-
-                    # Only remove quotes if the value was non-dict, non-list
-                    if allow_raw_convert is True and raw is True:
-                        if results.startswith('"') is True:
-                            results = results[1:]
-                        if results.endswith('"') is True:
-                            results = results[:-1]
-                    self.cli.output(results)
-                elif output_format == 'json':
-                    self.cli.output(json.dumps(results, indent=4))
-                else:
-                    return results
-            except Exception as err:
-                sys.exit("JSONPath failed: {}".format(err))
+        if field is not None:
+            self._query_field(
+                field_key=field,
+                records=records
+            )
+        elif jsonpath_query is not None:
+            self._query_jsonpath(
+                jsonpath_query=jsonpath_query,
+                records=records,
+                force_array=force_array,
+                text_join_char=text_join_char,
+                raw=raw
+            )
         else:
             return self.output_results(records=records, output_format=output_format, force_array=force_array,
                                        use_color=use_color)

@@ -234,22 +234,34 @@ def secret_list_command(ctx, uid, json):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-@click.option('--uid', '-u', required=True, type=str, multiple=True)
+@click.option('--uid', '-u', type=str, multiple=True, help='Unique identifier of record.')
+@click.option('--title', '-t', type=str, multiple=True, help='Title of record.')
+@click.option('--field', '-f', type=str, help='Field to get.')
 @click.option('--query', '-q', type=str, help='Perform a JSONPath query on results.')
 @click.option('--json', is_flag=True, help='Return secret as JSON')
 @click.option('--raw', is_flag=True, help="Remove quotes on return quote text.")
 @click.option('--force-array', is_flag=True, help="Return secrets as array even if a single record.")
 @click.option('--unmask', is_flag=True, help="Show password like values in table views.")
 @click.pass_context
-def secret_get_command(ctx, uid, query, json, raw, force_array, unmask):
+def secret_get_command(ctx, uid, title, field, query, json, raw, force_array, unmask):
     """Get secret record(s)."""
 
     output = "text"
     if json is True:
         output = "json"
 
+    total_query = len(uid) + len(title)
+
+    if total_query == 0:
+        sys.exit("No uid or title specified for secret get command.")
+
+    if total_query > 1 and field is not None:
+        sys.exit("Cannot perform field search on multiple records. Only choose one uid/title.")
+
     ctx.obj["secret"].query(
         uids=uid,
+        titles=title,
+        field=field,
         jsonpath_query=query,
         output_format=output,
         raw=raw,
