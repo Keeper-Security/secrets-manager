@@ -183,8 +183,8 @@ class SecretTest(unittest.TestCase):
                 '--query', '[*].fields[*].type',
                 '--force-array'
             ], catch_exceptions=True)
-            rows = result.output.split("\n")
-            self.assertEqual(4, len(rows), "found 4 rows")
+            data = json.loads(result.output)
+            self.assertEqual(4, len(data), "found 4 rows")
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
 
     def test_get_dash_uid(self):
@@ -231,6 +231,70 @@ class SecretTest(unittest.TestCase):
                 secret = json.load(tf)
                 self.assertEqual(dash_uid, secret["uid"], "didn't get the correct uid for secret")
                 tf.close()
+
+    def test_get_list_field(self):
+
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
+            "hostname": "fake.keepersecurity.com",
+            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
+            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
+            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
+            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
+                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
+                          "jhKMhHQFaHYI"
+        }))
+
+        res = mock.Response()
+        one = res.add_record(title="My Record 1")
+        one.field("login", "My Login 1")
+        one.field("password", "My Password 1")
+        one.field("url", [])
+        one.custom_field("My Custom", "custom1")
+
+        two = res.add_record(title="My Record 2")
+        two.field("login", "My Login 2")
+        two.field("password", "My Password 2")
+        two.field("url", [])
+        two.custom_field("My Custom", "custom2")
+
+        three = res.add_record(title="My Record 3")
+        three.field("login", "My Login 3")
+        three.field("password", "My Password 3")
+        three.field("url", [])
+        three.custom_field("My Custom", "custom3")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        for test in range(0, 3):
+            queue.add_response(res)
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
+                as mock_client:
+            mock_client.return_value = secrets_manager
+
+            Profile.init(
+                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+            )
+
+            runner = CliRunner()
+
+            # JSON Output to file
+            with tempfile.NamedTemporaryFile() as tf:
+                result = runner.invoke(cli, ['-o', tf.name,
+                                             'secret', 'get', '--title', two.title, '--json'],
+                                       catch_exceptions=False)
+                self.assertEqual(0, result.exit_code, "the exit code was not 0")
+                tf.seek(0)
+                secret = json.load(tf)
+                self.assertEqual(two.uid, secret["uid"], "didn't get the correct uid for secret")
+                tf.close()
+
+            result = runner.invoke(cli, ['secret', 'get',
+                                         '--title', two.title, '--field', 'My Custom'],
+                           catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+            # The line feed are stderr to make console display more readable. Doing a FILED=$(ksm ...) will result
+            # in only the stdout being captured.
+            self.assertEqual("\ncustom2\n", result.output)
 
     def test_download(self):
 
