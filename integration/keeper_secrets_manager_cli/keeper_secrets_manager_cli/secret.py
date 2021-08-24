@@ -314,6 +314,10 @@ class Secret:
         if output_format == 'json':
             unmask = True
 
+        # If we want a specific field, then unmask the value
+        if field is not None:
+            unmask=True
+
         records = []
         try:
             fetch_uids = None
