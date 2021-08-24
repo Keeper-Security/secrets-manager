@@ -32,7 +32,8 @@ interface KeyValueStorage {
 
 data class SecretsManagerOptions @JvmOverloads constructor(
     val storage: KeyValueStorage,
-    val queryFunction: QueryFunction? = null
+    val queryFunction: QueryFunction? = null,
+    val allowUnverifiedCertificate: Boolean = false
 )
 
 typealias QueryFunction = (url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload) -> KeeperHttpResponse
@@ -419,7 +420,7 @@ private inline fun <reified T> postQuery(
         val transmissionKey = generateTransmissionKey(options.storage)
         val encryptedPayload = encryptAndSignPayload(options.storage, transmissionKey, payload)
         val response = if (options.queryFunction == null) {
-            postFunction(url, transmissionKey, encryptedPayload, false)
+            postFunction(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate)
         } else {
             options.queryFunction.invoke(url, transmissionKey, encryptedPayload)
         }
