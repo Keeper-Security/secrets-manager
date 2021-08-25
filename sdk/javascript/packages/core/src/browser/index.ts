@@ -6,6 +6,7 @@ connectPlatform(browserPlatform)
 initialize()
 
 export * from '../keeper'
+export {loadJsonConfig, inMemoryStorage} from '../platform'
 export * from './localConfigStorage'
 
 

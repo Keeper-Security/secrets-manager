@@ -5,17 +5,15 @@ using System.Text.Encodings.Web;
 
 namespace SecretsManager
 {
-    public class LocalConfigStorage : IKeyValueStorage
+    public class InMemoryStorage : IKeyValueStorage
     {
-        private readonly Dictionary<string, string> strings = new();
-        private readonly string fileName;
+        internal readonly Dictionary<string, string> Strings = new();
 
-        public LocalConfigStorage(string configName = null)
+        public InMemoryStorage(string configJson = null)
         {
-            fileName = configName;
-            if (fileName == null || !File.Exists(fileName))
+            if (configJson == null)
                 return;
-            var bytes = File.ReadAllBytes(fileName);
+            var bytes = CryptoUtils.StringToBytes(configJson);
             var reader = new Utf8JsonReader(bytes);
             string propertyName = null;
             while (reader.Read())
@@ -28,12 +26,56 @@ namespace SecretsManager
                     case JsonTokenType.String:
                         if (propertyName != null)
                         {
-                            strings[propertyName] = reader.GetString();
+                            Strings[propertyName] = reader.GetString();
                         }
 
                         break;
                 }
             }
+        }
+
+        public string GetString(string key)
+        {
+            return Strings.TryGetValue(key, out var result) ? result : null;
+        }
+
+        public void SaveString(string key, string value)
+        {
+            Strings[key] = value;
+        }
+
+        public byte[] GetBytes(string key)
+        {
+            var stringValue = Strings.TryGetValue(key, out var result) ? result : null;
+            return stringValue == null ? null : CryptoUtils.Base64ToBytes(stringValue);
+        }
+
+        public void SaveBytes(string key, byte[] value)
+        {
+            Strings[key] = CryptoUtils.BytesToBase64(value);
+        }
+
+        public void Delete(string key)
+        {
+            Strings.Remove(key);
+        }
+    }
+
+    public class LocalConfigStorage : IKeyValueStorage
+    {
+        private readonly InMemoryStorage storage;
+        private readonly string fileName;
+
+        public LocalConfigStorage(string configName = null)
+        {
+            fileName = configName;
+            if (fileName == null || !File.Exists(fileName))
+            {
+                storage = new InMemoryStorage();
+                return;
+            }
+            var json = File.ReadAllText(fileName);
+            storage = new InMemoryStorage(json);
         }
 
         private void SaveToFile()
@@ -50,7 +92,7 @@ namespace SecretsManager
                 Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             });
             writer.WriteStartObject();
-            foreach (var kv in strings)
+            foreach (var kv in storage.Strings)
             {
                 writer.WriteString(kv.Key, kv.Value);
             }
@@ -61,29 +103,29 @@ namespace SecretsManager
 
         public string GetString(string key)
         {
-            return strings.TryGetValue(key, out var result) ? result : null;
+            return storage.GetString(key);
         }
 
         public void SaveString(string key, string value)
         {
-            strings[key] = value;
+            storage.SaveString(key, value);
             SaveToFile();
         }
 
         public byte[] GetBytes(string key)
         {
-            var stringValue = strings.TryGetValue(key, out var result) ? result : null;
-            return stringValue == null ? null : CryptoUtils.Base64ToBytes(stringValue);
+            return storage.GetBytes(key);
         }
 
         public void SaveBytes(string key, byte[] value)
         {
-            SaveString(key, CryptoUtils.BytesToBase64(value));
+            storage.SaveBytes(key, value);
+            SaveToFile();
         }
 
         public void Delete(string key)
         {
-            strings.Remove(key);
+            storage.Delete(key);
             SaveToFile();
         }
     }

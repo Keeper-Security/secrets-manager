@@ -1,4 +1,4 @@
-import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey} from "../platform";
+import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey, inMemoryStorage} from "../platform";
 import * as fs from 'fs';
 
 export const localConfigStorage = (configName?: string): KeyValueStorage => {
@@ -14,7 +14,7 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
         }
     }
 
-    const storage: any = readStorage()
+    const storage: KeyValueStorage = inMemoryStorage(readStorage())
 
     const saveStorage = (storage: any) => {
         if (!configName) {
@@ -23,65 +23,22 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
         fs.writeFileSync(configName, JSON.stringify(storage, null, 2))
     }
 
-    const getValue = (key: string): any | undefined => {
-        const keyParts = key.split('/')
-        let obj = storage
-        for (const part of keyParts) {
-            obj = obj[part]
-            if (!obj) {
-                return undefined
-            }
-        }
-        return obj.toString();
-    }
-
-    const saveValue = (key: string, value: any): void => {
-        const keyParts = key.split('/')
-        let obj = storage
-        for (const part of keyParts.slice(0, -1)) {
-            if (!obj[part]) {
-                obj[part] = {}
-            }
-            obj = obj[part]
-        }
-        obj[keyParts.slice(-1)[0]] = value
-        saveStorage(storage)
-    }
-
-    const clearValue = (key: string): void => {
-        const keyParts = key.split('/')
-        let obj = storage
-        for (const part of keyParts.slice(0, -1)) {
-            if (!obj[part]) {
-                obj[part] = {}
-            }
-            obj = obj[part]
-        }
-        delete obj[keyParts.slice(-1)[0]]
-        saveStorage(storage)
-    }
-
     return {
-        getString: key => Promise.resolve(getValue(key)),
-        saveString: (key, value) => {
-            saveValue(key, value)
+        getString: storage.getString,
+        saveString: async (key, value) => {
+            await storage.saveString(key, value)
+            saveStorage(storage)
             return Promise.resolve()
         },
-        getBytes: key => {
-            const bytesString: string = getValue(key)
-            if (bytesString) {
-                return Promise.resolve(platform.base64ToBytes(bytesString))
-            } else {
-                return Promise.resolve(undefined)
-            }
-        },
-        saveBytes: (key, value) => {
-            const bytesString = platform.bytesToBase64(value)
-            saveValue(key, bytesString)
+        getBytes: storage.getBytes,
+        saveBytes: async (key, value) => {
+            await storage.saveBytes(key, value)
+            saveStorage(storage)
             return Promise.resolve()
         },
-        delete: (key) => {
-            clearValue(key)
+        delete: async (key) => {
+            await storage.delete(key)
+            saveStorage(storage)
             return Promise.resolve()
         }
     }

@@ -23,6 +23,55 @@ fun getCachedValue(): ByteArray {
     }
 }
 
+class InMemoryStorage(configJson: String? = null) : KeyValueStorage {
+
+    @Serializable
+    private data class LocalConfig(
+        var hostname: String? = null,
+        var clientId: String? = null,
+        var privateKey: String? = null,
+        var clientKey: String? = null,
+        var appKey: String? = null,
+        var serverPublicKeyId: String? = null
+    )
+
+    private val strings: MutableMap<String, String> = HashMap()
+
+    init {
+        if (configJson != null) {
+            val config = Json.decodeFromString<LocalConfig>(configJson)
+            val optSetFn: (key: String, value: String?) -> Unit = { key, value -> if (value != null) strings[key] = value }
+            optSetFn(KEY_HOSTNAME, config.hostname)
+            optSetFn(KEY_CLIENT_ID, config.clientId)
+            optSetFn(KEY_PRIVATE_KEY, config.privateKey)
+            optSetFn(KEY_CLIENT_KEY, config.clientKey)
+            optSetFn(KEY_APP_KEY, config.appKey)
+            optSetFn(KEY_SERVER_PUBIC_KEY_ID, config.serverPublicKeyId)
+        }
+    }
+
+    override fun getString(key: String): String? {
+        return strings[key]
+    }
+
+    override fun saveString(key: String, value: String) {
+        strings[key] = value
+    }
+
+    override fun getBytes(key: String): ByteArray? {
+        val stringValue = getString(key) ?: return null
+        return base64ToBytes(stringValue)
+    }
+
+    override fun saveBytes(key: String, value: ByteArray) {
+        saveString(key, bytesToBase64(value))
+    }
+
+    override fun delete(key: String) {
+        strings.remove(key)
+    }
+}
+
 // LocalConfigStorage becomes in memory storage if config name is null
 class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
 
@@ -37,58 +86,48 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
     )
 
     private val file = configName?.let { File(it) }
-    private val strings: MutableMap<String, String> = HashMap()
-
-    init {
-        if (file != null && file.exists()) {
-            val inputStream = BufferedReader(FileReader(file))
-            val config = Json.decodeFromString<LocalConfig>(inputStream.readText())
-            val optSetFn: (key: String, value: String?) -> Unit = { key, value -> if (value != null) strings[key] = value }
-            optSetFn(KEY_HOSTNAME, config.hostname)
-            optSetFn(KEY_CLIENT_ID, config.clientId)
-            optSetFn(KEY_PRIVATE_KEY, config.privateKey)
-            optSetFn(KEY_CLIENT_KEY, config.clientKey)
-            optSetFn(KEY_APP_KEY, config.appKey)
-            optSetFn(KEY_SERVER_PUBIC_KEY_ID, config.serverPublicKeyId)
-        }
+    private var storage: InMemoryStorage = if (file != null && file.exists()) {
+        val inputStream = BufferedReader(FileReader(file))
+        InMemoryStorage(inputStream.readText())
+    } else {
+        InMemoryStorage()
     }
-
 
     private fun saveToFile() {
         if (file == null) return
         val config = LocalConfig()
-        config.hostname = strings[KEY_HOSTNAME]
-        config.clientId = strings[KEY_CLIENT_ID]
-        config.privateKey = strings[KEY_PRIVATE_KEY]
-        config.clientKey = strings[KEY_CLIENT_KEY]
-        config.appKey = strings[KEY_APP_KEY]
-        config.serverPublicKeyId = strings[KEY_SERVER_PUBIC_KEY_ID]
+        config.hostname = storage.getString(KEY_HOSTNAME)
+        config.clientId = storage.getString(KEY_CLIENT_ID)
+        config.privateKey = storage.getString(KEY_PRIVATE_KEY)
+        config.clientKey = storage.getString(KEY_CLIENT_KEY)
+        config.appKey = storage.getString(KEY_APP_KEY)
+        config.serverPublicKeyId = storage.getString(KEY_SERVER_PUBIC_KEY_ID)
         val json = Json { prettyPrint = true }.encodeToString(config)
         val outputStream = BufferedWriter(FileWriter(file))
-        outputStream.write(json);
+        outputStream.write(json)
         outputStream.close()
     }
 
     override fun getString(key: String): String? {
-        return strings[key]
+        return storage.getString(key)
     }
 
     override fun saveString(key: String, value: String) {
-        strings[key] = value
+        storage.saveString(key, value)
         saveToFile()
     }
 
     override fun getBytes(key: String): ByteArray? {
-        val stringValue = getString(key) ?: return null
-        return base64ToBytes(stringValue)
+        return storage.getBytes(key)
     }
 
     override fun saveBytes(key: String, value: ByteArray) {
-        saveString(key, bytesToBase64(value))
+        storage.saveBytes(key, value)
+        saveToFile()
     }
 
     override fun delete(key: String) {
-        strings.remove(key)
+        storage.delete(key)
         saveToFile()
     }
 }

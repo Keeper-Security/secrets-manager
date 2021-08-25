@@ -287,10 +287,6 @@ export const initializeStorage = async (storage: KeyValueStorage, clientKey: str
     await platform.generatePrivateKey(KEY_PRIVATE_KEY, storage)
 }
 
-export const loadJsonConfig = (storage: KeyValueStorage, config: string, hostName: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
-
-}
-
 export const getSecrets = async (options: SecretManagerOptions, recordsFilter?: string[]): Promise<KeeperSecrets> => {
     const {secrets, justBound} = await fetchAndDecryptSecrets(options, recordsFilter)
     if (justBound) {
