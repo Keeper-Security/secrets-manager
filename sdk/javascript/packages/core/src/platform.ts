@@ -21,7 +21,7 @@ export type Platform = {
 
 //  network
     get(url: string, headers: any): Promise<KeeperHttpResponse>
-    post(url: string, request: Uint8Array, headers?: { [key: string]: string }): Promise<KeeperHttpResponse>
+    post(url: string, request: Uint8Array, headers?: { [key: string]: string }, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse>
 }
 
 export type KeyValueStorage = {
