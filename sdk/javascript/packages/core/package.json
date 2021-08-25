@@ -1,6 +1,6 @@
 {
   "name": "@keeper-security/secrets-manager-core",
-  "version": "16.0.12",
+  "version": "16.0.13",
   "description": "Keeper Secrets Manages Javascript SDK",
   "browser": "dist/index.es.js",
   "main": "dist/index.cjs.js",
@@ -11,7 +11,7 @@
   "scripts": {
     "test": "jest",
     "quicktest": "ts-node internal/quicktest.ts",
-    "prepublish": "rollup -c",
+    "prepublishOnly": "rollup -c",
     "publish-to-npm": "npm publish"
   },
   "devDependencies": {
