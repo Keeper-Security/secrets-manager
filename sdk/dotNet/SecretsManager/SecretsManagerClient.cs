@@ -27,13 +27,15 @@ namespace SecretsManager
 
     public class SecretsManagerOptions
     {
+        public bool AllowUnverifiedCertificate { get; }
         public IKeyValueStorage Storage { get; }
         public QueryFunction QueryFunction { get; }
 
-        public SecretsManagerOptions(IKeyValueStorage storage, QueryFunction queryFunction = null)
+        public SecretsManagerOptions(IKeyValueStorage storage, QueryFunction queryFunction = null, bool allowUnverifiedCertificate = false)
         {
             Storage = storage;
             QueryFunction = queryFunction;
+            AllowUnverifiedCertificate = allowUnverifiedCertificate;
         }
     }
 
@@ -590,7 +592,7 @@ namespace SecretsManager
                 var transmissionKey = GenerateTransmissionKey(options.Storage);
                 var encryptedPayload = EncryptAndSignPayload(options.Storage, transmissionKey, payload);
                 var response = options.QueryFunction == null
-                    ? await PostFunction(url, transmissionKey, encryptedPayload, false)
+                    ? await PostFunction(url, transmissionKey, encryptedPayload, options.AllowUnverifiedCertificate)
                     : await options.QueryFunction(url, transmissionKey, encryptedPayload);
                 if (response.IsError)
                 {

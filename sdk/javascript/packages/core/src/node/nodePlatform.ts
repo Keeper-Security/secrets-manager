@@ -1,4 +1,4 @@
-import {KeeperHttpResponse, KeyValueStorage, Platform, TransmissionKey, EncryptedPayload, platform} from '../platform'
+import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
 import {privateDerToPublicRaw} from '../utils'
 import {request, RequestOptions} from 'https'
 import {
@@ -181,10 +181,11 @@ const get = (
 const post = (
     url: string,
     payload: Uint8Array,
-    headers?: { [key: string]: string }
+    headers?: { [key: string]: string },
+    allowUnverifiedCertificate?: boolean
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
     const options: RequestOptions = {
-        rejectUnauthorized: false
+        rejectUnauthorized: !allowUnverifiedCertificate
     }
     const post = request(url, {
         method: 'post',

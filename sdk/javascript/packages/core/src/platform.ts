@@ -21,7 +21,7 @@ export type Platform = {
 
 //  network
     get(url: string, headers: any): Promise<KeeperHttpResponse>
-    post(url: string, request: Uint8Array, headers?: { [key: string]: string }): Promise<KeeperHttpResponse>
+    post(url: string, request: Uint8Array, headers?: { [key: string]: string }, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse>
 }
 
 export type KeyValueStorage = {
@@ -56,3 +56,71 @@ export function connectPlatform(p: Platform) {
 }
 
 export let platform: Platform
+
+export const loadJsonConfig = (config: string) : KeyValueStorage  => {
+    return inMemoryStorage(JSON.parse(config))
+}
+
+export const inMemoryStorage = (storage: any): KeyValueStorage => {
+
+    const getValue = (key: string): any | undefined => {
+        const keyParts = key.split('/')
+        let obj = storage
+        for (const part of keyParts) {
+            obj = obj[part]
+            if (!obj) {
+                return undefined
+            }
+        }
+        return obj.toString();
+    }
+
+    const saveValue = (key: string, value: any): void => {
+        const keyParts = key.split('/')
+        let obj = storage
+        for (const part of keyParts.slice(0, -1)) {
+            if (!obj[part]) {
+                obj[part] = {}
+            }
+            obj = obj[part]
+        }
+        obj[keyParts.slice(-1)[0]] = value
+    }
+
+    const clearValue = (key: string): void => {
+        const keyParts = key.split('/')
+        let obj = storage
+        for (const part of keyParts.slice(0, -1)) {
+            if (!obj[part]) {
+                obj[part] = {}
+            }
+            obj = obj[part]
+        }
+        delete obj[keyParts.slice(-1)[0]]
+    }
+
+    return {
+        getString: key => Promise.resolve(getValue(key)),
+        saveString: (key, value) => {
+            saveValue(key, value)
+            return Promise.resolve()
+        },
+        getBytes: key => {
+            const bytesString: string = getValue(key)
+            if (bytesString) {
+                return Promise.resolve(platform.base64ToBytes(bytesString))
+            } else {
+                return Promise.resolve(undefined)
+            }
+        },
+        saveBytes: (key, value) => {
+            const bytesString = platform.bytesToBase64(value)
+            saveValue(key, bytesString)
+            return Promise.resolve()
+        },
+        delete: (key) => {
+            clearValue(key)
+            return Promise.resolve()
+        }
+    }
+}
