@@ -19,4 +19,8 @@ jobs:
         with:
           node-version: 12
       - run: yarn install
+        env:
+          NPM_TOKEN: ""
       - run: yarn run test
+        env:
+          NPM_TOKEN: ""
