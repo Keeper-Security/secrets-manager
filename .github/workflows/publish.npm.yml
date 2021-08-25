@@ -19,7 +19,7 @@ jobs:
           hostname: keepersecurity.com
           keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
           secrets: |
-            Sq4nnb5HXXNp1l6KryXynw field:password | env:NPM_TOKEN
+            NScQiZwrHJFCPv1gL8TX6Q field:password | env:NPM_TOKEN
 
       - uses: actions/checkout@v2
 
