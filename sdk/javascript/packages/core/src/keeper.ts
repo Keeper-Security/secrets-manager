@@ -39,7 +39,8 @@ export const initialize = (pkgVersion?: string) => {
 
 export type SecretManagerOptions = {
     storage: KeyValueStorage
-    queryFunction?: (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload) => Promise<KeeperHttpResponse>
+    queryFunction?: (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean) => Promise<KeeperHttpResponse>
+    allowUnverifiedCertificate?: boolean;
 }
 
 type GetPayload = {
@@ -145,12 +146,13 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperReco
     }
 }
 
-const postFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload): Promise<KeeperHttpResponse> => {
-    return platform.post(url, payload.payload, {
-        PublicKeyId: transmissionKey.publicKeyId.toString(),
-        TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
-        Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-    })
+const postFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse> => {
+    return platform.post(url, payload.payload,
+        {
+            PublicKeyId: transmissionKey.publicKeyId.toString(),
+            TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
+            Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
+        }, allowUnverifiedCertificate)
 }
 
 export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => {
@@ -174,7 +176,7 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     const encryptedPayload = await platform.encryptWithKey(payloadBytes, transmissionKey.key)
     const signatureBase = Uint8Array.of(...transmissionKey.encryptedKey, ...encryptedPayload)
     const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
-    return { payload: encryptedPayload, signature}
+    return {payload: encryptedPayload, signature}
 }
 
 const postQuery = async (options: SecretManagerOptions, path: string, payload: GetPayload | UpdatePayload): Promise<Uint8Array> => {
@@ -186,7 +188,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: G
     while (true) {
         const transmissionKey = await generateTransmissionKey(options.storage)
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
-        const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload)
+        const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate)
         if (response.statusCode !== 200) {
             const errorMessage = platform.bytesToString(response.data.slice(0, 1000))
             try {

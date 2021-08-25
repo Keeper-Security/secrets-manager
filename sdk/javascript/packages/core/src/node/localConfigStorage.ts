@@ -14,13 +14,14 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
         }
     }
 
-    const storage: KeyValueStorage = inMemoryStorage(readStorage())
+    const storageData = readStorage()
+    const storage: KeyValueStorage = inMemoryStorage(storageData)
 
     const saveStorage = (storage: any) => {
         if (!configName) {
             return
         }
-        fs.writeFileSync(configName, JSON.stringify(storage, null, 2))
+        fs.writeFileSync(configName, JSON.stringify(storageData, null, 2))
     }
 
     return {
