@@ -109,7 +109,7 @@ class Record:
 
         found_item = None
         for item in self.dict.get('fields'):
-            if item["type"] == field_type.lower():
+            if item["type"].lower() == field_type.lower():
                 found_item = item
                 break
         if found_item is None:
@@ -130,16 +130,18 @@ class Record:
         found_item = None
         for item in self.dict.get('custom', []):
             found = False
+            test_label = label
 
             # If the user doesn't set the label in the UI, and uses the default, the label will be missing :/
             # Set the label to the type.
             if item.get("label") is None:
-                item["label"] = item["type"]
+                item["label"] = item["type"].lower()
+                test_label = label.lower();
 
-            if item["label"] == label:
+            if item["label"] == test_label:
                 # We can have duplicate labels, so allow type to be used too.
                 if field_type is not None:
-                    if item["type"] == field_type.lower():
+                    if item["type"].lower() == field_type.lower():
                         found = True
                 else:
                     found = True
