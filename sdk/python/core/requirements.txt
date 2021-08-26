@@ -1,5 +1,5 @@
 ecdsa
-cryptography
+cryptography>=3.1
 requests
 pytest
 importlib_metadata

@@ -15,13 +15,11 @@ import configparser
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
-from keeper_secrets_manager_core.crypto import CryptoUtils
 from .table import Table, ColumnAlign
 from colorama import Fore
 import sys
 import json
 import base64
-import hashlib
 import tempfile
 
 
