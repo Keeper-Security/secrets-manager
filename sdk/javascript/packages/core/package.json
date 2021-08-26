@@ -9,6 +9,7 @@
   "author": "saldoukhov@keepersecurity.com",
   "license": "ISC",
   "scripts": {
+    "pretest": "rollup -c",
     "test": "jest",
     "quicktest": "ts-node internal/quicktest.ts",
     "prepublishOnly": "rollup -c",

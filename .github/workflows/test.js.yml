@@ -21,6 +21,6 @@ jobs:
       - run: yarn install
         env:
           NPM_TOKEN: ""
-      - run: yarn run test
+      - run: yarn test
         env:
           NPM_TOKEN: ""
