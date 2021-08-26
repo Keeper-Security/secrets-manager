@@ -183,6 +183,122 @@ class NotationTest(unittest.TestCase):
                 secrets_manager.get_notation("{}/custom_field/My Custom 1".format(one.uid))
                 self.fail("Should not have gotten here.")
             except ValueError as err:
-                self.assertRegex(str(err), r'Cannot find the custom field label', 'did not get correct exception')
+                self.assertRegex(str(err), r'Cannot find ', 'did not get correct exception')
             except Exception as err:
                 self.fail("Didn't get the correct exception message: {}".format(err))
+
+    def test_notation_inflate(self):
+
+        """ Test inflating the field values
+
+        The main record has a cardRef type, which reference a Payment Card record which has an addressRef, which
+        references an Address record. When we use notation to get the cardRef, we want the data not the record UIDs.
+        Replace the UIDs with actual data.
+        """
+
+        with tempfile.NamedTemporaryFile("w") as fh:
+            fh.write(
+                json.dumps({
+                    "hostname": "fake.keepersecurity.com",
+                    "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
+                    "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26"
+                    "C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
+                    "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
+                    "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9d"
+                    "jH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbE"
+                    "T6joq0xCjhKMhHQFaHYI"
+                })
+            )
+            fh.seek(0)
+
+            prefix = SecretsManager.notation_prefix
+
+            secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
+
+            # Create records in reverse order
+
+            address_res = mock.Response()
+            address = address_res.add_record(title="Address Record")
+            address.field("address", [{
+                "street1": "100 West Street",
+                "city": "Central City",
+                "state": "AZ",
+                "zip": "53211"
+            }])
+
+            card_res = mock.Response()
+            card = card_res.add_record(title="Card Record")
+            card.field("paymentCard", [{"cardNumber": "5555555555555555",
+                "cardExpirationDate": "01/2021",
+                "cardSecurityCode": "543"}])
+            card.field("text", value=["Cardholder"], label="Cardholder Name")
+            card.field("pinCode", "1234")
+            # card contains the address
+            card.field("addressRef", [address.uid])
+
+            main_res = mock.Response()
+            main = main_res.add_record(title="Main Record")
+            # main contains the card
+            main.field("cardRef", [card.uid])
+
+            queue = mock.ResponseQueue(client=secrets_manager)
+
+            # Get the entire value
+
+            queue.add_response(main_res)
+            queue.add_response(card_res)
+            queue.add_response(address_res)
+
+            value = secrets_manager.get_notation("{}://{}/field/cardRef".format(prefix, main.uid))
+
+            self.assertEqual('5555555555555555', value.get("cardNumber"), 'card number is wrong')
+            self.assertEqual('Cardholder', value.get("Cardholder Name"), 'Cardholder Name is wrong')
+            self.assertEqual('100 West Street', value.get("street1"), 'street1 is wrong')
+
+
+            # Get a value in the dictionary
+            queue.add_response(main_res)
+            queue.add_response(card_res)
+            queue.add_response(address_res)
+
+            value = secrets_manager.get_notation("{}://{}/field/cardRef[cardSecurityCode]".format(prefix, main.uid))
+            self.assertEqual("543", value, "cardSecurityCode is wrong")
+
+            # This is done via morbid curiosity. We coded for this, but we don't actually have an inflation that does
+            # it.
+
+            address_res = mock.Response()
+            address = address_res.add_record(title="Address Record")
+            address.field("address", [{
+                "street1": "100 West Street",
+                "city": "Central City",
+                "state": "AZ",
+                "zip": "53211"
+            }])
+
+            card_res = mock.Response()
+            card = card_res.add_record(title="Card Record")
+
+            # Have the string be first instead of the object.
+            card.field("pinCode", "1234")
+            card.field("text", value=["Cardholder"], label="Cardholder Name")
+            card.field("paymentCard", [{"cardNumber": "5555555555555555",
+                                        "cardExpirationDate": "01/2021",
+                                        "cardSecurityCode": "543"}])
+            # card contains the address
+            card.field("addressRef", [address.uid])
+
+            main_res = mock.Response()
+            main = main_res.add_record(title="Main Record")
+            # main contains the card
+            main.field("cardRef", [card.uid])
+
+            queue.add_response(main_res)
+            queue.add_response(card_res)
+            queue.add_response(address_res)
+
+            value = secrets_manager.get_notation("{}://{}/field/cardRef".format(prefix, main.uid))
+
+            self.assertEqual('5555555555555555', value.get("cardNumber"), 'card number is wrong')
+            self.assertEqual('Cardholder', value.get("Cardholder Name"), 'Cardholder Name is wrong')
+            self.assertEqual('100 West Street', value.get("street1"), 'street1 is wrong')

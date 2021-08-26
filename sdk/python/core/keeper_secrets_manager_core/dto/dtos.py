@@ -11,7 +11,6 @@
 import os
 
 import requests
-
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core import utils
@@ -35,7 +34,8 @@ class Record:
         if 'recordKey' in record_dict and record_dict.get('recordKey'):
             # Folder Share
             record_key_encrypted_str = record_dict.get('recordKey')
-            record_key_encrypted_bytes = utils.base64_to_bytes(record_key_encrypted_str) if record_key_encrypted_str else None
+            record_key_encrypted_bytes = utils.base64_to_bytes(record_key_encrypted_str) if \
+                record_key_encrypted_str else None
 
             self.record_key_bytes = CryptoUtils.decrypt_aes(record_key_encrypted_bytes, secret_key)
         else:
@@ -109,60 +109,120 @@ class Record:
     def _value(values, single):
 
         if single is True:
+            if values is None or len(values) == 0:
+                return None
             return values[0]
         return values
 
-    def field(self, field_type, value=None, single=False):
+    @staticmethod
+    def _field_search(fields, field_key):
 
+        """ This is a generic field search that returns the field
+
+        It will work for for both standard and custom fields. It
+        returns the field as a dictionary.
+        """
+
+        # First check in the field_key matches any labels. Label matching is case sensitive.
         found_item = None
-        for item in self.dict.get('fields'):
-            if item["type"] == field_type.lower():
+        for item in fields:
+            if item.get("label") is not None and item.get("label") == field_key:
                 found_item = item
                 break
+        # If the label was not found, check the field type. Field type is case insensitive.
         if found_item is None:
-            raise ValueError("Cannot find the field '{}'.".format(field_type))
+            for item in fields:
+                if item.get("type").lower() == field_key.lower():
+                    found_item = item
+                    break
+
+        return found_item
+
+    def get_standard_field(self, field_type):
+        return self._field_search(fields=self.dict.get('fields', []), field_key=field_type)
+
+    def get_standard_field_value(self, field_type, single=False):
+        field = self.get_standard_field(field_type)
+        if field is None:
+            raise ValueError("Cannot find standard field {} in record".format(field_type))
+        return Record._value(field.get("value", []), single)
+
+    def set_standard_field_value(self, field_type, value):
+        field = self.get_standard_field(field_type)
+        if field is None:
+            raise ValueError("Cannot find standard field {} in record".format(field_type))
+        if type(value) is not list:
+            value = [value]
+        field["value"] = value
+        self._update()
+
+    def get_custom_field(self, field_type):
+        return self._field_search(fields=self.dict.get('custom', []), field_key=field_type)
+
+    def get_custom_field_value(self, field_type, single=False):
+        field = self.get_custom_field(field_type)
+        if field is None:
+            raise ValueError("Cannot find custom field {} in record".format(field_type))
+        return Record._value(field.get("value", []), single)
+
+    def set_custom_field_value(self, field_type, value):
+        field = self.get_custom_field(field_type)
+        if field is None:
+            raise ValueError("Cannot find custom field {} in record".format(field_type))
+        if type(value) is not list:
+            value = [value]
+        field["value"] = value
+        self._update()
+
+    # TODO: Deprecate this for better getter and setters
+    def field(self, field_type, value=None, single=False):
+
+        """ Getter and setter for standard fields
+
+        A getter operation is performed when the 'value' parameter is not passed. For example, this would
+        return the value.
+
+            record.field("login")
+
+        A setter operation is performed when a 'value'  parameter is passed. For example, this would set
+        the value in the field.
+
+            record.field("login", value="My New Value")
+        """
+
+        field = self._field_search(fields=self.dict.get('fields', []), field_key=field_type)
+
+        if field is None:
+            raise ValueError("Cannot find the field for {}".format(field_type))
 
         if value is None:
-            value = Record._value(found_item["value"], single)
+            value = Record._value(field["value"], single)
         else:
             if type(value) is not list:
                 value = [value]
-            found_item["value"] = value
+            field["value"] = value
             self._update()
 
         return value
 
-    def custom_field(self, label, value=None, field_type=None, single=False):
+    # TODO: Deprecate this for better getter and setters
+    def custom_field(self, label=None, value=None, field_type=None, single=False):
 
-        found_item = None
-        for item in self.dict.get('custom', []):
-            found = False
+        custom_field = None
+        if label is not None:
+            custom_field = self._field_search(fields=self.dict.get('custom', []), field_key=label)
+            if custom_field is None and field_type is not None:
+                custom_field = self._field_search(fields=self.dict.get('custom', []), field_key=field_type)
 
-            # If the user doesn't set the label in the UI, and uses the default, the label will be missing :/
-            # Set the label to the type.
-            if item.get("label") is None:
-                item["label"] = item["type"]
-
-            if item["label"] == label:
-                # We can have duplicate labels, so allow type to be used too.
-                if field_type is not None:
-                    if item["type"] == field_type.lower():
-                        found = True
-                else:
-                    found = True
-            if found is True:
-                found_item = item
-                break
-
-        if found_item is None:
+        if custom_field is None:
             raise ValueError("Cannot find the custom field label='{}', field type='{}'.".format(label, field_type))
 
         if value is None:
-            value = Record._value(found_item["value"], single)
+            value = Record._value(custom_field["value"], single)
         else:
             if type(value) is not list:
                 value = [value]
-            found_item["value"] = value
+            custom_field["value"] = value
             self._update()
 
         return value

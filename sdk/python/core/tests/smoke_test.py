@@ -123,7 +123,7 @@ class SmokeTest(unittest.TestCase):
             custom = record.custom_field("My Custom 2", field_type='text')
             self.assertEqual(custom[0], "custom2", "didn't get the correct My Custom 2/text value")
             custom = record.custom_field("My Custom 2", field_type='secret')
-            self.assertEqual(custom[0], "my secret", "didn't get the correct My Custom 2/secret value")
+            self.assertNotEqual(custom[0], "my secret", "should have gotten the first My Custom 2 record")
 
             # Test field sets
             record.field("login", value="ABC")

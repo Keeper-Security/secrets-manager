@@ -300,6 +300,8 @@ class File:
 
 class Record:
 
+    no_label = "__NONE__"
+
     def __init__(self, record_type=None, uid=None, title=None):
 
         if uid is None:
@@ -315,9 +317,11 @@ class Record:
 
         # Some default data
         self._fields = {
-            "login": "Login {}".format(uid),
-            "password": "******** {}".format(uid),
-            "url": "http://localhost/{}".format(uid)
+            Record.no_label: {
+                "login": "Login {}".format(uid),
+                "password": "******** {}".format(uid),
+                "url": "http://localhost/{}".format(uid)
+            }
         }
         self._custom_fields = {}
 
@@ -331,6 +335,7 @@ class Record:
         )
         for item in keeper_record.dict.get("fields"):
             new_record.field(
+                label=item.get("label"),
                 field_type=item["type"],
                 value=item["value"]
             )
@@ -343,10 +348,18 @@ class Record:
         # TODO - Add files
         return new_record
 
-    def field(self, field_type, value):
+    def field(self, field_type, value, label=None):
+
+        # Field can sometime shave a label
+        if label is None:
+            label = Record.no_label
+
         if type(value) is not list:
             value = [value]
-        self._fields[field_type] = value
+
+        if label not in self._fields:
+            self._fields[label] = {}
+        self._fields[label][field_type] = value
 
     def custom_field(self, label, value, field_type="text"):
         if type(value) is not list:
@@ -376,11 +389,16 @@ class Record:
             files = [self.files[uid].dump(secret=secret, flags=flags) for uid in self.files]
 
         fields = [{"type": "fileRef", "value": [uid for uid in self.files]}]
-        for field_type in self._fields:
-            fields.append({
-                "type": field_type,
-                "value": self._fields[field_type]
-            })
+        for label in self._fields:
+            for field_type in self._fields[label]:
+                data = {
+                    "type": field_type,
+                    "value": self._fields[label][field_type],
+                }
+                if label != Record.no_label:
+                    data["label"] = label
+
+                fields.append(data)
 
         custom = []
         for label in self._custom_fields:
