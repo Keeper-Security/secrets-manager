@@ -105,10 +105,10 @@ data class KeeperSecrets(val records: List<KeeperRecord>) {
 data class KeeperRecord(
     val recordKey: ByteArray,
     val recordUid: String,
-    var folderUid: String?,
+    var folderUid: String? = null,
     val data: KeeperRecordData,
-    val revision: Long?,
-    val files: List<KeeperFile>?
+    val revision: Long? = 0,
+    val files: List<KeeperFile>? = null
 ) {
     fun getPassword(): String? {
         val passwordField = data.getField<Password>() ?: return null
