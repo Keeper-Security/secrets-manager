@@ -299,15 +299,12 @@ export const getSecrets = async (options: SecretManagerOptions, recordsFilter?: 
             console.error(e)
         }
     }
-    platform.cleanKeyCache()
     return secrets
 }
 
 export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord): Promise<void> => {
-    platform.cleanKeyCache()
     const payload = await prepareUpdatePayload(options.storage, record)
     await postQuery(options, 'update_secret', payload)
-    platform.cleanKeyCache()
 }
 
 export const downloadFile = async (file: KeeperFile): Promise<Uint8Array> => {

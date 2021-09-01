@@ -74,6 +74,7 @@ const loadKey = async (keyId: string, storage?: KeyValueStorage): Promise<Crypto
 
 const generatePrivateKey = async (keyId: string, storage: KeyValueStorage): Promise<void> => {
     const keyPair = await crypto.subtle.generateKey({name: 'ECDSA', namedCurve: 'P-256'}, !storage.saveObject, ['sign', 'verify'])
+    // @ts-ignore workaround for GitHub action build failure
     keyCache[keyId] = keyPair.privateKey
     if (storage.saveObject) {
         await storage.saveObject(keyId, keyPair)
