@@ -18,9 +18,9 @@ jobs:
         uses: actions/setup-node@v2
         with:
           node-version: 12
-      - run: yarn install
+      - run: npm install
         env:
           NPM_TOKEN: ""
-      - run: yarn test
+      - run: npm test
         env:
           NPM_TOKEN: ""
