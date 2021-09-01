@@ -6,8 +6,7 @@
     "module": "es6",
     "noEmit": false,
     "outDir": "./dist",
-    "sourceMap": true,
-    "strict": false
+    "sourceMap": true
   },
   "include": [
     "src/**/*"

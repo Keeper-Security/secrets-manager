@@ -74,12 +74,11 @@ const loadKey = async (keyId: string, storage?: KeyValueStorage): Promise<Crypto
 
 const generatePrivateKey = async (keyId: string, storage: KeyValueStorage): Promise<void> => {
     const keyPair = await crypto.subtle.generateKey({name: 'ECDSA', namedCurve: 'P-256'}, !storage.saveObject, ['sign', 'verify'])
-// @ts-ignore workaround for GitHub action build failure
-    keyCache[keyId] = keyPair.privateKey
+    keyCache[keyId] = keyPair.privateKey!
     if (storage.saveObject) {
         await storage.saveObject(keyId, keyPair)
     } else {
-// @ts-ignore workaround for GitHub action build failure
+        // @ts-ignore
         const privateKey = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey)
         await storage.saveBytes(keyId, new Uint8Array(privateKey))
     }
@@ -89,7 +88,8 @@ const exportPublicKey = async (keyId: string, storage: KeyValueStorage): Promise
     if (storage.getObject) {
         const keyPair = await storage.getObject<CryptoKeyPair>(keyId)
         if (keyPair) {
-            const publicKey = await crypto.subtle.exportKey('raw', keyPair.publicKey)
+            // @ts-ignore
+            const publicKey = await crypto.subtle.exportKey('raw', keyPair.publicKey)!
             return new Uint8Array(publicKey)
         }
     } else {
@@ -261,6 +261,7 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
         name: 'ECDH',
         namedCurve: 'P-256'
     }, false, ['deriveBits'])
+    // @ts-ignore
     const ephemeralPublicKey = await crypto.subtle.exportKey('raw', ephemeralKeyPair.publicKey)
     const recipientPublicKey = await crypto.subtle.importKey('raw', key, {
         name: 'ECDH',
@@ -269,7 +270,7 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
     const sharedSecret = await crypto.subtle.deriveBits({
         name: 'ECDH',
         public: recipientPublicKey
-    }, ephemeralKeyPair.privateKey, 256)
+    }, ephemeralKeyPair.privateKey!, 256)
     const idBytes = id || new Uint8Array()
     const sharedSecretCombined = new Uint8Array(sharedSecret.byteLength + idBytes.byteLength)
     sharedSecretCombined.set(new Uint8Array(sharedSecret), 0)

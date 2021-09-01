@@ -56,8 +56,8 @@ test('Notations', () => {
     try {
         value = getValue(secrets, `keeper://${recordUID}/field/login[1]`)
         fail('Getting wrong index did not throw')
-    } catch (e) {
-        expect(e.message).toContain(`The index 1 for field value of login in the record ${recordUID} is out of range`)
+    } catch ({message}) {
+        expect(message).toContain(`The index 1 for field value of login in the record ${recordUID} is out of range`)
     }
 
     value = getValue(secrets, `keeper://${recordUID}/field/login[]`)
