@@ -10,7 +10,7 @@ export function getValue(secrets: KeeperSecrets, notation: string): any {
     const schemaNotation = notation.split('://')
     if (schemaNotation.length > 1) {
         if (schemaNotation[0] !== 'keeper') {
-            throw Error(`invalid notation schema: ${schemaNotation[0]}`)
+            throw Error(`Invalid notation schema: ${schemaNotation[0]}`)
         }
         notation = notation.slice(9)
     }

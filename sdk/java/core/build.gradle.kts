@@ -38,6 +38,8 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.2.1")
 
+    implementation("org.jetbrains.kotlin:kotlin-reflect:1.5.30")
+
     implementation("org.bouncycastle:bc-fips:1.0.2.1")
 
     // Use the Kotlin test library.
