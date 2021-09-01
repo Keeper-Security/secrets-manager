@@ -204,6 +204,12 @@ const post = (
     post.end()
 })
 
+const cleanKeyCache = () => {
+    for (const key in keyCache) {
+        delete keyCache[key]
+    }
+}
+
 export const nodePlatform: Platform = {
     bytesToBase64: bytesToBase64,
     base64ToBytes: base64ToBytes,
@@ -222,5 +228,6 @@ export const nodePlatform: Platform = {
     publicEncrypt: publicEncrypt,
     sign: sign,
     get: get,
-    post: post
+    post: post,
+    cleanKeyCache: cleanKeyCache
 }

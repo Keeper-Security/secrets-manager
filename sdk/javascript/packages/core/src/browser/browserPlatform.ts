@@ -315,6 +315,12 @@ const post = async (
     }
 }
 
+const cleanKeyCache = () => {
+    for (const key in keyCache) {
+        delete keyCache[key]
+    }
+}
+
 export const browserPlatform: Platform = {
     bytesToBase64: bytesToBase64,
     base64ToBytes: base64ToBytes,
@@ -333,5 +339,6 @@ export const browserPlatform: Platform = {
     publicEncrypt: publicEncrypt,
     sign: sign,
     get: get,
-    post: post
+    post: post,
+    cleanKeyCache: cleanKeyCache
 }

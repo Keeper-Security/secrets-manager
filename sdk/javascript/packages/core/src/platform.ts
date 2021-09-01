@@ -18,6 +18,7 @@ export type Platform = {
     decrypt(data: Uint8Array, keyId: string, storage?: KeyValueStorage): Promise<Uint8Array>
     decryptWithKey(data: Uint8Array, key: Uint8Array): Promise<Uint8Array>
     hash(data: Uint8Array, tag: string): Promise<Uint8Array>
+    cleanKeyCache(): void
 
 //  network
     get(url: string, headers: any): Promise<KeeperHttpResponse>
