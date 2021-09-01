@@ -1,5 +1,6 @@
 package com.keepersecurity.secretsManager.core
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.*
@@ -11,11 +12,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.fail
 
+@ExperimentalSerializationApi
 internal class SecretsManagerTest {
 
     @Serializable
     data class TestResponse(val transmissionKey: String, val data: String, val statusCode: Int)
 
+    @ExperimentalSerializationApi
     @Test
     fun getSecretsE2E() {
         val file = File("../../test_data.json")

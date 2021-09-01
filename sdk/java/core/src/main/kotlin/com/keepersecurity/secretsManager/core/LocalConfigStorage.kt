@@ -1,5 +1,6 @@
 package com.keepersecurity.secretsManager.core
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -23,6 +24,7 @@ fun getCachedValue(): ByteArray {
     }
 }
 
+@ExperimentalSerializationApi
 class InMemoryStorage(configJson: String? = null) : KeyValueStorage {
 
     @Serializable
@@ -73,6 +75,7 @@ class InMemoryStorage(configJson: String? = null) : KeyValueStorage {
 }
 
 // LocalConfigStorage becomes in memory storage if config name is null
+@ExperimentalSerializationApi
 class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
 
     @Serializable
@@ -93,6 +96,8 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         InMemoryStorage()
     }
 
+    private val prettyJson = Json { prettyPrint = true }
+
     private fun saveToFile() {
         if (file == null) return
         val config = LocalConfig()
@@ -102,7 +107,7 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         config.clientKey = storage.getString(KEY_CLIENT_KEY)
         config.appKey = storage.getString(KEY_APP_KEY)
         config.serverPublicKeyId = storage.getString(KEY_SERVER_PUBIC_KEY_ID)
-        val json = Json { prettyPrint = true }.encodeToString(config)
+        val json = prettyJson.encodeToString(config)
         val outputStream = BufferedWriter(FileWriter(file))
         outputStream.write(json)
         outputStream.close()

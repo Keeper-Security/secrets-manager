@@ -2,6 +2,7 @@
 
 package com.keepersecurity.secretsManager.core
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -178,6 +179,7 @@ fun toKeeperAppClientString(version: String): String {
     return "mj${version.replace("-SNAPSHOT", "")}"
 }
 
+@ExperimentalSerializationApi
 @JvmOverloads
 fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emptyList()): KeeperSecrets {
     val (secrets, justBound) = fetchAndDecryptSecrets(options, recordsFilter)
@@ -191,6 +193,7 @@ fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emp
     return secrets
 }
 
+@ExperimentalSerializationApi
 fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
     val payload = prepareUpdatePayload(options.storage, record)
     postQuery(options, "update_secret", payload)
@@ -222,6 +225,7 @@ private fun downloadFile(file: KeeperFile, url: String): ByteArray {
     }
 }
 
+@ExperimentalSerializationApi
 private fun fetchAndDecryptSecrets(
     options: SecretsManagerOptions,
     recordsFilter: List<String>
@@ -265,6 +269,7 @@ private fun fetchAndDecryptSecrets(
     return Pair(secrets, justBound)
 }
 
+@ExperimentalSerializationApi
 private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray): KeeperRecord {
     val decryptedRecord = decrypt(record.data, recordKey)
 
@@ -311,6 +316,7 @@ private fun prepareGetPayload(
     return payload
 }
 
+@ExperimentalSerializationApi
 private fun prepareUpdatePayload(
     storage: KeyValueStorage,
     record: KeeperRecord
@@ -396,6 +402,7 @@ private fun generateTransmissionKey(storage: KeyValueStorage): TransmissionKey {
     return TransmissionKey(keyNumber, transmissionKey, encryptedKey)
 }
 
+@ExperimentalSerializationApi
 private inline fun <reified T> encryptAndSignPayload(
     storage: KeyValueStorage,
     transmissionKey: TransmissionKey,
@@ -409,6 +416,7 @@ private inline fun <reified T> encryptAndSignPayload(
     return EncryptedPayload(encryptedPayload, signature)
 }
 
+@ExperimentalSerializationApi
 private inline fun <reified T> postQuery(
     options: SecretsManagerOptions,
     path: String,

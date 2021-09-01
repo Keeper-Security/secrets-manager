@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.fail
 
+@ExperimentalSerializationApi
 internal class NotationTest {
 
     private val recordUID = "k9qMpcO0aszz9w3li5XbaQ"
@@ -34,12 +35,10 @@ internal class NotationTest {
 
     private val secrets = KeeperSecrets(listOf(KeeperRecord(ByteArray(0), recordUID, data = recordData)))
 
-    @ExperimentalSerializationApi
     @Test
     fun notationsWork() {
-        var value: String
 
-        value = getValue(secrets, "keeper://${recordUID}/field/login")
+        var value: String = getValue(secrets, "keeper://${recordUID}/field/login")
         assertEquals("My Login 1", value)
 
         value = getValue(secrets, "${recordUID}/field/login")
@@ -49,7 +48,7 @@ internal class NotationTest {
         assertEquals("My Login 1", value)
 
         try {
-            value = getValue(secrets, "keeper://${recordUID}/field/login[1]")
+            getValue(secrets, "keeper://${recordUID}/field/login[1]")
             fail("Getting wrong index did not throw")
         } catch (e: Exception) {
             assertEquals("Index 1 out of bounds for length 1", e.message.toString())
