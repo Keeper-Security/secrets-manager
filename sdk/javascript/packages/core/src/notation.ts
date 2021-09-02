@@ -15,20 +15,12 @@ export function getValue(secrets: KeeperSecrets, notation: string): any {
         notation = notation.slice(9)
     }
     const notationParts = notation.split('/')
+    if (notationParts.length < 3) {
+        throw Error(`Invalid notation ${notation}`)
+    }
     const record = secrets.records.find(x => x.recordUid === notationParts[0])
     if (!record) {
         throw Error(`Record ${notationParts[0]} not found`)
-    }
-    if (notationParts[1].startsWith('file[')) {
-        const fileTitle = notationParts[1].slice(5, -1)
-        const file = (record.files || []).find(x => x.data.title === fileTitle)
-        if (!file) {
-            throw Error(`File ${fileTitle} not found in the record ${record.recordUid}`)
-        }
-        return file
-    }
-    if (notationParts.length < 3) {
-        throw Error(`Invalid notation ${notation}`)
     }
     let fields: KeeperField[]
     switch (notationParts[1]) {
@@ -38,6 +30,13 @@ export function getValue(secrets: KeeperSecrets, notation: string): any {
         case 'custom_field':
             fields = record.data.custom
             break
+        case 'file':
+            const fileId = notationParts[2]
+            const file = (record.files || []).find(x => x.data.title === fileId || x.data.name === fileId)
+            if (!file) {
+                throw Error(`File ${fileId} not found in the record ${record.recordUid}`)
+            }
+            return file
         default:
             throw Error(`Expected /field or /custom_field but found /${notationParts[1]}`)
     }

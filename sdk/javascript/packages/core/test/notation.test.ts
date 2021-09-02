@@ -103,7 +103,11 @@ test('Notations', () => {
     value = getValue(secrets, `keeper://${recordUID}/custom_field/name[last]`)
     expect(value).toBe('Smith')
 
-    value = getValue(secrets, `keeper://${recordUID}/file[QR Code]`)
+    value = getValue(secrets, `keeper://${recordUID}/file/QR Code`)
+    expect(value.fileUid).toBe('HKGdx7dSrtuTfA67wiEZkw')
+    expect(value.url).toBe('QR Code File Url')
+
+    value = getValue(secrets, `keeper://${recordUID}/file/qr.png`)
     expect(value.fileUid).toBe('HKGdx7dSrtuTfA67wiEZkw')
     expect(value.url).toBe('QR Code File Url')
 })
