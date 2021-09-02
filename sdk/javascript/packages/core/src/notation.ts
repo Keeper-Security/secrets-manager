@@ -30,6 +30,13 @@ export function getValue(secrets: KeeperSecrets, notation: string): any {
         case 'custom_field':
             fields = record.data.custom
             break
+        case 'file':
+            const fileId = notationParts[2]
+            const file = (record.files || []).find(x => x.data.title === fileId || x.data.name === fileId)
+            if (!file) {
+                throw Error(`File ${fileId} not found in the record ${record.recordUid}`)
+            }
+            return file
         default:
             throw Error(`Expected /field or /custom_field but found /${notationParts[1]}`)
     }
