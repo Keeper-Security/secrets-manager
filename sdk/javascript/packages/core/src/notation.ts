@@ -15,12 +15,20 @@ export function getValue(secrets: KeeperSecrets, notation: string): any {
         notation = notation.slice(9)
     }
     const notationParts = notation.split('/')
-    if (notationParts.length < 3) {
-        throw Error(`Invalid notation ${notation}`)
-    }
     const record = secrets.records.find(x => x.recordUid === notationParts[0])
     if (!record) {
         throw Error(`Record ${notationParts[0]} not found`)
+    }
+    if (notationParts[1].startsWith('file[')) {
+        const fileTitle = notationParts[1].slice(5, -1)
+        const file = (record.files || []).find(x => x.data.title === fileTitle)
+        if (!file) {
+            throw Error(`File ${fileTitle} not found in the record ${record.recordUid}`)
+        }
+        return file
+    }
+    if (notationParts.length < 3) {
+        throw Error(`Invalid notation ${notation}`)
     }
     let fields: KeeperField[]
     switch (notationParts[1]) {
