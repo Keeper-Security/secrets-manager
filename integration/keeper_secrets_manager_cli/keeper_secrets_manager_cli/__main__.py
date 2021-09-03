@@ -12,7 +12,7 @@
 
 import click
 from click_help_colors import HelpColorsGroup, HelpColorsCommand
-from colorama import Fore, Style
+from colorama import Fore, Style, init
 from . import KeeperCli
 from .exec import Exec
 from .secret import Secret
@@ -23,11 +23,96 @@ import keeper_secrets_manager_core
 import traceback
 import importlib_metadata
 from colorama import init
+import difflib
+import typing as t
 
+# NOTE: For the CLI, all groups and command are lowercase. All arguments are lower case, so you cannot use
+# -n and -N for an arg flag. If you add a command, you need to add it to the list of known commands so we can
+# do a best match.
+
+class AliasedGroup(HelpColorsGroup):
+
+    known_commands = [
+        "config",
+        "color",
+        "show",
+        "exec",
+        "profile",
+        "active",
+        "export",
+        "import",
+        "init",
+        "secret",
+        "download",
+        "get",
+        "list",
+        "notation",
+        "update",
+        "version"
+    ]
+
+    alias_commands = {
+        "c": "config",
+        "e": "exec",
+        "p": "profile",
+        "i": "init",
+        "s": "secret",
+        "g": "get",
+        "l": "list",
+        "d": "download",
+        "n": "notation",
+        "u": "update",
+        "v": "version"
+    }
+
+    def get_command(self, ctx, cmd_name):
+
+        """ Find the best matching command
+
+        If the user mistypes a command, find the best matching command. Also lowercase the command if they type
+        in mixed case.
+        """
+
+        # All commands are lower case, lowercase in case user used mixed case.
+        cmd_name = cmd_name.lower()
+
+        # Is the command an alias?
+        if cmd_name in AliasedGroup.alias_commands:
+            cmd_name = AliasedGroup.alias_commands[cmd_name]
+        # Else if the command is not in known command list, find the best match.
+        elif cmd_name not in AliasedGroup.known_commands:
+            best_command = None
+            best_score = 0
+            for command in AliasedGroup.known_commands:
+                seq = difflib.SequenceMatcher(a=cmd_name, b=command)
+                if seq.ratio() > best_score:
+                    best_score = seq.ratio()
+                    best_command = command
+
+            if best_score > 0.50:
+                cmd_name = best_command
+        return super().get_command(ctx, cmd_name)
+>>>>>>> 438b27f (Make args/params easier to use)
+
+    def parse_args(self, ctx, args: t.List[str]):
+
+        """ Convert any argument case-insensitive.
+
+        Lowercase any argument that starts with a -, except if it's 22 characters long. If it's 22 chars long, it
+        most likely a record uid that starts a with -.
+        """
+
+        new_args: t.List[str] = []
+        for item in args:
+            # 22 is the length of the UID. We don't want to change the case of that if it starts with a -
+            if item.startswith("-") and len(item) != 22:
+                item = item.lower()
+            new_args.append(item)
+
+        return super().parse_args(ctx, new_args)
 
 def _get_cli(**kwargs):
     return KeeperCli(**kwargs)
-
 
 def base_command_help(f):
     doc = f.__doc__
@@ -48,7 +133,7 @@ def base_command_help(f):
 
 # MAIN GROUP
 @click.group(
-    cls=HelpColorsGroup,
+    cls=AliasedGroup,
     help_headers_color='yellow',
     help_options_color='green'
 )
@@ -86,7 +171,7 @@ def cli(ctx, ini_file, profile_name, output, color):
 
 @click.group(
     name='profile',
-    cls=HelpColorsGroup,
+    cls=AliasedGroup,
     help_headers_color='yellow',
     help_options_color='green'
 )
@@ -198,7 +283,7 @@ profile_command.add_command(profile_import_command)
 
 @click.group(
     name='secret',
-    cls=HelpColorsGroup,
+    cls=AliasedGroup,
     help_headers_color='yellow',
     help_options_color='green'
 )
@@ -243,15 +328,24 @@ def secret_list_command(ctx, uid, json):
 @click.option('--raw', is_flag=True, help="Remove quotes on return quote text.")
 @click.option('--force-array', is_flag=True, help="Return secrets as array even if a single record.")
 @click.option('--unmask', is_flag=True, help="Show password like values in table views.")
+@click.argument('extra-uid', type=str, nargs=-1)
 @click.pass_context
-def secret_get_command(ctx, uid, title, field, query, json, raw, force_array, unmask):
+def secret_get_command(ctx, uid, title, field, query, json, raw, force_array, unmask, extra_uid):
     """Get secret record(s)."""
+
+    uid_list = []
+    if uid is not None:
+        for u in uid:
+            uid_list.append(u)
+    if extra_uid is not None:
+        for u in extra_uid:
+            uid_list.append(u)
 
     output = "text"
     if json is True:
         output = "json"
 
-    total_query = len(uid) + len(title)
+    total_query = len(uid_list) + len(title)
 
     if total_query == 0:
         sys.exit("No uid or title specified for secret get command.")
@@ -260,7 +354,7 @@ def secret_get_command(ctx, uid, title, field, query, json, raw, force_array, un
         sys.exit("Cannot perform field search on multiple records. Only choose one uid/title.")
 
     ctx.obj["secret"].query(
-        uids=uid,
+        uids=uid_list,
         titles=title,
         field=field,
         jsonpath_query=query,
@@ -352,7 +446,7 @@ def exec_command(ctx, capture_output, inline, cmd):
 # CONFIG COMMAND
 @click.group(
     name='config',
-    cls=HelpColorsGroup,
+    cls=AliasedGroup,
     help_headers_color='yellow',
     help_options_color='green'
 )
