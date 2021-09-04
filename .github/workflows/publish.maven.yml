@@ -20,7 +20,6 @@ jobs:
         id: ksmsecrets
         uses: Keeper-Security/ksm-action@js
         with:
-          hostname: keepersecurity.eu
           keeper-secret-config: ${{ secrets.KSM_ARTIFACT_JAVA_APP_CONFIG }}
           secrets: |
             zOVOneDczofWFlfizjC5Qw/file/90A46CD1-private-key.asc > file:/tmp/signing_secret_key_ring_file.asc
