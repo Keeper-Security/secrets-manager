@@ -14,12 +14,6 @@ jobs:
       - name: Get the source code
         uses: actions/checkout@v2
 
-#      - name: Set up Node
-#        uses: actions/setup-node@v2
-#        with:
-#          node-version: 12
-#          registry-url: https://registry.npmjs.org/
-#
       - name: Retrieve secrets from KSM
         id: ksmsecrets
         uses: Keeper-Security/ksm-action@js
