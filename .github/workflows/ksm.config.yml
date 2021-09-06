@@ -1,0 +1,18 @@
+name: Create KSM Config
+on:
+  workflow_dispatch:
+
+jobs:
+  ksm-config:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v2
+
+      - name: Create KSM Config from One Time Token
+        uses: Keeper-Security/ksm-secret@v1.0
+        with:
+          accessToken: ${{ secrets.SERGE_ACCESS_TOKEN }}
+          oneTimeToken: ${{ secrets.ONE_TIME_TOKEN }}
+          configName: SERGE_KSM_CONFIG
