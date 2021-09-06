@@ -11,17 +11,8 @@ jobs:
         working-directory: ./sdk/dotNet
 
     steps:
-
-      - name: Retrieve secrets from KSM
-        id: ksmsecrets
-        uses: Keeper-Security/ksm-action@master
-        with:
-          hostname: keepersecurity.com
-          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
-          secrets: |
-            Sq4nnb5HXXNp1l6KryXynw field:password | env:NUGET_AUTH_TOKEN
-
-      - uses: actions/checkout@v2
+      - name: Get the source code
+        uses: actions/checkout@v2
 
       - name: Set up .Net
         uses: actions/setup-dotnet@v1.8.1
@@ -34,5 +25,14 @@ jobs:
       - name: Build
         run: dotnet build --configuration Release --no-restore
 
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@js
+        with:
+          hostname: keepersecurity.com
+          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
+          secrets: |
+            Sq4nnb5HXXNp1l6KryXynw/field/password > NUGET_AUTH_TOKEN
+
       - name: Publish package
-        run: dotnet nuget push ./SecretsManager/bin/Release/*.nupkg --api-key ${{env.NUGET_AUTH_TOKEN}} --source https://api.nuget.org/v3/index.json
+        run: dotnet nuget push ./SecretsManager/bin/Release/*.nupkg --api-key ${{steps.ksmsecrets.outputs.NUGET_AUTH_TOKEN}} --source https://api.nuget.org/v3/index.json

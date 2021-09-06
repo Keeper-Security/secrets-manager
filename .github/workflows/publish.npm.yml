@@ -11,23 +11,16 @@ jobs:
         working-directory: ./sdk/javascript/packages/core
 
     steps:
+      - name: Get the source code
+        uses: actions/checkout@v2
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
-        uses: Keeper-Security/ksm-action@master
+        uses: Keeper-Security/ksm-action@js
         with:
-          hostname: keepersecurity.com
           keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
           secrets: |
-            NScQiZwrHJFCPv1gL8TX6Q field:password | env:NPM_TOKEN
-
-      - uses: actions/checkout@v2
-
-      - name: Set up Node
-        uses: actions/setup-node@v2
-        with:
-          node-version: 12
-          registry-url: https://registry.npmjs.org/
+            NScQiZwrHJFCPv1gL8TX6Q/field/password > env:NPM_TOKEN
 
       - name: Install dependencies
         run: npm install
