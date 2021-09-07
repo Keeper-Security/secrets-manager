@@ -1,16 +1,13 @@
 # Keeper Secrets Manager
 
-![Javascript](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.js.yml/badge.svg)
-![Python](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.python.yml/badge.svg)
-![Java](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.java.yml/badge.svg)
-![.Net](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.dotnet.yml/badge.svg)
-![Ansible](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.ansible.yml/badge.svg)
-![CLI](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.cli.yml/badge.svg)
-
-[![NPM](https://img.shields.io/npm/v/@keeper-security/secrets-manager-core?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/@keeper-security/secrets-manager-core)
-[![PyPi](https://img.shields.io/pypi/v/keeper-secrets-manager-core?style=for-the-badge&logo=pypi)](https://pypi.org/project/keeper-secrets-manager-core/)
-[![Maven Central](https://img.shields.io/maven-central/v/com.keepersecurity.secrets-manager/core?style=for-the-badge&logo=java)](https://search.maven.org/artifact/com.keepersecurity.secrets-manager/core)
-[![Nuget](https://img.shields.io/nuget/v/Keeper.SecretsManager?style=for-the-badge&logo=nuget)](https://www.nuget.org/packages/Keeper.SecretsManager)
+|                                                                                                             | Published Artifacts                                                                                                                                                                                                  |
+|-------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ![Javascript](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.js.yml/badge.svg)   | [![NPM](https://img.shields.io/npm/v/@keeper-security/secrets-manager-core?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/@keeper-security/secrets-manager-core)                              |
+| ![Python](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.python.yml/badge.svg)   | [![PyPi](https://img.shields.io/pypi/v/keeper-secrets-manager-core?style=for-the-badge&logo=pypi)](https://pypi.org/project/keeper-secrets-manager-core/)                                                   |
+| ![Java](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.java.yml/badge.svg)       | [![Maven Central](https://img.shields.io/maven-central/v/com.keepersecurity.secrets-manager/core?style=for-the-badge&logo=java)](https://search.maven.org/artifact/com.keepersecurity.secrets-manager/core) |
+| ![.Net](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.dotnet.yml/badge.svg)     | [![Nuget](https://img.shields.io/nuget/v/Keeper.SecretsManager?style=for-the-badge&logo=nuget)](https://www.nuget.org/packages/Keeper.SecretsManager)                                                       |
+| ![Ansible](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.ansible.yml/badge.svg) |                                                                                                                                                                                                             |
+| ![CLI](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.cli.yml/badge.svg)         |                                                                                                                                                                                                             |
 
 # What is Keeper Secrets Manager?
 
