@@ -7,6 +7,11 @@
 ![Ansible](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.ansible.yml/badge.svg)
 ![CLI](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.cli.yml/badge.svg)
 
+[![NPM](https://img.shields.io/npm/v/@keeper-security/secrets-manager-core?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/@keeper-security/secrets-manager-core)
+[![PyPi](https://img.shields.io/pypi/v/keeper-secrets-manager-core?style=for-the-badge&logo=pypi)](https://pypi.org/project/keeper-secrets-manager-core/)
+[![Maven Central](https://img.shields.io/maven-central/v/com.keepersecurity.secrets-manager/core?style=for-the-badge&logo=java)](https://search.maven.org/artifact/com.keepersecurity.secrets-manager/core)
+[![Nuget](https://img.shields.io/nuget/v/Keeper.SecretsManager?style=for-the-badge&logo=nuget)](https://www.nuget.org/packages/Keeper.SecretsManager)
+
 # What is Keeper Secrets Manager?
 
 Keeper Secrets Manager is a component of the Keeper Enterprise platform. It provides your DevOps, IT Security and
