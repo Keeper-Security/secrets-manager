@@ -55,11 +55,11 @@ class Export:
     def _format_json(self):
 
         mapping = {
-            "clientkey": { "key": "clientKey", "isBase64": True},
             "clientId": {"key": "clientId", "isBase64": True},
             "privateKey": {"key": "privateKey", "isBase64": True},
             "appKey": {"key": "appKey", "isBase64": True},
             "hostname": {"key": "hostname", "isBase64": False},
+            "serverPublicKeyId": {"key": "serverPublicKeyId", "isBase64": False}
         }
 
         config_dict = {}
@@ -68,6 +68,7 @@ class Export:
             if key in self.config:
                 if info["isBase64"] is True:
                     value_bytes = base64_to_bytes(self.config[key])
+                    # Encode a non-url safe base64
                     config_dict[info["key"]] = base64.b64encode(value_bytes).decode()
                 else:
                     config_dict[info["key"]] = self.config[key]

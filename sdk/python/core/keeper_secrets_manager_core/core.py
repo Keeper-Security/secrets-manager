@@ -14,6 +14,7 @@ import os
 from distutils.util import strtobool
 import re
 import json
+import base64
 
 import requests
 from requests import HTTPError
@@ -395,7 +396,9 @@ class SecretsManager:
             just_bound = True
 
             encrypted_master_key = url_safe_str_to_bytes(decrypted_response_dict.get('encryptedAppKey'))
-            secret_key = CryptoUtils.decrypt_aes(encrypted_master_key, self.config.get(ConfigKeys.KEY_CLIENT_KEY))
+            client_key = self.config.get(ConfigKeys.KEY_CLIENT_KEY)
+            client_key = base64.urlsafe_b64decode(client_key + "==")
+            secret_key = CryptoUtils.decrypt_aes(encrypted_master_key, client_key)
             self.config.set(ConfigKeys.KEY_APP_KEY, bytes_to_url_safe_str(secret_key))
 
             self.config.delete(ConfigKeys.KEY_CLIENT_KEY)

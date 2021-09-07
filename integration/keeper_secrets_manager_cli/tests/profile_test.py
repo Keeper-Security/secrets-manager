@@ -22,8 +22,8 @@ class ProfileTest(unittest.TestCase):
         os.chdir(self.temp_dir.name)
 
         # Clear env var from other tests
-        os.environ.pop("KSM_CONFIG_BASE64",None)
-        os.environ.pop("KSM_CONFIG_BASE64_DESC", None)
+        os.environ.pop("KSM_CONFIG_BASE64_1",None)
+        os.environ.pop("KSM_CONFIG_BASE64_DESC_1", None)
         os.environ.pop("KSM_CONFIG_BASE64_2", None)
         os.environ.pop("KSM_CONFIG_BASE64_DESC_2", None)
 
@@ -152,7 +152,7 @@ color = True
 
         # Test INI export. Get the 'Another' profile
 
-        result = runner.invoke(cli, ['profile', 'export', '--encode', "Another"], catch_exceptions=False)
+        result = runner.invoke(cli, ['profile', 'export', "Another"], catch_exceptions=False)
         print(result.output)
         self.assertEqual(0, result.exit_code, "did not get a success on list")
         config_data = result.output
@@ -195,7 +195,7 @@ color = True
         config.read("keeper.ini")
         self.assertEqual(json_config["clientKey"], config["_default"].get("clientkey"),  "client keys match")
 
-        result = runner.invoke(cli, ['profile', 'export', '--encode', '--file-format=json'],
+        result = runner.invoke(cli, ['profile', 'export', '--file-format=json'],
                                catch_exceptions=False)
         print(result.output)
         self.assertEqual(0, result.exit_code, "did not get a success on list")
@@ -223,8 +223,8 @@ color = True
         runner = CliRunner()
 
         # Create two configs
-        os.environ["KSM_CONFIG_BASE64"] = base64_config.decode()
-        os.environ["KSM_CONFIG_BASE64_DESC"] = "App1"
+        os.environ["KSM_CONFIG_BASE64_1"] = base64_config.decode()
+        os.environ["KSM_CONFIG_BASE64_DESC_1"] = "App1"
         os.environ["KSM_CONFIG_BASE64_2"] = base64_config.decode()
         os.environ["KSM_CONFIG_BASE64_DESC_2"] = "App2"
 
@@ -238,25 +238,6 @@ color = True
             profile_data = json.load(tf)
             self.assertEqual("App1", profile_data[0]["name"], "found first app")
             self.assertEqual("App2", profile_data[1]["name"], "found second app")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 if __name__ == '__main__':
     unittest.main()

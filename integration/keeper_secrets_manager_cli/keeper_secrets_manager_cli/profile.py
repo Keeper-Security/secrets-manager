@@ -21,7 +21,6 @@ from colorama import Fore
 import sys
 import json
 import base64
-import tempfile
 
 
 class Profile:

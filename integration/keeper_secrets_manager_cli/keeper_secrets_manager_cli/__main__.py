@@ -159,12 +159,15 @@ def profile_active_command(ctx, profile_name):
     help_options_color='blue'
 )
 @click.option('--plain', is_flag=True, help='Export the config not base64 encoded.')
+@click.option('--file-format', type=click.Choice(['ini', 'json'], case_sensitive=False), default='ini',
+              help='File format to export.')
 @click.argument('profile-name', type=str, required=False, nargs=1)
 @click.pass_context
-def profile_export_command(ctx, plain, profile_name):
+def profile_export_command(ctx, plain, file_format, profile_name):
     """Create a new config file from a profile."""
     Profile(cli=ctx.obj["cli"]).export_config(
         plain=plain,
+        file_format=file_format,
         profile_name=profile_name
     )
 
