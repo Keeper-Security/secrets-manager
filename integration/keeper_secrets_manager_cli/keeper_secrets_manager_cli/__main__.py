@@ -22,7 +22,6 @@ import os
 import keeper_secrets_manager_core
 import traceback
 import importlib_metadata
-from colorama import init
 import difflib
 import typing as t
 
@@ -92,7 +91,7 @@ class AliasedGroup(HelpColorsGroup):
             if best_score > 0.50:
                 cmd_name = best_command
         return super().get_command(ctx, cmd_name)
->>>>>>> 438b27f (Make args/params easier to use)
+
 
     def parse_args(self, ctx, args: t.List[str]):
 
