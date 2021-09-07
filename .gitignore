@@ -60,5 +60,6 @@ venv.bak/
 # Don't add Config files
 keeper.ini*
 *config*.json
+.secrets
 
 /.gradle
