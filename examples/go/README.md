@@ -16,7 +16,7 @@ go get github.com/keeper-security/secrets-manager-go/core
 Usage:
 
 ```shell
-go run hello-ksm.go
+go run hello-ksm-read.go
 ```
 
 You need to use client key only once per config name. After config has been initialized, the client key becomes obsolete and can be omitted.
