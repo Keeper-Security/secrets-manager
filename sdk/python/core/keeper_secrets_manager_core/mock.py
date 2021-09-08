@@ -17,6 +17,7 @@ from requests import Response as RequestResponse
 
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.configkeys import ConfigKeys
+from keeper_secrets_manager_core.dto.payload import KSMHttpResponse
 
 
 class ResponseQueue:
@@ -129,7 +130,7 @@ class Response:
 
         # def _post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True):
         # We need the transmission_key.key to encrypt the content
-        self.client._post_function = patch
+        self.client.post_function = patch
 
     def dump(self, secret, flags=None):
 
@@ -175,7 +176,7 @@ class Response:
             res.status_code = self.status_code
             res.reason = self.reason
 
-        return res
+        return KSMHttpResponse(res.status_code, res.content, res)
 
     def add_record(self, title=None, record_type=None, uid=None, record=None, keeper_record=None):
 
