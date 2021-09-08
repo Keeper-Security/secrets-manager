@@ -38,6 +38,12 @@ class SecretsManager:
     notation_prefix = "keeper"
     default_key_id = "7"
 
+    # Field types that can be inflated. Used for notation.
+    inflate_ref_types = {
+        "addressRef": ["address"],
+        "cardRef": ["paymentCard", "text", "pinCode", "addressRef"]
+    }
+
     def __init__(self,
                  token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None,
                  custom_post_function=None):
@@ -495,13 +501,13 @@ class SecretsManager:
                 raise ValueError("Keeper url missing information about the uid, field type, and field key.")
 
         try:
-            (uid, file_type, key) = url.split('/')
+            (uid, file_data_type, key) = url.split('/')
         except Exception as _:
             raise ValueError("Could not parse the notation {}. Is it valid?".format(url))
 
         if uid is None:
             raise ValueError("UID is missing the in the keeper url.")
-        if file_type is None:
+        if file_data_type is None:
             raise ValueError("file type is missing the in the keeper url.")
         if key is None:
             raise ValueError("file key is missing the in the keeper url.")
@@ -562,17 +568,31 @@ class SecretsManager:
 
         record = records[0]
 
-        if file_type == "field":
-            value = record.field(key, single=False)
-        elif file_type == "custom_field":
-            value = record.custom_field(key, single=False)
-        elif file_type == "file":
+        field_type = None
+        if file_data_type == "field":
+            field = record.get_standard_field(key)
+            if field is None:
+                raise ValueError("Cannot find standard field {}".format(key))
+            value = field.get("value")
+            field_type = field.get("type")
+        elif file_data_type == "custom_field":
+            field = record.get_custom_field(key)
+            if field is None:
+                raise ValueError("Cannot find custom field {}".format(key))
+            value = field.get("value")
+            field_type = field.get("type")
+        elif file_data_type == "file":
             file = record.find_file_by_title(key)
             if file is None:
                 raise FileNotFoundError("Cannot find the file {} in record {}.".format(key, uid))
             value = file.get_file_data()
         else:
-            raise ValueError("Field type of {} is not value.".format(file_type))
+            raise ValueError("Field type of {} is not valid.".format(file_data_type))
+
+        # Inflate the value if its part of list of types to inflate. This will request additional records
+        # from secrets manager.
+        if field_type in SecretsManager.inflate_ref_types:
+            value = self.inflate_field_value(value, SecretsManager.inflate_ref_types[field_type])
 
         ret = value
         if return_single is True and type(value) is list:
@@ -582,11 +602,78 @@ class SecretsManager:
                 ret = value[index]
                 if dict_key is not None:
                     if dict_key not in ret:
-                        raise ValueError("Cannot find the dictionary key {} in the valuye".format(dict_key))
+                        raise ValueError("Cannot find the dictionary key {} in the value".format(dict_key))
                     ret = ret[dict_key]
             except IndexError:
                 raise ValueError("The value at index {} does not exist for {}.".format(index, url))
         return ret
+
+    @staticmethod
+    def get_inflate_ref_types(field_type):
+        return SecretsManager.inflate_ref_types.get(field_type, [])
+
+    def inflate_field_value(self, uids, replace_fields):
+
+        # The replacement value
+        value = []
+
+        # Get the record and make a lookup for them.
+        lookup = {}
+        records = self.get_secrets(uids)
+        for record in records:
+            lookup[record.uid] = record
+
+        for uid in uids:
+            record = lookup.get(uid)
+            new_value = None
+            if record is not None:
+                for replacement_key in replace_fields:
+                    # Replacement are always in the standard fields.
+                    real_field = record.get_standard_field(replacement_key)
+
+                    # If we can't find it, move onto the next type. There might be a problem with the record.
+                    if real_field is None:
+                        self.logger.debug("Cannot find {} in the fields in record UID {} for inflation. Skipping". \
+                                          format(replacement_key, uid))
+                        continue
+                    real_values = real_field.get("value", [])
+                    if len(real_values) > 0:
+                        real_value = real_values[0]
+                        if real_value is not None:
+
+                            # Do we need to replace a value in our real value?
+                            if replacement_key in SecretsManager.inflate_ref_types:
+                                real_value = self.inflate_field_value([real_value], SecretsManager.inflate_ref_types[
+                                    replacement_key])
+                                if real_value is not None:
+                                    real_value = real_value[0]
+
+                            # If we don't have value, just use the real value. It might be a str or a dict. We
+                            # do this because the value of the real_value might be the final value. So it might
+                            # be a str or dict, just leave it that way for now.
+                            if new_value is None:
+                                new_value = real_value
+                            else:
+                                # If we need to add a new key/value use the label and fall back the the type
+                                label = real_field.get("label", real_field.get("type"))
+
+                                # Since we have more than 1 value, convert the value to a dict if it is not already
+                                # one.
+                                if type(new_value) is not dict:
+                                    new_value = {
+                                        label: new_value
+                                    }
+                                # If the real_value is a dict, then copy the k/v pair into the value
+                                if type(real_value) is dict:
+                                    for k, v in real_value.items():
+                                        new_value[k] = v
+                                # Else the real_value is str, use the label/type as a key
+                                else:
+                                    new_value[label] = real_value
+            if new_value is not None:
+                value.append(new_value)
+
+        return value
 
 
 class KSMCache:
