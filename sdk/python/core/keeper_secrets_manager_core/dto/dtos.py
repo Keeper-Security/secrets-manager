@@ -27,6 +27,8 @@ class Record:
         self.raw_json = None
         self.dict = {}
         self.password = None
+        self.revision = None
+        self.is_editable = None
 
         self.uid = record_dict.get('recordUid')
 
@@ -47,6 +49,8 @@ class Record:
         self.dict = utils.json_to_dict(self.raw_json)
         self.title = self.dict.get('title')
         self.type = self.dict.get('type')
+        self.revision = record_dict.get('revision')
+        self.is_editable = record_dict.get("isEditable")
 
         # files
         if record_dict.get('files'):
@@ -74,9 +78,12 @@ class Record:
 
         return found_file
 
-    def download_file_by_title(self, title, path, ):
+    def download_file_by_title(self, title, path):
 
         found_file = self.find_file_by_title(title)
+
+        if not found_file:
+            raise KeeperError("File %s not found" % title)
 
         found_file.save_file(path)
 
