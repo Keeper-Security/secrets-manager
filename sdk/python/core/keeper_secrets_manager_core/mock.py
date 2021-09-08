@@ -16,6 +16,7 @@ from collections import deque
 from requests import Response as RequestResponse
 
 from keeper_secrets_manager_core.crypto import CryptoUtils
+from keeper_secrets_manager_core.configkeys import ConfigKeys
 
 
 class ResponseQueue:
@@ -45,14 +46,14 @@ class ResponseQueue:
             response.patch_post_query(self.post_method)
         self.queue.append(response)
 
-    def get_response(self, context):
+    def get_response(self, transmission_key):
         if len(self.queue) == 0:
             raise ValueError("Not enough queued responses. Cannot get response.")
         response = self.queue.popleft()
-        return response.instance(context)
+        return response.instance(transmission_key)
 
-    def auto_responder_patch(self, _path, context, _payload_and_signature):
-        return self.get_response(context)
+    def auto_responder_patch(self, url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs):
+        return self.get_response(transmission_key)
 
 
 class Response:
@@ -125,7 +126,10 @@ class Response:
         if self.client is None:
             raise ValueError("The secrets manager client has not been set.")
 
-        self.client._post_query = patch
+
+        # def _post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True):
+        # We need the transmission_key.key to encrypt the content
+        self.client._post_function = patch
 
     def dump(self, secret, flags=None):
 
@@ -135,7 +139,7 @@ class Response:
             "records": [self.records[uid].dump(secret=secret, flags=flags) for uid in self.records]
         }
 
-    def instance(self, context):
+    def instance(self, transmission_key):
 
         """ Return a requests Response instance filled in with mock response message
 
@@ -153,8 +157,10 @@ class Response:
 
         # If canned content has not be set, the create content from records/folders.
         if self.content is None:
-            json_str = json.dumps(self.dump(secret=context.clientKey, flags=self.flags))
-            content = CryptoUtils.encrypt_aes(json_str.encode(), context.transmissionKey.key)
+            app_key = self.client.config.get(ConfigKeys.KEY_APP_KEY)
+            app_key = base64.urlsafe_b64decode(app_key + "==")
+            json_str = json.dumps(self.dump(secret=app_key, flags=self.flags))
+            content = CryptoUtils.encrypt_aes(json_str.encode(), transmission_key.key)
             res._content = content
             res.headers["Content-Length"] = str(len(content))
 

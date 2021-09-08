@@ -14,21 +14,23 @@ import os
 from distutils.util import strtobool
 import re
 import json
+from http import HTTPStatus
 import base64
 
 import requests
-from requests import HTTPError
 
 from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.dto.dtos import Folder, Record
-from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, Context, TransmissionKey
+from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, TransmissionKey, \
+    EncryptedPayload, KSMHttpResponse
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys, \
     logger_name
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage
-from keeper_secrets_manager_core.utils import bytes_to_url_safe_str, base64_to_bytes, dict_to_json, url_safe_str_to_bytes
+from keeper_secrets_manager_core.utils import bytes_to_url_safe_str, base64_to_bytes, dict_to_json, \
+    url_safe_str_to_bytes
 
 
 class SecretsManager:
@@ -36,7 +38,9 @@ class SecretsManager:
     notation_prefix = "keeper"
     default_key_id = "7"
 
-    def __init__(self, token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None):
+    def __init__(self,
+                 token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None,
+                 custom_post_function=None):
 
         self.token = token
         self.hostname = hostname
@@ -50,6 +54,8 @@ class SecretsManager:
         if os.environ.get("KSM_SKIP_VERIFY") is not None:
             # We need to flip the value of KSM_SKIP_VERIFY, if true, we want verify_ssl_certs to be false.
             self.verify_ssl_certs = not bool(strtobool(os.environ.get("KSM_SKIP_VERIFY")))
+
+        self.custom_post_function = custom_post_function
 
         if config is None:
             config = FileKeyValueStorage()
@@ -131,7 +137,8 @@ class SecretsManager:
 
             self.config.delete(ConfigKeys.KEY_CLIENT_ID)
             self.config.delete(ConfigKeys.KEY_PRIVATE_KEY)
-            self.config.delete(ConfigKeys.KEY_APP_KEY)
+            if self.config.get(ConfigKeys.KEY_CLIENT_ID):
+                self.config.delete(ConfigKeys.KEY_APP_KEY)
 
             self.config.set(ConfigKeys.KEY_CLIENT_ID, existing_secret_key_hash)
 
@@ -190,37 +197,8 @@ class SecretsManager:
 
         return TransmissionKey(key_id, transmission_key, encrypted_key)
 
-    def prepare_context(self):
-
-        # Get the index of the public get we need to use. If not set, set it the default and
-        # save it back into the config
-        key_id = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID)
-        if key_id is None:
-            key_id = SecretsManager.default_key_id
-            self.config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, str(key_id))
-
-        # Generate the transmission key using the public key at the key id index
-        transmission_key = SecretsManager.generate_transmission_key(key_id)
-        client_id = self.config.get(ConfigKeys.KEY_CLIENT_ID)
-        secret_key = None
-
-        # While not use in the normal operations, it's used for mocking unit tests.
-        app_key = self.config.get(ConfigKeys.KEY_APP_KEY)
-        if app_key is not None:
-            secret_key = base64_to_bytes(app_key)
-
-        if not client_id:
-            raise Exception("Client ID is missing from the configuration")
-
-        client_id_bytes = base64_to_bytes(client_id)
-
-        return Context(
-                    transmission_key,
-                    client_id_bytes,
-                    secret_key
-                )
-
-    def encrypt_and_sign_payload(self, context, payload):
+    @staticmethod
+    def encrypt_and_sign_payload(storage, transmission_key, payload):
 
         if not (isinstance(payload, GetPayload) or isinstance(payload, UpdatePayload)):
             raise Exception('Unknown payload type "%s"' % payload.__class__.__name__)
@@ -228,31 +206,34 @@ class SecretsManager:
         payload_json_str = dict_to_json(payload.__dict__)
         payload_bytes = utils.string_to_bytes(payload_json_str)
 
-        encrypted_payload = CryptoUtils.encrypt_aes(payload_bytes, context.transmissionKey.key)
+        encrypted_payload = CryptoUtils.encrypt_aes(payload_bytes, transmission_key.key)
 
-        encrypted_key = context.transmissionKey.encryptedKey
+        encrypted_key = transmission_key.encryptedKey
         signature_base = encrypted_key + encrypted_payload
 
-        pk = CryptoUtils.der_base64_private_key_to_private_key(self.config.get(ConfigKeys.KEY_PRIVATE_KEY))
+        private_key = storage.get(ConfigKeys.KEY_PRIVATE_KEY)
+        pk = CryptoUtils.der_base64_private_key_to_private_key(private_key)
         signature = CryptoUtils.sign(signature_base, pk)
 
-        return {
-            'payload':  encrypted_payload,
-            'signature': signature
-        }
+        return EncryptedPayload(
+            encrypted_payload,
+            signature
+        )
 
-    def prepare_get_payload(self, context, records_filter):
+    @staticmethod
+    def prepare_get_payload(storage, records_filter):
 
         payload = GetPayload()
 
         payload.clientVersion = keeper_secrets_manager_sdk_client_id
-        payload.clientId = bytes_to_url_safe_str(context.clientId) + "="
+        client_id_bytes = base64_to_bytes(storage.get(ConfigKeys.KEY_CLIENT_ID))
+        payload.clientId = bytes_to_url_safe_str(client_id_bytes) + "="
 
-        app_key_str = self.config.get(ConfigKeys.KEY_APP_KEY)
+        app_key_str = storage.get(ConfigKeys.KEY_APP_KEY)
 
         if not app_key_str:
 
-            public_key_bytes = CryptoUtils.extract_public_key_bytes(self.config.get(ConfigKeys.KEY_PRIVATE_KEY))
+            public_key_bytes = CryptoUtils.extract_public_key_bytes(storage.get(ConfigKeys.KEY_PRIVATE_KEY))
             public_key_base64 = bytes_to_url_safe_str(public_key_bytes)
             # passed once when binding
             payload.publicKey = public_key_base64 + "="
@@ -260,19 +241,20 @@ class SecretsManager:
         if records_filter:
             payload.requestedRecords = records_filter
 
-        return self.encrypt_and_sign_payload(context, payload)
+        return payload
 
-    def prepare_update_payload(self, context, record):
+    @staticmethod
+    def prepare_update_payload(storage, record):
+
         payload = UpdatePayload()
 
         payload.clientVersion = keeper_secrets_manager_sdk_client_id
-        payload.clientId = bytes_to_url_safe_str(context.clientId) + "="
-
-        if not context.clientKey:
-            raise KeeperError("To save and update, client must be authenticated by device token only")
+        client_id_bytes = base64_to_bytes(storage.get(ConfigKeys.KEY_CLIENT_ID))
+        payload.clientId = bytes_to_url_safe_str(client_id_bytes) + "="
 
         # for update, uid of the record
         payload.recordUid = record.uid
+        payload.revision = record.revision
 
         # TODO: This is where we need to get JSON of the updated Record
         raw_json_bytes = utils.string_to_bytes(record.raw_json)
@@ -282,31 +264,57 @@ class SecretsManager:
         # for create and update, the record data
         payload.data = encrypted_raw_json_bytes_str
 
-        return self.encrypt_and_sign_payload(context, payload)
+        return payload
 
-    def _post_query(self, path, context, payload_and_signature):
+    def _post_query(self, path, payload):
 
         keeper_server = helpers.get_server(self.hostname, self.config)
+        url = "https://%s/api/rest/sm/v1/%s" % (keeper_server, path)
 
-        transmission_key = context.transmissionKey
-        payload = payload_and_signature.get('payload')
-        signature = payload_and_signature.get('signature')
+        while True:
+
+            transmission_key_id = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID)
+            transmission_key = self.generate_transmission_key(transmission_key_id)
+            encrypted_payload_and_signature = self.encrypt_and_sign_payload(self.config, transmission_key, payload)
+
+            if self.custom_post_function and path == 'get_secret':
+                ksm_rs = self.custom_post_function(url, transmission_key, encrypted_payload_and_signature, self.verify_ssl_certs)
+            else:
+                ksm_rs = self.post_function(url, transmission_key, encrypted_payload_and_signature, self.verify_ssl_certs)
+
+            # If we are ok, then break out of the while loop
+            if ksm_rs.status_code == 200:
+                break
+
+            # Handle the error. Handling will throw an exception if it doesn't want us to retry.
+            self.handler_http_error(ksm_rs.http_response)
+
+        if ksm_rs.data:
+            return CryptoUtils.decrypt_aes(ksm_rs.data, transmission_key.key)
+        else:
+            return ksm_rs.data
+
+    @staticmethod
+    def post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True):
 
         request_headers = {
-            'Content-Type': 'application/octet-stream', 'Content-Length': str(len(payload)),
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': str(len(encrypted_payload_and_signature.encrypted_payload)),
             'PublicKeyId': str(transmission_key.publicKeyId),
             'TransmissionKey': bytes_to_url_safe_str(transmission_key.encryptedKey),
-            'Authorization': 'Signature %s' % bytes_to_url_safe_str(signature)
+            'Authorization': 'Signature %s' % bytes_to_url_safe_str(encrypted_payload_and_signature.signature)
         }
 
         rs = requests.post(
-            'https://%s/api/rest/sm/v1/%s' % (keeper_server, path),
+            url,
             headers=request_headers,
-            data=payload,
-            verify=self.verify_ssl_certs
+            data=encrypted_payload_and_signature.encrypted_payload,
+            verify=verify_ssl_certs
         )
 
-        return rs
+        ksm_rs = KSMHttpResponse(rs.status_code, rs.content, rs)
+
+        return ksm_rs
 
     def handler_http_error(self, rs):
 
@@ -362,29 +370,17 @@ class SecretsManager:
             ))
 
         # This is a unknown error, not one of ours, just throw a HTTPError
-        raise HTTPError(rs.text)
+        raise requests.HTTPError(rs.text)
 
-    def fetch(self, record_filter=None):
+    def fetch_and_decrypt_secrets(self, record_filter=None):
 
-        while True:
+        payload = SecretsManager.prepare_get_payload(self.config, records_filter=record_filter)
 
-            context = self.prepare_context()
-            payload_and_signature = self.prepare_get_payload(context, records_filter=record_filter)
+        decrypted_response_bytes = self._post_query(
+            'get_secret',
+            payload
+        )
 
-            rs = self._post_query(
-                'get_secret',
-                context,
-                payload_and_signature
-            )
-
-            # If we are ok, then break out of the while loop
-            if rs.ok:
-                break
-
-            # Handle the error. Handling will throw an exception if it doesn't want us to retry.
-            self.handler_http_error(rs)
-
-        decrypted_response_bytes = CryptoUtils.decrypt_aes(rs.content, context.transmissionKey.key)
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
         decrypted_response_dict = utils.json_to_dict(decrypted_response_str)
 
@@ -433,14 +429,16 @@ class SecretsManager:
         """
         Retrieve all records associated with the given application
         """
-        records_resp = self.fetch(uids)
+
+        if isinstance(uids, str):
+            uids = [uids]
+
+        records_resp = self.fetch_and_decrypt_secrets(uids)
 
         just_bound = records_resp.get('justBound')
 
         if just_bound:
-            records_resp = self.fetch(uids)
-
-        # TODO: Erase client key because we are already bound
+            records_resp = self.fetch_and_decrypt_secrets(uids)
 
         records = records_resp.get('records') or []
 
@@ -453,23 +451,12 @@ class SecretsManager:
 
         self.logger.info("Updating record uid: %s" % record.uid)
 
-        while True:
+        payload = SecretsManager.prepare_update_payload(self.config, record)
 
-            context = self.prepare_context()
-            payload_and_signature = self.prepare_update_payload(context, record)
-
-            rs = self._post_query(
-                'update_secret',
-                context,
-                payload_and_signature
-            )
-
-            # If we are ok, then break out of the while loop
-            if rs.ok:
-                break
-
-            # Handle the error. Handling will throw an exception if it doesn't want us to retry.
-            self.handler_http_error(rs)
+        self._post_query(
+            'update_secret',
+            payload
+        )
 
         return True
 
@@ -600,3 +587,40 @@ class SecretsManager:
             except IndexError:
                 raise ValueError("The value at index {} does not exist for {}.".format(index, url))
         return ret
+
+
+class KSMCache:
+    kms_cache_file_name = 'ksm_cache.bin'
+
+    @staticmethod
+    def save_cache(data):
+        cache_file = open(KSMCache.kms_cache_file_name, 'wb')
+        cache_file.write(data)
+        cache_file.close()
+
+    @staticmethod
+    def get_cached_data():
+        cache_file = open(KSMCache.kms_cache_file_name, 'rb')
+        cache_data = cache_file.read()
+        cache_file.close()
+        return cache_data
+
+    @staticmethod
+    def caching_post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True):
+
+        try:
+
+            ksm_rs = SecretsManager.post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs)
+
+            if ksm_rs.status_code == 200:
+                KSMCache.save_cache(transmission_key.key + ksm_rs.data)
+                return ksm_rs
+        except:
+            cached_data = KSMCache.get_cached_data()
+            cached_transmission_key = cached_data[:32]
+            transmission_key.key = cached_transmission_key
+            data = cached_data[32:len(cached_data)]
+
+            ksm_rs = KSMHttpResponse(HTTPStatus.OK, data, None)
+
+        return ksm_rs

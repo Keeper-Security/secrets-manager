@@ -40,3 +40,19 @@ class UpdatePayload:
         self.clientId = None
         self.recordUid = None
         self.data = None
+        self.revision = None
+
+
+class EncryptedPayload:
+
+    def __init__(self, encrypted_payload, signature):
+        self.encrypted_payload = encrypted_payload
+        self.signature = signature
+
+
+class KSMHttpResponse:
+
+    def __init__(self, status_code, data, http_response=None):
+        self.status_code = status_code
+        self.data = data
+        self.http_response = http_response
