@@ -34,8 +34,9 @@ class KeeperAnsibleTest(unittest.TestCase):
         with tempfile.NamedTemporaryFile("w", delete=False) as temp_config:
             config = json.dumps({
                 "hostname": "dev.keepersecurity.com",
-                "appKey": "4I57jIjbn2OCNwCFzyGHek0YFfhdh2y9TLTncOwujmM",
-                "clientId": "yccmFNJ9X6hKZerHWPipakDWHYCgCjjP86zwKM9N94Y",
+                "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
+                "clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCE"
+                            "LujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
                 "clientKey": "KmsOqSq-aB0l7VraWHBHhMaZC2HYDDY5rJIgaP3qD7E",
                 "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgf54pIB7q_qV-B_2Zlw5NPZybvQzAHfZQFl4veRG"
                               "Z3YChRANCAASv7xdTLFfRuCIur0GUFIp1rPERmuBgtmUlSq72kYBwFO-NEbTjC9JUcZbQ73kDiGdvYwiuQqkKc7"
@@ -60,8 +61,9 @@ class KeeperAnsibleTest(unittest.TestCase):
 
         values = {
             "hostname": "dev.keepersecurity.com",
-            "app_key": "hDlYsYMPNJMhJb7d_Ca4u1yl5RSUzCvuIsFx32h7t04",
-            "client_id": "PrF-9pxKIiLzngZb31GpimYXMhQgO9w1jO8PwfBD554",
+            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
+            "clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCE"
+                        "LujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
             "client_key": "1zOuIXXkrrAaDioo6MX8yohRBC0otcBXF58Th5D0LOs",
             "private_key": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgAPoRbTN0Nt7Go_nVMaSY8dgLFzvYmaH5_14JoyX-"
                            "z-ShRANCAATiHRnQxz4f3bAS8eFuhaaEDnbwZF3OLKbf7A_ZshyoPPqdKiEX-XU9dCTF3f0I-QPusqCzlUuAVu8J"
