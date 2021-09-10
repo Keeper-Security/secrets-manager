@@ -16,19 +16,29 @@ import sys
 from collections import deque
 from colorama import Fore, Style
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
+from keeper_secrets_manager_core.core import SecretsManager
 from .table import Table, ColumnAlign
 import uuid
 
 
 class Secret:
 
-    # Type in custom_fields to type in fields dictionary
+    # Maps the type in a field to what it should pull in from the real record. There
+    # might be multiple field that need to be pulled in.
     support_ref_types = {
-        "addressRef": "address"
+        "addressRef": ["address"],
+        "cardRef": ["paymentCard", "text", "pinCode", "addressRef"]
     }
     redact_str = "****"
     redact_placeholder = "___" + str(uuid.uuid4()) + "___"
-    redact_type_list = ['password', 'secret', 'pinCode', 'securityQuestion', 'oneTimeCode']
+    redact_type_list = [
+        'password',
+        'secret',
+        'pinCode',
+        'securityQuestion',
+        'oneTimeCode',
+        'cardRef'
+    ]
 
     def __init__(self, cli):
         self.cli = cli
@@ -56,74 +66,84 @@ class Secret:
                 value = Secret.redact_str
         return value
 
-    def _record_to_dict(self, record, load_references=False, unmask=False, use_color=True):
+    def _field_replacement(self, fields, unmask, use_color, append_func, inflate):
+
+        for field in fields:
+
+            # If this is a maskable field and we are not going to unmask there is no need to load in the
+            # reference value.
+            if unmask is False and Secret._should_mask(field):
+                continue
+
+            # If want to inflate references and the type of the field is a supported reference type then get
+            # the real record
+            if inflate is True:
+                field_type = field.get("type")
+                if field_type in Secret.support_ref_types:
+                    field["value"] = self.cli.client.inflate_field_value(field.get("value"),
+                                                                         SecretsManager.inflate_ref_types[field_type])
+
+        replace_fields = []
+        for field in fields:
+            value = field.get("value")
+
+            # Should we mask the values?
+            if unmask is False and Secret._should_mask(field):
+                value = Secret._redact_value(value, use_color)
+
+            append_func(field, value, replace_fields)
+
+        return replace_fields
+
+    def _get_standard_fields(self, raw_standard_fields, unmask, use_color, inflate):
+
+        def _appender(field, value, fields):
+            fields.append({
+                "label": field.get("label", field.get("type")),
+                "type": field.get("type"),
+                "value": value
+            })
+
+        standard_fields = self._field_replacement(raw_standard_fields,
+                                                  unmask=unmask, use_color=use_color, inflate=inflate,
+                                                  append_func=_appender)
+
+        return standard_fields
+
+    def _get_custom_fields(self, raw_custom_fields, unmask, use_color, inflate):
+
+        def _appender(field, value, fields):
+            fields.append({
+                "label": field.get("label", field.get("type")),
+                "type": field.get("type"),
+                "value": value
+            })
+
+        custom_fields = self._field_replacement(raw_custom_fields,
+                                                unmask=unmask, use_color=use_color, inflate=inflate,
+                                                append_func=_appender)
+
+        return custom_fields
+
+    def _record_to_dict(self, record, load_references=False, unmask=False, use_color=True, inflate=True):
+
+        standard_fields = []
         custom_fields = []
+
+        raw_standard_fields = record.dict.get('fields', [])
         raw_custom_fields = record.dict.get('custom', [])
 
-        # If we have custom fields check in any have references that can replace with actual values
+        # If we have  fields check in any have references that can replace with actual values
+        if len(raw_standard_fields) > 0 and load_references is True:
+            standard_fields = self._get_standard_fields(raw_standard_fields, unmask, use_color, inflate)
         if len(raw_custom_fields) > 0 and load_references is True:
-
-            # Find all the custom fields that have a reference type and remember their index into the array. We
-            # will use the index into the array to add the real values.
-            index = 0
-            replacement_data = {}
-            for custom_field in raw_custom_fields:
-
-                # If this is a maskable field and we are not going to unmask there is no need to load in the
-                # reference value.
-                if unmask is False and Secret._should_mask(custom_field):
-                    index += 1
-                    continue
-
-                field_type = custom_field.get("type")
-                value = custom_field.get("value")
-
-                # If the type of the custom field is a supported reference type then add their value to list
-                # if uid to query. We are doing this in one shot so we don't get throttled.
-                if field_type in Secret.support_ref_types:
-                    for uid in value:
-                        replacement_data[uid] = {"index": index, "type": field_type}
-                    # Make a placeholder for the real values
-                    custom_field["value"] = []
-                index += 1
-
-            # If we have replacement values, then get them and add their values with the real values
-            if len(replacement_data) > 0:
-                real_records = self.cli.client.get_secrets([uid for uid in replacement_data])
-                for real_record in real_records:
-                    if real_record.uid in replacement_data:
-                        replacement_index = replacement_data[real_record.uid]["index"]
-                        replacement_type = replacement_data[real_record.uid]["type"]
-                        replacement_key = Secret.support_ref_types[replacement_type]
-                        real_values = real_record.field(replacement_key)
-                        for value in real_values:
-                            raw_custom_fields[replacement_index]["value"].append(value)
-
-            for custom_field in raw_custom_fields:
-                field_type = custom_field.get("type")
-                value = custom_field.get("value")
-
-                # Should we mask the values?
-                if unmask is False and Secret._should_mask(custom_field):
-                    value = Secret._redact_value(value, use_color)
-
-                custom_fields.append({
-                    "label": custom_field.get("label", field_type),
-                    "type": field_type,
-                    "value": value
-                })
+            custom_fields = self._get_custom_fields(raw_custom_fields, unmask, use_color, inflate)
 
         ret = {
             "uid": record.uid,
             "title": record.title,
             "type": record.type,
-            "fields": [
-                {
-                    "type": x["type"],
-                    "value": Secret._redact_value(x["value"], use_color) if unmask is False and Secret._should_mask(x)
-                    else x["value"]
-                } for x in record.dict.get('fields', [])
-            ],
+            "fields": standard_fields,
             "custom_fields": custom_fields,
             "files": [{
                 "name": x.name,
@@ -175,7 +195,9 @@ class Secret:
             # Don't show blank value pairs
             if value == "":
                 continue
-            table.add_row([field["type"], value])
+
+            label = field.get("label", field.get("type"));
+            table.add_row([label, value])
         ret += table.get_string() + "\n"
 
         if len(record_dict["custom_fields"]) > 0:
@@ -303,7 +325,7 @@ class Secret:
             sys.exit("JSONPath failed: {}".format(err))
 
     def query(self, uids=None, titles=None, field=None, output_format='json', jsonpath_query=None, raw=False, force_array=False,
-              text_join_char='\n', load_references=False,  unmask=False, use_color=True):
+              text_join_char='\n', load_references=False,  unmask=False, use_color=True, inflate=True):
 
         if uids is None:
             uids = []
@@ -333,7 +355,10 @@ class Secret:
                     add_record = True
 
                 if add_record is True:
-                    records.append(self._record_to_dict(record, load_references=load_references, unmask=unmask))
+                    records.append(self._record_to_dict(record,
+                                                        load_references=load_references,
+                                                        unmask=unmask,
+                                                        inflate=inflate))
         except KeeperError as err:
             sys.exit("Could not query the records: {}".format(err.message))
         except KeeperAccessDenied as err:

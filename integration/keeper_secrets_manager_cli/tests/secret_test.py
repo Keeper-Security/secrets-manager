@@ -402,7 +402,7 @@ class SecretTest(unittest.TestCase):
             notation = "keeper://{}/{}/{}".format(one.uid, "field", "im_a_bad_field")
             runner = CliRunner()
             result = runner.invoke(cli, ['secret', 'notation', notation], catch_exceptions=False)
-            self.assertRegex(result.output, r'Cannot find the field', 'got an error for bad field')
+            self.assertRegex(result.output, r'Cannot find ', 'got an error for bad field')
             self.assertEqual(1, result.exit_code, "the exit code was not 1")
 
     def test_notation_file(self):
