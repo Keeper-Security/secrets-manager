@@ -29,8 +29,8 @@ from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys, \
     logger_name
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage
-from keeper_secrets_manager_core.utils import bytes_to_url_safe_str, base64_to_bytes, dict_to_json, \
-    url_safe_str_to_bytes
+from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
+    url_safe_str_to_bytes, bytes_to_base64, string_to_bytes
 
 
 class SecretsManager:
@@ -137,7 +137,7 @@ class SecretsManager:
 
             existing_secret_key_bytes = url_safe_str_to_bytes(existing_secret_key)
             digest = 'sha512'
-            existing_secret_key_hash = bytes_to_url_safe_str(hmac.new(existing_secret_key_bytes,
+            existing_secret_key_hash = bytes_to_base64(hmac.new(existing_secret_key_bytes,
                                                                       b'KEEPER_SECRETS_MANAGER_CLIENT_ID',
                                                                       digest).digest())
 
@@ -152,7 +152,7 @@ class SecretsManager:
 
             if not private_key_str:
                 private_key_der = CryptoUtils.generate_private_key_der()
-                self.config.set(ConfigKeys.KEY_PRIVATE_KEY, bytes_to_url_safe_str(private_key_der))
+                self.config.set(ConfigKeys.KEY_PRIVATE_KEY, bytes_to_base64(private_key_der))
 
         if not self.verify_ssl_certs:
             self.logger.warning("WARNING: Running without SSL cert verification. "
@@ -232,17 +232,16 @@ class SecretsManager:
         payload = GetPayload()
 
         payload.clientVersion = keeper_secrets_manager_sdk_client_id
-        client_id_bytes = base64_to_bytes(storage.get(ConfigKeys.KEY_CLIENT_ID))
-        payload.clientId = bytes_to_url_safe_str(client_id_bytes) + "="
+        payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
 
         app_key_str = storage.get(ConfigKeys.KEY_APP_KEY)
 
         if not app_key_str:
 
             public_key_bytes = CryptoUtils.extract_public_key_bytes(storage.get(ConfigKeys.KEY_PRIVATE_KEY))
-            public_key_base64 = bytes_to_url_safe_str(public_key_bytes)
+            public_key_base64 = bytes_to_base64(public_key_bytes)
             # passed once when binding
-            payload.publicKey = public_key_base64 + "="
+            payload.publicKey = public_key_base64
 
         if records_filter:
             payload.requestedRecords = records_filter
@@ -255,8 +254,7 @@ class SecretsManager:
         payload = UpdatePayload()
 
         payload.clientVersion = keeper_secrets_manager_sdk_client_id
-        client_id_bytes = base64_to_bytes(storage.get(ConfigKeys.KEY_CLIENT_ID))
-        payload.clientId = bytes_to_url_safe_str(client_id_bytes) + "="
+        payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
 
         # for update, uid of the record
         payload.recordUid = record.uid
@@ -265,10 +263,8 @@ class SecretsManager:
         # TODO: This is where we need to get JSON of the updated Record
         raw_json_bytes = utils.string_to_bytes(record.raw_json)
         encrypted_raw_json_bytes = CryptoUtils.encrypt_aes(raw_json_bytes, record.record_key_bytes)
-        encrypted_raw_json_bytes_str = bytes_to_url_safe_str(encrypted_raw_json_bytes)
 
-        # for create and update, the record data
-        payload.data = encrypted_raw_json_bytes_str
+        payload.data = bytes_to_base64(encrypted_raw_json_bytes)
 
         return payload
 
@@ -307,8 +303,8 @@ class SecretsManager:
             'Content-Type': 'application/octet-stream',
             'Content-Length': str(len(encrypted_payload_and_signature.encrypted_payload)),
             'PublicKeyId': str(transmission_key.publicKeyId),
-            'TransmissionKey': bytes_to_url_safe_str(transmission_key.encryptedKey),
-            'Authorization': 'Signature %s' % bytes_to_url_safe_str(encrypted_payload_and_signature.signature)
+            'TransmissionKey': bytes_to_base64(transmission_key.encryptedKey),
+            'Authorization': 'Signature %s' % bytes_to_base64(encrypted_payload_and_signature.signature)
         }
 
         rs = requests.post(
@@ -398,10 +394,9 @@ class SecretsManager:
             just_bound = True
 
             encrypted_master_key = url_safe_str_to_bytes(decrypted_response_dict.get('encryptedAppKey'))
-            client_key = self.config.get(ConfigKeys.KEY_CLIENT_KEY)
-            client_key = base64.urlsafe_b64decode(client_key + "==")
+            client_key = url_safe_str_to_bytes(self.config.get(ConfigKeys.KEY_CLIENT_KEY))
             secret_key = CryptoUtils.decrypt_aes(encrypted_master_key, client_key)
-            self.config.set(ConfigKeys.KEY_APP_KEY, bytes_to_url_safe_str(secret_key))
+            self.config.set(ConfigKeys.KEY_APP_KEY, bytes_to_base64(secret_key))
 
             self.config.delete(ConfigKeys.KEY_CLIENT_KEY)
 

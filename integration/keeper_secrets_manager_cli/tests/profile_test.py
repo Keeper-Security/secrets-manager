@@ -37,8 +37,9 @@ class ProfileTest(unittest.TestCase):
 
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
             "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
+            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
+            "clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCE"
+                        "LujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
             "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
             "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
                           "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
@@ -168,10 +169,13 @@ color = True
 
         json_config = {
             "hostname": "fake.keepersecurity.com",
-            "appKey": "zhLwBKEIdiXaqVwlpnIXEl6jm_nO7WpPxYhKZv2LPGY",
-            "clientId": "Kk_rWgGbWXDkpkT4dt-Fsxr1gyG7r70dUMuMfChSt8ZOOw",
-            "clientKey": "wYC4AjTpZ28cHdqgayukFxt9jyMAtijx_NDIv5uiQkM",
-            "privateKey": "EHQ_qI7GR4Tgr7zNiORLpV0RGelg34nwDYAc3TLHV3Q"
+            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
+            "clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCE"
+                        "LujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
+            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
+            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9d"
+                          "jH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbE"
+                          "T6joq0xCjhKMhHQFaHYI"
         }
 
         runner = CliRunner()
@@ -213,8 +217,8 @@ color = True
 
         json_config = {
             "hostname": "fake.keepersecurity.com",
-            "appKey": "XXXXXjvhEiJLRKHtg2Rm4PAtUoP3URw",
-            "clientId": "XXXXXboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
+            "appKey": "XXXXXjvhEiJLRKHtg2Rm4PAtUoP3URw=",
+            "clientId": "XXXXXboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
             "clientKey": "XXXXXyRBsdChSsTeDEAMvNj9Bdh7BJuo",
             "privateKey": "XXXXXX9AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
         }

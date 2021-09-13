@@ -74,11 +74,10 @@ class CryptoUtils:
         pub_key_bytes = pub_key.public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
         return pub_key_bytes
 
-
     @staticmethod
     def generate_private_key_ecc():
         encryption_key_bytes = utils.generate_random_bytes(32)
-        private_key_str = utils.bytes_to_url_safe_str(encryption_key_bytes)
+        private_key_str = utils.bytes_to_base64(encryption_key_bytes)
 
         encryption_key_int = utils.url_safe_str_to_int(private_key_str)
 
