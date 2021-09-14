@@ -36,7 +36,7 @@ from keeper_secrets_manager_core.utils import bytes_to_url_safe_str, base64_to_b
 class SecretsManager:
 
     notation_prefix = "keeper"
-    default_key_id = "7"
+    default_key_id = "10"
 
     # Field types that can be inflated. Used for notation.
     inflate_ref_types = {

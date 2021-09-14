@@ -18,7 +18,7 @@ export const initialize = (pkgVersion?: string) => {
     if (pkgVersion) {
         packageVersion = pkgVersion
     }
-    let keyNumber = 7
+    let keyNumber = 10
     keeperPublicKeys = [
         'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM',
         'BKnhy0obglZJK-igwthNLdknoSXRrGB-mvFRzyb_L-DKKefWjYdFD2888qN1ROczz4n3keYSfKz9Koj90Z6w_tQ',

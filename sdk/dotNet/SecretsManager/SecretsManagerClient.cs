@@ -452,7 +452,7 @@ namespace SecretsManager
         [SuppressMessage("ReSharper", "StringLiteralTypo")]
         private static Dictionary<int, byte[]> InitKeeperKeys()
         {
-            var keyId = 7;
+            var keyId = 10;
             return new[]
                 {
                     "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM",
