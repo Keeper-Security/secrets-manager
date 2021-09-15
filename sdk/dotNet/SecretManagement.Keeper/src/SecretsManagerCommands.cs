@@ -12,6 +12,18 @@ namespace SecretManagement.Keeper
             ValueFromPipelineByPropertyName = true)]
         public string Name { get; set; }
     
+        [Parameter(
+            Mandatory = false,
+            ValueFromPipeline = true,
+            ValueFromPipelineByPropertyName = true)]
+        public string VaultName { get; set; }
+        
+        [Parameter(
+            Mandatory = false,
+            ValueFromPipeline = true,
+            ValueFromPipelineByPropertyName = true)]
+        public string AdditionalParameters { get; set; }
+        
         // This method gets called once for each cmdlet in the pipeline when the pipeline starts executing
         protected override void BeginProcessing()
         {
