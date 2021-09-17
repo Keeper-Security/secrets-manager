@@ -49,6 +49,10 @@ def base64_to_bytes(s):
     return base64.urlsafe_b64decode(s)
 
 
+def base64_to_string(b64s):
+    return base64.b64decode(b64s).decode('UTF-8')
+
+
 def string_to_bytes(s):
     return s.encode(ENCODING)
 
