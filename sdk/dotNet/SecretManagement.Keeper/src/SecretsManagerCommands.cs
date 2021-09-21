@@ -1,187 +1,128 @@
-﻿using System.Management.Automation;
+﻿using System;
+using System.Collections;
+using System.Linq;
+using System.Net;
+using System.Security;
+using System.Threading.Tasks;
+using Microsoft.PowerShell.SecretStore;
+using SecretsManager;
 
 namespace SecretManagement.Keeper
 {
-    [Cmdlet(VerbsCommon.Get, "Secret")]
-    [OutputType(typeof(KeeperSecret))]
-    public class GetSecretCommand : PSCmdlet
+    public static class Client
     {
-        [Parameter(
-            Mandatory = true,
-            ValueFromPipeline = true,
-            ValueFromPipelineByPropertyName = true)]
-        public string Name { get; set; }
-    
-        [Parameter(
-            Mandatory = false,
-            ValueFromPipeline = true,
-            ValueFromPipelineByPropertyName = true)]
-        public string VaultName { get; set; }
-        
-        [Parameter(
-            Mandatory = false,
-            ValueFromPipeline = true,
-            ValueFromPipelineByPropertyName = true)]
-        public string AdditionalParameters { get; set; }
-        
-        // This method gets called once for each cmdlet in the pipeline when the pipeline starts executing
-        protected override void BeginProcessing()
+        public static async Task<KeeperResult> SetVaultConfig(string oneTimeToken, string vaultName)
         {
-            WriteVerbose("Begin!");
-        }
-    
-        // This method will be called for each input received from the pipeline to this cmdlet; if no input is received, this method is not called
-        protected override void ProcessRecord()
-        {
-            WriteObject(new KeeperSecret
+            string errorMsg;
+            LocalSecretStore localStore = null;
+            try
             {
-                Secret = Name
-            });
+                localStore = LocalSecretStore.GetInstance();
+                var configName = "KeeperVault." + vaultName;
+                if (!localStore.WriteObject(configName, "test", out errorMsg))
+                {
+                    return new KeeperResult($"Error accessing the local secret storage: {errorMsg}");
+                }
+                var storage = new InMemoryStorage();
+                SecretsManagerClient.InitializeStorage(storage, oneTimeToken, "keepersecurity.com");
+                await SecretsManagerClient.GetSecrets(new SecretsManagerOptions(storage));
+                return Microsoft.PowerShell.SecretStore.LocalSecretStore.GetInstance().WriteObject("KeeperVault." + vaultName, storage.AsHashTable(), out errorMsg)
+                    ? new KeeperResult()
+                    : new KeeperResult(errorMsg);
+            }
+            catch (Exception e)
+            {
+                if (localStore != null)
+                {
+                    localStore.DeleteObject(vaultName, out errorMsg);
+                }
+                return new KeeperResult($"Error connecting to the Keeper Vault: {e.Message}");
+            }
         }
-    
-        // This method will be called once at the end of pipeline execution; if no input is received, this method is not called
-        protected override void EndProcessing()
+
+        public class KeeperResult
         {
-            WriteVerbose("End!");
+            public bool IsFailure { get; }
+            public string ErrorMsg { get; }
+
+            public KeeperResult()
+            {
+            }
+
+            public KeeperResult(string errorMsg)
+            {
+                IsFailure = true;
+                ErrorMsg = errorMsg;
+            }
+        }
+
+        public static int SetVaultConfig1(string oneTimeToken, string vaultName)
+        {
+            throw new Exception("test");
+            return 1;
+        }
+
+
+        public static async Task<Hashtable> GetSecret(string name, string vaultName, Hashtable additionalParameters)
+        {
+            var records = await GetKeeperSecrets(vaultName);
+            var found = records.FirstOrDefault(x => x.Data.title == name);
+            if (found == null)
+            {
+                return null;
+            }
+
+            var dict = found.Data.fields
+                .Where(x => x.value.Length > 0)
+                .ToDictionary(x => x.label ?? x.type, y => y.value[0].ToString());
+            return new Hashtable(dict);
+        }
+
+        private static async Task<KeeperRecord[]> GetKeeperSecrets(string vaultName)
+        {
+            if (!Microsoft.PowerShell.SecretStore.LocalSecretStore.GetInstance().ReadObject("KeeperVault." + vaultName, out var config, out var errorMsg))
+            {
+                throw new Exception($"Keeper Vault {vaultName} does not have a valid local config. Use Register-KeeperVault command to register.");
+            }
+
+            try
+            {
+                var storage = new InMemoryStorage(config as Hashtable);
+                var secrets = await SecretsManagerClient.GetSecrets(new SecretsManagerOptions(storage));
+                return secrets.Records;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                throw;
+            }
+        }
+
+        public static async Task<string[]> GetSecretsInfo(string filter, string vaultName, Hashtable additionalParameters)
+        {
+            var records = await GetKeeperSecrets(vaultName);
+            return records.Select(x => x.Data.title).ToArray();
         }
     }
-    
-    [Cmdlet(VerbsCommon.Set, "Secret")]
-    [OutputType(typeof(KeeperSecret))]
-    public class SetSecretCommand : PSCmdlet
+
+    public static class Extensions
     {
-        [Parameter(
-            Mandatory = true,
-            ValueFromPipeline = true,
-            ValueFromPipelineByPropertyName = true)]
-        public string Name { get; set; }
-    
-        [Parameter(
-            Mandatory = true,
-            ValueFromPipeline = true,
-            ValueFromPipelineByPropertyName = true)]
-        public string Secret { get; set; }
-        
-        // This method gets called once for each cmdlet in the pipeline when the pipeline starts executing
-        protected override void BeginProcessing()
+        public static string ToPlainString(this SecureString secureStr)
         {
-            WriteVerbose("Begin!");
+            string plainStr = new NetworkCredential(string.Empty, secureStr).Password;
+            return plainStr;
         }
-    
-        // This method will be called for each input received from the pipeline to this cmdlet; if no input is received, this method is not called
-        protected override void ProcessRecord()
+
+        public static SecureString ToSecureString(this string plainStr)
         {
-            WriteObject(new KeeperSecret
+            var secStr = new SecureString();
+            secStr.Clear();
+            foreach (var c in plainStr)
             {
-                Secret = Name
-            });
+                secStr.AppendChar(c);
+            }
+
+            return secStr;
         }
-    
-        // This method will be called once at the end of pipeline execution; if no input is received, this method is not called
-        protected override void EndProcessing()
-        {
-            WriteVerbose("End!");
-        }
-    }
-   
-    [Cmdlet(VerbsCommon.Remove, "Secret")]
-    [OutputType(typeof(KeeperSecret))]
-    public class RemoveSecretCommand : PSCmdlet
-    {
-        [Parameter(
-            Mandatory = true,
-            ValueFromPipeline = true,
-            ValueFromPipelineByPropertyName = true)]
-        public string Name { get; set; }
-    
-        // This method gets called once for each cmdlet in the pipeline when the pipeline starts executing
-        protected override void BeginProcessing()
-        {
-            WriteVerbose("Begin!");
-        }
-    
-        // This method will be called for each input received from the pipeline to this cmdlet; if no input is received, this method is not called
-        protected override void ProcessRecord()
-        {
-            WriteObject(new KeeperSecret
-            {
-                Secret = Name
-            });
-        }
-    
-        // This method will be called once at the end of pipeline execution; if no input is received, this method is not called
-        protected override void EndProcessing()
-        {
-            WriteVerbose("End!");
-        }
-    }
-    
-    [Cmdlet(VerbsCommon.Get, "SecretInfo")]
-    [OutputType(typeof(KeeperSecret))]
-    public class GetSecretInfoCommand : PSCmdlet
-    {
-        [Parameter(
-            Mandatory = true,
-            ValueFromPipeline = true,
-            ValueFromPipelineByPropertyName = true)]
-        public string Name { get; set; }
-    
-        // This method gets called once for each cmdlet in the pipeline when the pipeline starts executing
-        protected override void BeginProcessing()
-        {
-            WriteVerbose("Begin!");
-        }
-    
-        // This method will be called for each input received from the pipeline to this cmdlet; if no input is received, this method is not called
-        protected override void ProcessRecord()
-        {
-            WriteObject(new KeeperSecret
-            {
-                Secret = Name
-            });
-        }
-    
-        // This method will be called once at the end of pipeline execution; if no input is received, this method is not called
-        protected override void EndProcessing()
-        {
-            WriteVerbose("End!");
-        }
-    }
-    
-    [Cmdlet(VerbsDiagnostic.Test, "SecretVault")]
-    [OutputType(typeof(KeeperSecret))]
-    public class TestSecretVaultCommand : PSCmdlet
-    {
-        [Parameter(
-            Mandatory = true,
-            ValueFromPipeline = true,
-            ValueFromPipelineByPropertyName = true)]
-        public string VaultName { get; set; }
-    
-        // This method gets called once for each cmdlet in the pipeline when the pipeline starts executing
-        protected override void BeginProcessing()
-        {
-            WriteVerbose("Begin!");
-        }
-    
-        // This method will be called for each input received from the pipeline to this cmdlet; if no input is received, this method is not called
-        protected override void ProcessRecord()
-        {
-            WriteObject(new KeeperSecret
-            {
-                Secret = VaultName
-            });
-        }
-    
-        // This method will be called once at the end of pipeline execution; if no input is received, this method is not called
-        protected override void EndProcessing()
-        {
-            WriteVerbose("End!");
-        }
-    }
-    
-    public class KeeperSecret
-    {
-        public string Secret { get; set; }
     }
 }

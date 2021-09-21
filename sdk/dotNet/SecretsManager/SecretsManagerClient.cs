@@ -452,7 +452,7 @@ namespace SecretsManager
         [SuppressMessage("ReSharper", "StringLiteralTypo")]
         private static Dictionary<int, byte[]> InitKeeperKeys()
         {
-            var keyId = 10;
+            var keyId = 7;
             return new[]
                 {
                     "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM",
@@ -478,7 +478,7 @@ namespace SecretsManager
                 ? CryptoUtils.GetRandomBytes(32)
                 : TransmissionKeyStub(32);
             var keyNumberString = storage.GetString(KeyServerPubicKeyId);
-            var keyNumber = keyNumberString == null ? 7 : int.Parse(keyNumberString);
+            var keyNumber = keyNumberString == null ? 10 : int.Parse(keyNumberString);
             if (!KeeperPublicKeys.TryGetValue(keyNumber, out var keeperPublicKey))
             {
                 throw new Exception($"Key number {keyNumber} is not supported");
