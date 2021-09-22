@@ -53,7 +53,26 @@ internal class SecretsManagerTest {
         }
     }
 
-//    @Test // uncomment to debug the integration test
+    @Test
+    fun testStoragePrefixes() {
+        var storage = InMemoryStorage()
+        initializeStorage(storage, "US:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw")
+        assertEquals("keepersecurity.com", storage.getString("hostname"))
+        storage = InMemoryStorage()
+        initializeStorage(storage, "EU:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw")
+        assertEquals("keepersecurity.eu", storage.getString("hostname"))
+        storage = InMemoryStorage()
+        initializeStorage(storage, "AU:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw")
+        assertEquals("keepersecurity.com.au", storage.getString("hostname"))
+        storage = InMemoryStorage()
+        initializeStorage(storage, "eu:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw")
+        assertEquals("keepersecurity.eu", storage.getString("hostname"))
+        storage = InMemoryStorage()
+        initializeStorage(storage, "local.keepersecurity.com:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw")
+        assertEquals("local.keepersecurity.com", storage.getString("hostname"))
+    }
+
+        //    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (
             url: String,

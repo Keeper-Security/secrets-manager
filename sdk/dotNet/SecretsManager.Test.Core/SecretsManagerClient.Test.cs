@@ -41,5 +41,29 @@ namespace SecretsManager.Test
             // ReSharper disable once StringLiteralTypo
             Assert.AreEqual("N$B!lkoOrVL1RUNDBvn2", password);
         }
+
+        [Test]
+        public void TestStoragePrefixes()
+        {
+            var storage = new InMemoryStorage();
+            SecretsManagerClient.InitializeStorage(storage, "US:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw");
+            Assert.AreEqual("keepersecurity.com", storage.GetString("hostname"));
+
+            storage = new InMemoryStorage();
+            SecretsManagerClient.InitializeStorage(storage, "EU:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw");
+            Assert.AreEqual("keepersecurity.eu", storage.GetString("hostname"));
+
+            storage = new InMemoryStorage();
+            SecretsManagerClient.InitializeStorage(storage, "AU:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw");
+            Assert.AreEqual("keepersecurity.com.au", storage.GetString("hostname"));
+            
+            storage = new InMemoryStorage();
+            SecretsManagerClient.InitializeStorage(storage, "eu:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw");
+            Assert.AreEqual("keepersecurity.eu", storage.GetString("hostname"));
+            
+            storage = new InMemoryStorage();
+            SecretsManagerClient.InitializeStorage(storage, "local.keepersecurity.com:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw");
+            Assert.AreEqual("local.keepersecurity.com", storage.GetString("hostname"));
+        }
     }
 }

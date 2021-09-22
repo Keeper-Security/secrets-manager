@@ -260,8 +260,27 @@ namespace SecretsManager
         private const string KeyPrivateKey = "privateKey"; // The client's private key
         private const string ClientIdHashTag = "KEEPER_SECRETS_MANAGER_CLIENT_ID"; // Tag for hashing the client key to client id
 
-        public static void InitializeStorage(IKeyValueStorage storage, string clientKey, string hostName)
+        public static void InitializeStorage(IKeyValueStorage storage, string oneTimeToken, string hostName = null)
         {
+            var tokenParts = oneTimeToken.Split(':');
+            string host;
+            string clientKey;
+            if (tokenParts.Length == 1)
+            {
+                host = hostName ?? throw new Exception($"The hostname must be present in the token or as a parameter");
+                clientKey = oneTimeToken;
+            }
+            else
+            {
+                host = tokenParts[0].ToUpper() switch
+                {
+                    "US" => "keepersecurity.com",
+                    "EU" => "keepersecurity.eu",
+                    "AU" => "keepersecurity.com.au",
+                    _ => tokenParts[0]
+                };
+                clientKey = tokenParts[1];
+            }
             var clientKeyBytes = CryptoUtils.WebSafe64ToBytes(clientKey);
             var clientKeyHash = CryptoUtils.Hash(clientKeyBytes, ClientIdHashTag);
             var clientId = CryptoUtils.BytesToBase64(clientKeyHash);
@@ -276,7 +295,7 @@ namespace SecretsManager
                 throw new Exception($"The storage is already initialized with a different client Id ({existingClientId})");
             }
 
-            storage.SaveString(KeyHostname, hostName);
+            storage.SaveString(KeyHostname, host);
             storage.SaveString(KeyClientId, clientId);
             storage.SaveBytes(KeyClientKey, clientKeyBytes);
             storage.SaveBytes(KeyPrivateKey, CryptoUtils.GenerateKeyPair());
