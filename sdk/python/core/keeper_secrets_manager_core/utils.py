@@ -41,14 +41,12 @@ def bytes_to_int(b):
     return int.from_bytes(b, byteorder='big')
 
 
-def bytes_to_url_safe_str(b):
-    return base64.urlsafe_b64encode(b).decode().rstrip('=')
+def bytes_to_base64(b):
+    return base64.b64encode(b).decode()
 
 
 def base64_to_bytes(s):
-    bbytes = base64.urlsafe_b64decode(s + '==')
-
-    return bbytes
+    return base64.urlsafe_b64decode(s)
 
 
 def string_to_bytes(s):
