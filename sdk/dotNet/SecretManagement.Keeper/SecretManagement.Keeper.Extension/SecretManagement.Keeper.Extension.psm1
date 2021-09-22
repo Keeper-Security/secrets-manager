@@ -7,7 +7,7 @@ function Get-Secret
         [hashtable] $AdditionalParameters
     )
 
-    return [SecretManagement.Keeper.Client]::GetSecret($Name, $VaultName, $AdditionalParameters).GetAwaiter().GetResult()
+    return [SecretManagement.Keeper.Client]::GetSecret($Name, $VaultName).GetAwaiter().GetResult()
 }
 
 function Get-SecretInfo
@@ -19,15 +19,13 @@ function Get-SecretInfo
         [hashtable] $AdditionalParameters
     )
     
-    $secrets = [SecretManagement.Keeper.Client]::GetSecretsInfo($Filter, $VaultName, $AdditionalParameters).GetAwaiter().GetResult()
-    
-    Write-Host "Here too"
+    $secrets = [SecretManagement.Keeper.Client]::GetSecretsInfo($Filter, $VaultName).GetAwaiter().GetResult()
     
     $secretsInfo = New-Object System.Collections.Generic.List[System.Object]
     foreach ($secret in $secrets) {
         $secretInfo = [Microsoft.PowerShell.SecretManagement.SecretInformation]::new(
                           $secret,      # Name of secret
-                          "String",      # Secret data type [Microsoft.PowerShell.SecretManagement.SecretType]
+                          "Hashtable",      # Secret data type [Microsoft.PowerShell.SecretManagement.SecretType]
                           $VaultName,    # Name of vault
                           $Metadata)
         $secretsInfo.Add($secretInfo)                  
@@ -45,9 +43,11 @@ function Set-Secret
         [hashtable] $AdditionalParameters
     )
     
-    Write-Host "Set-Secret"
-
-    [TestStore]::SetItem($Name, $Secret)
+    $result = [SecretManagement.Keeper.Client]::SetSecret($Name, $Secret, $VaultName).GetAwaiter().GetResult()
+    if ($result.IsFailure) {
+        Write-Error $result.ErrorMsg
+        return
+    }
 }
 
 
@@ -60,9 +60,7 @@ function Remove-Secret
         [hashtable] $AdditionalParameters
     )
     
-    Write-Host "Remove-Secret"
-
-    [TestStore]::RemoveItem($Name)
+    Write-Error "Remove-Secret is not supported for Keeper Vault"
 }
 
 function Test-SecretVault
@@ -73,7 +71,5 @@ function Test-SecretVault
         [hashtable] $AdditionalParameters
     )
     
-    Write-Host "Test-SecretVault"
-
-    return [TestStore]::TestVault()
+    return [SecretManagement.Keeper.Client]::TestVault($VaultName).GetAwaiter().GetResult()
 }
