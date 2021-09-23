@@ -11,6 +11,7 @@ import java.net.HttpURLConnection.HTTP_OK
 import java.net.URL
 import java.security.*
 import java.security.cert.X509Certificate
+import java.util.*
 import java.util.jar.Manifest
 import javax.net.ssl.*
 
@@ -138,7 +139,22 @@ data class KeeperFile(
     val thumbnailUrl: String?
 )
 
-fun initializeStorage(storage: KeyValueStorage, clientKey: String, hostName: String) {
+fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: String? = null) {
+    val tokenParts = oneTimeToken.split(':')
+    val host: String
+    val clientKey: String
+    if (tokenParts.size == 1) {
+        host = hostName ?: throw Exception("The hostname must be present in the token or as a parameter")
+        clientKey = oneTimeToken
+    } else {
+        host = when (tokenParts[0].uppercase(Locale.getDefault())) {
+            "US" -> "keepersecurity.com"
+            "EU" -> "keepersecurity.eu"
+            "AU" -> "keepersecurity.com.au"
+            else -> tokenParts[0]
+        }
+        clientKey = tokenParts[1]
+    }
     val clientKeyBytes = webSafe64ToBytes(clientKey)
     val clientKeyHash = hash(clientKeyBytes, CLIENT_ID_HASH_TAG)
     val clientId = bytesToBase64(clientKeyHash)
@@ -149,7 +165,7 @@ fun initializeStorage(storage: KeyValueStorage, clientKey: String, hostName: Str
         }
         throw Exception("The storage is already initialized with a different client Id (${existingClientId})")
     }
-    storage.saveString(KEY_HOSTNAME, hostName)
+    storage.saveString(KEY_HOSTNAME, host)
     storage.saveString(KEY_CLIENT_ID, clientId)
     storage.saveBytes(KEY_CLIENT_KEY, clientKeyBytes)
     val privateKey = generateKeyPair()
@@ -167,7 +183,11 @@ internal object ManifestLoader {
             val libPath = classPath.substring(0, libPathEnd)
             "$libPath!/META-INF/MANIFEST.MF"
         } else { // we might be testing
-            val buildPath = classPath.substring(0, classPath.lastIndexOf("build/classes"))
+            var buildPathCoreIdx = classPath.lastIndexOf("build/classes")
+            if (buildPathCoreIdx < 0) {
+                buildPathCoreIdx = classPath.lastIndexOf("out/production/classes")
+            }
+            val buildPath = classPath.substring(0, buildPathCoreIdx)
             "${buildPath}build/tmp/jar/MANIFEST.MF"
         }
         val manifest = Manifest(URL(filePath).openStream())
@@ -307,7 +327,7 @@ private fun prepareGetPayload(
     val appKey = storage.getBytes(KEY_APP_KEY)
     if (appKey == null) {
         val privateKey = storage.getBytes(KEY_PRIVATE_KEY) ?: throw Exception("Private key is missing from the storage")
-        val publicKey =  exportPublicKey(privateKey)
+        val publicKey = exportPublicKey(privateKey)
         payload.publicKey = bytesToBase64(publicKey)
     }
     if (recordsFilter.isNotEmpty()) {

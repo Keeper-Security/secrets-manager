@@ -51,7 +51,6 @@ internal class NotationTest {
             getValue(secrets, "keeper://${recordUID}/field/login[1]")
             fail("Getting wrong index did not throw")
         } catch (e: Exception) {
-            assertEquals("Index 1 out of bounds for length 1", e.message.toString())
         }
         value = getValue(secrets, "keeper://${recordUID}/field/login[]")
         assertEquals("[\"My Login 1\"]", value)

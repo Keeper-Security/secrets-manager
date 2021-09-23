@@ -1,13 +1,52 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
+using System.Security;
 using System.Text.Json;
 using System.Text.Encodings.Web;
 
 namespace SecretsManager
 {
+    public static class Extensions
+    {
+        public static string ToPlainString(this SecureString secureStr)
+        {
+            string plainStr = new NetworkCredential(string.Empty, secureStr).Password;
+            return plainStr;
+        }
+
+        public static SecureString ToSecureString(this string plainStr)
+        {
+            var secStr = new SecureString();
+            secStr.Clear();
+            foreach (var c in plainStr)
+            {
+                secStr.AppendChar(c);
+            }
+
+            return secStr;
+        }
+    }
+
     public class InMemoryStorage : IKeyValueStorage
     {
         internal readonly Dictionary<string, string> Strings = new();
+
+        public InMemoryStorage(Hashtable config)
+        {
+            foreach (var entry in config)
+            {
+                var de = (DictionaryEntry)entry;
+                Strings[(string)de.Key] = de.Value switch
+                {
+                    SecureString secureString => secureString.ToPlainString(),
+                    string stringValue => stringValue,
+                    _ => throw new Exception("Unsupported config value type")
+                };
+            }
+        }
 
         public InMemoryStorage(string configJson = null)
         {
@@ -59,6 +98,11 @@ namespace SecretsManager
         {
             Strings.Remove(key);
         }
+
+        public Hashtable AsHashTable()
+        {
+            return new Hashtable(Strings);
+        }
     }
 
     public class LocalConfigStorage : IKeyValueStorage
@@ -74,6 +118,7 @@ namespace SecretsManager
                 storage = new InMemoryStorage();
                 return;
             }
+
             var json = File.ReadAllText(fileName);
             storage = new InMemoryStorage(json);
         }

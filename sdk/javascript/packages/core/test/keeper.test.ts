@@ -3,7 +3,7 @@ import {
     getSecrets,
     initializeStorage,
     platform,
-    localConfigStorage, SecretManagerOptions
+    localConfigStorage, SecretManagerOptions, inMemoryStorage
 } from '../'
 
 import * as fs from 'fs';
@@ -42,3 +42,26 @@ test('Get secrets e2e', async () => {
         expect(JSON.parse(message as string).message).toBe('Signature is invalid')
     }
 })
+
+test('Storage prefixes', async () => {
+    let storage = inMemoryStorage({})
+    await initializeStorage(storage, 'US:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw')
+    expect(await storage.getString('hostname')).toBe('keepersecurity.com')
+
+    storage = inMemoryStorage({})
+    await initializeStorage(storage, 'EU:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw')
+    expect(await storage.getString('hostname')).toBe('keepersecurity.eu')
+
+    storage = inMemoryStorage({})
+    await initializeStorage(storage, 'AU:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw')
+    expect(await storage.getString('hostname')).toBe('keepersecurity.com.au')
+
+    storage = inMemoryStorage({})
+    await initializeStorage(storage, 'eu:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw')
+    expect(await storage.getString('hostname')).toBe('keepersecurity.eu')
+
+    storage = inMemoryStorage({})
+    await initializeStorage(storage, 'local.keepersecurity.com:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw')
+    expect(await storage.getString('hostname')).toBe('local.keepersecurity.com')
+})
+
