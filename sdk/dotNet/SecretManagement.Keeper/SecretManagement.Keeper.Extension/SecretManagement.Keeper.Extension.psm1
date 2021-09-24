@@ -19,6 +19,11 @@ function Get-SecretInfo
         [hashtable] $AdditionalParameters
     )
     
+    $moduleName = 'Microsoft.PowerShell.SecretStore'
+    $moduleInstance = Import-Module -Name $moduleName -PassThru
+    $secret = & $moduleInstance { Get-Secret -Name aa }
+    Write-Host $secret
+    
     $secrets = [SecretManagement.Keeper.Client]::GetSecretsInfo($Filter, $VaultName).GetAwaiter().GetResult()
     
     $secretsInfo = New-Object System.Collections.Generic.List[System.Object]
