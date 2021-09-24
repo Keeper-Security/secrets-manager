@@ -33,11 +33,18 @@ internal class NotationTest {
         )
     )
 
-    private val secrets = KeeperSecrets(listOf(KeeperRecord(ByteArray(0), recordUID, data = recordData)))
+    private val recordFiles = listOf<KeeperFile>(
+        KeeperFile(
+            ByteArray(0), "HKGdx7dSrtuTfA67wiEZkw",
+            KeeperFileData("QR Code", "qr.png", "image/png", 53926, 1629142801191),
+            "QR Code File Url", null
+        )
+    )
+
+    private val secrets = KeeperSecrets(listOf(KeeperRecord(ByteArray(0), recordUID, data = recordData, files = recordFiles)))
 
     @Test
     fun notationsWork() {
-
         var value: String = getValue(secrets, "keeper://${recordUID}/field/login")
         assertEquals("My Login 1", value)
 
@@ -81,6 +88,14 @@ internal class NotationTest {
 
         value = getValue(secrets, "keeper://${recordUID}/custom_field/name[last]")
         assertEquals("Smith", value)
+
+        var file = getFile(secrets, "keeper://${recordUID}/file/QR Code")
+        assertEquals("HKGdx7dSrtuTfA67wiEZkw", file.fileUid)
+        assertEquals("QR Code File Url", file.url)
+
+        file = getFile(secrets, "keeper://${recordUID}/file/qr.png")
+        assertEquals("HKGdx7dSrtuTfA67wiEZkw", file.fileUid)
+        assertEquals("QR Code File Url", file.url)
     }
 
 }

@@ -10,20 +10,7 @@ import kotlin.reflect.full.memberProperties
 
 @ExperimentalSerializationApi
 fun getValue(secrets: KeeperSecrets, notation: String): String {
-
-    var query = notation
-    val schemaNotation = query.split("://")
-    if (schemaNotation.size > 1) {
-        if (schemaNotation[0] != "keeper") {
-            throw Exception("Invalid notation schema: ${schemaNotation[0]}")
-        }
-        query = query.slice(9 until query.length)
-    }
-    val queryParts = query.split('/')
-    if (queryParts.size < 3) {
-        throw Exception("invalid notation $notation")
-    }
-    val record = secrets.getRecordByUid(queryParts[0]) ?: throw Error("Record ${queryParts[0]} not found")
+    val (record, queryParts) = getRecord(secrets, notation)
     val fields: List<KeeperRecordField> =
         when (queryParts[1]) {
             "field" -> record.data.fields
@@ -57,6 +44,36 @@ fun getValue(secrets: KeeperSecrets, notation: String): String {
         return getFieldStringValue(field, fieldValueIdx)
     }
     return getFieldValueProperty(field, fieldValueIdx, fieldParts[2])
+}
+
+fun getFile(secrets: KeeperSecrets, notation: String): KeeperFile {
+    val (record, queryParts) = getRecord(secrets, notation)
+    if (queryParts[1] == "file") {
+        val fileId = queryParts[2]
+        return record.files?.find { x -> x.data.title == fileId || x.data.name == fileId }
+            ?: throw Exception("File $fileId not found in the record ${record.recordUid}")
+    } else {
+        throw Exception("Notation should include file tag")
+    }
+}
+
+private data class RecordAndNotation(val record: KeeperRecord, val queryParts: List<String>)
+
+private fun getRecord(secrets: KeeperSecrets, notation: String): RecordAndNotation {
+    var query = notation
+    val schemaNotation = query.split("://")
+    if (schemaNotation.size > 1) {
+        if (schemaNotation[0] != "keeper") {
+            throw Exception("Invalid notation schema: ${schemaNotation[0]}")
+        }
+        query = query.slice(9 until query.length)
+    }
+    val queryParts = query.split('/')
+    if (queryParts.size < 3) {
+        throw Exception("invalid notation $notation")
+    }
+    val record = secrets.getRecordByUid(queryParts[0]) ?: throw Error("Record ${queryParts[0]} not found")
+    return RecordAndNotation(record, queryParts)
 }
 
 private fun fieldType(field: KeeperRecordField): String {
