@@ -40,14 +40,17 @@ namespace HelloSecret
 
             var options = new SecretsManagerOptions(storage);
             // var options = new SecretsManagerOptions(storage, SecretsManagerClient.CachingPostFunction);
-            var records = (await SecretsManagerClient.GetSecrets(options)).Records;
-            // var records = (await SecretsManagerClient.GetSecrets(options, new[] { "UlzQ-jKQTgQcEvpJI9vxxQ" })).Records;
-            Console.WriteLine($"Received {records.Length} record(s)");
+            var secrets = await SecretsManagerClient.GetSecrets(options);
+            // var secrets = await SecretsManagerClient.GetSecrets(options, new[] { "UlzQ-jKQTgQcEvpJI9vxxQ" }));
+            Console.WriteLine($"Received {secrets.Records.Length} record(s)");
 
             // get the password from the first record
-            var firstRecord = records[0];
-            var password = records[0].FieldValue("password").ToString();
+            var firstRecord = secrets.Records[0];
+            var password = firstRecord.FieldValue("password").ToString();
             Console.WriteLine($"Password: {password}");
+
+            // alternative way to get field value
+            // var password = Notation.GetValue(secrets, "BediNKCMG21ztm5xGYgNww/field/password");
 
             // download the file from the 1st record
             var file = firstRecord.GetFileByName("acme.cer");
