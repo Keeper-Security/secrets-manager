@@ -7,59 +7,57 @@ using System.Linq;
 using System.Management.Automation;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Microsoft.PowerShell.SecretStore;
 using SecretsManager;
 
 namespace SecretManagement.Keeper
 {
     public static class Client
     {
-        public static async Task<KeeperResult> SetVaultConfig(string oneTimeToken, string vaultName)
+        public static async Task<KeeperResult> GetVaultConfig(string oneTimeToken)
         {
-            string errorMsg;
-            LocalSecretStore localStore = null;
-            try
-            {
-                localStore = LocalSecretStore.GetInstance();
-                var configName = "KeeperVault." + vaultName;
-                if (!localStore.WriteObject(configName, "test", out errorMsg))
-                {
-                    return new KeeperResult($"Error accessing the local secret storage: {errorMsg}");
-                }
-
-                var storage = new InMemoryStorage();
-                SecretsManagerClient.InitializeStorage(storage, oneTimeToken, "keepersecurity.com");
-                await SecretsManagerClient.GetSecrets(new SecretsManagerOptions(storage));
-                return LocalSecretStore.GetInstance().WriteObject("KeeperVault." + vaultName, storage.AsHashTable(), out errorMsg)
-                    ? new KeeperResult()
-                    : new KeeperResult(errorMsg);
-            }
-            catch (Exception e)
-            {
-                if (localStore != null)
-                {
-                    localStore.DeleteObject(vaultName, out errorMsg);
-                }
-
-                return new KeeperResult($"Error connecting to the Keeper Vault: {e.Message}");
-            }
+            return KeeperResult.Ok("Hello");
+            // var storage = new InMemoryStorage();
+            // SecretsManagerClient.InitializeStorage(storage, oneTimeToken, "keepersecurity.com");
+            // try
+            // {
+            //     await SecretsManagerClient.GetSecrets(new SecretsManagerOptions(storage));
+            // }
+            // catch (Exception e)
+            // {
+            //     return KeeperResult.Error(e.Message);
+            // }
+            //
+            // return KeeperResult.Ok(storage.AsHashTable());
         }
 
         [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
         [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
         public class KeeperResult
         {
-            public bool IsFailure { get; }
-            public string ErrorMsg { get; }
+            private object result;
+            public bool IsFailure { get; private set; }
+            public object Data => result;
+            public string ErrorMessage => result as string;
 
-            public KeeperResult()
+            private KeeperResult()
             {
             }
 
-            public KeeperResult(string errorMsg)
+            public static KeeperResult Ok(object result = null)
             {
-                IsFailure = true;
-                ErrorMsg = errorMsg;
+                return new KeeperResult
+                {
+                    result = result
+                };
+            }
+
+            public static KeeperResult Error(string errorMsg)
+            {
+                return new KeeperResult
+                {
+                    result = errorMsg,
+                    IsFailure = true
+                };
             }
         }
 
@@ -125,24 +123,24 @@ namespace SecretManagement.Keeper
             var parts = name.Split('.');
             if (parts.Length == 1)
             {
-                return new KeeperResult("Set-Secret can be used only on a single field");
+                return KeeperResult.Error("Set-Secret can be used only on a single field");
             }
 
             var (records, options) = await GetKeeperSecrets(vaultName);
             var found = records.FirstOrDefault(x => x.Data.title == parts[0]);
             if (found == null)
             {
-                return new KeeperResult("Set-Secret can only be used to update existing Keeper secrets");
+                return KeeperResult.Error("Set-Secret can only be used to update existing Keeper secrets");
             }
 
             var field = found.Data.fields.FirstOrDefault(x => (x.label ?? x.type).Equals(parts[1], StringComparison.OrdinalIgnoreCase));
             if (field == null)
             {
-                return new KeeperResult("Set-Secret can only be used to update existing Keeper secrets");
+                return KeeperResult.Error("Set-Secret can only be used to update existing Keeper secrets");
             }
 
             var fieldValueJson = (JsonElement)field.value[0];
-            
+
             // ReSharper disable once SwitchStatementHandlesSomeKnownEnumValuesWithDefault
             var typeMismatch = false;
             switch (fieldValueJson.ValueKind)
@@ -152,20 +150,24 @@ namespace SecretManagement.Keeper
                     {
                         typeMismatch = true;
                     }
+
                     break;
                 case JsonValueKind.Number:
                     if (!(secret is int))
                     {
                         typeMismatch = true;
                     }
+
                     break;
                 default:
-                    return new KeeperResult($"Setting values for the field {parts[1]} is not supported");
-            } 
+                    return KeeperResult.Error($"Setting values for the field {parts[1]} is not supported");
+            }
+
             if (typeMismatch)
             {
-                return new KeeperResult($"The new value for field {parts[1]} does not match the existing type");
+                return KeeperResult.Error($"The new value for field {parts[1]} does not match the existing type");
             }
+
             field.value[0] = secret;
 
             try
@@ -174,12 +176,12 @@ namespace SecretManagement.Keeper
             }
             catch (Exception e)
             {
-                return new KeeperResult(e.Message);
+                return KeeperResult.Error(e.Message);
             }
 
-            return new KeeperResult();
+            return KeeperResult.Ok();
         }
-        
+
         public static async Task<bool> TestVault(string vaultName)
         {
             try
@@ -187,7 +189,7 @@ namespace SecretManagement.Keeper
                 await GetKeeperSecrets(vaultName);
                 return true;
             }
-            catch 
+            catch
             {
                 return false;
             }
@@ -195,10 +197,12 @@ namespace SecretManagement.Keeper
 
         private static async Task<Tuple<KeeperRecord[], SecretsManagerOptions>> GetKeeperSecrets(string vaultName)
         {
-            if (!LocalSecretStore.GetInstance().ReadObject("KeeperVault." + vaultName, out var config, out _))
-            {
-                throw new Exception($"Keeper Vault {vaultName} does not have a valid local config. Use Register-KeeperVault command to register.");
-            }
+            // if (!LocalSecretStore.GetInstance().ReadObject("KeeperVault." + vaultName, out var config, out _))
+            // {
+            //     throw new Exception($"Keeper Vault {vaultName} does not have a valid local config. Use Register-KeeperVault command to register.");
+            // }
+
+            var config = new Hashtable();
 
             var storage = new InMemoryStorage(config as Hashtable);
             var options = new SecretsManagerOptions(storage);

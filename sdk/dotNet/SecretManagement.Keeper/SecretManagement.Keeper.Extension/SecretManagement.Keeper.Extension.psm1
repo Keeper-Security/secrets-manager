@@ -6,8 +6,10 @@ function Get-Secret
         [string] $VaultName,
         [hashtable] $AdditionalParameters
     )
+    
+    return $null
 
-    return [SecretManagement.Keeper.Client]::GetSecret($Name, $VaultName).GetAwaiter().GetResult()
+#     return [SecretManagement.Keeper.Client]::GetSecret($Name, $VaultName).GetAwaiter().GetResult()
 }
 
 function Get-SecretInfo
@@ -19,23 +21,25 @@ function Get-SecretInfo
         [hashtable] $AdditionalParameters
     )
     
-    $moduleName = 'Microsoft.PowerShell.SecretStore'
-    $moduleInstance = Import-Module -Name $moduleName -PassThru
-    $secret = & $moduleInstance { Get-Secret -Name aa }
-    Write-Host $secret
+    return $null
     
-    $secrets = [SecretManagement.Keeper.Client]::GetSecretsInfo($Filter, $VaultName).GetAwaiter().GetResult()
-    
-    $secretsInfo = New-Object System.Collections.Generic.List[System.Object]
-    foreach ($secret in $secrets) {
-        $secretInfo = [Microsoft.PowerShell.SecretManagement.SecretInformation]::new(
-                          $secret,      # Name of secret
-                          "Hashtable",      # Secret data type [Microsoft.PowerShell.SecretManagement.SecretType]
-                          $VaultName,    # Name of vault
-                          $Metadata)
-        $secretsInfo.Add($secretInfo)                  
-    }
-    return $secretsInfo
+#     $moduleName = 'Microsoft.PowerShell.SecretStore'
+#     $moduleInstance = Import-Module -Name $moduleName -PassThru
+#     $secret = & $moduleInstance { Get-Secret -Name aa }
+#     Write-Host $secret
+#     
+#     $secrets = [SecretManagement.Keeper.Client]::GetSecretsInfo($Filter, $VaultName).GetAwaiter().GetResult()
+#     
+#     $secretsInfo = New-Object System.Collections.Generic.List[System.Object]
+#     foreach ($secret in $secrets) {
+#         $secretInfo = [Microsoft.PowerShell.SecretManagement.SecretInformation]::new(
+#                           $secret,      # Name of secret
+#                           "Hashtable",      # Secret data type [Microsoft.PowerShell.SecretManagement.SecretType]
+#                           $VaultName,    # Name of vault
+#                           $Metadata)
+#         $secretsInfo.Add($secretInfo)                  
+#     }
+#     return $secretsInfo
 }
 
 function Set-Secret
