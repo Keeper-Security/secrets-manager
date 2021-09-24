@@ -26,6 +26,7 @@ namespace QuickTest
             var options = new SecretsManagerOptions(storage);
             // var options = new SecretsManagerOptions(storage, SecretsManagerClient.CachingPostFunction);
             var secrets = await SecretsManagerClient.GetSecrets(options);
+            // var password = Notation.GetValue(secrets, "BediNKCMG21ztm5xGYgNww/field/password");
             var firstRecord = secrets.Records[0]; 
             var password = firstRecord.FieldValue("password").ToString();
             Console.WriteLine(password);
