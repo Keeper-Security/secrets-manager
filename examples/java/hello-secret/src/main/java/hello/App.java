@@ -2,6 +2,7 @@ package hello;
 
 import com.keepersecurity.secretsManager.core.*;
 import static com.keepersecurity.secretsManager.core.SecretsManager.*;
+import static com.keepersecurity.secretsManager.core.Notation.*;
 
 import java.io.FileOutputStream;
 
@@ -25,13 +26,17 @@ public class App {
             SecretsManagerOptions options = new SecretsManagerOptions(storage);
 //            SecretsManagerOptions options = new SecretsManagerOptions(storage, SecretsManager::cachingPostFunction);
             KeeperSecrets secrets = getSecrets(options);
-//            KeeperSecrets secrets = getSecrets(options, Arrays.asList("UlzQ-jKQTgQcEvpJI9vxxQ"));
+//          KeeperSecrets secrets = getSecrets(options, Arrays.asList("UlzQ-jKQTgQcEvpJI9vxxQ")); for a single record
             System.out.println(secrets.getRecords());
 
             // get the password from the first record
             KeeperRecord firstRecord = secrets.getRecords().get(0);
             String firstRecordPassword = firstRecord.getPassword();
             System.out.println(firstRecordPassword);
+
+            // an alternate way to get the password
+//          String password = getValue(secrets, "BediNKCMG21ztm5xGYgNww/field/password");
+//          System.out.println(password);
 
             // download the file from the 3rd record
             KeeperFile file = secrets.getRecords().get(2).getFileByName("acme.cer");

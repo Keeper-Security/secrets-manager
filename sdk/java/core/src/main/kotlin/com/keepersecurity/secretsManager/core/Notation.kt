@@ -1,3 +1,5 @@
+@file:JvmName("Notation")
+
 package com.keepersecurity.secretsManager.core
 
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -112,7 +114,7 @@ private fun getObjectProperty(obj: Any, propertyName: String): String {
 }
 
 @ExperimentalSerializationApi
-fun getFieldJsonValue(field: KeeperRecordField): String {
+private fun getFieldJsonValue(field: KeeperRecordField): String {
     return when (field) {
         is AccountNumber -> Json.encodeToString(field.value)
         is AddressRef -> Json.encodeToString(field.value)
