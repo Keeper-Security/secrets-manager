@@ -15,19 +15,18 @@ namespace SecretManagement.Keeper
     {
         public static async Task<KeeperResult> GetVaultConfig(string oneTimeToken)
         {
-            return KeeperResult.Ok("Hello");
-            // var storage = new InMemoryStorage();
-            // SecretsManagerClient.InitializeStorage(storage, oneTimeToken, "keepersecurity.com");
-            // try
-            // {
-            //     await SecretsManagerClient.GetSecrets(new SecretsManagerOptions(storage));
-            // }
-            // catch (Exception e)
-            // {
-            //     return KeeperResult.Error(e.Message);
-            // }
-            //
-            // return KeeperResult.Ok(storage.AsHashTable());
+            var storage = new InMemoryStorage();
+            SecretsManagerClient.InitializeStorage(storage, oneTimeToken, "keepersecurity.com");
+            try
+            {
+                await SecretsManagerClient.GetSecrets(new SecretsManagerOptions(storage));
+            }
+            catch (Exception e)
+            {
+                return KeeperResult.Error(e.Message);
+            }
+
+            return KeeperResult.Ok(storage.AsHashTable());
         }
 
         [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
@@ -61,10 +60,10 @@ namespace SecretManagement.Keeper
             }
         }
 
-        public static async Task<object> GetSecret(string name, string vaultName)
+        public static async Task<object> GetSecret(string name, Hashtable config)
         {
             var parts = name.Split('.');
-            var (records, _) = await GetKeeperSecrets(vaultName);
+            var (records, _) = await GetKeeperSecrets(config);
             var found = records.FirstOrDefault(x => x.Data.title == parts[0]);
             if (found == null)
             {
@@ -107,9 +106,9 @@ namespace SecretManagement.Keeper
             return new Hashtable(dict);
         }
 
-        public static async Task<string[]> GetSecretsInfo(string filter, string vaultName)
+        public static async Task<string[]> GetSecretsInfo(string filter, Hashtable config)
         {
-            var (records, _) = await GetKeeperSecrets(vaultName);
+            var (records, _) = await GetKeeperSecrets(config);
             var filterPattern = new WildcardPattern(
                 pattern: filter,
                 options: WildcardOptions.IgnoreCase);
@@ -118,7 +117,7 @@ namespace SecretManagement.Keeper
                 .Select(x => x.Data.title).ToArray();
         }
 
-        public static async Task<KeeperResult> SetSecret(string name, object secret, string vaultName)
+        public static async Task<KeeperResult> SetSecret(string name, object secret, Hashtable config)
         {
             var parts = name.Split('.');
             if (parts.Length == 1)
@@ -126,7 +125,7 @@ namespace SecretManagement.Keeper
                 return KeeperResult.Error("Set-Secret can be used only on a single field");
             }
 
-            var (records, options) = await GetKeeperSecrets(vaultName);
+            var (records, options) = await GetKeeperSecrets(config);
             var found = records.FirstOrDefault(x => x.Data.title == parts[0]);
             if (found == null)
             {
@@ -182,11 +181,11 @@ namespace SecretManagement.Keeper
             return KeeperResult.Ok();
         }
 
-        public static async Task<bool> TestVault(string vaultName)
+        public static async Task<bool> TestVault(Hashtable config)
         {
             try
             {
-                await GetKeeperSecrets(vaultName);
+                await GetKeeperSecrets(config);
                 return true;
             }
             catch
@@ -195,16 +194,9 @@ namespace SecretManagement.Keeper
             }
         }
 
-        private static async Task<Tuple<KeeperRecord[], SecretsManagerOptions>> GetKeeperSecrets(string vaultName)
+        private static async Task<Tuple<KeeperRecord[], SecretsManagerOptions>> GetKeeperSecrets(Hashtable config)
         {
-            // if (!LocalSecretStore.GetInstance().ReadObject("KeeperVault." + vaultName, out var config, out _))
-            // {
-            //     throw new Exception($"Keeper Vault {vaultName} does not have a valid local config. Use Register-KeeperVault command to register.");
-            // }
-
-            var config = new Hashtable();
-
-            var storage = new InMemoryStorage(config as Hashtable);
+            var storage = new InMemoryStorage(config);
             var options = new SecretsManagerOptions(storage);
             var secrets = await SecretsManagerClient.GetSecrets(options);
             return new Tuple<KeeperRecord[], SecretsManagerOptions>(secrets.Records, options);

@@ -1,19 +1,19 @@
-function Get-Secret
-{
+function Get-Secret {
     [CmdletBinding()]
     param (
         [string] $Name,
         [string] $VaultName,
         [hashtable] $AdditionalParameters
     )
-    
-    return $null
 
-#     return [SecretManagement.Keeper.Client]::GetSecret($Name, $VaultName).GetAwaiter().GetResult()
+    $configSecretName = 'KeeperVault.' + $VaultName
+    $moduleName = 'Microsoft.PowerShell.SecretStore'
+    $moduleInstance = Import-Module -Name $moduleName -PassThru
+    $config = & $moduleInstance Get-Secret -Name $configSecretName
+    return [SecretManagement.Keeper.Client]::GetSecret($Name, $config[0]).GetAwaiter().GetResult()
 }
 
-function Get-SecretInfo
-{
+function Get-SecretInfo {
     [CmdletBinding()]
     param (
         [string] $Filter,
@@ -21,29 +21,27 @@ function Get-SecretInfo
         [hashtable] $AdditionalParameters
     )
     
-    return $null
-    
-#     $moduleName = 'Microsoft.PowerShell.SecretStore'
-#     $moduleInstance = Import-Module -Name $moduleName -PassThru
-#     $secret = & $moduleInstance { Get-Secret -Name aa }
-#     Write-Host $secret
-#     
-#     $secrets = [SecretManagement.Keeper.Client]::GetSecretsInfo($Filter, $VaultName).GetAwaiter().GetResult()
-#     
-#     $secretsInfo = New-Object System.Collections.Generic.List[System.Object]
-#     foreach ($secret in $secrets) {
-#         $secretInfo = [Microsoft.PowerShell.SecretManagement.SecretInformation]::new(
-#                           $secret,      # Name of secret
-#                           "Hashtable",      # Secret data type [Microsoft.PowerShell.SecretManagement.SecretType]
-#                           $VaultName,    # Name of vault
-#                           $Metadata)
-#         $secretsInfo.Add($secretInfo)                  
-#     }
-#     return $secretsInfo
+    $vaults = Microsoft.Powershell.SecretManagement\Get-SecretVault
+    $localVault = $vaults.Where( { $_.Name -eq $AdditionalParameters.LocalVaultName } )
+    if (!$localVault) {
+        Write-Error "Unable to find configuration Vault $($AdditionalParameters.LocalVaultName) for Keeper Vault $($VaultName)"
+    }
+    $moduleInstance = Import-Module -Name $localVault.ModuleName -PassThru
+    $configSecretName = 'KeeperVault.' + $VaultName
+    $config = & $moduleInstance Get-Secret -Name $configSecretName -VaultName $localVault.Name
+    if ($config -isnot [Hashtable]) { 
+        $config = $config[0] # SecretStore returns a List
+    }
+    $secrets = [SecretManagement.Keeper.Client]::GetSecretsInfo($Filter, $config).GetAwaiter().GetResult()
+
+    $secretsInfo = New-Object System.Collections.Generic.List[System.Object]
+    foreach ($secret in $secrets) {
+        $secretsInfo.Add([Microsoft.PowerShell.SecretManagement.SecretInformation]::new($secret, "Hashtable", $VaultName, $Metadata))                  
+    }
+    return $secretsInfo
 }
 
-function Set-Secret
-{
+function Set-Secret {
     [CmdletBinding()]
     param (
         [string] $Name,
@@ -60,8 +58,7 @@ function Set-Secret
 }
 
 
-function Remove-Secret
-{
+function Remove-Secret {
     [CmdletBinding()]
     param (
         [string] $Name,
@@ -72,8 +69,7 @@ function Remove-Secret
     Write-Error "Remove-Secret is not supported for Keeper Vault"
 }
 
-function Test-SecretVault
-{
+function Test-SecretVault {
     [CmdletBinding()]
     param (
         [string] $VaultName,

@@ -1,41 +1,39 @@
-function Register-KeeperVault
-{
-    [CmdletBinding()]
-    param (
-#         [Parameter(Mandatory = $true)]
-#         [string] $Name,
-#         [Parameter(Mandatory = $true)]
-        [string] $OneTimeToken,
-        [string] $LocalVaultModule
-    )
-
-    Write-Host getting by lit 1    
-    Get-Secret -Name aa -Vault SecretStore
-    
-#     $configSecretName = 'KeeperVault.' + $Name
-#     Write-Host $configSecretName
-    $LocalVaultModule = if ($PSBoundParameters.ContainsKey('LocalVaultModule')) { $LocalVaultModule } else { 'Microsoft.PowerShell.SecretStore' }
-    $moduleInstance = Import-Module -Name $LocalVaultModule -PassThru -ErrorAction Stop
-#     
-    Write-Host getting by literal
-    & $moduleInstance { Get-Secret aa }
-    
-    Write-Host getting by lit 2    
-    Get-Secret -Name aa -Vault SecretStore
-    
-# 
-#     Write-Host getting by name
-#     & $moduleInstance { Get-Secret $Name }
-    
-#     & $moduleInstance { Set-Secret -Name $configSecretName -Secret 'abcd' }
-#     & $moduleInstance { Set-Secret -Name KeeperVault.K2 -Secret 'abcd' }
-#     $result = [SecretManagement.Keeper.Client]::GetVaultConfig($OneTimeToken).GetAwaiter().GetResult()
-#     if ($result.IsFailure) {
-#       Write-Error $result.ErrorMessage 
-#       return
-#     }
-#     Write-Host $configSecretName
-#     Write-Host $result.Data
-#     & $moduleInstance { Set-Secret -Name $configSecretName -Secret $result.Data -VaultName SecretStore }
-#     Microsoft.Powershell.SecretManagement\Register-SecretVault -Name $Name ./SecretManagement.Keeper.psd1
+function Register-KeeperVault {
+  [CmdletBinding()]
+  param (
+    # [Parameter(Mandatory = $true)]
+    [string] $Name,
+    # [Parameter(Mandatory = $true)]
+    [string] $OneTimeToken,
+    [string] $LocalVaultName
+  )
+  $vaults = Microsoft.Powershell.SecretManagement\Get-SecretVault
+  if ($LocalVaultName) {
+    $localVaultModuleName = $vaults.Where( { $_.Name -eq $LocalVaultName } ) | Select-Object -ExpandProperty ModuleName
+    if (!$localVaultModuleName) {
+      Write-Error "Vault $($LocalVaultName) was not found"
+      return
+    }
+  }
+  else {
+    $localVaultModuleName = 'Microsoft.PowerShell.SecretStore'
+    $LocalVaultName = $vaults.Where( { $_.ModuleName -eq $localVaultModuleName } )[0] | Select-Object -ExpandProperty Name
+    if (!$LocalVaultName) {
+      Write-Error 'Microsoft.PowerShell.SecretStore vault was not found'
+      return
+    }
+  }
+  $configSecretName = 'KeeperVault.' + $Name
+  Write-Host "Storing Keeper Vault config $($configSecretName) in $($localVaultModuleName) Vault named $($LocalVaultName)"
+  $moduleInstance = Import-Module -Name $localVaultModuleName -PassThru -ErrorAction Stop
+  $result = [SecretManagement.Keeper.Client]::GetVaultConfig($OneTimeToken).GetAwaiter().GetResult()
+  if ($result.IsFailure) {
+    Write-Error $result.ErrorMessage 
+    return
+  }
+  & $moduleInstance Set-Secret -Name $configSecretName -Secret $result.Data -VaultName $LocalVaultName  
+  $vaultParameters = @{
+    LocalVaultName = $LocalVaultName
+  }
+  Microsoft.Powershell.SecretManagement\Register-SecretVault -Name $Name ./SecretManagement.Keeper.psd1 -VaultParameters $vaultParameters
 }
