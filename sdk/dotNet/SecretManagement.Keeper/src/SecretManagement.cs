@@ -62,7 +62,7 @@ namespace SecretManagement.Keeper
 
         public static async Task<object> GetSecret(string name, Hashtable config)
         {
-            var parts = name.Split('.');
+            var parts = name.Split(new char[] { '.' }, 2);
             var (records, _) = await GetKeeperSecrets(config);
             var found = records.FirstOrDefault(x => x.Data.title == parts[0]);
             if (found == null)
@@ -75,13 +75,15 @@ namespace SecretManagement.Keeper
             {
                 if (parts[1].StartsWith("Files[", true, CultureInfo.InvariantCulture))
                 {
-                    var fileIdx = int.Parse(parts[1].Substring(6, parts[1].IndexOf(']') - 6));
-                    if (found.Files == null || found.Files.Length < fileIdx + 1)
+                    if (found.Files == null)
                     {
                         return null;
                     }
-
-                    return SecretsManagerClient.DownloadFile(found.Files[fileIdx]);
+                    var fileTitle = parts[1].Substring(6, parts[1].IndexOf(']') - 6).Trim('"', '\'');
+                    var file = found.Files.FirstOrDefault(x => x.Data.title.Equals(fileTitle, StringComparison.OrdinalIgnoreCase));
+                    return file == null 
+                        ? null 
+                        : SecretsManagerClient.DownloadFile(file);
                 }
 
                 var field = found.Data.fields.FirstOrDefault(x => (x.label ?? x.type).Equals(parts[1], StringComparison.OrdinalIgnoreCase));
@@ -98,7 +100,7 @@ namespace SecretManagement.Keeper
                 dict[field.label ?? field.type] = field.value[0].ToString();
             }
 
-            if (found.Files != null)
+            if (found.Files != null && found.Files.Length > 0)
             {
                 dict["Files"] = found.Files.Select(x => x.Data.title).ToArray();
             }

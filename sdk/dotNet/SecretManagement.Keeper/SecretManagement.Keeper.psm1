@@ -1,9 +1,9 @@
 function Register-KeeperVault {
   [CmdletBinding()]
   param (
-    # [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true)]
     [string] $Name,
-    # [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true)]
     [string] $OneTimeToken,
     [string] $LocalVaultName
   )
