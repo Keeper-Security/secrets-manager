@@ -1,12 +1,11 @@
 @{
-    ModuleVersion = '0.1.0'
+    ModuleVersion = '16.0.1'
     CompatiblePSEditions = @('Core')
-    GUID = '74bb5212-2a5d-451d-8f43-edf9bcd2efe8'
+    GUID = '20ab89cb-f0dd-4e8e-b276-f3a7708c1eb2'
     Author = 'Sergey Aldoukhov'
     CompanyName = 'Keeper Security'
     Copyright = '(c) 2021 Keeper Security, Inc.'
     Description = 'SecretManagement extension vault for Keeper'
-#     RootModule = './bin/Debug/netstandard2.0/SecretManagement.Keeper.dll'
     RootModule = './SecretManagement.Keeper.psm1'
     NestedModules = @('./SecretManagement.Keeper.Extension')
     PowerShellVersion = '5.1'
@@ -16,9 +15,9 @@
     AliasesToExport = @()
     PrivateData = @{
         PSData = @{
-            Tags = @('SecretManagement')
-            LicenseUri = 'bla'
-            ProjectUri = 'bla'
+            Tags = @('SecretManagement','Keeper','SecretVault','Vault','Secret','MacOS','Linux','Windows')
+            LicenseUri = 'https://github.com/Keeper-Security/secrets-manager/blob/master/LICENSE'
+            ProjectUri = 'https://github.com/Keeper-Security/secrets-manager'
             ReleaseNotes = 'Initial release'
         }
     }

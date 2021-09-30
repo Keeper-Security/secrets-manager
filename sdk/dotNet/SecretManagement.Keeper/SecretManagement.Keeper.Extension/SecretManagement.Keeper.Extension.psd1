@@ -1,13 +1,14 @@
 @{
-    ModuleVersion = '0.1.0'
+    ModuleVersion = '16.0.1'
     RootModule = 'SecretManagement.Keeper.Extension.psm1'
-    RequiredAssemblies = './bin/Debug/netstandard2.0/SecretManagement.Keeper.dll'    
+    RequiredAssemblies = '../SecretManagement.Keeper.dll'    
     CompatiblePSEditions = @('Core')
-    GUID = '6a4caa73-b31c-4df3-a751-9b96b1daf294'
+    GUID = '7ad471fa-c303-4e0f-8da7-4b4b6da380f9'
     Author = 'Sergey Aldoukhov'
     CompanyName = 'Keeper Security'
     Copyright = '(c) 2021 Keeper Security, Inc.'
     FunctionsToExport = 'Set-Secret', 'Get-Secret', 'Remove-Secret', 'Get-SecretInfo', 'Test-SecretVault', 'Set-KeeperVault'
+    CmdletsToExport = @()    
     VariablesToExport = @()
     AliasesToExport = @()
 }
