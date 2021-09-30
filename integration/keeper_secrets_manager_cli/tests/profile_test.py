@@ -243,5 +243,67 @@ color = True
             self.assertEqual("App1", profile_data[0]["name"], "found first app")
             self.assertEqual("App2", profile_data[1]["name"], "found second app")
 
+
+    def test_import_sdk_json(self):
+
+        base64_json = "eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2"\
+                      "xpZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0"\
+                      "bU5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgIC"\
+                      "AgICJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJ"\
+                      "NGlWUzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2"\
+                      "FHMmdsRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNl"\
+                      "cnZlclB1YmxpY0tleUlkIjogIjEwIiB9"
+
+        runner = CliRunner()
+
+        result = runner.invoke(cli, ['profile', 'import', base64_json], catch_exceptions=False)
+        self.assertEqual(0, result.exit_code, "did not get a success on list")
+        self.assertTrue(os.path.exists("keeper.ini"), "the ini config doesn't exists")
+
+        config = configparser.ConfigParser()
+        config.read(Profile.default_ini_file)
+
+        profile = config["_default"]
+        self.assertIsNotNone(profile, "could not find the profile")
+        self.assertEqual("8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=", profile.get("appKey"),
+                         "did not get the correct app key")
+        self.assertEqual("keepersecurity.com", profile.get("hostname"), "did not get the correct hostname")
+
+    def test_auto_config_sdk_json(self):
+
+        base64_json = "eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2"\
+                      "xpZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0"\
+                      "bU5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgIC"\
+                      "AgICJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJ"\
+                      "NGlWUzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2"\
+                      "FHMmdsRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNl"\
+                      "cnZlclB1YmxpY0tleUlkIjogIjEwIiB9"
+
+
+        runner = CliRunner()
+
+        # Create two configs
+        os.environ["KSM_CONFIG_BASE64_1"] = base64_json
+        os.environ["KSM_CONFIG_BASE64_DESC_1"] = "SDK"
+
+        # Using a file output due to cli runner joining stdout and stderr
+        with tempfile.NamedTemporaryFile() as tf:
+            result = runner.invoke(cli, [
+                '-o', tf.name,
+                'profile', 'list', '--json'], catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "did not get a success on list")
+            tf.seek(0)
+            profile_data = json.load(tf)
+            self.assertEqual("SDK", profile_data[0]["name"], "found first app")
+
+            config = configparser.ConfigParser()
+            config.read(Profile.default_ini_file)
+
+            profile = config["SDK"]
+            self.assertIsNotNone(profile, "could not find the profile")
+            self.assertEqual("8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=", profile.get("appKey"),
+                             "did not get the correct app key")
+            self.assertEqual("keepersecurity.com", profile.get("hostname"), "did not get the correct hostname")
+
 if __name__ == '__main__':
     unittest.main()

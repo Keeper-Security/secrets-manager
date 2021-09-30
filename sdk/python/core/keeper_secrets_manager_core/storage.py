@@ -7,7 +7,7 @@
 # Keeper Secrets Manager
 # Copyright 2021 Keeper Security Inc.
 # Contact: ops@keepersecurity.com
-
+import base64
 import logging
 import os
 import json
@@ -16,7 +16,7 @@ import json
 import errno
 from json import JSONDecodeError
 
-from keeper_secrets_manager_core import exceptions
+from keeper_secrets_manager_core import exceptions, utils
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.keeper_globals import logger_name
 from keeper_secrets_manager_core.utils import ENCODING, json_to_dict
@@ -155,6 +155,11 @@ class InMemoryKeyValueStorage(KeyValueStorage):
             config = {}
 
         elif isinstance(config, str):
+
+            if InMemoryKeyValueStorage.is_base64(config):
+                # Decode if config json was provided as base64 string
+                config = utils.base64_to_string(config)
+
             config = json_to_dict(config)
             if not config:
                 raise exceptions.KeeperError("Could not load config data. Json text size: %s" % str(len(config)))
@@ -188,3 +193,10 @@ class InMemoryKeyValueStorage(KeyValueStorage):
 
     def contains(self, key: ConfigKeys):
         return key in self.config
+
+    @staticmethod
+    def is_base64(s):
+        try:
+            return base64.b64encode(base64.b64decode(s)) == str.encode(s)
+        except:
+            return False
