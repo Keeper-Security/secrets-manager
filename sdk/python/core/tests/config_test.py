@@ -101,6 +101,24 @@ class ConfigTest(unittest.TestCase):
                              "did not get correct server")
             self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "Client key is not present")
 
+    def test_onetime_token_formats_abbrev(self):
+        secrets_manager = SecretsManager(token="US:ABC123", hostname='localhost')
+
+        self.assertEqual(secrets_manager.hostname, "keepersecurity.com", "did not get correct server")
+        self.assertIsNone(secrets_manager.token, "One time token/Client key is not present")
+
+        self.assertEqual(secrets_manager.config.get(ConfigKeys.KEY_HOSTNAME), "keepersecurity.com", "did not get correct server")
+        self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "Client key is not present")
+
+    def test_onetime_token_formats_hostname(self):
+        secrets_manager = SecretsManager(token="fake.keepersecurity.com:ABC123", hostname='localhost')
+
+        self.assertEqual(secrets_manager.hostname, "fake.keepersecurity.com", "did not get correct server")
+        self.assertIsNone(secrets_manager.token, "One time token/Client key is not present")
+
+        self.assertEqual(secrets_manager.config.get(ConfigKeys.KEY_HOSTNAME), "fake.keepersecurity.com", "did not get correct server")
+        self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "Client key is not present")
+
     def test_pass_in_config(self):
 
         default_config_name = FileKeyValueStorage.default_config_file_location
