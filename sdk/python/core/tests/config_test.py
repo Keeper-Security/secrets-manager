@@ -114,7 +114,7 @@ class ConfigTest(unittest.TestCase):
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(b64config_str), token="US:ABC123", hostname='localhost')
 
         self.assertEqual(secrets_manager.hostname, "keepersecurity.com", "did not get correct server")
-        self.assertIsNone(secrets_manager.token, "One time token/Client key is not present")
+        self.assertEqual(secrets_manager.token, 'ABC123', "One time token/Client key don't match")
 
         self.assertEqual(secrets_manager.config.get(ConfigKeys.KEY_HOSTNAME), "keepersecurity.com", "did not get correct server")
         self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "Client key is not present")
@@ -132,7 +132,7 @@ class ConfigTest(unittest.TestCase):
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(b64config_str), token="fake.keepersecurity.com:ABC123", hostname='localhost')
 
         self.assertEqual(secrets_manager.hostname, "fake.keepersecurity.com", "did not get correct server")
-        self.assertIsNone(secrets_manager.token, "One time token/Client key is not present")
+        self.assertEqual(secrets_manager.token, 'ABC123', "One time token/Client key don't match")
 
         self.assertEqual(secrets_manager.config.get(ConfigKeys.KEY_HOSTNAME), "fake.keepersecurity.com", "did not get correct server")
         self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "Client key is not present")
