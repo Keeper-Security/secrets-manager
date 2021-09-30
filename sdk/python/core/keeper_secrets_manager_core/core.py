@@ -15,7 +15,6 @@ from distutils.util import strtobool
 import re
 import json
 from http import HTTPStatus
-import base64
 
 import requests
 
@@ -27,7 +26,7 @@ from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, T
     EncryptedPayload, KSMHttpResponse
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys, \
-    logger_name
+    logger_name, keeper_servers
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
     url_safe_str_to_bytes, bytes_to_base64, string_to_bytes
@@ -48,8 +47,34 @@ class SecretsManager:
                  token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None,
                  custom_post_function=None):
 
-        self.token = token
-        self.hostname = hostname
+        self.token = None
+        self.hostname = None
+
+        if token:
+
+            token = token.strip()
+
+            token_parts = token.split(":")
+
+            if len(token_parts) == 1:
+                if not hostname:
+                    raise ValueError('The hostname must be present in the token or provided as a parameter')
+
+                self.token = token
+                self.hostname = hostname
+            else:
+                token_host = keeper_servers.get(token_parts[0].upper())
+
+                if token_host:
+                    # meaning that token contained abbreviation:
+                    #   ex. 'US:c0rwWQDMm517A9xXjZundtVSWVZqRrFD3Qc6dStUfPg'
+                    self.hostname = token_host
+                else:
+                    # meaning that token contained url prefix:
+                    #   ex. keepersecurity.com:c0rwWQDMm517A9xXjZundtVSWVZqRrFD3Qc6dStUfPg
+                    self.hostname = token_parts[0]
+
+                self.token = keeper_servers.get(token_parts[1])
 
         # Init the log, create a logger for the core.
         self._init_logger(log_level=log_level)
@@ -69,9 +94,9 @@ class SecretsManager:
         # If the server or client key are set in the args, make sure they makes it's way into the config. They
         # will override what is already in the config if they exist.
         if token is not None:
-            config.set(ConfigKeys.KEY_CLIENT_KEY, token)
+            config.set(ConfigKeys.KEY_CLIENT_KEY, self.token)
         if hostname is not None:
-            config.set(ConfigKeys.KEY_HOSTNAME, hostname)
+            config.set(ConfigKeys.KEY_HOSTNAME, self.hostname)
 
         # Make sure our public key id is set and pointing an existing key.
         if config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID) is None:

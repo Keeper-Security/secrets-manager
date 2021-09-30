@@ -76,5 +76,5 @@ keeper_servers = {
     'US': 'keepersecurity.com',
     'EU': 'keepersecurity.eu',
     'AU': 'keepersecurity.com.au',
-    'US_GOV': 'govcloud.keepersecurity.us'
+    'GOV': 'govcloud.keepersecurity.us'
 }

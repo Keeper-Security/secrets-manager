@@ -101,6 +101,42 @@ class ConfigTest(unittest.TestCase):
                              "did not get correct server")
             self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "Client key is not present")
 
+    def test_onetime_token_formats_abbrev(self):
+
+        b64config_str = 'eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2x' \
+                        'pZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0bU' \
+                        '5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgICAgI' \
+                        'CJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJNGlW' \
+                        'UzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2FHMmd' \
+                        'sRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNlcnZlcl' \
+                        'B1YmxpY0tleUlkIjogIjEwIiB9'
+
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(b64config_str), token="US:ABC123", hostname='localhost')
+
+        self.assertEqual(secrets_manager.hostname, "keepersecurity.com", "did not get correct server")
+        self.assertIsNone(secrets_manager.token, "One time token/Client key is not present")
+
+        self.assertEqual(secrets_manager.config.get(ConfigKeys.KEY_HOSTNAME), "keepersecurity.com", "did not get correct server")
+        self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "Client key is not present")
+
+    def test_onetime_token_formats_hostname(self):
+
+        b64config_str = 'eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2x' \
+                        'pZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0bU' \
+                        '5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgICAgI' \
+                        'CJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJNGlW' \
+                        'UzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2FHMmd' \
+                        'sRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNlcnZlcl' \
+                        'B1YmxpY0tleUlkIjogIjEwIiB9'
+
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(b64config_str), token="fake.keepersecurity.com:ABC123", hostname='localhost')
+
+        self.assertEqual(secrets_manager.hostname, "fake.keepersecurity.com", "did not get correct server")
+        self.assertIsNone(secrets_manager.token, "One time token/Client key is not present")
+
+        self.assertEqual(secrets_manager.config.get(ConfigKeys.KEY_HOSTNAME), "fake.keepersecurity.com", "did not get correct server")
+        self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "Client key is not present")
+
     def test_pass_in_config(self):
 
         default_config_name = FileKeyValueStorage.default_config_file_location
