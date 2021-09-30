@@ -19,12 +19,12 @@ initialize(version)
 
 // const configFileName = 'client-config-admin+rte.json'
 // const clientKey = '122iGmGds8JSRem1aJZN1r8PNiG2a6UyoLa4j60kGcY'
-const configFileName = 'client-config-prod.json'
-const clientKey = 'wdTD7eiBhamTUmoliQ4gkY35Z2ZzNSrTBBIaChdjXlg'
+const configFileName = 'client-config-new.json'
+const clientKey = 'US:ZJOEornylurkGjdZ_Ff6zjeFtdf0TgZuU3zcp7XswyI'
 
 async function test() {
     const kvs = localConfigStorage(configFileName)
-    // await initializeStorage(kvs, clientKey, 'dev.keepersecurity.com')
+    await initializeStorage(kvs, clientKey)
     const options: SecretManagerOptions = {
         storage: kvs,
         // queryFunction: cachingPostFunction
