@@ -47,26 +47,34 @@ class SecretsManager:
                  token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None,
                  custom_post_function=None):
 
-        token_parts = token.split(":")
+        self.token = None
+        self.hostname = None
 
-        if len(token_parts) == 1:
-            if not hostname:
-                raise ValueError('The hostname must be present in the token or provided as a parameter')
+        if token:
 
-            self.token = token
-            self.hostname = hostname
-        else:
+            token = token.strip()
 
-            token_host = keeper_servers.get(token_parts[0].upper())
+            token_parts = token.split(":")
 
-            if token_host:
-                # meaning token contained abbreviation: ex. 'US:c0rwWQDMm517A9xXjZundtVSWVZqRrFD3Qc6dStUfPg'
-                self.hostname = token_host
+            if len(token_parts) == 1:
+                if not hostname:
+                    raise ValueError('The hostname must be present in the token or provided as a parameter')
+
+                self.token = token
+                self.hostname = hostname
             else:
-                # meaning token contained url prefix: ex. keepersecurity.com:c0rwWQDMm517A9xXjZundtVSWVZqRrFD3Qc6dStUfPg
-                self.hostname = token_parts[0]
+                token_host = keeper_servers.get(token_parts[0].upper())
 
-            self.token = keeper_servers.get(token_parts[1])
+                if token_host:
+                    # meaning that token contained abbreviation:
+                    #   ex. 'US:c0rwWQDMm517A9xXjZundtVSWVZqRrFD3Qc6dStUfPg'
+                    self.hostname = token_host
+                else:
+                    # meaning that token contained url prefix:
+                    #   ex. keepersecurity.com:c0rwWQDMm517A9xXjZundtVSWVZqRrFD3Qc6dStUfPg
+                    self.hostname = token_parts[0]
+
+                self.token = keeper_servers.get(token_parts[1])
 
         # Init the log, create a logger for the core.
         self._init_logger(log_level=log_level)

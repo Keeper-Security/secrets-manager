@@ -102,7 +102,16 @@ class ConfigTest(unittest.TestCase):
             self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "Client key is not present")
 
     def test_onetime_token_formats_abbrev(self):
-        secrets_manager = SecretsManager(token="US:ABC123", hostname='localhost')
+
+        b64config_str = 'eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2x' \
+                        'pZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0bU' \
+                        '5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgICAgI' \
+                        'CJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJNGlW' \
+                        'UzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2FHMmd' \
+                        'sRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNlcnZlcl' \
+                        'B1YmxpY0tleUlkIjogIjEwIiB9'
+
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(b64config_str), token="US:ABC123", hostname='localhost')
 
         self.assertEqual(secrets_manager.hostname, "keepersecurity.com", "did not get correct server")
         self.assertIsNone(secrets_manager.token, "One time token/Client key is not present")
@@ -111,7 +120,16 @@ class ConfigTest(unittest.TestCase):
         self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "Client key is not present")
 
     def test_onetime_token_formats_hostname(self):
-        secrets_manager = SecretsManager(token="fake.keepersecurity.com:ABC123", hostname='localhost')
+
+        b64config_str = 'eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2x' \
+                        'pZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0bU' \
+                        '5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgICAgI' \
+                        'CJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJNGlW' \
+                        'UzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2FHMmd' \
+                        'sRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNlcnZlcl' \
+                        'B1YmxpY0tleUlkIjogIjEwIiB9'
+
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(b64config_str), token="fake.keepersecurity.com:ABC123", hostname='localhost')
 
         self.assertEqual(secrets_manager.hostname, "fake.keepersecurity.com", "did not get correct server")
         self.assertIsNone(secrets_manager.token, "One time token/Client key is not present")
@@ -214,3 +232,45 @@ class ConfigTest(unittest.TestCase):
             "the public key is not set the default after bad key id"
         )
 
+    def test_in_memory_base64_config(self):
+
+        # Json:
+        # {
+        #     "appKey": "MY APP KEY",
+        #     "clientId": "MY CLIENT ID",
+        #     "hostname": "fake.keepersecurity.com",
+        #     "privateKey": "MY PRIVATE KEY",
+        #     "serverPublicKeyId": "2"
+        # }
+        #
+        # Above json in base64:
+        # ewoiYXBwS2V5IjogIk1ZIEFQUCBLRVkiLCAKImNsaWVudElkIjogIk1ZIENMSUVOVCBJRCIsIAoiaG9zdG5hbWUiOiAiZmFrZS5rZWVwZXJzZWN1cml0eS5jb20iLCAicHJpdmF0ZUtleSI6ICJNWSBQUklWQVRFIEtFWSIsCiJzZXJ2ZXJQdWJsaWNLZXlJZCI6ICIyIgp9
+
+        b64config_str = 'ewoiYXBwS2V5IjogIk1ZIEFQUCBLRVkiLCAKImNsaWVudElkIjogIk1ZIENMSUVOVCBJRCIsIAoiaG9zdG5hbWUiOiA' \
+                        'iZmFrZS5rZWVwZXJzZWN1cml0eS5jb20iLCAicHJpdmF0ZUtleSI6ICJNWSBQUklWQVRFIEtFWSIsCiJzZXJ2ZXJQdW' \
+                        'JsaWNLZXlJZCI6ICIyIgp9'
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(b64config_str))
+        dict_config = secrets_manager.config.read_storage()
+
+        self.assertEqual("MY APP KEY", dict_config.get(ConfigKeys.KEY_APP_KEY.value),
+                         "got correct app key")
+        self.assertEqual("MY CLIENT ID", dict_config.get(ConfigKeys.KEY_CLIENT_ID.value),
+                         "got correct client id")
+        self.assertEqual("fake.keepersecurity.com", dict_config.get(ConfigKeys.KEY_HOSTNAME.value),
+                         "got correct hostname")
+        self.assertEqual("MY PRIVATE KEY", dict_config.get(ConfigKeys.KEY_PRIVATE_KEY.value),
+                         "got correct private key")
+        self.assertEqual("2", dict_config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID.value),
+                         "got correct server public key id")
+        # Pass in the config
+        secrets_manager = SecretsManager(config=secrets_manager.config)
+
+        # Is not bound, client id and private key will be generated and overwrite existing
+        self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_ID), "got a client id")
+        self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_PRIVATE_KEY), "got a private key")
+        self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_APP_KEY), "got an app key")
+        self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_HOSTNAME), "got a hostname")
+        self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID), "got a public key id")
+
+        # App key should be removed.
+        self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "client key (one time token) was removed successfully")
