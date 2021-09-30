@@ -62,7 +62,7 @@ namespace SecretManagement.Keeper
 
         public static async Task<object> GetSecret(string name, Hashtable config)
         {
-            var parts = name.Split(new char[] { '.' }, 2);
+            var parts = name.Split(new[] { '.' }, 2);
             var (records, _) = await GetKeeperSecrets(config);
             var found = records.FirstOrDefault(x => x.Data.title == parts[0]);
             if (found == null)
