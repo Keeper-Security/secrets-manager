@@ -74,7 +74,7 @@ class SecretsManager:
                     #   ex. keepersecurity.com:c0rwWQDMm517A9xXjZundtVSWVZqRrFD3Qc6dStUfPg
                     self.hostname = token_parts[0]
 
-                self.token = keeper_servers.get(token_parts[1])
+                self.token = token_parts[1]
 
         # Init the log, create a logger for the core.
         self._init_logger(log_level=log_level)
