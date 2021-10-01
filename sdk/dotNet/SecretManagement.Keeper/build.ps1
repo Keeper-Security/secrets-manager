@@ -42,7 +42,7 @@ if ($Publish) {
     if (!$APIKey) {
         $APIKey = Read-Host 'API Key'
     }
-    Publish-Module -Path ./out/SecretManagement.Keeper -NuGetApiKey $APIKey -Verbose
+    Publish-Module -Path ./out/SecretManagement.Keeper -NuGetApiKey $APIKey -Verbose -WhatIf
 }
 
 Pop-Location

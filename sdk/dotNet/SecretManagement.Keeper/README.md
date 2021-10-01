@@ -5,7 +5,7 @@
 Pre-requisites are installed Microsoft.PowerShell.SecretManagement module, plus one of the extension vaults from [Microsoft SecretManagement](https://www.powershellgallery.com/packages?q=Tags%3A%22SecretManagement%22). The extension vault is used to store Keeper configuration, and we recommend that you use an extension that stores the secrets locally. [Microsoft.Powershell.SecretStore](https://www.powershellgallery.com/packages/Microsoft.PowerShell.SecretStore) and [SecretManagement.KeyChain](https://www.powershellgallery.com/packages/SecretManagement.KeyChain) are the good candidates for the job.
 
 ```PowerShell
-Install-Module Microsoft.PowerShell.SecretManagement, SecretsManagement.Keeper, SecretManagement.KeyChain
+Install-Module Microsoft.PowerShell.SecretManagement, SecretManagement.Keeper, SecretManagement.KeyChain
 ```
 Then, if you don't have a vault already, create a vault that would be used to store [Keeper Secrets Manager](https://docs.keeper.io/secrets-manager/secrets-manager) configuration (you will be using the name of this vault to register Keeper Vault): 
 
@@ -81,5 +81,5 @@ Remove-Secret ALL -Vault "Keeper"
 To download a file, use dot notation while specifying the file title in square brackets, and pipeline the binary output to the Set-Content Cmdlet:
 
 ```PowerShell
-Get-Secret R2.files[file1.json] | Set-Content -Path ./file1.json -AsByteStream
+Get-Secret R2.files[file1.json] -Vault Keeper | Set-Content -Path ./file1.json -AsByteStream
 ```

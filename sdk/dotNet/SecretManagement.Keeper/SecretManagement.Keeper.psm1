@@ -36,4 +36,6 @@ function Register-KeeperVault {
     LocalVaultName = $LocalVaultName
   }
   Microsoft.Powershell.SecretManagement\Register-SecretVault -Name $Name -ModuleName SecretManagement.Keeper -VaultParameters $vaultParameters
+  # for local testing
+  # Microsoft.Powershell.SecretManagement\Register-SecretVault -Name $Name -ModuleName ./SecretManagement.Keeper.psd1 -VaultParameters $vaultParameters
 }
