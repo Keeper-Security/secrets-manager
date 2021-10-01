@@ -1,5 +1,5 @@
 @{
-    ModuleVersion = '16.0.1'
+    ModuleVersion = '16.0.2'
     CompatiblePSEditions = @('Core')
     GUID = '20ab89cb-f0dd-4e8e-b276-f3a7708c1eb2'
     Author = 'Sergey Aldoukhov'
@@ -18,6 +18,7 @@
             Tags = @('SecretManagement','Keeper','SecretVault','Vault','Secret','MacOS','Linux','Windows')
             LicenseUri = 'https://github.com/Keeper-Security/secrets-manager/blob/master/LICENSE'
             ProjectUri = 'https://github.com/Keeper-Security/secrets-manager'
+            IconUri  = 'https://keeper-email-images.s3.amazonaws.com/common/powershell.png'
             ReleaseNotes = 'Initial release'
         }
     }
