@@ -65,13 +65,23 @@ const exportPublicKey = async (keyId: string, storage: KeyValueStorage): Promise
     return privateDerToPublicRaw(privateKeyDer)
 }
 
+const privateDerToPEM = (key: Uint8Array): string => {
+    const rawPrivate = key.slice(36, 68)
+    const rawPublic = key.slice(-65)
+    const keyData1 = Buffer.of(0x30, 0x77, 0x02, 0x01, 0x01, 0x04, 0x20)
+    const keyData2 = Buffer.of(0xa0, 0x0a, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0xa1, 0x44, 0x03, 0x42, 0x00)
+    return `-----BEGIN EC PRIVATE KEY-----\n${bytesToBase64(Buffer.concat([keyData1, rawPrivate, keyData2, rawPublic]))}\n-----END EC PRIVATE KEY-----`
+}
+
 const sign = async (data: Uint8Array, keyId: string, storage: KeyValueStorage): Promise<Uint8Array> => {
     const privateKeyDer = await loadKey(keyId, storage)
-    const key = createPrivateKey({
-        key: Buffer.from(privateKeyDer),
-        format: 'der',
-        type: 'pkcs8',
-    })
+    const key = privateDerToPEM(privateKeyDer)
+    // TODO revert to using createPrivateKey when node 10 interop is not needed anymore
+    // const key = createPrivateKey({
+    //     key: Buffer.from(privateKeyDer),
+    //     format: 'der',
+    //     type: 'pkcs8',
+    // })
     const sign = createSign('SHA256')
     sign.update(data)
     const sig = sign.sign(key)
