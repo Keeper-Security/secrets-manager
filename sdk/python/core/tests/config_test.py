@@ -14,9 +14,13 @@ class ConfigTest(unittest.TestCase):
 
         self.orig_working_dir = os.getcwd()
 
+        # Make the the config is not set in the env var. Will screw up certain tests.
+        os.environ.pop("KSM_CONFIG", None)
+
     def tearDown(self):
 
         os.chdir(self.orig_working_dir)
+        os.environ.pop("KSM_CONFIG", None)
 
     def test_missing_config(self):
 
@@ -250,6 +254,53 @@ class ConfigTest(unittest.TestCase):
                         'iZmFrZS5rZWVwZXJzZWN1cml0eS5jb20iLCAicHJpdmF0ZUtleSI6ICJNWSBQUklWQVRFIEtFWSIsCiJzZXJ2ZXJQdW' \
                         'JsaWNLZXlJZCI6ICIyIgp9'
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(b64config_str))
+        dict_config = secrets_manager.config.read_storage()
+
+        self.assertEqual("MY APP KEY", dict_config.get(ConfigKeys.KEY_APP_KEY.value),
+                         "got correct app key")
+        self.assertEqual("MY CLIENT ID", dict_config.get(ConfigKeys.KEY_CLIENT_ID.value),
+                         "got correct client id")
+        self.assertEqual("fake.keepersecurity.com", dict_config.get(ConfigKeys.KEY_HOSTNAME.value),
+                         "got correct hostname")
+        self.assertEqual("MY PRIVATE KEY", dict_config.get(ConfigKeys.KEY_PRIVATE_KEY.value),
+                         "got correct private key")
+        self.assertEqual("2", dict_config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID.value),
+                         "got correct server public key id")
+        # Pass in the config
+        secrets_manager = SecretsManager(config=secrets_manager.config)
+
+        # Is not bound, client id and private key will be generated and overwrite existing
+        self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_ID), "got a client id")
+        self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_PRIVATE_KEY), "got a private key")
+        self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_APP_KEY), "got an app key")
+        self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_HOSTNAME), "got a hostname")
+        self.assertIsNotNone(secrets_manager.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID), "got a public key id")
+
+        # App key should be removed.
+        self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "client key (one time token) was removed successfully")
+
+    def test_in_memory_base64_config_via_env(self):
+
+        # Json:
+        # {
+        #     "appKey": "MY APP KEY",
+        #     "clientId": "MY CLIENT ID",
+        #     "hostname": "fake.keepersecurity.com",
+        #     "privateKey": "MY PRIVATE KEY",
+        #     "serverPublicKeyId": "2"
+        # }
+        #
+        # Above json in base64:
+        # ewoiYXBwS2V5IjogIk1ZIEFQUCBLRVkiLCAKImNsaWVudElkIjogIk1ZIENMSUVOVCBJRCIsIAoiaG9zdG5hbWUiOiAiZmFrZS5rZWVwZXJzZWN1cml0eS5jb20iLCAicHJpdmF0ZUtleSI6ICJNWSBQUklWQVRFIEtFWSIsCiJzZXJ2ZXJQdWJsaWNLZXlJZCI6ICIyIgp9
+
+        b64config_str = 'ewoiYXBwS2V5IjogIk1ZIEFQUCBLRVkiLCAKImNsaWVudElkIjogIk1ZIENMSUVOVCBJRCIsIAoiaG9zdG5hbWUiOiA' \
+                        'iZmFrZS5rZWVwZXJzZWN1cml0eS5jb20iLCAicHJpdmF0ZUtleSI6ICJNWSBQUklWQVRFIEtFWSIsCiJzZXJ2ZXJQdW' \
+                        'JsaWNLZXlJZCI6ICIyIgp9'
+
+        # Put the config into an
+        os.environ["KSM_CONFIG"] = b64config_str
+
+        secrets_manager = SecretsManager()
         dict_config = secrets_manager.config.read_storage()
 
         self.assertEqual("MY APP KEY", dict_config.get(ConfigKeys.KEY_APP_KEY.value),
