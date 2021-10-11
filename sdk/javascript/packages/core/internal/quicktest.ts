@@ -11,7 +11,7 @@ import {connectPlatform} from '../src/platform';
 import {inspect} from 'util';
 import {cachingPostFunction, localConfigStorage} from "../src/node";
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+// process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 
 const version = require("../package.json").version;
 connectPlatform(nodePlatform)
@@ -19,15 +19,16 @@ initialize(version)
 
 // const configFileName = 'client-config-admin+rte.json'
 // const clientKey = '122iGmGds8JSRem1aJZN1r8PNiG2a6UyoLa4j60kGcY'
-const configFileName = 'client-config-new.json'
-const clientKey = 'US:ZJOEornylurkGjdZ_Ff6zjeFtdf0TgZuU3zcp7XswyI'
+const clientKey = 'US:Oc4nJ6etAQ46Rlm-HmbZHJjgOQDzTuDWpBUfvWp9SAw'
+const configFileName = `client-config-${clientKey.replace(':', '_')}.json`
+
 
 async function test() {
     const kvs = localConfigStorage(configFileName)
     await initializeStorage(kvs, clientKey)
     const options: SecretManagerOptions = {
         storage: kvs,
-        // queryFunction: cachingPostFunction
+        queryFunction: cachingPostFunction
         // allowUnverifiedCertificate: true
     }
     const { records } = await getSecrets(options)
