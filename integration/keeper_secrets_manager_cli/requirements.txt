@@ -1,6 +1,9 @@
 keeper-secrets-manager-core
+prompt-toolkit~=2.0
 jsonpath-rw-ext
 colorama
 importlib_metadata
 click
 click_help_colors
+click-repl
+pyyaml

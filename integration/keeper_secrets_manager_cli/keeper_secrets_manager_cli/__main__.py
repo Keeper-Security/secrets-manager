@@ -12,11 +12,14 @@
 
 import click
 from click_help_colors import HelpColorsGroup, HelpColorsCommand
+from click_repl import repl, exit as repl_exit
 from colorama import Fore, Style, init
 from . import KeeperCli
+from .exception import KsmCliException
 from .exec import Exec
 from .secret import Secret
 from .profile import Profile
+from .init import Init
 import sys
 import os
 import keeper_secrets_manager_core
@@ -28,6 +31,7 @@ import typing as t
 # NOTE: For the CLI, all groups and command are lowercase. All arguments are lower case, so you cannot use
 # -n and -N for an arg flag. If you add a command, you need to add it to the list of known commands so we can
 # do a best match.
+
 
 class AliasedGroup(HelpColorsGroup):
 
@@ -61,7 +65,10 @@ class AliasedGroup(HelpColorsGroup):
         "d": "download",
         "n": "notation",
         "u": "update",
-        "v": "version"
+        "v": "version",
+        "exit": "quit",
+        "q": "quit",
+        "help": "--help"
     }
 
     def get_command(self, ctx, cmd_name):
@@ -92,7 +99,6 @@ class AliasedGroup(HelpColorsGroup):
                 cmd_name = best_command
         return super().get_command(ctx, cmd_name)
 
-
     def parse_args(self, ctx, args: t.List[str]):
 
         """ Convert any argument case-insensitive.
@@ -110,8 +116,10 @@ class AliasedGroup(HelpColorsGroup):
 
         return super().parse_args(ctx, new_args)
 
+
 def _get_cli(**kwargs):
     return KeeperCli(**kwargs)
+
 
 def base_command_help(f):
     doc = f.__doc__
@@ -146,27 +154,16 @@ def cli(ctx, ini_file, profile_name, output, color):
 
     """Keeper Secrets Manager CLI
     """
-
-    try:
-        ctx.obj = {
-            "cli": _get_cli(ini_file=ini_file, profile_name=profile_name, output=output, use_color=color),
-            "ini_file": ini_file,
-            "profile_name": profile_name,
-            "output": output,
-            "use_color": color
-        }
-    except FileNotFoundError as _:
-        sys.exit("Could not find the INI file specified on the top level command. If you are running the init"
-                 " sub-command, specify the INI file on the sub-command parameters instead on the top level command.")
-    except Exception as err:
-        # Set KSM_DEBUG to get a stack trace. Secret env var.
-        if os.environ.get("KSM_DEBUG") is not None:
-            print(traceback.format_exc(), file=sys.stderr)
-        sys.exit("Could not run the command. Got the error: {}".format(err))
+    ctx.obj = {
+        "cli": _get_cli(ini_file=ini_file, profile_name=profile_name, output=output, use_color=color),
+        "ini_file": ini_file,
+        "profile_name": profile_name,
+        "output": output,
+        "use_color": color
+    }
 
 
 # PROFILE GROUP
-
 
 @click.group(
     name='profile',
@@ -184,13 +181,19 @@ def profile_command():
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-@click.option('--token', '-t', type=str, required=True, help="The One Time Access Token.")
-@click.option('--hostname', '-h', type=str, default="US", help="Hostname of secrets manager server.")
+@click.option('--token', '-t', type=str, help="The One Time Access Token.")
+@click.option('--hostname', '-h', type=str, help="Hostname of secrets manager server.")
 @click.option('--ini-file', type=str, help="INI config file to create.")
 @click.option('--profile-name', '-p', type=str, help='Config profile to create.')
+@click.argument('token-arg', type=str, nargs=-1)
 @click.pass_context
-def profile_init_command(ctx, token, hostname, ini_file, profile_name):
+def profile_init_command(ctx, token, hostname, ini_file, profile_name, token_arg):
     """Initialize a profile."""
+
+    if token is None and len(token_arg) > 0:
+        token = token_arg[0]
+    if token is None:
+        sys.exit("An one time access token is required either as a command parameter or an argument.")
 
     # Since the top level commands are available for all command, it might be confusing the init command since
     # it take
@@ -271,6 +274,7 @@ def profile_import_command(ctx, output_file, config_base64):
         config_base64=config_base64
     )
 
+
 profile_command.add_command(profile_init_command)
 profile_command.add_command(profile_list_command)
 profile_command.add_command(profile_active_command)
@@ -324,13 +328,12 @@ def secret_list_command(ctx, uid, json):
 @click.option('--field', '-f', type=str, help='Field to get.')
 @click.option('--query', '-q', type=str, help='Perform a JSONPath query on results.')
 @click.option('--json', is_flag=True, help='Return secret as JSON')
-@click.option('--raw', is_flag=True, help="Remove quotes on return quote text.")
 @click.option('--force-array', is_flag=True, help="Return secrets as array even if a single record.")
 @click.option('--unmask', is_flag=True, help="Show password like values in table views.")
 @click.option('--inflate/--deflate', default=True, help="Load in outside records.")
 @click.argument('extra-uid', type=str, nargs=-1)
 @click.pass_context
-def secret_get_command(ctx, uid, title, field, query, json, raw, force_array, unmask, inflate, extra_uid):
+def secret_get_command(ctx, uid, title, field, query, json, force_array, unmask, inflate, extra_uid):
     """Get secret record(s)."""
 
     uid_list = []
@@ -348,10 +351,10 @@ def secret_get_command(ctx, uid, title, field, query, json, raw, force_array, un
     total_query = len(uid_list) + len(title)
 
     if total_query == 0:
-        sys.exit("No uid or title specified for secret get command.")
+        raise Exception("No uid or title specified for secret get command.")
 
     if total_query > 1 and field is not None:
-        sys.exit("Cannot perform field search on multiple records. Only choose one uid/title.")
+        raise Exception("Cannot perform field search on multiple records. Only choose one uid/title.")
 
     ctx.obj["secret"].query(
         uids=uid_list,
@@ -359,7 +362,6 @@ def secret_get_command(ctx, uid, title, field, query, json, raw, force_array, un
         field=field,
         jsonpath_query=query,
         output_format=output,
-        raw=raw,
         force_array=force_array,
         load_references=True,
         unmask=unmask,
@@ -468,6 +470,7 @@ def config_show_command(ctx):
     """Show current configuration."""
     ctx.obj["profile"].show_config()
 
+
 @click.command(
     name='color',
     cls=HelpColorsCommand,
@@ -482,6 +485,61 @@ def config_log_command(ctx, enable):
 
 config_command.add_command(config_show_command)
 config_command.add_command(config_log_command)
+
+
+# REDEEM COMMAND
+@click.group(
+    name='init',
+    cls=AliasedGroup,
+    help_headers_color='yellow',
+    help_options_color='green'
+)
+@click.pass_context
+def init_command(ctx):
+    """Redeem an one time access token."""
+    ctx.obj["profile"] = Profile(cli=ctx.obj["cli"])
+
+
+@click.command(
+    name='k8s',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--name', '-n', type=str, help="Name of secret", default='ksm-config')
+@click.option('--namespace', '--ns', type=str, help="Namespace", default='default')
+@click.option('--hostname', '-h', type=str, help="Hostname of secrets manager server.")
+@click.option('--apply', '-a', is_flag=True, help='Apply to k8s secrets.')
+@click.option('--immutable', '-i', is_flag=True, help='Make secret immutable (Kubernetes >=v1.21)')
+@click.option('--skip-ssl-verify', is_flag=True, help='Skip the SSL verify')
+@click.argument('token', type=str, nargs=1)
+@click.pass_context
+def init_k8s_command(ctx, name, namespace, hostname, apply, immutable, skip_ssl_verify, token):
+    """Output the config as a k8s secret."""
+    Init(cli=ctx.obj["cli"], token=token, hostname=hostname, skip_ssl_verify=skip_ssl_verify).get_k8s(
+        name=name,
+        namespace=namespace,
+        immutable=immutable,
+        apply=apply)
+
+
+# Want to use json, however click is using some reflection which is picking up the json module :/
+@click.command(
+    name='default',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--plain', is_flag=True, help='do not Base64 encode.')
+@click.option('--hostname', '-h', type=str, help="Hostname of secrets manager server.")
+@click.option('--skip-ssl-verify', is_flag=True, help='Skip the SSL verify')
+@click.argument('token', type=str, nargs=1)
+@click.pass_context
+def init_json_command(ctx, plain, hostname, skip_ssl_verify, token):
+    """Output the config as the default JSON."""
+    Init(cli=ctx.obj["cli"], token=token, hostname=hostname, skip_ssl_verify=skip_ssl_verify).get_json(plain)
+
+
+init_command.add_command(init_json_command)
+init_command.add_command(init_k8s_command)
 
 
 @click.command(
@@ -517,19 +575,46 @@ def version_command(ctx):
     print("Config file: {}".format(ctx.obj["cli"].profile.ini_file))
 
 
+@click.command(
+    name='shell',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+def shell_command():
+    """Run KSM in a shell"""
+
+    KsmCliException.in_a_shell = True
+    repl(click.get_current_context(), prompt_kwargs={
+        "message": u'KSM Shell (? for help) > '
+    })
+
+
+@click.command(
+    name='quit',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+def quit_command():
+    """Quit shell mode"""
+    repl_exit()
+
+
 # TOP LEVEL COMMANDS
 cli.add_command(profile_command)
 cli.add_command(secret_command)
 cli.add_command(exec_command)
 cli.add_command(config_command)
+cli.add_command(init_command)
 cli.add_command(version_command)
+cli.add_command(shell_command)
+cli.add_command(quit_command)
 
 
 def main():
     try:
         # This init colors for Windows. CMD looks great. PS has no yellow :(
         init()
-        cli(obj={"cli": None})
+        cli(obj={"cli": None}, prog_name="ksm")
     except Exception as err:
         # Set KSM_DEBUG to get a stack trace. Secret env var.
         if os.environ.get("KSM_DEBUG") is not None:

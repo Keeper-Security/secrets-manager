@@ -9,17 +9,20 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 
 install_requires = [
     'keeper-secrets-manager-core',
+    'prompt-toolkit~=2.0',
     'click',
     'click_help_colors',
+    'click-repl',
     'jsonpath-rw-ext',
     'colorama',
-    'importlib_metadata'
+    'importlib_metadata',
+    'pyyaml'
 ]
 
 # Version set in the keeper_secrets_manager_cli.version file.
 setup(
     name="keeper-secrets-manager-cli",
-    version="0.0.32",
+    version="0.0.33",
     description="Command line tool for Keeper Secrets Manager",
     long_description=long_description,
     long_description_content_type="text/markdown",

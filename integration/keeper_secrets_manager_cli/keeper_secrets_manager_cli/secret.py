@@ -15,7 +15,7 @@ from jsonpath_rw_ext import parse
 import sys
 from collections import deque
 from colorama import Fore, Style
-from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
+from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_core.core import SecretsManager
 from .table import Table, ColumnAlign
 import uuid
@@ -196,7 +196,7 @@ class Secret:
             if value == "":
                 continue
 
-            label = field.get("label", field.get("type"));
+            label = field.get("label", field.get("type"))
             table.add_row([label, value])
         ret += table.get_string() + "\n"
 
@@ -287,7 +287,7 @@ class Secret:
     def _query_field(self, field_key, records):
 
         if len(records) == 0:
-            sys.exit("No records found. Cannot find field {}.".format(field_key))
+            raise Exception("No records found. Cannot find field {}.".format(field_key))
 
         # Can only perform field search on one record. The CLI part prevents this. Just grab the first record.
         record = records[0]
@@ -302,7 +302,7 @@ class Secret:
             except ValueError as _:
                 pass
         if field is None:
-            sys.exit("Cannot find the field {} in record {}".format(field_key, record["title"]))
+            raise KsmCliException("Cannot find the field {} in record {}".format(field_key, record["title"]))
 
         value = field.get("value", [])
         if len(value) > 0:
@@ -314,7 +314,7 @@ class Secret:
         self.cli.output(value)
         print("", file=sys.stderr)
 
-    def _query_jsonpath(self, jsonpath_query, records, force_array, text_join_char, raw):
+    def _query_jsonpath(self, jsonpath_query, records, force_array):
         # Adjust records here so the JQ query works with the displayed JSON.
         record_list = Secret._adjust_records(records, force_array)
 
@@ -322,10 +322,10 @@ class Secret:
             results = self._get_jsonpath_results(record_list, jsonpath_query)
             self.cli.output(json.dumps(results, indent=4))
         except Exception as err:
-            sys.exit("JSONPath failed: {}".format(err))
+            raise KsmCliException("JSONPath failed: {}".format(err))
 
-    def query(self, uids=None, titles=None, field=None, output_format='json', jsonpath_query=None, raw=False, force_array=False,
-              text_join_char='\n', load_references=False,  unmask=False, use_color=True, inflate=True):
+    def query(self, uids=None, titles=None, field=None, output_format='json', jsonpath_query=None,
+              force_array=False, load_references=False,  unmask=False, use_color=True, inflate=True):
 
         if uids is None:
             uids = []
@@ -338,33 +338,26 @@ class Secret:
 
         # If we want a specific field, then unmask the value
         if field is not None:
-            unmask=True
+            unmask = True
 
         records = []
-        try:
-            fetch_uids = None
-            if len(titles) == 0:
-                fetch_uids = uids
+        fetch_uids = None
+        if len(titles) == 0:
+            fetch_uids = uids
 
-            for record in self.cli.client.get_secrets(uids=fetch_uids):
-                add_record = False
-                if len(titles) > 0:
-                    if record.title in titles or record.uid in uids:
-                        add_record = True
-                else:
+        for record in self.cli.client.get_secrets(uids=fetch_uids):
+            add_record = False
+            if len(titles) > 0:
+                if record.title in titles or record.uid in uids:
                     add_record = True
+            else:
+                add_record = True
 
-                if add_record is True:
-                    records.append(self._record_to_dict(record,
-                                                        load_references=load_references,
-                                                        unmask=unmask,
-                                                        inflate=inflate))
-        except KeeperError as err:
-            sys.exit("Could not query the records: {}".format(err.message))
-        except KeeperAccessDenied as err:
-            sys.exit("Could not query the records: {}".format(err.message))
-        except Exception as err:
-            sys.exit("Could not query the records: {}".format(err))
+            if add_record is True:
+                records.append(self._record_to_dict(record,
+                                                    load_references=load_references,
+                                                    unmask=unmask,
+                                                    inflate=inflate))
 
         if field is not None:
             self._query_field(
@@ -376,8 +369,6 @@ class Secret:
                 jsonpath_query=jsonpath_query,
                 records=records,
                 force_array=force_array,
-                text_join_char=text_join_char,
-                raw=raw
             )
         else:
             return self.output_results(records=records, output_format=output_format, force_array=force_array,
@@ -407,11 +398,11 @@ class Secret:
 
         record = self.cli.client.get_secrets(uids=[uid])
         if len(record) == 0:
-            sys.exit("Cannot find a record for UID {}. Cannot download {}".format(uid, name))
+            raise KsmCliException("Cannot find a record for UID {}. Cannot download {}".format(uid, name))
 
         file = record[0].find_file_by_title(name)
         if file is None:
-            sys.exit("Cannot find a file named {} for UID {}. Cannot download file".format(name, uid))
+            raise KsmCliException("Cannot find a file named {} for UID {}. Cannot download file".format(name, uid))
 
         if file_output == 'stdout':
             sys.stderr.buffer.write(file.get_file_data())
@@ -420,7 +411,8 @@ class Secret:
         elif type(file_output) is str:
             file.save_file(file_output, create_folders)
         else:
-            sys.exit("The file output {} is not supported. Cannot download and save the file.".format(file_output))
+            raise KsmCliException("The file output {} is not supported. Cannot download and save the file.".format(
+                file_output))
 
     def get_via_notation(self, notation):
         try:
@@ -428,7 +420,7 @@ class Secret:
             if type(value) is dict or type(value) is list:
                 value = json.dumps(value)
         except Exception as err:
-            sys.exit(err)
+            raise KsmCliException(err)
 
         return self.cli.output(value)
 
@@ -483,7 +475,7 @@ class Secret:
                 if value.endswith('"') is True:
                     value = value[:-1]
         except Exception:
-            raise ValueError("The key/value format is invalid for '{}'.".format(text))
+            raise KsmCliException("The key/value format is invalid for '{}'.".format(text))
 
         return key, value
 
@@ -491,7 +483,7 @@ class Secret:
 
         record = self.cli.client.get_secrets(uids=[uid])
         if len(record) == 0:
-            sys.exit("Cannot find a record for UID {}.".format(uid))
+            raise KsmCliException("Cannot find a record for UID {}.".format(uid))
 
         try:
             if fields is not None:
@@ -503,9 +495,9 @@ class Secret:
                     key, value = self._split_kv(kv)
                     record[0].custom_field(key, value)
         except Exception as err:
-            sys.exit("Could not update record: {}".format(err))
+            raise KsmCliException("Could not update record: {}".format(err))
 
         try:
             self.cli.client.save(record[0])
         except Exception as err:
-            sys.exit("Could not save record: {}".format(err))
+            raise KsmCliException("Could not save record: {}".format(err))

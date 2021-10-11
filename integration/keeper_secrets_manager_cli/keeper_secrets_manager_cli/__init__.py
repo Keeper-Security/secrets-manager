@@ -14,6 +14,7 @@ from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from distutils.util import strtobool
+from .exception import KsmCliException
 from .profile import Profile
 import sys
 import os
@@ -75,7 +76,7 @@ class KeeperCli:
     @property
     def client(self):
         if self._client is None:
-            raise Exception("The Keeper SDK client has not been loaded. The INI config might not be set.")
+            raise KsmCliException("The Keeper SDK client has not been loaded. The INI config might not be set.")
         return self._client
 
     @client.setter
