@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Org.BouncyCastle.Asn1;
 using Org.BouncyCastle.Asn1.X9;
 using Org.BouncyCastle.Crypto;
@@ -168,6 +170,141 @@ namespace SecretsManager
             sig.BlockUpdate(data, 0, data.Length);
             var signature = sig.GenerateSignature();
             return signature;
+        }
+
+        // TOTP functions
+        const string DefaultAlgorithm = "SHA1";
+        const int DefaultDigits = 6;
+        const int DefaultPeriod = 30;
+        const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+        private static readonly Regex rxBase32Alphabet = new Regex($"^[A-Z2-7]+$", RegexOptions.Compiled);
+
+        internal static byte[] Base32ToBytes(string base32)
+        {
+            // The padding specified in RFC 3548 section 2.2 is not required and should be omitted.
+            base32 = base32?.Trim().TrimEnd('=');
+            if (string.IsNullOrEmpty(base32) || !rxBase32Alphabet.IsMatch(base32))
+                return null;
+
+            var bytes = base32.ToCharArray();
+            var output = new List<byte>();
+            for (var bitIndex = 0; bitIndex < base32.Length * 5; bitIndex += 8)
+            {
+                var dualByte = alphabet.IndexOf(bytes[bitIndex / 5]) << 10;
+                if (bitIndex / 5 + 1 < bytes.Length)
+                    dualByte |= alphabet.IndexOf(bytes[bitIndex / 5 + 1]) << 5;
+                if (bitIndex / 5 + 2 < bytes.Length)
+                    dualByte |= alphabet.IndexOf(bytes[bitIndex / 5 + 2]);
+
+                dualByte = 0xff & (dualByte >> (15 - bitIndex % 5 - 8));
+                output.Add((byte)dualByte);
+            }
+
+            return output.ToArray();
+        }
+
+        private static Dictionary<string, string> ParseQueryString(string requestQueryString)
+        {
+            var rc = new Dictionary<string, string>();
+            if (string.IsNullOrEmpty(requestQueryString)) return rc;
+
+            var kvp = requestQueryString.Split(new char[] { '&', '?' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var row in kvp)
+            {
+                if (string.IsNullOrWhiteSpace(row)) continue;
+                var index = row.IndexOf('=');
+                if (index < 0) continue;
+                rc[Uri.UnescapeDataString(row.Substring(0, index))] = Uri.UnescapeDataString(row.Substring(index + 1));
+            }
+            return rc;
+        }
+
+        /// <summary>
+        /// Gets TOTP code for URL
+        /// </summary>
+        /// <param name="url">TOTP URL</param>
+        /// <param name="unixTimeSeconds">unix time seconds to use as starting timestamp</param>
+        /// <returns>
+        /// A tuple containing three values:
+        /// <list type="number">
+        /// <item><description>TOTP code</description></item>
+        /// <item><description>Seconds passed</description></item>
+        /// <item><description>TOTP Period in seconds</description></item>
+        /// </list>
+        /// </returns>
+        public static Tuple<string, int, int> GetTotpCode(string url, long unixTimeSeconds = 0)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri uri))
+                return null;
+
+            if (uri.Scheme != "otpauth")
+                return null;
+
+            string secret = null;
+            var algorithm = "SHA1";
+            var digits = 6;
+            var period = 30;
+
+            var coll = ParseQueryString(uri.Query);
+            foreach (var key in coll.Keys)
+                switch (key)
+                {
+                    case "secret":
+                        secret = coll[key];
+                        break;
+                    case "algorithm":
+                        algorithm = string.IsNullOrWhiteSpace(coll[key]) ? DefaultAlgorithm : coll[key];
+                        break;
+                    case "digits":
+                        if (!int.TryParse(coll[key], out digits) || digits == 0) digits = DefaultDigits;
+                        break;
+                    case "period":
+                        if (!int.TryParse(coll[key], out period) || period == 0) period = DefaultPeriod;
+                        break;
+                }
+
+            if (string.IsNullOrEmpty(secret))
+                return null;
+
+            var tmBase = unixTimeSeconds != 0 ? unixTimeSeconds : DateTimeOffset.Now.ToUnixTimeSeconds();
+            var tm = tmBase / period;
+            var msg = BitConverter.GetBytes(tm);
+            if (BitConverter.IsLittleEndian)
+                Array.Reverse(msg);
+
+            var secretBytes = Base32ToBytes(secret.ToUpper());
+            if (secretBytes == null)
+                return null;
+
+            HMAC hmac = null;
+            switch (algorithm)
+            {
+                // although once part of Google Key Uri Format - https://github.com/google/google-authenticator/wiki/Key-Uri-Format/_history
+                // removed MD5 as unreliable - only digests of length >= 20 can be used (MD5 has a digest length of 16)
+                //case "MD5": hmac = new HMACMD5(secretBytes); break;
+                case "SHA1": hmac = new HMACSHA1(secretBytes); break;
+                case "SHA256": hmac = new HMACSHA256(secretBytes); break;
+                case "SHA512": hmac = new HMACSHA512(secretBytes); break;
+            }
+
+            if (hmac == null)
+                return null;
+
+            var digest = hmac.ComputeHash(msg);
+            var offset = digest[digest.Length - 1] & 0x0f;
+            var codeBytes = new byte[4];
+            Array.Copy(digest, offset, codeBytes, 0, codeBytes.Length);
+            codeBytes[0] &= 0x7f;
+            if (BitConverter.IsLittleEndian)
+                Array.Reverse(codeBytes);
+
+            var codeInt = BitConverter.ToInt32(codeBytes, 0);
+            codeInt %= (int)Math.Pow(10, digits);
+            var codeStr = codeInt.ToString();
+            while (codeStr.Length < digits)
+                codeStr = "0" + codeStr;
+
+            return Tuple.Create(codeStr, (int)(tmBase % period), period);
         }
     }
 }
