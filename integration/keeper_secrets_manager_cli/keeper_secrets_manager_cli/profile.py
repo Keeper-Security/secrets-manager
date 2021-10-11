@@ -12,6 +12,7 @@
 
 import os
 import configparser
+from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
@@ -51,10 +52,15 @@ class Profile:
                 ini_file = Profile.find_ini_config()
 
             # Auto generate config file from base64 encode env vars.
+            # This can import multiple profiles.
             elif os.environ.get("KSM_CONFIG_BASE64_1") is not None:
                 self._auto_config_from_env_var()
                 ini_file = Profile.find_ini_config()
-
+            # This can only import one. Move the KSM_CONFIG to KSM_CONFIG_BASE64_1
+            elif os.environ.get("KSM_CONFIG") is not None:
+                os.environ["KSM_CONFIG_BASE64_1"] = os.environ["KSM_CONFIG"]
+                self._auto_config_from_env_var()
+                ini_file = Profile.find_ini_config()
 
         self.ini_file = ini_file
 
@@ -74,7 +80,7 @@ class Profile:
 
         index = 1
         while True:
-            config_base64 =  os.environ.get("KSM_CONFIG_BASE64_{}".format(index))
+            config_base64 = os.environ.get("KSM_CONFIG_BASE64_{}".format(index))
             if config_base64 is not None:
                 Profile.import_config(
                     config_base64=config_base64,
@@ -138,7 +144,7 @@ class Profile:
     def get_profile_config(self, profile_name):
         config = self.get_config()
         if profile_name not in config:
-            raise ValueError("The profile {} does not exist in the INI config.".format(profile_name))
+            raise KsmCliException("The profile {} does not exist in the INI config.".format(profile_name))
 
         return config[profile_name]
 
@@ -150,7 +156,7 @@ class Profile:
         try:
             return self.get_profile_config(Profile.config_profile)
         except Exception as err:
-            sys.exit("{} {}".format(error_prefix, err))
+            raise KsmCliException("{} {}".format(error_prefix, err))
 
     @staticmethod
     def _init_config_file(profile_name=None):
@@ -186,7 +192,7 @@ class Profile:
             profile_name = os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
 
         if profile_name == Profile.config_profile:
-            raise ValueError("The profile '{}' is a reserved profile name. Cannot not init profile.".format(
+            raise KsmCliException("The profile '{}' is a reserved profile name. Cannot not init profile.".format(
                 profile_name))
 
         # We want to flag if we create a INI file. If there is an error, remove it so it
@@ -203,6 +209,10 @@ class Profile:
             config = configparser.ConfigParser()
             config.read(ini_file)
 
+        # if the token has a ":" in it, the region code/server is concat'd to the token. Split them.
+        if ":" in token:
+            server, token = token.split(":", 1)
+
         config_storage = InMemoryKeyValueStorage()
         config_storage.set(ConfigKeys.KEY_CLIENT_KEY, token)
         if server is not None:
@@ -217,11 +227,11 @@ class Profile:
             # If we just create the INI file and there was an error. Remove it.
             if created_ini is True:
                 os.unlink(ini_file)
-            sys.exit("Could not init the profile: {}".format(err.message))
+            raise KsmCliException("Could not init the profile: {}".format(err.message))
         except Exception as err:
             if created_ini is True:
                 os.unlink(ini_file)
-            sys.exit("Could not init the profile: {}".format(err))
+            raise KsmCliException("Could not init the profile: {}".format(err))
 
         config[profile_name] = {
             "clientKey": "",
@@ -271,14 +281,14 @@ class Profile:
             return profiles
 
         except FileNotFoundError as err:
-            sys.exit("Cannot get list of profiles. {}".format(err))
+            raise KsmCliException("Cannot get list of profiles. {}".format(err))
 
     def set_active(self, profile_name):
 
         common_config = self._get_common_config("Cannot set active profile.")
 
         if profile_name not in self.get_config():
-            exit("Cannot set profile {} to active. It does not exists.".format(profile_name))
+            raise Exception("Cannot set profile {} to active. It does not exists.".format(profile_name))
 
         common_config[Profile.active_profile_key] = profile_name
         self.save()

@@ -5,6 +5,7 @@ import json
 
 from keeper_secrets_manager_core.utils import base64_to_bytes
 
+
 class Export:
 
     def __init__(self, config, file_format=None, plain=False):
@@ -64,7 +65,7 @@ class Export:
 
         config_dict = {}
 
-        for key,info in mapping.items():
+        for key, info in mapping.items():
             if key in self.config:
                 if info["isBase64"] is True:
                     value_bytes = base64_to_bytes(self.config[key])

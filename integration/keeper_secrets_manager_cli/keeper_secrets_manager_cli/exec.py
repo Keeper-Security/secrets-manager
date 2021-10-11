@@ -13,6 +13,7 @@
 import os
 import sys
 import subprocess
+from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_core.core import SecretsManager
 import re
 import json
@@ -69,8 +70,7 @@ class Exec:
         full_cmd = " ".join(cmd)
 
         if len(cmd) == 0:
-            sys.stderr.write("Cannot execute command, it's missing.\n")
-            sys.exit(1)
+            raise Exception("Cannot execute command, it's missing.")
         else:
             self.env_replace()
 
@@ -91,14 +91,14 @@ class Exec:
                 message = str(err)
                 if (re.search(r'WinError 193', message) is not None and
                         re.search(r'\.ps1', full_cmd, re.IGNORECASE) is not None):
-                    sys.exit("Cannot execute command. If this was a powershell script, please use the command"
-                             " 'powershell {}'".format(full_cmd))
+                    raise KsmCliException("Cannot execute command. If this was a powershell script, please use"
+                                          " the command 'powershell {}'".format(full_cmd))
                 else:
-                    sys.exit("Cannot execute command: {}".format(message))
+                    raise KsmCliException("Cannot execute command: {}".format(message))
             except Exception as err:
-                sys.exit("Cannot execute command: {}".format(err))
+                raise KsmCliException("Cannot execute command: {}".format(err))
 
             if completed.returncode != 0:
-                exit(completed.returncode)
+                raise KsmCliException("Return code was: " + str(completed.returncode))
             if capture_output is True:
                 print(completed.stdout)
