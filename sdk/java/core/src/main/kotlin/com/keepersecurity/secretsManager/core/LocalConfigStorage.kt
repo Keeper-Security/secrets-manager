@@ -6,6 +6,8 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.*
+import java.util.*
+import kotlin.collections.HashMap
 
 fun saveCachedValue(data: ByteArray) {
     val fos = FileOutputStream("cache.dat")
@@ -41,7 +43,12 @@ class InMemoryStorage(configJson: String? = null) : KeyValueStorage {
 
     init {
         if (configJson != null) {
-            val config = Json.decodeFromString<LocalConfig>(configJson)
+            val jsonStr: String = try {
+                bytesToString(base64ToBytes(configJson))
+            } catch(e: Exception) {
+                configJson
+            }
+            val config = Json.decodeFromString<LocalConfig>(jsonStr)
             val optSetFn: (key: String, value: String?) -> Unit = { key, value -> if (value != null) strings[key] = value }
             optSetFn(KEY_HOSTNAME, config.hostname)
             optSetFn(KEY_CLIENT_ID, config.clientId)
