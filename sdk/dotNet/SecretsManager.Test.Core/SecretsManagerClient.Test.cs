@@ -16,7 +16,7 @@ namespace SecretsManager.Test
         public string data { get; set; }
         public int statusCode { get; set; }
     }
-    
+
     public class SecretsManagerClientTests
     {
         [Test]
@@ -56,14 +56,28 @@ namespace SecretsManager.Test
             storage = new InMemoryStorage();
             SecretsManagerClient.InitializeStorage(storage, "AU:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw");
             Assert.AreEqual("keepersecurity.com.au", storage.GetString("hostname"));
-            
+
             storage = new InMemoryStorage();
             SecretsManagerClient.InitializeStorage(storage, "eu:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw");
             Assert.AreEqual("keepersecurity.eu", storage.GetString("hostname"));
-            
+
             storage = new InMemoryStorage();
             SecretsManagerClient.InitializeStorage(storage, "local.keepersecurity.com:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw");
             Assert.AreEqual("local.keepersecurity.com", storage.GetString("hostname"));
+        }
+
+        [Test]
+        public void TestStorageBase64Config()
+        {
+            string base64Config = "eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2x" +
+                "pZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0bU" +
+                "5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgICAgI" +
+                "CJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJNGlW" +
+                "UzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2FHMmd" +
+                "sRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNlcnZlcl" +
+                "B1YmxpY0tleUlkIjogIjEwIiB9";
+            var storage = new InMemoryStorage(base64Config);
+            Assert.AreEqual("keepersecurity.com", storage.GetString("hostname"));
         }
     }
 }

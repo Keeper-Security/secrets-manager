@@ -19,6 +19,7 @@ export type Platform = {
     decryptWithKey(data: Uint8Array, key: Uint8Array): Promise<Uint8Array>
     hash(data: Uint8Array, tag: string): Promise<Uint8Array>
     cleanKeyCache(): void
+    getHmacDigest(algorithm: string, secret: Uint8Array, message: Uint8Array): Promise<Uint8Array>
 
 //  network
     get(url: string, headers: any): Promise<KeeperHttpResponse>
@@ -59,7 +60,18 @@ export function connectPlatform(p: Platform) {
 export let platform: Platform
 
 export const loadJsonConfig = (config: string) : KeyValueStorage  => {
-    return inMemoryStorage(JSON.parse(config))
+    let jsonStr: string = config
+    try
+    {
+        const str: string = platform.bytesToString(platform.base64ToBytes(config))
+        if (str.trimStart().startsWith('{') && str.trimEnd().endsWith('}'))
+            jsonStr = str
+    }
+    catch (e) {
+        jsonStr = config
+     }
+
+    return inMemoryStorage(JSON.parse(jsonStr))
 }
 
 export const inMemoryStorage = (storage: any): KeyValueStorage => {

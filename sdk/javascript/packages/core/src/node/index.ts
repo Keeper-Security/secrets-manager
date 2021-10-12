@@ -8,6 +8,5 @@ initialize()
 export * from '../keeper'
 export * from '../platform'
 export * from '../notation'
+export {getTotpCode} from '../utils'
 export * from './localConfigStorage'
-
-

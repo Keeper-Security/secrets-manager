@@ -220,6 +220,17 @@ const cleanKeyCache = () => {
     }
 }
 
+const getHmacDigest = async (algorithm: string, secret: Uint8Array, message: Uint8Array): Promise<Uint8Array> => {
+    // although once part of Google Key Uri Format - https://github.com/google/google-authenticator/wiki/Key-Uri-Format/_history
+    // removed MD5 as unreliable - only digests of length >= 20 can be used (MD5 has a digest length of 16)
+    let digest = new Uint8Array()
+    const algo = algorithm.toUpperCase().trim();
+    if (['SHA1', 'SHA256', 'SHA512'].includes(algo))
+        digest = createHmac(algo, secret).update(message).digest();
+
+    return Promise.resolve(digest);
+}
+
 export const nodePlatform: Platform = {
     bytesToBase64: bytesToBase64,
     base64ToBytes: base64ToBytes,
@@ -239,5 +250,6 @@ export const nodePlatform: Platform = {
     sign: sign,
     get: get,
     post: post,
-    cleanKeyCache: cleanKeyCache
+    cleanKeyCache: cleanKeyCache,
+    getHmacDigest: getHmacDigest
 }

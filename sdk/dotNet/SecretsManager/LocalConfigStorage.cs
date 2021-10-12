@@ -6,6 +6,7 @@ using System.Net;
 using System.Security;
 using System.Text.Json;
 using System.Text.Encodings.Web;
+using System.Text;
 
 namespace SecretsManager
 {
@@ -52,7 +53,15 @@ namespace SecretsManager
         {
             if (configJson == null)
                 return;
-            var bytes = CryptoUtils.StringToBytes(configJson);
+
+            string jsonStr = configJson;
+            try
+            {
+                jsonStr = CryptoUtils.BytesToString(CryptoUtils.Base64ToBytes(jsonStr));
+            }
+            catch (Exception){}
+
+            var bytes = CryptoUtils.StringToBytes(jsonStr);
             var reader = new Utf8JsonReader(bytes);
             string propertyName = null;
             while (reader.Read())

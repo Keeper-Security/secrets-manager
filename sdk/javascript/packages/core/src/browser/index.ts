@@ -6,8 +6,9 @@ connectPlatform(browserPlatform)
 initialize()
 
 export * from '../keeper'
-export * from '../notation'
 export {loadJsonConfig, inMemoryStorage} from '../platform'
+export * from '../notation'
+export {getTotpCode} from '../utils'
 export * from './localConfigStorage'
 
 

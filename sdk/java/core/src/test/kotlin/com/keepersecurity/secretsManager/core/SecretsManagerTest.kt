@@ -7,10 +7,7 @@ import kotlinx.serialization.json.*
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileReader
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.fail
+import kotlin.test.*
 
 @ExperimentalSerializationApi
 internal class SecretsManagerTest {
@@ -72,7 +69,20 @@ internal class SecretsManagerTest {
         assertEquals("local.keepersecurity.com", storage.getString("hostname"))
     }
 
-        //    @Test // uncomment to debug the integration test
+    @Test
+    fun testStorageBase64Config() {
+        val base64Config: String = "eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2x" +
+                "pZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0bU" +
+                "5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgICAgI" +
+                "CJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJNGlW" +
+                "UzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2FHMmd" +
+                "sRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNlcnZlcl" +
+                "B1YmxpY0tleUlkIjogIjEwIiB9"
+        val storage = InMemoryStorage(base64Config)
+        assertEquals("keepersecurity.com", storage.getString("hostname"))
+    }
+
+    //    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (
             url: String,
