@@ -7,8 +7,8 @@ import {
 } from '../'
 
 import * as fs from 'fs';
-import { getTotpCode } from '../src/platform';
 import { notDeepStrictEqual } from 'assert';
+import { getTotpCode } from '../src/utils';
 
 test('Get secrets e2e', async () => {
 

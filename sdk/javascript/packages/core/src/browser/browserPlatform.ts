@@ -324,6 +324,22 @@ const cleanKeyCache = () => {
     }
 }
 
+const getHmacDigest = async (algorithm: string, secret: Uint8Array, message: Uint8Array): Promise<Uint8Array> => {
+    // although once part of Google Key Uri Format - https://github.com/google/google-authenticator/wiki/Key-Uri-Format/_history
+    // removed MD5 as unreliable - only digests of length >= 20 can be used (MD5 has a digest length of 16)
+    let algo = algorithm.toUpperCase().trim();
+    if (['SHA1', 'SHA256', 'SHA512'].includes(algo)) {
+        algo = 'SHA-' + algo.substr(3);
+        const key = await crypto.subtle.importKey('raw', secret, {
+            name: 'HMAC',
+            hash: { name: algo  }
+        }, false, ['sign'])
+        const signature = await crypto.subtle.sign('HMAC', key, message)
+        return new Uint8Array(signature)
+    }
+    return new Uint8Array();
+}
+
 export const browserPlatform: Platform = {
     bytesToBase64: bytesToBase64,
     base64ToBytes: base64ToBytes,
@@ -343,5 +359,6 @@ export const browserPlatform: Platform = {
     sign: sign,
     get: get,
     post: post,
-    cleanKeyCache: cleanKeyCache
+    cleanKeyCache: cleanKeyCache,
+    getHmacDigest: getHmacDigest
 }
