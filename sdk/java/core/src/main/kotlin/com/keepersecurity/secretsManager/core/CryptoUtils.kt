@@ -16,7 +16,6 @@ import javax.crypto.KeyAgreement
 import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
-import kotlin.experimental.and
 import kotlin.math.pow
 
 internal object KeeperCryptoParameters {
@@ -240,9 +239,9 @@ fun getTotpCode(url: String, unixTimeSeconds: Long = 0): Triple<String?, Int, In
         e.printStackTrace()
     }
 
-    val offset: Int = digest[digest.size - 1].and(0x0f).toInt()
+    val offset: Int = digest[digest.size - 1].toInt() and 0x0f
     val codeBytes: ByteArray = digest.copyOfRange(offset, offset+4)
-    codeBytes[0] = codeBytes[0].and(0x7f)
+    codeBytes[0] = (codeBytes[0].toInt() and 0x7f).toByte()
     var codeInt: Int = ByteBuffer.wrap(codeBytes).int
     codeInt %= 10.0.pow(digits.toDouble()).toInt()
     var codeStr: String = codeInt.toString().padStart(digits, '0')
