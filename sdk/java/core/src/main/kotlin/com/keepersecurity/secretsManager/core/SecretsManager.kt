@@ -6,20 +6,16 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.*
+import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection.HTTP_OK
 import java.net.URL
-import java.net.URLDecoder
-import java.nio.ByteBuffer
-import java.security.*
+import java.security.KeyManagementException
+import java.security.NoSuchAlgorithmException
+import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.*
 import java.util.jar.Manifest
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 import javax.net.ssl.*
-import kotlin.experimental.and
-import kotlin.math.pow
 
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
