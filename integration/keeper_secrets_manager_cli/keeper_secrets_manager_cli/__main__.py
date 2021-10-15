@@ -46,6 +46,7 @@ class AliasedGroup(HelpColorsGroup):
         "import",
         "init",
         "secret",
+        "totp",
         "download",
         "get",
         "list",
@@ -62,6 +63,7 @@ class AliasedGroup(HelpColorsGroup):
         "s": "secret",
         "g": "get",
         "l": "list",
+        "t": "totp",
         "d": "download",
         "n": "notation",
         "u": "update",
@@ -421,11 +423,26 @@ def secret_download_command(ctx, uid, name, file_output, create_folders):
     )
 
 
+@click.command(
+    name='totp',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--uid', '-u', required=True, type=str)
+@click.pass_context
+def secret_totp_command(ctx, uid):
+    """Get TOTP code from a secret record."""
+    ctx.obj["secret"].get_totp_code(
+        uid=uid
+    )
+
+
 secret_command.add_command(secret_list_command)
 secret_command.add_command(secret_get_command)
 secret_command.add_command(secret_notation_command)
 secret_command.add_command(secret_update_command)
 secret_command.add_command(secret_download_command)
+secret_command.add_command(secret_totp_command)
 
 
 # EXEC COMMAND
