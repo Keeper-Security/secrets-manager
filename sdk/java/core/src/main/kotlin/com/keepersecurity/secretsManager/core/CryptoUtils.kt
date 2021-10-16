@@ -18,6 +18,7 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.math.pow
 
+
 internal object KeeperCryptoParameters {
     internal val provider: BouncyCastleFipsProvider = BouncyCastleFipsProvider()
     internal val keyFactory: KeyFactory
@@ -246,4 +247,62 @@ fun getTotpCode(url: String, unixTimeSeconds: Long = 0): Triple<String?, Int, In
     codeInt %= 10.0.pow(digits.toDouble()).toInt()
     var codeStr: String = codeInt.toString().padStart(digits, '0')
     return Triple(codeStr, (tmBase % period).toInt(), period)
+}
+
+// password generation
+const val AsciiLowercase = "abcdefghijklmnopqrstuvwxyz"
+const val AsciiUppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const val AsciiDigits = "0123456789"
+const val AsciiSpecialCharacters = "\"!@#$%()+;<>=?[]{}^.,"
+
+internal fun randomSample(sampleLength: Int=0, sampleString: String=""): String
+{
+    var result: String = ""
+    val _sampleLength = if (sampleLength < 0) 0 else sampleLength
+    if (_sampleLength > 0 && !sampleString.isNullOrEmpty())
+    {
+        val random = SecureRandom()
+        val bytes = CharArray(_sampleLength)
+        result = (bytes.indices)
+            .map { _ -> sampleString[random.nextInt(sampleString.length)]
+            }.joinToString("")
+
+    }
+    return result
+}
+
+fun generatePassword(
+    length: Int = 64,
+    lowercase: Int = 0,
+    uppercase: Int = 0,
+    digits: Int = 0,
+    specialCharacters: Int = 0
+): String {
+    val _length: Int = if (length <= 0) 64 else length
+    var _lowercase: Int = lowercase
+    var _uppercase: Int = uppercase
+    var _digits: Int = digits
+    var _specialCharacters: Int = specialCharacters
+
+    if (lowercase === 0 && uppercase === 0 && digits === 0 && specialCharacters === 0) {
+        val increment: Int = length / 4
+        val lastIncrement: Int = increment + length % 4
+        _lowercase = increment
+        _uppercase = increment
+        _digits = increment
+        _specialCharacters = lastIncrement
+    }
+    var passwordCharacters: String = ""
+    if (_lowercase > 0)
+        passwordCharacters += randomSample(_lowercase, AsciiLowercase);
+    if (_uppercase > 0)
+        passwordCharacters += randomSample(_uppercase, AsciiUppercase);
+    if (_digits > 0)
+        passwordCharacters += randomSample(_digits, AsciiDigits);
+    if (_specialCharacters > 0)
+        passwordCharacters += randomSample(_specialCharacters, AsciiSpecialCharacters);
+
+    var pcharArray = passwordCharacters.toCharArray()
+    pcharArray.shuffle()
+    return String(pcharArray)
 }
