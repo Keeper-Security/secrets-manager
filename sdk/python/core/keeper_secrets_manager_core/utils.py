@@ -15,6 +15,8 @@ import hmac
 import json
 import logging
 import os
+import random
+import string
 from json import JSONDecodeError
 from sys import platform as _platform
 from typing import Tuple
@@ -23,6 +25,7 @@ from urllib import parse
 from keeper_secrets_manager_core.keeper_globals import logger_name
 
 ENCODING = 'UTF-8'
+SPECIAL_CHARACTERS = '''"!@#$%()+;<>=?[]{}^.,'''
 
 
 def get_os():
@@ -153,3 +156,51 @@ def get_totp_code(url):
         code = str(code_int % (10 ** digits)).zfill(digits)
         return code, period - (tm_base % period), period
 
+# password generation
+def random_sample(sample_length=0, sample_string=''):
+    use_secrets = False
+    try:
+        # Older version of Python (before 3.6) don't have this module.
+        # If not installed, fall back to the original version of the code
+        import secrets
+        logging.debug("module 'secrets' is installed")
+        use_secrets = True
+    except ModuleNotFoundError:
+        logging.warning("module 'secrets' is not installed")
+
+    sample = ''
+    for _ in range(sample_length):
+        if use_secrets:
+            sample += secrets.choice(sample_string)
+        else:
+            pos = int.from_bytes(os.urandom(2), 'big') % len(sample_string)
+            sample += sample_string[pos]
+
+    return sample
+
+def generate_password(length=64, lowercase=0, uppercase=0, digits=0, special_characters=0):
+    # type: (int, int, int, int, int) -> string or None
+    """ Generate a password of specified length with specified number of """
+    """ uppercase, lowercase, digits and special characters """
+    """ If all character groups have length=0 then total length is split evenly"""
+    """ with last group 'special_characters' taking any extra charcters"""
+    if length <= 0:
+        length = 64
+    if lowercase == 0 and uppercase == 0 and digits == 0 and special_characters == 0:
+        increment = length // 4
+        lastincrement = increment + (length % 4)
+        lowercase, uppercase, digits, special_characters = increment, increment, increment, lastincrement
+
+    password = ''
+
+    if lowercase:
+        password += random_sample(lowercase, string.ascii_lowercase)
+    if uppercase:
+        password += random_sample(uppercase, string.ascii_uppercase)
+    if digits:
+        password += random_sample(digits, string.digits)
+    if special_characters:
+        password += random_sample(special_characters, SPECIAL_CHARACTERS)
+
+    newpass = ''.join(random.sample(password,len(password)))
+    return newpass
