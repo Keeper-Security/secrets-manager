@@ -1,3 +1,5 @@
+using System;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 
 namespace SecretsManager.Test
@@ -18,6 +20,36 @@ namespace SecretsManager.Test
         {
             var privateKey = CryptoUtils.GenerateKeyPair();
             Assert.AreEqual(150, privateKey.Length);
+        }
+
+        [Test]
+        public void TestPasswordGeneration()
+        {
+            var password = CryptoUtils.GeneratePassword();
+            Assert.AreEqual(64, password?.Length);
+
+            password = CryptoUtils.GeneratePassword(32, 32);
+            Assert.IsTrue(Regex.IsMatch(password, @"^[a-z]{32}$"));
+
+            password = CryptoUtils.GeneratePassword(32, 0, 32);
+            Assert.IsTrue(Regex.IsMatch(password, @"^[A-Z]{32}$"));
+
+            password = CryptoUtils.GeneratePassword(32, 0, 0, 32);
+            Assert.IsTrue(Regex.IsMatch(password, @"^[0-9]{32}$"));
+
+            password = CryptoUtils.GeneratePassword(32, 0, 0, 0, 32);
+            Assert.IsTrue(Regex.IsMatch(password, @"^[""!@#$%()+;<>=?[\\\]{}^.,]{32}$"));
+
+            password = CryptoUtils.GeneratePassword(64, 16, 16, 16, 16);
+            var chars = password.ToCharArray();
+            Array.Sort(chars, (x, y) => {
+                int xgroup = (x >= 'a' && x <= 'z') ? 1 : (x >= 'A' && x <= 'Z') ? 2 : (x >= '0' && x <= '9') ? 3 : 4;
+                int ygroup = (y >= 'a' && y <= 'z') ? 1 : (y >= 'A' && y <= 'Z') ? 2 : (y >= '0' && y <= '9') ? 3 : 4;
+                int groupCompare = xgroup.CompareTo(ygroup);
+                return groupCompare == 0 ? x.CompareTo(y) : groupCompare;
+                });
+            password = new string(chars);
+            Assert.IsTrue(Regex.IsMatch(password, @"^[a-z]{16}[A-Z]{16}[0-9]{16}[""!@#$%()+;<>=?[\\\]{}^.,]{16}$"));
         }
 
         [Test]

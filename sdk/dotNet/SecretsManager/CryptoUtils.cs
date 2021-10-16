@@ -306,5 +306,91 @@ namespace SecretsManager
 
             return Tuple.Create(codeStr, (int)(tmBase % period), period);
         }
+
+        // password generation
+        const string AsciiLowercase = @"abcdefghijklmnopqrstuvwxyz";
+        const string AsciiUppercase = @"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const string AsciiDigits = @"0123456789";
+        const string AsciiSpecialCharacters = @"""!@#$%()+;<>=?[]{}^.,";
+
+        internal static string RandomSample(int sampleLength=0, string sampleString="")
+        {
+            sampleLength = sampleLength < 0 ? 0 : sampleLength;
+            var result = new StringBuilder(sampleLength);
+            if (sampleLength > 0 && !string.IsNullOrEmpty(sampleString))
+            {
+                var data = new byte[4 * sampleLength];
+                using (var crypto = RandomNumberGenerator.Create())
+                    crypto.GetBytes(data);
+                for (int i = 0; i < sampleLength; i++)
+                {
+                    var rnd = BitConverter.ToUInt32(data, i * 4);
+                    var idx = (int)(rnd % sampleString.Length);
+
+                    result.Append(sampleString[idx]);
+                }
+            }
+            return result.ToString();
+        }
+
+        internal static string Shuffle(string text)
+        {
+            var result = "";
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                Random rng = new Random();
+                var array = text.ToCharArray();
+                for (var i = array.Length - 1; i >= 1; --i)
+                {
+                    int j = rng.Next(i + 1); // 0 <= j <= i
+                    if (i != j) {
+                        var temp = array[i];
+                        array[i] = array[j];
+                        array[j] = temp;
+                    }
+                }
+                result = new string(array);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Generate a password of specified length with specified number of
+        /// uppercase, lowercase, digits and special characters
+        /// If all character groups have length=0 then total length is split evenly
+        /// with last group 'specialCharacters' taking any extra charcters
+        /// </summary>
+        /// <param name="length">Password length</param>
+        /// <param name="lowercase">Number of lowercase characters</param>
+        /// <param name="uppercase">Number of uppercase characters</param>
+        /// <param name="digits">Number of digits</param>
+        /// <param name="specialCharacters">Number of special characters</param>
+        /// <returns></returns>
+        public static string GeneratePassword(int length = 64, int lowercase = 0, int uppercase = 0, int digits = 0, int specialCharacters = 0)
+        {
+            if (length <= 0)
+                length = 64;
+            if (lowercase == 0 && uppercase == 0 && digits == 0 && specialCharacters == 0) {
+                int increment = length / 4;
+                int lastIncrement = increment + (length % 4);
+                lowercase = uppercase = digits = increment;
+                specialCharacters = lastIncrement;
+            }
+
+            string passwordCharacters = "";
+            if (lowercase > 0)
+                passwordCharacters += RandomSample(lowercase, AsciiLowercase);
+            if (uppercase > 0)
+                passwordCharacters += RandomSample(uppercase, AsciiUppercase);
+            if (digits > 0)
+                passwordCharacters += RandomSample(digits, AsciiDigits);
+            if (specialCharacters > 0)
+                passwordCharacters += RandomSample(specialCharacters, AsciiSpecialCharacters);
+
+            string password = Shuffle(passwordCharacters);
+            return password;
+        }
     }
 }
