@@ -42,19 +42,22 @@ export const parseSecretsInputs = (inputs: string[]): SecretsInput[] => {
         const inputParts = input.replace(/\s/g, '').split('>')
         let destinationType: DestinationType = DestinationType.output
         let destination = inputParts[1]
-        if (destination.startsWith('var:')){
-            destinationType = DestinationType.variable
+
+        if (destination.startsWith('out:')) {
+            destinationType = DestinationType.output
             destination = destination.slice(4)
-        } else if (destination.startsWith('env:')) {
-            destinationType = DestinationType.environment
+        } else if (destination.startsWith('var:')){
+            destinationType = DestinationType.variable
             destination = destination.slice(4)
         } else if (destination.startsWith('file:')) {
             destinationType = DestinationType.file
             destination = destination.slice(5)
         }
+
         if (inputParts[0].split('/')[1] === 'file') {
             destinationType = DestinationType.file
         }
+
         results.push({
             notation: inputParts[0],
             destination,
@@ -109,10 +112,14 @@ async function run() {
 
             // @ts-ignore
             const secret = await getValue(secrets, input.notation)
-            tl.setSecret(secret)
+
+            if(typeof secret === 'string')
+                tl.setSecret(secret)
 
             tl.debug("input: [" + JSON.stringify(input) + "]")
 
+            // Azure docs on how to pass variables:
+            //  https://docs.microsoft.com/en-us/azure/devops/pipelines/process/variables?view=azure-devops&tabs=yaml%2Cbatch
 
             switch (input.destinationType) {
                 case DestinationType.variable:
@@ -140,13 +147,14 @@ async function run() {
                     //
                     //  See: https://www.nigelfrank.com/blog/azure-devops-output-variables/
                     break
-                // case DestinationType.environment:
-                //     tl.setVariable(input.destination, secret, true )
-                //     break
                 case DestinationType.file:
-                    tl.debug(`Start downloading file: from [${JSON.stringify(secret)}] to [${input.destination}]`)
+
                     await downloadSecretFile(secret as KeeperFile, input.destination)
-                    tl.debug("Finish downloading file")
+                    tl.debug(`Finish downloading file to ${input.destination}`)
+
+                    // xtlguWgodbpFkKJn7_7mAQ/file/rose2.jpeg > file:/tmp/rose2.jpeg
+
+
                     break
             }
         }

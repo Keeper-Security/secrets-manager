@@ -9,7 +9,7 @@
   "author": "Keeper Security",
   "version": {
     "Major": 0,
-    "Minor": 2,
+    "Minor": 6,
     "Patch": 0
   },
   "instanceNameFormat": "KeeperSecretsManager",
