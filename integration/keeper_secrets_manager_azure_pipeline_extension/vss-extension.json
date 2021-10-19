@@ -1,0 +1,62 @@
+{
+  "manifestVersion": 1,
+  "id": "keeper-secrets-manager",
+  "version": "0.6.0",
+  "publisher": "KeeperSecurity",
+  "name": "Keeper Secrets Manager",
+  "public": true,
+  "targets": [
+    {
+      "id": "Microsoft.VisualStudio.Services"
+    }
+  ],
+  "description": "Keeper Secrets Manager Azure DevOps Task",
+  "categories": [ "Azure Pipelines" ],
+  "icons": {
+    "default": "images/ksm-logo-128x128.png"
+  },
+  "files": [
+    {
+      "path": "ksm-azure-devops-secrets-task"
+    }
+  ],
+  "contributions": [
+    {
+      "id": "ksm-secrets-inject-task",
+      "type":     "ms.vss-distributed-task.task",
+      "targets": ["ms.vss-distributed-task.tasks"],
+      "properties": {
+        "name": "ksm-azure-devops-secrets-task"
+      }
+    }
+  ],
+  "content": {
+    "details": {
+      "path": "overview.md"
+    }
+  },
+  "links": {
+    "home": {
+      "uri": "https://www.keepersecurity.com"
+    },
+    "getstarted": {
+      "uri": "https://docs.keeper.io/secrets-manager/secrets-manager/quick-start-guide"
+    },
+    "learn": {
+      "uri": "https://docs.keeper.io/secrets-manager/secrets-manager/overview"
+    },
+    "support": {
+      "uri": "https://www.keepersecurity.com/support.html"
+    },
+    "repository": {
+      "uri": "https://github.com/Keeper-Security/secrets-manager"
+    },
+    "issues": {
+      "uri": "https://github.com/Keeper-Security/secrets-manager/issues"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "uri": "https://github.com/Keeper-Security/secrets-manager"
+  }
+}
