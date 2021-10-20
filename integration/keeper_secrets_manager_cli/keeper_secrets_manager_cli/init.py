@@ -10,7 +10,6 @@
 # Contact: ops@keepersecurity.com
 #
 
-import yaml
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
@@ -47,25 +46,21 @@ class Init:
             ])
             print("Created secret for KSM config.", file=sys.stderr)
         else:
-            secret = {
-                "apiVersion": "v1",
-                "data": {
-                    "config": base64_config.decode()
-                },
-                "kind": "Secret",
-                "metadata": {
-                    "name": name,
-                    "namespace": namespace
-                },
-                "type": "Opaque"
-            }
+            secret = "apiVersion: v1\n"\
+                     "data\n"\
+                     "  config: {}\n"\
+                     "kind: Secret\n"\
+                     "metadata:\n"\
+                     "  name: {}\n"\
+                     "  namespace: {}\n"\
+                     "type: Opaque".format(base64_config.decode(), name, namespace)
 
             # Kubernetes v1.21
             if immutable is True:
-                secret["immutable"] = True
+                secret += "immutable: True\n"
 
             print("", file=sys.stderr)
-            self.cli.output(yaml.dump(secret))
+            self.cli.output(secret)
             print("", file=sys.stderr)
 
     def get_json(self, plain=False):
