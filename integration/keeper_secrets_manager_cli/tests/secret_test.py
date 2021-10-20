@@ -289,8 +289,7 @@ class SecretTest(unittest.TestCase):
                 tf.close()
 
             result = runner.invoke(cli, ['secret', 'get',
-                                         '--title', two.title, '--field', 'My Custom'],
-                           catch_exceptions=False)
+                                         '--title', two.title, '--field', 'My Custom'], catch_exceptions=False)
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
             # The line feed are stderr to make console display more readable. Doing a FILED=$(ksm ...) will result
             # in only the stdout being captured.
@@ -734,6 +733,55 @@ class SecretTest(unittest.TestCase):
                 self.assertEqual(dict, type(address), "address value is not a dict")
                 self.assertEqual("My Address", address["label"], "did not get the addressRef")
 
+                tf.close()
+
+    def test_totp(self):
+
+        """Test TOTP
+        """
+
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
+            "hostname": "fake.keepersecurity.com",
+            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
+            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
+            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
+            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
+                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
+                          "jhKMhHQFaHYI"
+        }))
+
+        profile_init_res = mock.Response()
+        profile_init_res.add_record(title="Profile Init")
+
+        totp_res = mock.Response()
+        totp_record = totp_res.add_record(title="My Record 1", record_type="address")
+        totp_record.field("oneTimeCode", [
+            "otpauth://totp/ACME:jw@localhost?secret=MYSECRET&issuer=ACME&algorithm=SHA1&digits=6&period=30"
+        ], label='oneTimeCode')
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(profile_init_res)
+        queue.add_response(totp_res)
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
+                as mock_client:
+            mock_client.return_value = secrets_manager
+
+            Profile.init(
+                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
+            )
+
+            # JSON Output to file
+            with tempfile.NamedTemporaryFile() as tf:
+                runner = CliRunner()
+                result = runner.invoke(cli, ['-o', tf.name, 'secret', 'totp', totp_record.uid],
+                                       catch_exceptions=False)
+                self.assertEqual(0, result.exit_code, "the exit code was not 0")
+                tf.seek(0)
+                code = tf.readline()
+                code = code.decode()
+                self.assertEqual(6, len(code), "code is not 6 character long")
+                self.assertRegex(code, r'^\d{6}$', 'code is not all digits')
                 tf.close()
 
 

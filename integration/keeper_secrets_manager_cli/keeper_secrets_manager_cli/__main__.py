@@ -428,10 +428,10 @@ def secret_download_command(ctx, uid, name, file_output, create_folders):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-@click.option('--uid', '-u', required=True, type=str)
+@click.argument('uid', type=str, nargs=1)
 @click.pass_context
 def secret_totp_command(ctx, uid):
-    """Get TOTP code from a secret record."""
+    """Get TOTP code from a secret Record UID."""
     ctx.obj["secret"].get_totp_code(
         uid=uid
     )
