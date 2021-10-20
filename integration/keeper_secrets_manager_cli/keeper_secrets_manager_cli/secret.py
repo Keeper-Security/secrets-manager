@@ -434,7 +434,15 @@ class Secret:
         if not totp_uri:
             raise KsmCliException("Cannot find TOTP field for UID {}.".format(uid))
 
-        totp, ttl, period = get_totp_code(totp_uri)
+        try:
+            totp, ttl, period = get_totp_code(totp_uri)
+        except Exception as err:
+            # The UI doesn't appear to valid the secret key, so the user might enter a bad secret key.
+            if str(err) == 'Incorrect padding':
+                raise KsmCliException("The secret key of the two factor code field appears to be invalid."
+                                      " Please make sure the record is correct.")
+            raise err
+
         self.cli.output(totp)
 
     def get_via_notation(self, notation):
