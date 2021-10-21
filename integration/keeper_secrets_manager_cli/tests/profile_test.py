@@ -22,7 +22,7 @@ class ProfileTest(unittest.TestCase):
         os.chdir(self.temp_dir.name)
 
         # Clear env var from other tests
-        os.environ.pop("KSM_CONFIG_BASE64_1",None)
+        os.environ.pop("KSM_CONFIG_BASE64_1", None)
         os.environ.pop("KSM_CONFIG_BASE64_DESC_1", None)
         os.environ.pop("KSM_CONFIG_BASE64_2", None)
         os.environ.pop("KSM_CONFIG_BASE64_DESC_2", None)
@@ -117,7 +117,7 @@ class ProfileTest(unittest.TestCase):
 
     def test_config_ini_import_export(self):
 
-        ini_config ='''
+        ini_config = '''
 [_default]
 clientkey = D_XXXXX_CK
 clientid = D_XXXXX_CI
@@ -208,7 +208,7 @@ color = True
         try:
             test_config = base64.urlsafe_b64decode(config_data).decode()
             config = json.loads(test_config)
-            self.assertEqual(json_config["hostname"], config["hostname"], "host name is not the same" )
+            self.assertEqual(json_config["hostname"], config["hostname"], "host name is not the same")
 
         except Exception as err:
             self.fail("Could not base64/json decode the config: {}".format(err))
@@ -242,7 +242,6 @@ color = True
             profile_data = json.load(tf)
             self.assertEqual("App1", profile_data[0]["name"], "found first app")
             self.assertEqual("App2", profile_data[1]["name"], "found second app")
-
 
     def test_import_sdk_json(self):
 
@@ -279,7 +278,6 @@ color = True
                       "FHMmdsRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNl"\
                       "cnZlclB1YmxpY0tleUlkIjogIjEwIiB9"
 
-
         runner = CliRunner()
 
         # Create two configs
@@ -304,6 +302,7 @@ color = True
             self.assertEqual("8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=", profile.get("appKey"),
                              "did not get the correct app key")
             self.assertEqual("keepersecurity.com", profile.get("hostname"), "did not get the correct hostname")
+
 
 if __name__ == '__main__':
     unittest.main()

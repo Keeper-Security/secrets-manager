@@ -20,14 +20,23 @@ import sys
 
 class Init:
 
+    @staticmethod
+    def get_client(config, token, hostname, verify_ssl_certs):
+        return SecretsManager(config=config, token=token, hostname=hostname,
+                              verify_ssl_certs=verify_ssl_certs)
+
+    @staticmethod
+    def init_config():
+        return InMemoryKeyValueStorage()
+
     def __init__(self, cli, token, hostname=None, skip_ssl_verify=False):
         self.cli = cli
         self.token = token
         self.skip_ssl_verify = skip_ssl_verify
 
-        self.config = InMemoryKeyValueStorage()
-        redeem_sm = SecretsManager(config=self.config, token=token, hostname=hostname,
-                                   verify_ssl_certs=not skip_ssl_verify)
+        self.config = Init.init_config()
+        redeem_sm = Init.get_client(config=self.config, token=token, hostname=hostname,
+                                    verify_ssl_certs=not skip_ssl_verify)
         redeem_sm.get_secrets()
 
         self.config_dict = {}
@@ -47,7 +56,7 @@ class Init:
             print("Created secret for KSM config.", file=sys.stderr)
         else:
             secret = "apiVersion: v1\n"\
-                     "data\n"\
+                     "data: \n"\
                      "  config: {}\n"\
                      "kind: Secret\n"\
                      "metadata:\n"\
