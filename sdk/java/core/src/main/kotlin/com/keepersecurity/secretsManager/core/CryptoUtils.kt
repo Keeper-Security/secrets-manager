@@ -168,7 +168,7 @@ private fun base32ToBytes(base32Text: String): ByteArray {
     var output: ByteArray = byteArrayOf()
     // The padding specified in RFC 3548 section 2.2 is not required and should be omitted.
     val base32: String = base32Text.trim().trimEnd('=')
-    if (base32.isNullOrEmpty() || !rxBase32Alphabet.matches(base32))
+    if (base32.isEmpty() || !rxBase32Alphabet.matches(base32))
         return output
 
     val bytes: CharArray = base32.toCharArray()
@@ -208,7 +208,7 @@ fun getTotpCode(url: String, unixTimeSeconds: Long = 0): Triple<String?, Int, In
 
     if (digits == 0) digits = DEFAULT_DIGITS
     if (period == 0) period = DEFAULT_TIME_STEP
-    if (secret.isNullOrEmpty())
+    if (secret.isEmpty())
         return null
 
     val tmBase = if (unixTimeSeconds != 0L) unixTimeSeconds else System.currentTimeMillis()/1000L
@@ -245,7 +245,7 @@ fun getTotpCode(url: String, unixTimeSeconds: Long = 0): Triple<String?, Int, In
     codeBytes[0] = (codeBytes[0].toInt() and 0x7f).toByte()
     var codeInt: Int = ByteBuffer.wrap(codeBytes).int
     codeInt %= 10.0.pow(digits.toDouble()).toInt()
-    var codeStr: String = codeInt.toString().padStart(digits, '0')
+    val codeStr: String = codeInt.toString().padStart(digits, '0')
     return Triple(codeStr, (tmBase % period).toInt(), period)
 }
 
@@ -257,14 +257,15 @@ const val AsciiSpecialCharacters = "\"!@#$%()+;<>=?[]{}^.,"
 
 internal fun randomSample(sampleLength: Int=0, sampleString: String=""): String
 {
-    var result: String = ""
-    val _sampleLength = if (sampleLength < 0) 0 else sampleLength
-    if (_sampleLength > 0 && !sampleString.isNullOrEmpty())
+    var result = ""
+    val sampleLen = if (sampleLength < 0) 0 else sampleLength
+    if (sampleLen > 0 && sampleString.isNotEmpty())
     {
         val random = SecureRandom()
-        val bytes = CharArray(_sampleLength)
+        val bytes = CharArray(sampleLen)
         result = (bytes.indices)
-            .map { _ -> sampleString[random.nextInt(sampleString.length)]
+            .map {
+                sampleString[random.nextInt(sampleString.length)]
             }.joinToString("")
 
     }
@@ -278,31 +279,31 @@ fun generatePassword(
     digits: Int = 0,
     specialCharacters: Int = 0
 ): String {
-    val _length: Int = if (length <= 0) 64 else length
-    var _lowercase: Int = lowercase
-    var _uppercase: Int = uppercase
-    var _digits: Int = digits
-    var _specialCharacters: Int = specialCharacters
+    val totalLength: Int = if (length <= 0) 64 else length
+    var numLowercase: Int = lowercase
+    var numUppercase: Int = uppercase
+    var numDigits: Int = digits
+    var numSpecialCharacters: Int = specialCharacters
 
-    if (lowercase === 0 && uppercase === 0 && digits === 0 && specialCharacters === 0) {
-        val increment: Int = length / 4
-        val lastIncrement: Int = increment + length % 4
-        _lowercase = increment
-        _uppercase = increment
-        _digits = increment
-        _specialCharacters = lastIncrement
+    if (lowercase == 0 && uppercase == 0 && digits == 0 && specialCharacters == 0) {
+        val increment: Int = totalLength / 4
+        val lastIncrement: Int = increment + totalLength % 4
+        numLowercase = increment
+        numUppercase = increment
+        numDigits = increment
+        numSpecialCharacters = lastIncrement
     }
-    var passwordCharacters: String = ""
-    if (_lowercase > 0)
-        passwordCharacters += randomSample(_lowercase, AsciiLowercase);
-    if (_uppercase > 0)
-        passwordCharacters += randomSample(_uppercase, AsciiUppercase);
-    if (_digits > 0)
-        passwordCharacters += randomSample(_digits, AsciiDigits);
-    if (_specialCharacters > 0)
-        passwordCharacters += randomSample(_specialCharacters, AsciiSpecialCharacters);
+    var passwordCharacters = ""
+    if (numLowercase > 0)
+        passwordCharacters += randomSample(numLowercase, AsciiLowercase)
+    if (numUppercase > 0)
+        passwordCharacters += randomSample(numUppercase, AsciiUppercase)
+    if (numDigits > 0)
+        passwordCharacters += randomSample(numDigits, AsciiDigits)
+    if (numSpecialCharacters > 0)
+        passwordCharacters += randomSample(numSpecialCharacters, AsciiSpecialCharacters)
 
-    var pcharArray = passwordCharacters.toCharArray()
-    pcharArray.shuffle()
-    return String(pcharArray)
+    val pCharArray = passwordCharacters.toCharArray()
+    pCharArray.shuffle()
+    return String(pCharArray)
 }

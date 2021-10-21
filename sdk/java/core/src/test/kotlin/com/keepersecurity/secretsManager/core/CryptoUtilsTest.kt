@@ -151,16 +151,16 @@ internal class CryptoUtilsTest {
         var password = generatePassword()
         assertEquals(64, password?.length)
 
-        password = generatePassword(32, 32);
+        password = generatePassword(32, 32)
         assertTrue { "^[a-z]{32}$".toRegex().matches(password) }
 
-        password = generatePassword(32, 0, 32);
+        password = generatePassword(32, 0, 32)
         assertTrue { "^[A-Z]{32}$".toRegex().matches(password) }
 
-        password = generatePassword(32, 0, 0, 32);
+        password = generatePassword(32, 0, 0, 32)
         assertTrue { "^[0-9]{32}$".toRegex().matches(password) }
 
-        password = generatePassword(32, 0, 0, 0, 32);
+        password = generatePassword(32, 0, 0, 0, 32)
         assertTrue { password.length == 32 }
         assertTrue { password.filter { "\"!@#$%()+;<>=?[\\]{}^.,".contains(it) }.length == password.length }
     }
