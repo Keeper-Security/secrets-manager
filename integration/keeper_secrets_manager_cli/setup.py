@@ -15,7 +15,8 @@ install_requires = [
     'click-repl',
     'jsonpath-rw-ext',
     'colorama',
-    'importlib_metadata'
+    'importlib_metadata',
+    'pyyaml'
 ]
 
 # Version set in the keeper_secrets_manager_cli.version file.
