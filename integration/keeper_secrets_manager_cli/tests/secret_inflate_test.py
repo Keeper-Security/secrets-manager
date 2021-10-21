@@ -11,6 +11,7 @@ import tempfile
 import os
 import json
 
+
 class SecretInflateTest(unittest.TestCase):
 
     def setUp(self) -> None:
