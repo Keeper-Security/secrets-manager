@@ -261,11 +261,11 @@ internal fun randomSample(sampleLength: Int=0, sampleString: String=""): String
     val sampleLen = if (sampleLength < 0) 0 else sampleLength
     if (sampleLen > 0 && sampleString.isNotEmpty())
     {
-        val random = SecureRandom()
+        val secureRandom = SecureRandom.getInstanceStrong()
         val bytes = CharArray(sampleLen)
         result = (bytes.indices)
             .map {
-                sampleString[random.nextInt(sampleString.length)]
+                sampleString[secureRandom.nextInt(sampleString.length)]
             }.joinToString("")
 
     }

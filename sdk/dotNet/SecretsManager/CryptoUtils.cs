@@ -319,9 +319,7 @@ namespace SecretsManager
             var result = new StringBuilder(sampleLength);
             if (sampleLength > 0 && !string.IsNullOrEmpty(sampleString))
             {
-                var data = new byte[4 * sampleLength];
-                using (var crypto = RandomNumberGenerator.Create())
-                    crypto.GetBytes(data);
+                var data = GetRandomBytes(4 * sampleLength);
                 for (int i = 0; i < sampleLength; i++)
                 {
                     var rnd = BitConverter.ToUInt32(data, i * 4);
@@ -333,17 +331,27 @@ namespace SecretsManager
             return result.ToString();
         }
 
+        // Returns random number in the range [0, maxValue) i.e. 0 <= number < maxValue
+        internal static int getRandomInt(int maxValue) {
+            UInt32 limit = Convert.ToUInt32(UInt32.MaxValue - UInt32.MaxValue % maxValue);
+            UInt32 value = 0;
+            do {
+                var randomBytes = GetRandomBytes(4);
+                value = BitConverter.ToUInt32(randomBytes, 0);
+            } while (value > limit);
+            return Convert.ToInt32(value % maxValue);
+        }
+
         internal static string Shuffle(string text)
         {
             var result = "";
 
             if (!string.IsNullOrWhiteSpace(text))
             {
-                Random rng = new Random();
                 var array = text.ToCharArray();
                 for (var i = array.Length - 1; i >= 1; --i)
                 {
-                    int j = rng.Next(i + 1); // 0 <= j <= i
+                    int j = getRandomInt(i + 1); // 0 <= j <= i
                     if (i != j) {
                         var temp = array[i];
                         array[i] = array[j];
