@@ -1,0 +1,44 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
+  "id": "d1999142-896c-49c0-a31f-e37b75958abb",
+  "name": "ksmazpipelinetask",
+  "friendlyName": "Keeper Secrets Manager Task",
+  "description": "Keeper Secrets Manager extension to inject secrets from Keeper",
+  "helpMarkDown": "",
+  "category": "Utility",
+  "author": "Keeper Security",
+  "version": {
+    "Major": 0,
+    "Minor": 6,
+    "Patch": 0
+  },
+  "instanceNameFormat": "KeeperSecretsManager",
+  "inputs": [
+    {
+      "name": "keepersecretconfig",
+      "type": "string",
+      "label": "Config",
+      "defaultValue": "",
+      "required": true,
+      "helpMarkDown": "Keeper Secrets Manager configuration json or base64 string"
+    },
+    {
+      "name": "secrets",
+      "type": "multiLine",
+      "label": "Secrets",
+      "defaultValue": "[UID1]/field/[FIEND NAME] > env:[NAME]\n[UID1]/field/[FIEND NAME] > env:[NAME]",
+      "required": true,
+      "properties": {
+        "resizable": true,
+        "rows": "10"
+      },
+      "helpMarkDown": "A list of secrets to retrieve from Keeper Vault"
+
+    }
+  ],
+  "execution": {
+    "Node10": {
+      "target": "index.js"
+    }
+  }
+}

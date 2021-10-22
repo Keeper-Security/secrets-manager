@@ -84,6 +84,9 @@ def _init(args):
     if args.keeper_hostname is not None:
         task_args["keeper_hostname"] = args.keeper_hostname
 
+    if ":" in task_args["keeper_token"]:
+        task_args["keeper_hostname"], task_args["keeper_token"] = task_args["keeper_token"].split(":")
+
     try:
         keeper_ansible = KeeperAnsible(task_args)
         keeper_ansible.client.get_secrets()
@@ -91,6 +94,7 @@ def _init(args):
             print("Config file created at location {}".format(keeper_ansible.config_file))
     except Exception as err:
         sys.exit("Keeper Ansible had an error: {}".format(err))
+
 
 def main(*args):
     parser = argparse.ArgumentParser(description='Ansible config generator')

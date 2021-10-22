@@ -17,6 +17,7 @@ from collections import deque
 from colorama import Fore, Style
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_core.core import SecretsManager
+from keeper_secrets_manager_core.utils import get_totp_code
 from .table import Table, ColumnAlign
 import uuid
 
@@ -413,6 +414,36 @@ class Secret:
         else:
             raise KsmCliException("The file output {} is not supported. Cannot download and save the file.".format(
                 file_output))
+
+    def get_totp_code(self, uid):
+        record = self.cli.client.get_secrets(uids=[uid])
+        if len(record) == 0:
+            raise KsmCliException("Cannot find a record for UID {}.".format(uid))
+
+        totp_uri = None
+        try:
+            totp_uri = record[0].get_standard_field_value("oneTimeCode", True)
+        except Exception:
+            pass
+        if not totp_uri:
+            try:
+                totp_uri = record[0].get_custom_field_value("oneTimeCode", True)
+            except Exception:
+                pass
+
+        if not totp_uri:
+            raise KsmCliException("Cannot find TOTP field for UID {}.".format(uid))
+
+        try:
+            totp, ttl, period = get_totp_code(totp_uri)
+        except Exception as err:
+            # The UI doesn't appear to valid the secret key, so the user might enter a bad secret key.
+            if str(err) == 'Incorrect padding':
+                raise KsmCliException("The secret key of the two factor code field appears to be invalid."
+                                      " Please make sure the record is correct.")
+            raise err
+
+        self.cli.output(totp)
 
     def get_via_notation(self, notation):
         try:
