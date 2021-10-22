@@ -1,6 +1,6 @@
-﻿using System;
+﻿using SecretsManager;
+using System;
 using System.Threading.Tasks;
-using SecretsManager;
 
 namespace QuickTest
 {
@@ -27,7 +27,7 @@ namespace QuickTest
             // var options = new SecretsManagerOptions(storage, SecretsManagerClient.CachingPostFunction);
             var secrets = await SecretsManagerClient.GetSecrets(options);
             // var password = Notation.GetValue(secrets, "BediNKCMG21ztm5xGYgNww/field/password");
-            var firstRecord = secrets.Records[0]; 
+            var firstRecord = secrets.Records[0];
             var password = firstRecord.FieldValue("password").ToString();
             Console.WriteLine(password);
             // var fileBytes = SecretsManagerClient.DownloadFile(firstRecord.Files[0]);

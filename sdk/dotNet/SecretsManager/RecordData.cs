@@ -16,7 +16,7 @@ namespace SecretsManager
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]    
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class KeeperRecordField
     {
         public string type { get; set; }
@@ -30,7 +30,7 @@ namespace SecretsManager
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]    
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class KeeperFileData
     {
         public string title { get; set; }

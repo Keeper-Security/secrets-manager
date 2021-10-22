@@ -1,6 +1,6 @@
+using NUnit.Framework;
 using System;
 using System.Text.RegularExpressions;
-using NUnit.Framework;
 
 namespace SecretsManager.Test
 {
@@ -14,7 +14,7 @@ namespace SecretsManager.Test
             var exportedPublicKey = CryptoUtils.ExportPublicKey(privateKey);
             Assert.AreEqual("BAYf/hnCkZH0HsCUyNVjt6SmM5xoPeuG47bkKY5nEjfCpEN2FdAh0Oe5a9A8JnfKa2MvcLwmtUhyWiSXBgj1Pv4=", CryptoUtils.BytesToBase64(exportedPublicKey));
         }
-        
+
         [Test]
         public void PrivateKeySizeIs150()
         {
@@ -42,12 +42,13 @@ namespace SecretsManager.Test
 
             password = CryptoUtils.GeneratePassword(64, 16, 16, 16, 16);
             var chars = password.ToCharArray();
-            Array.Sort(chars, (x, y) => {
+            Array.Sort(chars, (x, y) =>
+            {
                 int xgroup = (x >= 'a' && x <= 'z') ? 1 : (x >= 'A' && x <= 'Z') ? 2 : (x >= '0' && x <= '9') ? 3 : 4;
                 int ygroup = (y >= 'a' && y <= 'z') ? 1 : (y >= 'A' && y <= 'Z') ? 2 : (y >= '0' && y <= '9') ? 3 : 4;
                 int groupCompare = xgroup.CompareTo(ygroup);
                 return groupCompare == 0 ? x.CompareTo(y) : groupCompare;
-                });
+            });
             password = new string(chars);
             Assert.IsTrue(Regex.IsMatch(password, @"^[a-z]{16}[A-Z]{16}[0-9]{16}[""!@#$%()+;<>=?[\\\]{}^.,]{16}$"));
         }

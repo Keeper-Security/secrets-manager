@@ -13,8 +13,8 @@ using System.Threading.Tasks;
 
 namespace SecretsManager
 {
-    using QueryFunction = Func<string, TransmissionKey, EncryptedPayload, Task<KeeperHttpResponse>>;
     using GetRandomBytesFunction = Func<int, byte[]>;
+    using QueryFunction = Func<string, TransmissionKey, EncryptedPayload, Task<KeeperHttpResponse>>;
 
     public interface IKeyValueStorage
     {
@@ -123,7 +123,7 @@ namespace SecretsManager
             this.revision = revision;
         }
     }
-    
+
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
@@ -421,7 +421,7 @@ namespace SecretsManager
                     files.Add(new KeeperFile(fileKey, file.fileUid, JsonUtils.ParseJson<KeeperFileData>(decryptedFile), file.url, file.thumbnailUrl));
                 }
             }
-            
+
             return new KeeperRecord(recordKey, record.recordUid, folderUid, JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord), record.revision, files.ToArray());
         }
 
@@ -632,8 +632,8 @@ namespace SecretsManager
                     throw new Exception(CryptoUtils.BytesToString(response.Data));
                 }
 
-                return response.Data.Length == 0 
-                    ? response.Data 
+                return response.Data.Length == 0
+                    ? response.Data
                     : CryptoUtils.Decrypt(response.Data, transmissionKey.Key);
             }
         }

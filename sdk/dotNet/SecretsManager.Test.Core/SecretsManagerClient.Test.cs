@@ -1,8 +1,7 @@
-using System;
+using NUnit.Framework;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading.Tasks;
-using NUnit.Framework;
 
 namespace SecretsManager.Test
 {
