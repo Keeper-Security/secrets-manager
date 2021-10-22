@@ -16,13 +16,14 @@ install_requires = [
     'jsonpath-rw-ext',
     'colorama',
     'importlib_metadata',
-    'pyyaml'
+    'pyyaml',
+    'update-checker'
 ]
 
 # Version set in the keeper_secrets_manager_cli.version file.
 setup(
     name="keeper-secrets-manager-cli",
-    version="0.0.35",
+    version="0.0.36",
     description="Command line tool for Keeper Secrets Manager",
     long_description=long_description,
     long_description_content_type="text/markdown",

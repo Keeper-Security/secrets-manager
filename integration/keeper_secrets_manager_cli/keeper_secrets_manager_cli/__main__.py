@@ -27,6 +27,7 @@ import traceback
 import importlib_metadata
 import difflib
 import typing as t
+from update_checker import UpdateChecker
 
 # NOTE: For the CLI, all groups and command are lowercase. All arguments are lower case, so you cannot use
 # -n and -N for an arg flag. If you add a command, you need to add it to the list of known commands so we can
@@ -128,15 +129,33 @@ def base_command_help(f):
 
     # Unit test do not know their version
     version = "Unknown"
+    sdk_version = None
     try:
         version = importlib_metadata.version("keeper-secrets-manager-cli")
+        sdk_version = importlib_metadata.version("keeper-secrets-manager-core")
     except importlib_metadata.PackageNotFoundError:
         pass
 
-    f.__doc__ = "{} Version: {} ".format(
+    doc = "{} Version: {} ".format(
         Fore.RED + doc + Style.RESET_ALL,
         Fore.YELLOW + version + Style.RESET_ALL
     )
+    try:
+        # The __doc__ stuff gets formatted so new line don't work, however long spaces will.
+        spacer = " " * 80
+        update = UpdateChecker().check("keeper-secrets-manager-cli", version)
+        if update is not None:
+            doc += spacer + "Version {} is available for the CLI".format(update.available_version)
+
+        if sdk_version is not None:
+            update = UpdateChecker().check("keeper-secrets-manager-core", sdk_version)
+            if update is not None:
+                doc += spacer + "Version {} is available for the SDK".format(update.available_version)
+    except Exception as _:
+        pass
+
+    f.__doc__ = doc
+
     return f
 
 
@@ -590,6 +609,19 @@ def version_command(ctx):
     print("SDK Version: {}".format(versions["keeper-secrets-manager-core"]))
     print("SDK Install: {}".format(os.path.dirname(os.path.realpath(keeper_secrets_manager_core.__file__))))
     print("Config file: {}".format(ctx.obj["cli"].profile.ini_file))
+
+    try:
+        if versions["keeper-secrets-manager-cli"] is not None:
+            update = UpdateChecker().check("keeper-secrets-manager-cli", versions["keeper-secrets-manager-cli"])
+            if update is not None:
+                print("Version {} is available for the CLI".format(update.available_version))
+
+        if versions["keeper-secrets-manager-core"] is not None:
+            update = UpdateChecker().check("keeper-secrets-manager-core", versions["keeper-secrets-manager-core"])
+            if update is not None:
+                print("Version {} is available for the SDK".format(update.available_version))
+    except Exception as _:
+        pass
 
 
 @click.command(
