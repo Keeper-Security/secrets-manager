@@ -93,3 +93,50 @@ export const getTotpCode = async (url: string, unixTimeSeconds: number = 0) : Pr
 
     return [codeStr, Math.floor(tmBase % period), period];
 }
+
+export const generatePassword = async (length: number = 64, lowercase: number = 0, uppercase: number = 0, digits: number = 0, specialCharacters: number = 0) : Promise<string> => {
+    const asciiLowercase = 'abcdefghijklmnopqrstuvwxyz'
+    const asciiUppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    const asciiDigits = '0123456789'
+    const asciiSpecialCharacters = '"!@#$%()+;<>=?[]{}^.,'
+
+    length = (typeof length === 'number' && length > 0) ? length : 64
+    lowercase = (typeof lowercase === 'number' && lowercase > 0) ? lowercase : 0
+    uppercase = (typeof uppercase === 'number' && uppercase > 0) ? uppercase : 0
+    digits = (typeof digits === 'number' && digits > 0) ? digits : 0
+    specialCharacters = (typeof specialCharacters === 'number' && specialCharacters > 0) ? specialCharacters : 0
+
+    if (lowercase == 0 && uppercase == 0 && digits == 0 && specialCharacters == 0) {
+        const increment = length / 4
+        const lastIncrement = increment + length % 4
+        lowercase = uppercase = digits = increment
+        specialCharacters = lastIncrement
+    }
+
+    let result = ''
+
+    for (let i = 0; i < lowercase; i++)
+        result += await platform.getRandomCharacterInCharset(asciiLowercase)
+    for (let i = 0; i < uppercase; i++)
+        result += await platform.getRandomCharacterInCharset(asciiUppercase)
+    for (let i = 0; i < digits; i++)
+        result += await platform.getRandomCharacterInCharset(asciiDigits)
+    for (let i = 0; i < specialCharacters; i++)
+        result += await platform.getRandomCharacterInCharset(asciiSpecialCharacters)
+
+    // Fisher-Yates shuffle
+    if (result.length > 1) {
+        let a = result.split('')
+        for (let i = a.length - 1; i > 0; i--) {
+            const j = await platform.getRandomNumber(i+1) // 0 <= j <= i
+            if (i != j) {
+                const tmp = a[i]
+                a[i] = a[j]
+                a[j] = tmp
+            }
+        }
+        result = a.join('')
+    }
+
+    return result
+}

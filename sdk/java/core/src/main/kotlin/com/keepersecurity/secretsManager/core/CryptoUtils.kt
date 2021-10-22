@@ -18,6 +18,7 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.math.pow
 
+
 internal object KeeperCryptoParameters {
     internal val provider: BouncyCastleFipsProvider = BouncyCastleFipsProvider()
     internal val keyFactory: KeyFactory
@@ -167,7 +168,7 @@ private fun base32ToBytes(base32Text: String): ByteArray {
     var output: ByteArray = byteArrayOf()
     // The padding specified in RFC 3548 section 2.2 is not required and should be omitted.
     val base32: String = base32Text.trim().trimEnd('=')
-    if (base32.isNullOrEmpty() || !rxBase32Alphabet.matches(base32))
+    if (base32.isEmpty() || !rxBase32Alphabet.matches(base32))
         return output
 
     val bytes: CharArray = base32.toCharArray()
@@ -207,7 +208,7 @@ fun getTotpCode(url: String, unixTimeSeconds: Long = 0): Triple<String?, Int, In
 
     if (digits == 0) digits = DEFAULT_DIGITS
     if (period == 0) period = DEFAULT_TIME_STEP
-    if (secret.isNullOrEmpty())
+    if (secret.isEmpty())
         return null
 
     val tmBase = if (unixTimeSeconds != 0L) unixTimeSeconds else System.currentTimeMillis()/1000L
@@ -244,6 +245,65 @@ fun getTotpCode(url: String, unixTimeSeconds: Long = 0): Triple<String?, Int, In
     codeBytes[0] = (codeBytes[0].toInt() and 0x7f).toByte()
     var codeInt: Int = ByteBuffer.wrap(codeBytes).int
     codeInt %= 10.0.pow(digits.toDouble()).toInt()
-    var codeStr: String = codeInt.toString().padStart(digits, '0')
+    val codeStr: String = codeInt.toString().padStart(digits, '0')
     return Triple(codeStr, (tmBase % period).toInt(), period)
+}
+
+// password generation
+const val AsciiLowercase = "abcdefghijklmnopqrstuvwxyz"
+const val AsciiUppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const val AsciiDigits = "0123456789"
+const val AsciiSpecialCharacters = "\"!@#$%()+;<>=?[]{}^.,"
+
+internal fun randomSample(sampleLength: Int=0, sampleString: String=""): String
+{
+    var result = ""
+    val sampleLen = if (sampleLength < 0) 0 else sampleLength
+    if (sampleLen > 0 && sampleString.isNotEmpty())
+    {
+        val secureRandom = SecureRandom.getInstanceStrong()
+        val bytes = CharArray(sampleLen)
+        result = (bytes.indices)
+            .map {
+                sampleString[secureRandom.nextInt(sampleString.length)]
+            }.joinToString("")
+
+    }
+    return result
+}
+
+fun generatePassword(
+    length: Int = 64,
+    lowercase: Int = 0,
+    uppercase: Int = 0,
+    digits: Int = 0,
+    specialCharacters: Int = 0
+): String {
+    val totalLength: Int = if (length <= 0) 64 else length
+    var numLowercase: Int = lowercase
+    var numUppercase: Int = uppercase
+    var numDigits: Int = digits
+    var numSpecialCharacters: Int = specialCharacters
+
+    if (lowercase == 0 && uppercase == 0 && digits == 0 && specialCharacters == 0) {
+        val increment: Int = totalLength / 4
+        val lastIncrement: Int = increment + totalLength % 4
+        numLowercase = increment
+        numUppercase = increment
+        numDigits = increment
+        numSpecialCharacters = lastIncrement
+    }
+    var passwordCharacters = ""
+    if (numLowercase > 0)
+        passwordCharacters += randomSample(numLowercase, AsciiLowercase)
+    if (numUppercase > 0)
+        passwordCharacters += randomSample(numUppercase, AsciiUppercase)
+    if (numDigits > 0)
+        passwordCharacters += randomSample(numDigits, AsciiDigits)
+    if (numSpecialCharacters > 0)
+        passwordCharacters += randomSample(numSpecialCharacters, AsciiSpecialCharacters)
+
+    val pCharArray = passwordCharacters.toCharArray()
+    pCharArray.shuffle()
+    return String(pCharArray)
 }

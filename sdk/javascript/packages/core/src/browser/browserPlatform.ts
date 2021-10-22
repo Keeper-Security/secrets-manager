@@ -340,6 +340,25 @@ const getHmacDigest = async (algorithm: string, secret: Uint8Array, message: Uin
     return new Uint8Array();
 }
 
+// Returns a sufficiently random number in the range [0, max) i.e. 0 <= number < max
+const getRandomNumber = async (n: number): Promise<number> => {
+    const uint32Max = Math.pow(2, 32) - 1
+    const limit = uint32Max - uint32Max % n
+    let values = new Uint32Array(1)
+    do {
+        const randomBytes = getRandomBytes(4)
+        values = new Uint32Array(randomBytes.buffer)
+    } while (values[0] > limit)
+    return Promise.resolve(values[0] % n)
+}
+
+// Given a character set, this function will return one sufficiently random character from the charset.
+const getRandomCharacterInCharset = async (charset: string): Promise<string> => {
+    const count = charset.length
+    const pos = await getRandomNumber(count)
+    return Promise.resolve(charset[pos])
+}
+
 export const browserPlatform: Platform = {
     bytesToBase64: bytesToBase64,
     base64ToBytes: base64ToBytes,
@@ -360,5 +379,7 @@ export const browserPlatform: Platform = {
     get: get,
     post: post,
     cleanKeyCache: cleanKeyCache,
-    getHmacDigest: getHmacDigest
+    getHmacDigest: getHmacDigest,
+    getRandomNumber: getRandomNumber,
+    getRandomCharacterInCharset: getRandomCharacterInCharset
 }

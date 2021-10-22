@@ -4,9 +4,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Security;
-using System.Text.Json;
 using System.Text.Encodings.Web;
-using System.Text;
+using System.Text.Json;
 
 namespace SecretsManager
 {
@@ -59,7 +58,7 @@ namespace SecretsManager
             {
                 jsonStr = CryptoUtils.BytesToString(CryptoUtils.Base64ToBytes(jsonStr));
             }
-            catch (Exception){}
+            catch (Exception) { }
 
             var bytes = CryptoUtils.StringToBytes(jsonStr);
             var reader = new Utf8JsonReader(bytes);

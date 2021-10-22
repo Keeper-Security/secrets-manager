@@ -1,9 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.RegularExpressions;
 using Org.BouncyCastle.Asn1;
 using Org.BouncyCastle.Asn1.X9;
 using Org.BouncyCastle.Crypto;
@@ -14,6 +8,12 @@ using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Math;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace SecretsManager
 {
@@ -55,7 +55,7 @@ namespace SecretsManager
         {
             return Encoding.ASCII.GetBytes(data);
         }
-        
+
         public static string BytesToString(byte[] data)
         {
             return Encoding.ASCII.GetString(data);
@@ -65,7 +65,7 @@ namespace SecretsManager
         {
             return Convert.ToBase64String(data);
         }
-        
+
         public static byte[] Base64ToBytes(string data)
         {
             return Convert.FromBase64String(data);
@@ -85,7 +85,7 @@ namespace SecretsManager
             var keyPair = keyGenerator.GenerateKeyPair();
             return PrivateKeyInfoFactory.CreatePrivateKeyInfo(keyPair.Private).GetDerEncoded();
         }
-       
+
         public static byte[] ExportPublicKey(byte[] privateKeyDer)
         {
             return Curve.G.Multiply(ImportPrivateKey(privateKeyDer).D).GetEncoded(false);
@@ -102,7 +102,7 @@ namespace SecretsManager
             var point = new X9ECPoint(ECParameters.Curve, new DerOctetString(key)).Point;
             return new ECPublicKeyParameters(point, ECParameters);
         }
-        
+
         private static ECPrivateKeyParameters ImportPrivateKey(byte[] privateKeyDer)
         {
             return new ECPrivateKeyParameters(new BigInteger(1, privateKeyDer.Skip(36).Take(32).ToArray()), ECParameters);
@@ -123,7 +123,7 @@ namespace SecretsManager
             cipher.Init(forEncryption, gcmParameterSpec);
             return cipher;
         }
-        
+
         private const int IvSize = 12;
 
         public static byte[] Encrypt(byte[] data, byte[] key)
@@ -159,7 +159,7 @@ namespace SecretsManager
             var recipientPublicKey = ImportPublicKey(key);
             var symmetricKey = GetECIESSymmetricKey(ephemeralKeyPair.Private, recipientPublicKey);
             var encryptedData = Encrypt(data, symmetricKey);
-            return ((ECPublicKeyParameters) ephemeralKeyPair.Public).Q.GetEncoded().Concat(encryptedData).ToArray();
+            return ((ECPublicKeyParameters)ephemeralKeyPair.Public).Q.GetEncoded().Concat(encryptedData).ToArray();
         }
 
         public static byte[] Sign(byte[] data, byte[] key)
@@ -305,6 +305,104 @@ namespace SecretsManager
                 codeStr = "0" + codeStr;
 
             return Tuple.Create(codeStr, (int)(tmBase % period), period);
+        }
+
+        // password generation
+        const string AsciiLowercase = @"abcdefghijklmnopqrstuvwxyz";
+        const string AsciiUppercase = @"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const string AsciiDigits = @"0123456789";
+        const string AsciiSpecialCharacters = @"""!@#$%()+;<>=?[]{}^.,";
+
+        internal static string RandomSample(int sampleLength = 0, string sampleString = "")
+        {
+            sampleLength = sampleLength < 0 ? 0 : sampleLength;
+            var result = new StringBuilder(sampleLength);
+            if (sampleLength > 0 && !string.IsNullOrEmpty(sampleString))
+            {
+                var data = GetRandomBytes(4 * sampleLength);
+                for (int i = 0; i < sampleLength; i++)
+                {
+                    var rnd = BitConverter.ToUInt32(data, i * 4);
+                    var idx = (int)(rnd % sampleString.Length);
+
+                    result.Append(sampleString[idx]);
+                }
+            }
+            return result.ToString();
+        }
+
+        // Returns random number in the range [0, maxValue) i.e. 0 <= number < maxValue
+        internal static int GetRandomInt(int maxValue)
+        {
+            uint limit = Convert.ToUInt32(UInt32.MaxValue - UInt32.MaxValue % maxValue);
+            uint value;
+            do
+            {
+                var randomBytes = GetRandomBytes(4);
+                value = BitConverter.ToUInt32(randomBytes, 0);
+            } while (value > limit);
+            return Convert.ToInt32(value % maxValue);
+        }
+
+        internal static string Shuffle(string text)
+        {
+            var result = "";
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                var array = text.ToCharArray();
+                for (var i = array.Length - 1; i >= 1; --i)
+                {
+                    int j = GetRandomInt(i + 1); // 0 <= j <= i
+                    if (i != j)
+                    {
+                        var temp = array[i];
+                        array[i] = array[j];
+                        array[j] = temp;
+                    }
+                }
+                result = new string(array);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Generate a password of specified length with specified number of
+        /// uppercase, lowercase, digits and special characters
+        /// If all character groups have length=0 then total length is split evenly
+        /// with last group 'specialCharacters' taking any extra charcters
+        /// </summary>
+        /// <param name="length">Password length</param>
+        /// <param name="lowercase">Number of lowercase characters</param>
+        /// <param name="uppercase">Number of uppercase characters</param>
+        /// <param name="digits">Number of digits</param>
+        /// <param name="specialCharacters">Number of special characters</param>
+        /// <returns></returns>
+        public static string GeneratePassword(int length = 64, int lowercase = 0, int uppercase = 0, int digits = 0, int specialCharacters = 0)
+        {
+            if (length <= 0)
+                length = 64;
+            if (lowercase == 0 && uppercase == 0 && digits == 0 && specialCharacters == 0)
+            {
+                int increment = length / 4;
+                int lastIncrement = increment + (length % 4);
+                lowercase = uppercase = digits = increment;
+                specialCharacters = lastIncrement;
+            }
+
+            string passwordCharacters = "";
+            if (lowercase > 0)
+                passwordCharacters += RandomSample(lowercase, AsciiLowercase);
+            if (uppercase > 0)
+                passwordCharacters += RandomSample(uppercase, AsciiUppercase);
+            if (digits > 0)
+                passwordCharacters += RandomSample(digits, AsciiDigits);
+            if (specialCharacters > 0)
+                passwordCharacters += RandomSample(specialCharacters, AsciiSpecialCharacters);
+
+            string password = Shuffle(passwordCharacters);
+            return password;
         }
     }
 }

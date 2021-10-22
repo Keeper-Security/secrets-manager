@@ -20,6 +20,8 @@ export type Platform = {
     hash(data: Uint8Array, tag: string): Promise<Uint8Array>
     cleanKeyCache(): void
     getHmacDigest(algorithm: string, secret: Uint8Array, message: Uint8Array): Promise<Uint8Array>
+    getRandomNumber(n: number): Promise<number>
+    getRandomCharacterInCharset(charset: string): Promise<string>
 
 //  network
     get(url: string, headers: any): Promise<KeeperHttpResponse>

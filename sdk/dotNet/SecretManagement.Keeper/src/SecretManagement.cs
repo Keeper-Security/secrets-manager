@@ -1,4 +1,5 @@
-﻿using System;
+﻿using SecretsManager;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -7,7 +8,6 @@ using System.Linq;
 using System.Management.Automation;
 using System.Text.Json;
 using System.Threading.Tasks;
-using SecretsManager;
 
 namespace SecretManagement.Keeper
 {
@@ -81,8 +81,8 @@ namespace SecretManagement.Keeper
                     }
                     var fileTitle = parts[1].Substring(6, parts[1].IndexOf(']') - 6).Trim('"', '\'');
                     var file = found.Files.FirstOrDefault(x => x.Data.title.Equals(fileTitle, StringComparison.OrdinalIgnoreCase));
-                    return file == null 
-                        ? null 
+                    return file == null
+                        ? null
                         : SecretsManagerClient.DownloadFile(file);
                 }
 
