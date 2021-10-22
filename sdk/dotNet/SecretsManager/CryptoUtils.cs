@@ -332,7 +332,7 @@ namespace SecretsManager
         }
 
         // Returns random number in the range [0, maxValue) i.e. 0 <= number < maxValue
-        internal static int getRandomInt(int maxValue)
+        internal static int GetRandomInt(int maxValue)
         {
             uint limit = Convert.ToUInt32(UInt32.MaxValue - UInt32.MaxValue % maxValue);
             uint value;
@@ -353,7 +353,7 @@ namespace SecretsManager
                 var array = text.ToCharArray();
                 for (var i = array.Length - 1; i >= 1; --i)
                 {
-                    int j = getRandomInt(i + 1); // 0 <= j <= i
+                    int j = GetRandomInt(i + 1); // 0 <= j <= i
                     if (i != j)
                     {
                         var temp = array[i];
