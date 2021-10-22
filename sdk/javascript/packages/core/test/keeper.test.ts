@@ -3,11 +3,10 @@ import {
     getSecrets,
     initializeStorage,
     platform,
-    localConfigStorage, SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode
+    localConfigStorage, SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword
 } from '../'
 
 import * as fs from 'fs'
-import { generatePassword } from '../src/utils'
 
 test('Get secrets e2e', async () => {
 
