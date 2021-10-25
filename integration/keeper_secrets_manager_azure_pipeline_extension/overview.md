@@ -9,7 +9,7 @@ Common use cases for Secrets Manager include:
   - Protecting access to privileged passwords, API keys and other managed secrets
   - Providing vault access to machines and applications
 
-##Features
+**Features**
 
 *Keeper Secrets Manager* is part of the [Keeper Password Security](https://keepersecurity.com/) platform. With millions 
 of users worldwide, Keeper Password Manager + Keeper Secrets Manager provides numerous benefits over using Hashicorp 
@@ -29,6 +29,6 @@ Vault, Cyberark and other "legacy" Secrets Management products:
   - FIPS 140-2 validated
   - FedRAMP Moderate (In-Process)
 
-##Get Started
+**Get Started**
 
-Ready to get started with Keeper Secrets Manager? Proceed to the [Setup Instructions](https://docs.keeper.io/secrets-manager/secrets-manager/quick-start-guide).
+Ready to get started with Keeper Secrets Manager? Proceed to the [Setup Instructions](https://docs.keeper.io/secrets-manager/secrets-manager/quick-start-guide) and [Azure DevOps Extensions](https://docs.keeper.io/secrets-manager/secrets-manager/integrations/azure-devops-plugin)

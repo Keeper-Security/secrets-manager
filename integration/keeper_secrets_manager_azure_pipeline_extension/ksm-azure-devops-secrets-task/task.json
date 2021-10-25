@@ -3,13 +3,13 @@
   "id": "d1999142-896c-49c0-a31f-e37b75958abb",
   "name": "ksmazpipelinetask",
   "friendlyName": "Keeper Secrets Manager Task",
-  "description": "Keeper Secrets Manager extension to inject secrets from Keeper",
+  "description": "Keeper Secrets Manager extension for Microsoft Azure Pipelines",
   "helpMarkDown": "",
   "category": "Utility",
   "author": "Keeper Security",
   "version": {
     "Major": 0,
-    "Minor": 6,
+    "Minor": 7,
     "Patch": 0
   },
   "instanceNameFormat": "KeeperSecretsManager",
@@ -26,7 +26,7 @@
       "name": "secrets",
       "type": "multiLine",
       "label": "Secrets",
-      "defaultValue": "[UID1]/field/[FIEND NAME] > env:[NAME]\n[UID1]/field/[FIEND NAME] > env:[NAME]",
+      "defaultValue": "[UID1]/field/[FIEND NAME] > var:[NAME]\n[UID1]/custom_field/[FIEND NAME] > out:[NAME]",
       "required": true,
       "properties": {
         "resizable": true,
