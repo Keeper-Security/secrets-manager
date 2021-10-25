@@ -10,7 +10,7 @@ Ansible    | ![Ansible](https://github.com/Keeper-Security/secrets-manager/actio
 KSM CLI    | ![CLI](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.cli.yml/badge.svg)         | [![PyPi](https://img.shields.io/pypi/v/keeper-secrets-manager-cli?style=for-the-badge&logo=pypi)](https://pypi.org/project/keeper-secrets-manager-cli/)                                                     |
 PowerShell | | [![PowerShell](https://img.shields.io/powershellgallery/v/SecretManagement.Keeper?style=for-the-badge&logo=powershell)](https://www.powershellgallery.com/packages/SecretManagement.Keeper)                                                     |
 Go         | ![GoLang](https://github.com/keeper-security/secrets-manager-go/actions/workflows/test.go.yml/badge.svg)    | [![Go](https://img.shields.io/badge/Go-Latest-blue.svg?style=for-the-badge&logo=go&logoColor=white)](https://github.com/Keeper-Security/secrets-manager-go)                                   |
-
+Azure DevOps Extension |                                                                                                    | [![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/KeeperSecurity.keeper-secrets-manager?label=Azure%20DevOps%20Extension&style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=KeeperSecurity.keeper-secrets-manager)           |
 # What is Keeper Secrets Manager?
 
 Keeper Secrets Manager is a component of the Keeper Enterprise platform. It provides your DevOps, IT Security and
