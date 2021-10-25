@@ -1,0 +1,37 @@
+name: Publish to Azure Pipeline Extension
+on:
+  workflow_dispatch:
+
+jobs:
+  publish-npm:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./integration/keeper_secrets_manager_azure_pipeline_extension
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v2
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_AZ_PIPELINE_PUBSLISHER_CONFIG }}
+          secrets: |
+            DJz3ilHBHIbIZqkTClDV5Q/field/password > PAT
+
+      - name: Build
+        run: |
+          cd ksm-azure-devops-secrets-task
+          pwd
+          ls -la
+          npm install
+          npm run build
+
+
+      - name: Publish
+        run: |
+          cd ..
+          tfx extension publish --token {{ steps.ksmsecrets.outputs.PAT }}
