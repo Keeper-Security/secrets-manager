@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc index.ts",
     "run": "tsc && node index.js",
     "test": "tsc && mocha tests/_suite.js",
     "quicktest": "tsc && ts-node index.ts"
