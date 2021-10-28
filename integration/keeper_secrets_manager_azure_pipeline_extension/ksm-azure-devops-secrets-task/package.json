@@ -1,6 +1,6 @@
 {
   "name": "keeper-secrets-manager",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -12,7 +12,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@keeper-security/secrets-manager-core": "^16.1.0",
+    "@keeper-security/secrets-manager-core": "^16.1.1",
     "azure-pipelines-task-lib": "^3.1.9"
   },
   "devDependencies": {
