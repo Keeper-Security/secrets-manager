@@ -3,9 +3,7 @@ import {IssueType} from "azure-pipelines-task-lib";
 import {downloadFile, getSecrets, getValue, KeeperFile, loadJsonConfig} from "@keeper-security/secrets-manager-core";
 import * as fs from "fs";
 
-
 /*
-
     Azure Pipeline:
     - Pipeline Variable: variable that can be referenced in other places inside the pipeline.
 
@@ -83,7 +81,6 @@ const downloadSecretFile = async (file: KeeperFile, destination: string): Promis
 async function run() {
 
     try {
-
         const config: string | undefined = tl.getInput('keepersecretconfig', true)
         const secrets_input_arr = tl.getDelimitedInput('secrets', '\n', true)
 
@@ -104,17 +101,19 @@ async function run() {
 
         tl.debug("secrets_input_arr: [" + JSON.stringify(secrets_input_arr) + "]")
         tl.debug("inputs: [" + JSON.stringify(inputs) + "]")
-        tl.debug("config: [" + JSON.stringify(config) + "]")
         tl.debug("uids_to_retrieve: [" + JSON.stringify(uids_to_retrieve) + "]")
-        tl.debug("secrets: [" + JSON.stringify(secrets) + "")
 
         for (const input of inputs) {
 
             // @ts-ignore
             const secret = await getValue(secrets, input.notation)
 
-            if(typeof secret === 'string')
+            if(typeof secret === 'string') {
+                tl.debug("Masking secret for notation: " + input.notation)
                 tl.setSecret(secret)
+            } else {
+                tl.debug("Not Masking secret for notation: " + input.notation + " (type: " + typeof secret + ")")
+            }
 
             tl.debug("input: [" + JSON.stringify(input) + "]")
 
@@ -154,12 +153,9 @@ async function run() {
 
                     // xtlguWgodbpFkKJn7_7mAQ/file/rose2.jpeg > file:/tmp/rose2.jpeg
 
-
                     break
             }
         }
-
-        // console.log(inspect(secrets, false, 6))
 
     } catch (error) {
         if (error != null)
