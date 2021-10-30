@@ -465,7 +465,7 @@ namespace SecretsManager
         private static string GetClientVersion()
         {
             var version = Assembly.GetExecutingAssembly().GetName().Version;
-            return $"mn{version.Major}.{version.Minor}.{version.Revision}";
+            return $"mn{version.Major}.{version.Minor}.{version.Build}";
         }
 
         [SuppressMessage("ReSharper", "StringLiteralTypo")]
