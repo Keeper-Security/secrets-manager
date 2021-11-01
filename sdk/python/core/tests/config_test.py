@@ -37,6 +37,7 @@ class ConfigTest(unittest.TestCase):
                 self.fail("Found config file, should be missing.")
             except Exception as err:
                 self.assertRegex(str(err), r'Cannot locate One Time Token.', "did not get correct exception message.")
+            os.chdir('..')
 
     def test_default_load_from_json(self):
 
@@ -70,6 +71,7 @@ class ConfigTest(unittest.TestCase):
                              "did not get correct server")
             self.assertEqual(c.config.get(ConfigKeys.KEY_APP_KEY), "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
                              "did not get correct server")
+            os.chdir('..')
 
     def test_overwrite_via_args(self):
 
@@ -104,6 +106,7 @@ class ConfigTest(unittest.TestCase):
             self.assertEqual(secrets_manager.config.get(ConfigKeys.KEY_HOSTNAME), "localhost",
                              "did not get correct server")
             self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "Client key is not present")
+            os.chdir('..')
 
     def test_onetime_token_formats_abbrev(self):
 
@@ -180,6 +183,7 @@ class ConfigTest(unittest.TestCase):
 
             # App key should be removed.
             self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "client key (one time token) was removed successfully")
+            os.chdir('..')
 
     def test_in_memory_config(self):
 
