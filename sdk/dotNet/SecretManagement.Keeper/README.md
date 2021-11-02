@@ -35,18 +35,21 @@ Get-SecretInfo -Vault Keeper
 ```
 This will print something like
 ```
-Name           Type      VaultName
-----           ----      ---------
-Home SSH       Hashtable Keeper
-ACME Login     Hashtable Keeper
+Name                                  Type      VaultName
+----                                  ----      ---------
+UR9f2i-BpyCYTOdeqBho6A Home SSH       Hashtable Keeper
+WXsoZEUG9MGy6JkvpqK2qQ ACME Login     Hashtable Keeper
 ```
-where Name column will contain the titles of the records shared to the [Keeper Secrets Manager](https://docs.keeper.io/secrets-manager/secrets-manager) client specified at the registration time by the OneTimeToken. 
+where Name column will contain the record UID's and titles of the records shared to the [Keeper Secrets Manager](https://docs.keeper.io/secrets-manager/secrets-manager) client specified at the registration time by the OneTimeToken. 
 
 ## Getting a secret
 
 ```PowerShell
 Get-Secret "ACME Login" -AsPlainText
+#or
+Get-Secret WXsoZEUG9MGy6JkvpqK2qQ -AsPlainText
 ```
+
 This will print something like
 ```
 Name                           Value
@@ -59,12 +62,14 @@ If you want to access a specific field, you can specify the field directly using
 
 ```PowerShell
 Get-Secret "ACME Login.password" -AsPlainText
+#or
+Get-Secret WXsoZEUG9MGy6JkvpqK2qQ.password -AsPlainText
 ```
 
 ## Setting a secret
 
 ```PowerShell
-Set-Secret "ACME Login.password" "456" -AsPlainText
+Set-Secret WXsoZEUG9MGy6JkvpqK2qQ.password "456" -AsPlainText
 ```
 Currently, setting a secret can only set a single field on a Keeper record. It also cannot create new records, and is only capable of updating existing ones.
 
