@@ -64,7 +64,7 @@ namespace SecretManagement.Keeper
         {
             var parts = name.Split(new[] { '.' }, 2);
             var (records, _) = await GetKeeperSecrets(config);
-            var found = records.FirstOrDefault(x => x.Data.title == parts[0]);
+            var found = records.FirstOrDefault(x => x.RecordUid == parts[0] || x.Data.title == parts[0]);
             if (found == null)
             {
                 return null;
@@ -116,7 +116,7 @@ namespace SecretManagement.Keeper
                 options: WildcardOptions.IgnoreCase);
             return records
                 .Where(x => filterPattern.IsMatch(x.Data.title))
-                .Select(x => x.Data.title).ToArray();
+                .Select(x => $"{x.RecordUid} {x.Data.title}").ToArray();
         }
 
         public static async Task<KeeperResult> SetSecret(string name, object secret, Hashtable config)
@@ -128,7 +128,7 @@ namespace SecretManagement.Keeper
             }
 
             var (records, options) = await GetKeeperSecrets(config);
-            var found = records.FirstOrDefault(x => x.Data.title == parts[0]);
+            var found = records.FirstOrDefault(x => x.RecordUid == parts[0] || x.Data.title == parts[0]);
             if (found == null)
             {
                 return KeeperResult.Error("Set-Secret can only be used to update existing Keeper secrets");
