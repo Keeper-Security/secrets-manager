@@ -323,7 +323,7 @@ namespace SecretsManager
             while (codeStr.Length < digits)
                 codeStr = "0" + codeStr;
 
-            int elapsed = (int)(tmBase % period); // time elapsed in curent period in seconds
+            int elapsed = (int)(tmBase % period); // time elapsed in current period in seconds
             int ttl = period - elapsed; // time to live in seconds
             return new TotpCode() { Code = codeStr, TimeLeft = ttl, Period = period };
         }

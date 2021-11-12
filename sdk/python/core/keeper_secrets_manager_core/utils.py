@@ -162,7 +162,7 @@ def get_totp_code(url):
         base[0] = base[0] & 0x7f
         code_int = int.from_bytes(base, byteorder='big')
         code = str(code_int % (10 ** digits)).zfill(digits)
-        elapsed = tm_base % period; # time elapsed in curent period in seconds
+        elapsed = tm_base % period; # time elapsed in current period in seconds
         ttl = period - elapsed; # time to live in seconds
 
         return TotpCode(code, ttl, period)
