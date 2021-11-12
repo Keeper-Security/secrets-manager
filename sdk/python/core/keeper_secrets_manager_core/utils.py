@@ -94,8 +94,16 @@ def json_to_dict(json_str):
     return resp
 
 
+class TotpCode:
+
+    def __init__(self, code, time_left, period):
+        self.code = code
+        self.time_left = time_left
+        self.period = period
+
+
 def get_totp_code(url):
-    # type: (str) -> Tuple[str, int, int] or None
+    # type: (str) -> TotpCode or None
     comp = parse.urlparse(url)
     if comp.scheme != 'otpauth':
         raise ValueError('Not an otpauth URI')
@@ -154,7 +162,10 @@ def get_totp_code(url):
         base[0] = base[0] & 0x7f
         code_int = int.from_bytes(base, byteorder='big')
         code = str(code_int % (10 ** digits)).zfill(digits)
-        return code, period - (tm_base % period), period
+        elapsed = tm_base % period; # time elapsed in curent period in seconds
+        ttl = period - elapsed; # time to live in seconds
+
+        return TotpCode(code, ttl, period)
 
 # password generation
 def random_sample(sample_length=0, sample_string=''):
