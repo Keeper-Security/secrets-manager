@@ -87,21 +87,21 @@ test('TOTP', async () => {
     let url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=&digits=8&period=30'
     let totp = await getTotpCode(url, 20000000000)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('65353130') // using default algorithm SHA1
+    expect(totp!.code).toBe('65353130') // using default algorithm SHA1
 
     // test default digits
     // { Algorithm: "SHA1", Period: 30, UnixTime: 20000000000, Secret: "12345678901234567890", Digits: 0}, Output: "353130"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=0&period=30'
     totp = await getTotpCode(url, 20000000000)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('353130') // using default digits = 6
+    expect(totp!.code).toBe('353130') // using default digits = 6
 
     // test default period
     // {Algorithm: "SHA1", Period: 0, UnixTime: 20000000000, Secret: "12345678901234567890", Digits: 8}, Output: "65353130"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=0'
     totp = await getTotpCode(url, 20000000000)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('65353130') // using default period = 30
+    expect(totp!.code).toBe('65353130') // using default period = 30
 
     // test empty secret
     // {Algorithm: "SHA1", Period: 30, UnixTime: 0, Secret: "", Digits: 8}, Output: "no secret key provided"}
@@ -126,103 +126,103 @@ test('TOTP', async () => {
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=30'
     totp = await getTotpCode(url, 59)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('94287082')
-    expect(totp![1]).toBe(29)
+    expect(totp!.code).toBe('94287082')
+    expect(totp!.timeLeft).toBe(1)
     // {Algorithm: "SHA256", Period: 30, UnixTime: 59, Secret: "12345678901234567890123456789012", Digits: 8}, Output: "46119246"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&issuer=ACME&algorithm=SHA256&digits=8&period=30'
     totp = await getTotpCode(url, 59)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('46119246')
-    expect(totp![1]).toBe(29)
+    expect(totp!.code).toBe('46119246')
+    expect(totp!.timeLeft).toBe(1)
     // {Algorithm: "SHA512", Period: 30, UnixTime: 59, Secret: "1234567890123456789012345678901234567890123456789012345678901234", Digits: 8}, Output: "90693936"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA=&issuer=ACME&algorithm=SHA512&digits=8&period=30'
     totp = await getTotpCode(url, 59)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('90693936')
-    expect(totp![1]).toBe(29)
+    expect(totp!.code).toBe('90693936')
+    expect(totp!.timeLeft).toBe(1)
 
     // Check different periods - 1 sec. before split
     // {Algorithm: "SHA1", Period: 30, UnixTime: 1111111109, Secret: "12345678901234567890", Digits: 8}, Output: "07081804"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=30'
     totp = await getTotpCode(url, 1111111109)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('07081804')
+    expect(totp!.code).toBe('07081804')
     // {Algorithm: "SHA256", Period: 30, UnixTime: 1111111109, Secret: "12345678901234567890123456789012", Digits: 8}, Output: "68084774"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&issuer=ACME&algorithm=SHA256&digits=8&period=30'
     totp = await getTotpCode(url, 1111111109)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('68084774')
+    expect(totp!.code).toBe('68084774')
     // {Algorithm: "SHA512", Period: 30, UnixTime: 1111111109, Secret: "1234567890123456789012345678901234567890123456789012345678901234", Digits: 8}, Output: "25091201"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA=&issuer=ACME&algorithm=SHA512&digits=8&period=30'
     totp = await getTotpCode(url, 1111111109)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('25091201')
+    expect(totp!.code).toBe('25091201')
 
     // Check different periods - 1 sec. after split
     // {Algorithm: "SHA1", Period: 30, UnixTime: 1111111111, Secret: "12345678901234567890", Digits: 8}, Output: "14050471"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=30'
     totp = await getTotpCode(url, 1111111111)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('14050471')
+    expect(totp!.code).toBe('14050471')
     // {Algorithm: "SHA256", Period: 30, UnixTime: 1111111111, Secret: "12345678901234567890123456789012", Digits: 8}, Output: "67062674"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&issuer=ACME&algorithm=SHA256&digits=8&period=30'
     totp = await getTotpCode(url, 1111111111)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('67062674')
+    expect(totp!.code).toBe('67062674')
     // {Algorithm: "SHA512", Period: 30, UnixTime: 1111111111, Secret: "1234567890123456789012345678901234567890123456789012345678901234", Digits: 8}, Output: "99943326"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA=&issuer=ACME&algorithm=SHA512&digits=8&period=30'
     totp = await getTotpCode(url, 1111111111)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('99943326')
+    expect(totp!.code).toBe('99943326')
 
     // Check different time periods
     // {Algorithm: "SHA1", Period: 30, UnixTime: 1234567890, Secret: "12345678901234567890", Digits: 8}, Output: "89005924"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=30'
     totp = await getTotpCode(url, 1234567890)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('89005924')
+    expect(totp!.code).toBe('89005924')
     // {Algorithm: "SHA256", Period: 30, UnixTime: 1234567890, Secret: "12345678901234567890123456789012", Digits: 8}, Output: "91819424"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&issuer=ACME&algorithm=SHA256&digits=8&period=30'
     totp = await getTotpCode(url, 1234567890)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('91819424')
+    expect(totp!.code).toBe('91819424')
     // {Algorithm: "SHA512", Period: 30, UnixTime: 1234567890, Secret: "1234567890123456789012345678901234567890123456789012345678901234", Digits: 8}, Output: "93441116"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA=&issuer=ACME&algorithm=SHA512&digits=8&period=30'
     totp = await getTotpCode(url, 1234567890)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('93441116')
+    expect(totp!.code).toBe('93441116')
 
     // {Algorithm: "SHA1", Period: 30, UnixTime: 2000000000, Secret: "12345678901234567890", Digits: 8}, Output: "69279037"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=30'
     totp = await getTotpCode(url, 2000000000)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('69279037')
+    expect(totp!.code).toBe('69279037')
     // {Algorithm: "SHA256", Period: 30, UnixTime: 2000000000, Secret: "12345678901234567890123456789012", Digits: 8}, Output: "90698825"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&issuer=ACME&algorithm=SHA256&digits=8&period=30'
     totp = await getTotpCode(url, 2000000000)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('90698825')
+    expect(totp!.code).toBe('90698825')
     // {Algorithm: "SHA512", Period: 30, UnixTime: 2000000000, Secret: "1234567890123456789012345678901234567890123456789012345678901234", Digits: 8}, Output: "38618901"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA=&issuer=ACME&algorithm=SHA512&digits=8&period=30'
     totp = await getTotpCode(url, 2000000000)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('38618901')
+    expect(totp!.code).toBe('38618901')
 
     // {Algorithm: "SHA1", Period: 30, UnixTime: 20000000000, Secret: "12345678901234567890", Digits: 8}, Output: "65353130"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=30'
     totp = await getTotpCode(url, 20000000000)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('65353130')
+    expect(totp!.code).toBe('65353130')
     // {Algorithm: "SHA256", Period: 30, UnixTime: 20000000000, Secret: "12345678901234567890123456789012", Digits: 8}, Output: "77737706"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&issuer=ACME&algorithm=SHA256&digits=8&period=30'
     totp = await getTotpCode(url, 20000000000)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('77737706')
+    expect(totp!.code).toBe('77737706')
     // {Algorithm: "SHA512", Period: 30, UnixTime: 20000000000, Secret: "1234567890123456789012345678901234567890123456789012345678901234", Digits: 8}, Output: "47863826"}
     url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA=&issuer=ACME&algorithm=SHA512&digits=8&period=30'
     totp = await getTotpCode(url, 20000000000)
     expect(totp).not.toBeNull()
-    expect(totp![0]).toBe('47863826')
+    expect(totp!.code).toBe('47863826')
 })
 
 test('GeneratePassword', async () => {
