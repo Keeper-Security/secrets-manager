@@ -293,15 +293,28 @@ class Secret:
         # Can only perform field search on one record. The CLI part prevents this. Just grab the first record.
         record = records[0]
         field = None
-        try:
-            field = next((item for item in record["fields"] if item["type"] == field_key), None)
-        except ValueError as _:
-            pass
-        if field is None or len(field) == 0:
-            try:
-                field = next((item for item in record["custom_fields"] if item["label"] == field_key), None)
-            except ValueError as _:
-                pass
+
+        # First check the fields. Label first and then type.
+        if record.get("fields") is not None:
+            for key in ["label", "type"]:
+                try:
+                    field = next((item for item in record["fields"] if item.get(key) == field_key), None)
+                except ValueError as _:
+                    pass
+                if field is not None:
+                    break
+
+        # If we don't have a value, check the custom_fields. Label first and then type.
+        if field is None and record.get("custom_fields") is not None:
+            for key in ["label", "type"]:
+                if field is None or len(field) == 0:
+                    try:
+                        field = next((item for item in record["custom_fields"] if item.get(key) == field_key), None)
+                    except ValueError as _:
+                        pass
+                if field is not None:
+                    break
+
         if field is None:
             raise KsmCliException("Cannot find the field {} in record {}".format(field_key, record["title"]))
 
@@ -343,11 +356,16 @@ class Secret:
 
         records = []
         fetch_uids = None
+
+        # If we are not searching by title, then set the fetch uid to the uids passed in.
         if len(titles) == 0:
             fetch_uids = uids
 
         for record in self.cli.client.get_secrets(uids=fetch_uids):
             add_record = False
+
+            # If we are searching by title, the fetch_uids was None, we have all the records. We need to filter
+            # them by the title or uids.
             if len(titles) > 0:
                 if record.title in titles or record.uid in uids:
                     add_record = True
@@ -360,11 +378,13 @@ class Secret:
                                                     unmask=unmask,
                                                     inflate=inflate))
 
+        # The user wants a specific field value.
         if field is not None:
             self._query_field(
                 field_key=field,
                 records=records
             )
+        # The user wants to use JSONPath to get the field(s) values.
         elif jsonpath_query is not None:
             self._query_jsonpath(
                 jsonpath_query=jsonpath_query,
