@@ -184,7 +184,9 @@ private fun base32ToBytes(base32Text: String): ByteArray {
     return output
 }
 
-fun getTotpCode(url: String, unixTimeSeconds: Long = 0): Triple<String?, Int, Int>? {
+data class TotpCode(val code: String, val timeLeft: Int, val period: Int)
+
+fun getTotpCode(url: String, unixTimeSeconds: Long = 0): TotpCode? {
     // java.net.MalformedURLException: unknown protocol: otpauth
     val protocol: String = if (url.startsWith("otpauth://", true)) "otpauth" else ""
     if (protocol != "otpauth")
@@ -246,7 +248,10 @@ fun getTotpCode(url: String, unixTimeSeconds: Long = 0): Triple<String?, Int, In
     var codeInt: Int = ByteBuffer.wrap(codeBytes).int
     codeInt %= 10.0.pow(digits.toDouble()).toInt()
     val codeStr: String = codeInt.toString().padStart(digits, '0')
-    return Triple(codeStr, (tmBase % period).toInt(), period)
+    val elapsed: Int = (tmBase % period).toInt(); // time elapsed in current period in seconds
+    val ttl: Int = period - elapsed; // time to live in seconds
+
+    return TotpCode(codeStr, ttl, period)
 }
 
 // password generation

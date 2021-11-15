@@ -179,6 +179,25 @@ namespace SecretsManager
         const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
         private static readonly Regex rxBase32Alphabet = new Regex($"^[A-Z2-7]+$", RegexOptions.Compiled);
 
+        /// <summary>
+        /// TotpCode provides detailed info about the generated TOTP code
+        /// </summary>
+        public class TotpCode
+        {
+            /// <summary>
+            /// TOTP Code
+            /// </summary>
+            public string Code;
+            /// <summary>
+            /// Time left in seconds (time before expiration)
+            /// </summary>
+            public int TimeLeft;
+            /// <summary>
+            /// Period in seconds
+            /// </summary>
+            public int Period;
+        }
+
         internal static byte[] Base32ToBytes(string base32)
         {
             // The padding specified in RFC 3548 section 2.2 is not required and should be omitted.
@@ -232,7 +251,7 @@ namespace SecretsManager
         /// <item><description>TOTP Period in seconds</description></item>
         /// </list>
         /// </returns>
-        public static Tuple<string, int, int> GetTotpCode(string url, long unixTimeSeconds = 0)
+        public static TotpCode GetTotpCode(string url, long unixTimeSeconds = 0)
         {
             if (!Uri.TryCreate(url, UriKind.Absolute, out Uri uri))
                 return null;
@@ -304,7 +323,9 @@ namespace SecretsManager
             while (codeStr.Length < digits)
                 codeStr = "0" + codeStr;
 
-            return Tuple.Create(codeStr, (int)(tmBase % period), period);
+            int elapsed = (int)(tmBase % period); // time elapsed in current period in seconds
+            int ttl = period - elapsed; // time to live in seconds
+            return new TotpCode() { Code = codeStr, TimeLeft = ttl, Period = period };
         }
 
         // password generation

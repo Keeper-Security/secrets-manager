@@ -39,7 +39,7 @@ const b32encode = (base32Text: string): Uint8Array => {
     return new Uint8Array(output);
 }
 
-export const getTotpCode = async (url: string, unixTimeSeconds: number = 0) : Promise<[string, number, number] | null>  => {
+export const getTotpCode = async (url: string, unixTimeSeconds: number = 0) : Promise<{ code: string; timeLeft: number; period: number; } | null>  => {
     let totpUrl: URL;
     try {
         totpUrl = new URL(url);
@@ -91,7 +91,9 @@ export const getTotpCode = async (url: string, unixTimeSeconds: number = 0) : Pr
     while (codeStr.length < digits)
         codeStr = "0" + codeStr;
 
-    return [codeStr, Math.floor(tmBase % period), period];
+    const elapsed = Math.floor(tmBase % period); // time elapsed in current period in seconds
+    const ttl = period - elapsed; // time to live in seconds
+    return { code: codeStr, timeLeft: ttl, period: period };
 }
 
 export const generatePassword = async (length: number = 64, lowercase: number = 0, uppercase: number = 0, digits: number = 0, specialCharacters: number = 0) : Promise<string> => {

@@ -65,26 +65,26 @@ class CoreTest(unittest.TestCase):
         # Test default algorithm
         # {Algorithm: "", Period: 30, UnixTime: 20000000000, Secret: "12345678901234567890", Digits: 8}, Output: "65353130"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=&digits=8&period=30&counter=20000000000'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual(code, '65353130') # using default algorithm SHA1
+        totp = get_totp_code(url)
+        self.assertEqual(totp.code, '65353130') # using default algorithm SHA1
 
         # Test default digits
         # { Algorithm: "SHA1", Period: 30, UnixTime: 20000000000, Secret: "12345678901234567890", Digits: 0}, Output: "353130"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=0&period=30&counter=20000000000'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual(code, '353130') # using default digits = 6
+        totp = get_totp_code(url)
+        self.assertEqual(totp.code, '353130') # using default digits = 6
 
         # Test default period
         # {Algorithm: "SHA1", Period: 0, UnixTime: 20000000000, Secret: "12345678901234567890", Digits: 8}, Output: "65353130"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=0&counter=20000000000'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual(code, '65353130') # using default period = 30
+        totp = get_totp_code(url)
+        self.assertEqual(totp.code, '65353130') # using default period = 30
 
         # Test empty secret
         # {Algorithm: "SHA1", Period: 30, UnixTime: 0, Secret: "", Digits: 8}, Output: "no secret key provided"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=&issuer=ACME&algorithm=SHA1&digits=8&period=30'
         try:
-            code, _, _ = get_totp_code(url)
+            totp = get_totp_code(url)
         except ValueError as err:
             self.assertEqual(str(err), 'TOTP secret not found in URI')
 
@@ -92,7 +92,7 @@ class CoreTest(unittest.TestCase):
         # { Algorithm: "SHA1024", Period: 30, UnixTime: 0, Secret: "12345678901234567890", Digits: 8}, Output: "invalid algorithm - use one of SHA1/SHA256/SHA512"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1024&digits=8&period=30'
         try:
-            code, _, _ = get_totp_code(url)
+            totp = get_totp_code(url)
         except ValueError as err:
             self.assertRegex(str(err), r'Invalid value "[^"]*" for TOTP algorithm, must be SHA1, SHA256 or SHA512', 'did not get correct error message')
 
@@ -100,91 +100,91 @@ class CoreTest(unittest.TestCase):
         # { Algorithm: "SHA1", Period: 30, UnixTime: 0, Secret: "1NVAL1D", Digits: 8}, Output: "bad secret key"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=1NVAL1D&issuer=ACME&algorithm=SHA1&digits=8&period=30'
         try:
-            code, _, _ = get_totp_code(url)
+            totp = get_totp_code(url)
         except ValueError as err:
             self.assertEqual(str(err), 'Non-base32 digit found')
 
         # Check seconds left
         # {Algorithm: "SHA1", Period: 30, UnixTime: 59, Secret: "12345678901234567890", Digits: 8}, Output: "94287082"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=30&counter=59'
-        code, ttl, _ = get_totp_code(url)
-        self.assertEqual("94287082", code)
-        self.assertEqual(1, ttl)
+        totp = get_totp_code(url)
+        self.assertEqual("94287082", totp.code)
+        self.assertEqual(1, totp.time_left)
         # {Algorithm: "SHA256", Period: 30, UnixTime: 59, Secret: "12345678901234567890123456789012", Digits: 8}, Output: "46119246"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&issuer=ACME&algorithm=SHA256&digits=8&period=30&counter=59'
-        code, ttl, _ = get_totp_code(url)
-        self.assertEqual("46119246", code)
-        self.assertEqual(1, ttl)
+        totp = get_totp_code(url)
+        self.assertEqual("46119246", totp.code)
+        self.assertEqual(1, totp.time_left)
         # {Algorithm: "SHA512", Period: 30, UnixTime: 59, Secret: "1234567890123456789012345678901234567890123456789012345678901234", Digits: 8}, Output: "90693936"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA=&issuer=ACME&algorithm=SHA512&digits=8&period=30&counter=59'
-        code, ttl, _ = get_totp_code(url)
-        self.assertEqual("90693936", code)
-        self.assertEqual(1, ttl)
+        totp = get_totp_code(url)
+        self.assertEqual("90693936", totp.code)
+        self.assertEqual(1, totp.time_left)
 
         # Check different periods - 1 sec. before split
         # {Algorithm: "SHA1", Period: 30, UnixTime: 1111111109, Secret: "12345678901234567890", Digits: 8}, Output: "07081804"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=30&counter=1111111109'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("07081804", code)
+        totp = get_totp_code(url)
+        self.assertEqual("07081804", totp.code)
         # {Algorithm: "SHA256", Period: 30, UnixTime: 1111111109, Secret: "12345678901234567890123456789012", Digits: 8}, Output: "68084774"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&issuer=ACME&algorithm=SHA256&digits=8&period=30&counter=1111111109'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("68084774", code)
+        totp = get_totp_code(url)
+        self.assertEqual("68084774", totp.code)
         # {Algorithm: "SHA512", Period: 30, UnixTime: 1111111109, Secret: "1234567890123456789012345678901234567890123456789012345678901234", Digits: 8}, Output: "25091201"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA=&issuer=ACME&algorithm=SHA512&digits=8&period=30&counter=1111111109'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("25091201", code)
+        totp = get_totp_code(url)
+        self.assertEqual("25091201", totp.code)
 
         # Check different periods - 1 sec. after split
         # {Algorithm: "SHA1", Period: 30, UnixTime: 1111111111, Secret: "12345678901234567890", Digits: 8}, Output: "14050471"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=30&counter=1111111111'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("14050471", code)
+        totp = get_totp_code(url)
+        self.assertEqual("14050471", totp.code)
         # {Algorithm: "SHA256", Period: 30, UnixTime: 1111111111, Secret: "12345678901234567890123456789012", Digits: 8}, Output: "67062674"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&issuer=ACME&algorithm=SHA256&digits=8&period=30&counter=1111111111'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("67062674", code)
+        totp = get_totp_code(url)
+        self.assertEqual("67062674", totp.code)
         # {Algorithm: "SHA512", Period: 30, UnixTime: 1111111111, Secret: "1234567890123456789012345678901234567890123456789012345678901234", Digits: 8}, Output: "99943326"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA=&issuer=ACME&algorithm=SHA512&digits=8&period=30&counter=1111111111'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("99943326", code)
+        totp = get_totp_code(url)
+        self.assertEqual("99943326", totp.code)
 
         # Check different time periods
         # {Algorithm: "SHA1", Period: 30, UnixTime: 1234567890, Secret: "12345678901234567890", Digits: 8}, Output: "89005924"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=30&counter=1234567890'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("89005924", code)
+        totp = get_totp_code(url)
+        self.assertEqual("89005924", totp.code)
         # {Algorithm: "SHA256", Period: 30, UnixTime: 1234567890, Secret: "12345678901234567890123456789012", Digits: 8}, Output: "91819424"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&issuer=ACME&algorithm=SHA256&digits=8&period=30&counter=1234567890'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("91819424", code)
+        totp = get_totp_code(url)
+        self.assertEqual("91819424", totp.code)
         # {Algorithm: "SHA512", Period: 30, UnixTime: 1234567890, Secret: "1234567890123456789012345678901234567890123456789012345678901234", Digits: 8}, Output: "93441116"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA=&issuer=ACME&algorithm=SHA512&digits=8&period=30&counter=1234567890'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("93441116", code)
+        totp = get_totp_code(url)
+        self.assertEqual("93441116", totp.code)
 
         # {Algorithm: "SHA1", Period: 30, UnixTime: 2000000000, Secret: "12345678901234567890", Digits: 8}, Output: "69279037"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=30&counter=2000000000'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("69279037", code)
+        totp = get_totp_code(url)
+        self.assertEqual("69279037", totp.code)
         # {Algorithm: "SHA256", Period: 30, UnixTime: 2000000000, Secret: "12345678901234567890123456789012", Digits: 8}, Output: "90698825"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&issuer=ACME&algorithm=SHA256&digits=8&period=30&counter=2000000000'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("90698825", code)
+        totp = get_totp_code(url)
+        self.assertEqual("90698825", totp.code)
         # {Algorithm: "SHA512", Period: 30, UnixTime: 2000000000, Secret: "1234567890123456789012345678901234567890123456789012345678901234", Digits: 8}, Output: "38618901"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA=&issuer=ACME&algorithm=SHA512&digits=8&period=30&counter=2000000000'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("38618901", code)
+        totp = get_totp_code(url)
+        self.assertEqual("38618901", totp.code)
 
         # {Algorithm: "SHA1", Period: 30, UnixTime: 20000000000, Secret: "12345678901234567890", Digits: 8}, Output: "65353130"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME&algorithm=SHA1&digits=8&period=30&counter=20000000000'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("65353130", code)
+        totp = get_totp_code(url)
+        self.assertEqual("65353130", totp.code)
         # {Algorithm: "SHA256", Period: 30, UnixTime: 20000000000, Secret: "12345678901234567890123456789012", Digits: 8}, Output: "77737706"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&issuer=ACME&algorithm=SHA256&digits=8&period=30&counter=20000000000'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("77737706", code)
+        totp = get_totp_code(url)
+        self.assertEqual("77737706", totp.code)
         # {Algorithm: "SHA512", Period: 30, UnixTime: 20000000000, Secret: "1234567890123456789012345678901234567890123456789012345678901234", Digits: 8}, Output: "47863826"}
         url = 'otpauth://totp/ACME:john.doe@email.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA=&issuer=ACME&algorithm=SHA512&digits=8&period=30&counter=20000000000'
-        code, _, _ = get_totp_code(url)
-        self.assertEqual("47863826", code)
+        totp = get_totp_code(url)
+        self.assertEqual("47863826", totp.code)
