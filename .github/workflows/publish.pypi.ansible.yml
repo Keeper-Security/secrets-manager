@@ -1,17 +1,17 @@
-name: Publish to PyPI (Python SDK)
+name: Publish to PyPI (KSM Ansible)
 on:
   workflow_dispatch:
 
 jobs:
   publish-pypi:
-    name: Build and publish 📦 KSM Python SDK to PyPI
+    name: Build and publish 📦 KSM CLI to PyPI
     environment: prod
     runs-on: ubuntu-latest
     timeout-minutes: 10 # To keep builds from running too long
 
     defaults:
       run:
-        working-directory: ./sdk/python/core
+        working-directory: ./integration/keeper_secrets_manager_cli
 
     steps:
       - name: Get the source code
