@@ -4,7 +4,7 @@ on:
 
 jobs:
   publish-pypi:
-    name: Build and publish 📦 KSM CLI to PyPI
+    name: Publish KSM CLI to PyPI
     environment: prod
     runs-on: ubuntu-latest
     timeout-minutes: 10 # To keep builds from running too long

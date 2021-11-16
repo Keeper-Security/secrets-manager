@@ -4,14 +4,14 @@ on:
 
 jobs:
   publish-pypi:
-    name: Build and publish 📦 KSM CLI to PyPI
+    name: Publish KSM Ansible Pulugin to PyPI
     environment: prod
     runs-on: ubuntu-latest
     timeout-minutes: 10 # To keep builds from running too long
 
     defaults:
       run:
-        working-directory: ./integration/keeper_secrets_manager_cli
+        working-directory: ./integration/keeper_secrets_manager_ansible
 
     steps:
       - name: Get the source code
