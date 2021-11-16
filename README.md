@@ -6,11 +6,14 @@ JavaScript | ![Javascript](https://github.com/Keeper-Security/secrets-manager/ac
 Python     | ![Python](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.python.yml/badge.svg)   | [![PyPi](https://img.shields.io/pypi/v/keeper-secrets-manager-core?style=for-the-badge&logo=pypi)](https://pypi.org/project/keeper-secrets-manager-core/)                     |
 Java       | ![Java](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.java.yml/badge.svg)       | [![Maven Central](https://img.shields.io/maven-central/v/com.keepersecurity.secrets-manager/core?style=for-the-badge&logo=java)](https://search.maven.org/artifact/com.keepersecurity.secrets-manager/core) |
 .NET       | ![.NET](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.dotnet.yml/badge.svg)     | [![Nuget](https://img.shields.io/nuget/v/Keeper.SecretsManager?style=for-the-badge&logo=nuget)](https://www.nuget.org/packages/Keeper.SecretsManager)                                                       |
-Ansible    | ![Ansible](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.ansible.yml/badge.svg) | [![Ansible](https://img.shields.io/pypi/v/keeper-secrets-manager-ansible?style=for-the-badge&logo=pypi)](https://pypi.org/project/keeper-secrets-manager-ansible/) |
-KSM CLI    | ![CLI](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.cli.yml/badge.svg)         | [![PyPi](https://img.shields.io/pypi/v/keeper-secrets-manager-cli?style=for-the-badge&logo=pypi)](https://pypi.org/project/keeper-secrets-manager-cli/)                                                     |
+Ansible    | ![Ansible](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.ansible.yml/badge.svg) | [![Ansible](https://img.shields.io/pypi/v/keeper-secrets-manager-ansible?style=for-the-badge&logo=ansible)](https://pypi.org/project/keeper-secrets-manager-ansible/) |
+KSM CLI    | ![CLI](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.cli.yml/badge.svg)         | [![PyPi](https://img.shields.io/pypi/v/keeper-secrets-manager-cli?style=for-the-badge&logo=windowsterminal)](https://pypi.org/project/keeper-secrets-manager-cli/)                                                     |
 PowerShell | | [![PowerShell](https://img.shields.io/powershellgallery/v/SecretManagement.Keeper?style=for-the-badge&logo=powershell)](https://www.powershellgallery.com/packages/SecretManagement.Keeper)                                                     |
 Go         | ![GoLang](https://github.com/keeper-security/secrets-manager-go/actions/workflows/test.go.yml/badge.svg)    | [![Go](https://img.shields.io/badge/Go-Latest-blue.svg?style=for-the-badge&logo=go&logoColor=white)](https://github.com/Keeper-Security/secrets-manager-go)                                   |
-Azure DevOps Extension |                                                                                                    | [![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/KeeperSecurity.keeper-secrets-manager?label=Azure%20DevOps%20Extension&style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=KeeperSecurity.keeper-secrets-manager)           |
+Azure DevOps Extension |                                                                                                    | [![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/KeeperSecurity.keeper-secrets-manager?label=Azure%20DevOps%20Extension&logo=azuredevops&style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=KeeperSecurity.keeper-secrets-manager)           |
+GitHub Action | | [![GitHub Action](https://img.shields.io/badge/GitHub%20Action-Latest-blue.svg?style=for-the-badge&logo=github&logoColor=white)](https://github.com/marketplace/actions/keeper-secrets-manager-github-action) |
+Terraform Provider | | [![Terraform Provider](https://img.shields.io/badge/Terraform-Latest-blue.svg?style=for-the-badge&logo=terraform&logoColor=white)](https://registry.terraform.io/providers/Keeper-Security/secretsmanager/latest) |
+
 # What is Keeper Secrets Manager?
 
 Keeper Secrets Manager is a component of the Keeper Enterprise platform. It provides your DevOps, IT Security and
@@ -27,25 +30,3 @@ Common use cases for Secrets Manager include:
     
 More information about Keeper Secrets Manager, SDKs, tools, and integrations can be found in our [official documentation 
 portal](https://docs.keeper.io/secrets-manager/secrets-manager/overview)
-
-
-# Testing
-
-The automated tests are GitHub workflows found in the .github/workflow directory of this project.
-
-## Python
-
-Due the structure of the repository, Python testing might not be able to find all the modules. You can add the following
-to PYTHONPATH
-
-* sdk/python/core
-* integration/keeper\_secrets\_manager\_cli
-* integration/keeper\_secrets\_manager\_ansible/module
-
-Or in IDE like PyCharm, you can add those directories as Source Folders in the Project Structure.
-
-
-
-
-
-
