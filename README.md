@@ -13,6 +13,7 @@ Go         | ![GoLang](https://github.com/keeper-security/secrets-manager-go/act
 Azure DevOps Extension |                                                                                                    | [![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/KeeperSecurity.keeper-secrets-manager?label=Azure%20DevOps%20Extension&logo=azuredevops&style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=KeeperSecurity.keeper-secrets-manager)           |
 GitHub Action | | [![GitHub Action](https://img.shields.io/github/v/tag/Keeper-Security/ksm-action?label=GitHub%20Action&logo=github&logoColor=white&style=for-the-badge)](https://github.com/marketplace/actions/keeper-secrets-manager-github-action) |
 Terraform Provider | | [![Terraform Provider](https://img.shields.io/github/v/tag/Keeper-Security/terraform-provider-keeper?label=Terraform&logo=terraform&logoColor=white&style=for-the-badge)](https://registry.terraform.io/providers/Keeper-Security/secretsmanager/latest) |
+Jenkins Plugin | | [![Jenkins](https://img.shields.io/github/v/tag/jenkinsci/keeper-secrets-manager-plugin?label=Plugins%20Index&logo=jenkins&logoColor=white&style=for-the-badge)](https://plugins.jenkins.io/keeper-secrets-manager/) |
 
 # What is Keeper Secrets Manager?
 
