@@ -125,11 +125,37 @@ namespace SecretsManager
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    internal class CreatePayload
+    {
+        public string clientVersion { get; }
+        public string clientId { get; }
+        public string recordUid { get; }
+        public string recordKey { get; }
+        public string folderUid { get; }
+        public string folderKey { get; }
+        public string data { get; }
+
+        public CreatePayload(string clientVersion, string clientId, string recordUid, string recordKey, string folderUid, string folderKey, string data)
+        {
+            this.clientVersion = clientVersion;
+            this.clientId = clientId;
+            this.recordUid = recordUid;
+            this.recordKey = recordKey;
+            this.folderUid = folderUid;
+            this.folderKey = folderKey;
+            this.data = data;
+        }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
     [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class SecretsManagerResponse
     {
         public string encryptedAppKey { get; set; }
+        public string appOwnerPublicKey { get; set; }
         public SecretsManagerResponseFolder[] folders { get; set; }
         public SecretsManagerResponseRecord[] records { get; set; }
     }
@@ -185,12 +211,12 @@ namespace SecretsManager
     [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperRecord
     {
-
-        public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, KeeperRecordData data, long revision, KeeperFile[] files)
+        public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, byte[] folderKey, KeeperRecordData data, long revision, KeeperFile[] files)
         {
             RecordKey = recordKey;
             RecordUid = recordUid;
             FolderUid = folderUid;
+            FolderKey = folderKey;
             Data = data;
             Revision = revision;
             Files = files;
@@ -199,6 +225,7 @@ namespace SecretsManager
         public byte[] RecordKey { get; }
         public string RecordUid { get; }
         public string FolderUid { get; }
+        public byte[] FolderKey { get; }
         public KeeperRecordData Data { get; }
         public long Revision { get; }
         public KeeperFile[] Files { get; }
@@ -257,7 +284,9 @@ namespace SecretsManager
         private const string KeyClientId = "clientId";
         private const string KeyClientKey = "clientKey"; // The key that is used to identify the client before public key
         private const string KeyAppKey = "appKey"; // The application key with which all secrets are encrypted
+        private const string KeyOwnerPublicKey = "appOwnerPublicKey"; // The application owner public key, to create records
         private const string KeyPrivateKey = "privateKey"; // The client's private key
+
         private const string ClientIdHashTag = "KEEPER_SECRETS_MANAGER_CLIENT_ID"; // Tag for hashing the client key to client id
 
         public static void InitializeStorage(IKeyValueStorage storage, string oneTimeToken, string hostName = null)
@@ -281,6 +310,7 @@ namespace SecretsManager
                 };
                 clientKey = tokenParts[1];
             }
+
             var clientKeyBytes = CryptoUtils.WebSafe64ToBytes(clientKey);
             var clientKeyHash = CryptoUtils.Hash(clientKeyBytes, ClientIdHashTag);
             var clientId = CryptoUtils.BytesToBase64(clientKeyHash);
@@ -323,6 +353,13 @@ namespace SecretsManager
         {
             var payload = PrepareUpdatePayload(options.Storage, record);
             await PostQuery(options, "update_secret", payload);
+        }
+
+        public static async Task<string> CreateSecret(SecretsManagerOptions options, string folderUid, KeeperRecordData recordData, KeeperSecrets secrets)
+        {
+            var payload = PrepareCreatePayload(options.Storage, folderUid, recordData, secrets);
+            await PostQuery(options, "create_secret", payload);
+            return payload.recordUid;
         }
 
         public static byte[] DownloadFile(KeeperFile file)
@@ -369,6 +406,10 @@ namespace SecretsManager
                 appKey = CryptoUtils.Decrypt(response.encryptedAppKey, clientKey);
                 storage.SaveBytes(KeyAppKey, appKey);
                 storage.Delete(KeyClientKey);
+                if (response.appOwnerPublicKey != null)
+                {
+                    storage.SaveString(KeyOwnerPublicKey, response.appOwnerPublicKey);
+                }
             }
             else
             {
@@ -398,7 +439,7 @@ namespace SecretsManager
                     foreach (var record in folder.records)
                     {
                         var recordKey = CryptoUtils.Decrypt(record.recordKey, folderKey);
-                        var decryptedRecord = DecryptRecord(record, recordKey, folder.folderUid);
+                        var decryptedRecord = DecryptRecord(record, recordKey, folder.folderUid, folderKey);
                         records.Add(decryptedRecord);
                     }
                 }
@@ -408,7 +449,7 @@ namespace SecretsManager
             return new Tuple<KeeperSecrets, bool>(secrets, justBound);
         }
 
-        private static KeeperRecord DecryptRecord(SecretsManagerResponseRecord record, byte[] recordKey, string folderUid = null)
+        private static KeeperRecord DecryptRecord(SecretsManagerResponseRecord record, byte[] recordKey, string folderUid = null, byte[] folderKey = null)
         {
             var decryptedRecord = CryptoUtils.Decrypt(record.data, recordKey);
             var files = new List<KeeperFile>();
@@ -422,7 +463,7 @@ namespace SecretsManager
                 }
             }
 
-            return new KeeperRecord(recordKey, record.recordUid, folderUid, JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord), record.revision, files.ToArray());
+            return new KeeperRecord(recordKey, record.recordUid, folderUid, folderKey, JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord), record.revision, files.ToArray());
         }
 
         private static GetPayload PrepareGetPayload(IKeyValueStorage storage, string[] recordsFilter)
@@ -460,6 +501,39 @@ namespace SecretsManager
             var recordBytes = JsonUtils.SerializeJson(record.Data);
             var encryptedRecord = CryptoUtils.Encrypt(recordBytes, record.RecordKey);
             return new UpdatePayload(GetClientVersion(), clientId, record.RecordUid, CryptoUtils.WebSafe64FromBytes(encryptedRecord), record.Revision);
+        }
+
+        private static CreatePayload PrepareCreatePayload(IKeyValueStorage storage, string folderUid, KeeperRecordData recordData, KeeperSecrets secrets)
+        {
+            var clientId = storage.GetString(KeyClientId);
+            if (clientId == null)
+            {
+                throw new Exception("Client Id is missing from the configuration");
+            }
+
+            var ownerPublicKey = storage.GetBytes(KeyOwnerPublicKey);
+            if (ownerPublicKey == null)
+            {
+                throw new Exception("Application owner public key is missing from the configuration");
+            }
+
+            var recordFromFolder = secrets.Records.FirstOrDefault(x => x.FolderUid == folderUid);
+            if (recordFromFolder?.FolderKey == null)
+            {
+                throw new Exception($"Unable to create record - folder key for {folderUid} not found");
+            }
+
+            var recordBytes = JsonUtils.SerializeJson(recordData);
+            var recordKey = CryptoUtils.GetRandomBytes(32);
+            var recordUid = CryptoUtils.GetRandomBytes(16);
+            var encryptedRecord = CryptoUtils.Encrypt(recordBytes, recordKey);
+            var encryptedRecordKey = CryptoUtils.PublicEncrypt(recordKey, ownerPublicKey);
+            var encryptedFolderKey = CryptoUtils.Encrypt(recordKey, recordFromFolder.FolderKey);
+
+            return new CreatePayload(GetClientVersion(), clientId,
+                CryptoUtils.BytesToBase64(recordUid), CryptoUtils.BytesToBase64(encryptedRecordKey),
+                folderUid, CryptoUtils.BytesToBase64(encryptedFolderKey),
+                CryptoUtils.WebSafe64FromBytes(encryptedRecord));
         }
 
         private static string GetClientVersion()

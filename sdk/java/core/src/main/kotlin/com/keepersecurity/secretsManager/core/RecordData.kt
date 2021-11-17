@@ -7,11 +7,11 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class KeeperRecordData(
-    val title: String,
+    var title: String,
     val type: String,
     val fields: List<KeeperRecordField>,
     val custom: List<KeeperRecordField>? = null,
-    val notes: String? = null
+    var notes: String? = null
 ) {
     inline fun <reified T> getField(): T? {
         return (fields + custom).find { x -> x is T } as T

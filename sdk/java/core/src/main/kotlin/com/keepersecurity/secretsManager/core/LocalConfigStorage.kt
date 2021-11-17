@@ -36,6 +36,7 @@ class InMemoryStorage(configJson: String? = null) : KeyValueStorage {
         var privateKey: String? = null,
         var clientKey: String? = null,
         var appKey: String? = null,
+        var appOwnerPublicKey: String? = null,
         var serverPublicKeyId: String? = null
     )
 
@@ -55,6 +56,7 @@ class InMemoryStorage(configJson: String? = null) : KeyValueStorage {
             optSetFn(KEY_PRIVATE_KEY, config.privateKey)
             optSetFn(KEY_CLIENT_KEY, config.clientKey)
             optSetFn(KEY_APP_KEY, config.appKey)
+            optSetFn(KEY_OWNER_PUBLIC_KEY, config.appOwnerPublicKey)
             optSetFn(KEY_SERVER_PUBIC_KEY_ID, config.serverPublicKeyId)
         }
     }
@@ -92,6 +94,7 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         var privateKey: String? = null,
         var clientKey: String? = null,
         var appKey: String? = null,
+        var appOwnerPublicKey: String? = null,
         var serverPublicKeyId: String? = null
     )
 
@@ -113,6 +116,7 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         config.privateKey = storage.getString(KEY_PRIVATE_KEY)
         config.clientKey = storage.getString(KEY_CLIENT_KEY)
         config.appKey = storage.getString(KEY_APP_KEY)
+        config.appOwnerPublicKey = storage.getString(KEY_OWNER_PUBLIC_KEY)
         config.serverPublicKeyId = storage.getString(KEY_SERVER_PUBIC_KEY_ID)
         val json = prettyJson.encodeToString(config)
         val outputStream = BufferedWriter(FileWriter(file))

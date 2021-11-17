@@ -9,6 +9,7 @@ const KEY_SERVER_PUBIC_KEY_ID = 'serverPublicKeyId'
 const KEY_CLIENT_ID = 'clientId'
 const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the client before public key
 const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
+const KEY_OWNER_PUBLIC_KEY = 'appOwnerPublicKey' // The application owner public key, to create records
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
 
@@ -58,6 +59,16 @@ type UpdatePayload = {
     revision?: number
 }
 
+type CreatePayload = {
+    clientVersion: string
+    clientId: string
+    recordUid: string
+    recordKey: string
+    folderUid: string
+    folderKey: string
+    data: string
+}
+
 type SecretsManagerResponseFolder = {
     folderUid: string
     folderKey: string
@@ -81,7 +92,8 @@ type SecretsManagerResponseFile = {
 }
 
 type SecretsManagerResponse = {
-    encryptedAppKey: string
+    encryptedAppKey?: string  // received only on the first response
+    appOwnerPublicKey?: string   // received only on the first response
     folders: SecretsManagerResponseFolder[]
     records: SecretsManagerResponseRecord[]
 }
@@ -143,6 +155,32 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperReco
         recordUid: record.recordUid,
         data: webSafe64FromBytes(encryptedRecord),
         revision: record.revision
+    }
+}
+
+const prepareCreatePayload = async (storage: KeyValueStorage, folderUid: string, recordData: any): Promise<CreatePayload> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
+    const ownerPublicKey = await storage.getBytes(KEY_OWNER_PUBLIC_KEY)
+    if (!ownerPublicKey) {
+        throw new Error('Application owner public key is missing from the configuration')
+    }
+    const recordBytes = platform.stringToBytes(JSON.stringify(recordData))
+    const recordKey = platform.getRandomBytes(32)
+    const recordUid = platform.getRandomBytes(16)
+    const encryptedRecord = await platform.encryptWithKey(recordBytes, recordKey)
+    const encryptedRecordKey = await platform.publicEncrypt(recordKey, ownerPublicKey)
+    const encryptedFolderKey = await platform.encrypt(recordKey, folderUid)
+    return {
+        clientVersion: 'ms' + packageVersion, // TODO generate client version for SM
+        clientId: clientId,
+        recordUid: platform.bytesToBase64(recordUid),
+        recordKey: platform.bytesToBase64(encryptedRecordKey),
+        folderUid: folderUid,
+        folderKey: platform.bytesToBase64(encryptedFolderKey),
+        data: webSafe64FromBytes(encryptedRecord)
     }
 }
 
@@ -242,6 +280,7 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, recordsFilt
         justBound = true
         await platform.unwrap(platform.base64ToBytes(response.encryptedAppKey), KEY_APP_KEY, KEY_CLIENT_KEY, storage)
         await storage.delete(KEY_CLIENT_KEY)
+        await storage.saveString(KEY_OWNER_PUBLIC_KEY, response.appOwnerPublicKey!)
     }
     if (response.records) {
         for (const record of response.records) {
@@ -324,6 +363,12 @@ export const getSecrets = async (options: SecretManagerOptions, recordsFilter?: 
 export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord): Promise<void> => {
     const payload = await prepareUpdatePayload(options.storage, record)
     await postQuery(options, 'update_secret', payload)
+}
+
+export const createSecret = async (options: SecretManagerOptions, folderUid: string, recordData: any): Promise<string> => {
+    const payload = await prepareCreatePayload(options.storage, folderUid, recordData)
+    await postQuery(options, 'create_secret', payload)
+    return payload.recordUid
 }
 
 export const downloadFile = async (file: KeeperFile): Promise<Uint8Array> => {
