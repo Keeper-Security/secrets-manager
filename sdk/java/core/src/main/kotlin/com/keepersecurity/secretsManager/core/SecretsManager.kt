@@ -109,7 +109,7 @@ private data class SecretsManagerResponseFile(
 @Serializable
 private data class SecretsManagerResponse(
     val encryptedAppKey: String?,
-    val appOwnerPublicKey: String?,
+    val appOwnerPublicKey: String? = null,
     val folders: List<SecretsManagerResponseFolder>?,
     val records: List<SecretsManagerResponseRecord>?
 )

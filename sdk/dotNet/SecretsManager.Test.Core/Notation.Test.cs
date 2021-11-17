@@ -15,7 +15,7 @@ namespace SecretsManager.Test
             var recordData = JsonUtils.ParseJson<KeeperRecordData>(CryptoUtils.StringToBytes(testRecordDataJson));
             var secrets = new KeeperSecrets(new[]
             {
-                new KeeperRecord(null, RecordUid, null, recordData, 0, null)
+                new KeeperRecord(null, RecordUid, null, null, recordData, 0, null)
             });
 
             var value = Notation.GetValue(secrets, $"keeper://{RecordUid}/field/login");
