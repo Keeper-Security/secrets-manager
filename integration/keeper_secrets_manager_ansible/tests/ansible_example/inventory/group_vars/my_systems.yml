@@ -1,0 +1,14 @@
+---
+tmp_dir: /tmp
+keeper_app_key: zhLwBKEIdiXaqVwlpnIXEl6jm_nO7WpPxYhKZv2LPGY
+keeper_client_id: PSuLOZzlr0yW1699ilnAQRklezB3W4Fhb8GhyXZw3UcqtdZ46mS3KD-p0z92VTanWSOgi11IsK9S40DyxTMgag
+keeper_token: LnzftppgfI77XgY6lTroY2ER7QeqQWSbelITJVhCWTc
+keeper_private_key: "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg85jyaGDUCOCh67-1YVqfC1qDz6AQspTsAAsaIzl06hGhRANCAARMZqKCbuUIKKkSt6KuhSA-NtJracKm1dLCCciE2OyWlbEo-ieoccu7zzQrL2GjCzp-1qV57nJMLh0TD08wFmqD"
+keeper_hostname: https://dev.keepersecurity.com
+keeper_verify_ssl_certs: False
+uid: EG6KdJaaLG7esRZbMnfbFA
+password_uid: EG6KdJaaLG7esRZbMnfbFA
+#file_uid: EG6KdJaaLG7esRZbMnfbFA
+file_uid: GmMi9CdZ_HXhF3GiGHg3Wg
+file_name: IMG_0021.jpg
+new_password: "NEW PASSWORD"

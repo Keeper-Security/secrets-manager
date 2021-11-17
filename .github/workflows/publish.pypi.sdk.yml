@@ -1,0 +1,47 @@
+name: Publish to PyPI (Python SDK)
+on:
+  workflow_dispatch:
+
+jobs:
+  publish-pypi:
+    name: Publish KSM Python SDK to PyPI
+    environment: prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 10 # To keep builds from running too long
+
+    defaults:
+      run:
+        working-directory: ./sdk/python/core
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v2
+
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.9
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          hostname: keepersecurity.com
+          keeper-secret-config: ${{ secrets.KSM_PYPI_PUBLISHER_PYPI_SDK_CONFIG }}
+          secrets: |
+            -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade setuptools pip wheel twine
+          python3 -m pip install -r requirements.txt
+
+      - name: Build and Publish
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ steps.ksmsecrets.outputs.PYPI_API_TOKEN }}
+        run: |
+          python3 setup.py build
+          python3 setup.py sdist
+          python3 -m twine upload --verbose dist/*

@@ -1,0 +1,65 @@
+
+# Editors
+.vscode/
+.idea/
+*.iml
+
+
+# Mac/OSX
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+.pytest_cache
+
+# Vim
+*~
+*.swp
+*.swo
+
+# Don't add Config files
+keeper.ini*
+*config*.json
+.secrets
+
+/.gradle

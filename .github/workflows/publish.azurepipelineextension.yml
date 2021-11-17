@@ -1,0 +1,46 @@
+name: Publish to Azure Pipeline Extension
+on:
+  workflow_dispatch:
+
+jobs:
+  publish-az-pipeline-ext:
+    environment: prod
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./integration/keeper_secrets_manager_azure_pipeline_extension
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v2
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_AZ_PIPELINE_PUBSLISHER_CONFIG }}
+          secrets: |
+            DJz3ilHBHIbIZqkTClDV5Q/field/password > PAT
+
+      - name: Build
+        run: |
+          cd ksm-azure-devops-secrets-task
+          npm install
+          npm run build
+
+
+      - name: Publish
+        run: |
+          npm install -g tfx-cli
+          tfx extension publish --token ${{ steps.ksmsecrets.outputs.PAT }}
+          ls -lh *.vsix
+
+      - name: Step To run on failure
+        if: ${{ failure() }}
+        run: |
+          curl --request POST \
+          --url https://api.github.com/repos/${{ github.repository }}/issues \
+          --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+          --header 'content-type: application/json' \
+          --data '{"title": "Issue created due to fialure in workflow ${{ github.workflow }}, run #: ${{ github.run_id }}","body": "This issue was automatically created by the GitHub Action workflow **${{ github.workflow }}**.\n\nDue to failure in run: [${{ github.run_id }}](https://github.com/Keeper-Security/secrets-manager/actions/runs/${{ github.run_id }}).\n\nIf error is related to access denied (expiration of Personal Access Token, aka PAT), here are the steps to generate a new one:\n\n-Steps to generate one documented [HERE](https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page)\n- Update \"Password\" field in record UID `DJz3ilHBHIbIZqkTClDV5Q` (located in shared folder named \"Secrets Manager\")"}'

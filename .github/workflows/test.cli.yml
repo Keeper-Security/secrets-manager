@@ -1,0 +1,46 @@
+name: Test-CLI
+
+on:
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test-cli:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.6, 3.7, 3.8, 3.9]
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v1
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      ########## KSM Python SDK (from source)
+
+      - name: Install SDK dependencies
+        working-directory: ./sdk/python/core
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt
+          python3 -m pip install -e .
+
+      - name: Install SDK for integrations
+        working-directory: ./sdk/python/core
+        run: |
+          python3 setup.py build install
+
+      ########## CLI
+
+      - name: Install CLI dependencies
+        working-directory: ./integration/keeper_secrets_manager_cli
+        run: |
+          python3 -m pip install -r requirements.txt
+          python3 -m pip install pytest pytest-cov
+
+      - name: Run CLI tests
+        working-directory: ./integration/keeper_secrets_manager_cli
+        run: |
+          PYTHONPATH=$PWD pytest

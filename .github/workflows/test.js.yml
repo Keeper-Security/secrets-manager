@@ -1,0 +1,24 @@
+name: Test-JS
+
+on:
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test-js:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./sdk/javascript/packages/core
+    steps:
+      - uses: actions/checkout@v2
+      - name: Use Node.js 12
+        uses: actions/setup-node@v2
+        with:
+          node-version: 12
+      - run: npm install
+        env:
+          NPM_TOKEN: ""
+      - run: npm test
+        env:
+          NPM_TOKEN: ""

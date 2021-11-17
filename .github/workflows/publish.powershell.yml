@@ -1,0 +1,41 @@
+name: Publish to PowerShell Gallery
+on:
+  workflow_dispatch:
+
+jobs:
+  publish-powershell:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./sdk/dotNet
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v2
+
+      - name: Set up .Net
+        uses: actions/setup-dotnet@v1.8.1
+        with:
+          dotnet-version: '5.0.x'
+
+      - name: Install dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          hostname: keepersecurity.com
+          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
+          secrets: |
+            FeE4uHTMEVJJhAdWK0ubMg/field/password > NUGET_AUTH_TOKEN
+
+      - name: Publish package
+        shell: pwsh
+        run: |
+          Set-Location ./SecretManagement.Keeper/
+          ./build.ps1 -Package -Publish -APIKey ${{steps.ksmsecrets.outputs.NUGET_AUTH_TOKEN}}

@@ -1,0 +1,10 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Lookup
+  hosts: "my_systems"
+
+  tasks:
+  - name: "Print Password"
+    debug:
+      msg: "My password is {{ lookup('keeper', uid='TRd_567FkHy-CeGsAzs8aA', field='Password') }}"
+      verbosity: 0
