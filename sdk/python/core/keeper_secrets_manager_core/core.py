@@ -95,9 +95,9 @@ class SecretsManager:
 
         # If the server or client key are set in the args, make sure they makes it's way into the config. They
         # will override what is already in the config if they exist.
-        if token is not None:
+        if self.token is not None:
             config.set(ConfigKeys.KEY_CLIENT_KEY, self.token)
-        if hostname is not None:
+        if self.hostname is not None:
             config.set(ConfigKeys.KEY_HOSTNAME, self.hostname)
 
         # Make sure our public key id is set and pointing an existing key.
