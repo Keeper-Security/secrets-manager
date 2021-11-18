@@ -23,6 +23,7 @@ const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
 const val KEY_CLIENT_ID = "clientId"
 const val KEY_CLIENT_KEY = "clientKey" // The key that is used to identify the client before public key
 const val KEY_APP_KEY = "appKey" // The application key with which all secrets are encrypted
+const val KEY_OWNER_PUBLIC_KEY = "appOwnerPublicKey" // The application owner public key, to create records
 const val KEY_PRIVATE_KEY = "privateKey" // The client's private key
 
 private const val CLIENT_ID_HASH_TAG = "KEEPER_SECRETS_MANAGER_CLIENT_ID" // Tag for hashing the client key to client id
@@ -66,6 +67,17 @@ private data class UpdatePayload(
     val revision: Long? = null
 )
 
+@Serializable
+private data class CreatePayload(
+    val clientVersion: String,
+    val clientId: String,
+    val recordUid: String,
+    val recordKey: String,
+    val folderUid: String,
+    val folderKey: String,
+    val data: String,
+)
+
 data class EncryptedPayload(val payload: ByteArray, val signature: ByteArray)
 
 @Serializable
@@ -97,6 +109,7 @@ private data class SecretsManagerResponseFile(
 @Serializable
 private data class SecretsManagerResponse(
     val encryptedAppKey: String?,
+    val appOwnerPublicKey: String? = null,
     val folders: List<SecretsManagerResponseFolder>?,
     val records: List<SecretsManagerResponseRecord>?
 )
@@ -111,6 +124,7 @@ data class KeeperRecord(
     val recordKey: ByteArray,
     val recordUid: String,
     var folderUid: String? = null,
+    var folderKey: ByteArray? = null,
     val data: KeeperRecordData,
     val revision: Long? = 0,
     val files: List<KeeperFile>? = null
@@ -222,6 +236,13 @@ fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
     postQuery(options, "update_secret", payload)
 }
 
+@ExperimentalSerializationApi
+fun createSecret(options: SecretsManagerOptions, folderUid: String, recordData: KeeperRecordData, secrets: KeeperSecrets): String {
+    val payload = prepareCreatePayload(options.storage, folderUid, recordData, secrets)
+    postQuery(options, "create_secret", payload)
+    return payload.recordUid
+}
+
 fun downloadFile(file: KeeperFile): ByteArray {
     return downloadFile(file, file.url)
 }
@@ -257,7 +278,7 @@ private fun fetchAndDecryptSecrets(
     val payload = prepareGetPayload(storage, recordsFilter)
     val responseData = postQuery(options, "get_secret", payload)
     val jsonString = bytesToString(responseData)
-    val response = Json.decodeFromString<SecretsManagerResponse>(jsonString)
+    val response = nonStrictJson.decodeFromString<SecretsManagerResponse>(jsonString)
     var justBound = false
     val appKey: ByteArray
     if (response.encryptedAppKey != null) {
@@ -266,6 +287,9 @@ private fun fetchAndDecryptSecrets(
         appKey = decrypt(response.encryptedAppKey, clientKey)
         storage.saveBytes(KEY_APP_KEY, appKey)
         storage.delete(KEY_CLIENT_KEY)
+        response.appOwnerPublicKey?.let {
+            storage.saveString(KEY_OWNER_PUBLIC_KEY, it)
+        }
     } else {
         appKey = storage.getBytes(KEY_APP_KEY) ?: throw Exception("App key is missing from the storage")
     }
@@ -284,6 +308,7 @@ private fun fetchAndDecryptSecrets(
                 val recordKey = decrypt(record.recordKey, folderKey)
                 val decryptedRecord = decryptRecord(record, recordKey)
                 decryptedRecord.folderUid = folder.folderUid
+                decryptedRecord.folderKey = folderKey
                 records.add(decryptedRecord)
             }
         }
@@ -313,7 +338,7 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
             )
         }
     }
-    return KeeperRecord(recordKey, record.recordUid, null, Json.decodeFromString(bytesToString(decryptedRecord)), record.revision, files)
+    return KeeperRecord(recordKey, record.recordUid, null, null, Json.decodeFromString(bytesToString(decryptedRecord)), record.revision, files)
 }
 
 private fun prepareGetPayload(
@@ -348,6 +373,33 @@ private fun prepareUpdatePayload(
     val recordBytes = stringToBytes(Json.encodeToString(record.data))
     val encryptedRecord = encrypt(recordBytes, record.recordKey)
     return UpdatePayload(toKeeperAppClientString(ManifestLoader.version), clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision)
+}
+
+@ExperimentalSerializationApi
+private fun prepareCreatePayload(
+    storage: KeyValueStorage,
+    folderUid: String,
+    recordData: KeeperRecordData,
+    secrets: KeeperSecrets
+): CreatePayload {
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    val ownerPublicKey = storage.getBytes(KEY_OWNER_PUBLIC_KEY) ?: throw Exception("Application owner public key is missing from the configuration")
+    val recordFromFolder = secrets.records.find { it.folderUid == folderUid }
+    if (recordFromFolder?.folderKey == null) {
+        throw Exception("Unable to create record - folder key for $folderUid not found")
+    }
+    val recordBytes = stringToBytes(Json.encodeToString(recordData))
+    val recordKey = getRandomBytes(32)
+    val recordUid = getRandomBytes(16)
+    val encryptedRecord = encrypt(recordBytes, recordKey)
+    val encryptedRecordKey = publicEncrypt(recordKey, ownerPublicKey)
+    val encryptedFolderKey = encrypt(recordKey, recordFromFolder.folderKey!!)
+    return CreatePayload(toKeeperAppClientString(ManifestLoader.version), clientId,
+        bytesToBase64(recordUid),
+        bytesToBase64(encryptedRecordKey),
+        folderUid,
+        bytesToBase64(encryptedFolderKey),
+        webSafe64FromBytes(encryptedRecord))
 }
 
 fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload): KeeperHttpResponse {
@@ -394,7 +446,7 @@ fun postFunction(
     return KeeperHttpResponse(statusCode, data)
 }
 
-private val errorMsgJson = Json { ignoreUnknownKeys = true }
+private val nonStrictJson = Json { ignoreUnknownKeys = true }
 
 var keyId = 7
 
@@ -458,7 +510,7 @@ private inline fun <reified T> postQuery(
         if (response.statusCode != HTTP_OK) {
             val errorMessage = String(response.data)
             try {
-                val error = errorMsgJson.decodeFromString<KeeperError>(errorMessage)
+                val error = nonStrictJson.decodeFromString<KeeperError>(errorMessage)
                 if (error.error == "key") {
                     options.storage.saveString(KEY_SERVER_PUBIC_KEY_ID, error.key_id.toString())
                     continue

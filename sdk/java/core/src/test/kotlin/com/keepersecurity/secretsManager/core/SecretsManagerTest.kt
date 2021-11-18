@@ -82,25 +82,31 @@ internal class SecretsManagerTest {
         assertEquals("keepersecurity.com", storage.getString("hostname"))
     }
 
-    //    @Test // uncomment to debug the integration test
+//    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (
             url: String,
             transmissionKey: TransmissionKey,
             payload: EncryptedPayload,
         ) -> KeeperHttpResponse = { url, transmissionKey, payload -> postFunction(url, transmissionKey, payload, true) }
-        val storage = LocalConfigStorage("config-prod-msp1.json")
-        initializeStorage(storage, "BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw", "keepersecurity.com")
+        val storage = LocalConfigStorage("config-dev.json")
+//        initializeStorage(storage, "dev.keepersecurity.com:3rUMHjPysRByQPIrwLCwTtKFIBnfxpZeA4UG32w0wuU")
         val options = SecretsManagerOptions(storage, trustAllPostFunction)
 //        val options = SecretsManagerOptions(storage, ::cachingPostFunction)
         val secrets = getSecrets(options)
         val record = secrets.records[0]
+        println(record.data.title)
         val password = record.getPassword()
         if (password != null) {
             println(password)
 //            record.updatePassword("new password")
 //            updateSecret(options, record)
         }
+//        if (record.folderUid != null) {
+//            record.data.title = record.data.title + " Copy (Java)"
+//            val recordUid = createSecret(options, record.folderUid!!, record.data, secrets)
+//            println(recordUid)
+//        }
 //        val file = record.getFileByUid("XISgEFjKffxAsjzYCUJ6Bg")
 //        if (file != null) {
 //            val fileBytes = downloadFile(file)
