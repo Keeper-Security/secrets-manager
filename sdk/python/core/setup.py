@@ -19,7 +19,7 @@ install_requires = [
 
 setup(
     name="keeper-secrets-manager-core",
-    version="16.1.7",
+    version="16.1.8",
     description="Keeper Secrets Manager for Python 3",
     long_description=long_description,
     long_description_content_type="text/markdown",
