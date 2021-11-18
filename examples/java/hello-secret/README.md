@@ -1,23 +1,23 @@
-# hello-secret
+# Keeper Secrets Manager Java SDK Example
 
 Sample project demonstrating how to extract shared secrets from Keeper.
 
 Prerequisites:
 
 - Java 8 or higher
-- One or more client keys obtained from the owner of the secret. Client keys are one-time use.
+- One or more one-time access tokens obtained from the owner of the secret.
 
 Usage:
 
 ```.shell
-./gradlew run --args="%config_name% %client_key%"
-
-For example: 
-./gradlew run --args="config.json EvdTdbH1xbHuRcja7QG3wMOyLUbvoQgF9WkkrHTdkh8"
+./gradlew run --args="%config_name% %one_time_token%"
 ```
 
-You need to use client key only once per config name. After config has been initialized, the client key becomes obsolete and can be omitted.
+For example: 
+```
+./gradlew run --args="config.json US:EvdTdbH1xbHuRcja7QG3wMOyLUbvoQgF9WkkrHTdkh8"
+```
 
-To observe this effect, use the same client key with a new config, emulating the scenario of a malicious user intercepting the client key after it was used once - you would get a "Signature is invalid" error.  
+The One-Time Access Token is used once to initialize the SDK configuration. After the SDK configuration is initialized, the One-Time Access Token can be removed.
 
-
+For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/java-sdk
