@@ -1,10 +1,3 @@
-## Python
+## Keeper Secrets Manager Python SDK
 
-Due the structure of the repository, Python testing might not be able to find all the modules. You can add the following
-to PYTHONPATH
-
-* sdk/python/core
-* integration/keeper\_secrets\_manager\_cli
-* integration/keeper\_secrets\_manager\_ansible/module
-
-Or in IDE like PyCharm, you can add those directories as Source Folders in the Project Structure.
+For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/python-sdk

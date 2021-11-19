@@ -15,7 +15,7 @@ dependencies {
     // Use the Kotlin JDK 8 standard library.
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
 
-    implementation("com.keepersecurity.secrets-manager:core:16.0.1-SNAPSHOT")
+    implementation("com.keepersecurity.secrets-manager:core:16.1.2")
 
     // Use the Kotlin test library.
     testImplementation("org.jetbrains.kotlin:kotlin-test")

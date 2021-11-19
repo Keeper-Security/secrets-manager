@@ -25,7 +25,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.keepersecurity.secrets-manager:core:16.0.5-SNAPSHOT'
+    implementation 'com.keepersecurity.secrets-manager:core:16.1.2'
     implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.5.10'
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.2.1'
 
