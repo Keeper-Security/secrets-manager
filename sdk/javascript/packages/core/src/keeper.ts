@@ -96,10 +96,12 @@ type SecretsManagerResponse = {
     appOwnerPublicKey?: string   // received only on the first response
     folders: SecretsManagerResponseFolder[]
     records: SecretsManagerResponseRecord[]
+    warnings: string[]
 }
 
 export type KeeperSecrets = {
     records: KeeperRecord[]
+    warnings?: string[]
 }
 
 export type KeeperRecord = {
@@ -302,6 +304,9 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, recordsFilt
     }
     const secrets: KeeperSecrets = {
         records: records
+    }
+    if (response.warnings && response.warnings.length > 0) {
+        secrets.warnings = response.warnings
     }
     return {secrets, justBound}
 }
