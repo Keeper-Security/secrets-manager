@@ -29,13 +29,13 @@ import difflib
 import typing as t
 from update_checker import UpdateChecker
 
+
 # NOTE: For the CLI, all groups and command are lowercase. All arguments are lower case, so you cannot use
 # -n and -N for an arg flag. If you add a command, you need to add it to the list of known commands so we can
 # do a best match.
 
 
 class AliasedGroup(HelpColorsGroup):
-
     known_commands = [
         "config",
         "color",
@@ -172,7 +172,6 @@ def base_command_help(f):
 @click.pass_context
 @base_command_help
 def cli(ctx, ini_file, profile_name, output, color):
-
     """Keeper Secrets Manager CLI
     """
     ctx.obj = {
@@ -302,6 +301,7 @@ profile_command.add_command(profile_active_command)
 profile_command.add_command(profile_export_command)
 profile_command.add_command(profile_import_command)
 
+
 # SECRET GROUP
 
 
@@ -408,16 +408,21 @@ def secret_notation_command(ctx, text):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-@click.option('--uid', '-u', required=True, type=str)
-@click.option('--field', type=str, multiple=True)
-@click.option('--custom-field', type=str, multiple=True)
+@click.option('--uid', '-u', required=True, type=str, help="Unique identifier of record.")
+@click.option('--field', type=str, multiple=True, help="Update value in field section of vault")
+@click.option('--custom-field', type=str, multiple=True, help="Update value in custom field section of vault")
+@click.option('--field-json', type=str, multiple=True, help="Update value in field section of vault using JSON")
+@click.option('--custom-field-json', type=str, multiple=True,
+              help="Update value in custom field section of vault using JSON")
 @click.pass_context
-def secret_update_command(ctx, uid, field, custom_field):
+def secret_update_command(ctx, uid, field, custom_field, field_json, custom_field_json):
     """Update an existing record."""
     ctx.obj["secret"].update(
         uid=uid,
         fields=field,
         custom_fields=custom_field,
+        fields_json=field_json,
+        custom_fields_json=custom_field_json
     )
 
 
