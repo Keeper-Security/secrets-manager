@@ -544,6 +544,13 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(mock.Response(content="I hate you and your little dog.", status_code=500))
 
+        # JSON
+        queue.add_response(res)
+        queue.add_response(mock.Response(content="", status_code=200))
+
+        # JSON Bad
+        queue.add_response(res)
+
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
                 as mock_client:
             mock_client.return_value = secrets_manager
@@ -562,6 +569,7 @@ class SecretTest(unittest.TestCase):
                 '--field', '"login=New Login"',
                 '--custom-field', '"my_custom=New Custom text"',
             ], catch_exceptions=False)
+            print(result.output)
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
 
             # Blow up on bad field.
@@ -582,8 +590,27 @@ class SecretTest(unittest.TestCase):
                 '--field', '"login=New Login"',
                 '--custom-field', '"my_custom=New Custom text"',
             ], catch_exceptions=False)
-            # TODO - Improve SDK error messages. We don't have one for save errors.
             self.assertRegex(result.output, r'Could not save record', 'did not get correct error message for save')
+            self.assertEqual(1, result.exit_code, "the exit code was not 1")
+
+            # JSON
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                'secret', 'update', '-u', one.uid,
+                '--field-json', "'login={\"One\":1}'",
+                '--custom-field-json', "my_custom=[{\"Two\":2}]",
+            ], catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 1")
+
+            # JSON Bad
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                'secret', 'update', '-u', one.uid,
+                '--field-json', "'login=[{\"Bad One\":1}'",
+                '--custom-field-json', "my_custom=[{\"Two\":2}]",
+            ], catch_exceptions=False)
+            self.assertRegex(result.output, r'The value is not valid JSON for',
+                             'did not get correct error message for save')
             self.assertEqual(1, result.exit_code, "the exit code was not 1")
 
     def test_kv_split(self):
@@ -591,35 +618,65 @@ class SecretTest(unittest.TestCase):
         """
 
         # The simple
-        key, value = Secret._split_kv("foo=bar")
+        key, value = Secret._split_kv("foo=bar", is_json=False, labels=[r"foo"])
         self.assertEqual("foo", key, "key is not foo")
-        self.assertEqual("bar", value, "key is not bar")
+        self.assertEqual("bar", value, "value is not bar")
 
         # = in the key
-        key, value = Secret._split_kv(r"\=foo\==bar")
+        key, value = Secret._split_kv(r"=foo==bar", is_json=False, labels=[r"=foo="])
         self.assertEqual("=foo=", key, "key is not =foo=")
-        self.assertEqual("bar", value, "key is not bar, the 2nd")
+        self.assertEqual("bar", value, "value is not bar, the 2nd")
 
         # = in the key and value
-        key, value = Secret._split_kv(r"\=foo\==\=bar\=")
+        key, value = Secret._split_kv(r"=foo===bar=", is_json=False, labels=[r"=foo="])
         self.assertEqual("=foo=", key, "key is not =foo=")
-        self.assertEqual("=bar=", value, "key is not =bar=")
+        self.assertEqual("=bar=", value, "value is not =bar=")
 
         # = in the key and value, with escaped escape character in key
-        key, value = Secret._split_kv("\=foo\\\\=\=bar\=")
-        self.assertEqual("=foo\\\\", key, "key is not =foo=")
-        self.assertEqual("=bar=", value, "key is not =bar=")
+        key, value = Secret._split_kv(r"=foo\\==bar=", is_json=False, labels=[r"=foo\\"])
+        self.assertEqual(r"=foo\\", key, "key is not =foo\\\\")
+        self.assertEqual("=bar=", value, "value is not =bar=")
 
         # = in the key and value, with escaped escape character in both
-        key, value = Secret._split_kv("\=foo\\\\=\=bar_\\\\_hi")
-        self.assertEqual("=foo\\\\", key, "key is not =foo=")
-        self.assertEqual("=bar_\\\\_hi", value, "key is not =bar=")
+        key, value = Secret._split_kv(r"=foo\\==bar_\\_hi", is_json=False, labels=[r"=foo\\"])
+        self.assertEqual(r"=foo\\", key, "key is not =foo\\\\")
+        self.assertEqual(r"=bar_\\_hi", value, "value is not =bar=")
+
+        # Customer report test. Assign base64 value.
+        key, value = Secret._split_kv("tls_cert=--BEGIN--abcdef==--END--", is_json=False, labels=[r"tls_cert"])
+        self.assertEqual("tls_cert", key, "key is not tls_cert")
+        self.assertEqual("--BEGIN--abcdef==--END--", value, "value is not base64 string")
+
+        # Customer report test. Assign base64 value. Single quoted text.
+        key, value = Secret._split_kv(r"'tls_cert=--BEGIN--abcdef==--END--'", is_json=False, labels=[r"tls_cert"])
+        self.assertEqual("tls_cert", key, "key is not tls_cert")
+        self.assertEqual("--BEGIN--abcdef==--END--", value, "value is not base64 string")
+
+        # Customer report test. Assign base64 value. Double quoted text.
+        key, value = Secret._split_kv("\"tls_cert=--BEGIN--abcdef==--END--\"", is_json=False, labels=[r"tls_cert"])
+        self.assertEqual("tls_cert", key, "key is not tls_cert")
+        self.assertEqual("--BEGIN--abcdef==--END--", value, "value is not base64 string")
+
+        # Customer report test. Assign base64 value. Double quoted text abd quoted value.
+        key, value = Secret._split_kv("\"tls_cert=\"QUOTE\"\"", is_json=False, labels=[r"tls_cert"])
+        self.assertEqual("tls_cert", key, "key is not tls_cert")
+        self.assertEqual("\"QUOTE\"", value, "value is not \"QUOTE\"")
 
         try:
-            Secret._split_kv("bad")
-            self.fail("The key/value of 'bad' should have failed.")
+            Secret._split_kv("bad=1", is_json=False, labels=[r"good"])
+            self.fail("Cannot find the field/custom_field")
         except Exception as err:
-            self.assertRegex(str(err), r'The key/value format is invalid', 'did not get correct error message')
+            self.assertRegex(str(err), r'Cannot find the field/custom_field', 'did not get correct error message')
+
+        # JSON Object test
+        key, value = Secret._split_kv("json={\"One\":1}", is_json=True, labels=[r"json"])
+        self.assertEqual("json", key, "key is not tls_cert")
+        self.assertEqual([{'One': 1}], value, "value is not JSON")
+
+        # JSON List test
+        key, value = Secret._split_kv("json=[{\"One\":1}]", is_json=True, labels=[r"json"])
+        self.assertEqual("json", key, "key is not tls_cert")
+        self.assertEqual([{'One': 1}], value, "value is not JSON")
 
     def test_secrets_manager_record(self):
 
