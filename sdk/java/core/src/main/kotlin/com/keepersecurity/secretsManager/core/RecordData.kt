@@ -23,11 +23,13 @@ data class KeeperRecordData(
 }
 
 @Serializable
-sealed class KeeperRecordField(val lbl: String? = null)
+sealed class KeeperRecordField {
+    abstract val label: String?
+}
 
 @Serializable
 @SerialName("login")
-data class Login(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class Login(override var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 data class PasswordComplexity(
@@ -41,52 +43,52 @@ data class PasswordComplexity(
 @Serializable
 @SerialName("password")
 data class Password(
-    var label: String? = null,
+    override var label: String? = null,
     var required: Boolean? = null,
     var privacyScreen: Boolean? = null,
     var enforceGeneration: Boolean? = null,
     var complexity: PasswordComplexity? = null,
     val value: MutableList<String>
-) : KeeperRecordField(label)
+) : KeeperRecordField()
 
 @Serializable
 @SerialName("url")
-data class Url(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class Url(override var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("fileRef")
-data class FileRef(var label: String? = null, var required: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class FileRef(override var label: String? = null, var required: Boolean? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("oneTimeCode")
-data class OneTimeCode(var label: String? = null, var required: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class OneTimeCode(override var label: String? = null, var required: Boolean? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("otp")
-data class OneTimePassword(var label: String? = null, var required: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class OneTimePassword(override var label: String? = null, var required: Boolean? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 data class Name(var first: String? = null, var middle: String? = null, var last: String? = null)
 
 @Serializable
 @SerialName("name")
-data class Names(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Name>) : KeeperRecordField(label)
+data class Names(override val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Name>) : KeeperRecordField()
 
 @Serializable
 @SerialName("birthDate")
-data class BirthDate(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Long>) : KeeperRecordField(label)
+data class BirthDate(override var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Long>) : KeeperRecordField()
 
 @Serializable
 @SerialName("date")
-data class Date(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Long>) : KeeperRecordField(label)
+data class Date(override var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Long>) : KeeperRecordField()
 
 @Serializable
 @SerialName("expirationDate")
-data class ExpirationDate(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Long>) : KeeperRecordField(label)
+data class ExpirationDate(override var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Long>) : KeeperRecordField()
 
 @Serializable
 @SerialName("text")
-data class Text(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, var value: MutableList<String>) : KeeperRecordField(label)
+data class Text(override var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, var value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 data class SecurityQuestion(var question: String? = null, var answer: String? = null)
@@ -94,31 +96,31 @@ data class SecurityQuestion(var question: String? = null, var answer: String? = 
 @Serializable
 @SerialName("securityQuestion")
 data class SecurityQuestions(
-    var label: String? = null,
+    override var label: String? = null,
     var required: Boolean? = null,
     var privacyScreen: Boolean? = null,
     val value: MutableList<SecurityQuestion>
-) : KeeperRecordField(label)
+) : KeeperRecordField()
 
 @Serializable
 @SerialName("multiline")
-data class Multiline(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class Multiline(override var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("email")
-data class Email(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class Email(override var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("cardRef")
-data class CardRef(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class CardRef(override var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("addressRef")
-data class AddressRef(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class AddressRef(override var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("pinCode")
-data class PinCode(var label: String? = null, var required: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class PinCode(override var label: String? = null, var required: Boolean? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 data class Phone(
@@ -130,19 +132,19 @@ data class Phone(
 
 @Serializable
 @SerialName("phone")
-data class Phones(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: List<Phone>) : KeeperRecordField(label)
+data class Phones(override val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: List<Phone>) : KeeperRecordField()
 
 @Serializable
 @SerialName("secret")
-data class HiddenField(val label: String? = null, var required: Boolean? = null, val value: List<String>) : KeeperRecordField(label)
+data class HiddenField(override val label: String? = null, var required: Boolean? = null, val value: List<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("note")
-data class SecureNote(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: List<String>) : KeeperRecordField(label)
+data class SecureNote(override val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: List<String>) : KeeperRecordField()
 
 @Serializable
 @SerialName("accountNumber")
-data class AccountNumber(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: List<String>) : KeeperRecordField(label)
+data class AccountNumber(override val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: List<String>) : KeeperRecordField()
 
 @Serializable
 data class PaymentCard(
@@ -153,8 +155,8 @@ data class PaymentCard(
 
 @Serializable
 @SerialName("paymentCard")
-data class PaymentCards(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<PaymentCard>) :
-    KeeperRecordField(label)
+data class PaymentCards(override val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<PaymentCard>) :
+    KeeperRecordField()
 
 @Serializable
 data class BankAccount(
@@ -166,8 +168,8 @@ data class BankAccount(
 
 @Serializable
 @SerialName("bankAccount")
-data class BankAccounts(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<BankAccount>) :
-    KeeperRecordField(label)
+data class BankAccounts(override val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<BankAccount>) :
+    KeeperRecordField()
 
 @Serializable
 data class KeyPair(
@@ -177,7 +179,7 @@ data class KeyPair(
 
 @Serializable
 @SerialName("keyPair")
-data class KeyPairs(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<KeyPair>) : KeeperRecordField(label)
+data class KeyPairs(override val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<KeyPair>) : KeeperRecordField()
 
 @Serializable
 data class Host(
@@ -187,7 +189,7 @@ data class Host(
 
 @Serializable
 @SerialName("host")
-data class Hosts(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Host>) : KeeperRecordField(label)
+data class Hosts(override val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Host>) : KeeperRecordField()
 
 @Serializable
 data class Address(
@@ -201,11 +203,11 @@ data class Address(
 
 @Serializable
 @SerialName("address")
-data class Addresses(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Address>) : KeeperRecordField(label)
+data class Addresses(override val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Address>) : KeeperRecordField()
 
 @Serializable
 @SerialName("licenseNumber")
-data class LicenseNumber(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class LicenseNumber(override val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField()
 
 @Serializable
 data class KeeperFileData(
