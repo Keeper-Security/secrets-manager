@@ -92,14 +92,21 @@ type SecretsManagerResponseFile = {
 }
 
 type SecretsManagerResponse = {
+    appData: string
     encryptedAppKey?: string  // received only on the first response
     appOwnerPublicKey?: string   // received only on the first response
     folders: SecretsManagerResponseFolder[]
     records: SecretsManagerResponseRecord[]
+    expiresOn: number
     warnings: string[]
 }
 
 export type KeeperSecrets = {
+    appData: {
+        title: string
+        type: string
+    }
+    expiresOn?: Date
     records: KeeperRecord[]
     warnings?: string[]
 }
@@ -302,7 +309,10 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, recordsFilt
             }
         }
     }
+    const appData = await platform.decrypt(webSafe64ToBytes(response.appData), KEY_APP_KEY)
     const secrets: KeeperSecrets = {
+        appData: JSON.parse(platform.bytesToString(appData)),
+        expiresOn: response.expiresOn > 0 ? new Date(response.expiresOn) : undefined,
         records: records
     }
     if (response.warnings && response.warnings.length > 0) {
