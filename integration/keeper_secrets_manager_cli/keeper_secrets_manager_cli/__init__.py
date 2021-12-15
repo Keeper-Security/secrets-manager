@@ -11,6 +11,7 @@
 #
 
 from keeper_secrets_manager_core import SecretsManager
+from keeper_secrets_manager_core.core import KSMCache
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from distutils.util import strtobool
@@ -26,13 +27,15 @@ class KeeperCli:
     def get_client(**kwargs):
         return SecretsManager(**kwargs)
 
-    def __init__(self, ini_file=None, profile_name=None, output=None, use_color=None):
+    def __init__(self, ini_file=None, profile_name=None, output=None, use_color=None, use_cache=None):
 
         self.profile = Profile(cli=self, ini_file=ini_file)
         self._client = None
 
         self.log_level = os.environ.get("KSM_DEBUG", None)
         self.use_color = use_color
+
+        self.use_cache = use_cache
 
         # If no config file is loaded, then don't init the SDK
         if self.profile.is_loaded is True:
@@ -45,7 +48,6 @@ class KeeperCli:
                 if profile_name is None:
                     raise ValueError("Cannot determine the active profile.")
 
-            # Get the active configuration
             self.config = self.profile.get_profile_config(profile_name)
 
             config_storage = InMemoryKeyValueStorage()
@@ -57,12 +59,17 @@ class KeeperCli:
 
             common_profile = self.profile.get_profile_config(Profile.config_profile)
 
+            # Get the active configuration
+            if self.use_cache is None:
+                self.use_cache = bool(strtobool(common_profile.get(Profile.cache_key, str(True))))
+
             self._client = self.get_client(
                 config=config_storage,
-                log_level=self.log_level
+                log_level=self.log_level,
+                custom_post_function=KSMCache.caching_post_function if self.use_cache is True else None
             )
             if self.use_color is None:
-                self.use_color = bool(strtobool(common_profile.get("color", str(True))))
+                self.use_color = bool(strtobool(common_profile.get(Profile.color_key, str(True))))
         else:
             # Set the log level. We don't have the client to set the level, so set it here.
             if use_color is None:

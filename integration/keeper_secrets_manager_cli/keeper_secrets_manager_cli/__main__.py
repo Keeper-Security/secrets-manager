@@ -169,17 +169,19 @@ def base_command_help(f):
 @click.option('--profile-name', '-p', type=str, help='Config profile')
 @click.option('--output', '-o', type=str, help='Output [stdout|stderr|filename]', default='stdout')
 @click.option('--color/--no-color', '-c/-nc', default=None, help="Use color in table views, where applicable.")
+@click.option('--cache/--no-cache', default=None, help="Enable/disable record caching.")
 @click.pass_context
 @base_command_help
-def cli(ctx, ini_file, profile_name, output, color):
+def cli(ctx, ini_file, profile_name, output, color, cache):
     """Keeper Secrets Manager CLI
     """
     ctx.obj = {
-        "cli": _get_cli(ini_file=ini_file, profile_name=profile_name, output=output, use_color=color),
+        "cli": _get_cli(ini_file=ini_file, profile_name=profile_name, output=output, use_color=color, use_cache=cache),
         "ini_file": ini_file,
         "profile_name": profile_name,
         "output": output,
-        "use_color": color
+        "use_color": color,
+        "use_cache": cache
     }
 
 
@@ -524,8 +526,21 @@ def config_log_command(ctx, enable):
     ctx.obj["profile"].set_color(enable)
 
 
+@click.command(
+    name='record-cache',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--enable/--disable', required=True, help="Enable or disable cache.")
+@click.pass_context
+def config_cache_command(ctx, enable):
+    """Enable or disable cache"""
+    ctx.obj["profile"].set_cache(enable)
+
+
 config_command.add_command(config_show_command)
 config_command.add_command(config_log_command)
+config_command.add_command(config_cache_command)
 
 
 # REDEEM COMMAND
