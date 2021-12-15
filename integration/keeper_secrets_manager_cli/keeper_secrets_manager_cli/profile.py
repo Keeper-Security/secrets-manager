@@ -31,6 +31,7 @@ class Profile:
     default_profile = os.environ.get("KSM_CLI_PROFILE", "_default")
     default_ini_file = os.environ.get("KSM_INI_FILE", "keeper.ini")
     color_key = "color"
+    cache_key = "cache"
 
     def __init__(self, cli, ini_file=None):
 
@@ -375,8 +376,15 @@ class Profile:
         self.cli.use_color = on_off
         self.save()
 
+    def set_cache(self, on_off):
+        common_config = self._get_common_config("Cannot set log level.")
+        common_config[Profile.cache_key] = str(on_off)
+        self.cli.use_color = on_off
+        self.save()
+
     def show_config(self):
         common_config = self._get_common_config("Cannot show the config.")
         not_set_text = "-NOT SET-"
         print("Active Profile: {}".format(common_config.get(Profile.active_profile_key, not_set_text)))
+        print("Cache Enabled: {}".format(common_config.get(Profile.cache_key, not_set_text)))
         print("Color Enabled: {}".format(common_config.get(Profile.color_key, not_set_text)))
