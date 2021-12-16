@@ -228,14 +228,19 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: G
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
         const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate)
         if (response.statusCode !== 200) {
-            const errorMessage = platform.bytesToString(response.data.slice(0, 1000))
-            try {
-                const errorObj: KeeperError = JSON.parse(errorMessage)
-                if (errorObj.error === 'key') {
-                    await options.storage.saveString(KEY_SERVER_PUBIC_KEY_ID, errorObj.key_id!.toString())
-                    continue
+            let errorMessage
+            if (response.data) {
+                errorMessage = platform.bytesToString(response.data.slice(0, 1000))
+                try {
+                    const errorObj: KeeperError = JSON.parse(errorMessage)
+                    if (errorObj.error === 'key') {
+                        await options.storage.saveString(KEY_SERVER_PUBIC_KEY_ID, errorObj.key_id!.toString())
+                        continue
+                    }
+                } catch {
                 }
-            } catch {
+            } else {
+                errorMessage = `unknown ksm error, code ${response.statusCode}`
             }
             throw new Error(errorMessage)
         }
