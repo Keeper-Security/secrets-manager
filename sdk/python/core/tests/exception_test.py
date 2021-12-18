@@ -12,6 +12,11 @@ from requests import HTTPError
 
 class ExceptionTest(unittest.TestCase):
 
+    fake_app_key = "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE="
+    fake_private_key = "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y" \
+                       "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC" \
+                       "jhKMhHQFaHYI"
+
     def setUp(self):
 
         self.orig_working_dir = os.getcwd()
@@ -25,17 +30,16 @@ class ExceptionTest(unittest.TestCase):
         """Exceptions the Secrets Manager server will send that have meaning.
         """
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
+
+        fake_secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
             "hostname": "fake.keepersecurity.com",
-            "appKey": "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=",
-            "clientId": "45haqPHrK5csKjr2jXJRYrykxaE50QsAR/FR8OiU7aak5LexpGX50/23FJRwNK02thysUBf7AZReQK9q7Q8UUw==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
+            "appKey": self.fake_app_key,
+            "clientId": "CLIENT_ID",
+            "clientKey": "CLIENT_KEY",
+            "privateKey": self.fake_private_key
         }))
 
-        res_queue = mock.ResponseQueue(client=secrets_manager)
+        res_queue = mock.ResponseQueue(client=fake_secrets_manager)
 
         # Make the error message
         error_json = {
@@ -50,7 +54,7 @@ class ExceptionTest(unittest.TestCase):
         res_queue.add_response(res)
 
         try:
-            secrets_manager.get_secrets()
+            fake_secrets_manager.get_secrets()
         except KeeperError as err:
             self.assertRegex(err.message, r'Signature is invalid', 'did not get correct error message')
 
@@ -61,12 +65,10 @@ class ExceptionTest(unittest.TestCase):
 
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
             "hostname": "fake.keepersecurity.com",
-            "appKey": "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=",
-            "clientId": "45haqPHrK5csKjr2jXJRYrykxaE50QsAR/FR8OiU7aak5LexpGX50/23FJRwNK02thysUBf7AZReQK9q7Q8UUw==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
+            "appKey": self.fake_app_key,
+            "clientId": "CLIENT_ID",
+            "clientKey": "CLIENT_KEY",
+            "privateKey": self.fake_private_key
         }))
 
         res_queue = mock.ResponseQueue(client=secrets_manager)
@@ -86,12 +88,10 @@ class ExceptionTest(unittest.TestCase):
 
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
             "hostname": "fake.keepersecurity.com",
-            "appKey": "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=",
-            "clientId": "45haqPHrK5csKjr2jXJRYrykxaE50QsAR/FR8OiU7aak5LexpGX50/23FJRwNK02thysUBf7AZReQK9q7Q8UUw==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
+            "appKey": self.fake_app_key,
+            "clientId": "CLIENT_ID",
+            "clientKey": "CLIENT_KEY",
+            "privateKey": self.fake_private_key
         }))
 
         res_queue = mock.ResponseQueue(client=secrets_manager)

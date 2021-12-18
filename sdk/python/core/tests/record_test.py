@@ -6,6 +6,7 @@ import os
 from keeper_secrets_manager_core.storage import FileKeyValueStorage
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core import mock
+from tests.exception_test import ExceptionTest
 
 
 class RecordTest(unittest.TestCase):
@@ -28,13 +29,10 @@ class RecordTest(unittest.TestCase):
                 fh.write(
                     json.dumps({
                         "hostname": "fake.keepersecurity.com",
-                        "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-                        "clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCE"
-                                    "LujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
-                        "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-                        "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9d"
-                                        "jH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbE"
-                                        "T6joq0xCjhKMhHQFaHYI"
+                        "appKey": ExceptionTest.fake_app_key,
+                        "clientId": "CLIENT_ID",
+                        "clientKey": "CLIENT_KEY",
+                        "privateKey": ExceptionTest.fake_private_key
                     })
                 )
                 fh.seek(0)

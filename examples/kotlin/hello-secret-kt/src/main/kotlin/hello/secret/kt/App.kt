@@ -8,7 +8,7 @@ class App
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
         println("Usage: ./gradlew run --args=\"%config_name% %client_key%\"")
-        println("F.e. ./gradlew run --args=\"config.json EvdTdbH1xbHuRcja7QG3wMOyLUbvoQgF9WkkrHTdkh8\"")
+        println("F.e. ./gradlew run --args=\"config.json US:EXAMPLE_ONE_TIME_TOKEN\"")
         println("Use %client_key% only once to initialize the config. For subsequent runs, ./gradlew run --args=%config_name%")
         return
     }
@@ -23,7 +23,7 @@ fun main(args: Array<String>) {
         val options = SecretsManagerOptions(storage)
 //        val options = SecretsManagerOptions(storage, cachingPostFunction)
         val (records) = getSecrets(options)
-        //            KeeperSecrets secrets = getSecrets(options, Arrays.asList("UlzQ-jKQTgQcEvpJI9vxxQ"));
+        //            KeeperSecrets secrets = getSecrets(options, Arrays.asList("RECORD_UID"));
         println(records)
 
         // get the password from the first record
@@ -39,7 +39,7 @@ fun main(args: Array<String>) {
         }
 
         // update the password on the first record
-        firstRecord.updatePassword("aP1\$t367QOCvL\$eM\$bG#")
+        firstRecord.updatePassword("N3wP4$$w0rd")
         updateSecret(options, firstRecord)
     } catch (e: Exception) {
         println(e.message)

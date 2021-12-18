@@ -10,6 +10,7 @@ from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core import mock
 from keeper_secrets_manager_core.keeper_globals import get_client_version
+from tests.notation_test import NotationTest
 
 
 class SmokeTest(unittest.TestCase):
@@ -35,13 +36,10 @@ class SmokeTest(unittest.TestCase):
                 fh.write(
                     json.dumps({
                         "hostname": "fake.keepersecurity.com",
-                        "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-                        "clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCE"
-                                    "LujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
-                        "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-                        "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9d"
-                                    "jH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbE"
-                                    "T6joq0xCjhKMhHQFaHYI"
+                        "appKey": NotationTest.fake_app_key,
+                        "clientId": "CLIENT_ID",
+                        "clientKey": "CLIENT_KEY",
+                        "privateKey": NotationTest.fake_private_key
                     })
                 )
                 fh.seek(0)

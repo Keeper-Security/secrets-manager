@@ -17,20 +17,22 @@ initialize()
 const platformPost = platform.post;
 const platformRandomBytes = platform.getRandomBytes
 const responses: { transmissionKey: string; data: string, statusCode: number } [] = []
-const clientKey = 'VB3sGkzVyRB9Lup6WE7Rx-ETFZxyWR2zqY2b9f2zwBo'
+
+const oneTimeToken = 'ONE_TIME_TOKEN'       // TODO: Add user prompt for this variables
+const ksmServer = 'fake.keepersecurity.com' // TODO: Add user prompt for this variable
 
 async function generateTests() {
     platform.post = postProxy
     platform.getRandomBytes = getRandomBytesProxy
     try {
         const kvs = localConfigStorage()
-        await initializeStorage(kvs, clientKey, 'dev.keepersecurity.com')
+        await initializeStorage(kvs, oneTimeToken, ksmServer)
         const response = await getSecrets({
             storage: kvs
         })
         console.log(inspect(response, false, 6))
         const kvs1 = localConfigStorage()
-        await initializeStorage(kvs1, clientKey, 'dev.keepersecurity.com') // expect failure on invalid signature
+        await initializeStorage(kvs1, oneTimeToken, ksmServer) // expect failure on invalid signature
         await getSecrets({
             storage: kvs1
         })
@@ -38,7 +40,7 @@ async function generateTests() {
         console.error(e)
     }
     console.log(responses)
-    fs.writeFileSync('../../../test_data.json', JSON.stringify(responses, null, 2))
+    fs.writeFileSync('../../../fake_data.json', JSON.stringify(responses, null, 2))
 }
 
 generateTests().finally()

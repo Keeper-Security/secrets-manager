@@ -10,6 +10,11 @@ from keeper_secrets_manager_core import mock
 
 class NotationTest(unittest.TestCase):
 
+    fake_app_key = "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw="
+    fake_private_key = "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9d" \
+                       "jH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbE" \
+                       "T6joq0xCjhKMhHQFaHYI"
+
     def setUp(self):
 
         self.orig_working_dir = os.getcwd()
@@ -31,13 +36,10 @@ class NotationTest(unittest.TestCase):
                 fh.write(
                     json.dumps({
                         "hostname": "fake.keepersecurity.com",
-                        "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-                        "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26"
-                                    "C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-                        "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-                        "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9d"
-                                    "jH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbE"
-                                    "T6joq0xCjhKMhHQFaHYI"
+                        "appKey": self.fake_app_key ,
+                        "clientId": "CLIENT_ID",
+                        "clientKey": "CLIENT_KEY",
+                        "privateKey": self.fake_private_key
                     })
                 )
                 fh.seek(0)
@@ -152,13 +154,10 @@ class NotationTest(unittest.TestCase):
                 fh.write(
                     json.dumps({
                         "hostname": "fake.keepersecurity.com",
-                        "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-                        "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26"
-                                    "C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-                        "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-                        "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9d"
-                                    "jH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbE"
-                                    "T6joq0xCjhKMhHQFaHYI"
+                        "appKey": self.fake_app_key,
+                        "clientId": "CLIENT_ID",
+                        "clientKey": "CLIENT_KEY",
+                        "privateKey": self.fake_private_key
                     })
                 )
                 fh.seek(0)
@@ -209,13 +208,10 @@ class NotationTest(unittest.TestCase):
                 fh.write(
                     json.dumps({
                         "hostname": "fake.keepersecurity.com",
-                        "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-                        "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26"
-                                    "C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-                        "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-                        "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9d"
-                        "jH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbE"
-                        "T6joq0xCjhKMhHQFaHYI"
+                        "appKey": self.fake_app_key,
+                        "clientId": "CLIENT_ID",
+                        "clientKey": "CLIENT_KEY",
+                        "privateKey": self.fake_private_key
                     })
                 )
                 fh.seek(0)

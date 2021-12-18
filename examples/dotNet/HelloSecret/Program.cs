@@ -12,7 +12,7 @@ namespace HelloSecret
             if (args.Length == 0)
             {
                 Console.WriteLine("Usage: dotnet run %config_name% %client_key");
-                Console.WriteLine("F.e. dotnet run config.json EvdTdbH1xbHuRcja7QG3wMOyLUbvoQgF9WkkrHTdkh");
+                Console.WriteLine("F.e. dotnet run config.json US:EXAMPLE_ONE_TIME_TOKEN");
                 Console.WriteLine("Use %client_key% only once to initialize the config. For subsequent runs, dotnet run %config_name%");
                 return;
             }
@@ -41,7 +41,7 @@ namespace HelloSecret
             var options = new SecretsManagerOptions(storage);
             // var options = new SecretsManagerOptions(storage, SecretsManagerClient.CachingPostFunction);
             var secrets = await SecretsManagerClient.GetSecrets(options);
-            // var secrets = await SecretsManagerClient.GetSecrets(options, new[] { "UlzQ-jKQTgQcEvpJI9vxxQ" }));
+            // var secrets = await SecretsManagerClient.GetSecrets(options, new[] { "RECORD_UID" }));
             Console.WriteLine($"Received {secrets.Records.Length} record(s)");
 
             // get the password from the first record
@@ -50,7 +50,7 @@ namespace HelloSecret
             Console.WriteLine($"Password: {password}");
 
             // alternative way to get field value
-            // var password = Notation.GetValue(secrets, "BediNKCMG21ztm5xGYgNww/field/password");
+            // var password = Notation.GetValue(secrets, "RECORD_UID/field/password");
 
             // download the file from the 1st record
             var file = firstRecord.GetFileByName("acme.cer");
@@ -60,7 +60,7 @@ namespace HelloSecret
                 await File.WriteAllBytesAsync(file.Data.name, fileBytes);
             }
 
-            firstRecord.UpdateFieldValue("password", "aP1$t367QOCvL$eM$bG#");
+            firstRecord.UpdateFieldValue("password", "N3wP4$$w0rd");
             await SecretsManagerClient.UpdateSecret(options, firstRecord);
         }
     }

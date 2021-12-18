@@ -20,13 +20,13 @@ namespace QuickTest
 
         private static async Task GetSecrets()
         {
-            var storage = new LocalConfigStorage("config-dev-msp.json");
+            var storage = new LocalConfigStorage("test_config_storage.json");
             // ReSharper disable once StringLiteralTypo
-            SecretsManagerClient.InitializeStorage(storage, "dev.keepersecurity.com:kpsySedoEYM52vq8aoM6IBbNIxiWHtTwcou0FRQ4GkE");
+            SecretsManagerClient.InitializeStorage(storage, "US:ONE_TIME_TOKEN");
             var options = new SecretsManagerOptions(storage);
             // var options = new SecretsManagerOptions(storage, SecretsManagerClient.CachingPostFunction);
             var secrets = await SecretsManagerClient.GetSecrets(options);
-            // var password = Notation.GetValue(secrets, "BediNKCMG21ztm5xGYgNww/field/password");
+            // var password = Notation.GetValue(secrets, "RECORD_UID/field/password");
             var firstRecord = secrets.Records[0];
             var password = firstRecord.FieldValue("password").ToString();
             Console.WriteLine(password);

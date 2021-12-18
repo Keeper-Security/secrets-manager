@@ -7,6 +7,22 @@ from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKey
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 
+# Json:
+# {
+#     "appKey": "MY APP KEY",
+#     "clientId": "MY CLIENT ID",
+#     "hostname": "fake.keepersecurity.com",
+#     "privateKey": "MY PRIVATE KEY",
+#     "serverPublicKeyId": "2"
+# }
+#
+# Above json in base64:
+# ewoiYXBwS2V5IjogIk1ZIEFQUCBLRVkiLCAKImNsaWVudElkIjogIk1ZIENMSUVOVCBJRCIsIAoiaG9zdG5hbWUiOiAiZmFrZS5rZWVwZXJzZWN1cml0eS5jb20iLCAicHJpdmF0ZUtleSI6ICJNWSBQUklWQVRFIEtFWSIsCiJzZXJ2ZXJQdWJsaWNLZXlJZCI6ICIyIgp9
+
+fake_b64config_str = 'ewoiYXBwS2V5IjogIk1ZIEFQUCBLRVkiLCAKImNsaWVudElkIjogIk1ZIENMSUVOVCBJRCIsIAoiaG9zdG5hbWUiOiA' \
+                'iZmFrZS5rZWVwZXJzZWN1cml0eS5jb20iLCAicHJpdmF0ZUtleSI6ICJNWSBQUklWQVRFIEtFWSIsCiJzZXJ2ZXJQdW' \
+                'JsaWNLZXlJZCI6ICIyIgp9'
+
 
 class ConfigTest(unittest.TestCase):
 
@@ -88,37 +104,28 @@ class ConfigTest(unittest.TestCase):
             with open(default_config_name, "w") as fh:
                 fh.write(
                     json.dumps({
-                        "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-                        "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpG"
-                                    "ILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-                        "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-                        "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOt"
-                                      "x9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0U"
-                                      "BFTrbET6joq0xCjhKMhHQFaHYI",
+                        "appKey": "APP_KEY",
+                        "clientId": "CLIENT_ID",
+                        "clientKey": "CLIENT_KEY",
+                        "privateKey": "PRIVATE_KEY",
                         "serverPublicKeyId": "7"
                     })
                 )
                 fh.close()
 
             # Pass in the client key and server
-            secrets_manager = SecretsManager(token="ABC123", hostname='localhost')
+            secrets_manager = SecretsManager(token="ABC123", hostname='fake.keepersecurity.com')
 
-            self.assertEqual(secrets_manager.config.get(ConfigKeys.KEY_HOSTNAME), "localhost",
+            self.assertEqual(secrets_manager.config.get(ConfigKeys.KEY_HOSTNAME), "fake.keepersecurity.com",
                              "did not get correct server")
             self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY), "Client key is not present")
             os.chdir('..')
 
+
+
     def test_onetime_token_formats_abbrev(self):
 
-        b64config_str = 'eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2x' \
-                        'pZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0bU' \
-                        '5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgICAgI' \
-                        'CJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJNGlW' \
-                        'UzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2FHMmd' \
-                        'sRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNlcnZlcl' \
-                        'B1YmxpY0tleUlkIjogIjEwIiB9'
-
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(b64config_str), token="US:ABC123", hostname='localhost')
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(fake_b64config_str), token="US:ABC123", hostname='fake.keepersecurity.com')
 
         self.assertEqual(secrets_manager.hostname, "keepersecurity.com", "did not get correct server")
         self.assertEqual(secrets_manager.token, 'ABC123', "One time token/Client key don't match")
@@ -128,15 +135,7 @@ class ConfigTest(unittest.TestCase):
 
     def test_onetime_token_formats_hostname(self):
 
-        b64config_str = 'eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2x' \
-                        'pZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0bU' \
-                        '5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgICAgI' \
-                        'CJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJNGlW' \
-                        'UzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2FHMmd' \
-                        'sRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNlcnZlcl' \
-                        'B1YmxpY0tleUlkIjogIjEwIiB9'
-
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(b64config_str), token="fake.keepersecurity.com:ABC123", hostname='localhost')
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(fake_b64config_str), token="fake.keepersecurity.com:ABC123", hostname='company.com')
 
         self.assertEqual(secrets_manager.hostname, "fake.keepersecurity.com", "did not get correct server")
         self.assertEqual(secrets_manager.token, 'ABC123', "One time token/Client key don't match")
@@ -242,22 +241,7 @@ class ConfigTest(unittest.TestCase):
 
     def test_in_memory_base64_config(self):
 
-        # Json:
-        # {
-        #     "appKey": "MY APP KEY",
-        #     "clientId": "MY CLIENT ID",
-        #     "hostname": "fake.keepersecurity.com",
-        #     "privateKey": "MY PRIVATE KEY",
-        #     "serverPublicKeyId": "2"
-        # }
-        #
-        # Above json in base64:
-        # ewoiYXBwS2V5IjogIk1ZIEFQUCBLRVkiLCAKImNsaWVudElkIjogIk1ZIENMSUVOVCBJRCIsIAoiaG9zdG5hbWUiOiAiZmFrZS5rZWVwZXJzZWN1cml0eS5jb20iLCAicHJpdmF0ZUtleSI6ICJNWSBQUklWQVRFIEtFWSIsCiJzZXJ2ZXJQdWJsaWNLZXlJZCI6ICIyIgp9
-
-        b64config_str = 'ewoiYXBwS2V5IjogIk1ZIEFQUCBLRVkiLCAKImNsaWVudElkIjogIk1ZIENMSUVOVCBJRCIsIAoiaG9zdG5hbWUiOiA' \
-                        'iZmFrZS5rZWVwZXJzZWN1cml0eS5jb20iLCAicHJpdmF0ZUtleSI6ICJNWSBQUklWQVRFIEtFWSIsCiJzZXJ2ZXJQdW' \
-                        'JsaWNLZXlJZCI6ICIyIgp9'
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(b64config_str))
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(fake_b64config_str))
         dict_config = secrets_manager.config.read_storage()
 
         self.assertEqual("MY APP KEY", dict_config.get(ConfigKeys.KEY_APP_KEY.value),
@@ -285,24 +269,8 @@ class ConfigTest(unittest.TestCase):
 
     def test_in_memory_base64_config_via_env(self):
 
-        # Json:
-        # {
-        #     "appKey": "MY APP KEY",
-        #     "clientId": "MY CLIENT ID",
-        #     "hostname": "fake.keepersecurity.com",
-        #     "privateKey": "MY PRIVATE KEY",
-        #     "serverPublicKeyId": "2"
-        # }
-        #
-        # Above json in base64:
-        # ewoiYXBwS2V5IjogIk1ZIEFQUCBLRVkiLCAKImNsaWVudElkIjogIk1ZIENMSUVOVCBJRCIsIAoiaG9zdG5hbWUiOiAiZmFrZS5rZWVwZXJzZWN1cml0eS5jb20iLCAicHJpdmF0ZUtleSI6ICJNWSBQUklWQVRFIEtFWSIsCiJzZXJ2ZXJQdWJsaWNLZXlJZCI6ICIyIgp9
-
-        b64config_str = 'ewoiYXBwS2V5IjogIk1ZIEFQUCBLRVkiLCAKImNsaWVudElkIjogIk1ZIENMSUVOVCBJRCIsIAoiaG9zdG5hbWUiOiA' \
-                        'iZmFrZS5rZWVwZXJzZWN1cml0eS5jb20iLCAicHJpdmF0ZUtleSI6ICJNWSBQUklWQVRFIEtFWSIsCiJzZXJ2ZXJQdW' \
-                        'JsaWNLZXlJZCI6ICIyIgp9'
-
         # Put the config into an
-        os.environ["KSM_CONFIG"] = b64config_str
+        os.environ["KSM_CONFIG"] = fake_b64config_str
 
         secrets_manager = SecretsManager()
         dict_config = secrets_manager.config.read_storage()
