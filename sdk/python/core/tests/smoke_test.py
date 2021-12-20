@@ -9,6 +9,7 @@ from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKey
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core import mock
+from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_core.keeper_globals import get_client_version
 
 
@@ -32,18 +33,7 @@ class SmokeTest(unittest.TestCase):
 
         try:
             with tempfile.NamedTemporaryFile("w", delete=False) as fh:
-                fh.write(
-                    json.dumps({
-                        "hostname": "fake.keepersecurity.com",
-                        "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-                        "clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCE"
-                                    "LujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
-                        "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-                        "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9d"
-                                    "jH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbE"
-                                    "T6joq0xCjhKMhHQFaHYI"
-                    })
-                )
+                fh.write(MockConfig.make_json())
                 fh.seek(0)
                 secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
 
@@ -161,9 +151,10 @@ class SmokeTest(unittest.TestCase):
                 custom = record.custom_field("My Custom 1", single=True)
                 self.assertEqual(custom, "NEW VALUE", "didn't get the correct My Custom 1 value after write")
         finally:
-            try: os.unlink(fh.name)
-            except Exception: pass
-
+            try:
+                os.unlink(fh.name)
+            except IOError:
+                pass
 
     def test_verify_ssl_certs(self):
 

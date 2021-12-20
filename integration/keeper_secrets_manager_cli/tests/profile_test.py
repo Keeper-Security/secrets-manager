@@ -6,6 +6,7 @@ from click.testing import CliRunner
 from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core import mock
+from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_cli.profile import Profile
 from keeper_secrets_manager_cli.__main__ import cli
 import tempfile
@@ -35,16 +36,9 @@ class ProfileTest(unittest.TestCase):
         """ Test initializing the profile
         """
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCE"
-                        "LujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         res = mock.Response()
 
@@ -117,25 +111,27 @@ class ProfileTest(unittest.TestCase):
 
     def test_config_ini_import_export(self):
 
+        mock_config = MockConfig.make_config()
+
         ini_config = '''
 [_default]
 clientkey = D_XXXXX_CK
 clientid = D_XXXXX_CI
 privatekey = D_XXXXX_PK
 appkey = D_XXXX_AK
-hostname = fake.keepersecurity.com
+hostname = {}
 
 [Another]
 clientkey = A_XXXXX_CK
 clientid = A_XXXXX_CI
 privatekey = A_XXXXX_PK
 appkey = A_XXXX_AK
-hostname = A_fake.keepersecurity.com
+hostname = {}
 
 [_config]
 active_profile = _default
 color = True
-        '''
+        '''.format(mock_config.get("hostname"), mock_config.get("hostname"))
 
         runner = CliRunner()
 
@@ -167,16 +163,9 @@ color = True
 
     def test_config_json_import_export(self):
 
-        json_config = {
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCE"
-                        "LujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9d"
-                          "jH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbE"
-                          "T6joq0xCjhKMhHQFaHYI"
-        }
+        json_config = MockConfig.make_config()
+
+        print(json_config)
 
         runner = CliRunner()
 
@@ -215,13 +204,7 @@ color = True
 
     def test_auto_config(self):
 
-        json_config = {
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "XXXXXjvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "XXXXXboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-            "clientKey": "XXXXXyRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "XXXXXX9AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-        }
+        json_config = MockConfig.make_config()
         base64_config = base64.urlsafe_b64encode(json.dumps(json_config).encode())
 
         runner = CliRunner()
@@ -245,13 +228,8 @@ color = True
 
     def test_import_sdk_json(self):
 
-        base64_json = "eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2"\
-                      "xpZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0"\
-                      "bU5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgIC"\
-                      "AgICJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJ"\
-                      "NGlWUzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2"\
-                      "FHMmdsRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNl"\
-                      "cnZlclB1YmxpY0tleUlkIjogIjEwIiB9"
+        mock_config = MockConfig.make_config()
+        base64_json = MockConfig.make_base64(config=mock_config)
 
         runner = CliRunner()
 
@@ -264,19 +242,13 @@ color = True
 
         profile = config["_default"]
         self.assertIsNotNone(profile, "could not find the profile")
-        self.assertEqual("8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=", profile.get("appKey"),
-                         "did not get the correct app key")
-        self.assertEqual("keepersecurity.com", profile.get("hostname"), "did not get the correct hostname")
+        self.assertEqual(mock_config.get("appKey"), profile.get("appKey"), "did not get the correct app key")
+        self.assertEqual(mock_config.get("hostname"), profile.get("hostname"), "did not get the correct hostname")
 
     def test_auto_config_sdk_json(self):
 
-        base64_json = "eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2"\
-                      "xpZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0"\
-                      "bU5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgIC"\
-                      "AgICJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJ"\
-                      "NGlWUzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2"\
-                      "FHMmdsRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNl"\
-                      "cnZlclB1YmxpY0tleUlkIjogIjEwIiB9"
+        mock_config = MockConfig.make_config()
+        base64_json = MockConfig.make_base64(config=mock_config)
 
         runner = CliRunner()
 
@@ -299,9 +271,8 @@ color = True
 
             profile = config["SDK"]
             self.assertIsNotNone(profile, "could not find the profile")
-            self.assertEqual("8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=", profile.get("appKey"),
-                             "did not get the correct app key")
-            self.assertEqual("keepersecurity.com", profile.get("hostname"), "did not get the correct hostname")
+            self.assertEqual(mock_config.get("appKey"), profile.get("appKey"), "did not get the correct app key")
+            self.assertEqual(mock_config.get("hostname"), profile.get("hostname"), "did not get the correct hostname")
 
 
 if __name__ == '__main__':

@@ -5,6 +5,7 @@ from click.testing import CliRunner
 from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core import mock
+from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_cli.profile import Profile
 from keeper_secrets_manager_cli.__main__ import cli
 import tempfile
@@ -30,15 +31,9 @@ class SecretInflateTest(unittest.TestCase):
         """ Test getting a list if secret records
         """
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         address_res = mock.Response()
         address = address_res.add_record(title="Address Record")
@@ -79,9 +74,7 @@ class SecretInflateTest(unittest.TestCase):
                 as mock_client:
             mock_client.return_value = secrets_manager
 
-            Profile.init(
-                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
-            )
+            Profile.init(token='MY_TOKEN')
 
             runner = CliRunner()
             result = runner.invoke(cli, ['secret', 'get', '-u', main.uid, '--unmask', '--json'],
