@@ -165,8 +165,6 @@ color = True
 
         json_config = MockConfig.make_config()
 
-        print(json_config)
-
         runner = CliRunner()
 
         # Test INI import
@@ -180,9 +178,8 @@ color = True
         with open("keeper.ini", "r") as fh:
             file_config = fh.read()
             fh.close()
-            print(file_config)
-            self.assertRegex(file_config, json_config["clientKey"], 'did not find the client key')
-            self.assertRegex(file_config, json_config["privateKey"], 'did not find the private key')
+            assert json_config["clientId"] in file_config, "did not find the client id"
+            assert json_config["privateKey"] in file_config, "blah"
 
         config = configparser.ConfigParser()
         config.read("keeper.ini")
