@@ -16,3 +16,4 @@ jobs:
       with:
         java-version: 1.11
     - run: ./gradlew test --stacktrace --debug
+
