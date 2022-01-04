@@ -39,7 +39,7 @@ internal class SecretsManagerTest {
         initializeStorage(storage, "VB3sGkzVyRB9Lup6WE7Rx-ETFZxyWR2zqY2b9f2zwBo", "local.keepersecurity.com")
         val options = SecretsManagerOptions(storage, testPostFunction)
         val secrets = getSecrets(options)
-        assertTrue(secrets.size() == 2)
+        assertTrue(secrets.records.size == 2)
         val record = secrets.getRecordByUid("i3v4ehaoB-Bwsb7bbbek2g")
         assertNotNull(record)
         val password = record.getPassword()
