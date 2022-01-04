@@ -19,6 +19,9 @@ internal class SecretsManagerTest {
     @Test
     fun getSecretsE2E() {
         val file = File("../../test_data.json")
+
+        assertTrue(file.exists())
+
         val inputStream = BufferedReader(FileReader(file))
         val jsonString = inputStream.lines().reduce { x: String, y: String -> x + y }
         val testResponses = Json.decodeFromString<List<TestResponse>>(jsonString.get())
@@ -36,6 +39,7 @@ internal class SecretsManagerTest {
         initializeStorage(storage, "VB3sGkzVyRB9Lup6WE7Rx-ETFZxyWR2zqY2b9f2zwBo", "local.keepersecurity.com")
         val options = SecretsManagerOptions(storage, testPostFunction)
         val secrets = getSecrets(options)
+        assertTrue(secrets.records.size == 2)
         val record = secrets.getRecordByUid("i3v4ehaoB-Bwsb7bbbek2g")
         assertNotNull(record)
         val password = record.getPassword()
