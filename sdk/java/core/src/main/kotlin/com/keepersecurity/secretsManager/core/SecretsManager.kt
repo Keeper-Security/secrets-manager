@@ -115,8 +115,19 @@ private data class SecretsManagerResponse(
 )
 
 data class KeeperSecrets(val records: List<KeeperRecord>) {
+
+    /**
+     * Retrieve record by UID
+     */
     fun getRecordByUid(recordUid: String): KeeperRecord? {
         return records.find { it.recordUid == recordUid }
+    }
+
+    /**
+     * Number of records present
+     */
+    fun size(): Int {
+        return records.size
     }
 }
 
