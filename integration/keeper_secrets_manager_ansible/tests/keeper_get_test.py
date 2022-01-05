@@ -66,9 +66,9 @@ class KeeperGetTest(unittest.TestCase):
             self.assertEqual(result["changed"], 0, "0 things didn't change")
             self.assertRegex(out, r'password_ddd', "Did not find the password in the stdout")
 
-    #@unittest.skip
+    # @unittest.skip
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=mocked_get_secrets)
-    def test_keeper_get_mock(self, mock_get_secrets):
+    def test_keeper_get_mock(self, _):
         self._common()
 
     @unittest.skip

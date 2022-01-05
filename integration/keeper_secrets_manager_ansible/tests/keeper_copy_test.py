@@ -80,10 +80,10 @@ class KeeperCopyTest(unittest.TestCase):
             self.assertTrue("password" in ls, "did not find file password")
             self.assertTrue("video.mp4" in ls, "did not find file video.mp4")
 
-    #@unittest.skip
+    # @unittest.skip
     @patch("requests.get", side_effect=mocked_requests_get)
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
-    def test_keeper_copy_mock(self, mock_get_secrets, mock_request_get):
+    def test_keeper_copy_mock(self, _, _two):
         self._common()
 
     @unittest.skip

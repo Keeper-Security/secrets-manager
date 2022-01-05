@@ -44,6 +44,7 @@ def _config():
         print("ANSIBLE_ACTION_PLUGINS={}".format(action_plugin_dir))
         print("ANSIBLE_LOOKUP_PLUGINS={}".format(lookup_plugin_dir))
 
+
 def _version():
     # Unit test do not know their version
     versions = {
@@ -73,6 +74,7 @@ def _version():
     print("ANSIBLE_ACTION_PLUGINS env is {}".format(os.environ.get("ANSIBLE_ACTION_PLUGINS", "Not Set")))
     print("ANSIBLE_LOOKUP_PLUGINS env is {}".format(os.environ.get("ANSIBLE_LOOKUP_PLUGINS", "Not Set")))
 
+
 def _init(args):
     task_args = {
         "keeper_force_config_write": True
@@ -84,7 +86,7 @@ def _init(args):
     if args.keeper_hostname is not None:
         task_args["keeper_hostname"] = args.keeper_hostname
 
-    if ":" in task_args["keeper_token"]:
+    if task_args.get("keeper_token") is not None and ":" in task_args["keeper_token"]:
         task_args["keeper_hostname"], task_args["keeper_token"] = task_args["keeper_token"].split(":")
 
     try:
