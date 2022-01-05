@@ -18,21 +18,19 @@ const version = require("../package.json").version;
 connectPlatform(nodePlatform)
 initialize(version)
 
-// const configFileName = 'client-config-admin+rte.json'
-// const clientKey = '122iGmGds8JSRem1aJZN1r8PNiG2a6UyoLa4j60kGcY'
 const configFileName = 'client-config-local.json'
-const clientKey = 'local.keepersecurity.com:4wqhs0M-PU3fxhS6bmo66kiAkH3wWoEETz1KPjQuEdg'
+const oneTimeToken = 'US:ONE_TIME_TOKEN'
 
 async function test() {
     const kvs = localConfigStorage(configFileName)
-    await initializeStorage(kvs, clientKey)
+    await initializeStorage(kvs, oneTimeToken)
     const options: SecretManagerOptions = {
         storage: kvs,
         // queryFunction: cachingPostFunction
         allowUnverifiedCertificate: true
     }
     const { records } = await getSecrets(options)
-    // const { records } = await getSecrets(options, ['EG6KdJaaLG7esRZbMnfbFA'])
+    // const { records } = await getSecrets(options, ['SECRET_UID'])
     console.log(inspect(records, false, 6))
 
     // const templateRecord = records[1]

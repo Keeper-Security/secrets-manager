@@ -15,7 +15,7 @@ Usage:
 
 For example: 
 ```
-./gradlew run --args="config.json US:EvdTdbH1xbHuRcja7QG3wMOyLUbvoQgF9WkkrHTdkh8"
+./gradlew run --args="config.json US:EXAMPLE_ONE_TIME_TOKEN"
 ```
 
 The One-Time Access Token is used once to initialize the SDK configuration. After the SDK configuration is initialized, the One-Time Access Token can be removed.

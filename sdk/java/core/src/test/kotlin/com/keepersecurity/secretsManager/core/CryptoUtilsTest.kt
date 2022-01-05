@@ -6,13 +6,13 @@ internal class CryptoUtilsTest {
 
     @Test
     fun privateKeyIsCompatible() {
-        val privateKey64 = "MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQg34GXYbMpXKaHcHZW4dIMO3WYU8zTjB6t+41SRsY1rwqgCgYIKoZIzj0DAQehRANCAAQGH/4ZwpGR9B7AlMjVY7ekpjOcaD3rhuO25CmOZxI3wqRDdhXQIdDnuWvQPCZ3ymtjL3C8JrVIcloklwYI9T7+"
-        val privateKey = base64ToBytes(privateKey64)
-        val exportedPublicKey = exportPublicKey(privateKey)
-        assertEquals("BAYf/hnCkZH0HsCUyNVjt6SmM5xoPeuG47bkKY5nEjfCpEN2FdAh0Oe5a9A8JnfKa2MvcLwmtUhyWiSXBgj1Pv4=", bytesToBase64(exportedPublicKey))
+        val fakeExternalPrivateKey64String = "MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQg34GXYbMpXKaHcHZW4dIMO3WYU8zTjB6t+41SRsY1rwqgCgYIKoZIzj0DAQehRANCAAQGH/4ZwpGR9B7AlMjVY7ekpjOcaD3rhuO25CmOZxI3wqRDdhXQIdDnuWvQPCZ3ymtjL3C8JrVIcloklwYI9T7+"
+        val fakeExternalPrivateKey64Bytes = base64ToBytes(fakeExternalPrivateKey64String)
+        val fakeExportedPublicKey = exportPublicKey(fakeExternalPrivateKey64Bytes)
+        assertEquals("BAYf/hnCkZH0HsCUyNVjt6SmM5xoPeuG47bkKY5nEjfCpEN2FdAh0Oe5a9A8JnfKa2MvcLwmtUhyWiSXBgj1Pv4=", bytesToBase64(fakeExportedPublicKey))
         val data = getRandomBytes(32)
-        val ciphertext = publicEncrypt(data, exportedPublicKey)
-        val plaintext = privateDecrypt(ciphertext, privateKey)
+        val ciphertext = publicEncrypt(data, fakeExportedPublicKey)
+        val plaintext = privateDecrypt(ciphertext, fakeExternalPrivateKey64Bytes)
         assertContentEquals(data, plaintext)
     }
 

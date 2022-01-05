@@ -11,7 +11,7 @@ public class App {
     public static void main(String[] args) {
         if (args.length == 0) {
             System.out.println("Usage: ./gradlew run --args=\"%config_name% %client_key%\"");
-            System.out.println("F.e. ./gradlew run --args=\"config.json EvdTdbH1xbHuRcja7QG3wMOyLUbvoQgF9WkkrHTdkh8\"");
+            System.out.println("F.e. ./gradlew run --args=\"config.json US:EXAMPLE_ONE_TIME_TOKEN\"");
             System.out.println("Use %client_key% only once to initialize the config. For subsequent runs, ./gradlew run --args=%config_name%");
             return;
         }
@@ -26,7 +26,7 @@ public class App {
             SecretsManagerOptions options = new SecretsManagerOptions(storage);
 //            SecretsManagerOptions options = new SecretsManagerOptions(storage, SecretsManager::cachingPostFunction);
             KeeperSecrets secrets = getSecrets(options);
-//          KeeperSecrets secrets = getSecrets(options, Arrays.asList("UlzQ-jKQTgQcEvpJI9vxxQ")); for a single record
+//          KeeperSecrets secrets = getSecrets(options, Arrays.asList("RECORD_UID")); for a single record
             System.out.println(secrets.getRecords());
 
             // get the password from the first record
@@ -35,7 +35,7 @@ public class App {
             System.out.println(firstRecordPassword);
 
             // an alternate way to get the password
-//          String password = getValue(secrets, "BediNKCMG21ztm5xGYgNww/field/password");
+//          String password = getValue(secrets, "RECORD_UID/field/password");
 //          System.out.println(password);
 
             // download the file from the 3rd record
@@ -48,7 +48,7 @@ public class App {
             }
 
             // update the password on the first record
-            firstRecord.updatePassword("aP1$t367QOCvL$eM$bG#");
+            firstRecord.updatePassword("N3wP4$$w0rd");
             updateSecret(options, firstRecord);
         } catch (Exception e) {
             System.out.println(e.getMessage());
