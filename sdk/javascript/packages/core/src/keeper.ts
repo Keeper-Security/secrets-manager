@@ -329,7 +329,8 @@ export const initializeStorage = async (storage: KeyValueStorage, oneTimeToken: 
         host = {
             US: 'keepersecurity.com',
             EU: 'keepersecurity.eu',
-            AU: 'keepersecurity.com.au'
+            AU: 'keepersecurity.com.au',
+            GOV: 'govcloud.keepersecurity.us'
         }[tokenParts[0].toUpperCase()]
         if (!host) {
             host = tokenParts[0]
