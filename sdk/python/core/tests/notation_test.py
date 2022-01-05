@@ -1,19 +1,14 @@
 import unittest
 import tempfile
-import json
 import os
 
 from keeper_secrets_manager_core.storage import FileKeyValueStorage
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core import mock
+from keeper_secrets_manager_core.mock import MockConfig
 
 
 class NotationTest(unittest.TestCase):
-
-    fake_app_key = "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw="
-    fake_private_key = "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9d" \
-                       "jH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbE" \
-                       "T6joq0xCjhKMhHQFaHYI"
 
     def setUp(self):
 
@@ -33,15 +28,7 @@ class NotationTest(unittest.TestCase):
 
         try:
             with tempfile.NamedTemporaryFile("w", delete=False) as fh:
-                fh.write(
-                    json.dumps({
-                        "hostname": "fake.keepersecurity.com",
-                        "appKey": self.fake_app_key ,
-                        "clientId": "CLIENT_ID",
-                        "clientKey": "CLIENT_KEY",
-                        "privateKey": self.fake_private_key
-                    })
-                )
+                fh.write(MockConfig.make_json())
                 fh.seek(0)
                 secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
 
@@ -127,7 +114,7 @@ class NotationTest(unittest.TestCase):
                 # Custom field, get all of the third phone number
                 value = secrets_manager.get_notation("{}://{}/custom_field/phone[2]".format(prefix, one.uid))
                 self.assertEqual({"number": "888-8888888", "ext": "", "type": "Home"}, value,
-                                "custom field phone, did not get correct dict for third")
+                                 "custom field phone, did not get correct dict for third")
 
                 # Custom field, get first name
                 value = secrets_manager.get_notation("{}/custom_field/name[first]".format(one.uid))
@@ -137,8 +124,10 @@ class NotationTest(unittest.TestCase):
                 value = secrets_manager.get_notation("{}/custom_field/name[last]".format(one.uid))
                 self.assertEqual("Smith", value, "custom field name, got the last name")
         finally:
-            try: os.unlink(fh.name)
-            except Exception: pass
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass
 
     def test_secrets_manager_custom_field(self):
 
@@ -151,15 +140,7 @@ class NotationTest(unittest.TestCase):
 
         try:
             with tempfile.NamedTemporaryFile("w", delete=False) as fh:
-                fh.write(
-                    json.dumps({
-                        "hostname": "fake.keepersecurity.com",
-                        "appKey": self.fake_app_key,
-                        "clientId": "CLIENT_ID",
-                        "clientKey": "CLIENT_KEY",
-                        "privateKey": self.fake_private_key
-                    })
-                )
+                fh.write(MockConfig.make_json())
                 fh.seek(0)
                 secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
 
@@ -191,8 +172,10 @@ class NotationTest(unittest.TestCase):
                 except Exception as err:
                     self.fail("Didn't get the correct exception message: {}".format(err))
         finally:
-            try: os.unlink(fh.name)
-            except Exception: pass
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass
 
     def test_notation_inflate(self):
 
@@ -205,15 +188,7 @@ class NotationTest(unittest.TestCase):
 
         try:
             with tempfile.NamedTemporaryFile("w", delete=False) as fh:
-                fh.write(
-                    json.dumps({
-                        "hostname": "fake.keepersecurity.com",
-                        "appKey": self.fake_app_key,
-                        "clientId": "CLIENT_ID",
-                        "clientKey": "CLIENT_KEY",
-                        "privateKey": self.fake_private_key
-                    })
-                )
+                fh.write(MockConfig.make_json())
                 fh.seek(0)
 
                 prefix = SecretsManager.notation_prefix
@@ -234,8 +209,7 @@ class NotationTest(unittest.TestCase):
                 card_res = mock.Response()
                 card = card_res.add_record(title="Card Record")
                 card.field("paymentCard", [{"cardNumber": "5555555555555555",
-                    "cardExpirationDate": "01/2021",
-                    "cardSecurityCode": "543"}])
+                           "cardExpirationDate": "01/2021", "cardSecurityCode": "543"}])
                 card.field("text", value=["Cardholder"], label="Cardholder Name")
                 card.field("pinCode", "1234")
                 # card contains the address
@@ -260,17 +234,17 @@ class NotationTest(unittest.TestCase):
                 self.assertEqual('Cardholder', value.get("Cardholder Name"), 'Cardholder Name is wrong')
                 self.assertEqual('100 West Street', value.get("street1"), 'street1 is wrong')
 
-
                 # Get a value in the dictionary
                 queue.add_response(main_res)
                 queue.add_response(card_res)
                 queue.add_response(address_res)
 
-                value = secrets_manager.get_notation("{}://{}/field/cardRef[cardSecurityCode]".format(prefix, main.uid))
+                value = secrets_manager.get_notation("{}://{}/field/cardRef[cardSecurityCode]".format(prefix,
+                                                                                                      main.uid))
                 self.assertEqual("543", value, "cardSecurityCode is wrong")
 
-                # This is done via morbid curiosity. We coded for this, but we don't actually have an inflation that does
-                # it.
+                # This is done via morbid curiosity. We coded for this, but we don't actually have an inflation that
+                # does it.
 
                 address_res = mock.Response()
                 address = address_res.add_record(title="Address Record")
@@ -308,5 +282,7 @@ class NotationTest(unittest.TestCase):
                 self.assertEqual('Cardholder', value.get("Cardholder Name"), 'Cardholder Name is wrong')
                 self.assertEqual('100 West Street', value.get("street1"), 'street1 is wrong')
         finally:
-            try: os.unlink(fh.name)
-            except Exception: pass
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass

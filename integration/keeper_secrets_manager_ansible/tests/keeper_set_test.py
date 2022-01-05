@@ -70,9 +70,9 @@ def save(*args):
         record.password = password_field.get('value')[0]
         local_records.update({record.uid: record})
 
-        with open(pickle_file_name, "wb") as fh:
-            pickle.dump(local_records, fh)
-            fh.close()
+        with open(pickle_file_name, "wb") as fh2:
+            pickle.dump(local_records, fh2)
+            fh2.close()
 
 
 class KeeperSetTest(unittest.TestCase):
@@ -103,7 +103,7 @@ class KeeperSetTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
 
             a = AnsibleTestFramework(
-                base_dir= self.ansible_base_dir,
+                base_dir=self.ansible_base_dir,
                 playbook=os.path.join("playbooks", "keeper_set.yml"),
                 inventory=os.path.join("inventory", "all"),
                 plugin_base_dir=os.path.join(os.path.dirname(keeper_secrets_manager_ansible.plugins.__file__)),
@@ -125,10 +125,10 @@ class KeeperSetTest(unittest.TestCase):
             self.assertRegex(out, r'Current Password password_ddd', "did not find current password")
             self.assertRegex(out, r'New Password NEW PASSWORD', "did not find new password")
 
-    #@unittest.skip
+    # @unittest.skip
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
     @patch("keeper_secrets_manager_core.core.SecretsManager.save", side_effect=save)
-    def test_keeper_lookup_mock(self, mock_get_secrets, mock_save):
+    def test_keeper_lookup_mock(self, _, _two):
         self._common()
 
     @unittest.skip

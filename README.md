@@ -1,7 +1,5 @@
 # Keeper Secrets Manager
 
-# What is Keeper Secrets Manager?
-
 Keeper Secrets Manager is a component of the Keeper Enterprise platform. It provides your DevOps, IT Security and
 software development teams with a fully cloud-based, Zero-Knowledge platform for managing all of your
 infrastructure secrets such as API keys, Database passwords, access keys, certificates and any type of confidential data.
@@ -13,6 +11,12 @@ Common use cases for Secrets Manager include:
 - Protecting access to privileged passwords, API keys and other managed secrets.
 - Providing vault access to machines and applications
 
+### User Guides
+[Secrets Manager](https://docs.keeper.io/secrets-manager/secrets-manager/overview)
+
+[Keeper Commander](https://docs.keeper.io/secrets-manager/commander-cli/overview)
+
+[Enterprise Admin](https://docs.keeper.io/enterprise-guide/)
 
 
 ### Integrations
@@ -48,6 +52,11 @@ Common use cases for Secrets Manager include:
 **.NET** |  [Docs](https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/.net-sdk)  <br /> [Source](https://github.com/Keeper-Security/secrets-manager/tree/master/sdk/dotNet)     | ![.NET](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.dotnet.yml/badge.svg)     | [![Nuget](https://img.shields.io/nuget/v/Keeper.SecretsManager?style=for-the-badge&logo=nuget&logoColor=white)](https://www.nuget.org/packages/Keeper.SecretsManager)                                                       |
 **Go** | [Docs](https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/golang-sdk) <br /> [Source](https://github.com/Keeper-Security/secrets-manager-go)  | ![GoLang](https://github.com/keeper-security/secrets-manager-go/actions/workflows/test.go.yml/badge.svg)    | [![Go](https://img.shields.io/github/v/tag/Keeper-Security/secrets-manager-go?label=Go&logo=go&logoColor=white&style=for-the-badge)](https://github.com/Keeper-Security/secrets-manager-go)                                   |
 
- 
 More information about Keeper Secrets Manager, SDKs, tools, and integrations can be found in our [official documentation 
 portal](https://docs.keeper.io/secrets-manager/secrets-manager/overview)
+
+### About Keeper Security
+Keeper is the leading cybersecurity platform for preventing password-related data breaches and cyberthreats.
+
+Learn More at:
+[https://keepersecurity.com](https://keepersecurity.com)

@@ -9,8 +9,8 @@ from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKey
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core import mock
+from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_core.keeper_globals import get_client_version
-from tests.notation_test import NotationTest
 
 
 class SmokeTest(unittest.TestCase):
@@ -33,15 +33,7 @@ class SmokeTest(unittest.TestCase):
 
         try:
             with tempfile.NamedTemporaryFile("w", delete=False) as fh:
-                fh.write(
-                    json.dumps({
-                        "hostname": "fake.keepersecurity.com",
-                        "appKey": NotationTest.fake_app_key,
-                        "clientId": "CLIENT_ID",
-                        "clientKey": "CLIENT_KEY",
-                        "privateKey": NotationTest.fake_private_key
-                    })
-                )
+                fh.write(MockConfig.make_json())
                 fh.seek(0)
                 secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
 
@@ -159,9 +151,10 @@ class SmokeTest(unittest.TestCase):
                 custom = record.custom_field("My Custom 1", single=True)
                 self.assertEqual(custom, "NEW VALUE", "didn't get the correct My Custom 1 value after write")
         finally:
-            try: os.unlink(fh.name)
-            except Exception: pass
-
+            try:
+                os.unlink(fh.name)
+            except IOError:
+                pass
 
     def test_verify_ssl_certs(self):
 

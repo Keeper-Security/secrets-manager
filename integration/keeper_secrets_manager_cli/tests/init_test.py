@@ -2,13 +2,13 @@ import base64
 import os
 import unittest
 from unittest.mock import patch
-
 import yaml
 from click.testing import CliRunner
 from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core import mock
+from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_cli.__main__ import cli
 import tempfile
 import json
@@ -30,25 +30,20 @@ class InitTest(unittest.TestCase):
         """ Test initializing the profile
         """
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCE"
-                        "LujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         # We kind of need to mock getting back the app key
         init_config = InMemoryKeyValueStorage()
         init_secrets_manager = SecretsManager(
             config=init_config,
-            token="JG49ehxg_GW9FZkgtDcXUZTOKw-SArPuBCN89vDvztc",
+            token="MY_TOKEN",
             hostname="US",
             verify_ssl_certs=False
         )
-        init_config.set(ConfigKeys.KEY_APP_KEY, "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=")
+        # Add back the app key since it's deleted on the sm init. We don't get it unless we hit the server.
+        init_config.set(ConfigKeys.KEY_APP_KEY, mock_config.get("appKey"))
 
         res = mock.Response()
         res.add_record(title="My Record 1")
@@ -69,7 +64,7 @@ class InitTest(unittest.TestCase):
                 with patch('keeper_secrets_manager_cli.init.Init.init_config') as mock_init_config:
                     mock_init_config.return_value = init_config
 
-                    token = "US:JG49ehxg_GW9FZkgtDcXUZTOKw-SArPuBCN89vDvztc"
+                    token = "US:MY_TOKEN"
                     runner = CliRunner()
                     result = runner.invoke(cli, ['init ', 'default', token], catch_exceptions=False)
                     self.assertEqual(0, result.exit_code, "did not get a success for default init")
@@ -81,7 +76,7 @@ class InitTest(unittest.TestCase):
                     self.assertIsNotNone(config.get("appKey"), "app key is missing")
                     self.assertIsNotNone(config.get("hostname"), "hostname is missing")
                     self.assertEqual("US", config.get("hostname"), "hostname is not correct")
-                    self.assertEqual("9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=", config.get("appKey"),
+                    self.assertEqual(mock_config.get("appKey"), config.get("appKey"),
                                      "app key is not correct")
 
         # JSON OUTPUT
@@ -92,7 +87,7 @@ class InitTest(unittest.TestCase):
                 with patch('keeper_secrets_manager_cli.init.Init.init_config') as mock_init_config:
                     mock_init_config.return_value = init_config
 
-                    token = "US:JG49ehxg_GW9FZkgtDcXUZTOKw-SArPuBCN89vDvztc"
+                    token = "US:MY_TOKEN"
                     runner = CliRunner()
                     result = runner.invoke(cli, ['init ', 'default', token, '--plain'], catch_exceptions=False)
                     self.assertEqual(0, result.exit_code, "did not get a success for default init")
@@ -103,7 +98,7 @@ class InitTest(unittest.TestCase):
                     self.assertIsNotNone(config.get("appKey"), "app key is missing")
                     self.assertIsNotNone(config.get("hostname"), "hostname is missing")
                     self.assertEqual("US", config.get("hostname"), "hostname is not correct")
-                    self.assertEqual("9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=", config.get("appKey"),
+                    self.assertEqual(mock_config.get("appKey"), config.get("appKey"),
                                      "app key is not correct")
 
     def test_k8s(self):
@@ -111,25 +106,19 @@ class InitTest(unittest.TestCase):
         """ Test initializing the profile
         """
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCE"
-                        "LujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         # We kind of need to mock getting back the app key
         init_config = InMemoryKeyValueStorage()
         init_secrets_manager = SecretsManager(
             config=init_config,
-            token="JG49ehxg_GW9FZkgtDcXUZTOKw-SArPuBCN89vDvztc",
+            token="MY_TOKEN",
             hostname="US",
             verify_ssl_certs=False
         )
-        init_config.set(ConfigKeys.KEY_APP_KEY, "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=")
+        init_config.set(ConfigKeys.KEY_APP_KEY, mock_config.get("appKey"))
 
         res = mock.Response()
         res.add_record(title="My Record 1")
@@ -149,7 +138,7 @@ class InitTest(unittest.TestCase):
                 with patch('keeper_secrets_manager_cli.init.Init.init_config') as mock_init_config:
                     mock_init_config.return_value = init_config
 
-                    token = "US:JG49ehxg_GW9FZkgtDcXUZTOKw-SArPuBCN89vDvztc"
+                    token = "US:MY_TOKEN"
                     runner = CliRunner()
                     result = runner.invoke(cli, [
                         'init ', 'k8s', token,
@@ -181,7 +170,5 @@ class InitTest(unittest.TestCase):
                     self.assertIsNotNone(config.get("appKey"), "app key is missing")
                     self.assertIsNotNone(config.get("hostname"), "hostname is missing")
                     self.assertEqual("US", config.get("hostname"), "hostname is not correct")
-                    self.assertEqual("9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=", config.get("appKey"),
+                    self.assertEqual(mock_config.get("appKey"), config.get("appKey"),
                                      "app key is not correct")
-
-

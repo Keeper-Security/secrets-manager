@@ -67,9 +67,9 @@ class KeeperLookupTest(unittest.TestCase):
 
             self.assertRegex(out, r'My password is password_ddd', "did not find the debug message")
 
-    #@unittest.skip
+    # @unittest.skip
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
-    def test_keeper_lookup_mock(self, mock_get_secrets):
+    def test_keeper_lookup_mock(self, _):
         self._common()
 
     @unittest.skip

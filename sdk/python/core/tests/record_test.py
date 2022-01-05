@@ -1,12 +1,11 @@
 import unittest
 import tempfile
-import json
 import os
 
 from keeper_secrets_manager_core.storage import FileKeyValueStorage
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core import mock
-from tests.exception_test import ExceptionTest
+from keeper_secrets_manager_core.mock import MockConfig
 
 
 class RecordTest(unittest.TestCase):
@@ -26,15 +25,7 @@ class RecordTest(unittest.TestCase):
 
         try:
             with tempfile.NamedTemporaryFile("w", delete=False) as fh:
-                fh.write(
-                    json.dumps({
-                        "hostname": "fake.keepersecurity.com",
-                        "appKey": ExceptionTest.fake_app_key,
-                        "clientId": "CLIENT_ID",
-                        "clientKey": "CLIENT_KEY",
-                        "privateKey": ExceptionTest.fake_private_key
-                    })
-                )
+                fh.write(MockConfig.make_json())
                 fh.seek(0)
                 secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
 
@@ -57,7 +48,9 @@ class RecordTest(unittest.TestCase):
                 ugly_res = mock.Response(flags={"prune_empty_fields": True})
                 ugly = ugly_res.add_record(title="Ugly Record", record_type='login')
                 ugly.field("login", "My Login")
-                ugly.field("password", []) # this will be removed from the fields array.
+
+                # this will be removed from the fields array.
+                ugly.field("password", [])
 
                 res_queue = mock.ResponseQueue(client=secrets_manager)
                 res_queue.add_response(good_res)
@@ -76,5 +69,7 @@ class RecordTest(unittest.TestCase):
                 self.assertEqual(1, len(records), "didn't get 1 record for the ugly")
                 self.assertIsNone(records[0].password, "password is defined for the ugly")
         finally:
-            try: os.unlink(fh.name)
-            except Exception: pass
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass

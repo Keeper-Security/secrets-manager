@@ -5,6 +5,7 @@ from click.testing import CliRunner
 from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core import mock
+from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_cli.secret import Secret
 from keeper_secrets_manager_cli.profile import Profile
 from keeper_secrets_manager_cli.__main__ import cli
@@ -38,15 +39,8 @@ class SecretTest(unittest.TestCase):
         """ Test getting a list if secret records
         """
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         res = mock.Response()
 
@@ -76,9 +70,7 @@ class SecretTest(unittest.TestCase):
                 as mock_client:
             mock_client.return_value = secrets_manager
 
-            Profile.init(
-                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
-            )
+            Profile.init(token='MY_TOKEN')
 
             # JSON Output
             with tempfile.NamedTemporaryFile() as tf:
@@ -105,15 +97,8 @@ class SecretTest(unittest.TestCase):
 
     def test_get(self):
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         res = mock.Response()
         one = res.add_record(title="My Record 1")
@@ -136,9 +121,7 @@ class SecretTest(unittest.TestCase):
                 as mock_client:
             mock_client.return_value = secrets_manager
 
-            Profile.init(
-                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
-            )
+            Profile.init(token='MY_TOKEN')
 
             # JSON Output to file
             with tempfile.NamedTemporaryFile() as tf:
@@ -189,15 +172,8 @@ class SecretTest(unittest.TestCase):
 
     def test_get_dash_uid(self):
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         # UID starts with a dash to see if will be treated as a UID or a argument. We want UID :)
         dash_uid = '-uDASH'
@@ -217,9 +193,7 @@ class SecretTest(unittest.TestCase):
                 as mock_client:
             mock_client.return_value = secrets_manager
 
-            Profile.init(
-                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
-            )
+            Profile.init(token='MY_TOKEN')
 
             # JSON Output to file
             with tempfile.NamedTemporaryFile() as tf:
@@ -234,15 +208,8 @@ class SecretTest(unittest.TestCase):
 
     def test_get_list_field(self):
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         res = mock.Response()
         one = res.add_record(title="My Record 1")
@@ -271,9 +238,7 @@ class SecretTest(unittest.TestCase):
                 as mock_client:
             mock_client.return_value = secrets_manager
 
-            Profile.init(
-                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
-            )
+            Profile.init(token='MY_TOKEN')
 
             runner = CliRunner()
 
@@ -297,15 +262,8 @@ class SecretTest(unittest.TestCase):
 
     def test_download(self):
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         mock_content = "ABC123"
 
@@ -329,9 +287,7 @@ class SecretTest(unittest.TestCase):
                     as mock_client:
                 mock_client.return_value = secrets_manager
 
-                Profile.init(
-                    token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
-                )
+                Profile.init(token='MY_TOKEN')
 
                 with tempfile.NamedTemporaryFile() as tf:
                     runner = CliRunner()
@@ -347,15 +303,8 @@ class SecretTest(unittest.TestCase):
 
     def test_notation(self):
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         res = mock.Response()
         one = res.add_record(title="My Record 1")
@@ -372,9 +321,7 @@ class SecretTest(unittest.TestCase):
                 as mock_client:
             mock_client.return_value = secrets_manager
 
-            Profile.init(
-                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
-            )
+            Profile.init(token='MY_TOKEN')
 
             # Good one
             notation = "keeper://{}/{}/{}".format(one.uid, "field", "login")
@@ -406,15 +353,8 @@ class SecretTest(unittest.TestCase):
 
     def test_notation_file(self):
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         # This is a tiny 2x2 PNG image base64 encoded.
         tiny_png_base64 = \
@@ -474,9 +414,7 @@ class SecretTest(unittest.TestCase):
                     as mock_client:
                 mock_client.return_value = secrets_manager
 
-                Profile.init(
-                    token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
-                )
+                Profile.init(token='MY_TOKEN')
 
                 # Write png to file. This will be binary data.
                 with tempfile.NamedTemporaryFile() as tf:
@@ -514,15 +452,8 @@ class SecretTest(unittest.TestCase):
         """Test updating an existing record
         """
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         res = mock.Response()
         one = res.add_record(title="My Record 1")
@@ -555,9 +486,7 @@ class SecretTest(unittest.TestCase):
                 as mock_client:
             mock_client.return_value = secrets_manager
 
-            Profile.init(
-                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
-            )
+            Profile.init(token='MY_TOKEN')
 
             # Because of click/testing.py:278 ResourceWarning: unclosed file <_io.FileIO ...
             warnings.simplefilter("ignore", ResourceWarning)
@@ -683,15 +612,8 @@ class SecretTest(unittest.TestCase):
         """ Test how Secrets Manager stores record. Not custom fields, not 'custom' key in the response JSON.
         """
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         res = mock.Response(flags={
             "prune_custom_fields": True
@@ -711,9 +633,7 @@ class SecretTest(unittest.TestCase):
                 as mock_client:
             mock_client.return_value = secrets_manager
 
-            Profile.init(
-                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
-            )
+            Profile.init(token='MY_TOKEN')
 
             # JSON Output
             with tempfile.NamedTemporaryFile() as tf:
@@ -733,15 +653,8 @@ class SecretTest(unittest.TestCase):
         """This test will replace the addressRef with an actual address
         """
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         profile_init_res = mock.Response()
         profile_init_res.add_record(title="Profile Init")
@@ -772,9 +685,7 @@ class SecretTest(unittest.TestCase):
                 as mock_client:
             mock_client.return_value = secrets_manager
 
-            Profile.init(
-                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
-            )
+            Profile.init(token='MY_TOKEN')
 
             # JSON Output to file
             with tempfile.NamedTemporaryFile() as tf:
@@ -797,15 +708,8 @@ class SecretTest(unittest.TestCase):
         """Test TOTP
         """
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-            "clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         profile_init_res = mock.Response()
         profile_init_res.add_record(title="Profile Init")
@@ -824,9 +728,7 @@ class SecretTest(unittest.TestCase):
                 as mock_client:
             mock_client.return_value = secrets_manager
 
-            Profile.init(
-                token='rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ'
-            )
+            Profile.init(token='MY_TOKEN')
 
             # JSON Output to file
             with tempfile.NamedTemporaryFile() as tf:

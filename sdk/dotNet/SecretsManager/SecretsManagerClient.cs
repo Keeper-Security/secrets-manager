@@ -306,6 +306,7 @@ namespace SecretsManager
                     "US" => "keepersecurity.com",
                     "EU" => "keepersecurity.eu",
                     "AU" => "keepersecurity.com.au",
+                    "GOV" => "govcloud.keepersecurity.us",
                     _ => tokenParts[0]
                 };
                 clientKey = tokenParts[1];
