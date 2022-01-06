@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core import mock
+from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 import os
 import keeper_secrets_manager_ansible.plugins
@@ -27,15 +28,7 @@ class KeeperGetSdkTest(unittest.TestCase):
     def test_keeper_update_mock(self):
 
         fake_config = InMemoryKeyValueStorage(
-            config={
-                "appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-                "clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCE"
-                            "LujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
-                "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-                "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0YE"
-                              "vBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjh"
-                              "KMhHQFaHYI"
-            }
+            config=MockConfig.make_config()
         )
 
         # Get an instance of Secrets Manager and use our fake config

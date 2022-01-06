@@ -7,6 +7,7 @@ from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core import mock
+from keeper_secrets_manager_core.mock import MockConfig
 from requests import HTTPError
 
 
@@ -24,16 +25,7 @@ class ExceptionTest(unittest.TestCase):
 
         """Exceptions the Secrets Manager server will send that have meaning.
         """
-
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=",
-            "clientId": "45haqPHrK5csKjr2jXJRYrykxaE50QsAR/FR8OiU7aak5LexpGX50/23FJRwNK02thysUBf7AZReQK9q7Q8UUw==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(MockConfig.make_config()))
 
         res_queue = mock.ResponseQueue(client=secrets_manager)
 
@@ -59,15 +51,7 @@ class ExceptionTest(unittest.TestCase):
         """Generic message not specific to the Secrets Manager server.
         """
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=",
-            "clientId": "45haqPHrK5csKjr2jXJRYrykxaE50QsAR/FR8OiU7aak5LexpGX50/23FJRwNK02thysUBf7AZReQK9q7Q8UUw==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(MockConfig.make_config()))
 
         res_queue = mock.ResponseQueue(client=secrets_manager)
 
@@ -84,15 +68,7 @@ class ExceptionTest(unittest.TestCase):
         """Special exception for rotating the public key.
         """
 
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage({
-            "hostname": "fake.keepersecurity.com",
-            "appKey": "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=",
-            "clientId": "45haqPHrK5csKjr2jXJRYrykxaE50QsAR/FR8OiU7aak5LexpGX50/23FJRwNK02thysUBf7AZReQK9q7Q8UUw==",
-            "clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-            "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0Y"
-                          "EvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xC"
-                          "jhKMhHQFaHYI"
-        }))
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(MockConfig.make_config()))
 
         res_queue = mock.ResponseQueue(client=secrets_manager)
 
