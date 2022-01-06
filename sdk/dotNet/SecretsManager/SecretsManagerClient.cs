@@ -463,8 +463,9 @@ namespace SecretsManager
                 }
             }
 
-            var s = CryptoUtils.BytesToString(CryptoUtils.Decrypt(CryptoUtils.WebSafe64ToBytes(response.appData), appKey));
-            var appData = JsonUtils.ParseJson<AppData>(CryptoUtils.Decrypt(CryptoUtils.WebSafe64ToBytes(response.appData), appKey));
+            var appData = response.appData == null 
+                ? null : 
+                JsonUtils.ParseJson<AppData>(CryptoUtils.Decrypt(CryptoUtils.WebSafe64ToBytes(response.appData), appKey));
             var secrets = new KeeperSecrets(appData, response.expiresOn == 0 ? null : DateTimeOffset.FromUnixTimeSeconds(response.expiresOn), records.ToArray());
             if (response.warnings is { Length: > 0 })
             {

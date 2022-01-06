@@ -314,9 +314,12 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, recordsFilt
             }
         }
     }
-    const appData = await platform.decrypt(webSafe64ToBytes(response.appData), KEY_APP_KEY)
+    let appData
+    if (response.appData) {
+        appData = JSON.parse(platform.bytesToString(await platform.decrypt(webSafe64ToBytes(response.appData), KEY_APP_KEY)))
+    }
     const secrets: KeeperSecrets = {
-        appData: JSON.parse(platform.bytesToString(appData)),
+        appData: appData,
         expiresOn: response.expiresOn > 0 ? new Date(response.expiresOn) : undefined,
         records: records
     }
