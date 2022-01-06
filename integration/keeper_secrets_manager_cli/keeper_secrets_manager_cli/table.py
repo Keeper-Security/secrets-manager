@@ -35,7 +35,7 @@ class Table:
 
         self.max_width, _ = self._terminal_width()
 
-    def add_column(self, title, allow_wrap=False,
+    def add_column(self, title, allow_wrap=None,
                    data_color=Style.RESET_ALL, title_color=Style.RESET_ALL,
                    title_align=ColumnAlign.LEFT, data_align=ColumnAlign.LEFT, align=None):
 
@@ -71,7 +71,9 @@ class Table:
                 w = os.get_terminal_size().columns
                 h = os.get_terminal_size().lines
             else:
-                import fcntl, termios, struct
+                import fcntl
+                import termios
+                import struct
                 h, w, hp, wp = struct.unpack('HHHH',
                                              fcntl.ioctl(0, termios.TIOCGWINSZ,
                                                          struct.pack('HHHH', 0, 0, 0, 0)))
@@ -97,7 +99,6 @@ class Table:
                 width += len(self.spacer)
             if width > max_data_size:
                 max_data_size = width
-
         column_data["width"] = max_data_size
 
     def _adjust_columns(self):
@@ -148,6 +149,9 @@ class Table:
             # Normally the last column doesn't get a spacer added to it since we are done
             if add_spacer is True:
                 item += self.spacer
+            # Else remove trailing spaces. Extra space may cause huge vertical space if we can't word wrap.
+            else:
+                item = item.rstrip()
             formatted_values.append(item)
 
         return formatted_values
@@ -177,18 +181,30 @@ class Table:
 
         last_column = self.columns[-1]
 
+        # Build the column titles and separator line.
+        width_left = self.max_width
         for item in self.columns:
+            is_last_column = last_column["index"] == item["index"]
             text_rows = self._str_format(
                 value=item["title"],
                 width=item["width"],
                 align=item["title_align"],
-                add_spacer=last_column["index"] != item["index"]
+                add_spacer=not is_last_column
             )
             table_str += "".join(text_rows)
+
+            # Prevent the separator line from being too long. The text might be really long, but it might
+            # be word wrapped. If the last column, just use the remaining screen width for the line length.
+            width = item["width"]
+            if not is_last_column:
+                width_left -= (item["width"] + len(self.spacer))
+            elif width > width_left:
+                width = width_left
+
             line_str += self._char_line(
                 char=self.line,
-                width=item["width"],
-                add_spacer=last_column["index"] != item["index"]
+                width=width,
+                add_spacer=not is_last_column
             )
 
         table_str += "\n" + line_str + "\n"
