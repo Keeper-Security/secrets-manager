@@ -13,7 +13,7 @@ namespace SecretsManager.Test
             const string testRecordDataJson =
                 "{\"title\":\"My Record 1\",\"type\":\"login\",\"fields\":[{\"type\":\"login\",\"value\":[\"My Login 1\"]},{\"type\":\"password\",\"value\":[\"My Password 1\"]}],\"custom\":[{\"type\":\"text\",\"label\":\"My Custom 1\",\"value\":[\"custom1\"]},{\"type\":\"text\",\"label\":\"My Custom 1\",\"value\":[\"custom1\"]},{\"type\":\"text\",\"label\":\"My Custom 2\",\"value\":[\"one\",\"two\",\"three\"]},{\"type\":\"phone\",\"label\":\"phone\",\"value\":[{\"number\":\"555-5555555\",\"ext\":\"55\"},{\"number\":\"777-7777777\",\"ext\":\"77\"},{\"number\":\"888-8888888\",\"ext\":\"\",\"type\":\"Home\"},{\"number\":\"999-9999999\",\"type\":\"Work\"}]},{\"type\":\"name\",\"label\":\"name\",\"value\":[{\"first\":\"Jenny\",\"middle\":\"X\",\"last\":\"Smith\"}]}]}";
             var recordData = JsonUtils.ParseJson<KeeperRecordData>(CryptoUtils.StringToBytes(testRecordDataJson));
-            var secrets = new KeeperSecrets(new[]
+            var secrets = new KeeperSecrets(null,null, new[]
             {
                 new KeeperRecord(null, RecordUid, null, null, recordData, 0, null)
             });

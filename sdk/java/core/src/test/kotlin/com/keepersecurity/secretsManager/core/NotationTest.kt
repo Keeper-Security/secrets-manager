@@ -41,7 +41,7 @@ internal class NotationTest {
         )
     )
 
-    private val secrets = KeeperSecrets(listOf(KeeperRecord(ByteArray(0), recordUID, data = recordData, files = recordFiles)))
+    private val secrets = KeeperSecrets(AppData("", ""), listOf(KeeperRecord(ByteArray(0), recordUID, data = recordData, files = recordFiles)))
 
     @Test
     fun notationsWork() {
