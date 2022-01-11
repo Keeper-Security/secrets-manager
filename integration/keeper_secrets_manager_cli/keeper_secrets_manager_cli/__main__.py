@@ -146,7 +146,7 @@ def get_versions():
             for line in lines:
                 parts = line.split("==")
                 if parts[0] in versions:
-                    versions[parts[0]] = parts[1]
+                    versions[parts[0]] = parts[1].replace('\n', '').replace('\r', '')
             fh.close()
     # Else detect the versions
     else:
