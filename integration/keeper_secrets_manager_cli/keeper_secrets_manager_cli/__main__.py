@@ -134,7 +134,9 @@ def get_versions():
 
     # Inside of binaries, it's hard to get versions so we create a versions.txt file. If that is it,
     # get the version from the text file.
-    if os.path.exists("versions.txt") is True:
+
+    ksm_bin_path = os.path.dirname(__file__)
+    if os.path.exists(os.path.join(ksm_bin_path, "versions.txt")) is True:
         with open("versions.txt", "r") as fh:
             lines = fh.readlines()
             for line in lines:
