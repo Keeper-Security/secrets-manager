@@ -135,9 +135,11 @@ def get_versions():
     # Inside of binaries, it's hard to get versions so we create a versions.txt file. If that is it,
     # get the version from the text file.
 
-    ksm_bin_path = os.path.dirname(__file__)
+    # We want the parent directory. In the binary, the os.path.dirname(__file__) will return
+    # /usr/local/ksm/bin/keeper_secrets_manager_cli as the directory. However the versions.txt
+    # will be in the bin directory, so we need the parent of keeper_secrets_manager_cli directory.
+    ksm_bin_path = os.path.dirname(os.path.dirname(__file__))
     version_path = os.path.join(ksm_bin_path, "versions.txt")
-    print("Checking {}/versions.txt".format(ksm_bin_path))
     if os.path.exists(version_path) is True:
         with open(version_path, "r") as fh:
             lines = fh.readlines()
