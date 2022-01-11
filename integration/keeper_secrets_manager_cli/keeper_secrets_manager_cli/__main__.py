@@ -136,8 +136,10 @@ def get_versions():
     # get the version from the text file.
 
     ksm_bin_path = os.path.dirname(__file__)
-    if os.path.exists(os.path.join(ksm_bin_path, "versions.txt")) is True:
-        with open("versions.txt", "r") as fh:
+    version_path = os.path.join(ksm_bin_path, "versions.txt")
+    print("Checking {}/versions.txt".format(ksm_bin_path))
+    if os.path.exists(version_path) is True:
+        with open(version_path, "r") as fh:
             lines = fh.readlines()
             for line in lines:
                 parts = line.split("==")
