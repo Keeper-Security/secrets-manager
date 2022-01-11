@@ -163,6 +163,7 @@ data class KeeperFile(
     val thumbnailUrl: String?
 )
 
+@JvmOverloads
 fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: String? = null) {
     val tokenParts = oneTimeToken.split(':')
     val host: String
