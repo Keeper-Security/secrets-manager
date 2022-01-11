@@ -131,11 +131,24 @@ def get_versions():
         "keeper-secrets-manager-core": "Unknown",
         "keeper-secrets-manager-cli": "Unknown"
     }
-    for module in versions:
-        try:
-            versions[module] = importlib_metadata.version(module)
-        except importlib_metadata.PackageNotFoundError:
-            pass
+
+    # Inside of binaries, it's hard to get versions so we create a versions.txt file. If that is it,
+    # get the version from the text file.
+    if os.path.exists("versions.txt") is True:
+        with open("versions.txt", "r") as fh:
+            lines = fh.readlines()
+            for line in lines:
+                parts = line.split("==")
+                if parts[0] in versions:
+                    versions[parts[0]] = parts[1]
+            fh.close()
+    # Else detect the versions
+    else:
+        for module in versions:
+            try:
+                versions[module] = importlib_metadata.version(module)
+            except importlib_metadata.PackageNotFoundError:
+                pass
 
     return versions
 
