@@ -143,10 +143,7 @@ def get_versions():
         ksm_bin_path = os.path.dirname(ksm_bin_path)
     print("Post clean up", ksm_bin_path)
     version_path = os.path.join(ksm_bin_path, "versions.txt")
-    print(os.listdir(ksm_bin_path))
-    ksm_bin_path = ksm_bin_path.replace("\\", "//")
-    print("Changed", ksm_bin_path)
-    print(os.listdir(ksm_bin_path))
+    version_path = version_path.replace("\\", "//")
     print("Version Path", version_path)
     if os.path.isfile(version_path) is True:
         with open(version_path, "r") as fh:
