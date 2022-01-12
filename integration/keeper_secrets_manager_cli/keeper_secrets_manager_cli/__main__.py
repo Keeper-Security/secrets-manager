@@ -138,20 +138,13 @@ def get_versions():
     # Get the directory of the executable file. If last directory is keeper_secrets_manager_cli, get the parent
     # directory.
     ksm_bin_path = os.path.dirname(__file__)
-    print("Pre clean up", ksm_bin_path)
     if ksm_bin_path.endswith("keeper_secrets_manager_cli") is True:
         ksm_bin_path = os.path.dirname(ksm_bin_path)
-    print("Post clean up", ksm_bin_path)
     version_path = os.path.join(ksm_bin_path, "versions.txt")
-    # version_path = version_path.replace("\\", "//")
-    print("Version Path", version_path)
     if os.path.isfile(version_path) is True:
-        print("Found it")
         with open(version_path, "r") as fh:
             lines = fh.readlines()
-            print("Lines", lines)
             for line in lines:
-                print("Line", line)
                 parts = line.split("==")
                 if parts[0] in versions:
                     versions[parts[0]] = parts[1].replace('\n', '').replace('\r', '')
