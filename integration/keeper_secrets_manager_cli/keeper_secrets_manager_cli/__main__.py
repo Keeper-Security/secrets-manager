@@ -144,7 +144,7 @@ def get_versions():
     print("Post clean up", ksm_bin_path)
     version_path = os.path.join(ksm_bin_path, "versions.txt")
     print("Version Path", version_path)
-    if os.path.exists(version_path) is True:
+    if os.path.isfile(version_path) is True:
         with open(version_path, "r") as fh:
             lines = fh.readlines()
             for line in lines:
