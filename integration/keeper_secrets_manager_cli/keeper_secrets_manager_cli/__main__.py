@@ -132,12 +132,12 @@ def get_versions():
         "keeper-secrets-manager-cli": "Unknown"
     }
 
-    # Inside of binaries, it's hard to get versions so we create a versions.txt file. If that is it,
-    # get the version from the text file.
+    # Inside of the binaries, it's hard to get versions # so we create a versions.txt file in the build.
+    # If the versions.txt file exists, read the versions from that file.
 
-    # Get the directory of the executable file. If last directory is keeper_secrets_manager_cli, get the parent
-    # directory.
     ksm_bin_path = os.path.dirname(__file__)
+    # Get the directory of the executable file. If last directory is keeper_secrets_manager_cli, get the parent
+    # directory. There is no keeper_secrets_manager_cli directory.
     if ksm_bin_path.endswith("keeper_secrets_manager_cli") is True:
         ksm_bin_path = os.path.dirname(ksm_bin_path)
     version_path = os.path.join(ksm_bin_path, "versions.txt")
@@ -145,11 +145,13 @@ def get_versions():
         with open(version_path, "r") as fh:
             lines = fh.readlines()
             for line in lines:
+                # The versions file follows the requirements.txt file format.
                 parts = line.split("==")
                 if parts[0] in versions:
+                    # Remove the line feed at the end. Just makes the "version" command output have extra lines.
                     versions[parts[0]] = parts[1].replace('\n', '').replace('\r', '')
             fh.close()
-    # Else detect the versions
+    # Else detect the versions from the site-packages
     else:
         for module in versions:
             try:
