@@ -324,6 +324,10 @@ const cleanKeyCache = () => {
     }
 }
 
+const hasKeysCached = (): boolean => {
+    return Object.keys(keyCache).length > 0
+}
+
 const getHmacDigest = async (algorithm: string, secret: Uint8Array, message: Uint8Array): Promise<Uint8Array> => {
     // although once part of Google Key Uri Format - https://github.com/google/google-authenticator/wiki/Key-Uri-Format/_history
     // removed MD5 as unreliable - only digests of length >= 20 can be used (MD5 has a digest length of 16)
@@ -379,6 +383,7 @@ export const browserPlatform: Platform = {
     get: get,
     post: post,
     cleanKeyCache: cleanKeyCache,
+    hasKeysCached: hasKeysCached,
     getHmacDigest: getHmacDigest,
     getRandomNumber: getRandomNumber,
     getRandomCharacterInCharset: getRandomCharacterInCharset

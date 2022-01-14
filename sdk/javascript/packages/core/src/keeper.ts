@@ -390,6 +390,9 @@ export const updateSecret = async (options: SecretManagerOptions, record: Keeper
 }
 
 export const createSecret = async (options: SecretManagerOptions, folderUid: string, recordData: any): Promise<string> => {
+    if (!platform.hasKeysCached()) {
+        await getSecrets(options) // need to warm up keys cache before posting a record
+    }
     const payload = await prepareCreatePayload(options.storage, folderUid, recordData)
     await postQuery(options, 'create_secret', payload)
     return payload.recordUid
