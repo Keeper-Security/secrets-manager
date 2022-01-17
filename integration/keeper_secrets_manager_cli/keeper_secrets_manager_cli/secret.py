@@ -13,7 +13,6 @@
 import json
 from jsonpath_rw_ext import parse
 import sys
-from collections import deque
 from colorama import Fore, Style
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_core.core import SecretsManager
@@ -471,80 +470,79 @@ class Secret:
             if type(value) is dict or type(value) is list:
                 value = json.dumps(value)
         except Exception as err:
-            raise KsmCliException(err)
+            raise KsmCliException(str(err))
 
         return self.cli.output(value)
 
     @staticmethod
-    def _split_kv(text):
+    def _split_kv(text, is_json=False, labels=None):
 
         """Split key/value.
-
-        Since we allow custom labels, the labels could include a '=' character so we can't just
-        split a string on a '=' and call it a day.
-
-        If a custom label has a '=' the user needs to escape it with a '\' character.
-
-        For example, if we had a label like "==TOTAL==", the user would have to escape the '=' like
-        this "\=\=TOTAL\=\='"so not to interfere the key/value separator. The final text would look like
-
-        =\=TOTAL\=\==VALUE
-
-        And the custom label has a "\" that now needs to be escaped "\\"
-
         """
 
-        # Split the text by a =. Then build a key
-        text_parts = deque(text.split("="))
+        # We need to know the label/types in the record. If we don't we can find the value.
+        if labels is None:
+            raise KsmCliException("Could not find any fields or custom_fields in the record.")
 
-        def _build_string(parts):
-            string = parts.popleft()
+        #  Unwrap kv is quote wrapped. Only use ' and "
+        # "label=value" or 'label=value'
+        for quote in ["\'", "\""]:
+            if text.startswith(quote) is True and text.endswith(quote) is True:
+                text = text[1:-1]
+                break
 
-            # While the key ends with a '\' and it's not a '\\', append the next value array
-            while string.endswith("\\") is True:
+        # Our final values. Init to None
+        key = None
+        value = None
 
-                # Don't add a = is the escape character is escaped :/
-                if string.endswith("\\\\") is False:
-                    # Remove the escape character and replace it a '='
-                    string = string[:-1]
-                    string += "="
-                    string += parts.popleft()
-                # The string must have had a foo\\=. The = isn't escape, but the escape character escaped. Just
-                # break. This is a an edge case.
-                else:
-                    break
+        for label in labels:
+            if text.startswith("{}=".format(label)) is True:
+                value = text.replace("{}=".format(label), "")
+                key = label
 
-            return string
+        if key is None:
+            raise KsmCliException("Cannot find the field/custom_field label or type for {}.".format(text))
 
-        try:
-            key = _build_string(text_parts)
-            value = _build_string(text_parts)
-
-            # The key/value might have been surrounded with quotes. Remove them
-            if key.startswith('"') is True:
-                key = key[1:]
-                if value.endswith('"') is True:
-                    value = value[:-1]
-        except Exception:
-            raise KsmCliException("The key/value format is invalid for '{}'.".format(text))
+        if is_json is True:
+            try:
+                value = json.loads(value)
+                if type(value) is not list:
+                    value = [value]
+            except json.JSONDecodeError:
+                raise KsmCliException("The value is not valid JSON for {}".format(text))
 
         return key, value
 
-    def update(self, uid, fields=None, custom_fields=None):
+    def update(self, uid, fields=None, custom_fields=None, fields_json=None, custom_fields_json=None):
 
         record = self.cli.client.get_secrets(uids=[uid])
         if len(record) == 0:
             raise KsmCliException("Cannot find a record for UID {}.".format(uid))
 
+        # Get a list of all labels/type allowed.
+        labels = {
+            "field": [x.get("label", x.get("type")) for x in record[0].dict.get("fields", [])],
+            "custom_field": [x.get("label", x.get("type")) for x in record[0].dict.get("custom", [])]
+        }
+
+        data = [
+            {"type": "field", "is_json": False, "values": fields},
+            {"type": "custom_field", "is_json": False, "values": custom_fields},
+            {"type": "field", "is_json": True, "values": fields_json},
+            {"type": "custom_field", "is_json": True, "values": custom_fields_json},
+        ]
+
         try:
-            if fields is not None:
-                for kv in list(fields):
-                    key, value = self._split_kv(kv)
-                    record[0].field(key, value)
-            if custom_fields is not None:
-                for kv in list(custom_fields):
-                    key, value = self._split_kv(kv)
-                    record[0].custom_field(key, value)
+            for item in data:
+                if item["values"] is not None:
+                    for kv in list(item["values"]):
+                        key, value = self._split_kv(
+                            kv,
+                            is_json=item["is_json"],
+                            labels=labels[item["type"]]
+                        )
+                        getattr(record[0], item["type"])(key, value)
+
         except Exception as err:
             raise KsmCliException("Could not update record: {}".format(err))
 

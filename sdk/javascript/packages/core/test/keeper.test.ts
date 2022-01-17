@@ -10,7 +10,7 @@ import * as fs from 'fs'
 
 test('Get secrets e2e', async () => {
 
-    const responses: { transmissionKey: string, data: string, statusCode: number } [] = JSON.parse(fs.readFileSync('../../../test_data.json').toString())
+    const responses: { transmissionKey: string, data: string, statusCode: number } [] = JSON.parse(fs.readFileSync('../../../fake_data.json').toString())
 
     let responseNo = 0
 
@@ -28,7 +28,10 @@ test('Get secrets e2e', async () => {
     platform.getRandomBytes = getRandomBytesStub
     platform.post = postStub
     const kvs = localConfigStorage()
-    await initializeStorage(kvs, 'VB3sGkzVyRB9Lup6WE7Rx-ETFZxyWR2zqY2b9f2zwBo', 'local.keepersecurity.com')
+
+    const fakeOneTimeCode = 'VB3sGkzVyRB9Lup6WE7Rx-ETFZxyWR2zqY2b9f2zwBo'
+
+    await initializeStorage(kvs, fakeOneTimeCode, 'fake.keepersecurity.com')
     const options: SecretManagerOptions = {
         storage: kvs,
         queryFunction: postStub
@@ -45,40 +48,37 @@ test('Get secrets e2e', async () => {
 
 test('Storage prefixes', async () => {
     let storage = inMemoryStorage({})
-    await initializeStorage(storage, 'US:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw')
+    await initializeStorage(storage, 'US:ONE_TIME_TOKEN')
     expect(await storage.getString('hostname')).toBe('keepersecurity.com')
 
     storage = inMemoryStorage({})
-    await initializeStorage(storage, 'EU:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw')
+    await initializeStorage(storage, 'EU:ONE_TIME_TOKEN')
     expect(await storage.getString('hostname')).toBe('keepersecurity.eu')
 
     storage = inMemoryStorage({})
-    await initializeStorage(storage, 'AU:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw')
+    await initializeStorage(storage, 'AU:ONE_TIME_TOKEN')
     expect(await storage.getString('hostname')).toBe('keepersecurity.com.au')
 
     storage = inMemoryStorage({})
-    await initializeStorage(storage, 'eu:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw')
+    await initializeStorage(storage, 'eu:ONE_TIME_TOKEN')
     expect(await storage.getString('hostname')).toBe('keepersecurity.eu')
 
     storage = inMemoryStorage({})
-    await initializeStorage(storage, 'local.keepersecurity.com:BZ1RK0CpTSuGbjozAQW9DmUuUyN42Rxg-ulNsUN5gXw')
-    expect(await storage.getString('hostname')).toBe('local.keepersecurity.com')
+    await initializeStorage(storage, 'fake.keepersecurity.com:ONE_TIME_TOKEN')
+    expect(await storage.getString('hostname')).toBe('fake.keepersecurity.com')
 })
 
 test('Storage base64', async () => {
-    const base64Config = 'eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2x' +
-        'pZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0bU' +
-        '5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgICAgI' +
-        'CJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJNGlW' +
-        'UzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2FHMmd' +
-        'sRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNlcnZlcl' +
-        'B1YmxpY0tleUlkIjogIjEwIiB9'
-    let storage = loadJsonConfig(base64Config)
-    expect(await storage.getString('hostname')).toBe('keepersecurity.com')
+    const base64Config = 'eyJhcHBLZXkiOiAiRkFLRV9BUFBfS0VZIiwgICAgICJjbGllbnRJZCI6ICJGQUtFX0NMSUVOVF9LRVkiL' +
+        'CAgICAgImhvc3RuYW1lIjogImZha2Uua2VlcGVyc2VjdXJpdHkuY29tIiwgICAgICJwcml2YXRlS2V5IjogIkZBS0VfUFJJVkFUR' +
+        'V9LRVkiLCAgICAKInNlcnZlclB1YmxpY0tleUlkIjogIjEwIiB9'
 
-    const jsonConfig = '{"hostname": "keepersecurity.com"}'
+    let storage = loadJsonConfig(base64Config)
+    expect(await storage.getString('hostname')).toBe('fake.keepersecurity.com')
+
+    const jsonConfig = '{"hostname": "fake.keepersecurity.com"}'
     storage = loadJsonConfig(jsonConfig)
-    expect(await storage.getString('hostname')).toBe('keepersecurity.com')
+    expect(await storage.getString('hostname')).toBe('fake.keepersecurity.com')
 })
 
 test('TOTP', async () => {

@@ -6,6 +6,10 @@ import {
 const recordUID = 'k9qMpcO0aszz9w3li5XbaQ'
 
 const secrets: KeeperSecrets = {
+    appData: {
+        title: "",
+        type: ""
+    },
     records: [
         {
             recordUid: recordUID,

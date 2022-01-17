@@ -19,7 +19,7 @@ fun getValue(secrets: KeeperSecrets, notation: String): String {
         }
 
     fun findField(fieldName: String): KeeperRecordField {
-        return fields.find { x -> x.lbl == fieldName || fieldType(x) == fieldName }
+        return fields.find { x -> x.label == fieldName || fieldType(x) == fieldName }
             ?: throw Exception("Field $fieldName not found in the record ${record.recordUid}")
     }
 

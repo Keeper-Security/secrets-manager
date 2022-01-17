@@ -29,13 +29,13 @@ import difflib
 import typing as t
 from update_checker import UpdateChecker
 
+
 # NOTE: For the CLI, all groups and command are lowercase. All arguments are lower case, so you cannot use
 # -n and -N for an arg flag. If you add a command, you need to add it to the list of known commands so we can
 # do a best match.
 
 
 class AliasedGroup(HelpColorsGroup):
-
     known_commands = [
         "config",
         "color",
@@ -124,31 +124,71 @@ def _get_cli(**kwargs):
     return KeeperCli(**kwargs)
 
 
+def get_versions():
+
+    # Unit test do not know their version
+    versions = {
+        "keeper-secrets-manager-core": "Unknown",
+        "keeper-secrets-manager-cli": "Unknown"
+    }
+
+    # Inside of the binaries, it's hard to get versions # so we create a versions.txt file in the build.
+    # If the versions.txt file exists, read the versions from that file.
+
+    ksm_bin_path = os.path.dirname(__file__)
+    # Get the directory of the executable file. If last directory is keeper_secrets_manager_cli, get the parent
+    # directory. There is no keeper_secrets_manager_cli directory.
+    if ksm_bin_path.endswith("keeper_secrets_manager_cli") is True:
+        ksm_bin_path = os.path.dirname(ksm_bin_path)
+    version_path = os.path.join(ksm_bin_path, "versions.txt")
+    if os.path.isfile(version_path) is True:
+        with open(version_path, "r") as fh:
+            lines = fh.readlines()
+            for line in lines:
+                # The versions file follows the requirements.txt file format.
+                parts = line.split("==")
+                if parts[0] in versions:
+                    # Remove the line feed at the end. Just makes the "version" command output have extra lines.
+                    versions[parts[0]] = parts[1].replace('\n', '').replace('\r', '')
+            fh.close()
+    # Else detect the versions from the site-packages
+    else:
+        for module in versions:
+            try:
+                versions[module] = importlib_metadata.version(module)
+            except importlib_metadata.PackageNotFoundError:
+                pass
+
+    return versions
+
+
+def update_available(module, versions=None):
+
+    if versions is None:
+        versions = get_versions()
+    return UpdateChecker().check(module, versions[module])
+
+
 def base_command_help(f):
     doc = f.__doc__
 
-    # Unit test do not know their version
-    version = "Unknown"
-    sdk_version = None
-    try:
-        version = importlib_metadata.version("keeper-secrets-manager-cli")
-        sdk_version = importlib_metadata.version("keeper-secrets-manager-core")
-    except importlib_metadata.PackageNotFoundError:
-        pass
+    versions = get_versions()
+    cli_version = versions.get("keeper-secrets-manager-cli")
+    sdk_version = versions.get("keeper-secrets-manager-core")
 
     doc = "{} Version: {} ".format(
         Fore.RED + doc + Style.RESET_ALL,
-        Fore.YELLOW + version + Style.RESET_ALL
+        Fore.YELLOW + cli_version + Style.RESET_ALL
     )
     try:
         # The __doc__ stuff gets formatted so new line don't work, however long spaces will.
         spacer = " " * 80
-        update = UpdateChecker().check("keeper-secrets-manager-cli", version)
+        update = update_available("keeper-secrets-manager-cli", versions)
         if update is not None:
             doc += spacer + "Version {} is available for the CLI".format(update.available_version)
 
-        if sdk_version is not None:
-            update = UpdateChecker().check("keeper-secrets-manager-core", sdk_version)
+        if sdk_version != "Unknown":
+            update = update_available("keeper-secrets-manager-core", versions)
             if update is not None:
                 doc += spacer + "Version {} is available for the SDK".format(update.available_version)
     except Exception as _:
@@ -169,18 +209,19 @@ def base_command_help(f):
 @click.option('--profile-name', '-p', type=str, help='Config profile')
 @click.option('--output', '-o', type=str, help='Output [stdout|stderr|filename]', default='stdout')
 @click.option('--color/--no-color', '-c/-nc', default=None, help="Use color in table views, where applicable.")
+@click.option('--cache/--no-cache', default=None, help="Enable/disable record caching.")
 @click.pass_context
 @base_command_help
-def cli(ctx, ini_file, profile_name, output, color):
-
+def cli(ctx, ini_file, profile_name, output, color, cache):
     """Keeper Secrets Manager CLI
     """
     ctx.obj = {
-        "cli": _get_cli(ini_file=ini_file, profile_name=profile_name, output=output, use_color=color),
+        "cli": _get_cli(ini_file=ini_file, profile_name=profile_name, output=output, use_color=color, use_cache=cache),
         "ini_file": ini_file,
         "profile_name": profile_name,
         "output": output,
-        "use_color": color
+        "use_color": color,
+        "use_cache": cache
     }
 
 
@@ -302,6 +343,7 @@ profile_command.add_command(profile_active_command)
 profile_command.add_command(profile_export_command)
 profile_command.add_command(profile_import_command)
 
+
 # SECRET GROUP
 
 
@@ -408,16 +450,21 @@ def secret_notation_command(ctx, text):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-@click.option('--uid', '-u', required=True, type=str)
-@click.option('--field', type=str, multiple=True)
-@click.option('--custom-field', type=str, multiple=True)
+@click.option('--uid', '-u', required=True, type=str, help="Unique identifier of record.")
+@click.option('--field', type=str, multiple=True, help="Update value in field section of vault")
+@click.option('--custom-field', type=str, multiple=True, help="Update value in custom field section of vault")
+@click.option('--field-json', type=str, multiple=True, help="Update value in field section of vault using JSON")
+@click.option('--custom-field-json', type=str, multiple=True,
+              help="Update value in custom field section of vault using JSON")
 @click.pass_context
-def secret_update_command(ctx, uid, field, custom_field):
+def secret_update_command(ctx, uid, field, custom_field, field_json, custom_field_json):
     """Update an existing record."""
     ctx.obj["secret"].update(
         uid=uid,
         fields=field,
         custom_fields=custom_field,
+        fields_json=field_json,
+        custom_fields_json=custom_field_json
     )
 
 
@@ -519,8 +566,21 @@ def config_log_command(ctx, enable):
     ctx.obj["profile"].set_color(enable)
 
 
+@click.command(
+    name='record-cache',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--enable/--disable', required=True, help="Enable or disable cache.")
+@click.pass_context
+def config_cache_command(ctx, enable):
+    """Enable or disable cache"""
+    ctx.obj["profile"].set_cache(enable)
+
+
 config_command.add_command(config_show_command)
 config_command.add_command(config_log_command)
+config_command.add_command(config_cache_command)
 
 
 # REDEEM COMMAND
@@ -587,16 +647,7 @@ init_command.add_command(init_k8s_command)
 def version_command(ctx):
     """Get module versions and information."""
 
-    # Unit test do not know their version
-    versions = {
-        "keeper-secrets-manager-core": "Unknown",
-        "keeper-secrets-manager-cli": "Unknown"
-    }
-    for module in versions:
-        try:
-            versions[module] = importlib_metadata.version(module)
-        except importlib_metadata.PackageNotFoundError:
-            pass
+    versions = get_versions()
 
     print("Python Version: {}".format(".".join([
         str(sys.version_info.major),
@@ -611,13 +662,13 @@ def version_command(ctx):
     print("Config file: {}".format(ctx.obj["cli"].profile.ini_file))
 
     try:
-        if versions["keeper-secrets-manager-cli"] is not None:
-            update = UpdateChecker().check("keeper-secrets-manager-cli", versions["keeper-secrets-manager-cli"])
+        if versions["keeper-secrets-manager-cli"] != "Unknown":
+            update = update_available("keeper-secrets-manager-cli", versions)
             if update is not None:
                 print("Version {} is available for the CLI".format(update.available_version))
 
-        if versions["keeper-secrets-manager-core"] is not None:
-            update = UpdateChecker().check("keeper-secrets-manager-core", versions["keeper-secrets-manager-core"])
+        if versions["keeper-secrets-manager-core"] != "Unknown":
+            update = update_available("keeper-secrets-manager-core", versions)
             if update is not None:
                 print("Version {} is available for the SDK".format(update.available_version))
     except Exception as _:
@@ -629,8 +680,29 @@ def version_command(ctx):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-def shell_command():
+@click.pass_context
+def shell_command(ctx):
     """Run KSM in a shell"""
+
+    # https://manytools.org/hacker-tools/ascii-banner/
+    logo = """
+██╗  ██╗███████╗███╗   ███╗     ██████╗██╗     ██╗
+██║ ██╔╝██╔════╝████╗ ████║    ██╔════╝██║     ██║
+█████╔╝ ███████╗██╔████╔██║    ██║     ██║     ██║
+██╔═██╗ ╚════██║██║╚██╔╝██║    ██║     ██║     ██║
+██║  ██╗███████║██║ ╚═╝ ██║    ╚██████╗███████╗██║
+╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝     ╚═════╝╚══════╝╚═╝                                                                          
+    """
+    print(Fore.BLUE + logo + Style.RESET_ALL)
+
+    versions = get_versions()
+
+    print(Fore.CYAN + "Current Version: " + Fore.GREEN + versions.get("keeper-secrets-manager-cli") + Style.RESET_ALL)
+    update = update_available("keeper-secrets-manager-cli", versions)
+    if update is not None:
+        print(Fore.YELLOW + "Version {} is available.".format(update.available_version) + Style.RESET_ALL)
+
+    print("\nRunning in shell mode. Type 'quit' to exit.\n")
 
     KsmCliException.in_a_shell = True
     repl(click.get_current_context(), prompt_kwargs={
@@ -663,7 +735,13 @@ def main():
     try:
         # This init colors for Windows. CMD looks great. PS has no yellow :(
         init()
-        cli(obj={"cli": None}, prog_name="ksm")
+
+        program_name = "ksm"
+        # If we are running in the shell mode, there is no program name for the usage. Blank it out.
+        if "shell" in sys.argv:
+            program_name = ""
+
+        cli(obj={"cli": None}, prog_name=program_name)
     except Exception as err:
         # Set KSM_DEBUG to get a stack trace. Secret env var.
         if os.environ.get("KSM_DEBUG") is not None:

@@ -13,6 +13,7 @@ import java.security.KeyManagementException
 import java.security.NoSuchAlgorithmException
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
+import java.time.Instant
 import java.util.*
 import java.util.jar.Manifest
 import javax.net.ssl.*
@@ -108,17 +109,23 @@ private data class SecretsManagerResponseFile(
 
 @Serializable
 private data class SecretsManagerResponse(
+    val appData: String? = null,
     val encryptedAppKey: String?,
     val appOwnerPublicKey: String? = null,
     val folders: List<SecretsManagerResponseFolder>?,
-    val records: List<SecretsManagerResponseRecord>?
+    val records: List<SecretsManagerResponseRecord>?,
+    val expiresOn: Long? = null,
+    val warnings: List<String>? = null
 )
 
-data class KeeperSecrets(val records: List<KeeperRecord>) {
+data class KeeperSecrets(val appData: AppData, val records: List<KeeperRecord>, val expiresOn: Instant? = null, val warnings: List<String>? = null) {
     fun getRecordByUid(recordUid: String): KeeperRecord? {
         return records.find { it.recordUid == recordUid }
     }
 }
+
+@Serializable
+data class AppData(val title: String, val type: String)
 
 data class KeeperRecord(
     val recordKey: ByteArray,
@@ -156,6 +163,7 @@ data class KeeperFile(
     val thumbnailUrl: String?
 )
 
+@JvmOverloads
 fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: String? = null) {
     val tokenParts = oneTimeToken.split(':')
     val host: String
@@ -168,6 +176,7 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
             "US" -> "keepersecurity.com"
             "EU" -> "keepersecurity.eu"
             "AU" -> "keepersecurity.com.au"
+            "GOV" -> "govcloud.keepersecurity.us"
             else -> tokenParts[0]
         }
         clientKey = tokenParts[1]
@@ -237,7 +246,9 @@ fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
 }
 
 @ExperimentalSerializationApi
-fun createSecret(options: SecretsManagerOptions, folderUid: String, recordData: KeeperRecordData, secrets: KeeperSecrets): String {
+@JvmOverloads
+fun createSecret(options: SecretsManagerOptions, folderUid: String, recordData: KeeperRecordData, secrets: KeeperSecrets = getSecrets(options)): String {
+
     val payload = prepareCreatePayload(options.storage, folderUid, recordData, secrets)
     postQuery(options, "create_secret", payload)
     return payload.recordUid
@@ -313,7 +324,15 @@ private fun fetchAndDecryptSecrets(
             }
         }
     }
-    val secrets = KeeperSecrets(records)
+    val appData = if (response.appData == null)
+        AppData("", "") else
+        nonStrictJson.decodeFromString(bytesToString(decrypt(webSafe64ToBytes(response.appData), appKey)))
+    val warnings = if (response.warnings == null || response.warnings.isEmpty()) null else response.warnings
+    val secrets = KeeperSecrets(
+        appData,
+        records,
+        if (response.expiresOn != null && response.expiresOn > 0) Instant.ofEpochMilli(response.expiresOn) else null,
+        warnings)
     return Pair(secrets, justBound)
 }
 

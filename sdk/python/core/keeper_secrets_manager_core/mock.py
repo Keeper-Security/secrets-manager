@@ -14,6 +14,8 @@ import json
 import time
 from collections import deque
 from requests import Response as RequestResponse
+import string
+import random
 
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.configkeys import ConfigKeys
@@ -53,7 +55,7 @@ class ResponseQueue:
         response = self.queue.popleft()
         return response.instance(transmission_key)
 
-    def auto_responder_patch(self, url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs):
+    def auto_responder_patch(self, _, transmission_key, _two, _three):
         return self.get_response(transmission_key)
 
 
@@ -126,7 +128,6 @@ class Response:
 
         if self.client is None:
             raise ValueError("The secrets manager client has not been set.")
-
 
         # def _post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True):
         # We need the transmission_key.key to encrypt the content
@@ -438,3 +439,52 @@ class Record:
         }
 
         return data
+
+
+class MockConfig:
+
+    @staticmethod
+    def make_config(skip_list=None, token=None, app_key=None):
+
+        if skip_list is None:
+            skip_list = []
+
+        if token is None:
+            random_token = ''.join((random.choice(string.ascii_lowercase) for _ in range(28)))
+            token = base64.urlsafe_b64encode(random_token.encode()).decode()
+            token = token.replace("=", "")
+
+        import keeper_secrets_manager_core.core as sm_core
+        import keeper_secrets_manager_core.storage as sm_storage
+
+        # Generate a fake hostname
+        hostname = ''.join((random.choice(string.ascii_lowercase) for _ in range(10))) + ".com"
+
+        sm_config = sm_storage.InMemoryKeyValueStorage()
+        sm_core.SecretsManager(token=token, hostname=hostname, config=sm_config)
+
+        if app_key is None:
+            random_app_key = ''.join((random.choice(string.ascii_lowercase) for _ in range(32)))
+            app_key = base64.b64encode(random_app_key.encode()).decode()
+        sm_config.set(ConfigKeys.KEY_APP_KEY, app_key)
+
+        config = {}
+        for key in ConfigKeys:
+            if key.value in skip_list:
+                continue
+            if sm_config.contains(key) is True:
+                config[key.value] = sm_config.get(key)
+
+        return config
+
+    @staticmethod
+    def make_json(skip_list=None, token=None, app_key=None, config=None):
+        if config is None:
+            config = MockConfig.make_config(skip_list=skip_list, token=token, app_key=app_key)
+        return json.dumps(config)
+
+    @staticmethod
+    def make_base64(skip_list=None, token=None, app_key=None, config=None, json_config=None):
+        if json_config is None:
+            json_config = MockConfig.make_json(skip_list=skip_list, token=token, app_key=app_key, config=config)
+        return base64.b64encode(json_config.encode()).decode()

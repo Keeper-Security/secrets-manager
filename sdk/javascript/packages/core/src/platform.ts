@@ -19,6 +19,7 @@ export type Platform = {
     decryptWithKey(data: Uint8Array, key: Uint8Array): Promise<Uint8Array>
     hash(data: Uint8Array, tag: string): Promise<Uint8Array>
     cleanKeyCache(): void
+    hasKeysCached(): boolean;
     getHmacDigest(algorithm: string, secret: Uint8Array, message: Uint8Array): Promise<Uint8Array>
     getRandomNumber(n: number): Promise<number>
     getRandomCharacterInCharset(charset: string): Promise<string>

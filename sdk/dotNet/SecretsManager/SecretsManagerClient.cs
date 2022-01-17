@@ -154,10 +154,13 @@ namespace SecretsManager
     [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class SecretsManagerResponse
     {
+        public string appData { get; set; }
         public string encryptedAppKey { get; set; }
         public string appOwnerPublicKey { get; set; }
         public SecretsManagerResponseFolder[] folders { get; set; }
         public SecretsManagerResponseRecord[] records { get; set; }
+        public long expiresOn { get; set; }
+        public string[] warnings { get; set; }
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
@@ -199,12 +202,26 @@ namespace SecretsManager
     [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperSecrets
     {
+        public AppData AppData { get; }
+        public DateTimeOffset? ExpiresOn { get; }
         public KeeperRecord[] Records { get; }
+        public string[] Warnings { get; set; } 
 
-        public KeeperSecrets(KeeperRecord[] records)
+        public KeeperSecrets(AppData appData, DateTimeOffset? expiresOn, KeeperRecord[] records)
         {
+            AppData = appData;
+            ExpiresOn = expiresOn;
             Records = records;
         }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    public class AppData
+    {
+        public string title { get; set; }
+        public string type { get; set; }
     }
 
     [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
@@ -306,6 +323,7 @@ namespace SecretsManager
                     "US" => "keepersecurity.com",
                     "EU" => "keepersecurity.eu",
                     "AU" => "keepersecurity.com.au",
+                    "GOV" => "govcloud.keepersecurity.us",
                     _ => tokenParts[0]
                 };
                 clientKey = tokenParts[1];
@@ -445,7 +463,14 @@ namespace SecretsManager
                 }
             }
 
-            var secrets = new KeeperSecrets(records.ToArray());
+            var appData = response.appData == null 
+                ? null : 
+                JsonUtils.ParseJson<AppData>(CryptoUtils.Decrypt(CryptoUtils.WebSafe64ToBytes(response.appData), appKey));
+            var secrets = new KeeperSecrets(appData, response.expiresOn == 0 ? null : DateTimeOffset.FromUnixTimeSeconds(response.expiresOn), records.ToArray());
+            if (response.warnings is { Length: > 0 })
+            {
+                secrets.Warnings = response.warnings;
+            }
             return new Tuple<KeeperSecrets, bool>(secrets, justBound);
         }
 

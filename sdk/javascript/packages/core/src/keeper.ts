@@ -92,14 +92,23 @@ type SecretsManagerResponseFile = {
 }
 
 type SecretsManagerResponse = {
+    appData: string
     encryptedAppKey?: string  // received only on the first response
     appOwnerPublicKey?: string   // received only on the first response
     folders: SecretsManagerResponseFolder[]
     records: SecretsManagerResponseRecord[]
+    expiresOn: number
+    warnings: string[]
 }
 
 export type KeeperSecrets = {
+    appData: {
+        title: string
+        type: string
+    }
+    expiresOn?: Date
     records: KeeperRecord[]
+    warnings?: string[]
 }
 
 export type KeeperRecord = {
@@ -228,14 +237,19 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: G
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
         const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate)
         if (response.statusCode !== 200) {
-            const errorMessage = platform.bytesToString(response.data.slice(0, 1000))
-            try {
-                const errorObj: KeeperError = JSON.parse(errorMessage)
-                if (errorObj.error === 'key') {
-                    await options.storage.saveString(KEY_SERVER_PUBIC_KEY_ID, errorObj.key_id!.toString())
-                    continue
+            let errorMessage
+            if (response.data) {
+                errorMessage = platform.bytesToString(response.data.slice(0, 1000))
+                try {
+                    const errorObj: KeeperError = JSON.parse(errorMessage)
+                    if (errorObj.error === 'key') {
+                        await options.storage.saveString(KEY_SERVER_PUBIC_KEY_ID, errorObj.key_id!.toString())
+                        continue
+                    }
+                } catch {
                 }
-            } catch {
+            } else {
+                errorMessage = `unknown ksm error, code ${response.statusCode}`
             }
             throw new Error(errorMessage)
         }
@@ -300,8 +314,17 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, recordsFilt
             }
         }
     }
+    let appData
+    if (response.appData) {
+        appData = JSON.parse(platform.bytesToString(await platform.decrypt(webSafe64ToBytes(response.appData), KEY_APP_KEY)))
+    }
     const secrets: KeeperSecrets = {
+        appData: appData,
+        expiresOn: response.expiresOn > 0 ? new Date(response.expiresOn) : undefined,
         records: records
+    }
+    if (response.warnings && response.warnings.length > 0) {
+        secrets.warnings = response.warnings
     }
     return {secrets, justBound}
 }
@@ -324,7 +347,8 @@ export const initializeStorage = async (storage: KeyValueStorage, oneTimeToken: 
         host = {
             US: 'keepersecurity.com',
             EU: 'keepersecurity.eu',
-            AU: 'keepersecurity.com.au'
+            AU: 'keepersecurity.com.au',
+            GOV: 'govcloud.keepersecurity.us'
         }[tokenParts[0].toUpperCase()]
         if (!host) {
             host = tokenParts[0]
@@ -366,6 +390,9 @@ export const updateSecret = async (options: SecretManagerOptions, record: Keeper
 }
 
 export const createSecret = async (options: SecretManagerOptions, folderUid: string, recordData: any): Promise<string> => {
+    if (!platform.hasKeysCached()) {
+        await getSecrets(options) // need to warm up keys cache before posting a record
+    }
     const payload = await prepareCreatePayload(options.storage, folderUid, recordData)
     await postQuery(options, 'create_secret', payload)
     return payload.recordUid

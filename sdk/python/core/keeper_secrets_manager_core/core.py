@@ -69,11 +69,11 @@ class SecretsManager:
 
                 if token_host:
                     # meaning that token contained abbreviation:
-                    #   ex. 'US:randomhash123'
+                    #   ex. 'US:ONE_TIME_TOKEN'
                     self.hostname = token_host
                 else:
                     # meaning that token contained url prefix:
-                    #   ex. keepersecurity.com:randomhash123
+                    #   ex. ksm.company.com:ONE_TIME_TOKEN
                     self.hostname = token_parts[0]
 
                 self.token = token_parts[1]
@@ -596,15 +596,15 @@ class SecretsManager:
 
         Example:
 
-            EG6KdJaaLG7esRZbMnfbFA/field/password                => MyPasswprd
-            EG6KdJaaLG7esRZbMnfbFA/field/password[0]             => MyPassword
-            EG6KdJaaLG7esRZbMnfbFA/field/password[]              => ["MyPassword"]
-            EG6KdJaaLG7esRZbMnfbFA/custom_field/name[first]      => John
-            EG6KdJaaLG7esRZbMnfbFA/custom_field/name[last]       => Smitht
-            EG6KdJaaLG7esRZbMnfbFA/custom_field/phone[0][number] => "555-5555555"
-            EG6KdJaaLG7esRZbMnfbFA/custom_field/phone[1][number] => "777-7777777"
-            EG6KdJaaLG7esRZbMnfbFA/custom_field/phone[]          => [{"number": "555-555...}, { "number": "777.....}]
-            EG6KdJaaLG7esRZbMnfbFA/custom_field/phone[0]         => [{"number": "555-555...}]
+            RECORD_UID/field/password                => MyPasswprd
+            RECORD_UID/field/password[0]             => MyPassword
+            RECORD_UID/field/password[]              => ["MyPassword"]
+            RECORD_UID/custom_field/name[first]      => John
+            RECORD_UID/custom_field/name[last]       => Smitht
+            RECORD_UID/custom_field/phone[0][number] => "555-5555555"
+            RECORD_UID/custom_field/phone[1][number] => "777-7777777"
+            RECORD_UID/custom_field/phone[]          => [{"number": "555-555...}, { "number": "777.....}]
+            RECORD_UID/custom_field/phone[0]         => [{"number": "555-555...}]
 
         """
 

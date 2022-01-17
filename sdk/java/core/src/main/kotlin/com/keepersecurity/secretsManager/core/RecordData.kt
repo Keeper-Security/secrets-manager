@@ -6,7 +6,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class KeeperRecordData(
+data class KeeperRecordData @JvmOverloads constructor(
     var title: String,
     val type: String,
     val fields: List<KeeperRecordField>,
@@ -23,11 +23,24 @@ data class KeeperRecordData(
 }
 
 @Serializable
-sealed class KeeperRecordField(val lbl: String? = null)
+sealed class KeeperRecordField {
+    abstract val label: String?
+}
 
 @Serializable
 @SerialName("login")
-data class Login(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class Login @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<String>
+) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 data class PasswordComplexity(
@@ -40,112 +53,319 @@ data class PasswordComplexity(
 
 @Serializable
 @SerialName("password")
-data class Password(
-    var label: String? = null,
+data class Password @JvmOverloads constructor(
+    override var label: String? = null,
     var required: Boolean? = null,
     var privacyScreen: Boolean? = null,
     var enforceGeneration: Boolean? = null,
     var complexity: PasswordComplexity? = null,
     val value: MutableList<String>
-) : KeeperRecordField(label)
+) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("url")
-data class Url(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class Url @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<String>) : KeeperRecordField(){
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("fileRef")
-data class FileRef(var label: String? = null, var required: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class FileRef @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    val value: MutableList<String>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("oneTimeCode")
-data class OneTimeCode(var label: String? = null, var required: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class OneTimeCode @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<String>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     * @param value TOTP URL. Ex. otpauth://totp/asdfsadf:asdf@asdf.com?secret=2355666655444334&issuer=asdfsadf&algorithm=SHA256&digits=6&period=30
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("otp")
-data class OneTimePassword(var label: String? = null, var required: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class OneTimePassword @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<String>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
-data class Name(var first: String? = null, var middle: String? = null, var last: String? = null)
+data class Name @JvmOverloads constructor( var first: String? = null, var middle: String? = null, var last: String? = null)
 
 @Serializable
 @SerialName("name")
-data class Names(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Name>) : KeeperRecordField(label)
+data class Names @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<Name>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: Name): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("birthDate")
-data class BirthDate(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Long>) : KeeperRecordField(label)
+data class BirthDate @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<Long>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: Long): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("date")
-data class Date(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Long>) : KeeperRecordField(label)
+data class Date @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<Long>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: Long): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("expirationDate")
-data class ExpirationDate(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Long>) : KeeperRecordField(label)
+data class ExpirationDate @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<Long>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: Long): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("text")
-data class Text(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, var value: MutableList<String>) : KeeperRecordField(label)
+data class Text @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    var value: MutableList<String>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
-data class SecurityQuestion(var question: String? = null, var answer: String? = null)
+data class SecurityQuestion @JvmOverloads constructor( var question: String? = null, var answer: String? = null)
 
 @Serializable
 @SerialName("securityQuestion")
-data class SecurityQuestions(
-    var label: String? = null,
+data class SecurityQuestions @JvmOverloads constructor(
+    override var label: String? = null,
     var required: Boolean? = null,
     var privacyScreen: Boolean? = null,
     val value: MutableList<SecurityQuestion>
-) : KeeperRecordField(label)
+) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: SecurityQuestion): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("multiline")
-data class Multiline(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class Multiline @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<String>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("email")
-data class Email(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class Email @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<String>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("cardRef")
-data class CardRef(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class CardRef @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<String>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("addressRef")
-data class AddressRef(var label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class AddressRef @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<String>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("pinCode")
-data class PinCode(var label: String? = null, var required: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class PinCode @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<String>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
-data class Phone(
+data class Phone @JvmOverloads constructor(
+
+    /**
+     * Region code. Ex. US
+     */
     val region: String? = null,
+
+    /**
+     * Phone number. Ex. 510-222-5555
+     */
     val number: String? = null,
+
+    /**
+     * Extension number. Ex. 9987
+     */
     val ext: String? = null,
+
+    /**
+     * Phone number type. Ex. Mobile
+     */
     val type: String? = null
 )
 
 @Serializable
 @SerialName("phone")
-data class Phones(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: List<Phone>) : KeeperRecordField(label)
+data class Phones @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: List<Phone>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: Phone): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("secret")
-data class HiddenField(val label: String? = null, var required: Boolean? = null, val value: List<String>) : KeeperRecordField(label)
+data class HiddenField @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: List<String>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("note")
-data class SecureNote(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: List<String>) : KeeperRecordField(label)
+data class SecureNote @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: List<String>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("accountNumber")
-data class AccountNumber(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: List<String>) : KeeperRecordField(label)
+data class AccountNumber @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: List<String>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
-data class PaymentCard(
+data class PaymentCard @JvmOverloads constructor(
     var cardNumber: String? = null,
     var cardExpirationDate: String? = null,
     var cardSecurityCode: String? = null
@@ -153,11 +373,20 @@ data class PaymentCard(
 
 @Serializable
 @SerialName("paymentCard")
-data class PaymentCards(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<PaymentCard>) :
-    KeeperRecordField(label)
+data class PaymentCards @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<PaymentCard>) : KeeperRecordField(){
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: PaymentCard): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
-data class BankAccount(
+data class BankAccount @JvmOverloads constructor(
     var accountType: String? = null,
     var routingNumber: String? = null,
     var accountNumber: String? = null,
@@ -166,31 +395,60 @@ data class BankAccount(
 
 @Serializable
 @SerialName("bankAccount")
-data class BankAccounts(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<BankAccount>) :
-    KeeperRecordField(label)
+data class BankAccounts @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<BankAccount>) : KeeperRecordField() {
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: BankAccount): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
-data class KeyPair(
+data class KeyPair @JvmOverloads constructor(
     val publicKey: String? = null,
     val privateKey: String? = null,
 )
 
 @Serializable
 @SerialName("keyPair")
-data class KeyPairs(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<KeyPair>) : KeeperRecordField(label)
+data class KeyPairs @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<KeyPair>) : KeeperRecordField() {
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: KeyPair): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
-data class Host(
+data class Host @JvmOverloads constructor(
     val hostName: String? = null,
     val port: String? = null,
 )
 
 @Serializable
 @SerialName("host")
-data class Hosts(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Host>) : KeeperRecordField(label)
+data class Hosts @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<Host>) : KeeperRecordField() {
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: Host): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
-data class Address(
+data class Address @JvmOverloads constructor(
     val street1: String? = null,
     val street2: String? = null,
     val city: String? = null,
@@ -201,11 +459,31 @@ data class Address(
 
 @Serializable
 @SerialName("address")
-data class Addresses(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<Address>) : KeeperRecordField(label)
+data class Addresses @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<Address>) : KeeperRecordField() {
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: Address): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 @SerialName("licenseNumber")
-data class LicenseNumber(val label: String? = null, var required: Boolean? = null, var privacyScreen: Boolean? = null, val value: MutableList<String>) : KeeperRecordField(label)
+data class LicenseNumber @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<String>) : KeeperRecordField() {
+
+    /**
+     * Constructor with the single value to eliminate the complexity of the passing List as a value
+     */
+    constructor(value: String): this(null, null, null, mutableListOf(value))
+}
 
 @Serializable
 data class KeeperFileData(
