@@ -99,13 +99,14 @@ data class FileRef @JvmOverloads constructor(
 data class OneTimeCode @JvmOverloads constructor(
     override var label: String? = null,
     var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
     val value: MutableList<String>) : KeeperRecordField(){
 
     /**
      * Constructor with the single value to eliminate the complexity of the passing List as a value
      * @param value TOTP URL. Ex. otpauth://totp/asdfsadf:asdf@asdf.com?secret=2355666655444334&issuer=asdfsadf&algorithm=SHA256&digits=6&period=30
      */
-    constructor(value: String): this(null, null, mutableListOf(value))
+    constructor(value: String): this(null, null, null, mutableListOf(value))
 }
 
 @Serializable
@@ -113,12 +114,13 @@ data class OneTimeCode @JvmOverloads constructor(
 data class OneTimePassword @JvmOverloads constructor(
     override var label: String? = null,
     var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
     val value: MutableList<String>) : KeeperRecordField(){
 
     /**
      * Constructor with the single value to eliminate the complexity of the passing List as a value
      */
-    constructor(value: String): this(null, null, mutableListOf(value))
+    constructor(value: String): this(null, null, null, mutableListOf(value))
 }
 
 @Serializable
@@ -273,12 +275,13 @@ data class AddressRef @JvmOverloads constructor(
 data class PinCode @JvmOverloads constructor(
     override var label: String? = null,
     var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
     val value: MutableList<String>) : KeeperRecordField(){
 
     /**
      * Constructor with the single value to eliminate the complexity of the passing List as a value
      */
-    constructor(value: String): this(null, null, mutableListOf(value))
+    constructor(value: String): this(null, null, null, mutableListOf(value))
 }
 
 @Serializable
@@ -324,12 +327,13 @@ data class Phones @JvmOverloads constructor(
 data class HiddenField @JvmOverloads constructor(
     override val label: String? = null,
     var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
     val value: List<String>) : KeeperRecordField(){
 
     /**
      * Constructor with the single value to eliminate the complexity of the passing List as a value
      */
-    constructor(value: String): this(null, null, mutableListOf(value))
+    constructor(value: String): this(null, null, null, mutableListOf(value))
 }
 
 @Serializable
