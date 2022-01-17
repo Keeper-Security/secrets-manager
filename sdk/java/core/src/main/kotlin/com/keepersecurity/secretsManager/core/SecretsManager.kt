@@ -246,7 +246,9 @@ fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
 }
 
 @ExperimentalSerializationApi
-fun createSecret(options: SecretsManagerOptions, folderUid: String, recordData: KeeperRecordData, secrets: KeeperSecrets): String {
+@JvmOverloads
+fun createSecret(options: SecretsManagerOptions, folderUid: String, recordData: KeeperRecordData, secrets: KeeperSecrets = getSecrets(options)): String {
+
     val payload = prepareCreatePayload(options.storage, folderUid, recordData, secrets)
     postQuery(options, "create_secret", payload)
     return payload.recordUid
