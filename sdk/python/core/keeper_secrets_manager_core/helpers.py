@@ -7,7 +7,7 @@
 # Keeper Secrets Manager
 # Copyright 2021 Keeper Security Inc.
 # Contact: ops@keepersecurity.com
-
+import json
 import logging
 import os
 from urllib.parse import urlparse
@@ -44,3 +44,29 @@ def get_server(code_server, config_store: KeyValueStorage):
     logging.getLogger(logger_name).debug("Keeper hostname %s" % server_to_return)
 
     return server_to_return
+
+
+def is_json(json_str):
+    try:
+        json.loads(json_str)
+    except ValueError as e:
+        return False
+
+    return True
+
+
+def obj_to_dict(obj):
+    return json.loads(
+        json.dumps(obj, default=lambda o: getattr(o, '__dict__', str(o)))
+    )
+
+
+def get_folder_key(folder_uid, secrets_and_folders):
+
+    folders = secrets_and_folders.get('folders')
+
+    for f in folders:
+        if f.uid == folder_uid:
+            return f
+
+    return None

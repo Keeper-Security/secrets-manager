@@ -33,6 +33,18 @@ class GetPayload:
         self.requestedRecords = None
 
 
+class CreatePayload:
+
+    def __init__(self):
+        self.clientVersion = None
+        self.clientId = None
+        self.recordUid = None
+        self.recordKey = None
+        self.folderUid = None
+        self.folderKey = None
+        self.data = None
+
+
 class UpdatePayload:
 
     def __init__(self):

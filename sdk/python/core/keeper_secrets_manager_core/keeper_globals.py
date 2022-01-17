@@ -30,7 +30,7 @@ def get_client_version(hardcode=False):
     """
     # Get the version of the keeper secrets manager core
     version_major = "16"
-    version = "{}.1.0".format(version_major)
+    version = "{}.2.0".format(version_major)
 
     # Allow the default version to be hard coded. If not build the client version from the module
     # version.

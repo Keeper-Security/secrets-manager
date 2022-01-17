@@ -136,6 +136,7 @@ class Response:
 
         return {
             "encryptedAppKey": None,
+            # "appOwnerPublicKey" ????????,
             "folders": [self.folders[uid].dump(secret=secret, flags=flags) for uid in self.folders],
             "records": [self.records[uid].dump(secret=secret, flags=flags) for uid in self.records]
         }

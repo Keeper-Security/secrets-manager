@@ -7,13 +7,13 @@
 # Keeper Secrets Manager
 # Copyright 2021 Keeper Security Inc.
 # Contact: ops@keepersecurity.com
-
+import json
 import os
 
 import requests
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.exceptions import KeeperError
-from keeper_secrets_manager_core import utils
+from keeper_secrets_manager_core import utils, helpers
 
 
 class Record:
@@ -265,6 +265,8 @@ class Folder:
         folder_records = folder.get('records')
 
         self.uid = folder_uid
+        self.key = folder_key
+
         for r in folder_records:
 
             record = Record(r, folder_key)
@@ -359,3 +361,53 @@ class KeeperFile:
 
     def __str__(self):
         return "[KeeperFile - name: %s, title: %s]" % (self.name, self.title)
+
+
+class RecordField:
+
+    def __init__(self, field_type=None, value=None, label=None, required=None):
+
+        self.type = field_type
+
+        if isinstance(value, list):
+            self.value = value
+        else:
+            self.value = [value] if value else []
+
+        if label:
+            self.label = label
+
+        if required:
+            self.required = required
+
+
+class RecordCreate:
+
+    def __init__(self, record_type, title):
+
+        self.record_type = record_type
+        self.title = title
+        self.notes = None
+        self.fields = None
+        self.custom = None
+
+    def to_dict(self):
+
+        rec_dict = {
+            'type': self.record_type,
+            'title': self.title,
+            'fields': self.fields,
+        }
+
+        if self.notes:
+            rec_dict['notes'] = self.notes
+
+        if self.custom:
+            rec_dict['custom'] = self.custom
+
+        return helpers.obj_to_dict(rec_dict)
+
+    def to_json(self):
+
+        json_object = json.dumps(self.to_dict(), indent=4)
+        return json_object
