@@ -27,21 +27,17 @@ description:
 author:
     - John Walstra
 options:
-  uid:
+  folder_uid:
     description:
-    - The UID of the Keeper Vault record.
+    - The UID of the Keeper Vault folder where the record should be created.
     type: str
     required: no
-  field:
+  fields:
     description:
-    - The label, or type, of the standard field in record that contains the value.
-    - If the value has a complex value, use notation to get the specific value from the complex value.
     type: str
     required: no
-  custom_field:
+  custom_fields:
     description:
-    - The label, or type, of the user added customer field in record that contains the value.
-    - If the value has a complex value, use notation to get the specific value from the complex value.
     type: str
     required: no
   file:

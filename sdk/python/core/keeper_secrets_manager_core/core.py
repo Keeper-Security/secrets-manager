@@ -796,7 +796,9 @@ class SecretsManager:
 
 
 class KSMCache:
-    kms_cache_file_name = 'ksm_cache.bin'
+    # Allow the directory that will contain the cache to be set with environment variables. If not set, the
+    # cache file will be create in the current working directory.
+    kms_cache_file_name = os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
 
     @staticmethod
     def save_cache(data):
@@ -810,6 +812,11 @@ class KSMCache:
         cache_data = cache_file.read()
         cache_file.close()
         return cache_data
+
+    @staticmethod
+    def remove_cache_file():
+        if os.path.exists(KSMCache.kms_cache_file_name) is True:
+            os.unlink(KSMCache.kms_cache_file_name)
 
     @staticmethod
     def caching_post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True):
