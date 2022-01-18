@@ -48,6 +48,22 @@ internal class SecretsManagerTest {
         val password = record.getPassword()
         assertNotNull(password)
         assertEquals("N\$B!lkoOrVL1RUNDBvn2", password)
+
+        record.updatePassword("NewPassword1")
+        val passwordNew1 = record.getPassword()
+        assertNotNull(passwordNew1)
+        assertEquals("NewPassword1", passwordNew1)
+
+        // Removing password from the record
+        (record.data.fields[1] as Password).value.clear()
+        val passwordNull = record.getPassword()
+        assertNull(passwordNull)
+
+        record.updatePassword("NewPassword2")
+        val passwordNew2 = record.getPassword()
+        assertNotNull(passwordNew2)
+        assertEquals("NewPassword2", passwordNew2)
+
         try {
             getSecrets(options)
             fail("Did not throw")

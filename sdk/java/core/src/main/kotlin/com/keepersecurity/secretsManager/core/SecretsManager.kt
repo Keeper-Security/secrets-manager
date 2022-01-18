@@ -138,12 +138,16 @@ data class KeeperRecord(
 ) {
     fun getPassword(): String? {
         val passwordField = data.getField<Password>() ?: return null
-        return passwordField.value[0]
+        return if (passwordField.value.size > 0) passwordField.value[0] else null
     }
 
     fun updatePassword(newPassword: String) {
         val passwordField = data.getField<Password>() ?: throw Exception("Password field is not present on the record $recordUid")
-        passwordField.value[0] = newPassword
+
+        if (passwordField.value.size == 0)
+            passwordField.value.add(newPassword)
+        else
+            passwordField.value[0] = newPassword
     }
 
     fun getFileByName(fileName: String): KeeperFile? {
