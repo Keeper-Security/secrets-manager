@@ -21,15 +21,15 @@ import requests
 from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.crypto import CryptoUtils
-from keeper_secrets_manager_core.dto.dtos import Folder, Record
+from keeper_secrets_manager_core.dto.dtos import Folder, Record, RecordCreate
 from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, TransmissionKey, \
-    EncryptedPayload, KSMHttpResponse
+    EncryptedPayload, KSMHttpResponse, CreatePayload
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys, \
     logger_name, keeper_servers
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage, InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
-    url_safe_str_to_bytes, bytes_to_base64
+    url_safe_str_to_bytes, bytes_to_base64, generate_random_bytes
 
 
 class SecretsManager:
@@ -233,7 +233,10 @@ class SecretsManager:
     @staticmethod
     def encrypt_and_sign_payload(storage, transmission_key, payload):
 
-        if not (isinstance(payload, GetPayload) or isinstance(payload, UpdatePayload)):
+        if not (
+                isinstance(payload, GetPayload) or
+                isinstance(payload, UpdatePayload) or
+                isinstance(payload, CreatePayload)):
             raise Exception('Unknown payload type "%s"' % payload.__class__.__name__)
 
         payload_json_str = dict_to_json(payload.__dict__)
@@ -272,6 +275,43 @@ class SecretsManager:
 
         if records_filter:
             payload.requestedRecords = records_filter
+
+        return payload
+
+    @staticmethod
+    def prepare_create_payload(storage, folder_uid, record_data_json_str, folder_key):
+
+        owner_public_key = storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY)
+
+        if not owner_public_key:
+            raise KeeperError('Unable to create record - owner key is missing. Looks like application was created '
+                              'using out date client (Web Vault or Commander)')
+
+        owner_public_key_bytes = url_safe_str_to_bytes(owner_public_key)
+
+        if not folder_key:
+            raise KeeperError('Unable to create record - folder key for ' + folder_uid + ' is missing')
+
+        record_bytes = ""
+        record_key = generate_random_bytes(32)
+        record_uid = generate_random_bytes(16)
+
+        record_data_bytes = utils.string_to_bytes(record_data_json_str)
+        record_data_encrypted = CryptoUtils.encrypt_aes(record_data_bytes, record_key)
+
+        record_key_encrypted = CryptoUtils.public_encrypt(record_key, owner_public_key_bytes)
+
+        folder_key_encrypted = CryptoUtils.encrypt_aes(record_key, folder_key)
+
+        payload = CreatePayload()
+
+        payload.clientVersion = keeper_secrets_manager_sdk_client_id
+        payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
+        payload.recordUid = bytes_to_base64(record_uid)
+        payload.recordKey = bytes_to_base64(record_key_encrypted)
+        payload.folderUid = folder_uid
+        payload.folderKey = bytes_to_base64(folder_key_encrypted)
+        payload.data = bytes_to_base64(record_data_encrypted)
 
         return payload
 
@@ -414,6 +454,7 @@ class SecretsManager:
         decrypted_response_dict = utils.json_to_dict(decrypted_response_str)
 
         records = []
+        shared_folders = []
 
         just_bound = False
 
@@ -426,6 +467,10 @@ class SecretsManager:
             self.config.set(ConfigKeys.KEY_APP_KEY, bytes_to_base64(secret_key))
 
             self.config.delete(ConfigKeys.KEY_CLIENT_KEY)
+
+            if decrypted_response_dict.get('appOwnerPublicKey'):
+                appOwnerPublicKeyBytes = url_safe_str_to_bytes(decrypted_response_dict.get('appOwnerPublicKey'))
+                self.config.set(ConfigKeys.KEY_OWNER_PUBLIC_KEY, bytes_to_base64(appOwnerPublicKeyBytes))
 
         else:
             secret_key = base64_to_bytes(self.config.get(ConfigKeys.KEY_APP_KEY))
@@ -445,15 +490,17 @@ class SecretsManager:
             for f in folders_resp:
                 folder = Folder(f, secret_key)
                 records.extend(folder.records)
+                shared_folders.append(folder)
 
         self.logger.debug("Total record count: {}".format(len(records)))
 
         return {
             'records': records,
+            'folders': shared_folders,
             'justBound': just_bound
         }
 
-    def get_secrets(self, uids=None):
+    def get_secrets(self, uids=None, full_response=False):
         """
         Retrieve all records associated with the given application
         """
@@ -468,9 +515,59 @@ class SecretsManager:
         if just_bound:
             records_resp = self.fetch_and_decrypt_secrets(uids)
 
-        records = records_resp.get('records') or []
+        if full_response:
+            return records_resp
+        else:
+            records = records_resp.get('records') or []
 
-        return records
+            return records
+
+    def create_secret(self, folder_uid, record_data):
+
+        #   Backend only need a JSON string of the record, so we have different ways of handing data:
+        #       - providing data as JSON string
+        #       - providing data as dictionary
+        #       - providing data as CreateRecord object
+        #
+        #   For now we will only allow CreateRecord objects
+
+        record_data_json_str = None
+
+        if isinstance(record_data, RecordCreate):
+            record_data_json_str = record_data.to_json()
+        else:
+            raise KeeperError('New record data has to be a valid ' + RecordCreate.__name__ + ' object')
+
+        # if isinstance(record_data, RecordV3):
+        #     record_data_json_str = record_data.to_json()
+        # elif isinstance(record_data, dict):
+        #     record_data_json_str = dict_to_json(record_data)
+        # elif isinstance(record_data, str):
+        #     if not is_json(record_data):
+        #         raise KeeperError('Record data has to be a valid JSON string.')
+        #
+        #     record_data_json_str = record_data
+
+        # Since we don't know folder's key where this record will be
+        # placed in, currently we have to retrieve all data that is share to
+        # this device/client and look for the folder's key in the returned
+        # folder data
+
+        records_and_folders_response = self.get_secrets(full_response=True)
+
+        found_folder = helpers.get_folder_key(folder_uid=folder_uid, secrets_and_folders=records_and_folders_response)
+
+        if not found_folder:
+            raise KeeperError('Folder uid=' + folder_uid + ' was not retrieved. If you are creating a record to a '
+                              'folder folder that you know exists, make sure that at least one record is present in '
+                              'the prior to adding a record to the folder.')
+
+
+        payload = SecretsManager.prepare_create_payload(self.config, folder_uid, record_data_json_str, found_folder.key)
+
+        self._post_query('create_secret', payload)
+
+        return payload.recordUid
 
     def save(self, record):
         """
