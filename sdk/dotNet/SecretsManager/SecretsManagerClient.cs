@@ -373,8 +373,10 @@ namespace SecretsManager
             await PostQuery(options, "update_secret", payload);
         }
 
-        public static async Task<string> CreateSecret(SecretsManagerOptions options, string folderUid, KeeperRecordData recordData, KeeperSecrets secrets)
+        public static async Task<string> CreateSecret(SecretsManagerOptions options, string folderUid, KeeperRecordData recordData, KeeperSecrets secrets = null)
         {
+            secrets ??= await GetSecrets(options);
+            
             var payload = PrepareCreatePayload(options.Storage, folderUid, recordData, secrets);
             await PostQuery(options, "create_secret", payload);
             return payload.recordUid;
