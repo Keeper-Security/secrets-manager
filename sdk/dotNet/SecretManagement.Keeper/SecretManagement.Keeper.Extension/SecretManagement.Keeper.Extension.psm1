@@ -70,7 +70,7 @@ function Set-Secret {
 
     $result = [SecretManagement.Keeper.Client]::SetSecret($Name, $Secret, $config).GetAwaiter().GetResult()
     if ($result.IsFailure) {
-        Write-Error $result.ErrorMsg
+        Write-Error $result.ErrorMessage
         return
     }
 }
