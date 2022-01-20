@@ -10,7 +10,7 @@
   "version": {
     "Major": 0,
     "Minor": 7,
-    "Patch": 5
+    "Patch": 6
   },
   "instanceNameFormat": "KeeperSecretsManager",
   "inputs": [
