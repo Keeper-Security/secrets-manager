@@ -12,11 +12,11 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@keeper-security/secrets-manager-core": "^16.1.1",
-    "azure-pipelines-task-lib": "^3.1.9"
+    "@keeper-security/secrets-manager-core": "^16.2.1",
+    "azure-pipelines-task-lib": "^3.1.10"
   },
   "devDependencies": {
-    "@types/mocha": "^9.0.0",
+    "@types/mocha": "^9.1.0",
     "@types/node": "^16.10.4",
     "@types/q": "^1.5.5",
     "nock": "^13.1.3"
