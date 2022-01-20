@@ -8,20 +8,14 @@ import json
 import pickle
 
 
-os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "Yes"
-
-
 # Our fake data. Two login records and a file record with two attached files.
 records = {
-    "EG6KdJaaLG7esRZbMnfbFA": RecordMaker.make_record(
-        uid="EG6KdJaaLG7esRZbMnfbFA",
-        title="JW-F1-R1",
-        value="aaa"
-    ),
     "TRd_567FkHy-CeGsAzs8aA": RecordMaker.make_record(
         uid="TRd_567FkHy-CeGsAzs8aA",
         title="JW-F1-R1",
-        value="ddd"
+        fields={
+            "password": "ddd"
+        }
     ),
     "A_7YpGBUgRTeDEQLhVRo0Q": RecordMaker.make_file(
         uid="A_7YpGBUgRTeDEQLhVRo0Q",
@@ -122,7 +116,7 @@ class KeeperSetTest(unittest.TestCase):
             self.assertEqual(result["failures"], 0, "failures was not 0")
             self.assertEqual(result["changed"], 0, "0 things didn't change")
 
-            self.assertRegex(out, r'Current Password password_ddd', "did not find current password")
+            self.assertRegex(out, r'Current Password ddd', "did not find current password")
             self.assertRegex(out, r'New Password NEW PASSWORD', "did not find new password")
 
     # @unittest.skip

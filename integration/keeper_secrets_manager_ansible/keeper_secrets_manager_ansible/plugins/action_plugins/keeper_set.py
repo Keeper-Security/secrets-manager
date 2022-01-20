@@ -80,7 +80,7 @@ class ActionModule(ActionBase):
 
         keeper = KeeperAnsible(task_vars=task_vars)
 
-        uid = self._task.args.get("uid", None)
+        uid = self._task.args.get("uid")
         if uid is None:
             raise AnsibleError("The uid is blank. keeper_set requires this value to be set.")
 

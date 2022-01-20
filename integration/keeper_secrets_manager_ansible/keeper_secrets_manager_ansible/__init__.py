@@ -15,6 +15,7 @@ from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKey
 from distutils.util import strtobool
 from ansible.utils.display import Display
 from ansible.errors import AnsibleError
+from distutils.util import strtobool
 import os
 import json
 from re import sub
@@ -214,6 +215,9 @@ class KeeperAnsible:
     def get_value(self, uid, field_type, key, allow_array=False):
 
         record = self.get_record(uid)
+
+        # Make sure the boolean is a boolean.
+        allow_array = bool(strtobool(str(allow_array)))
 
         values = None
         if field_type == KeeperFieldType.FIELD:

@@ -7,15 +7,12 @@ import tempfile
 
 
 records = {
-    "EG6KdJaaLG7esRZbMnfbFA": RecordMaker.make_record(
-        uid="EG6KdJaaLG7esRZbMnfbFA",
-        title="JW-F1-R1",
-        value="aaa"
-    ),
     "TRd_567FkHy-CeGsAzs8aA": RecordMaker.make_record(
         uid="TRd_567FkHy-CeGsAzs8aA",
         title="JW-F1-R1",
-        value="ddd"
+        fields={
+          "password": "ddd"
+        }
     ),
     "A_7YpGBUgRTeDEQLhVRo0Q": RecordMaker.make_file(
         uid="A_7YpGBUgRTeDEQLhVRo0Q",
@@ -64,7 +61,7 @@ class KeeperGetTest(unittest.TestCase):
             self.assertEqual(result["ok"], 3, "3 things didn't happen")
             self.assertEqual(result["failures"], 0, "failures was not 0")
             self.assertEqual(result["changed"], 0, "0 things didn't change")
-            self.assertRegex(out, r'password_ddd', "Did not find the password in the stdout")
+            self.assertRegex(out, r'ddd', "Did not find the password in the stdout")
 
     # @unittest.skip
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=mocked_get_secrets)

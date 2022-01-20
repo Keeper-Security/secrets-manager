@@ -53,6 +53,7 @@ options:
     description:
     - Allow array of values instead of taking the first value.
     - If enabled, the value will be returned in array even if single value.
+    - This does not work with notation since notation defines if an array is returned.
     type: bool
     default: no
     required: no 
@@ -115,17 +116,17 @@ class ActionModule(ActionBase):
 
         keeper = KeeperAnsible(task_vars=task_vars)
 
-        allow_array = self._task.args.get("allow_array", False)
         if self._task.args.get("notation") is not None:
             value = keeper.get_value_via_notation(self._task.args.get("notation"))
         else:
-            uid = self._task.args.pop("uid", None)
+            uid = self._task.args.get("uid")
             if uid is None:
                 raise AnsibleError("The uid is blank. keeper_get requires this value to be set.")
 
             # Try to get either the field, custom_field, or file name.
             field_type_enum, field_key = keeper.get_field_type_enum_and_key(args=self._task.args)
 
+            allow_array = self._task.args.get("allow_array", False)
             value = keeper.get_value(uid, field_type=field_type_enum, key=field_key, allow_array=allow_array)
 
         return {

@@ -220,7 +220,6 @@ class ActionModule(ActionBase):
             task_vars = {}
 
         keeper = KeeperAnsible(task_vars=task_vars)
-        uid = None
 
         if self._task.args.get("notation") is not None:
             value = keeper.get_value_via_notation(self._task.args.get("notation"))
