@@ -1,7 +1,7 @@
 ---
 requires_ansible: '>=2.10'
 plugin_routing:
-  modules:
+  action:
     keeper_copy:
       redirect: keepersecurity.keeper_secrets_manager.keeper_copy
     keeper_get:
@@ -10,6 +10,9 @@ plugin_routing:
       redirect: keepersecurity.keeper_secrets_manager.keeper_set
     keeper_cleanup:
       redirect: keepersecurity.keeper_secrets_manager.keeper_cleanup
+  lookup:
+    keeper:
+      redirect: keepersecurity.keeper_secrets_manager.keeper
 action_groups:
   keeper_secrets_manager:
     - keeper_copy
