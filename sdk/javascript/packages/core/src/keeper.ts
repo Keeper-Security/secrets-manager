@@ -185,7 +185,7 @@ const prepareCreatePayload = async (storage: KeyValueStorage, folderUid: string,
     return {
         clientVersion: 'ms' + packageVersion, // TODO generate client version for SM
         clientId: clientId,
-        recordUid: platform.bytesToBase64(recordUid),
+        recordUid: webSafe64FromBytes(recordUid),
         recordKey: platform.bytesToBase64(encryptedRecordKey),
         folderUid: folderUid,
         folderKey: platform.bytesToBase64(encryptedFolderKey),

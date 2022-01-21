@@ -418,7 +418,7 @@ private fun prepareCreatePayload(
     val encryptedRecordKey = publicEncrypt(recordKey, ownerPublicKey)
     val encryptedFolderKey = encrypt(recordKey, recordFromFolder.folderKey!!)
     return CreatePayload(toKeeperAppClientString(ManifestLoader.version), clientId,
-        bytesToBase64(recordUid),
+        webSafe64FromBytes(recordUid),
         bytesToBase64(encryptedRecordKey),
         folderUid,
         bytesToBase64(encryptedFolderKey),

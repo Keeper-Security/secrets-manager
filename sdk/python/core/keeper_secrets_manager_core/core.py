@@ -307,7 +307,7 @@ class SecretsManager:
 
         payload.clientVersion = keeper_secrets_manager_sdk_client_id
         payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
-        payload.recordUid = bytes_to_base64(record_uid)
+        payload.recordUid = CryptoUtils.bytes_to_url_safe_str(record_uid)
         payload.recordKey = bytes_to_base64(record_key_encrypted)
         payload.folderUid = folder_uid
         payload.folderKey = bytes_to_base64(folder_key_encrypted)
