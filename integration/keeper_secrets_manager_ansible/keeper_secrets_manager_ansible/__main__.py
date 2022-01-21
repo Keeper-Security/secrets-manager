@@ -90,7 +90,7 @@ def _init(args):
         task_args["keeper_hostname"], task_args["keeper_token"] = task_args["keeper_token"].split(":")
 
     try:
-        keeper_ansible = KeeperAnsible(task_args)
+        keeper_ansible = KeeperAnsible(task_args, None)
         keeper_ansible.client.get_secrets()
         if keeper_ansible.config_created is True:
             print("Config file created at location {}".format(keeper_ansible.config_file))

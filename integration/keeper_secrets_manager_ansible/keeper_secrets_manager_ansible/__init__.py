@@ -9,17 +9,24 @@
 # Contact: ops@keepersecurity.com
 #
 
-from keeper_secrets_manager_core import SecretsManager
-from keeper_secrets_manager_core.core import KSMCache
-from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
-from distutils.util import strtobool
 from ansible.utils.display import Display
 from ansible.errors import AnsibleError
+from ansible.module_utils.basic import missing_required_lib
 from distutils.util import strtobool
 import os
 import json
 from re import sub
 from enum import Enum
+import traceback
+
+# Check if the KSM SDK core has been installed
+KSM_SDK_ERR = None
+try:
+    from keeper_secrets_manager_core import SecretsManager
+    from keeper_secrets_manager_core.core import KSMCache
+    from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
+except ImportError:
+    KSM_SDK_ERR = traceback.format_exc()
 
 
 display = Display()
@@ -65,12 +72,15 @@ class KeeperAnsible:
     def keeper_key(key):
         return "{}_{}".format(KeeperAnsible.KEY_PREFIX, key)
 
-    def __init__(self, task_vars):
+    def __init__(self, task_vars, module):
 
         """ Build the config used by the Keeper Python SDK
 
         The configuration is mainly read from a JSON file.
         """
+
+        if KSM_SDK_ERR is not None:
+            module.fail_json(msg=missing_required_lib('keeper-secrets-manager-core'), exception=KSM_SDK_ERR)
 
         self.config_file = None
         self.config_created = False
