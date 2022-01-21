@@ -6,7 +6,7 @@ import java.util.*
 group = "com.keepersecurity.secrets-manager"
 
 // During publishing, If version ends with '-SNAPSHOT' then it will be published to Maven snapshot repository
-version = "16.2.5"
+version = "16.2.6"
 
 plugins {
     `java-library`

@@ -558,7 +558,7 @@ namespace SecretsManager
             var encryptedFolderKey = CryptoUtils.Encrypt(recordKey, recordFromFolder.FolderKey);
 
             return new CreatePayload(GetClientVersion(), clientId,
-                CryptoUtils.BytesToBase64(recordUid), CryptoUtils.BytesToBase64(encryptedRecordKey),
+                CryptoUtils.WebSafe64FromBytes(recordUid), CryptoUtils.BytesToBase64(encryptedRecordKey),
                 folderUid, CryptoUtils.BytesToBase64(encryptedFolderKey),
                 CryptoUtils.WebSafe64FromBytes(encryptedRecord));
         }
