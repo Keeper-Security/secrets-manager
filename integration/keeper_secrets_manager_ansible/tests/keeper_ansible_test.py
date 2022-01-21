@@ -50,8 +50,7 @@ class KeeperAnsibleTest(unittest.TestCase):
                 task_vars={
                     keeper_config_file_key: temp_config.name,
                     "keeper_verify_ssl_certs": False
-                },
-                module=None
+                }
             )
             ka.client.get_secrets()
             mock_get_secrets.assert_called_once()
@@ -71,7 +70,7 @@ class KeeperAnsibleTest(unittest.TestCase):
         for key in values:
             task_vars[KeeperAnsible.keeper_key(key)] = values[key]
 
-        ka = KeeperAnsible(task_vars=task_vars, module=None)
+        ka = KeeperAnsible(task_vars=task_vars)
         ka.client.get_secrets()
         mock_get_secrets.assert_called_once()
 

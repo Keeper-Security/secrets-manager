@@ -88,7 +88,7 @@ class LookupModule(LookupBase):
 
     def run(self, terms, variables=None, **kwargs):
 
-        keeper = KeeperAnsible(task_vars=variables, module=self)
+        keeper = KeeperAnsible(task_vars=variables)
 
         if kwargs.get("notation") is not None:
             value = keeper.get_value_via_notation(kwargs.get("notation"))

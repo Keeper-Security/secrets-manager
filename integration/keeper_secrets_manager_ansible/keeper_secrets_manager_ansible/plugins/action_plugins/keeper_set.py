@@ -78,7 +78,7 @@ class ActionModule(ActionBase):
         if task_vars is None:
             task_vars = {}
 
-        keeper = KeeperAnsible(task_vars=task_vars, module=self)
+        keeper = KeeperAnsible(task_vars=task_vars)
 
         uid = self._task.args.get("uid")
         if uid is None:

@@ -12,8 +12,10 @@
 from ansible.utils.display import Display
 from ansible.errors import AnsibleError
 from ansible.module_utils.basic import missing_required_lib
+from ansible.module_utils.common.text.converters import jsonify
 from distutils.util import strtobool
 import os
+import sys
 import json
 from re import sub
 from enum import Enum
@@ -72,7 +74,14 @@ class KeeperAnsible:
     def keeper_key(key):
         return "{}_{}".format(KeeperAnsible.KEY_PREFIX, key)
 
-    def __init__(self, task_vars, module):
+    @staticmethod
+    def fail_json(msg, **kwargs):
+        kwargs['failed'] = True
+        kwargs['msg'] = msg
+        print('\n%s' % jsonify(kwargs))
+        sys.exit(0)
+
+    def __init__(self, task_vars):
 
         """ Build the config used by the Keeper Python SDK
 
@@ -80,7 +89,7 @@ class KeeperAnsible:
         """
 
         if KSM_SDK_ERR is not None:
-            module.fail_json(msg=missing_required_lib('keeper-secrets-manager-core'), exception=KSM_SDK_ERR)
+            self.fail_json(msg=missing_required_lib('keeper-secrets-manager-core'), exception=KSM_SDK_ERR)
 
         self.config_file = None
         self.config_created = False
