@@ -24,12 +24,13 @@ import traceback
 # Check if the KSM SDK core has been installed
 KSM_SDK_ERR = None
 try:
+    import keeper_secrets_manager_core
+except ImportError:
+    KSM_SDK_ERR = traceback.format_exc()
+else:
     from keeper_secrets_manager_core import SecretsManager
     from keeper_secrets_manager_core.core import KSMCache
     from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
-except ImportError:
-    KSM_SDK_ERR = traceback.format_exc()
-
 
 display = Display()
 
@@ -321,4 +322,3 @@ class KeeperAnsible:
             status["removed_ksm_cache"] = True
 
         return status
-
