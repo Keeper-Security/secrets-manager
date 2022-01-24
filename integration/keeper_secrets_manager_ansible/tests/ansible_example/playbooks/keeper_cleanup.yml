@@ -1,0 +1,15 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Get
+  hosts: "my_systems"
+  vars:
+    keeper_use_cache: True
+
+  tasks:
+    - name: "Get Value"
+      keeper_get:
+        uid: "{{ uid }}"
+        field: "password"
+
+    - name: Clean up all.
+      keeper_cleanup:
