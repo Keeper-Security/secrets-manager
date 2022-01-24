@@ -107,8 +107,6 @@ class ActionModule(ActionBase):
             if config.contains(e):
                 config_dict[ansible_key] = str(config.get(e))
 
-        print(config_dict)
-
         # If the file name is set, then save the config into a file. A JSON extension will make the standard
         # JSON config file that is usable across SDKs and integrations. Anything else will make a YAML file
         # with a config that has keys that Ansible can use.
