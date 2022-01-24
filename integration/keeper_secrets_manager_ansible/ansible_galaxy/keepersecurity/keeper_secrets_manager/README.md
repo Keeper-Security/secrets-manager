@@ -1,5 +1,8 @@
 ![Ansible](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.ansible.yml/badge.svg) 
 
+| In development. Wait until version is 1.1.0. |
+|----|
+
 # Keeper Secrets Manager Collection
 
 This collection allows you retrieve and update records in your Keeper Vault.
