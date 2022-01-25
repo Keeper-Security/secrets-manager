@@ -48,4 +48,5 @@ type recordOptions struct {
 	Type        string `json:"type,omitempty"`
 	TemplateUid string `json:"template_uid,omitempty"`
 	FolderUid   string `json:"folder_uid,omitempty"`
+	RecordData  string `json:"data,omitempty"`
 }

@@ -41,7 +41,7 @@ func (b *backend) pathConfig() *framework.Path {
 				Description: descKsmAppConfig,
 				Required:    true,
 				DisplayAttrs: &framework.DisplayAttributes{
-					Name:      "Password",
+					Name:      "AppConfig",
 					Sensitive: true,
 				},
 			},

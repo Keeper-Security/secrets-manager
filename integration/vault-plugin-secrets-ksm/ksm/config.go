@@ -2,11 +2,16 @@ package ksm
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/hashicorp/vault/sdk/framework"
+	"github.com/keeper-security/secrets-manager-go/core"
 )
 
-var errFieldDataNil = errors.New("field data passed for updating was nil")
+var (
+	errFieldDataNil    = errors.New("field data passed for updating was nil")
+	errBadConfigFormat = errors.New("config string is not a valid JSON/Base64")
+)
 
 // Config holds all configuration for the backend.
 type Config struct {
@@ -29,12 +34,27 @@ func (c *Config) Update(d *framework.FieldData) (bool, error) {
 	// Track changes to the configuration.
 	var changed bool
 
-	if AppConfig, ok := d.GetOk(keyKsmAppConfig); ok {
-		if nv := AppConfig.(string); c.KsmAppConfig != nv {
+	if appConfig, ok := d.GetOk(keyKsmAppConfig); ok {
+		if nv := strings.TrimSpace(appConfig.(string)); c.KsmAppConfig != nv {
+			if err := validateConfigStr(nv); err != nil {
+				return false, err
+			}
 			c.KsmAppConfig = nv
 			changed = true
 		}
 	}
 
 	return changed, nil
+}
+
+func validateConfigStr(cfg string) error {
+	jsonCfg := strings.TrimSpace(core.Base64ToString(cfg))
+	if jsonCfg == "" {
+		jsonCfg = cfg
+	}
+	if v := core.JsonToDict(string(jsonCfg)); len(v) == 0 {
+		return errBadConfigFormat
+	}
+
+	return nil
 }

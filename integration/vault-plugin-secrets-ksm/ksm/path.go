@@ -45,7 +45,6 @@ func validateFields(req *logical.Request, data *framework.FieldData) error {
 		return fmt.Errorf("%w: %s", errUnknownField, unknownFields[0])
 	default:
 		sort.Strings(unknownFields)
-
 		return fmt.Errorf("%w: %s", errUnknownFields, strings.Join(unknownFields, ", "))
 	}
 }
