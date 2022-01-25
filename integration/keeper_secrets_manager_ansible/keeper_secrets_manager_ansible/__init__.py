@@ -58,6 +58,7 @@ class KeeperAnsible:
     ALLOWED_FIELDS = ["field", "custom_field", "file"]
     TOKEN_ENV = "KSM_TOKEN"
     TOKEN_KEY = "token"
+    HOSTNAME_KEY = "hostname"
     CONFIG_CLIENT_KEY = "clientKey"
     FORCE_CONFIG_FILE = "force_config_write"
     KEY_SSL_VERIFY_SKIP = "verify_ssl_certs_skip"
@@ -82,7 +83,7 @@ class KeeperAnsible:
         print('\n%s' % jsonify(kwargs))
         sys.exit(0)
 
-    def __init__(self, task_vars):
+    def __init__(self, task_vars, force_in_memory=False):
 
         """ Build the config used by the Keeper Python SDK
 
@@ -143,7 +144,7 @@ class KeeperAnsible:
             else:
                 display.vvv("Keeper Secrets Manager is not using a cache.")
 
-            if os.path.isfile(self.config_file) is True:
+            if os.path.isfile(self.config_file) is True and force_in_memory is False:
                 display.vvv("Loading keeper config file file {}.".format(self.config_file))
                 self.client = KeeperAnsible.get_client(
                     config=FileKeyValueStorage(config_file_location=self.config_file),
@@ -190,6 +191,10 @@ class KeeperAnsible:
                 # If the is only 1 key, we want to force the config to write to the file.
                 elif len(config_dict) == 1 and KeeperAnsible.CONFIG_CLIENT_KEY in config_dict:
                     in_memory_storage = False
+
+                # Sometime we don't want a JSON file ever
+                if force_in_memory is True:
+                    in_memory_storage = True
 
                 if in_memory_storage is True:
                     config_instance = InMemoryKeyValueStorage(config=config_dict)

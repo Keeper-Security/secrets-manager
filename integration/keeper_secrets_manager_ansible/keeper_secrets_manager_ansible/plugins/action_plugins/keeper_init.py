@@ -144,13 +144,18 @@ class ActionModule(ActionBase):
             config_file = "keeper_ansible_config.yml"
 
         # Remove keeper_ keys from task vars. We only want to accept from the options.
-        for key in task_vars:
-            if re.search(r'^{}_'.format(KeeperAnsible.KEY_PREFIX), key) is not None:
+        for key in list(task_vars.keys()):
+            if re.search("^{}".format(KeeperAnsible.KEY_PREFIX), key) is not None:
                 task_vars.pop(key, None)
 
-        task_vars[KeeperAnsible.keeper_key(KeeperAnsible.TOKEN_KEY)] = token
+        if ":" in token:
+            task_vars[KeeperAnsible.keeper_key(KeeperAnsible.HOSTNAME_KEY)], \
+                task_vars[KeeperAnsible.keeper_key(KeeperAnsible.TOKEN_KEY)] = token.split(":")
+        else:
+            task_vars[KeeperAnsible.keeper_key(KeeperAnsible.TOKEN_KEY)] = token
 
-        keeper = KeeperAnsible(task_vars=task_vars)
+        # We don't want a JSON, force the config to be in memory.
+        keeper = KeeperAnsible(task_vars=task_vars, force_in_memory=True)
 
         # Don't load the entire vault, make a bad UID.
         try:
