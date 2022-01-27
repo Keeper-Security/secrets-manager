@@ -1,10 +1,12 @@
 package ksm
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
-	ksm "github.com/keeper-security/secrets-manager-go/core"
+	"github.com/keeper-security/secrets-manager-go/core"
 )
 
 var errClientConfigNil = errors.New("client configuration was nil")
@@ -12,7 +14,7 @@ var errClientConfigNil = errors.New("client configuration was nil")
 // Client encapsulates KSM client for talking to the Keeper Vault.
 type Client struct {
 	*Config
-	SecretsManager *ksm.SecretsManager
+	SecretsManager *core.SecretsManager
 }
 
 // NewClient returns a newly constructed client from the provided config.
@@ -34,12 +36,67 @@ func NewClient(config *Config) (c *Client, err error) {
 		return nil, errClientConfigNil
 	}
 
-	cfg := ksm.NewMemoryKeyValueStorage(config.KsmAppConfig)
-	sm := ksm.NewSecretsManagerFromConfig(cfg)
+	cfg := core.NewMemoryKeyValueStorage(config.KsmAppConfig)
+	sm := core.NewSecretsManagerFromConfig(cfg)
 
 	return &Client{
 		SecretsManager: sm,
 	}, nil
+}
+
+// NewClientConfig returns a newly constructed client config form the provided token.
+// It will error if it fails to bind the token and validate necessary configuration formats
+func NewClientConfig(token string) (config string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			config = ""
+			switch x := r.(type) {
+			case error:
+				err = x
+			default:
+				err = fmt.Errorf("error creating new client config: %v", r)
+			}
+		}
+	}()
+
+	if token := strings.TrimSpace(token); token == "" {
+		return "", errClientConfigNil
+	}
+	if parts := strings.Split(token, ":"); len(parts) == 2 {
+		cfg := core.NewMemoryKeyValueStorage()
+		sm := core.NewSecretsManagerFromFullSetup(token, "", true, cfg)
+		if _, err := sm.GetSecrets([]string{""}); err != nil {
+			return "", err
+		}
+
+		confData := struct {
+			// ClientKey         string `json:"clientKey,omitempty"`
+			AppKey            string `json:"appKey,omitempty"`
+			AppOwnerPublicKey string `json:"appOwnerPublicKey,omitempty"`
+			ClientId          string `json:"clientId,omitempty"`
+			Hostname          string `json:"hostname,omitempty"`
+			PrivateKey        string `json:"privateKey,omitempty"`
+			ServerPublicKeyId string `json:"serverPublicKeyId,omitempty"`
+		}{
+			// ClientKey:         cfg.Get(ksm.KEY_CLIENT_KEY),
+			AppKey:            cfg.Get(core.KEY_APP_KEY),
+			AppOwnerPublicKey: cfg.Get(core.KEY_OWNER_PUBLIC_KEY),
+			ClientId:          cfg.Get(core.KEY_CLIENT_ID),
+			Hostname:          cfg.Get(core.KEY_HOSTNAME),
+			PrivateKey:        cfg.Get(core.KEY_PRIVATE_KEY),
+			ServerPublicKeyId: cfg.Get(core.KEY_SERVER_PUBLIC_KEY_ID),
+		}
+
+		confJson, err := json.Marshal(confData)
+		if err != nil {
+			return "", err
+		}
+		config = core.BytesToBase64(confJson)
+	} else {
+		return "", fmt.Errorf("invalid device token: %v, expected format host:base64_token", token)
+	}
+
+	return config, nil
 }
 
 // recordOptions stores record options for current operation
