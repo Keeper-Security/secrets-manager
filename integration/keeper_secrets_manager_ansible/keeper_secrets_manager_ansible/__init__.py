@@ -68,6 +68,8 @@ class KeeperAnsible:
     ENV_CACHE_DIR = "KSM_CACHE_DIR"
     DEFAULT_LOG_LEVEL = "ERROR"
 
+    REDACT_MODULE = "ansible.plugins.callback.keeper_redact"
+
     @staticmethod
     def get_client(**kwargs):
         return SecretsManager(**kwargs)
@@ -96,6 +98,9 @@ class KeeperAnsible:
         self.config_file = None
         self.config_created = False
         self.using_cache = False
+
+        self.has_redact = KeeperAnsible.REDACT_MODULE in sys.modules
+        self.secret_values = []
 
         def camel_case(text):
             text = sub(r"([_\-])+", " ", text).title().replace(" ", "")
@@ -234,8 +239,38 @@ class KeeperAnsible:
 
         return records[0]
 
+    @staticmethod
+    def _gather_secrets(obj):
+        """
+        Walk the secret structure and get values. This should just be str, list, and dict. Warn is the SDK
+        return something different.
+        """
+        result = []
+        if type(obj) is str:
+            result.append(obj)
+        elif type(obj) is list:
+            for item in obj:
+                result += KeeperAnsible._gather_secrets(item)
+        elif type(obj) is dict:
+            for k, v in obj.items():
+                result += KeeperAnsible._gather_secrets(v)
+        else:
+            display.warning("Result item is not string, list, or dictionary, can't get secret values: "
+                            + str(type(obj)))
+        return result
+
+    def stash_secret_value(self, value):
+        """
+        Parse the result of the secret retrieval and add values to list of secret values.
+        """
+        for secret_value in self._gather_secrets(value):
+            if secret_value not in self.secret_values:
+                self.secret_values.append(secret_value)
+
     def get_value_via_notation(self, notation):
-        return self.client.get_notation(notation)
+        value = self.client.get_notation(notation)
+        self.stash_secret_value(value)
+        return value
 
     def get_value(self, uid, field_type, key, allow_array=False):
 
@@ -264,6 +299,8 @@ class KeeperAnsible:
             display.debug("The value for uid {}, field_type {}, key {} was None or was an empty list.".format(
                 uid, field_type.name, key))
             return None
+
+        self.stash_secret_value(values)
 
         # If we want the entire array, then just return what we got from the field.
         if allow_array is True:
@@ -316,6 +353,18 @@ class KeeperAnsible:
                                "custom_field or file.")
 
         return KeeperFieldType.get_enum(field_type[0]), field_key
+
+    def add_secret_values_to_results(self, results):
+        """
+        If the redact stdout callback is being used, add the secrets to the results dictionary. The redact
+        stdout callback will remove it from the results. It will use value to remove values from stdout.
+        """
+
+        # If we are using the redact stdout callback, add the secrets we retrieve to the special key. The redact
+        # stdout callback will make sure the value is not in the stdout.
+        if self.has_redact is True:
+            results["_secrets"] = self.secret_values
+        return results
 
     def cleanup(self):
 

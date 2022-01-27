@@ -260,4 +260,6 @@ class ActionModule(ActionBase):
                     module_args.pop('src', None)
                     module_args.pop('content', None)
 
+            result = keeper.add_secret_values_to_results(result)
+
         return result

@@ -129,6 +129,12 @@ class ActionModule(ActionBase):
             allow_array = self._task.args.get("allow_array", False)
             value = keeper.get_value(uid, field_type=field_type_enum, key=field_key, allow_array=allow_array)
 
-        return {
+        keeper.stash_secret_value(value)
+
+        result = {
             "value": value
         }
+
+        keeper.add_secret_values_to_results(result)
+
+        return result

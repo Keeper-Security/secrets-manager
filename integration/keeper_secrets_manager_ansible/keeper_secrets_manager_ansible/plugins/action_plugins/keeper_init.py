@@ -141,7 +141,7 @@ class ActionModule(ActionBase):
 
         config_file = self._task.args.get("filename", task_vars.get("keeper_config_file"))
         if config_file is None or config_file == "":
-            config_file = "keeper_ansible_config.yml"
+            config_file = "keeper-config.yml"
 
         # Remove keeper_ keys from task vars. We only want to accept from the options.
         for key in list(task_vars.keys()):

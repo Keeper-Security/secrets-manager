@@ -26,8 +26,8 @@ $ ansible-galaxy collection install keepersecrity.keeper_secrets_manager
 
 # Plugins
 
-This is a list of action and lookup plugins. If you wish, you can set the
-collections in your task and just used the short name (ie keeper_copy)
+If you wish, you can set the collections in your task and
+just used the short name (ie keeper_copy)
 
 ```yaml
 - name: Keeper Task
@@ -65,4 +65,35 @@ If you omit the `collections` , you will need to use the full plugin name.
 
 # Examples
 
+The first step is initializing a configuration from a one-time access token. Getting the 
+token is explained in the
+[Quick Start Guide](https://docs.keeper.io/secrets-manager/secrets-manager/quick-start-guide).
+
+Then create a simple playbook to initialize the token.
+
+```yaml
+- name: Initialize the Keeper one time access token.
+  hosts: localhost
+  connection: local
+  collections: keepersecurity.keeper_secrets_manager
+
+  roles:
+    - keeper_init_token
+```
+Then run the playbook. Pass the token in using the extra var param (-e).
+```shell
+$ ansible-playbook keeper_init.yml -e keeper_token=US:XXX
+```
+When done there will be a file called `keeper-config.yml` which will contain the configuration
+for your device.
+
+```yaml
+keeper_app_key: +U5Jao ... l5FmXymVI=
+keeper_client_id: Fokc6j ... PlBwzAKlMUgFZHqLg==
+keeper_hostname: US
+keeper_private_key: MIGHf ... IcvCihUHyA7Oy
+keeper_server_public_key_id: '10'
+```
+The content of this YAML file can then be cut-n-pasted into a **group_vars**, **host_vars**, **all**
+configuration file or even a playbook.
 
