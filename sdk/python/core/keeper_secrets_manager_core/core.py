@@ -21,7 +21,7 @@ import requests
 from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.crypto import CryptoUtils
-from keeper_secrets_manager_core.dto.dtos import Folder, Record, RecordCreate
+from keeper_secrets_manager_core.dto.dtos import Folder, Record, RecordCreate, SecretsManagerResponse, AppData
 from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, TransmissionKey, \
     EncryptedPayload, KSMHttpResponse, CreatePayload
 from keeper_secrets_manager_core.exceptions import KeeperError
@@ -494,11 +494,31 @@ class SecretsManager:
 
         self.logger.debug("Total record count: {}".format(len(records)))
 
-        return {
-            'records': records,
-            'folders': shared_folders,
-            'justBound': just_bound
-        }
+        sm_response = SecretsManagerResponse()
+
+        if 'appData' in decrypted_response_dict:
+            app_data_json = CryptoUtils.decrypt_aes(
+                url_safe_str_to_bytes(decrypted_response_dict['appData']),
+                base64_to_bytes(self.config.get(ConfigKeys.KEY_APP_KEY))
+            )
+
+            app_data_dict = utils.json_to_dict(app_data_json)
+
+            sm_response.appData = AppData(title=app_data_dict['title'], app_type=app_data_dict['type'])
+        else:
+            sm_response.appData = AppData()
+
+        if 'expiresOn' in decrypted_response_dict:
+            sm_response.expiresOn = decrypted_response_dict.get('expiresOn')
+
+        if 'warnings' in decrypted_response_dict:
+            sm_response.warnings = decrypted_response_dict.get('warnings')
+
+        sm_response.records = records
+        sm_response.folders = shared_folders
+        sm_response.justBound = just_bound
+
+        return sm_response
 
     def get_secrets(self, uids=None, full_response=False):
         """
@@ -510,15 +530,19 @@ class SecretsManager:
 
         records_resp = self.fetch_and_decrypt_secrets(uids)
 
-        just_bound = records_resp.get('justBound')
-
-        if just_bound:
+        if records_resp.justBound:
             records_resp = self.fetch_and_decrypt_secrets(uids)
+
+        # Log warnings we got from the server
+        # Will only be displayed if logging is enabled:
+        if records_resp.warnings:
+            for warning in records_resp.warnings:
+                self.logger.warning(warning)
 
         if full_response:
             return records_resp
         else:
-            records = records_resp.get('records') or []
+            records = records_resp.records or []
 
             return records
 
@@ -561,7 +585,6 @@ class SecretsManager:
             raise KeeperError('Folder uid=' + folder_uid + ' was not retrieved. If you are creating a record to a '
                               'folder folder that you know exists, make sure that at least one record is present in '
                               'the prior to adding a record to the folder.')
-
 
         payload = SecretsManager.prepare_create_payload(self.config, folder_uid, record_data_json_str, found_folder.key)
 
