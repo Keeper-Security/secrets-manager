@@ -16,6 +16,7 @@ from ansible.module_utils.common.text.converters import jsonify
 from distutils.util import strtobool
 import os
 import sys
+import re
 import json
 from re import sub
 from enum import Enum
@@ -49,12 +50,12 @@ class KeeperFieldType(Enum):
 
 
 class KeeperAnsible:
-
     """ A class containing common method used by the Ansible plugin and also talked to Keeper Python SDK
     """
 
     KEY_PREFIX = "keeper"
     KEY_CONFIG_FILE_SUFFIX = "config_file"
+    KEY_CONFIG_BASE64 = "config"
     ALLOWED_FIELDS = ["field", "custom_field", "file"]
     TOKEN_ENV = "KSM_TOKEN"
     TOKEN_KEY = "token"
@@ -67,8 +68,7 @@ class KeeperAnsible:
     KEY_CACHE_DIR = "cache_dir"
     ENV_CACHE_DIR = "KSM_CACHE_DIR"
     DEFAULT_LOG_LEVEL = "ERROR"
-
-    REDACT_MODULE = "ansible.plugins.callback.keeper_redact"
+    REDACT_MODULE_MATCH = r"\.keeper_redact$"
 
     @staticmethod
     def get_client(**kwargs):
@@ -99,7 +99,13 @@ class KeeperAnsible:
         self.config_created = False
         self.using_cache = False
 
-        self.has_redact = KeeperAnsible.REDACT_MODULE in sys.modules
+        # Check if we have the keeper redact callback stdout plugin is enabled.
+        self.has_redact = False
+        for module in sys.modules:
+            if re.search(KeeperAnsible.REDACT_MODULE_MATCH, module) is not None:
+                self.has_redact = True
+                break
+
         self.secret_values = []
 
         def camel_case(text):
@@ -161,48 +167,59 @@ class KeeperAnsible:
             else:
                 display.vvv("Loading keeper config from Ansible vars.")
 
-                config_dict = {}
-                # Convert Ansible variables into the keys used by Secrets Manager's config.
-                for key in ["url", "client_id", "client_key", "app_key", "private_key", "bat", "binding_key",
-                            "hostname"]:
-                    keeper_key = KeeperAnsible.keeper_key(key)
-                    camel_key = camel_case(key)
-                    if keeper_key in task_vars:
-                        config_dict[camel_key] = task_vars[keeper_key]
-
-                # token is the odd ball. we need it to be client key in the SDK config.
-                token_key = KeeperAnsible.keeper_key(KeeperAnsible.TOKEN_KEY)
-                if token_key in task_vars:
-                    config_dict[KeeperAnsible.CONFIG_CLIENT_KEY] = task_vars[token_key]
-
-                # If the secret client key is in the environment, override the Ansible var.
-                if os.environ.get(KeeperAnsible.TOKEN_ENV) is not None:
-                    config_dict[KeeperAnsible.CONFIG_CLIENT_KEY] = os.environ.get(KeeperAnsible.TOKEN_ENV)
-                elif token_key in task_vars:
-                    config_dict[KeeperAnsible.CONFIG_CLIENT_KEY] = task_vars[token_key]
-
-                # If no variables were passed in throw an error.
-                if len(config_dict) == 0:
-                    raise AnsibleError("There is no config file and the Ansible variable contain no config keys. Will"
-                                       " not be able to connect to the Keeper server.")
-
                 # Since we are getting our variables from Ansible, we want to default using the in memory storage so
                 # not to leave config files laying around.
                 in_memory_storage = True
 
-                # Does the user want to write the config to a file? Then don't use the in memory storage.
-                if bool(task_vars.get(KeeperAnsible.keeper_key(KeeperAnsible.FORCE_CONFIG_FILE), False)) is True:
-                    in_memory_storage = False
-                # If the is only 1 key, we want to force the config to write to the file.
-                elif len(config_dict) == 1 and KeeperAnsible.CONFIG_CLIENT_KEY in config_dict:
-                    in_memory_storage = False
+                # If be have parameter with a Base64 config, use it for the config_option and force
+                # the config to be in memory.
+                base64_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CONFIG_BASE64)
+                if base64_key in task_vars:
+                    config_option = task_vars.get(base64_key)
+                    force_in_memory = True
+                # Else try to discover the config values.
+                else:
 
-                # Sometime we don't want a JSON file ever
+                    # Config is not a Base64 string, make a dictionary to hold config values.
+                    config_option = {}
+                    # Convert Ansible variables into the keys used by Secrets Manager's config.
+                    for key in ["url", "client_id", "client_key", "app_key", "private_key", "bat", "binding_key",
+                                "hostname"]:
+                        keeper_key = KeeperAnsible.keeper_key(key)
+                        camel_key = camel_case(key)
+                        if keeper_key in task_vars:
+                            config_option[camel_key] = task_vars[keeper_key]
+
+                    # Token is the odd ball. we need it to be client key in the SDK config. SDK will remove it
+                    # when it is done.
+                    token_key = KeeperAnsible.keeper_key(KeeperAnsible.TOKEN_KEY)
+                    if token_key in task_vars:
+                        config_option[KeeperAnsible.CONFIG_CLIENT_KEY] = task_vars[token_key]
+
+                    # If the secret client key is in the environment, override the Ansible var.
+                    if os.environ.get(KeeperAnsible.TOKEN_ENV) is not None:
+                        config_option[KeeperAnsible.CONFIG_CLIENT_KEY] = os.environ.get(KeeperAnsible.TOKEN_ENV)
+                    elif token_key in task_vars:
+                        config_option[KeeperAnsible.CONFIG_CLIENT_KEY] = task_vars[token_key]
+
+                    # If no variables were passed in throw an error.
+                    if len(config_option) == 0:
+                        raise AnsibleError("There is no config file and the Ansible variable contain no config keys."
+                                           " Will not be able to connect to the Keeper server.")
+
+                    # Does the user want to write the config to a file? Then don't use the in memory storage.
+                    if bool(task_vars.get(KeeperAnsible.keeper_key(KeeperAnsible.FORCE_CONFIG_FILE), False)) is True:
+                        in_memory_storage = False
+                    # If the is only 1 key, we want to force the config to write to the file.
+                    elif len(config_option) == 1 and KeeperAnsible.CONFIG_CLIENT_KEY in config_option:
+                        in_memory_storage = False
+
+                # Sometime we don't want a JSON file, ever. Force the config to be in memory.
                 if force_in_memory is True:
                     in_memory_storage = True
 
                 if in_memory_storage is True:
-                    config_instance = InMemoryKeyValueStorage(config=config_dict)
+                    config_instance = InMemoryKeyValueStorage(config=config_option)
                 else:
                     if self.config_file is None:
                         self.config_file = FileKeyValueStorage.default_config_file_location
@@ -210,9 +227,10 @@ class KeeperAnsible:
                     elif os.path.isfile(self.config_file) is False:
                         self.config_created = True
 
-                    # Write the variables we have to a JSON file.
+                    # Write the variables we have to a JSON file. If we are in here config_option is a dictionary,
+                    # not a Base64 string.
                     with open(self.config_file, "w") as fh:
-                        json.dump(config_dict, fh, indent=4)
+                        json.dump(config_option, fh, indent=4)
                         fh.close()
 
                     config_instance = FileKeyValueStorage(config_file_location=self.config_file)
@@ -241,8 +259,7 @@ class KeeperAnsible:
 
     @staticmethod
     def _gather_secrets(obj):
-        """
-        Walk the secret structure and get values. This should just be str, list, and dict. Warn is the SDK
+        """ Walk the secret structure and get values. These should just be str, list, and dict. Warn if the SDK
         return something different.
         """
         result = []
@@ -260,8 +277,7 @@ class KeeperAnsible:
         return result
 
     def stash_secret_value(self, value):
-        """
-        Parse the result of the secret retrieval and add values to list of secret values.
+        """ Parse the result of the secret retrieval and add values to list of secret values.
         """
         for secret_value in self._gather_secrets(value):
             if secret_value not in self.secret_values:
@@ -327,7 +343,7 @@ class KeeperAnsible:
     @staticmethod
     def get_field_type_enum_and_key(args):
 
-        """Get the field type enum and field key in the Ansible args for a task.
+        """ Get the field type enum and field key in the Ansible args for a task.
 
         For a task that, only allowed one of the allowed field, this method will find the type of field and
         the key/label for that field.
@@ -355,8 +371,7 @@ class KeeperAnsible:
         return KeeperFieldType.get_enum(field_type[0]), field_key
 
     def add_secret_values_to_results(self, results):
-        """
-        If the redact stdout callback is being used, add the secrets to the results dictionary. The redact
+        """ If the redact stdout callback is being used, add the secrets to the results dictionary. The redact
         stdout callback will remove it from the results. It will use value to remove values from stdout.
         """
 
