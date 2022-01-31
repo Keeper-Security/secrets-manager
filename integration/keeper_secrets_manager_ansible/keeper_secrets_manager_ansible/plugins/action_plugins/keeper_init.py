@@ -110,7 +110,7 @@ class ActionModule(ActionBase):
         # If the file name is set, then save the config into a file. A JSON extension will make the standard
         # JSON config file that is usable across SDKs and integrations. Anything else will make a YAML file
         # with a config that has keys that Ansible can use.
-        if filename is not None:
+        if filename is not None and filename != "":
             # If this a JSON file.
             if re.search(r'json$', filename) is not None:
                 config_json_dict = {}
@@ -134,16 +134,18 @@ class ActionModule(ActionBase):
         if task_vars is None:
             task_vars = {}
 
+        # Only get the values from the values passed in with option.
+
         # We need the one time access token.
-        token = self._task.args.get("token", task_vars.get("keeper_token"))
+        token = self._task.args.get("token")
         if token is None or token == "":
             raise AnsibleError("The token is not set. Either set keeper_token extra vars or token on the action.")
 
-        config_file = self._task.args.get("filename", task_vars.get("keeper_config_file"))
-        if config_file is None or config_file == "":
-            config_file = "keeper-config.yml"
+        # If there is no filename, don't create a file
+        config_file = self._task.args.get("filename")
 
-        # Remove keeper_ keys from task vars. We only want to accept from the options.
+        # Remove keeper_ keys from task vars. We only want to accept from other variables, like existing
+        # configurations.
         for key in list(task_vars.keys()):
             if re.search("^{}".format(KeeperAnsible.KEY_PREFIX), key) is not None:
                 task_vars.pop(key, None)

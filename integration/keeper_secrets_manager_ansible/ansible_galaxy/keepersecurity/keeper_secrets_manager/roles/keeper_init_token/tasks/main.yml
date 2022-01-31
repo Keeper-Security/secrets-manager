@@ -9,5 +9,5 @@
 - name: Init the one-time access token.
   keepersecurity.keeper_secrets_manager.keeper_init:
     token: "{{ keeper_token }}"
-    filename: "{{ keeper_config_file | default('keeper-config.yml') }}"
+    filename: "{{ keeper_config_file | default('') }}"
     show_config: "{{ keeper_show_config | default(False) }}"
