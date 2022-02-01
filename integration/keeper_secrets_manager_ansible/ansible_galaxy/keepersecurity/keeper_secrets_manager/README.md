@@ -63,6 +63,10 @@ If you omit the `collections` , you will need to use the full plugin name.
 
 * `keepersecurity.keeper_secrets_manager.keeper` - Get a value from your vault via a lookup.
 
+## Callback
+
+* `keepersecurity.keeper_secrets_manager.keeper_redact` - Stdout callback plugin to redact secret values.
+
 # Examples
 
 The first step is initializing a configuration from a one-time access token. Getting the 
@@ -82,7 +86,7 @@ Then create a simple playbook to initialize the token.
 ```
 Then run the playbook. Pass the token in using the extra var param (-e).
 ```shell
-$ ansible-playbook keeper_init.yml -e keeper_token=US:XXX
+$ ansible-playbook keeper_init.yml -e keeper_token=US:XXX -e keeper_config_file=keeper-config.yml
 ```
 When done there will be a file called `keeper-config.yml` which will contain the configuration
 for your device.

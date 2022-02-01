@@ -24,8 +24,29 @@ class CallbackModule(DefaultCallbackBase):
     CALLBACK_TYPE = 'stdout'
     CALLBACK_NAME = 'keeper_redact'
 
+    KEEPER_KEYS = [
+        "keeper_config",
+        "keeper_config_file",
+        "keeper_client_id",
+        "keeper_private_key",
+        "keeper_app_key"
+    ]
+
     def __init__(self):
         super(CallbackModule, self).__init__()
+
+    @staticmethod
+    def _remove_special_keeper_values(obj):
+        if type(obj) is list:
+            for item in obj:
+                CallbackModule._remove_special_keeper_values(item)
+        elif type(obj) is dict:
+            for k, v in obj.items():
+                if type(v) is dict or type(v) is list:
+                    CallbackModule._remove_special_keeper_values(v)
+                else:
+                    if k in CallbackModule.KEEPER_KEYS:
+                        obj[k] = "****"
 
     def _dump_results(self, result, indent=None, sort_keys=True, keep_invocation=False, serialize=True):
 
@@ -35,6 +56,11 @@ class CallbackModule(DefaultCallbackBase):
             return json.dumps(dict(
                 censored="The output has been hidden due "
                          "to the fact that 'no_log: true' was specified for this result"))
+
+        clean_result = strip_internal_keys(module_response_deepcopy(result))
+
+        # Remove keeper config vars that are secret.
+        self._remove_special_keeper_values(clean_result)
 
         # If we have secrets, then remove them from results, sort them in descending lengths, and make a
         # regular expression to replace them with ****
@@ -49,8 +75,6 @@ class CallbackModule(DefaultCallbackBase):
                 # which we will just convert to a str.
                 reg_exp_items.append(re.escape(str(item)))
             redact_regexp = "|".join(reg_exp_items)
-
-        clean_result = strip_internal_keys(module_response_deepcopy(result))
 
         json_result = json.dumps(clean_result, indent=4)
         if redact_regexp is not None:
