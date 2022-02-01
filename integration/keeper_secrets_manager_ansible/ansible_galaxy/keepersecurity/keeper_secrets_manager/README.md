@@ -1,16 +1,22 @@
 ![Ansible](https://github.com/Keeper-Security/secrets-manager/actions/workflows/test.ansible.yml/badge.svg) 
 
-| In development. Wait until version is 1.1.0. |
-|----|
-
 # Keeper Secrets Manager Collection
 
 This collection allows you retrieve and update records in your Keeper Vault.
 
-Additional documentation can be found one the [Keeper Secrets Manager Ansible](https://docs.keeper.io/secrets-manager/secrets-manager/integrations/ansible-plugin) 
+Additional documentation can be found on the [Keeper Secrets Manager Ansible](https://docs.keeper.io/secrets-manager/secrets-manager/integrations/ansible-plugin) 
 document portal.
 
 # Installation
+
+## Ansible Tower
+
+If you are using Ansible Tower, there is an Execution Environment docker image location at
+[https://hub.docker.com/repository/docker/keeper/keeper-secrets-manager-tower-ee](https://hub.docker.com/repository/docker/keeper/keeper-secrets-manager-tower-ee).
+
+This Execution Environment contains the Python SDK.
+
+## Command Line
 
 This collection requires the [keeper-secrets-manager-core](https://pypi.org/project/keeper-secrets-manager-core/) 
 Python SDK. Use pip to install this module into the modules used by your installation of Ansible.
