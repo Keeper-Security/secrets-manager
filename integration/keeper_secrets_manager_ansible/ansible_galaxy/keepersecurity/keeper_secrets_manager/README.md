@@ -11,15 +11,17 @@ document portal.
 
 ## Ansible Tower
 
-If you are using Ansible Tower, there is an Execution Environment docker image location at
-[https://hub.docker.com/repository/docker/keeper/keeper-secrets-manager-tower-ee](https://hub.docker.com/repository/docker/keeper/keeper-secrets-manager-tower-ee).
+In your playbook's source repository, add `keepersecrity.keeper_secrets_manager` to the
+`requirement.yml` collections list.
 
-This Execution Environment contains the Python SDK.
+There is an **Execution Environment** docker image location at
+[https://hub.docker.com/repository/docker/keeper/keeper-secrets-manager-tower-ee](https://hub.docker.com/repository/docker/keeper/keeper-secrets-manager-tower-ee). 
+This **Execution Environment** contains the Python SDK.
 
 ## Command Line
 
 This collection requires the [keeper-secrets-manager-core](https://pypi.org/project/keeper-secrets-manager-core/) 
-Python SDK. Use pip to install this module into the modules used by your installation of Ansible.
+Python SDK. Use `pip` to install this module into the modules used by your installation of Ansible.
 
 ```shell
 $ pip3 install -U keeper-secrets-manager-core
@@ -37,7 +39,8 @@ just used the short name (ie keeper_copy)
 
 ```yaml
 - name: Keeper Task
-  collections: keepersecurity.keeper_secrets_manager
+  collections: 
+    - keepersecurity.keeper_secrets_manager
   
   tasks:
     - name: "Copy My SSH Keys"
@@ -73,11 +76,11 @@ If you omit the `collections` , you will need to use the full plugin name.
 
 * `keepersecurity.keeper_secrets_manager.keeper_redact` - Stdout callback plugin to redact secret values.
 
-# Examples
+## keeper_init_token Role
 
-The first step is initializing a configuration from a one-time access token. Getting the 
+Initializing a configuration from a one-time access token. Getting the 
 token is explained in the
-[Quick Start Guide](https://docs.keeper.io/secrets-manager/secrets-manager/quick-start-guide).
+[One Time Access Token](https://docs.keeper.io/secrets-manager/secrets-manager/about/one-time-token) document.
 
 Then create a simple playbook to initialize the token.
 
