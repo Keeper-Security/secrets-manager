@@ -5,16 +5,19 @@ import keeper_secrets_manager_ansible.plugins
 from .ansible_test_framework import AnsibleTestFramework, RecordMaker
 import tempfile
 
+
 records = {
-    "EG6KdJaaLG7esRZbMnfbFA": RecordMaker.make_record(
-        uid="EG6KdJaaLG7esRZbMnfbFA",
-        title="JW-F1-R1",
-        value="aaa"
-    ),
     "TRd_567FkHy-CeGsAzs8aA": RecordMaker.make_record(
-        uid="EG6KdJaaLG7esRZbMnfbFA",
+        uid="TRd_567FkHy-CeGsAzs8aA",
         title="JW-F1-R1",
-        value="ddd"
+        fields={
+            "password": "ddd",
+            "login": "aaa",
+            "phone": [
+                {'number': '(555) 123-2222', 'type': 'Work', 'ext': '6666'},
+                {'number': '(555) 789-3333', 'type': 'Mobile'}
+            ]
+        }
     ),
     "A_7YpGBUgRTeDEQLhVRo0Q": RecordMaker.make_file(
         uid="A_7YpGBUgRTeDEQLhVRo0Q",
@@ -61,11 +64,17 @@ class KeeperLookupTest(unittest.TestCase):
             )
             r, out, err = a.run()
             result = r[0]["localhost"]
-            self.assertEqual(result["ok"], 2, "2 things didn't happen")
+            self.assertEqual(result["ok"], 5, "5 things didn't happen")
             self.assertEqual(result["failures"], 0, "failures was not 0")
             self.assertEqual(result["changed"], 0, "0 things didn't change")
 
-            self.assertRegex(out, r'My password is password_ddd', "did not find the debug message")
+            self.assertRegex(out, r'My password is ddd', "did not find the password debug message")
+            self.assertRegex(out, r'My login is aaa', "did not find the login debug message")
+
+            self.assertRegex(out, r"My phone_1 is \{'number': '\(555\) 123-2222",
+                             "did not find the phone_1 debug message")
+            self.assertRegex(out, r"My phone_2 is \[\{'number': '\(555\) 123-2222.*'number': '\(555\) 789-3333'",
+                             "did not find the phone_2 debug message")
 
     # @unittest.skip
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)

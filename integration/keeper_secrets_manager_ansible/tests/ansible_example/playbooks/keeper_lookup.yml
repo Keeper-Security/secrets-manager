@@ -8,3 +8,18 @@
     debug:
       msg: "My password is {{ lookup('keeper', uid='TRd_567FkHy-CeGsAzs8aA', field='Password') }}"
       verbosity: 0
+
+  - name: "Print Login via Notation"
+    debug:
+      msg: "My login is {{ lookup('keeper', notation='TRd_567FkHy-CeGsAzs8aA/field/login') }}"
+      verbosity: 0
+
+  - name: "Print Phone"
+    debug:
+      msg: "My phone_1 is {{ lookup('keeper', uid='TRd_567FkHy-CeGsAzs8aA', field='phone') }}"
+      verbosity: 0
+
+  - name: "Print Phone Full Array"
+    debug:
+      msg: "My phone_2 is {{ lookup('keeper', uid='TRd_567FkHy-CeGsAzs8aA', field='phone', allow_array='True') }}"
+      verbosity: 0

@@ -35,33 +35,67 @@ def mocked_get_secrets(*args):
     return ret
 
 
-class KeeperGetTest(unittest.TestCase):
+class KeeperInitTest(unittest.TestCase):
 
     def setUp(self):
+
+        self.yml_file_name = "test_keeper.yml"
+        self.json_file_name = "test_keeper.json"
 
         # Add in addition Python libs. This includes the base
         # module for Keeper Ansible and the Keeper SDK.
         self.base_dir = os.path.dirname(os.path.realpath(__file__))
         self.ansible_base_dir = os.path.join(self.base_dir, "ansible_example")
+        self.yml_file = os.path.join(os.path.join(self.ansible_base_dir, self.yml_file_name))
+        self.json_file = os.path.join(os.path.join(self.ansible_base_dir, self.json_file_name))
+        for file in [self.yml_file, self.json_file]:
+            if os.path.exists(file) is True:
+                os.unlink(file)
+
+    def tearDown(self):
+        for file in [self.yml_file, self.json_file]:
+            if os.path.exists(file) is True:
+                os.unlink(file)
 
     def _common(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             a = AnsibleTestFramework(
                 base_dir=self.ansible_base_dir,
-                playbook=os.path.join("playbooks", "keeper_get.yml"),
+                playbook=os.path.join("playbooks", "keeper_init.yml"),
                 inventory=os.path.join("inventory", "all"),
                 plugin_base_dir=os.path.join(os.path.dirname(keeper_secrets_manager_ansible.plugins.__file__)),
                 vars={
-                    "tmp_dir": temp_dir,
-                    "uid": "TRd_567FkHy-CeGsAzs8aA"
+                    "keeper_token": "US:XXXXXX",
+                    "keeper_config_file": self.yml_file_name,
+                    "show_config": True
                 }
             )
             r, out, err = a.run()
             result = r[0]["localhost"]
-            self.assertEqual(result["ok"], 3, "3 things didn't happen")
+            self.assertEqual(result["ok"], 2, "1 things didn't happen")
             self.assertEqual(result["failures"], 0, "failures was not 0")
             self.assertEqual(result["changed"], 0, "0 things didn't change")
-            self.assertRegex(out, r'ddd', "Did not find the password in the stdout")
+
+            self.assertTrue(os.path.exists(self.yml_file), "test_keeper.yml does not exist")
+
+            a = AnsibleTestFramework(
+                base_dir=self.ansible_base_dir,
+                playbook=os.path.join("playbooks", "keeper_init.yml"),
+                inventory=os.path.join("inventory", "all"),
+                plugin_base_dir=os.path.join(os.path.dirname(keeper_secrets_manager_ansible.plugins.__file__)),
+                vars={
+                    "keeper_token": "US:XXXXXX",
+                    "keeper_config_file": self.json_file_name,
+                    "show_config": False
+                }
+            )
+            r, out, err = a.run()
+            result = r[0]["localhost"]
+            self.assertEqual(result["ok"], 2, "1 things didn't happen")
+            self.assertEqual(result["failures"], 0, "failures was not 0")
+            self.assertEqual(result["changed"], 0, "0 things didn't change")
+
+            self.assertTrue(os.path.exists(self.json_file), "test_keeper.json does not exist")
 
     # @unittest.skip
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=mocked_get_secrets)

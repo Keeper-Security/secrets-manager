@@ -8,15 +8,13 @@ from requests import Response
 
 # Our fake data. Two login records and a file record with two attached files.
 records = {
-    "EG6KdJaaLG7esRZbMnfbFA": RecordMaker.make_record(
-        uid="EG6KdJaaLG7esRZbMnfbFA",
-        title="JW-F1-R1",
-        value="aaa"
-    ),
     "TRd_567FkHy-CeGsAzs8aA": RecordMaker.make_record(
-        uid="EG6KdJaaLG7esRZbMnfbFA",
+        uid="TRd_567FkHy-CeGsAzs8aA",
         title="JW-F1-R1",
-        value="ddd"
+        fields={
+            "login": "aaa",
+            "password": "ddd"
+        }
     ),
     "A_7YpGBUgRTeDEQLhVRo0Q": RecordMaker.make_file(
         uid="A_7YpGBUgRTeDEQLhVRo0Q",
@@ -73,9 +71,9 @@ class KeeperCopyTest(unittest.TestCase):
             )
             r, out, err = a.run()
             result = r[0]["localhost"]
-            self.assertEqual(result["ok"], 3, "3 things didn't happen")
+            self.assertEqual(result["ok"], 4, "4 things didn't happen")
             self.assertEqual(result["failures"], 0, "failures was n ot 0")
-            self.assertEqual(result["changed"], 2, "2 things didn't change")
+            self.assertEqual(result["changed"], 3, "3 things didn't change")
             ls = os.listdir(temp_dir)
             self.assertTrue("password" in ls, "did not find file password")
             self.assertTrue("video.mp4" in ls, "did not find file video.mp4")

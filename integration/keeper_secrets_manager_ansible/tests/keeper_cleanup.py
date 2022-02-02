@@ -35,7 +35,7 @@ def mocked_get_secrets(*args):
     return ret
 
 
-class KeeperGetTest(unittest.TestCase):
+class KeeperCleanupTest(unittest.TestCase):
 
     def setUp(self):
 
@@ -48,7 +48,7 @@ class KeeperGetTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             a = AnsibleTestFramework(
                 base_dir=self.ansible_base_dir,
-                playbook=os.path.join("playbooks", "keeper_get.yml"),
+                playbook=os.path.join("playbooks", "keeper_cleanup.yml"),
                 inventory=os.path.join("inventory", "all"),
                 plugin_base_dir=os.path.join(os.path.dirname(keeper_secrets_manager_ansible.plugins.__file__)),
                 vars={
@@ -57,11 +57,11 @@ class KeeperGetTest(unittest.TestCase):
                 }
             )
             r, out, err = a.run()
+            print(out)
             result = r[0]["localhost"]
             self.assertEqual(result["ok"], 3, "3 things didn't happen")
             self.assertEqual(result["failures"], 0, "failures was not 0")
             self.assertEqual(result["changed"], 0, "0 things didn't change")
-            self.assertRegex(out, r'ddd', "Did not find the password in the stdout")
 
     # @unittest.skip
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=mocked_get_secrets)

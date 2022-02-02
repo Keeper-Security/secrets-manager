@@ -1,0 +1,12 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Get
+  hosts: "my_systems"
+
+  tasks:
+
+    - name: Init the one-time access token.
+      keeper_init:
+        token: "{{ keeper_token }}"
+        filename: "{{ keeper_config_file }}"
+        show_config: "{{ show_config }}"

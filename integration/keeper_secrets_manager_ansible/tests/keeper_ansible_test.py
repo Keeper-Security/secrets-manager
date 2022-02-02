@@ -7,6 +7,7 @@ import json
 from keeper_secrets_manager_ansible import KeeperAnsible
 from keeper_secrets_manager_ansible.__main__ import main
 from keeper_secrets_manager_core.mock import MockConfig
+from keeper_secrets_manager_core.configkeys import ConfigKeys
 import io
 from contextlib import redirect_stdout
 
@@ -73,6 +74,26 @@ class KeeperAnsibleTest(unittest.TestCase):
         ka = KeeperAnsible(task_vars=task_vars)
         ka.client.get_secrets()
         mock_get_secrets.assert_called_once()
+
+    @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
+    def test_config_base_64(self, mock_get_secrets):
+
+        values = MockConfig.make_config()
+        base64_config = MockConfig.make_base64(config=values)
+
+        task_vars = {
+            "keeper_config": base64_config
+        }
+
+        ka = KeeperAnsible(task_vars=task_vars)
+        ka.client.get_secrets()
+        mock_get_secrets.assert_called_once()
+        self.assertEqual(values.get("clientId"), ka.client.config.get(ConfigKeys.KEY_CLIENT_ID),
+                         "base64 client ids are not the same")
+        self.assertEqual(values.get("appKey"), ka.client.config.get(ConfigKeys.KEY_APP_KEY),
+                         "base64 app key are not the same")
+        self.assertEqual(values.get("privateKey"), ka.client.config.get(ConfigKeys.KEY_PRIVATE_KEY),
+                         "base64 private key are not the same")
 
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
     def test_ansible_cli_init(self, _):

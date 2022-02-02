@@ -17,3 +17,9 @@
       file: "{{ file_name }}"
       dest: "{{ tmp_dir }}/video.mp4"
       mode: '0777'
+
+  - name: "Copy the login"
+    keeper_copy:
+      notation: "{{ password_uid }}/field/login"
+      dest: "{{ tmp_dir }}/login"
+      mode: '0600'

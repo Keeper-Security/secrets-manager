@@ -1,0 +1,1 @@
+keeper-secrets-manager-core

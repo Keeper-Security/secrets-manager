@@ -125,23 +125,38 @@ class RecordMaker:
     secret = b"11111111111111111111111111111111"
 
     @staticmethod
-    def make_record(uid, title, value=None):
+    def make_record(uid, title, record_type=None, fields=None, custom_fields=None):
 
-        if value is None:
-            value = uid
+        if record_type is None:
+            record_type = "login"
+
+        data = {
+            "title": title,
+            "type": record_type
+        }
+        if fields is not None:
+            data["fields"] = []
+            for field_type, value in fields.items():
+                if type(value) is not list:
+                    value = [value]
+                data["fields"].append({
+                    "type": field_type,
+                    "value": value
+                })
+        if custom_fields is not None:
+            data["custom"] = []
+            for field_type, value in custom_fields.items():
+                if type(value) is not list:
+                    value = [value]
+                data["fields"].append({
+                    "label": field_type,
+                    "type": field_type,
+                    "value": value
+                })
 
         return Record({
             "recordUid": uid,
-            "data": CryptoUtils.encrypt_aes(json.dumps({
-                "title": title,
-                "type": "login",
-                "fields": [
-                    {"type": "login", "value": ["login_{}".format(value)]},
-                    {"type": "password", "value": ["password_{}".format(value)]},
-                    {"type": "url", "value": ["https://{}".format(value)]},
-                    {"type": "fileRef", "value": []}
-                ]
-            }).encode(), RecordMaker.secret)
+            "data": CryptoUtils.encrypt_aes(json.dumps(data).encode(), RecordMaker.secret)
         }, RecordMaker.secret)
 
     @staticmethod

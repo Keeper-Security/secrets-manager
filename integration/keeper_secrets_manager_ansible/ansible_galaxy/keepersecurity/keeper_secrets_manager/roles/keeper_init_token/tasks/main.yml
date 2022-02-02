@@ -1,0 +1,13 @@
+---
+# tasks file for keeper_init_token
+
+- name: Check if keeper_token has been set.
+  fail:
+    msg: "The keeper_token has not been set. Use '-e keeper_token=XX:XXXX' to pass in the one time access token."
+  when: keeper_token is undefined
+
+- name: Init the one-time access token.
+  keepersecurity.keeper_secrets_manager.keeper_init:
+    token: "{{ keeper_token }}"
+    filename: "{{ keeper_config_file | default('') }}"
+    show_config: "{{ keeper_show_config | default(False) }}"
