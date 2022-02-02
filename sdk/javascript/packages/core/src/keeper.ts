@@ -259,8 +259,8 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: G
     }
 }
 
-const decryptRecord = async (record: SecretsManagerResponseRecord): Promise<KeeperRecord> => {
-    const decryptedRecord = await platform.decrypt(platform.base64ToBytes(record.data), record.recordUid)
+const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: KeyValueStorage): Promise<KeeperRecord> => {
+    const decryptedRecord = await platform.decrypt(platform.base64ToBytes(record.data), record.recordUid || KEY_APP_KEY, storage)
     const keeperRecord: KeeperRecord = {
         recordUid: record.recordUid,
         data: JSON.parse(platform.bytesToString(decryptedRecord)),
@@ -298,8 +298,10 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, recordsFilt
     }
     if (response.records) {
         for (const record of response.records) {
-            await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, KEY_APP_KEY, storage, true)
-            const decryptedRecord = await decryptRecord(record)
+            if (record.recordKey) {
+                await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, KEY_APP_KEY, storage, true)
+            }
+            const decryptedRecord = await decryptRecord(record, storage)
             records.push(decryptedRecord)
         }
     }
