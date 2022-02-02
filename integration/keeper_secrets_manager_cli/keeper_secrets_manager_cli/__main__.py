@@ -234,7 +234,7 @@ def cli(ctx, ini_file, profile_name, output, color, cache):
     help_options_color='green'
 )
 def profile_command():
-    """Commands for profile management."""
+    """Manage local client device profiles"""
     pass
 
 
@@ -250,7 +250,7 @@ def profile_command():
 @click.argument('token-arg', type=str, nargs=-1)
 @click.pass_context
 def profile_init_command(ctx, token, hostname, ini_file, profile_name, token_arg):
-    """Initialize a profile."""
+    """Initialize a profile"""
 
     if token is None and len(token_arg) > 0:
         token = token_arg[0]
@@ -279,7 +279,7 @@ def profile_init_command(ctx, token, hostname, ini_file, profile_name, token_arg
 @click.option('--json', is_flag=True, help='Return secret as JSON')
 @click.pass_context
 def profile_list_command(ctx, json):
-    """List all profiles."""
+    """List all profiles"""
 
     output = "text"
     if json is True:
@@ -296,7 +296,7 @@ def profile_list_command(ctx, json):
 @click.argument('profile-name', type=str, required=True, nargs=1)
 @click.pass_context
 def profile_active_command(ctx, profile_name):
-    """Set the active profile."""
+    """Set the active profile"""
     Profile(cli=ctx.obj["cli"]).set_active(
         profile_name=profile_name
     )
@@ -313,7 +313,7 @@ def profile_active_command(ctx, profile_name):
 @click.argument('profile-name', type=str, required=False, nargs=1)
 @click.pass_context
 def profile_export_command(ctx, plain, file_format, profile_name):
-    """Create a new config file from a profile."""
+    """Create a new config file from a profile"""
     Profile(cli=ctx.obj["cli"]).export_config(
         plain=plain,
         file_format=file_format,
@@ -330,7 +330,7 @@ def profile_export_command(ctx, plain, file_format, profile_name):
 @click.argument('config-base64', type=str, required=True, nargs=1)
 @click.pass_context
 def profile_import_command(ctx, output_file, config_base64):
-    """Import an encrypted config file."""
+    """Import an encrypted config file"""
     Profile(cli=ctx.obj["cli"]).import_config(
         file=output_file,
         config_base64=config_base64
@@ -355,7 +355,7 @@ profile_command.add_command(profile_import_command)
 )
 @click.pass_context
 def secret_command(ctx):
-    """Commands for secrets."""
+    """Commands for secrets"""
     ctx.obj["secret"] = Secret(cli=ctx.obj["cli"])
 
 
@@ -368,7 +368,7 @@ def secret_command(ctx):
 @click.option('--json', is_flag=True, help='Return secret as JSON')
 @click.pass_context
 def secret_list_command(ctx, uid, json):
-    """List all secrets."""
+    """List all secrets"""
 
     output = "text"
     if json is True:
@@ -397,7 +397,7 @@ def secret_list_command(ctx, uid, json):
 @click.argument('extra-uid', type=str, nargs=-1)
 @click.pass_context
 def secret_get_command(ctx, uid, title, field, query, json, force_array, unmask, inflate, extra_uid):
-    """Get secret record(s)."""
+    """Get secret record(s)"""
 
     uid_list = []
     if uid is not None:
@@ -441,7 +441,7 @@ def secret_get_command(ctx, uid, title, field, query, json, force_array, unmask,
 @click.argument('text', type=str, nargs=1)
 @click.pass_context
 def secret_notation_command(ctx, text):
-    """Get secret record via notation."""
+    """Get secret record via notation"""
     ctx.obj["secret"].get_via_notation(notation=text)
 
 
@@ -458,7 +458,7 @@ def secret_notation_command(ctx, text):
               help="Update value in custom field section of vault using JSON")
 @click.pass_context
 def secret_update_command(ctx, uid, field, custom_field, field_json, custom_field_json):
-    """Update an existing record."""
+    """Update an existing record"""
     ctx.obj["secret"].update(
         uid=uid,
         fields=field,
@@ -480,7 +480,7 @@ def secret_update_command(ctx, uid, field, custom_field, field_json, custom_fiel
 @click.option('--create-folders', is_flag=True, help='Create folder for filename path.')
 @click.pass_context
 def secret_download_command(ctx, uid, name, file_output, create_folders):
-    """Download a file from a secret record."""
+    """Download a file from a secret record"""
     ctx.obj["secret"].download(
         uid=uid,
         name=name,
@@ -497,7 +497,7 @@ def secret_download_command(ctx, uid, name, file_output, create_folders):
 @click.argument('uid', type=str, nargs=1)
 @click.pass_context
 def secret_totp_command(ctx, uid):
-    """Get TOTP code from a secret Record UID."""
+    """Get TOTP code from a secret Record UID"""
     ctx.obj["secret"].get_totp_code(
         uid=uid
     )
@@ -524,7 +524,7 @@ secret_command.add_command(secret_totp_command)
 @click.argument('cmd', type=str, nargs=-1)
 @click.pass_context
 def exec_command(ctx, capture_output, inline, cmd):
-    """Wrap an application and expose secrets in environmental variables."""
+    """Wrap an application and replace env variables"""
     ex = Exec(cli=ctx.obj["cli"])
     ex.execute(cmd=cmd, capture_output=capture_output, inline=inline)
 
@@ -538,7 +538,7 @@ def exec_command(ctx, capture_output, inline, cmd):
 )
 @click.pass_context
 def config_command(ctx):
-    """Configure the command line tool."""
+    """Configure the command line tool"""
     ctx.obj["profile"] = Profile(cli=ctx.obj["cli"])
     pass
 
@@ -550,7 +550,7 @@ def config_command(ctx):
 )
 @click.pass_context
 def config_show_command(ctx):
-    """Show current configuration."""
+    """Show current configuration"""
     ctx.obj["profile"].show_config()
 
 
@@ -592,7 +592,7 @@ config_command.add_command(config_cache_command)
 )
 @click.pass_context
 def init_command(ctx):
-    """Redeem an one time access token."""
+    """Initialize a configuration file for integrations"""
     ctx.obj["profile"] = Profile(cli=ctx.obj["cli"])
 
 
@@ -610,7 +610,7 @@ def init_command(ctx):
 @click.argument('token', type=str, nargs=1)
 @click.pass_context
 def init_k8s_command(ctx, name, namespace, hostname, apply, immutable, skip_ssl_verify, token):
-    """Output the config as a k8s secret."""
+    """Output the config as a k8s secret"""
     Init(cli=ctx.obj["cli"], token=token, hostname=hostname, skip_ssl_verify=skip_ssl_verify).get_k8s(
         name=name,
         namespace=namespace,
@@ -630,7 +630,7 @@ def init_k8s_command(ctx, name, namespace, hostname, apply, immutable, skip_ssl_
 @click.argument('token', type=str, nargs=1)
 @click.pass_context
 def init_json_command(ctx, plain, hostname, skip_ssl_verify, token):
-    """Output the config as the default JSON."""
+    """Output the config as base64 encoded JSON"""
     Init(cli=ctx.obj["cli"], token=token, hostname=hostname, skip_ssl_verify=skip_ssl_verify).get_json(plain)
 
 
@@ -645,7 +645,7 @@ init_command.add_command(init_k8s_command)
 )
 @click.pass_context
 def version_command(ctx):
-    """Get module versions and information."""
+    """Get module versions and information"""
 
     versions = get_versions()
 
@@ -681,7 +681,7 @@ def version_command(ctx):
     help_options_color='blue'
 )
 @click.pass_context
-def shell_command(ctx):
+def shell_command():
     """Run KSM in a shell"""
 
     # https://manytools.org/hacker-tools/ascii-banner/
