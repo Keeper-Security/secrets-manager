@@ -63,7 +63,7 @@ def obj_to_dict(obj):
 
 def get_folder_key(folder_uid, secrets_and_folders):
 
-    folders = secrets_and_folders.get('folders')
+    folders = secrets_and_folders.folders
 
     for f in folders:
         if f.uid == folder_uid:

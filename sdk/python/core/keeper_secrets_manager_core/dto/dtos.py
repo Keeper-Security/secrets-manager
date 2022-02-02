@@ -9,6 +9,7 @@
 # Contact: ops@keepersecurity.com
 import json
 import os
+from datetime import datetime
 
 import requests
 from keeper_secrets_manager_core.crypto import CryptoUtils
@@ -411,3 +412,35 @@ class RecordCreate:
 
         json_object = json.dumps(self.to_dict(), indent=4)
         return json_object
+
+
+class AppData:
+    """
+    Application info
+    """
+    def __init__(self, title="", app_type=""):
+        self.title = title
+        self.app_type = app_type
+
+
+class SecretsManagerResponse:
+
+    """
+    Server response contained details about the application and the records
+    that were requested to be returned
+    """
+    def __init__(self):
+        self.appData = None
+        # self.encryptedAppKey = None
+        # self.appOwnerPublicKey = None
+        self.folders = None
+        self.records = None
+        self.expiresOn = None
+        self.warnings = None
+        self.justBound = False
+
+    def expires_on_str(self, date_format='%Y-%m-%d %H:%M:%S'):
+        """
+        Retrieve string formatted expiration date
+        """
+        return datetime.fromtimestamp(self.expiresOn/1000).strftime(date_format)
