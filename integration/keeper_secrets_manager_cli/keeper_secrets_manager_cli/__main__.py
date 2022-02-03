@@ -680,7 +680,6 @@ def version_command(ctx):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-@click.pass_context
 def shell_command():
     """Run KSM in a shell"""
 
