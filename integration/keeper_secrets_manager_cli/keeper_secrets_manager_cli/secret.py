@@ -16,7 +16,7 @@ import sys
 from colorama import Fore, Style
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_core.core import SecretsManager
-from keeper_secrets_manager_core.utils import get_totp_code
+from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
 from .table import Table, ColumnAlign
 import uuid
 
@@ -442,12 +442,12 @@ class Secret:
         totp_uri = None
         try:
             totp_uri = record[0].get_standard_field_value("oneTimeCode", True)
-        except Exception:
+        except (Exception,):
             pass
         if not totp_uri:
             try:
                 totp_uri = record[0].get_custom_field_value("oneTimeCode", True)
-            except Exception:
+            except (Exception,):
                 pass
 
         if not totp_uri:
@@ -550,3 +550,15 @@ class Secret:
             self.cli.client.save(record[0])
         except Exception as err:
             raise KsmCliException("Could not save record: {}".format(err))
+
+    def generate_password(self, length, lowercase, uppercase, digits, special_characters):
+
+        new_password = sdk_generate_password(
+            length=length,
+            lowercase=lowercase,
+            uppercase=uppercase,
+            digits=digits,
+            special_characters=special_characters
+        )
+
+        return self.cli.output(new_password)

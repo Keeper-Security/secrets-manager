@@ -743,6 +743,65 @@ class SecretTest(unittest.TestCase):
                 self.assertRegex(code, r'^\d{6}$', 'code is not all digits')
                 tf.close()
 
+    def test_generate_password(self):
+
+        """Generate a password
+        """
+
+        #  Default values
+        with tempfile.NamedTemporaryFile() as tf:
+            runner = CliRunner()
+            result = runner.invoke(cli, ['-o', tf.name, 'secret', 'password'],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+            tf.seek(0)
+            password = tf.readline().decode()
+            self.assertEqual(len(password), 64, "Default password is not 64 characters.")
+
+            tf.close()
+
+        #  Set the length to 32
+        with tempfile.NamedTemporaryFile() as tf:
+            runner = CliRunner()
+            result = runner.invoke(cli, ['-o', tf.name, 'secret', 'password', '--length', '32'],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+            tf.seek(0)
+            password = tf.readline().decode()
+            self.assertEqual(len(password), 32, "Default password is not 64 characters.")
+
+            tf.close()
+
+        #  Set character groups
+        with tempfile.NamedTemporaryFile() as tf:
+            runner = CliRunner()
+            result = runner.invoke(cli, ['-o', tf.name, 'secret', 'password',
+                                         '-lc', '4',
+                                         '-uc', '5',
+                                         '-d', '6',
+                                         '-sc', '7'],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+            tf.seek(0)
+            password = tf.readline().decode()
+            self.assertEqual(len(password), 22, "Default password is not 64 characters.")
+
+            tf.close()
+
+        #  Bad
+        with tempfile.NamedTemporaryFile() as tf:
+            runner = CliRunner()
+            result = runner.invoke(cli, ['-o', tf.name, 'secret', 'password',
+                                         '-l', '100',
+                                         '-lc', '4',
+                                         '-uc', '5',
+                                         '-d', '6',
+                                         '-sc', '7'],
+                                   catch_exceptions=False)
+            self.assertEqual(1, result.exit_code, "the exit code was not 1")
+            print(result.stdout)
+            tf.close()
+
 
 if __name__ == '__main__':
     unittest.main()

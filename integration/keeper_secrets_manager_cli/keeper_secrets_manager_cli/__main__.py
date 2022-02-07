@@ -53,7 +53,8 @@ class AliasedGroup(HelpColorsGroup):
         "list",
         "notation",
         "update",
-        "version"
+        "version",
+        "password"
     ]
 
     alias_commands = {
@@ -70,6 +71,7 @@ class AliasedGroup(HelpColorsGroup):
         "u": "update",
         "v": "version",
         "exit": "quit",
+        "pass": "password",
         "q": "quit",
         "help": "--help"
     }
@@ -191,7 +193,7 @@ def base_command_help(f):
             update = update_available("keeper-secrets-manager-core", versions)
             if update is not None:
                 doc += spacer + "Version {} is available for the SDK".format(update.available_version)
-    except Exception as _:
+    except (Exception,):
         pass
 
     f.__doc__ = doc
@@ -255,7 +257,7 @@ def profile_init_command(ctx, token, hostname, ini_file, profile_name, token_arg
     if token is None and len(token_arg) > 0:
         token = token_arg[0]
     if token is None:
-        sys.exit("An one time access token is required either as a command parameter or an argument.")
+        raise KsmCliException("A one time access token is required either as a command parameter or an argument.")
 
     # Since the top level commands are available for all command, it might be confusing the init command since
     # it take
@@ -414,10 +416,10 @@ def secret_get_command(ctx, uid, title, field, query, json, force_array, unmask,
     total_query = len(uid_list) + len(title)
 
     if total_query == 0:
-        raise Exception("No uid or title specified for secret get command.")
+        raise KsmCliException("No uid or title specified for secret get command.")
 
     if total_query > 1 and field is not None:
-        raise Exception("Cannot perform field search on multiple records. Only choose one uid/title.")
+        raise KsmCliException("Cannot perform field search on multiple records. Only choose one uid/title.")
 
     ctx.obj["secret"].query(
         uids=uid_list,
@@ -503,12 +505,50 @@ def secret_totp_command(ctx, uid):
     )
 
 
+@click.command(
+    name='password',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.pass_context
+@click.option('--length', '-l', required=False, type=int, default=0,
+              help="Length of password. Will evenly split lowercase, uppercase, digits, and special characters.")
+@click.option('-lc', required=False, type=int, default=0, help="Number of lowercase letters.")
+@click.option('-uc', required=False, type=int, default=0, help="Number of uppercase letters.")
+@click.option('-d', required=False, type=int, default=0, help="Number of digits.")
+@click.option('-sc', required=False, type=int, default=0, help="Number of special characters.")
+def secret_password_command(ctx, length, lc, uc, d, sc):
+    """Generate a password"""
+
+    # Get the total length of character groups. If the total is greater than 0,
+    # then make the length the total count of the character groups.
+    char_count = lc + uc + d + sc
+    if char_count > 0:
+        if 0 < length != char_count:
+            raise KsmCliException("Both length and at least one of the character group counts has been set. "
+                                  "Either set the length or the character group counts, but not both. The total count "
+                                  "of the character groups counts will determine the length.")
+        length = char_count
+
+    if length == 0:
+        length = 64
+
+    ctx.obj["secret"].generate_password(
+        length=length,
+        lowercase=lc,
+        uppercase=uc,
+        digits=d,
+        special_characters=sc
+    )
+
+
 secret_command.add_command(secret_list_command)
 secret_command.add_command(secret_get_command)
 secret_command.add_command(secret_notation_command)
 secret_command.add_command(secret_update_command)
 secret_command.add_command(secret_download_command)
 secret_command.add_command(secret_totp_command)
+secret_command.add_command(secret_password_command)
 
 
 # EXEC COMMAND
@@ -671,7 +711,7 @@ def version_command(ctx):
             update = update_available("keeper-secrets-manager-core", versions)
             if update is not None:
                 print("Version {} is available for the SDK".format(update.available_version))
-    except Exception as _:
+    except (Exception,) as _:
         pass
 
 
