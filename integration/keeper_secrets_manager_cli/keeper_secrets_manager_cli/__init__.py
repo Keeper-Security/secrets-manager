@@ -60,14 +60,18 @@ class KeeperCli:
             common_profile = self.profile.get_profile_config(Profile.config_profile)
 
             # Get the active configuration
+
+            # By default, don't use the cache.
             if self.use_cache is None:
-                self.use_cache = bool(strtobool(common_profile.get(Profile.cache_key, str(True))))
+                self.use_cache = bool(strtobool(common_profile.get(Profile.cache_key, str(False))))
 
             self._client = self.get_client(
                 config=config_storage,
                 log_level=self.log_level,
                 custom_post_function=KSMCache.caching_post_function if self.use_cache is True else None
             )
+
+            # By default, use colors.
             if self.use_color is None:
                 self.use_color = bool(strtobool(common_profile.get(Profile.color_key, str(True))))
         else:
