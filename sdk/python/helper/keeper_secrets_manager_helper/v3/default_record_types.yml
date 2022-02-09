@@ -1,0 +1,152 @@
+---
+version: v3
+kind: KeeperRecordType
+data:
+  - class: Login
+    name: login
+    fields:
+      - type: login
+      - type: password
+      - type: url
+      - type: fileRef
+      - type: oneTimeCode
+  - class: BankAccount
+    name: bankAccount
+    fields:
+      - type: bankAccount
+        required: true
+      - type: name
+      - type: login
+      - type: password
+      - type: url
+      - type: cardRef
+      - type: fileRef
+        allow_multiple: True
+      - type: oneTimeCode
+  - class: Address
+    name: address
+    fields:
+      - type: address
+      - type: fileRef
+  - class: BankCard
+    name: bankCard
+    fields:
+      - type: paymentCard
+      - type: text
+        label: "Cardholder Name"
+      - type: pinCode
+      - type: addressRef
+      - type: fileRef
+  - class: BirthCertificate
+    name: birthCertificate
+    fields:
+      - type: name
+      - type: birthDate
+      - type: fileRef
+  - class: Contact
+    name: contact
+    fields:
+      - type: name
+        required: true
+      - type: text
+        label: "Company"
+      - type: email
+      - type: phone
+      - type: addressRef
+      - type: fileRef
+  - class: DriverLicense
+    name: driverLicense
+    fields:
+      - type: accountNumber
+        label: "Driver's License Number"
+      - type: name
+      - type: birthDate
+      - type: addressRef
+      - type: expirationDate
+      - type: fileRef
+  - class: EncryptedNotes
+    name: encryptedNotes
+    fields:
+      - type: note
+      - type: date
+      - type: fileRef
+  - class: File
+    name: file
+    fields:
+      - type: fileRef
+  - class: HealthInsurance
+    name: healthInsurance
+    fields:
+      - type: accountNumber
+      - type: name
+        label: "Insured's Name"
+      - type: login
+      - type: password
+      - type: url
+      - type: fileRef
+      - type: securityQuestion
+  - class: Membership
+    name: membership
+    fields:
+      - type: accountNumber
+      - type: name
+      - type: password
+      - type: fileRef
+      - type: securityQuestion
+  - class: Passport
+    name: passport
+    fields:
+      - type: accountNumber
+        label: "Passport Number"
+      - type: name
+      - type: birthDate
+      - type: addressRef
+      - type: expirationDate
+      - type: date
+        label: "Date Issued"
+      - type: password
+      - type: fileRef
+  - class: Photo
+    name: photo
+    fields:
+      - type: fileRef
+  - class: ServerCredentials
+    name: serverCredentials
+    fields:
+      - type: host
+      - type: login
+      - type: password
+      - type: fileRef
+  - class: SoftwareLicense
+    name: softwareLicense
+    fields:
+      - type: licenseNumber
+      - type: expirationDate
+      - type: date
+        label: "Date Active"
+      - type: fileRef
+      - type: securityQuestion
+  - class: SsnCard
+    name: ssnCard
+    fields:
+      - type: accountNumber
+        label: "Identity Number"
+      - type: name
+      - type: fileRef
+  - class: SshKeys
+    name: sshKeys
+    fields:
+      - type: login
+      - type: keyPair
+      - type: password
+      - type: host
+      - type: fileRef
+  - class: DatabaseCredentials
+    name: databaseCredentials
+    fields:
+      - type: text
+        label: "type"
+      - type: host
+      - type: login
+      - type: password
+      - type: fileRef

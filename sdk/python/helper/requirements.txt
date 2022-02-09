@@ -1,0 +1,2 @@
+keeper-secrets-manager-core>=16.2.2
+pyyaml
