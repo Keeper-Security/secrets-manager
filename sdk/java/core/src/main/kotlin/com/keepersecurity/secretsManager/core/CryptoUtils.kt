@@ -1,8 +1,5 @@
 package com.keepersecurity.secretsManager.core
 
-import org.bouncycastle.asn1.x9.ECNamedCurveTable
-import org.bouncycastle.asn1.x9.X9ECParameters
-import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider
 import java.math.BigInteger
 import java.net.URL
 import java.net.URLDecoder
@@ -18,21 +15,35 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.math.pow
 
+interface CryptoProvider {
+    val provider: Provider
+    fun multiplyG(s: BigInteger): ByteArray
+}
+
+internal fun setCryptoProvider(cryptoProvider: CryptoProvider) {
+    KeeperCryptoParameters.setProvider(cryptoProvider)
+}
 
 internal object KeeperCryptoParameters {
-    internal val provider: BouncyCastleFipsProvider = BouncyCastleFipsProvider()
-    internal val keyFactory: KeyFactory
-    internal val ecParameterSpec: ECParameterSpec
-    internal val curveParams: X9ECParameters
 
-    init {
+    fun setProvider(cryptoProvider: CryptoProvider) {
+        provider = cryptoProvider.provider
         Security.addProvider(provider)
         keyFactory = KeyFactory.getInstance("EC", provider)
-        curveParams = ECNamedCurveTable.getByName("secp256r1")
+        val ecGenParameterSpec = ECGenParameterSpec("secp256r1")
         val parameters = AlgorithmParameters.getInstance("EC")
-        parameters.init(ECGenParameterSpec("secp256r1"))
+        parameters.init(ecGenParameterSpec)
         ecParameterSpec = parameters.getParameterSpec(ECParameterSpec::class.java)
+        keyGen = KeyPairGenerator.getInstance("EC", provider)
+        keyGen.initialize(ecGenParameterSpec)
+        multiplyG = cryptoProvider::multiplyG
     }
+
+    internal lateinit var provider: Provider
+    internal lateinit var keyFactory: KeyFactory
+    internal lateinit var keyGen: KeyPairGenerator
+    internal lateinit var ecParameterSpec: ECParameterSpec
+    internal lateinit var multiplyG : (s: BigInteger) -> ByteArray
 }
 
 internal fun bytesToBase64(data: ByteArray): String {
@@ -67,14 +78,13 @@ internal fun getRandomBytes(length: Int): ByteArray {
 }
 
 internal fun generateKeyPair(): ByteArray {
-    val keyGen = KeyPairGenerator.getInstance("EC", KeeperCryptoParameters.provider)
-    keyGen.initialize(ECGenParameterSpec("secp256r1"))
-    val keyPair = keyGen.genKeyPair()
+    val keyPair = KeeperCryptoParameters.keyGen.genKeyPair()
     return keyPair.private.encoded
 }
 
 internal fun exportPublicKey(privateKeyDer: ByteArray): ByteArray {
-    return KeeperCryptoParameters.curveParams.g.multiply(importPrivateKey(privateKeyDer).s).encoded
+    val privateKey = importPrivateKey(privateKeyDer)
+    return KeeperCryptoParameters.multiplyG(privateKey.s)
 }
 
 internal fun hash(data: ByteArray, tag: String): ByteArray {
@@ -114,8 +124,11 @@ internal fun importPrivateKey(privateKeyDer: ByteArray): ECPrivateKey {
 }
 
 internal fun importPublicKey(rawBytes: ByteArray): PublicKey {
-    val q = KeeperCryptoParameters.curveParams.curve.decodePoint(rawBytes)
-    val pubKeySpec = ECPublicKeySpec(ECPoint(q.xCoord.toBigInteger(), q.yCoord.toBigInteger()), KeeperCryptoParameters.ecParameterSpec)
+    val pubKeySpec = ECPublicKeySpec(
+        ECPoint(
+            BigInteger(1, rawBytes, 1, 32),
+            BigInteger(1, rawBytes, 33, 32)),
+        KeeperCryptoParameters.ecParameterSpec)
     return KeeperCryptoParameters.keyFactory.generatePublic(pubKeySpec)
 }
 
@@ -127,17 +140,21 @@ internal fun getEciesSymmetricKey(privateKey: Key, publicKey: Key): ByteArray {
     return MessageDigest.getInstance("SHA-256", KeeperCryptoParameters.provider).digest(commonSecret)
 }
 
+internal fun extractPublicRaw(publicKey: PublicKey): ByteArray {
+    fun adjustTo32Bytes(bytes: ByteArray) = when {
+        bytes.size > 32 -> bytes.sliceArray(bytes.size - 32 until bytes.size)
+        else -> bytes
+    }
+    val w = KeeperCryptoParameters.keyFactory.getKeySpec(publicKey, ECPublicKeySpec::class.java).w
+    return byteArrayOf(4) + adjustTo32Bytes(w.affineX.toByteArray()) + adjustTo32Bytes(w.affineY.toByteArray())
+}
+
 internal fun publicEncrypt(data: ByteArray, key: ByteArray): ByteArray {
-    val keyGen = KeyPairGenerator.getInstance("EC", KeeperCryptoParameters.provider)
-    keyGen.initialize(ECGenParameterSpec("secp256r1"))
-    val ephemeralKeyPair = keyGen.genKeyPair()
+    val ephemeralKeyPair = KeeperCryptoParameters.keyGen.genKeyPair()
     val recipientPublicKey = importPublicKey(key)
     val symmetricKey = getEciesSymmetricKey(ephemeralKeyPair.private, recipientPublicKey)
     val encryptedData = encrypt(data, symmetricKey)
-    with(ephemeralKeyPair.public.encoded) {
-        val ephemeralPublicRaw = copyOfRange(26, size)
-        return ephemeralPublicRaw + encryptedData
-    }
+    return extractPublicRaw(ephemeralKeyPair.public) + encryptedData
 }
 
 internal fun privateDecrypt(data: ByteArray, key: ByteArray): ByteArray {
@@ -248,8 +265,8 @@ fun getTotpCode(url: String, unixTimeSeconds: Long = 0): TotpCode? {
     var codeInt: Int = ByteBuffer.wrap(codeBytes).int
     codeInt %= 10.0.pow(digits.toDouble()).toInt()
     val codeStr: String = codeInt.toString().padStart(digits, '0')
-    val elapsed: Int = (tmBase % period).toInt(); // time elapsed in current period in seconds
-    val ttl: Int = period - elapsed; // time to live in seconds
+    val elapsed: Int = (tmBase % period).toInt() // time elapsed in current period in seconds
+    val ttl: Int = period - elapsed // time to live in seconds
 
     return TotpCode(codeStr, ttl, period)
 }

@@ -4,6 +4,10 @@ import kotlin.test.*
 
 internal class CryptoUtilsTest {
 
+    init {
+        setCryptoProvider(TestCryptoProvider())
+    }
+
     @Test
     fun privateKeyIsCompatible() {
         val fakeExternalPrivateKey64String = "MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQg34GXYbMpXKaHcHZW4dIMO3WYU8zTjB6t+41SRsY1rwqgCgYIKoZIzj0DAQehRANCAAQGH/4ZwpGR9B7AlMjVY7ekpjOcaD3rhuO25CmOZxI3wqRDdhXQIdDnuWvQPCZ3ymtjL3C8JrVIcloklwYI9T7+"

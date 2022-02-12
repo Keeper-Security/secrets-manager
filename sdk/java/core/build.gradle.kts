@@ -44,13 +44,16 @@ dependencies {
 
     implementation("org.jetbrains.kotlin:kotlin-reflect:1.6.10")
 
-    implementation("org.bouncycastle:bc-fips:1.0.2.1")
 
     // Use the Kotlin test library.
     testImplementation("org.jetbrains.kotlin:kotlin-test")
 
     // Use the Kotlin JUnit integration.
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit")
+
+    testImplementation("org.bouncycastle:bc-fips:1.0.2.1")
+
+//    testImplementation("org.bouncycastle:bcprov-jdk15on:1.70")
 }
 
 tasks.jar {
