@@ -11,12 +11,12 @@ Common use cases for Secrets Manager include:
 - Protecting access to privileged passwords, API keys and other managed secrets.
 - Providing vault access to machines and applications
 
-### User Guides
-[Secrets Manager](https://docs.keeper.io/secrets-manager/secrets-manager/overview)
+### Documentation
+[Secrets Manager Guide](https://docs.keeper.io/secrets-manager/secrets-manager/overview)
 
-[Keeper Commander](https://docs.keeper.io/secrets-manager/commander-cli/overview)
+[Keeper Commander Guide](https://docs.keeper.io/secrets-manager/commander-cli/overview)
 
-[Enterprise Admin](https://docs.keeper.io/enterprise-guide/)
+[Enterprise Admin Guide](https://docs.keeper.io/enterprise-guide/)
 
 
 ### Integrations
