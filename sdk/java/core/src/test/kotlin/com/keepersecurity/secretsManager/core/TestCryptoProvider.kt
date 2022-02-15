@@ -8,7 +8,7 @@ import java.security.Provider
 
 class TestCryptoProvider : CryptoProvider {
 
-    val p = BouncyCastleFipsProvider()
+    private val p = BouncyCastleFipsProvider()
 //    val p = BouncyCastleProvider()
 
     override val provider: Provider

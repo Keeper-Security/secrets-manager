@@ -12,6 +12,10 @@ import kotlin.test.*
 @ExperimentalSerializationApi
 internal class SecretsManagerTest {
 
+    init {
+        setCryptoProvider(TestCryptoProvider())
+    }
+
     @Serializable
     data class TestResponse(val transmissionKey: String, val data: String, val statusCode: Int)
 

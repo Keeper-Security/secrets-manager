@@ -7,10 +7,12 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.math.BigInteger
 import java.net.HttpURLConnection.HTTP_OK
 import java.net.URL
 import java.security.KeyManagementException
 import java.security.NoSuchAlgorithmException
+import java.security.Provider
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.time.Instant
@@ -18,6 +20,16 @@ import java.util.*
 import java.util.jar.Manifest
 import javax.net.ssl.*
 
+// this interface is the way to initialize the Secrets Manager with the JCE provider of client's choice
+interface CryptoProvider {
+    val provider: Provider
+    fun multiplyG(s: BigInteger): ByteArray
+}
+
+// This function must be called before any other interaction with the Secrets Manager is attempted
+fun setCryptoProvider(cryptoProvider: CryptoProvider) {
+    KeeperCryptoParameters.setProvider(cryptoProvider)
+}
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"

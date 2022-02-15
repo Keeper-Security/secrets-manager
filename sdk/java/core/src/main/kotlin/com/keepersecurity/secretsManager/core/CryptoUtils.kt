@@ -15,16 +15,24 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.math.pow
 
-interface CryptoProvider {
-    val provider: Provider
-    fun multiplyG(s: BigInteger): ByteArray
-}
-
-internal fun setCryptoProvider(cryptoProvider: CryptoProvider) {
-    KeeperCryptoParameters.setProvider(cryptoProvider)
+class GenericCryptoProvider(override val provider: Provider) : CryptoProvider {
+    override fun multiplyG(s: BigInteger): ByteArray {
+        throw NotImplementedError("Need to provide the implementation for public key export")
+    }
 }
 
 internal object KeeperCryptoParameters {
+
+    init {
+        val providers = Security.getProviders()
+        var provider = Security.getProvider("BCFIPS")
+        if (provider == null) {
+            provider = Security.getProvider("BC")
+        }
+        if (provider != null) {
+            setProvider(GenericCryptoProvider(provider))
+        }
+    }
 
     fun setProvider(cryptoProvider: CryptoProvider) {
         provider = cryptoProvider.provider
@@ -43,7 +51,7 @@ internal object KeeperCryptoParameters {
     internal lateinit var keyFactory: KeyFactory
     internal lateinit var keyGen: KeyPairGenerator
     internal lateinit var ecParameterSpec: ECParameterSpec
-    internal lateinit var multiplyG : (s: BigInteger) -> ByteArray
+    internal lateinit var multiplyG: (s: BigInteger) -> ByteArray
 }
 
 internal fun bytesToBase64(data: ByteArray): String {
@@ -119,7 +127,8 @@ internal fun decrypt(data: String, key: ByteArray): ByteArray {
 }
 
 internal fun importPrivateKey(privateKeyDer: ByteArray): ECPrivateKey {
-    val privateKeySpec = ECPrivateKeySpec(BigInteger(1, privateKeyDer.copyOfRange(36, 68)), KeeperCryptoParameters.ecParameterSpec)
+    val privateKeySpec =
+        ECPrivateKeySpec(BigInteger(1, privateKeyDer.copyOfRange(36, 68)), KeeperCryptoParameters.ecParameterSpec)
     return KeeperCryptoParameters.keyFactory.generatePrivate(privateKeySpec) as ECPrivateKey
 }
 
@@ -127,8 +136,10 @@ internal fun importPublicKey(rawBytes: ByteArray): PublicKey {
     val pubKeySpec = ECPublicKeySpec(
         ECPoint(
             BigInteger(1, rawBytes, 1, 32),
-            BigInteger(1, rawBytes, 33, 32)),
-        KeeperCryptoParameters.ecParameterSpec)
+            BigInteger(1, rawBytes, 33, 32)
+        ),
+        KeeperCryptoParameters.ecParameterSpec
+    )
     return KeeperCryptoParameters.keyFactory.generatePublic(pubKeySpec)
 }
 
@@ -145,6 +156,7 @@ internal fun extractPublicRaw(publicKey: PublicKey): ByteArray {
         bytes.size > 32 -> bytes.sliceArray(bytes.size - 32 until bytes.size)
         else -> bytes
     }
+
     val w = KeeperCryptoParameters.keyFactory.getKeySpec(publicKey, ECPublicKeySpec::class.java).w
     return byteArrayOf(4) + adjustTo32Bytes(w.affineX.toByteArray()) + adjustTo32Bytes(w.affineY.toByteArray())
 }
@@ -230,7 +242,7 @@ fun getTotpCode(url: String, unixTimeSeconds: Long = 0): TotpCode? {
     if (secret.isEmpty())
         return null
 
-    val tmBase = if (unixTimeSeconds != 0L) unixTimeSeconds else System.currentTimeMillis()/1000L
+    val tmBase = if (unixTimeSeconds != 0L) unixTimeSeconds else System.currentTimeMillis() / 1000L
     val tm = tmBase / period
     val msg: ByteArray = ByteBuffer.allocate(8).putLong(tm).array()
 
@@ -260,7 +272,7 @@ fun getTotpCode(url: String, unixTimeSeconds: Long = 0): TotpCode? {
     }
 
     val offset: Int = digest[digest.size - 1].toInt() and 0x0f
-    val codeBytes: ByteArray = digest.copyOfRange(offset, offset+4)
+    val codeBytes: ByteArray = digest.copyOfRange(offset, offset + 4)
     codeBytes[0] = (codeBytes[0].toInt() and 0x7f).toByte()
     var codeInt: Int = ByteBuffer.wrap(codeBytes).int
     codeInt %= 10.0.pow(digits.toDouble()).toInt()
@@ -277,7 +289,7 @@ const val AsciiUppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const val AsciiDigits = "0123456789"
 const val AsciiSpecialCharacters = "\"!@#$%()+;<>=?[]{}^.,"
 
-internal fun randomSample(sampleLength: Int=0, sampleString: String=""): String {
+internal fun randomSample(sampleLength: Int = 0, sampleString: String = ""): String {
     var result = ""
     val sampleLen = if (sampleLength < 0) 0 else sampleLength
     if (sampleLen > 0 && sampleString.isNotEmpty()) {
