@@ -7,29 +7,16 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.math.BigInteger
 import java.net.HttpURLConnection.HTTP_OK
 import java.net.URL
 import java.security.KeyManagementException
 import java.security.NoSuchAlgorithmException
-import java.security.Provider
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.time.Instant
 import java.util.*
 import java.util.jar.Manifest
 import javax.net.ssl.*
-
-// this interface is the way to initialize the Secrets Manager with the JCE provider of client's choice
-interface CryptoProvider {
-    val provider: Provider
-    fun multiplyG(s: BigInteger): ByteArray
-}
-
-// This function must be called before any other interaction with the Secrets Manager is attempted
-fun setCryptoProvider(cryptoProvider: CryptoProvider) {
-    KeeperCryptoParameters.setProvider(cryptoProvider)
-}
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -38,6 +25,7 @@ const val KEY_CLIENT_KEY = "clientKey" // The key that is used to identify the c
 const val KEY_APP_KEY = "appKey" // The application key with which all secrets are encrypted
 const val KEY_OWNER_PUBLIC_KEY = "appOwnerPublicKey" // The application owner public key, to create records
 const val KEY_PRIVATE_KEY = "privateKey" // The client's private key
+const val KEY_PUBLIC_KEY = "publicKey" // The client's public key
 
 private const val CLIENT_ID_HASH_TAG = "KEEPER_SECRETS_MANAGER_CLIENT_ID" // Tag for hashing the client key to client id
 
@@ -210,8 +198,9 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
     storage.saveString(KEY_HOSTNAME, host)
     storage.saveString(KEY_CLIENT_ID, clientId)
     storage.saveBytes(KEY_CLIENT_KEY, clientKeyBytes)
-    val privateKey = generateKeyPair()
-    storage.saveBytes(KEY_PRIVATE_KEY, privateKey)
+    val keyPair = generateKeyPair()
+    storage.saveBytes(KEY_PRIVATE_KEY, keyPair.private.encoded) // private key is stored in DER, to be compatible with other SDK's
+    storage.saveBytes(KEY_PUBLIC_KEY, extractPublicRaw(keyPair.public)) // public key stored raw
 }
 
 internal object ManifestLoader {
@@ -314,6 +303,7 @@ private fun fetchAndDecryptSecrets(
         appKey = decrypt(response.encryptedAppKey, clientKey)
         storage.saveBytes(KEY_APP_KEY, appKey)
         storage.delete(KEY_CLIENT_KEY)
+        storage.delete(KEY_PUBLIC_KEY)
         response.appOwnerPublicKey?.let {
             storage.saveString(KEY_OWNER_PUBLIC_KEY, it)
         }
@@ -389,8 +379,7 @@ private fun prepareGetPayload(
     )
     val appKey = storage.getBytes(KEY_APP_KEY)
     if (appKey == null) {
-        val privateKey = storage.getBytes(KEY_PRIVATE_KEY) ?: throw Exception("Private key is missing from the storage")
-        val publicKey = exportPublicKey(privateKey)
+        val publicKey = storage.getBytes(KEY_PUBLIC_KEY) ?: throw Exception("Public key is missing from the storage")
         payload.publicKey = bytesToBase64(publicKey)
     }
     if (recordsFilter.isNotEmpty()) {

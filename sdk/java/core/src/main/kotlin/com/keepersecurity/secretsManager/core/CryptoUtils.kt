@@ -15,28 +15,22 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.math.pow
 
-class GenericCryptoProvider(override val provider: Provider) : CryptoProvider {
-    override fun multiplyG(s: BigInteger): ByteArray {
-        throw NotImplementedError("Need to provide the implementation for public key export")
-    }
-}
-
 internal object KeeperCryptoParameters {
 
-    init {
-        val providers = Security.getProviders()
-        var provider = Security.getProvider("BCFIPS")
-        if (provider == null) {
-            provider = Security.getProvider("BC")
-        }
-        if (provider != null) {
-            setProvider(GenericCryptoProvider(provider))
-        }
-    }
+    internal val provider: Provider
+    internal val keyFactory: KeyFactory
+    internal val keyGen: KeyPairGenerator
+    internal val ecParameterSpec: ECParameterSpec
 
-    fun setProvider(cryptoProvider: CryptoProvider) {
-        provider = cryptoProvider.provider
-        Security.addProvider(provider)
+    init {
+        var bcProvider = Security.getProvider("BCFIPS")
+        if (bcProvider == null) {
+            bcProvider = Security.getProvider("BC")
+        }
+        if (bcProvider == null) {
+            throw Exception("Secrets Manager requires BouncyCastle provider to be added to Java Security")
+        }
+        this.provider = bcProvider
         keyFactory = KeyFactory.getInstance("EC", provider)
         val ecGenParameterSpec = ECGenParameterSpec("secp256r1")
         val parameters = AlgorithmParameters.getInstance("EC")
@@ -44,14 +38,7 @@ internal object KeeperCryptoParameters {
         ecParameterSpec = parameters.getParameterSpec(ECParameterSpec::class.java)
         keyGen = KeyPairGenerator.getInstance("EC", provider)
         keyGen.initialize(ecGenParameterSpec)
-        multiplyG = cryptoProvider::multiplyG
     }
-
-    internal lateinit var provider: Provider
-    internal lateinit var keyFactory: KeyFactory
-    internal lateinit var keyGen: KeyPairGenerator
-    internal lateinit var ecParameterSpec: ECParameterSpec
-    internal lateinit var multiplyG: (s: BigInteger) -> ByteArray
 }
 
 internal fun bytesToBase64(data: ByteArray): String {
@@ -85,14 +72,8 @@ internal fun getRandomBytes(length: Int): ByteArray {
     return bytes
 }
 
-internal fun generateKeyPair(): ByteArray {
-    val keyPair = KeeperCryptoParameters.keyGen.genKeyPair()
-    return keyPair.private.encoded
-}
-
-internal fun exportPublicKey(privateKeyDer: ByteArray): ByteArray {
-    val privateKey = importPrivateKey(privateKeyDer)
-    return KeeperCryptoParameters.multiplyG(privateKey.s)
+internal fun generateKeyPair(): java.security.KeyPair {
+    return KeeperCryptoParameters.keyGen.genKeyPair()
 }
 
 internal fun hash(data: ByteArray, tag: String): ByteArray {

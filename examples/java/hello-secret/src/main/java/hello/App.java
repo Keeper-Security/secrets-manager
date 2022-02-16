@@ -5,29 +5,12 @@ import static com.keepersecurity.secretsManager.core.SecretsManager.*;
 import static com.keepersecurity.secretsManager.core.Notation.*;
 
 import java.io.FileOutputStream;
-import java.math.BigInteger;
-import java.security.Provider;
 import java.security.Security;
 
-import org.bouncycastle.asn1.x9.ECNamedCurveTable;
 import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider;
 //import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 public class App {
-
-    private static class TestCryptoProvider implements CryptoProvider {
-
-        static Provider p = new BouncyCastleFipsProvider();
-//        static Provider p = new BouncyCastleProvider();
-
-        public Provider getProvider() {
-            return p;
-        }
-
-        public byte[] multiplyG(BigInteger s) {
-            return ECNamedCurveTable.getByName("secp256r1").getG().multiply(s).getEncoded(false);
-        }
-    }
 
     public static void main(String[] args) {
         if (args.length == 0) {
@@ -40,9 +23,8 @@ public class App {
 // If working with initialized config, Secrets Manager does not need to call setCryptoProvider if the client already uses BouncyCastle or BouncyCastle FIPS
 // If using one time token, Secrets Manager need to export the public key and needs a call to setCryptoProvider to wire the necessary logic
 
-//        Security.addProvider(new BouncyCastleFipsProvider());
+        Security.addProvider(new BouncyCastleFipsProvider());
 //        Security.addProvider(new BouncyCastleProvider());
-        setCryptoProvider(new TestCryptoProvider());
 
         KeyValueStorage storage = new LocalConfigStorage(args[0]);
         System.out.printf("Local Config Storage opened from the file '%s'%n", args[0]);
