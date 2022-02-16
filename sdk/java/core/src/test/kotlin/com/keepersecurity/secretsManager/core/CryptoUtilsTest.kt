@@ -1,13 +1,15 @@
 package com.keepersecurity.secretsManager.core
 
 import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider
+//import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.security.Security
 import kotlin.test.*
 
 internal class CryptoUtilsTest {
 
     init {
-//        Security.addProvider(BouncyCastleFipsProvider())
+        Security.addProvider(BouncyCastleFipsProvider())
+//        Security.addProvider(BouncyCastleProvider())
     }
 
     @Test

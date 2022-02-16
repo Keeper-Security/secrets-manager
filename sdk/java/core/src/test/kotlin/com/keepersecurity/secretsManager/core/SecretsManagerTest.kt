@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.*
 import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider
+//import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileReader
@@ -15,7 +16,8 @@ import kotlin.test.*
 internal class SecretsManagerTest {
 
     init {
-//        Security.addProvider(BouncyCastleFipsProvider())
+        Security.addProvider(BouncyCastleFipsProvider())
+//        Security.addProvider(BouncyCastleProvider())
     }
 
     @Serializable

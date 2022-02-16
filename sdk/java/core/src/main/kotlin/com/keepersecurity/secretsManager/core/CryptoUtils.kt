@@ -31,18 +31,21 @@ internal object KeeperCryptoParameters {
         if (bcProvider == null) {
             bcProvider = Security.getProvider("BC")
         }
-//        if (bcProvider == null) {
-//            throw Exception("Secrets Manager requires BouncyCastle provider to be added to Java Security")
-//        }
         this.provider = bcProvider
-        keyFactory = if (provider == null) KeyFactory.getInstance("EC") else KeyFactory.getInstance("EC", provider)
+        keyFactory = if (provider == null)
+            KeyFactory.getInstance("EC") else
+            KeyFactory.getInstance("EC", provider)
         val ecGenParameterSpec = ECGenParameterSpec("secp256r1")
         val parameters = AlgorithmParameters.getInstance("EC")
         parameters.init(ecGenParameterSpec)
         ecParameterSpec = parameters.getParameterSpec(ECParameterSpec::class.java)
-        keyGen = if (provider == null) KeyPairGenerator.getInstance("EC") else KeyPairGenerator.getInstance("EC", provider)
+        keyGen = if (provider == null)
+            KeyPairGenerator.getInstance("EC") else
+            KeyPairGenerator.getInstance("EC", provider)
         keyGen.initialize(ecGenParameterSpec)
-        sha256 = if (provider == null) MessageDigest.getInstance("SHA-256") else MessageDigest.getInstance("SHA-256", provider)
+        sha256 = if (provider == null)
+            MessageDigest.getInstance("SHA-256") else
+            MessageDigest.getInstance("SHA-256", provider)
     }
 }
 
@@ -82,13 +85,17 @@ internal fun generateKeyPair(): java.security.KeyPair {
 }
 
 internal fun hash(data: ByteArray, tag: String): ByteArray {
-    val mac = if (KeeperCryptoParameters.provider == null) Mac.getInstance("HmacSHA512") else Mac.getInstance("HmacSHA512", KeeperCryptoParameters.provider)
+    val mac = if (KeeperCryptoParameters.provider == null)
+        Mac.getInstance("HmacSHA512") else
+        Mac.getInstance("HmacSHA512", KeeperCryptoParameters.provider)
     mac.init(SecretKeySpec(data, "HmacSHA512"))
     return mac.doFinal(stringToBytes(tag))
 }
 
 internal fun getCipher(mode: Int, iv: ByteArray, key: ByteArray): Cipher {
-    val cipher = if (KeeperCryptoParameters.provider == null) Cipher.getInstance("AES/GCM/NoPadding") else Cipher.getInstance("AES/GCM/NoPadding", KeeperCryptoParameters.provider)
+    val cipher = if (KeeperCryptoParameters.provider == null)
+        Cipher.getInstance("AES/GCM/NoPadding") else
+        Cipher.getInstance("AES/GCM/NoPadding", KeeperCryptoParameters.provider)
     val keySpec = SecretKeySpec(key, "AES")
     val gcmParameterSpec = GCMParameterSpec(16 * 8, iv)
     cipher.init(mode, keySpec, gcmParameterSpec)
@@ -122,8 +129,8 @@ internal fun importPrivateKey(privateKeyDer: ByteArray): ECPrivateKey {
 internal fun importPublicKey(rawBytes: ByteArray): PublicKey {
     val pubKeySpec = ECPublicKeySpec(
         ECPoint(
-            BigInteger(1, rawBytes, 1, 32),
-            BigInteger(1, rawBytes, 33, 32)
+            BigInteger(1, rawBytes.copyOfRange(1, 33)),
+            BigInteger(1, rawBytes.copyOfRange(33, 65))
         ),
         KeeperCryptoParameters.ecParameterSpec
     )
@@ -131,7 +138,9 @@ internal fun importPublicKey(rawBytes: ByteArray): PublicKey {
 }
 
 internal fun getEciesSymmetricKey(privateKey: Key, publicKey: Key): ByteArray {
-    val ka = if (KeeperCryptoParameters.provider == null) KeyAgreement.getInstance("ECDH") else KeyAgreement.getInstance("ECDH", KeeperCryptoParameters.provider)
+    val ka = if (KeeperCryptoParameters.provider == null)
+        KeyAgreement.getInstance("ECDH") else
+        KeyAgreement.getInstance("ECDH", KeeperCryptoParameters.provider)
     ka.init(privateKey)
     ka.doPhase(publicKey, true)
     val commonSecret = ka.generateSecret()
@@ -159,7 +168,9 @@ internal fun privateDecrypt(data: ByteArray, key: ByteArray): ByteArray {
 
 internal fun sign(data: ByteArray, key: ByteArray): ByteArray {
     val privateKey = importPrivateKey(key)
-    val sig = if (KeeperCryptoParameters.provider == null) Signature.getInstance("SHA256withECDSA") else Signature.getInstance("SHA256withECDSA", KeeperCryptoParameters.provider)
+    val sig = if (KeeperCryptoParameters.provider == null)
+        Signature.getInstance("SHA256withECDSA") else
+        Signature.getInstance("SHA256withECDSA", KeeperCryptoParameters.provider)
     sig.initSign(privateKey)
     sig.update(data)
     return sig.sign()
