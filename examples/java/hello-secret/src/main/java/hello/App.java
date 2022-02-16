@@ -20,9 +20,6 @@ public class App {
             return;
         }
 
-// If working with initialized config, Secrets Manager does not need to call setCryptoProvider if the client already uses BouncyCastle or BouncyCastle FIPS
-// If using one time token, Secrets Manager need to export the public key and needs a call to setCryptoProvider to wire the necessary logic
-
         Security.addProvider(new BouncyCastleFipsProvider());
 //        Security.addProvider(new BouncyCastleProvider());
 
