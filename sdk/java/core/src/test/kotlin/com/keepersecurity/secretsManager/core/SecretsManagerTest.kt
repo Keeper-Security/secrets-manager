@@ -15,7 +15,7 @@ import kotlin.test.*
 internal class SecretsManagerTest {
 
     init {
-        Security.addProvider(BouncyCastleFipsProvider())
+//        Security.addProvider(BouncyCastleFipsProvider())
     }
 
     @Serializable

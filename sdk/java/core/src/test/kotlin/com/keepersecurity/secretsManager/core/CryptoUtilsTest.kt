@@ -7,7 +7,7 @@ import kotlin.test.*
 internal class CryptoUtilsTest {
 
     init {
-        Security.addProvider(BouncyCastleFipsProvider())
+//        Security.addProvider(BouncyCastleFipsProvider())
     }
 
     @Test
@@ -18,14 +18,6 @@ internal class CryptoUtilsTest {
         val ciphertext = publicEncrypt(data, publicKey)
         val plaintext = privateDecrypt(ciphertext, keyPair.private.encoded)
         assertContentEquals(data, plaintext)
-    }
-
-    @Test
-    fun keySizes() {
-        val keyPair = generateKeyPair()
-        val publicKey = extractPublicRaw(keyPair.public)
-        assertEquals(65, publicKey.size)
-        assertEquals(150, keyPair.private.encoded.size)
     }
 
     @Test

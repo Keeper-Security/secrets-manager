@@ -1,5 +1,8 @@
+@file:Suppress("JAVA_MODULE_DOES_NOT_EXPORT_PACKAGE")
+
 package com.keepersecurity.secretsManager.core
 
+import sun.security.util.DerInputStream
 import java.math.BigInteger
 import java.net.URL
 import java.net.URLDecoder
@@ -17,27 +20,29 @@ import kotlin.math.pow
 
 internal object KeeperCryptoParameters {
 
-    internal val provider: Provider
+    internal val provider: Provider?
     internal val keyFactory: KeyFactory
     internal val keyGen: KeyPairGenerator
     internal val ecParameterSpec: ECParameterSpec
+    internal val sha256: MessageDigest
 
     init {
         var bcProvider = Security.getProvider("BCFIPS")
         if (bcProvider == null) {
             bcProvider = Security.getProvider("BC")
         }
-        if (bcProvider == null) {
-            throw Exception("Secrets Manager requires BouncyCastle provider to be added to Java Security")
-        }
+//        if (bcProvider == null) {
+//            throw Exception("Secrets Manager requires BouncyCastle provider to be added to Java Security")
+//        }
         this.provider = bcProvider
-        keyFactory = KeyFactory.getInstance("EC", provider)
+        keyFactory = if (provider == null) KeyFactory.getInstance("EC") else KeyFactory.getInstance("EC", provider)
         val ecGenParameterSpec = ECGenParameterSpec("secp256r1")
         val parameters = AlgorithmParameters.getInstance("EC")
         parameters.init(ecGenParameterSpec)
         ecParameterSpec = parameters.getParameterSpec(ECParameterSpec::class.java)
-        keyGen = KeyPairGenerator.getInstance("EC", provider)
+        keyGen = if (provider == null) KeyPairGenerator.getInstance("EC") else KeyPairGenerator.getInstance("EC", provider)
         keyGen.initialize(ecGenParameterSpec)
+        sha256 = if (provider == null) MessageDigest.getInstance("SHA-256") else MessageDigest.getInstance("SHA-256", provider)
     }
 }
 
@@ -77,13 +82,13 @@ internal fun generateKeyPair(): java.security.KeyPair {
 }
 
 internal fun hash(data: ByteArray, tag: String): ByteArray {
-    val mac = Mac.getInstance("HmacSHA512", KeeperCryptoParameters.provider)
+    val mac = if (KeeperCryptoParameters.provider == null) Mac.getInstance("HmacSHA512") else Mac.getInstance("HmacSHA512", KeeperCryptoParameters.provider)
     mac.init(SecretKeySpec(data, "HmacSHA512"))
     return mac.doFinal(stringToBytes(tag))
 }
 
 internal fun getCipher(mode: Int, iv: ByteArray, key: ByteArray): Cipher {
-    val cipher = Cipher.getInstance("AES/GCM/NoPadding", KeeperCryptoParameters.provider)
+    val cipher = if (KeeperCryptoParameters.provider == null) Cipher.getInstance("AES/GCM/NoPadding") else Cipher.getInstance("AES/GCM/NoPadding", KeeperCryptoParameters.provider)
     val keySpec = SecretKeySpec(key, "AES")
     val gcmParameterSpec = GCMParameterSpec(16 * 8, iv)
     cipher.init(mode, keySpec, gcmParameterSpec)
@@ -108,8 +113,9 @@ internal fun decrypt(data: String, key: ByteArray): ByteArray {
 }
 
 internal fun importPrivateKey(privateKeyDer: ByteArray): ECPrivateKey {
-    val privateKeySpec =
-        ECPrivateKeySpec(BigInteger(1, privateKeyDer.copyOfRange(36, 68)), KeeperCryptoParameters.ecParameterSpec)
+    val seq0 = DerInputStream(privateKeyDer).getSequence(0)
+    val rawBytes = DerInputStream(seq0[2].octetString).getSequence(0)[1].dataBytes
+    val privateKeySpec = ECPrivateKeySpec(BigInteger(1, rawBytes), KeeperCryptoParameters.ecParameterSpec)
     return KeeperCryptoParameters.keyFactory.generatePrivate(privateKeySpec) as ECPrivateKey
 }
 
@@ -125,21 +131,15 @@ internal fun importPublicKey(rawBytes: ByteArray): PublicKey {
 }
 
 internal fun getEciesSymmetricKey(privateKey: Key, publicKey: Key): ByteArray {
-    val ka = KeyAgreement.getInstance("ECDH", KeeperCryptoParameters.provider)
+    val ka = if (KeeperCryptoParameters.provider == null) KeyAgreement.getInstance("ECDH") else KeyAgreement.getInstance("ECDH", KeeperCryptoParameters.provider)
     ka.init(privateKey)
     ka.doPhase(publicKey, true)
     val commonSecret = ka.generateSecret()
-    return MessageDigest.getInstance("SHA-256", KeeperCryptoParameters.provider).digest(commonSecret)
+    return KeeperCryptoParameters.sha256.digest(commonSecret)
 }
 
 internal fun extractPublicRaw(publicKey: PublicKey): ByteArray {
-    fun adjustTo32Bytes(bytes: ByteArray) = when {
-        bytes.size > 32 -> bytes.sliceArray(bytes.size - 32 until bytes.size)
-        else -> bytes
-    }
-
-    val w = KeeperCryptoParameters.keyFactory.getKeySpec(publicKey, ECPublicKeySpec::class.java).w
-    return byteArrayOf(4) + adjustTo32Bytes(w.affineX.toByteArray()) + adjustTo32Bytes(w.affineY.toByteArray())
+    return DerInputStream(publicKey.encoded).getSequence(0)[1].bitString
 }
 
 internal fun publicEncrypt(data: ByteArray, key: ByteArray): ByteArray {
@@ -159,7 +159,7 @@ internal fun privateDecrypt(data: ByteArray, key: ByteArray): ByteArray {
 
 internal fun sign(data: ByteArray, key: ByteArray): ByteArray {
     val privateKey = importPrivateKey(key)
-    val sig = Signature.getInstance("SHA256withECDSA", KeeperCryptoParameters.provider)
+    val sig = if (KeeperCryptoParameters.provider == null) Signature.getInstance("SHA256withECDSA") else Signature.getInstance("SHA256withECDSA", KeeperCryptoParameters.provider)
     sig.initSign(privateKey)
     sig.update(data)
     return sig.sign()
