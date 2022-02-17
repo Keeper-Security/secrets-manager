@@ -15,7 +15,11 @@ dependencies {
     // Use the Kotlin JDK 8 standard library.
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
 
-    implementation("com.keepersecurity.secrets-manager:core:16.1.2")
+    implementation("com.keepersecurity.secrets-manager:core:16.3.0-SNAPSHOT")
+
+    implementation("org.bouncycastle:bc-fips:1.0.2.1")
+
+//    implementation("org.bouncycastle:bcprov-jdk15on:1.70")
 
     // Use the Kotlin test library.
     testImplementation("org.jetbrains.kotlin:kotlin-test")

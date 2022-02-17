@@ -1,7 +1,10 @@
 package hello.secret.kt
 
 import com.keepersecurity.secretsManager.core.*
+import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider
+//import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.FileOutputStream
+import java.security.Security
 
 class App
 
@@ -12,6 +15,10 @@ fun main(args: Array<String>) {
         println("Use %client_key% only once to initialize the config. For subsequent runs, ./gradlew run --args=%config_name%")
         return
     }
+
+    Security.addProvider(BouncyCastleFipsProvider())
+//    Security.addProvider(BouncyCastleProvider());
+
     val storage: KeyValueStorage = LocalConfigStorage(args[0])
     println("Local Config Storage opened from the file ${args[0]}")
     try {

@@ -5,6 +5,10 @@ import static com.keepersecurity.secretsManager.core.SecretsManager.*;
 import static com.keepersecurity.secretsManager.core.Notation.*;
 
 import java.io.FileOutputStream;
+import java.security.Security;
+
+import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider;
+//import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 public class App {
 
@@ -15,6 +19,10 @@ public class App {
             System.out.println("Use %client_key% only once to initialize the config. For subsequent runs, ./gradlew run --args=%config_name%");
             return;
         }
+
+        Security.addProvider(new BouncyCastleFipsProvider());
+//        Security.addProvider(new BouncyCastleProvider());
+
         KeyValueStorage storage = new LocalConfigStorage(args[0]);
         System.out.printf("Local Config Storage opened from the file '%s'%n", args[0]);
         try {

@@ -1,25 +1,25 @@
 package com.keepersecurity.secretsManager.core
 
+import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider
+//import org.bouncycastle.jce.provider.BouncyCastleProvider
+import java.security.Security
 import kotlin.test.*
 
 internal class CryptoUtilsTest {
 
-    @Test
-    fun privateKeyIsCompatible() {
-        val fakeExternalPrivateKey64String = "MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQg34GXYbMpXKaHcHZW4dIMO3WYU8zTjB6t+41SRsY1rwqgCgYIKoZIzj0DAQehRANCAAQGH/4ZwpGR9B7AlMjVY7ekpjOcaD3rhuO25CmOZxI3wqRDdhXQIdDnuWvQPCZ3ymtjL3C8JrVIcloklwYI9T7+"
-        val fakeExternalPrivateKey64Bytes = base64ToBytes(fakeExternalPrivateKey64String)
-        val fakeExportedPublicKey = exportPublicKey(fakeExternalPrivateKey64Bytes)
-        assertEquals("BAYf/hnCkZH0HsCUyNVjt6SmM5xoPeuG47bkKY5nEjfCpEN2FdAh0Oe5a9A8JnfKa2MvcLwmtUhyWiSXBgj1Pv4=", bytesToBase64(fakeExportedPublicKey))
-        val data = getRandomBytes(32)
-        val ciphertext = publicEncrypt(data, fakeExportedPublicKey)
-        val plaintext = privateDecrypt(ciphertext, fakeExternalPrivateKey64Bytes)
-        assertContentEquals(data, plaintext)
+    init {
+        Security.addProvider(BouncyCastleFipsProvider())
+//        Security.addProvider(BouncyCastleProvider())
     }
 
     @Test
-    fun privateKeySize() {
-        val privateKey = generateKeyPair()
-        assertEquals(150, privateKey.size)
+    fun privateKeyIsCompatible() {
+        val keyPair = generateKeyPair()
+        val data = getRandomBytes(32)
+        val publicKey = extractPublicRaw(keyPair.public)
+        val ciphertext = publicEncrypt(data, publicKey)
+        val plaintext = privateDecrypt(ciphertext, keyPair.private.encoded)
+        assertContentEquals(data, plaintext)
     }
 
     @Test
