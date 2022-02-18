@@ -14,6 +14,8 @@ from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.core import KSMCache
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
+from keeper_secrets_manager_cli.common import find_ksm_path
+from keeper_secrets_manager_helper.record_type import RecordType
 from distutils.util import strtobool
 from .exception import KsmCliException
 from .profile import Profile
@@ -27,13 +29,17 @@ class KeeperCli:
     def get_client(**kwargs):
         return SecretsManager(**kwargs)
 
-    def __init__(self, ini_file=None, profile_name=None, output=None, use_color=None, use_cache=None):
+    def __init__(self, ini_file=None, profile_name=None, output=None, use_color=None, use_cache=None,
+                 record_type_dir=None, editor=None, macos_ui=False):
 
         self.profile = Profile(cli=self, ini_file=ini_file)
         self._client = None
 
         self.log_level = os.environ.get("KSM_DEBUG", None)
         self.use_color = use_color
+        self.record_type_dir = record_type_dir
+        self.editor = editor
+        self.editor_macos_ui = macos_ui
 
         self.use_cache = use_cache
 
@@ -56,6 +62,7 @@ class KeeperCli:
             config_storage.set(ConfigKeys.KEY_PRIVATE_KEY, self.config.get("privateKey"))
             config_storage.set(ConfigKeys.KEY_APP_KEY, self.config.get("appKey"))
             config_storage.set(ConfigKeys.KEY_HOSTNAME, self.config.get("hostname"))
+            config_storage.set(ConfigKeys.KEY_OWNER_PUBLIC_KEY, self.config.get("appOwnerPublicKey"))
 
             common_profile = self.profile.get_profile_config(Profile.config_profile)
 
@@ -74,6 +81,22 @@ class KeeperCli:
             # By default, use colors.
             if self.use_color is None:
                 self.use_color = bool(strtobool(common_profile.get(Profile.color_key, str(True))))
+
+            if self.record_type_dir is None:
+                self.record_type_dir = common_profile.get(Profile.record_type_dir_key, None)
+                if self.record_type_dir is None:
+                    self.record_type_dir = find_ksm_path("record_type", is_file=False)
+
+            # If the have a directory where record type schema files may exists, attempt to load
+            # them.
+            if self.record_type_dir is not None and os.path.exists(self.record_type_dir) is True:
+                RecordType.find_and_load_record_type_schema_files(self.record_type_dir)
+
+            # Get the editor to use for visual editing a record
+            if self.editor is None:
+                self.editor = common_profile.get(Profile.editor_key, None)
+            self.editor_macos_ui = bool(strtobool(common_profile.get(Profile.editor_macos_ui_key, str(macos_ui))))
+
         else:
             # Set the log level. We don't have the client to set the level, so set it here.
             if use_color is None:

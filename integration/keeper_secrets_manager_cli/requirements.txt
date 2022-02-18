@@ -1,4 +1,5 @@
 keeper-secrets-manager-core>=16.2.2
+keeper-secrets-manager-helper
 prompt-toolkit~=2.0
 jsonpath-rw-ext
 colorama

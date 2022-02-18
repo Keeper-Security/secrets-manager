@@ -11,18 +11,24 @@
 #
 
 import json
+import os
+import re
 from jsonpath_rw_ext import parse
 import sys
 from colorama import Fore, Style
 from keeper_secrets_manager_cli.exception import KsmCliException
+from keeper_secrets_manager_cli.common import launch_editor
 from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
+from keeper_secrets_manager_helper.record import Record
+from keeper_secrets_manager_helper.exception import FileSyntaxException
 from .table import Table, ColumnAlign
 import uuid
+import tempfile
+import subprocess
 
 
 class Secret:
-
     # Maps the type in a field to what it should pull in from the real record. There
     # might be multiple field that need to be pulled in.
     support_ref_types = {
@@ -235,8 +241,8 @@ class Secret:
 
             ret += table.get_string() + "\n"
             if len(problems) > 0:
-                ret += " !! Found duplicate labels ({}). When accessing custom fields the first record found will be "\
-                       "returned.\n".format(",".join(problems))
+                ret += " !! Found duplicate labels ({}). When accessing custom fields the first record found will" \
+                       "be returned.\n".format(",".join(problems))
 
         if len(record_dict["files"]) > 0:
             ret += "\n"
@@ -338,7 +344,7 @@ class Secret:
             raise KsmCliException("JSONPath failed: {}".format(err))
 
     def query(self, uids=None, titles=None, field=None, output_format='json', jsonpath_query=None,
-              force_array=False, load_references=False,  unmask=False, use_color=True, inflate=True):
+              force_array=False, load_references=False, unmask=False, use_color=True, inflate=True):
 
         if uids is None:
             uids = []
@@ -551,6 +557,115 @@ class Secret:
         except Exception as err:
             raise KsmCliException("Could not save record: {}".format(err))
 
+    def _check_if_can_add_records(self):
+        # Check to see if appOwnerPublicKey is in the keeper.ini. It's a newly added key and if the
+        # profile is too old we can't add a record.
+        profile_config = self.cli.profile.get_profile_config(self.cli.profile.get_active_profile_name())
+        if profile_config.get("appOwnerPublicKey") is None:
+            raise KsmCliException("Your profile is out of date. It is missing the application order key. "
+                                  "To create a record you will need to init a profile with a new token.")
+
+    def add_record_interactive(self, version, folder_uid, record_type, output_format,
+                               password_generate_flag, title=None, notes=None, editor=None):
+        self._check_if_can_add_records()
+
+        if editor is None:
+            editor = self.cli.editor
+            editor_macos_ui = self.cli.editor_macos_ui
+
+
+            template = Record(version).get_template(
+                record_type=record_type,
+                output_format=output_format,
+                title=title,
+                notes=notes
+            )
+
+            temp_filename = None
+            try:
+                # Write the template file and close it. Windows doesn't like to share open files.
+                tf = tempfile.NamedTemporaryFile("w+", delete=False)
+                temp_filename = tf.name
+                tf.write(template)
+                tf.close()
+
+                while True:
+                    # Launch the editor
+                    launch_editor(file=temp_filename, editor=editor, macos_ui=editor_macos_ui)
+
+                    with open(temp_filename, 'r') as fh:
+                        record_data = fh.read()
+                        fh.close()
+                        if re.search(r'<#ADD', record_data, re.MULTILINE) is not None:
+                            ynq = input(Fore.RED + "Found template markers (#ADD) still in the record data. Either " +
+                                                   "add a value or remove the line completely. " + Style.RESET_ALL +
+                                                   "Do you wish to edit? Y/n/q: ")
+                            if ynq == "" or ynq[0].lower() == "y":
+                                continue
+                            if ynq[0].lower() == "q":
+                                print("Not adding record.")
+                                return
+                    try:
+                        # When saved, import the file
+                        self.add_record_from_file(
+                            folder_uid=folder_uid,
+                            file=temp_filename,
+                            password_generate_flag=password_generate_flag
+                        )
+                        # All is good break out of the loop
+                        break
+                    except FileSyntaxException as err:
+                        ynq = input(Fore.RED + str(err) + Style.RESET_ALL +
+                                    "Do you wish to edit and try again? Y/n/q: ")
+                    except Exception as err:
+                        ynq = input(Fore.RED + f"Could not create the record: {err}. " + Style.RESET_ALL +
+                                    "Do you wish to edit and try again? Y/n/q: ")
+
+                    if ynq == "" or ynq[0].lower() == "y":
+                        continue
+                    if ynq[0].lower() == "q":
+                        print("Not adding record.")
+                        return
+
+            except Exception as err:
+                raise KsmCliException(f"Could not edit the record template file: {err}")
+            finally:
+                if temp_filename is not None:
+                    os.unlink(temp_filename)
+
+    def add_record_from_file(self, folder_uid, file, password_generate_flag):
+        self._check_if_can_add_records()
+
+        try:
+            records = Record.create_from_file(file, password_generate=password_generate_flag)
+            record_uids = []
+            for record in records:
+                record_create_obj = record.get_record_create_obj()
+                record_uid = self.cli.client.create_secret(folder_uid, record_create_obj)
+                record_uids.append(record_uid)
+        except FileSyntaxException as err:
+            raise KsmCliException(str(err))
+        except Exception as err:
+            raise KsmCliException(f"Could not load records from file {file}: {err}")
+        return self.cli.output(json.dumps(record_uids))
+
+    def add_record_from_field_args(self, version, folder_uid, password_generate_flag, record_type,
+                                   title, notes, field_args):
+
+        self._check_if_can_add_records()
+
+        records = Record(version).create_from_field_args(
+            record_type=record_type,
+            title=title,
+            notes=notes,
+            field_args=field_args,
+            password_generate=password_generate_flag
+        )
+        record = records[0]
+        record_create_obj = record.get_record_create_obj()
+        record_uid = self.cli.client.create_secret(folder_uid, record_create_obj)
+        return self.cli.output(record_uid)
+
     def generate_password(self, length, lowercase, uppercase, digits, special_characters):
 
         new_password = sdk_generate_password(
@@ -562,3 +677,25 @@ class Secret:
         )
 
         return self.cli.output(new_password)
+
+    def get_record_type_template(self, record_type, output_format, version, file):
+
+        print("", file=sys.stderr)
+        if file is not None:
+            self.cli.output_name = file
+        return self.cli.output(Record(version).get_template(
+            record_type=record_type,
+            output_format=output_format
+        ))
+
+    def get_record_type_list(self, version):
+        print("", file=sys.stderr)
+        record_list = Record(version).get_template_list()
+
+        table = Table(use_color=self.cli.use_color)
+        table.add_column("Record Type", allow_wrap=True, data_color=Fore.GREEN)
+
+        for record_type in record_list:
+            table.add_row([record_type])
+
+        return self.cli.output(table.get_string())
