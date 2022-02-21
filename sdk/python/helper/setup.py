@@ -10,6 +10,7 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 install_requires = [
     'keeper-secrets-manager-core>=16.2.2',
     'pyyaml',
+    'iso8601'
 ]
 
 setup(
@@ -25,6 +26,8 @@ setup(
     keywords="Keeper Password Secrets Manager Helper Record",
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
+    package_data={},
+    include_package_data=True,
     install_requires=install_requires,
     python_requires='>=3.6',
     project_urls={

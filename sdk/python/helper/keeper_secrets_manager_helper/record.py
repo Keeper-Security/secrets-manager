@@ -26,8 +26,8 @@ class Record:
             self.record_mod = import_module(f"keeper_secrets_manager_helper.{self.version}.record")
             self.parser_mod = import_module(f"keeper_secrets_manager_helper.{self.version}.parser")
             self.record_type_mod = import_module(f"keeper_secrets_manager_helper.{self.version}.record_type")
-        except ImportError:
-            raise Exception(f"Version {self.version} is not supported.")
+        except ImportError as err:
+            raise Exception(f"Version {self.version} is not supported: " + str(err))
 
     def create_from_field_args(self, **kwargs):
         kwargs["fields"] = getattr(self.parser_mod, "Parser")().parse_field(kwargs.get("field_args"))

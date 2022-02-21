@@ -35,7 +35,8 @@ class Profile:
     cache_key = "cache"
     record_type_dir_key = "record_type_dir"
     editor_key = "editor"
-    editor_macos_ui_key = "editor_macos_ui"
+    editor_use_blocking_key = "editor_use_blocking"
+    editor_process_name_key = "editor_process_name"
 
     def __init__(self, cli, ini_file=None):
 
@@ -372,17 +373,20 @@ class Profile:
         self.cli.record_type_dir = directory
         self.save()
 
-    def set_editor(self, editor, macos_ui=None):
+    def set_editor(self, editor, use_blocking=None, process_name=None):
         common_config = self._get_common_config("Cannot set editor.")
         if editor is None:
             del common_config[Profile.editor_key]
-            del common_config[Profile.editor_macos_ui_key]
+            del common_config[Profile.editor_use_blocking_key]
+            del common_config[Profile.editor_process_name_key]
         else:
             common_config[Profile.editor_key] = editor
-            if macos_ui is not None:
-                common_config[Profile.editor_macos_ui_key] = str(macos_ui)
+            if use_blocking is not None:
+                common_config[Profile.editor_use_blocking_key] = str(use_blocking)
+            if process_name is not None:
+                common_config[Profile.editor_process_name_key] = process_name
         self.cli.editor = editor
-        self.cli.editor_macos_ui = macos_ui
+        self.cli.editor_use_blocking = use_blocking
         self.save()
 
     def show_config(self):
@@ -392,5 +396,8 @@ class Profile:
         print("Cache Enabled: {}".format(common_config.get(Profile.cache_key, not_set_text)))
         print("Color Enabled: {}".format(common_config.get(Profile.color_key, not_set_text)))
         print("Record Type Directory: {}".format(common_config.get(Profile.record_type_dir_key, not_set_text)))
-        print("Editor: {}".format(common_config.get(Profile.editor_key, not_set_text)))
-        print("Editor is MacOS UI App: {}".format(common_config.get(Profile.editor_macos_ui_key, not_set_text)))
+        print("Editor: {} ({})".format(
+            common_config.get(Profile.editor_key, not_set_text),
+            common_config.get(Profile.editor_process_name_key, "NA")
+        ))
+        print("Editor Blocking: {}".format(common_config.get(Profile.editor_use_blocking_key, not_set_text)))

@@ -30,7 +30,7 @@ class KeeperCli:
         return SecretsManager(**kwargs)
 
     def __init__(self, ini_file=None, profile_name=None, output=None, use_color=None, use_cache=None,
-                 record_type_dir=None, editor=None, macos_ui=False):
+                 record_type_dir=None, editor=None, editor_use_blocking=False, editor_process_name=None):
 
         self.profile = Profile(cli=self, ini_file=ini_file)
         self._client = None
@@ -38,8 +38,13 @@ class KeeperCli:
         self.log_level = os.environ.get("KSM_DEBUG", None)
         self.use_color = use_color
         self.record_type_dir = record_type_dir
+
+        # The editor to launch ... however this might be a bat or cmd file, not the real application
         self.editor = editor
-        self.editor_macos_ui = macos_ui
+        # Some application don't block. To enabling blocking the CLI, set this to True
+        self.editor_use_blocking = editor_use_blocking
+        # Blocking might be waiting until a process in the task list goes away. This is that process.
+        self.editor_process_name = editor_process_name
 
         self.use_cache = use_cache
 
@@ -95,8 +100,9 @@ class KeeperCli:
             # Get the editor to use for visual editing a record
             if self.editor is None:
                 self.editor = common_profile.get(Profile.editor_key, None)
-            self.editor_macos_ui = bool(strtobool(common_profile.get(Profile.editor_macos_ui_key, str(macos_ui))))
-
+            self.editor_use_blocking = bool(strtobool(common_profile.get(Profile.editor_use_blocking_key,
+                                                                         str(editor_use_blocking))))
+            self.editor_process_name = common_profile.get(Profile.editor_process_name_key, editor_process_name)
         else:
             # Set the log level. We don't have the client to set the level, so set it here.
             if use_color is None:

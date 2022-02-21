@@ -2,6 +2,8 @@ import os
 import shutil
 import platform
 import subprocess
+import time
+import psutil
 
 
 def find_ksm_path(find_path, is_file=True):
@@ -40,7 +42,7 @@ def find_ksm_path(find_path, is_file=True):
     return None
 
 
-def launch_editor(file, editor=None, macos_ui=False):
+def launch_editor(file, editor=None, use_blocking=False, process_name=None):
 
     if editor is None:
 
@@ -50,15 +52,24 @@ def launch_editor(file, editor=None, macos_ui=False):
             if platform.system() == "Windows":
                 # If someone installed Visual Code, use that first. It had a nice JSON and YAML syntax tester. Else
                 # call back to good old notepad
-                editor_list = ["code.cmd", "notepad.exe"]
+                editor_list = [
+                    {"cmd": "code.cmd", "use_blocking": True, "process_name": "code.exe"},
+                    {"cmd": "notepad.exe"}
+                ]
             else:
-                # Why this order. No one installs emacs unless they want it. Nano is the most "friendly" for people
-                # and it normally the default. vim and vi for back up.
-                editor_list = ["emacs", "nano", "vim", "vi"]
+                # MacOS and Linux use the same list. nano is the default command line editor for both MacOS and Linux.
+                editor_list = [
+                    {"cmd": "nano"},
+                    {"cmd": "vim"},
+                    {"cmd": "vi"},
+                    {"cmd": "emacs"}
+                ]
             for editor_file in editor_list:
-                located = shutil.which(editor_file)
+                located = shutil.which(editor_file.get("cmd"))
                 if located is not None:
                     editor = located
+                    use_blocking = editor_file.get("use_blocking")
+                    process_name = editor_file.get("process_name",  editor_file.get("cmd"))
                     break
             if editor is None:
                 raise FileNotFoundError("Cannot find an editor. Please configure an editor in the CLI or set the "
@@ -67,11 +78,23 @@ def launch_editor(file, editor=None, macos_ui=False):
 
     cmd = [editor, file]
 
-    # If using an MacOS editor that has a UI. You have to use 'open' to launch the editor, the -W will block
-    # until the application is closed ( not the windows is closed, then entire application is closed).
-    if macos_ui is True and platform.system() == "Darwin":
-        cmd = ["open", "-W", "-a"] + cmd
-
-    exit_code = subprocess.call(cmd)
-    if exit_code == 1:
-        pass
+    # Windows and MacOS may launch an application that doesn't block until the application exists. Or the application
+    # launches another application and exists. If we are using blocking we are going to either cause blocking on
+    # the way we launch the application (MacOS) or monitor the processes until the application exits.
+    if use_blocking is True:
+        if platform.system() == "Darwin":
+            cmd = ["open", "-W", "-a"] + cmd
+            subprocess.call(cmd)
+        elif platform.system() == "Windows":
+            subprocess.call(cmd)
+            while True:
+                time.sleep(2)
+                process_found = False
+                for proc in psutil.process_iter():
+                    if proc.name().lower() in process_name.lower() and proc.status() == psutil.STATUS_RUNNING:
+                        process_found = True
+                        break
+                if process_found is False:
+                    break
+    else:
+        subprocess.call(cmd)

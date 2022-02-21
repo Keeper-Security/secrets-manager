@@ -569,10 +569,12 @@ class Secret:
                                password_generate_flag, title=None, notes=None, editor=None):
         self._check_if_can_add_records()
 
+        editor_use_blocking = False
+        editor_process_name = None
         if editor is None:
             editor = self.cli.editor
-            editor_macos_ui = self.cli.editor_macos_ui
-
+            editor_use_blocking = self.cli.editor_use_blocking
+            editor_process_name = self.cli.editor_process_name
 
             template = Record(version).get_template(
                 record_type=record_type,
@@ -591,7 +593,12 @@ class Secret:
 
                 while True:
                     # Launch the editor
-                    launch_editor(file=temp_filename, editor=editor, macos_ui=editor_macos_ui)
+                    launch_editor(
+                        file=temp_filename,
+                        editor=editor,
+                        use_blocking=editor_use_blocking,
+                        process_name=editor_process_name
+                    )
 
                     with open(temp_filename, 'r') as fh:
                         record_data = fh.read()

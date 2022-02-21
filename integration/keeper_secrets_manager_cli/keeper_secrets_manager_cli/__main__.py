@@ -782,19 +782,21 @@ def config_rt_dir_command(ctx, directory, clear):
     help_options_color='blue'
 )
 @click.option('--application', "--app", type=str, help='Application path and name to use for editor.')
-@click.option('--macos-ui', is_flag=True, help='Application is a MacOS application with a UI')
+@click.option('--blocking', is_flag=True, help='Application requires blocking.')
+@click.option('--process-name', type=str, help='Application process name.')
 @click.option('--clear', is_flag=True, help='Clear location of record type schema directory')
 @click.pass_context
-def config_editor_command(ctx, application, macos_ui, clear):
+def config_editor_command(ctx, application, blocking, process_name, clear):
     """Set the editor to use for record editing"""
 
     if clear is True:
         application = None
-        macos_ui = False
+        blocking = False
+        process_name = None
     if clear is not True and application is None:
         raise KsmCliException("Either a --application is required or the --clear flag set")
 
-    ctx.obj["profile"].set_editor(editor=application, macos_ui=macos_ui)
+    ctx.obj["profile"].set_editor(editor=application, use_blocking=blocking, process_name=process_name)
 
 
 config_command.add_command(config_show_command)
