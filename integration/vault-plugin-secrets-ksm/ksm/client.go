@@ -37,7 +37,7 @@ func NewClient(config *Config) (c *Client, err error) {
 	}
 
 	cfg := core.NewMemoryKeyValueStorage(config.KsmAppConfig)
-	sm := core.NewSecretsManagerFromConfig(cfg)
+	sm := core.NewSecretsManager(&core.ClientOptions{Config: cfg})
 
 	return &Client{
 		SecretsManager: sm,
@@ -64,7 +64,7 @@ func NewClientConfig(token string) (config string, err error) {
 	}
 	if parts := strings.Split(token, ":"); len(parts) == 2 {
 		cfg := core.NewMemoryKeyValueStorage()
-		sm := core.NewSecretsManagerFromFullSetup(token, "", true, cfg)
+		sm := core.NewSecretsManager(&core.ClientOptions{Token: token, Config: cfg})
 		if _, err := sm.GetSecrets([]string{""}); err != nil {
 			return "", err
 		}
