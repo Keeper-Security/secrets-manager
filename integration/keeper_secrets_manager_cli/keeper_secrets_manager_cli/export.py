@@ -4,6 +4,7 @@ import base64
 import json
 
 from keeper_secrets_manager_core.utils import base64_to_bytes
+from keeper_secrets_manager_core.keeper_globals import keeper_servers
 
 
 class Export:
@@ -59,7 +60,7 @@ class Export:
             "clientId": {"key": "clientId", "isBase64": True},
             "privateKey": {"key": "privateKey", "isBase64": True},
             "appKey": {"key": "appKey", "isBase64": True},
-            "hostname": {"key": "hostname", "isBase64": False},
+            "hostname": {"key": "hostname", "isBase64": False, "transformMap": keeper_servers},
             "serverPublicKeyId": {"key": "serverPublicKeyId", "isBase64": False}
         }
 
@@ -72,5 +73,8 @@ class Export:
                     # Encode a non-url safe base64
                     config_dict[info["key"]] = base64.b64encode(value_bytes).decode()
                 else:
-                    config_dict[info["key"]] = self.config[key]
+                    if "transformMap" in info:
+                        config_dict[info["key"]] = info["transformMap"].get(self.config[key], self.config[key])
+                    else:
+                        config_dict[info["key"]] = self.config[key]
         return json.dumps(config_dict, indent=4)
