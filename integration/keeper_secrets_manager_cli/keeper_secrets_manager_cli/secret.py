@@ -345,7 +345,10 @@ class Secret:
             raise KsmCliException("JSONPath failed: {}".format(err))
 
     def query(self, uids=None, titles=None, field=None, output_format='json', jsonpath_query=None,
-              force_array=False, load_references=False, unmask=False, use_color=True, inflate=True):
+              force_array=False, load_references=False, unmask=False, use_color=None, inflate=True):
+
+        if use_color is None:
+            use_color = self.cli.use_color
 
         if uids is None:
             uids = []
@@ -411,7 +414,10 @@ class Secret:
             table.add_row([record["uid"], record["type"], record["title"]])
         return "\n" + table.get_string() + "\n"
 
-    def secret_list(self, uids=None, output_format='json', use_color=True):
+    def secret_list(self, uids=None, output_format='json', use_color=None):
+
+        if use_color is None:
+            use_color = self.cli.user_color
 
         record_dict = self.query(uids=uids, output_format='dict', unmask=True, use_color=use_color)
         if output_format == 'text':

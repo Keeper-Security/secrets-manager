@@ -48,5 +48,3 @@ class RecordType:
                         RecordType.load_record_types(os.path.join(root, file))
                     except (Exception,):
                         pass
-
-

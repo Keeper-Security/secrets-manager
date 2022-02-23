@@ -60,7 +60,9 @@ class AliasedGroup(HelpColorsGroup):
         "editor",
         "field",
         "record",
-        "file"
+        "file",
+        "cache",
+        "record-type-dir"
     ]
 
     alias_commands = {
@@ -549,6 +551,8 @@ def secret_password_command(ctx, length, lc, uc, d, sc):
 
 
 # SECRET TEMPLATE COMMAND
+
+
 @click.group(
     name='template',
     cls=AliasedGroup,
@@ -628,6 +632,8 @@ secret_template_command.add_command(secret_template_field_command)
 
 
 # SECRET ADD COMMAND
+
+
 @click.group(
     name='add',
     cls=AliasedGroup,
@@ -794,19 +800,19 @@ def config_log_command(ctx, enable):
 
 
 @click.command(
-    name='record-cache',
+    name='cache',
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
 @click.option('--enable/--disable', required=True, help="Enable or disable cache.")
 @click.pass_context
 def config_cache_command(ctx, enable):
-    """Enable or disable cache"""
+    """Enable or disable record cache"""
     ctx.obj["profile"].set_cache(enable)
 
 
 @click.command(
-    name='rt-dir',
+    name='record-type-dir',
     cls=HelpColorsCommand,
     help_options_color='blue'
 )

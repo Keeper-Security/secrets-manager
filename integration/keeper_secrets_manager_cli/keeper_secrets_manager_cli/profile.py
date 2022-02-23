@@ -231,7 +231,10 @@ class Profile:
 
         print("Added profile {} to INI config file located at {}".format(profile_name, ini_file), file=sys.stderr)
 
-    def list_profiles(self, output='text', use_color=True):
+    def list_profiles(self, output='text', use_color=None):
+
+        if use_color is None:
+            use_color = self.cli.use_color
 
         profiles = []
 
@@ -376,9 +379,9 @@ class Profile:
     def set_editor(self, editor, use_blocking=None, process_name=None):
         common_config = self._get_common_config("Cannot set editor.")
         if editor is None:
-            del common_config[Profile.editor_key]
-            del common_config[Profile.editor_use_blocking_key]
-            del common_config[Profile.editor_process_name_key]
+            common_config.pop(Profile.editor_key, None)
+            common_config.pop(Profile.editor_use_blocking_key, None)
+            common_config.pop(Profile.editor_process_name_key, None)
         else:
             common_config[Profile.editor_key] = editor
             if use_blocking is not None:
@@ -391,13 +394,19 @@ class Profile:
 
     def show_config(self):
         common_config = self._get_common_config("Cannot show the config.")
+
+        table = Table(use_color=self.cli.use_color)
+        table.add_column("Config Item", data_color=Fore.GREEN)
+        table.add_column("Value", data_color=Fore.YELLOW, allow_wrap=True)
+
         not_set_text = "-NOT SET-"
-        print("Active Profile: {}".format(common_config.get(Profile.active_profile_key, not_set_text)))
-        print("Cache Enabled: {}".format(common_config.get(Profile.cache_key, not_set_text)))
-        print("Color Enabled: {}".format(common_config.get(Profile.color_key, not_set_text)))
-        print("Record Type Directory: {}".format(common_config.get(Profile.record_type_dir_key, not_set_text)))
-        print("Editor: {} ({})".format(
+        table.add_row(["Active Profile", common_config.get(Profile.active_profile_key, not_set_text)])
+        table.add_row(["Cache Enabled", common_config.get(Profile.cache_key, not_set_text)])
+        table.add_row(["Color Enabled", common_config.get(Profile.color_key, not_set_text)])
+        table.add_row(["Record Type Directory", common_config.get(Profile.record_type_dir_key, not_set_text)])
+        table.add_row(["Editor", "{} ({})".format(
             common_config.get(Profile.editor_key, not_set_text),
             common_config.get(Profile.editor_process_name_key, "NA")
-        ))
-        print("Editor Blocking: {}".format(common_config.get(Profile.editor_use_blocking_key, not_set_text)))
+        )])
+        table.add_row(["Editor Blocking", common_config.get(Profile.editor_use_blocking_key, not_set_text)])
+        self.cli.output(table.get_string())
