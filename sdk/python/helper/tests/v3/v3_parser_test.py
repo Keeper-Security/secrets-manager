@@ -1,7 +1,6 @@
 import unittest
 from keeper_secrets_manager_helper.v3.parser import Parser
 from keeper_secrets_manager_helper.field import FieldSectionEnum
-import json
 
 
 class ParserTest(unittest.TestCase):
@@ -27,7 +26,8 @@ class ParserTest(unittest.TestCase):
                               '{"region": "US", "number": "55555512324", "ext": "7777", "type":"Mobile"}')[0]
         self.assertEqual(field.field_section, FieldSectionEnum.CUSTOM)
         self.assertEqual(field.type, "phone")
-        self.assertDictEqual(field.value, {"ext": "7777", "number": "55555512324", "region": "US", "type": "Mobile"})
+        self.assertDictEqual(field.value, {"ext": "7777", "number": "55555512324", "region": "US", "type": "Mobile",
+                                           "_complete": True})
         self.assertEqual(field.label, "My Phone Numbers")
         self.assertIsNone(field.value_key)
 
@@ -50,7 +50,7 @@ class ParserTest(unittest.TestCase):
         field = p.parse_field('f.name={"first": "John", "last": "name"}')[0]
         self.assertEqual(field.field_section, FieldSectionEnum.STANDARD)
         self.assertEqual(field.type, "name")
-        self.assertDictEqual(field.value, {"first": "John", "last": "name"})
+        self.assertDictEqual(field.value, {"first": "John", "last": "name", "_complete": True})
         self.assertIsNone(field.label)
         self.assertIsNone(field.value_key)
 

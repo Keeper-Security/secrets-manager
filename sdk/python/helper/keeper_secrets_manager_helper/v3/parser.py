@@ -48,6 +48,7 @@ class Parser:
             # This key designating what would make a complete field record unique. It used in grouping data into
             # a field record. It's like a primary key. See the Phones/Phone field type.
             group_key = self.field_map[field_type].group_key
+            allow_multiple = self.field_map[field_type].allow_multiple
 
             # Remove the field type from the arg
             arg = arg[len(field_type):]
@@ -141,7 +142,8 @@ class Parser:
                     label=field_label,
                     value_key=value_key,
                     group_key=group_key,
-                    value=value
+                    value=value,
+                    allow_multiple=allow_multiple
                 )
             )
 

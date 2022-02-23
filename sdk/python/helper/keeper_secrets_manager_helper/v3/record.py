@@ -99,7 +99,8 @@ class Record:
             record_type = get_record_type_class(self.record_type)()
 
             # Make a quick lookup for the standard fields.
-            self._valid_fields = [x.get("type") for x in record_type.get_standard_fields()]
+            self._valid_fields = [{"type": x.get("type"), "label": x.get("label"), "has_value": False}
+                                  for x in record_type.get_standard_fields()]
         except ImportError as err:
             raise ValueError(err)
 
@@ -122,6 +123,35 @@ class Record:
             self.add_fields(fields)
             self.build_record()
 
+    def _add_new_field(self, field, field_key, group_key):
+        # Count the number of keys in the dictionary and use that for an index. That will be used determine
+        # the order.
+        field.index = len(self._fields[field.field_section])
+
+        # If the group key is not None, then convert the value to an array.
+        if group_key is not None and isinstance(field.value, list) is False:
+            field.value = [field.value]
+
+        self._fields[field.field_section][field_key] = field
+
+    def _is_valid_standard_field(self, field_type):
+        for item in self._valid_fields:
+            if item.get("type") == field_type and item.get("has_value") is False:
+                return True
+        return False
+
+    def _flag_standard_field_used(self, field_type):
+        for item in self._valid_fields:
+            if item.get("type") == field_type and item.get("has_value") is False:
+                item["has_value"] = True
+                break
+
+    def _get_label_for_standard_field(self, field_type):
+        for item in self._valid_fields:
+            if item.get("type") == field_type and item.get("has_value") is False:
+                return item.get("label")
+        return None
+
     def add_fields(self, fields):
         if isinstance(fields, list) is False:
             fields = [fields]
@@ -131,20 +161,44 @@ class Record:
             if isinstance(field, Field) is False:
                 raise ValueError("The method add_field requires instance(s) of Field")
 
-            if field.field_section == FieldSectionEnum.STANDARD and field.type not in self._valid_fields:
-                raise ValueError(f"The standard fields do not have a {field.type} field type.")
+            #
+            label = None
+            if field.field_section == FieldSectionEnum.STANDARD:
+                label = self._get_label_for_standard_field(field.type)
 
-            field_key = field.instance_field_key()
+            field_key = field.instance_field_key(label=label)
             group_key = field.group_key
 
-            # Does this key already exists? And can we add values to the dictionary?
+            # Does this key already exists? And can we add values to the dictionary value?
             if field_key in self._fields[field.field_section] and field.can_add_key_value():
+
+                # If out value is a string we should not be in here.
+                if isinstance(field.value, str) is True:
+                    raise ValueError(f"The {field.type} is a string. If JSON check to see if JSON is valid.")
 
                 # Get the existing field and copy any values in it's dictionary into the existing.
                 existing_field = self._fields[field.field_section][field_key]
 
-                if isinstance(field.value, str) is True:
-                    raise ValueError(f"The {field.type} is a string. If JSON check to see if JSON is valid.")
+                # If the field is completely set
+                if existing_field.is_complete is True and existing_field.field_section == FieldSectionEnum.STANDARD:
+                    raise ValueError("Attempting to set a standard field that has already been set.")
+
+                # The existing field is complete and a custom field, so add
+                if existing_field.is_complete is True:
+                    raise ValueError("Cannot add this field due to it not being unique. To make unique add a label to "
+                                     "the field or make sure the label is not being duplicated.")
+
+                # If the existing_field is JSON and the current field is JSON, then add to existing. This allows
+                # the value to be set with multiple objects.
+                if existing_field.initial_value_was_json and field.initial_value_was_json:
+                    if isinstance(existing_field.value, dict) is True:
+                        existing_field.value = [existing_field.value]
+                    if isinstance(field.value, list) is True:
+                        for item in field.value:
+                            existing_field.value.append(item)
+                    else:
+                        existing_field.value.append(field.value)
+                    continue
 
                 for k, v in field.value.items():
 
@@ -154,9 +208,11 @@ class Record:
                     if group_key is not None:
                         found_a_place = False
                         for item in existing_field.value:
-                            if group_key not in item:
+                            if group_key not in item and item.get(Field.complete_key) is not True:
                                 item[k] = v
                                 found_a_place = True
+                            else:
+                                item[Field.complete_key] = True
                         if found_a_place is False and isinstance(existing_field.value, list) is True:
                             new_object = {k: v}
                             existing_field.value.append(new_object)
@@ -165,15 +221,15 @@ class Record:
 
             # Else we are creating a new entry.
             else:
-                # Count the number of keys in the dictionary and use that for an index. That will be used determine
-                # the order.
-                field.index = len(self._fields[field.field_section])
+                # Standard fields are defined. Don't insert a field that doesn't belong.
+                if field.field_section == FieldSectionEnum.STANDARD:
+                    if self._is_valid_standard_field(field.type):
+                        self._flag_standard_field_used(field.type)
+                    else:
+                        raise ValueError(f"The standard fields do not have a '{field.type}' "
+                                         "field type or they all have values.")
 
-                # If the group key is not None, then convert the value to an array.
-                if group_key is not None and isinstance(field.value, list) is False:
-                    field.value = [field.value]
-
-                self._fields[field.field_section][field_key] = field
+                self._add_new_field(field, field_key, group_key)
 
     @staticmethod
     def _copy_record_type_settings(field_obj, standard_field):
@@ -224,6 +280,18 @@ class Record:
         fields_list.sort(key=get_index_key)
         return fields_list
 
+    @staticmethod
+    def _remove_private_keys(obj):
+        """
+        The value might contain dictionaries what contain private key. This will remove any that exists. Right
+        now it's just one.
+        """
+        if isinstance(obj, list):
+            for item in obj:
+                Record._remove_private_keys(item)
+        elif isinstance(obj, dict):
+            obj.pop(Field.complete_key, None)
+
     def build_record(self):
 
         record_type = get_record_type_class(self.record_type)()
@@ -233,6 +301,7 @@ class Record:
         self.fields = []
         for field in self._get_standard_fields(record_type):
             field_type_kwargs = field.to_dict()
+            self._remove_private_keys(field_type_kwargs.get("value"))
             field_type_kwargs["password_generate"] = self.password_generate
             field_type_obj = get_field_type_class(field.type)(**field_type_kwargs)
             self.fields.append(field_type_obj.to_dict())
@@ -241,6 +310,7 @@ class Record:
         self.custom_fields = []
         for field in self._get_custom_fields():
             field_type_kwargs = field.to_dict()
+            self._remove_private_keys(field_type_kwargs.get("value"))
             field_type_kwargs["password_generate"] = self.password_generate
             field_type_obj = get_field_type_class(field.type)(**field_type_kwargs)
             self.custom_fields.append(field_type_obj.to_dict())

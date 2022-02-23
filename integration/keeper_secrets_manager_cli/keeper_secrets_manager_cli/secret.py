@@ -11,6 +11,7 @@
 #
 
 import json
+import yaml
 import os
 import re
 from jsonpath_rw_ext import parse
@@ -21,11 +22,11 @@ from keeper_secrets_manager_cli.common import launch_editor
 from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
 from keeper_secrets_manager_helper.record import Record
+from keeper_secrets_manager_helper.field_type import FieldType
 from keeper_secrets_manager_helper.exception import FileSyntaxException
 from .table import Table, ColumnAlign
 import uuid
 import tempfile
-import subprocess
 
 
 class Secret:
@@ -687,7 +688,6 @@ class Secret:
 
     def get_record_type_template(self, record_type, output_format, version, file):
 
-        print("", file=sys.stderr)
         if file is not None:
             self.cli.output_name = file
         return self.cli.output(Record(version).get_template(
@@ -696,13 +696,32 @@ class Secret:
         ))
 
     def get_record_type_list(self, version):
-        print("", file=sys.stderr)
-        record_list = Record(version).get_template_list()
+
+        record_type_list = Record(version).get_template_list()
 
         table = Table(use_color=self.cli.use_color)
         table.add_column("Record Type", allow_wrap=True, data_color=Fore.GREEN)
 
-        for record_type in record_list:
+        for record_type in record_type_list:
             table.add_row([record_type])
 
         return self.cli.output(table.get_string())
+
+    def get_field_type_list(self, version):
+        field_type_list = FieldType.get_field_type_list(version)
+
+        table = Table(use_color=self.cli.use_color)
+        table.add_column("Field Type", allow_wrap=True, data_color=Fore.GREEN)
+
+        for field_type in field_type_list:
+            table.add_row([field_type])
+
+        return self.cli.output(table.get_string())
+
+    def get_field_type_schema(self, field_type, output_format, version):
+        schema = FieldType.get_field_type_schema(field_type, version)
+
+        if output_format == "json":
+            return self.cli.output(json.dumps(schema, indent=4))
+
+        return self.cli.output(yaml.dump(schema))

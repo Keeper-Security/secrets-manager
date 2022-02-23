@@ -31,9 +31,54 @@ def get_field_type_map():
 
 
 def get_class_by_type(class_name):
+    get_field_type_map()
     if class_name in field_map:
         return field_map[class_name]
     raise ImportError("Field type class {} does not exists.".format(class_name))
+
+
+def get_field_type_list():
+    return list(get_field_type_map().keys())
+
+
+def get_field_type_schema(field_type):
+    get_field_type_map()
+
+    def _expand_value_type(schema):
+
+        allow_multiple = schema.get("allow_multiple", False)
+        value_type = schema.get("value_type")
+        # If the record doesn't set allow_multiple to True/False, allow the field to set the value.
+        if issubclass(value_type, FieldType) is True:
+            new_schema = value_type.schema
+            return _expand_value_type(new_schema)
+        elif issubclass(value_type, BaseEnum) is True:
+            value = "<#ADD: " + value_type.build_example() + ">"
+            return value
+        elif issubclass(value_type, dict):
+            value_block = {}
+            for key, info in schema.get("schema").items():
+                value_block[key] = _expand_value_type(info)
+            return value_block
+        else:
+            value = "<#ADD: " + schema.get("desc", "Insert a {}".format(value_type.__name__)) + ">"
+            if allow_multiple is True:
+                value = [value]
+            return value
+
+    data = {
+        "type": field_type
+    }
+
+    if field_type not in field_map:
+        raise ValueError("Field type '{}' does not exists.".format(field_type))
+    field_type_obj = field_map[field_type]
+    field_schema = field_type_obj.schema
+    data["value"] = _expand_value_type(field_schema)
+    data["privacyScreen"] = field_schema.get("privacy_screen", False)
+    field_type_obj.add_template_specifics(data)
+
+    return data
 
 
 class PasswordComplexity:
@@ -87,6 +132,9 @@ class FieldType:
     # In a field that allows multiple FieldType, is there a "primary key" that makes a dictionary entry unique.
     # This use for Phones, which can many Phone entries, and if we need to figure out what is unique.
     group_key = None
+
+    # Are multiple values allowed
+    allow_multiple = False
 
     def __init__(self, *args, **kwargs):
         self._value = None
@@ -343,7 +391,8 @@ class Phone(FieldType):
 class Phones(FieldType):
     name = "phone"
     group_key = "type"
-    schema = {"value_type": Phone, "allow_multiple": True}
+    allow_multiple = True
+    schema = {"value_type": Phone}
 
 
 class Name(FieldType):

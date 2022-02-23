@@ -1,6 +1,6 @@
 import unittest
 from keeper_secrets_manager_helper.record_type import RecordType
-from keeper_secrets_manager_helper.v3.record_type import get_class_by_type, make_class_name, get_record_type_list
+from keeper_secrets_manager_helper.v3.record_type import get_class_by_type, make_class_name
 import json
 import tempfile
 
@@ -28,6 +28,33 @@ class ParserTest(unittest.TestCase):
         name = make_class_name("#####")
         self.assertEqual("", name)
 
+    def test_load_record_type_file(self):
+
+        data = {
+            "version": "v3",
+            "kind": "KeeperRecordType",
+            "data": [
+                {
+                    "class": "MyCustom",
+                    "name": "myCustom",
+                    "fields": [
+                        {"type": "text", "label": "Text One"},
+                        {"type": "text", "label": "Text Two"}
+                    ]
+                }
+            ]
+        }
+        with tempfile.NamedTemporaryFile("w", suffix=".json") as fh:
+            fh.write(json.dumps(data))
+            fh.seek(0)
+            RecordType.load_record_types(fh.name)
+            fh.close()
+
+        try:
+            get_class_by_type("myCustom")
+        except ImportError as err:
+            self.fail("Could not find class MyCustom: " + str(err))
+
     def test_load_commander_record_type_file(self):
 
         data = [
@@ -54,9 +81,6 @@ class ParserTest(unittest.TestCase):
             fh.close()
 
         try:
-            azure_class = get_class_by_type("Azure Login")
+            get_class_by_type("Azure Login")
         except ImportError as err:
             self.fail("Could not find class Azure Login: " + str(err))
-
-
-

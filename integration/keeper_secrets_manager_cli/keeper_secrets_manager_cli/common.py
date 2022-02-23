@@ -82,11 +82,16 @@ def launch_editor(file, editor=None, use_blocking=False, process_name=None):
     # launches another application and exists. If we are using blocking we are going to either cause blocking on
     # the way we launch the application (MacOS) or monitor the processes until the application exits.
     if use_blocking is True:
+        # In MacOS, opening the application with -W will wait until the application exits before continuing. The
+        # application needs to completely exit to continue. I mean completely exit, not just that windows closed.
         if platform.system() == "Darwin":
             cmd = ["open", "-W", "-a"] + cmd
             subprocess.call(cmd)
+
+        # Check the task list to see if the application is running. Once it is not, break out the while loop.
         elif platform.system() == "Windows":
             subprocess.call(cmd)
+
             while True:
                 time.sleep(2)
                 process_found = False

@@ -1,4 +1,4 @@
-name: Test-CLI
+name: Test-Python-Helper
 
 on:
   pull_request:
@@ -32,29 +32,15 @@ jobs:
         run: |
           python3 setup.py build install
 
-      ########## KSM Python Helper (from source)
-
-      - name: Install SDK Helper dependencies
-        working-directory: ./sdk/python/helper
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install -r requirements.txt
-          python3 -m pip install -e .
-
-      - name: Install SDK Helper for integrations
-        working-directory: ./sdk/python/helper
-        run: |
-          python3 setup.py build install
-
-      ########## CLI
+      ########## PYTHON HELPER
 
       - name: Install CLI dependencies
-        working-directory: ./integration/keeper_secrets_manager_cli
+        working-directory: ./sdk/python/helper
         run: |
           python3 -m pip install -r requirements.txt
           python3 -m pip install pytest pytest-cov
 
       - name: Run CLI tests
-        working-directory: ./integration/keeper_secrets_manager_cli
+        working-directory: ./sdk/python/helper
         run: |
           PYTHONPATH=$PWD pytest
