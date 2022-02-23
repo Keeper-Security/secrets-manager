@@ -576,29 +576,40 @@ class Secret:
                                password_generate_flag, title=None, notes=None, editor=None):
         self._check_if_can_add_records()
 
+        # If the editor was passed in, assume it doesn't need blocking.
         editor_use_blocking = False
         editor_process_name = None
+
+        # If the editor was not passed in, use the editor set in the config. If not set, the code will
+        # attempt to find and editor later.
         if editor is None:
             editor = self.cli.editor
             editor_use_blocking = self.cli.editor_use_blocking
             editor_process_name = self.cli.editor_process_name
 
-            template = Record(version).get_template(
-                record_type=record_type,
-                output_format=output_format,
-                title=title,
-                notes=notes
-            )
+        # Build a templated record with placeholders <#ADD>
+        template = Record(version).get_template(
+            record_type=record_type,
+            output_format=output_format,
+            title=title,
+            notes=notes
+        )
 
-            temp_filename = None
-            try:
-                # Write the template file and close it. Windows doesn't like to share open files.
-                tf = tempfile.NamedTemporaryFile("w+", delete=False)
-                temp_filename = tf.name
-                tf.write(template)
-                tf.close()
+        temp_filename = None
+        try:
+            # Write the template file and close it. Windows doesn't like to share open files. The finally will handle
+            # deleting  the file, so set delete=False so the tempfile doesn't delete it when closed.
+            tf = tempfile.NamedTemporaryFile("w+", delete=False)
+            temp_filename = tf.name
+            tf.write(template)
+            tf.close()
 
-                while True:
+            launch_the_editor = True
+
+            while True:
+
+                if launch_the_editor is True:
+
                     # Launch the editor
                     launch_editor(
                         file=temp_filename,
@@ -607,45 +618,53 @@ class Secret:
                         process_name=editor_process_name
                     )
 
-                    with open(temp_filename, 'r') as fh:
-                        record_data = fh.read()
-                        fh.close()
-                        if re.search(r'<#ADD', record_data, re.MULTILINE) is not None:
-                            ynq = input(Fore.RED + "Found template markers (#ADD) still in the record data. Either " +
-                                                   "add a value or remove the line completely. " + Style.RESET_ALL +
-                                                   "Do you wish to edit? Y/n/q: ")
-                            if ynq == "" or ynq[0].lower() == "y":
-                                continue
-                            if ynq[0].lower() == "q":
-                                print("Not adding record.")
-                                return
-                    try:
-                        # When saved, import the file
-                        self.add_record_from_file(
-                            folder_uid=folder_uid,
-                            file=temp_filename,
-                            password_generate_flag=password_generate_flag
-                        )
-                        # All is good break out of the loop
-                        break
-                    except FileSyntaxException as err:
-                        ynq = input(Fore.RED + str(err) + Style.RESET_ALL +
-                                    "Do you wish to edit and try again? Y/n/q: ")
-                    except Exception as err:
-                        ynq = input(Fore.RED + f"Could not create the record: {err}. " + Style.RESET_ALL +
-                                    "Do you wish to edit and try again? Y/n/q: ")
+                with open(temp_filename, 'r') as fh:
+                    record_data = fh.read()
+                    fh.close()
+                    if re.search(r'<#ADD', record_data, re.MULTILINE) is not None:
+                        print(Fore.RED + "Found template markers (#ADD) still in the record data. Either " +
+                              "add a value or remove the line completely. Enter 'r' to recheck " +
+                              "the file if the file was processed before you finished editing. " + Style.RESET_ALL)
+                        ynq = input("Do you wish to edit? Y/n/r/q: ")
+                        if ynq == "" or ynq[0].lower() == "y":
+                            launch_the_editor = True
+                            continue
+                        if ynq[0].lower() == "r":
+                            # If rechecking, don't launch the editor
+                            launch_the_editor = False
+                            continue
+                        if ynq[0].lower() == "q":
+                            print("Not adding record.")
+                            return
 
-                    if ynq == "" or ynq[0].lower() == "y":
-                        continue
-                    if ynq[0].lower() == "q":
-                        print("Not adding record.")
-                        return
+                try:
+                    # When saved, import the file
+                    self.add_record_from_file(
+                        folder_uid=folder_uid,
+                        file=temp_filename,
+                        password_generate_flag=password_generate_flag
+                    )
+                    # All is good break out of the loop
+                    break
+                except FileSyntaxException as err:
+                    ynq = input(Fore.RED + str(err) + Style.RESET_ALL +
+                                "Do you wish to edit and try again? Y/n/q: ")
+                except Exception as err:
+                    ynq = input(Fore.RED + f"Could not create the record: {err}. " + Style.RESET_ALL +
+                                "Do you wish to edit and try again? Y/n/q: ")
 
-            except Exception as err:
-                raise KsmCliException(f"Could not edit the record template file: {err}")
-            finally:
-                if temp_filename is not None:
-                    os.unlink(temp_filename)
+                if ynq == "" or ynq[0].lower() == "y":
+                    launch_the_editor = True
+                    continue
+                if ynq[0].lower() == "q":
+                    print("Not adding record.")
+                    return
+
+        except Exception as err:
+            raise KsmCliException(f"Could not edit the record template file: {err}")
+        finally:
+            if temp_filename is not None:
+                os.unlink(temp_filename)
 
     def add_record_from_file(self, folder_uid, file, password_generate_flag):
         self._check_if_can_add_records()
