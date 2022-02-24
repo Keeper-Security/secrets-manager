@@ -599,7 +599,7 @@ class Secret:
         try:
             # Write the template file and close it. Windows doesn't like to share open files. The finally will handle
             # deleting  the file, so set delete=False so the tempfile doesn't delete it when closed.
-            tf = tempfile.NamedTemporaryFile("w+", delete=False)
+            tf = tempfile.NamedTemporaryFile("w+", suffix=f".{output_format}", delete=False)
             temp_filename = tf.name
             tf.write(template)
             tf.close()
@@ -667,6 +667,7 @@ class Secret:
                 os.unlink(temp_filename)
 
     def add_record_from_file(self, folder_uid, file, password_generate_flag):
+
         self._check_if_can_add_records()
 
         try:
@@ -680,6 +681,8 @@ class Secret:
             raise KsmCliException(str(err))
         except Exception as err:
             raise KsmCliException(f"Could not load records from file {file}: {err}")
+
+        print("The following is the new record UIDs in JSON ...", file=sys.stderr)
         return self.cli.output(json.dumps(record_uids))
 
     def add_record_from_field_args(self, version, folder_uid, password_generate_flag, record_type,
@@ -687,16 +690,21 @@ class Secret:
 
         self._check_if_can_add_records()
 
-        records = Record(version).create_from_field_args(
-            record_type=record_type,
-            title=title,
-            notes=notes,
-            field_args=field_args,
-            password_generate=password_generate_flag
-        )
-        record = records[0]
-        record_create_obj = record.get_record_create_obj()
-        record_uid = self.cli.client.create_secret(folder_uid, record_create_obj)
+        try:
+            records = Record(version).create_from_field_args(
+                record_type=record_type,
+                title=title,
+                notes=notes,
+                field_args=field_args,
+                password_generate=password_generate_flag
+            )
+            record = records[0]
+            record_create_obj = record.get_record_create_obj()
+            record_uid = self.cli.client.create_secret(folder_uid, record_create_obj)
+        except Exception as err:
+            raise KsmCliException(f"{err}")
+
+        print("The following is the new record UID ...", file=sys.stderr)
         return self.cli.output(record_uid)
 
     def generate_password(self, length, lowercase, uppercase, digits, special_characters):

@@ -663,7 +663,6 @@ def secret_add_editor_command(ctx, shared_folder_uid, record_type, password_gene
                               output_format, editor, version):
     """Add a secret record via a text editor"""
 
-    print("The following is the new record UID ...", file=sys.stderr)
     ctx.obj["secret"].add_record_interactive(
         version=version,
         folder_uid=shared_folder_uid,
@@ -689,7 +688,6 @@ def secret_add_editor_command(ctx, shared_folder_uid, record_type, password_gene
 def secret_add_file_command(ctx, shared_folder_uid, file, password_generate):
     """Add a secret record(s) from a file"""
 
-    print("The following is the new record UIDs in JSON ...", file=sys.stderr)
     ctx.obj["secret"].add_record_from_file(
         folder_uid=shared_folder_uid,
         file=file,
@@ -715,7 +713,6 @@ def secret_add_field_command(ctx, shared_folder_uid, record_type, title, passwor
                              field_args):
     """Add a secret record from a command line field arguments"""
 
-    print("The following is the new record UID ...", file=sys.stderr)
     ctx.obj["secret"].add_record_from_field_args(
         version=version,
         folder_uid=shared_folder_uid,
