@@ -1,12 +1,18 @@
 function Register-KeeperVault {
-  [CmdletBinding()]
+  [CmdletBinding(DefaultParameterSetName = 'Token')]
   param (
     [Parameter(Mandatory = $true)]
     [string] $Name,
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Token')]
     [string] $OneTimeToken,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Config')]
+    [string] $Config,
     [string] $LocalVaultName
   )
+  if ($PSVersionTable.PSVersion.Major -lt 6) {
+    Write-Error "Keeper Secrets Manager: this version of Powershell ($($PSVersionTable.PSVersion.ToString())) is not supported"
+    return
+  }
   $vaults = Microsoft.Powershell.SecretManagement\Get-SecretVault
   if ($LocalVaultName) {
     $localVaultModuleName = $vaults.Where( { $_.Name -eq $LocalVaultName } ) | Select-Object -ExpandProperty ModuleName
@@ -26,7 +32,14 @@ function Register-KeeperVault {
   $configSecretName = 'KeeperVault.' + $Name
   Write-Host "Storing Keeper Vault config $($configSecretName) in $($localVaultModuleName) Vault named $($LocalVaultName)"
   $moduleInstance = Import-Module -Name $localVaultModuleName -PassThru -ErrorAction Stop
-  $result = [SecretManagement.Keeper.Client]::GetVaultConfig($OneTimeToken).GetAwaiter().GetResult()
+  switch ($PSCmdlet.ParameterSetName) {
+    'Token' {
+      $result = [SecretManagement.Keeper.Client]::GetVaultConfigFromToken($OneTimeToken).GetAwaiter().GetResult()
+    }
+    'Config' {
+      $result = [SecretManagement.Keeper.Client]::GetVaultConfigFromConfigString($Config).GetAwaiter().GetResult()
+    }
+  }
   if ($result.IsFailure) {
     Write-Error $result.ErrorMessage 
     return
