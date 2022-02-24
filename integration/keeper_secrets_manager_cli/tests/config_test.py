@@ -3,6 +3,8 @@ import unittest
 from click.testing import CliRunner
 import keeper_secrets_manager_cli
 from keeper_secrets_manager_cli.__main__ import cli
+from keeper_secrets_manager_cli.export import Export
+from keeper_secrets_manager_core.mock import MockConfig
 import tempfile
 from colorama import Fore
 
@@ -14,6 +16,12 @@ class ConfigTest(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         os.chdir(self.temp_dir.name)
 
+        # Make a fake keeper.ini file.
+        export = Export(config=MockConfig().make_config(), file_format="ini", plain=True)
+        with open("keeper.ini", "w") as fh:
+            fh.write(export.run().decode())
+            fh.close()
+
     def tearDown(self) -> None:
         os.chdir(self.orig_dir)
 
@@ -21,7 +29,6 @@ class ConfigTest(unittest.TestCase):
 
         runner = CliRunner()
         result = runner.invoke(cli, ['config', 'color', "--enable"], catch_exceptions=False)
-        print("OUTPUT", result.output)
         self.assertEqual(0, result.exit_code, "did not get a success on color enable")
 
         result = runner.invoke(cli, ['profile', 'list'], catch_exceptions=False)
@@ -41,7 +48,6 @@ class ConfigTest(unittest.TestCase):
 
         runner = CliRunner()
         result = runner.invoke(cli, ['config', 'cache', "--enable"], catch_exceptions=False)
-        print("OUTPUT", result.output)
         self.assertEqual(0, result.exit_code, "did not get a success on record cache enable")
 
         client = keeper_secrets_manager_cli.KeeperCli()
@@ -57,7 +63,6 @@ class ConfigTest(unittest.TestCase):
 
         runner = CliRunner()
         result = runner.invoke(cli, ['config', 'record-type-dir', '-d', self.temp_dir.name], catch_exceptions=False)
-        print("OUTPUT", result.output)
         self.assertEqual(0, result.exit_code, "did not get a success on record cache enable")
 
         client = keeper_secrets_manager_cli.KeeperCli()
@@ -74,7 +79,6 @@ class ConfigTest(unittest.TestCase):
         runner = CliRunner()
         result = runner.invoke(cli, ['config', 'editor',
                                      '--app', 'TextMate', '--blocking'], catch_exceptions=False)
-        print("OUTPUT", result.output)
         self.assertEqual(0, result.exit_code, "did not get a success on editor set")
 
         client = keeper_secrets_manager_cli.KeeperCli()
@@ -101,5 +105,4 @@ class ConfigTest(unittest.TestCase):
 
         runner = CliRunner()
         result = runner.invoke(cli, ['config', 'show'], catch_exceptions=False)
-        print("OUTPUT", result.output)
         self.assertEqual(0, result.exit_code, "did not get a success on editor set")

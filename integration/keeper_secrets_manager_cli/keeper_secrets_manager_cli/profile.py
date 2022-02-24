@@ -354,19 +354,19 @@ class Profile:
         print("Imported config saved to profile {} at {}.".format(profile_name, file), file=sys.stderr)
 
     def set_color(self, on_off):
-        common_config = self._get_common_config("Cannot set log level.")
+        common_config = self._get_common_config("Cannot set color settings.")
         common_config[Profile.color_key] = str(on_off)
         self.cli.use_color = on_off
         self.save()
 
     def set_cache(self, on_off):
-        common_config = self._get_common_config("Cannot set log level.")
+        common_config = self._get_common_config("Cannot set record cache.")
         common_config[Profile.cache_key] = str(on_off)
         self.cli.use_color = on_off
         self.save()
 
     def set_record_type_dir(self, directory):
-        common_config = self._get_common_config("Cannot record type directory.")
+        common_config = self._get_common_config("Cannot set the record type directory.")
         if directory is None:
             del common_config[Profile.record_type_dir_key]
         else:
