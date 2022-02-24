@@ -75,7 +75,7 @@ class InitTest(unittest.TestCase):
                     self.assertIsNotNone(config.get("privateKey"), "private key is missing")
                     self.assertIsNotNone(config.get("appKey"), "app key is missing")
                     self.assertIsNotNone(config.get("hostname"), "hostname is missing")
-                    self.assertEqual("US", config.get("hostname"), "hostname is not correct")
+                    self.assertEqual("keepersecurity.com", config.get("hostname"), "hostname is not correct")
                     self.assertEqual(mock_config.get("appKey"), config.get("appKey"),
                                      "app key is not correct")
 
@@ -97,7 +97,7 @@ class InitTest(unittest.TestCase):
                     self.assertIsNotNone(config.get("privateKey"), "private key is missing")
                     self.assertIsNotNone(config.get("appKey"), "app key is missing")
                     self.assertIsNotNone(config.get("hostname"), "hostname is missing")
-                    self.assertEqual("US", config.get("hostname"), "hostname is not correct")
+                    self.assertEqual("keepersecurity.com", config.get("hostname"), "hostname is not correct")
                     self.assertEqual(mock_config.get("appKey"), config.get("appKey"),
                                      "app key is not correct")
 
@@ -169,6 +169,6 @@ class InitTest(unittest.TestCase):
                     self.assertIsNotNone(config.get("privateKey"), "private key is missing")
                     self.assertIsNotNone(config.get("appKey"), "app key is missing")
                     self.assertIsNotNone(config.get("hostname"), "hostname is missing")
-                    self.assertEqual("US", config.get("hostname"), "hostname is not correct")
+                    self.assertEqual("keepersecurity.com", config.get("hostname"), "hostname is not correct")
                     self.assertEqual(mock_config.get("appKey"), config.get("appKey"),
                                      "app key is not correct")
