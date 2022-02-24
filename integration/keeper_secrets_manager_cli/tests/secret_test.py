@@ -802,6 +802,99 @@ class SecretTest(unittest.TestCase):
             print(result.stdout)
             tf.close()
 
+    def test_template_record_types(self):
+
+        """Test the template record type command
+        """
+
+        # Get a list of record types, display to terminal
+        runner = CliRunner()
+        results = runner.invoke(cli, ['secret', 'template', 'record', '-l'], catch_exceptions=False)
+        output = results.output
+        self.assertRegex(output, r'Record Type', 'Did not find the table title')
+        self.assertRegex(output, r'login', 'found the login record type')
+
+        # Get a record type as JSON and write it to a file
+        with tempfile.NamedTemporaryFile() as tf:
+            runner = CliRunner()
+            runner.invoke(cli, ['secret', 'template', 'record', '-f', tf.name, 'login'], catch_exceptions=False)
+            tf.seek(0)
+            schema = json.loads(tf.read().decode())
+            print(schema)
+            self.assertEqual("v3", schema.get("version"), "did not get the correct version")
+            self.assertEqual("KeeperRecord", schema.get("kind"), "did not get the correct kind")
+            self.assertIsInstance(schema.get("data"), list, "data is not a list")
+
+            data = schema.get("data")[0]
+
+            self.assertEqual("login", data.get("recordType"), "record type is not login")
+            self.assertIsNotNone(data.get("title"), "title was None")
+            self.assertIsNotNone(data.get("notes"), "title was None")
+
+            self.assertIsInstance(data.get("fields"), list, "fields is not a list")
+
+            field = data.get("fields")[0]
+            self.assertEqual("login", field.get("type"), "field type is not login")
+            self.assertIsNotNone(field.get("value"), "value was None")
+
+            tf.close()
+
+    def test_template_field_types(self):
+
+        """Test the template field type command
+        """
+
+        # Get a list of record types, display to terminal
+        runner = CliRunner()
+        results = runner.invoke(cli, ['secret', 'template', 'field', '-l'], catch_exceptions=False)
+        output = results.output
+        self.assertRegex(output, r'Field Type', 'Did not find the table title')
+        self.assertRegex(output, r'accountNumber', 'found the accountNumber field type')
+
+        # Get a record type as JSON and write it to a file
+        runner = CliRunner()
+        results = runner.invoke(cli, ['secret', 'template', 'field', 'securityQuestion'],
+                                catch_exceptions=False)
+        output = results.output
+        schema = json.loads(output)
+
+        self.assertEqual("securityQuestion", schema.get("type"), "field type is not securityQuestion")
+        self.assertIsNotNone(schema.get("value"), "value was None")
+
+    def test_add_record_via_field(self):
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        profile_init_res = mock.Response()
+        profile_init_res.add_folder(uid="FAKEUID")
+        profile_init_res.add_record(title="Profile Init")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
+                as mock_client:
+            mock_client.return_value = secrets_manager
+
+            Profile.init(token='MY_TOKEN')
+
+            runner = CliRunner()
+            results = runner.invoke(cli, ['secret', 'add', 'field',
+                                          '--sf', 'FAKEUID',
+                                          '--rt', 'login',
+                                          '--title', 'My Title',
+                                          '-p',
+                                          'login=jsmith',
+                                          'url=http://localhost'
+                                          ], catch_exceptions=False)
+            output = results.output
+            # stderr and stdout are merged
+            output_line = output.split('\n')
+            self.assertRegex(output_line[1], r'^[\w_-]{22}$', "did not get back a record uid")
+
 
 if __name__ == '__main__':
     unittest.main()

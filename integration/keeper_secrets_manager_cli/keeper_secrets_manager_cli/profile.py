@@ -13,6 +13,7 @@
 import os
 import configparser
 from keeper_secrets_manager_cli.exception import KsmCliException
+from keeper_secrets_manager_cli.common import find_ksm_path
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
@@ -32,6 +33,10 @@ class Profile:
     default_ini_file = os.environ.get("KSM_INI_FILE", "keeper.ini")
     color_key = "color"
     cache_key = "cache"
+    record_type_dir_key = "record_type_dir"
+    editor_key = "editor"
+    editor_use_blocking_key = "editor_use_blocking"
+    editor_process_name_key = "editor_process_name"
 
     def __init__(self, cli, ini_file=None):
 
@@ -109,34 +114,8 @@ class Profile:
 
     @staticmethod
     def find_ini_config():
-
-        # Directories to scan for the keeper INI file. This both Linux and Windows paths. The os.path.join
-        # should create a path that the OS understands. The not_set stuff in case the environmental var is not set.
-        # The last entry is the current working directory.
-        not_set = "_NOTSET_"
-        dir_locations = [
-            [os.environ.get("KSM_INI_DIR", not_set)],
-            [os.getcwd()],
-
-            # Linux
-            [os.environ.get("HOME", not_set)],
-            [os.environ.get("HOME", not_set), ".keeper"],
-            ["/etc"],
-            ["/etc", "keeper"],
-
-            # Windows
-            [os.environ.get("USERPROFILE", not_set)],
-            [os.environ.get("APPDIR", not_set)],
-            [os.environ.get("PROGRAMDATA", not_set), "Keeper"],
-            [os.environ.get("PROGRAMFILES", not_set), "Keeper"],
-        ]
-
-        for dir_location in dir_locations:
-            path = os.path.join(*dir_location, Profile.default_ini_file)
-            if os.path.exists(path) and os.path.isfile(path):
-                return path
-
-        return None
+        file = find_ksm_path(Profile.default_ini_file, is_file=True)
+        return file
 
     def get_config(self):
         self._load_config()
@@ -239,7 +218,8 @@ class Profile:
             "clientId": "",
             "privateKey": "",
             "appKey": "",
-            "hostname": ""
+            "hostname": "",
+            "appOwnerPublicKey": ""
         }
 
         for k, v in config_storage.config.items():
@@ -251,7 +231,10 @@ class Profile:
 
         print("Added profile {} to INI config file located at {}".format(profile_name, ini_file), file=sys.stderr)
 
-    def list_profiles(self, output='text', use_color=True):
+    def list_profiles(self, output='text', use_color=None):
+
+        if use_color is None:
+            use_color = self.cli.use_color
 
         profiles = []
 
@@ -371,20 +354,59 @@ class Profile:
         print("Imported config saved to profile {} at {}.".format(profile_name, file), file=sys.stderr)
 
     def set_color(self, on_off):
-        common_config = self._get_common_config("Cannot set log level.")
+        common_config = self._get_common_config("Cannot set color settings.")
         common_config[Profile.color_key] = str(on_off)
         self.cli.use_color = on_off
         self.save()
 
     def set_cache(self, on_off):
-        common_config = self._get_common_config("Cannot set log level.")
+        common_config = self._get_common_config("Cannot set record cache.")
         common_config[Profile.cache_key] = str(on_off)
         self.cli.use_color = on_off
         self.save()
 
+    def set_record_type_dir(self, directory):
+        common_config = self._get_common_config("Cannot set the record type directory.")
+        if directory is None:
+            del common_config[Profile.record_type_dir_key]
+        else:
+            if os.path.exists(directory) is False:
+                raise FileNotFoundError(f"Cannot find the directory 'directory' for record type schemas.")
+            common_config[Profile.record_type_dir_key] = str(directory)
+        self.cli.record_type_dir = directory
+        self.save()
+
+    def set_editor(self, editor, use_blocking=None, process_name=None):
+        common_config = self._get_common_config("Cannot set editor.")
+        if editor is None:
+            common_config.pop(Profile.editor_key, None)
+            common_config.pop(Profile.editor_use_blocking_key, None)
+            common_config.pop(Profile.editor_process_name_key, None)
+        else:
+            common_config[Profile.editor_key] = editor
+            if use_blocking is not None:
+                common_config[Profile.editor_use_blocking_key] = str(use_blocking)
+            if process_name is not None:
+                common_config[Profile.editor_process_name_key] = process_name
+        self.cli.editor = editor
+        self.cli.editor_use_blocking = use_blocking
+        self.save()
+
     def show_config(self):
         common_config = self._get_common_config("Cannot show the config.")
+
+        table = Table(use_color=self.cli.use_color)
+        table.add_column("Config Item", data_color=Fore.GREEN)
+        table.add_column("Value", data_color=Fore.YELLOW, allow_wrap=True)
+
         not_set_text = "-NOT SET-"
-        print("Active Profile: {}".format(common_config.get(Profile.active_profile_key, not_set_text)))
-        print("Cache Enabled: {}".format(common_config.get(Profile.cache_key, not_set_text)))
-        print("Color Enabled: {}".format(common_config.get(Profile.color_key, not_set_text)))
+        table.add_row(["Active Profile", common_config.get(Profile.active_profile_key, not_set_text)])
+        table.add_row(["Cache Enabled", common_config.get(Profile.cache_key, not_set_text)])
+        table.add_row(["Color Enabled", common_config.get(Profile.color_key, not_set_text)])
+        table.add_row(["Record Type Directory", common_config.get(Profile.record_type_dir_key, not_set_text)])
+        table.add_row(["Editor", "{} ({})".format(
+            common_config.get(Profile.editor_key, not_set_text),
+            common_config.get(Profile.editor_process_name_key, "NA")
+        )])
+        table.add_row(["Editor Blocking", common_config.get(Profile.editor_use_blocking_key, not_set_text)])
+        self.cli.output(table.get_string())

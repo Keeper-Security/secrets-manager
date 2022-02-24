@@ -17,3 +17,7 @@ class KsmCliException(click.ClickException):
 
     def __str__(self):
         return self.colorize()
+
+
+class KsmRecordSyntaxException:
+    pass

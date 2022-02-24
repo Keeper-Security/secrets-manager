@@ -1,0 +1,3 @@
+
+class FileSyntaxException(Exception):
+    pass

@@ -79,6 +79,10 @@ class SecretInflateTest(unittest.TestCase):
             runner = CliRunner()
             result = runner.invoke(cli, ['secret', 'get', '-u', main.uid, '--unmask', '--json'],
                                    catch_exceptions=False)
+
+            print("-----------------")
+            print(result.output)
+            print("-----------------")
             result = json.loads(result.output)
 
             card_ref = next((item for item in result["fields"] if item["type"] == "cardRef"), None)

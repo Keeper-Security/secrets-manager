@@ -54,7 +54,15 @@ class AliasedGroup(HelpColorsGroup):
         "notation",
         "update",
         "version",
-        "password"
+        "password",
+        "template",
+        "add",
+        "editor",
+        "field",
+        "record",
+        "file",
+        "cache",
+        "record-type-dir"
     ]
 
     alias_commands = {
@@ -542,13 +550,195 @@ def secret_password_command(ctx, length, lc, uc, d, sc):
     )
 
 
+# SECRET TEMPLATE COMMAND
+
+
+@click.group(
+    name='template',
+    cls=AliasedGroup,
+    help_headers_color='yellow',
+    help_options_color='green'
+)
+def secret_template_command():
+    """Record and field information"""
+
+
+@click.command(
+    name='record',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.pass_context
+@click.option('--show-list', '-l', is_flag=True, help='List available record types.')
+@click.option('--output-format', '-o', type=click.Choice(['yaml', 'json'], case_sensitive=False), default='json',
+              help='File format to export.')
+@click.option('--output-file', '-f', type=str, help='Write template to a file.')
+@click.option('--version', type=click.Choice(['v3'], case_sensitive=False), default='v3',
+              help='Record version.')
+@click.argument('record_type', type=str, nargs=-1)
+def secret_template_record_command(ctx, show_list, output_format, output_file, version, record_type):
+    """Get a record type or list available record types"""
+
+    if show_list is True:
+        print("", file=sys.stderr)
+        ctx.obj["secret"].get_record_type_list(version=version)
+        print("", file=sys.stderr)
+    else:
+        if record_type is None or len(record_type) == 0:
+            raise KsmCliException("A record type is required.")
+
+        print("", file=sys.stderr)
+        ctx.obj["secret"].get_record_type_template(
+            record_type=record_type[0],
+            version=version,
+            output_format=output_format,
+            file=output_file
+        )
+        print("", file=sys.stderr)
+
+
+@click.command(
+    name='field',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.pass_context
+@click.option('--show-list', '-l', is_flag=True, help='List available fields types.')
+@click.option('--output-format', '-o', type=click.Choice(['yaml', 'json'], case_sensitive=False), default='json',
+              help='Display field schema in this format.')
+@click.option('--version', type=click.Choice(['v3'], case_sensitive=False), default='v3',
+              help='Record version.')
+@click.argument('field_type', type=str, nargs=-1)
+def secret_template_field_command(ctx, show_list, output_format, version, field_type):
+    """List field types and field schemas"""
+    if show_list is True:
+        print("", file=sys.stderr)
+        ctx.obj["secret"].get_field_type_list(version=version)
+    else:
+        if field_type is None or len(field_type) == 0:
+            raise KsmCliException("A field type is required.")
+
+        print("", file=sys.stderr)
+        ctx.obj["secret"].get_field_type_schema(
+            field_type=field_type[0],
+            output_format=output_format,
+            version=version
+        )
+        print("", file=sys.stderr)
+
+
+secret_template_command.add_command(secret_template_record_command)
+secret_template_command.add_command(secret_template_field_command)
+
+
+# SECRET ADD COMMAND
+
+
+@click.group(
+    name='add',
+    cls=AliasedGroup,
+    help_headers_color='yellow',
+    help_options_color='green'
+)
+def secret_add_command():
+    """Add a secret record to a folder"""
+
+
+@click.command(
+    name='editor',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.pass_context
+@click.option('--shared-folder-uid', '--sf', required=True, type=str, help="Place record in folder with UID.")
+@click.option('--record-type', '--rt', required=True, type=str, help="Record type")
+@click.option('--password-generate', '-p', is_flag=True, help='Generate passwords for empty password fields.')
+@click.option('--title', '-t', type=str, help="Record title")
+@click.option('--notes', '-n', type=str, help="Record simple note")
+@click.option('--output-format', '-o', type=click.Choice(['yaml', 'json'], case_sensitive=False), default='json',
+              help='File format to display in editor.')
+@click.option('--editor', '-e', type=str, help='Application to use to edit record data.')
+@click.option('--version', type=click.Choice(['v3'], case_sensitive=False), default='v3', help='Record version.')
+def secret_add_editor_command(ctx, shared_folder_uid, record_type, password_generate, title, notes,
+                              output_format, editor, version):
+    """Add a secret record via a text editor"""
+
+    ctx.obj["secret"].add_record_interactive(
+        version=version,
+        folder_uid=shared_folder_uid,
+        record_type=record_type,
+        output_format=output_format,
+        password_generate_flag=password_generate,
+        title=title,
+        notes=notes,
+        editor=editor
+    )
+    print("", file=sys.stderr)
+
+
+@click.command(
+    name='file',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.pass_context
+@click.option('--shared-folder-uid', '--sf', required=True, type=str, help="Place record in folder with UID.")
+@click.option('--file', '-f', required=True, type=str, help='Add records from record script file.')
+@click.option('--password-generate', '-p', is_flag=True, help='Generate passwords for empty password fields.')
+def secret_add_file_command(ctx, shared_folder_uid, file, password_generate):
+    """Add a secret record(s) from a file"""
+
+    ctx.obj["secret"].add_record_from_file(
+        folder_uid=shared_folder_uid,
+        file=file,
+        password_generate_flag=password_generate,
+    )
+    print("", file=sys.stderr)
+
+
+@click.command(
+    name='field',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.pass_context
+@click.option('--shared-folder-uid', '--sf', required=True, type=str, help="Place record in folder with UID.")
+@click.option('--record-type', '--rt', required=True, type=str, help="Record type")
+@click.option('--title', '-t', required=True, type=str, help="Record title")
+@click.option('--password-generate', '-p', is_flag=True, help='Generate passwords for empty password fields.')
+@click.option('--notes', '-n', type=str, help="Record simple note")
+@click.option('--version', type=click.Choice(['v3'], case_sensitive=False), default='v3', help='Record version.')
+@click.argument('field_args', type=str, nargs=-1)
+def secret_add_field_command(ctx, shared_folder_uid, record_type, title, password_generate, notes, version,
+                             field_args):
+    """Add a secret record from a command line field arguments"""
+
+    ctx.obj["secret"].add_record_from_field_args(
+        version=version,
+        folder_uid=shared_folder_uid,
+        password_generate_flag=password_generate,
+        record_type=record_type,
+        title=title,
+        notes=notes,
+        field_args=list(field_args)
+    )
+    print("", file=sys.stderr)
+
+
+secret_add_command.add_command(secret_add_field_command)
+secret_add_command.add_command(secret_add_file_command)
+secret_add_command.add_command(secret_add_editor_command)
+
+
 secret_command.add_command(secret_list_command)
 secret_command.add_command(secret_get_command)
 secret_command.add_command(secret_notation_command)
 secret_command.add_command(secret_update_command)
+secret_command.add_command(secret_add_command)
 secret_command.add_command(secret_download_command)
 secret_command.add_command(secret_totp_command)
 secret_command.add_command(secret_password_command)
+secret_command.add_command(secret_template_command)
 
 
 # EXEC COMMAND
@@ -607,20 +797,64 @@ def config_log_command(ctx, enable):
 
 
 @click.command(
-    name='record-cache',
+    name='cache',
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
 @click.option('--enable/--disable', required=True, help="Enable or disable cache.")
 @click.pass_context
 def config_cache_command(ctx, enable):
-    """Enable or disable cache"""
+    """Enable or disable record cache"""
     ctx.obj["profile"].set_cache(enable)
+
+
+@click.command(
+    name='record-type-dir',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--directory', "-d", type=str, help='Location of record type schema directory')
+@click.option('--clear', is_flag=True, help='Clear location of record type schema directory')
+@click.pass_context
+def config_rt_dir_command(ctx, directory, clear):
+    """Set the directory that contains record type schemas"""
+
+    if clear is True:
+        directory = None
+    elif directory is None:
+        raise KsmCliException("Either a --directory is required or the --clear flag set")
+
+    ctx.obj["profile"].set_record_type_dir(directory)
+
+
+@click.command(
+    name='editor',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--application', "--app", type=str, help='Application path and name to use for editor.')
+@click.option('--blocking', is_flag=True, help='Application requires blocking.')
+@click.option('--process-name', type=str, help='Application process name.')
+@click.option('--clear', is_flag=True, help='Clear location of record type schema directory')
+@click.pass_context
+def config_editor_command(ctx, application, blocking, process_name, clear):
+    """Set the editor to use for record editing"""
+
+    if clear is True:
+        application = None
+        blocking = False
+        process_name = None
+    if clear is not True and application is None:
+        raise KsmCliException("Either a --application is required or the --clear flag set")
+
+    ctx.obj["profile"].set_editor(editor=application, use_blocking=blocking, process_name=process_name)
 
 
 config_command.add_command(config_show_command)
 config_command.add_command(config_log_command)
 config_command.add_command(config_cache_command)
+config_command.add_command(config_rt_dir_command)
+config_command.add_command(config_editor_command)
 
 
 # REDEEM COMMAND

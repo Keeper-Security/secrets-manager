@@ -14,6 +14,7 @@ import json
 import time
 from collections import deque
 from requests import Response as RequestResponse
+from .keeper_globals import keeper_public_keys
 import string
 import random
 
@@ -444,7 +445,7 @@ class Record:
 class MockConfig:
 
     @staticmethod
-    def make_config(skip_list=None, token=None, app_key=None):
+    def make_config(skip_list=None, token=None, app_key=None, owner_key = None):
 
         if skip_list is None:
             skip_list = []
@@ -467,6 +468,10 @@ class MockConfig:
             random_app_key = ''.join((random.choice(string.ascii_lowercase) for _ in range(32)))
             app_key = base64.b64encode(random_app_key.encode()).decode()
         sm_config.set(ConfigKeys.KEY_APP_KEY, app_key)
+
+        if owner_key is None:
+            owner_key = keeper_public_keys["7"]
+        sm_config.set(ConfigKeys.KEY_OWNER_PUBLIC_KEY, owner_key)
 
         config = {}
         for key in ConfigKeys:
