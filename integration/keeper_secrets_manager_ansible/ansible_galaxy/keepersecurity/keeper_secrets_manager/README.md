@@ -11,7 +11,7 @@ document portal.
 
 ## Ansible Tower
 
-In your playbook's source repository, add `keepersecrity.keeper_secrets_manager` to the
+In your playbook's source repository, add `keepersecurity.keeper_secrets_manager` to the
 `requirement.yml` collections list.
 
 There is an **Execution Environment** docker image location at
@@ -29,7 +29,7 @@ $ pip3 install -U keeper-secrets-manager-core
 Then install the collection.
 
 ```shell
-$ ansible-galaxy collection install keepersecrity.keeper_secrets_manager
+$ ansible-galaxy collection install keepersecurity.keeper_secrets_manager
 ```
 
 # Plugins
