@@ -9,3 +9,4 @@ click_help_colors
 click-repl
 pyyaml
 update-checker
+psutil

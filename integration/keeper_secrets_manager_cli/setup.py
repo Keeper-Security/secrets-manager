@@ -17,7 +17,8 @@ install_requires = [
     'colorama',
     'importlib_metadata',
     'pyyaml',
-    'update-checker'
+    'update-checker',
+    'psutil'
 ]
 
 # Version set in the keeper_secrets_manager_cli.version file.
