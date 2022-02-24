@@ -13,10 +13,25 @@ namespace SecretManagement.Keeper
 {
     public static class Client
     {
-        public static async Task<KeeperResult> GetVaultConfig(string oneTimeToken)
+        public static async Task<KeeperResult> GetVaultConfigFromToken(string oneTimeToken)
         {
             var storage = new InMemoryStorage();
-            SecretsManagerClient.InitializeStorage(storage, oneTimeToken, "keepersecurity.com");
+            SecretsManagerClient.InitializeStorage(storage, oneTimeToken);
+            try
+            {
+                await SecretsManagerClient.GetSecrets(new SecretsManagerOptions(storage));
+            }
+            catch (Exception e)
+            {
+                return KeeperResult.Error(e.Message);
+            }
+
+            return KeeperResult.Ok(storage.AsHashTable());
+        }
+
+        public static async Task<KeeperResult> GetVaultConfigFromConfigString(string config)
+        {
+            var storage = new InMemoryStorage(config);
             try
             {
                 await SecretsManagerClient.GetSecrets(new SecretsManagerOptions(storage));
@@ -73,6 +88,9 @@ namespace SecretManagement.Keeper
             var dict = new Dictionary<string, object>();
             if (parts.Length > 1)
             {
+                if (parts[1] == "Notes") {
+                    return found.Data.notes;
+                }
                 if (parts[1].StartsWith("Files[", true, CultureInfo.InvariantCulture))
                 {
                     if (found.Files == null)
@@ -86,11 +104,13 @@ namespace SecretManagement.Keeper
                         : SecretsManagerClient.DownloadFile(file);
                 }
 
-                var field = found.Data.fields.FirstOrDefault(x => (x.label ?? x.type).Equals(parts[1], StringComparison.OrdinalIgnoreCase));
+                var field = found.Data.fields
+                    .Concat(found.Data.custom ?? new KeeperRecordField[] { })
+                    .FirstOrDefault(x => (x.label ?? x.type).Equals(parts[1], StringComparison.OrdinalIgnoreCase));
                 return field?.value[0].ToString();
             }
 
-            foreach (var field in found.Data.fields)
+            foreach (var field in found.Data.fields.Concat(found.Data.custom ?? new KeeperRecordField[] { }))
             {
                 if (field.type == "fileRef" || field.value.Length == 0)
                 {
@@ -98,6 +118,10 @@ namespace SecretManagement.Keeper
                 }
 
                 dict[field.label ?? field.type] = field.value[0].ToString();
+            }
+
+            if (found.Data.notes != null) {
+                dict["Notes"] = found.Data.notes;
             }
 
             if (found.Files != null && found.Files.Length > 0)
@@ -108,6 +132,19 @@ namespace SecretManagement.Keeper
             return new Hashtable(dict);
         }
 
+        private class RecordComparer : IEqualityComparer<KeeperRecord>
+        {
+            public bool Equals(KeeperRecord x, KeeperRecord y)
+            {
+                return x.RecordUid == y.RecordUid;
+            }
+
+            public int GetHashCode(KeeperRecord obj)
+            {
+                return obj.RecordUid.GetHashCode();
+            }
+        }
+
         public static async Task<string[]> GetSecretsInfo(string filter, Hashtable config)
         {
             var (records, _) = await GetKeeperSecrets(config);
@@ -115,7 +152,8 @@ namespace SecretManagement.Keeper
                 pattern: filter,
                 options: WildcardOptions.IgnoreCase);
             return records
-                .Where(x => filterPattern.IsMatch(x.Data.title))
+                .Where(x => x.RecordUid == filter || filterPattern.IsMatch(x.Data.title))
+                .Distinct(new RecordComparer())
                 .Select(x => $"{x.RecordUid} {x.Data.title}").ToArray();
         }
 
