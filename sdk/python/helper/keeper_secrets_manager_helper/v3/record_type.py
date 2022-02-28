@@ -129,7 +129,11 @@ def load_record_type_from_data(record_types):
 
 # We are going to make some classes based off a YAML file.
 default_record_type_file = "default_record_types.yml"
-module_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+if os.path.exists(f"v3_{default_record_type_file}") is True:
+    schema_file = f"v3_{default_record_type_file}"
+else:
+    schema_file = os.path.abspath(inspect.getfile(inspect.currentframe()))
+module_dir = os.path.dirname(schema_file)
 load_record_type_from_file(os.path.join(module_dir, default_record_type_file))
 
 
