@@ -24,8 +24,7 @@ class Record:
         self.version = version
 
         try:
-            print("Module Paths", "\n".join(sys.path))
-            print("Modules Install", sys.modules)
+            print(">>>>>>>>", self.__file__)
             self.record_mod = import_module(f"keeper_secrets_manager_helper.{self.version}.record")
             self.parser_mod = import_module(f"keeper_secrets_manager_helper.{self.version}.parser")
             self.record_type_mod = import_module(f"keeper_secrets_manager_helper.{self.version}.record_type")
