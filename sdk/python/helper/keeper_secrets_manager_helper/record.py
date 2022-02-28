@@ -1,5 +1,6 @@
 from .common import load_file
 from importlib import import_module
+import sys
 
 
 class Record:
@@ -23,6 +24,7 @@ class Record:
         self.version = version
 
         try:
+            print("Module Paths", "\n".join(sys.path))
             self.record_mod = import_module(f"keeper_secrets_manager_helper.{self.version}.record")
             self.parser_mod = import_module(f"keeper_secrets_manager_helper.{self.version}.parser")
             self.record_type_mod = import_module(f"keeper_secrets_manager_helper.{self.version}.record_type")
