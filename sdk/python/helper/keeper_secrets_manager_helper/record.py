@@ -1,6 +1,7 @@
 from .common import load_file
 from importlib import import_module
 import sys
+import inspect
 
 
 class Record:
@@ -24,7 +25,7 @@ class Record:
         self.version = version
 
         try:
-            print(">>>>>>>>", self.__file__)
+            print(">>>>>>>>", inspect.getfile(self.__class__))
             self.record_mod = import_module(f"keeper_secrets_manager_helper.{self.version}.record")
             self.parser_mod = import_module(f"keeper_secrets_manager_helper.{self.version}.parser")
             self.record_type_mod = import_module(f"keeper_secrets_manager_helper.{self.version}.record_type")
