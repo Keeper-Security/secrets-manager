@@ -2,7 +2,6 @@ from keeper_secrets_manager_helper.v3.field_type import FieldType, get_field_typ
 from keeper_secrets_manager_helper.v3.enum import BaseEnum
 from keeper_secrets_manager_helper.common import load_file
 import os
-import inspect
 import yaml
 import json
 import re
@@ -128,16 +127,31 @@ def load_record_type_from_data(record_types):
 
 
 default_record_type_file = "default_record_types.yml"
-print("DIR >>>>>>>>")
-print(os.listdir())
-print("IM IN HERE", os.path.dirname(__file__))
-this_dir = os.path.abspath(inspect.getfile(inspect.currentframe()))
-print("SCHEMA BLAH", this_dir)
-if os.path.exists(f"v3_{default_record_type_file}") is True:
-    this_dir = f"v3_{default_record_type_file}"
 
-module_dir = os.path.dirname(this_dir)
-load_record_type_from_file(os.path.join(module_dir, default_record_type_file))
+# Get the directory of the executable file. If last directory is keeper_secrets_manager_cli, get the parent
+# directory. There is no keeper_secrets_manager_cli directory.
+
+# This is the module installed check. The default_record_type_file will be in that
+# directory
+current_directory = os.path.dirname(__file__)
+schema_dir = None
+if os.path.exists(os.path.join(current_directory, default_record_type_file)) is True:
+    schema_dir = current_directory
+
+# Else this is the binary where the schema has a different name and is in the root of
+# the app directory.
+else:
+    default_record_type_file = f"v3_{default_record_type_file}"
+    # Find the default_record_type_file in the path. Quit if reach the root fs
+    while current_directory != "/":
+        current_directory = os.path.dirname(current_directory)
+        if os.path.exists(os.path.join(current_directory, default_record_type_file)) is True:
+            schema_dir = current_directory
+            break
+    if schema_dir is None:
+        raise FileNotFoundError(f"Cannot find {default_record_type_file} in the binary app.")
+
+load_record_type_from_file(os.path.join(schema_dir, default_record_type_file))
 
 
 def get_class_by_type(class_name):
