@@ -130,11 +130,13 @@ def load_record_type_from_data(record_types):
 default_record_type_file = "default_record_types.yml"
 print("DIR >>>>>>>>")
 print(os.listdir())
+print("IM IN HERE", os.path.dirname(__file__))
+this_dir = os.path.abspath(inspect.getfile(inspect.currentframe()))
+print("SCHEMA BLAH", this_dir)
 if os.path.exists(f"v3_{default_record_type_file}") is True:
-    schema_file = f"v3_{default_record_type_file}"
-else:
-    schema_file = os.path.abspath(inspect.getfile(inspect.currentframe()))
-module_dir = os.path.dirname(schema_file)
+    this_dir = f"v3_{default_record_type_file}"
+
+module_dir = os.path.dirname(this_dir)
 load_record_type_from_file(os.path.join(module_dir, default_record_type_file))
 
 
