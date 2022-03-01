@@ -4,6 +4,7 @@ on:
 
 jobs:
   publish-java:
+    environment: prod
     runs-on: ubuntu-latest
 
     defaults:
@@ -25,7 +26,7 @@ jobs:
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
-        uses: Keeper-Security/ksm-action@master
+        uses: Keeper-Security/ksm-action@v1
         with:
           keeper-secret-config: ${{ secrets.KSM_ARTIFACT_JAVA_APP_CONFIG }}
           secrets: |
