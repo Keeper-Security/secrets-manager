@@ -131,19 +131,23 @@ default_record_type_file = "default_record_types.yml"
 # Get the directory of the executable file. If last directory is keeper_secrets_manager_cli, get the parent
 # directory. There is no keeper_secrets_manager_cli directory.
 
-# This is the module installed check. The default_record_type_file will be in that
-# directory
+# This is the Pypi module installed check. The default_record_type_file.yml will be in this directory along
+# the other V3 modules.
 current_directory = os.path.dirname(__file__)
 schema_dir = None
 if os.path.exists(os.path.join(current_directory, default_record_type_file)) is True:
     schema_dir = current_directory
 
-# Else this is the binary where the schema has a different name and is in the root of
-# the app directory.
+# Else this is the binary install. For PyInstaller, we move the YAML file to the rood
+# directory of the application. We don't want to hardcode the directory, so walk backwards
+# from here looking for the file. If we get to the root directory the file wasn't found.
 else:
+    # Change the filename to include the version
     default_record_type_file = f"v3_{default_record_type_file}"
-    # Find the default_record_type_file in the path. Quit if reach the root fs
-    while current_directory != "/":
+
+    # Find the default_record_type_file in the path. Quit if reach the root directory.
+    root_dir = os.path.abspath(os.sep)
+    while current_directory != root_dir:
         current_directory = os.path.dirname(current_directory)
         if os.path.exists(os.path.join(current_directory, default_record_type_file)) is True:
             schema_dir = current_directory
