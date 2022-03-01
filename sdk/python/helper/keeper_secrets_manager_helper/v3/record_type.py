@@ -127,8 +127,9 @@ def load_record_type_from_data(record_types):
         class_map_by_type[item.get("name")] = record_type_class
 
 
-# We are going to make some classes based off a YAML file.
 default_record_type_file = "default_record_types.yml"
+print("DIR >>>>>>>>")
+print(os.listdir())
 if os.path.exists(f"v3_{default_record_type_file}") is True:
     schema_file = f"v3_{default_record_type_file}"
 else:
