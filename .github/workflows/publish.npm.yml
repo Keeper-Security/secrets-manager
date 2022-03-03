@@ -4,6 +4,7 @@ on:
 
 jobs:
   publish-npm:
+    environment: prod
     runs-on: ubuntu-latest
 
     defaults:
