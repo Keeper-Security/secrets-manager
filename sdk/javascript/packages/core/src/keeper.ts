@@ -269,7 +269,7 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
     if (record.files) {
         keeperRecord.files = []
         for (const file of record.files) {
-            await platform.unwrap(platform.base64ToBytes(file.fileKey), file.fileUid, record.recordUid)
+            await platform.unwrap(platform.base64ToBytes(file.fileKey), file.fileUid, record.recordUid || KEY_APP_KEY)
             const decryptedFile = await platform.decrypt(platform.base64ToBytes(file.data), file.fileUid)
             keeperRecord.files.push({
                 fileUid: file.fileUid,
