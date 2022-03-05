@@ -11,6 +11,8 @@ import {
     generateKeyPair,
     randomBytes
 } from 'crypto'
+import * as FormData from "form-data"
+import * as https from "https";
 
 const bytesToBase64 = (data: Uint8Array): string => Buffer.from(data).toString('base64')
 
@@ -214,6 +216,32 @@ const post = (
     post.end()
 })
 
+const fileUpload = (
+    url: string,
+    uploadParameters: { [key: string]: string },
+    data: Uint8Array
+): Promise<any> => new Promise<any>((resolve, reject) => {
+    const form = new FormData()
+
+    for (const key in uploadParameters) {
+        form.append(key, uploadParameters[key]);
+    }
+    form.append('file', data)
+
+    let post = https.request(url, {
+        method: "post",
+        headers: form.getHeaders()
+    });
+    form.pipe(post)
+    post.on('response', function (res: any) {
+        resolve({
+            headers: res.headers,
+            statusCode: res.statusCode,
+            statusMessage: res.statusMessage
+        })
+    })
+})
+
 const cleanKeyCache = () => {
     for (const key in keyCache) {
         delete keyCache[key]
@@ -273,6 +301,7 @@ export const nodePlatform: Platform = {
     sign: sign,
     get: get,
     post: post,
+    fileUpload: fileUpload,
     cleanKeyCache: cleanKeyCache,
     hasKeysCached: hasKeysCached,
     getHmacDigest: getHmacDigest,
