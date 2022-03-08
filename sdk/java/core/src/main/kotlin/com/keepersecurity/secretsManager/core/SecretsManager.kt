@@ -79,7 +79,22 @@ private data class CreatePayload(
     val data: String,
 )
 
+@Serializable
+private data class FileUploadPayload(
+    val clientVersion: String,
+    val clientId: String,
+    val fileRecordUid: String,
+    val fileRecordKey: String,
+    val fileRecordData: String,
+    val ownerRecordUid: String,
+    val ownerRecordData: String,
+    val linkKey: String,
+    val fileSize: Int, // we will not allow upload size > 2GB due to memory constraints
+)
+
 data class EncryptedPayload(val payload: ByteArray, val signature: ByteArray)
+
+private data class FileUploadPayloadAndFile(val payload: FileUploadPayload, val encryptedFile: ByteArray)
 
 @Serializable
 private data class SecretsManagerResponseFolder(
@@ -116,6 +131,13 @@ private data class SecretsManagerResponse(
     val records: List<SecretsManagerResponseRecord>?,
     val expiresOn: Long? = null,
     val warnings: List<String>? = null
+)
+
+@Serializable
+private data class SecretsManagerAddFileResponse(
+    val url: String,
+    val parameters: String,
+    val successStatusCode: Int
 )
 
 data class KeeperSecrets(val appData: AppData, val records: List<KeeperRecord>, val expiresOn: Instant? = null, val warnings: List<String>? = null) {
@@ -166,6 +188,15 @@ data class KeeperFile(
     val url: String,
     val thumbnailUrl: String?
 )
+
+data class KeeperFileUpload(
+    val name: String,
+    val title: String,
+    val type: String?,
+    val data: ByteArray
+)
+
+data class KeeperFileUploadResult(val statusCode: Int, val statusMessage: String)
 
 @JvmOverloads
 fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: String? = null) {
@@ -253,10 +284,21 @@ fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
 @ExperimentalSerializationApi
 @JvmOverloads
 fun createSecret(options: SecretsManagerOptions, folderUid: String, recordData: KeeperRecordData, secrets: KeeperSecrets = getSecrets(options)): String {
-
     val payload = prepareCreatePayload(options.storage, folderUid, recordData, secrets)
     postQuery(options, "create_secret", payload)
     return payload.recordUid
+}
+
+@ExperimentalSerializationApi
+fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: KeeperFileUpload): String {
+    val payloadAndFile = prepareFileUploadPayload(options.storage, ownerRecord, file)
+    val responseData = postQuery(options, "add_file", payloadAndFile.payload)
+    val response = nonStrictJson.decodeFromString<SecretsManagerAddFileResponse>(bytesToString(responseData))
+    val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile)
+    if (uploadResult.statusCode != response.successStatusCode) {
+        throw Exception("Upload failed (${uploadResult.statusMessage}), code ${uploadResult.statusCode}")
+    }
+    return payloadAndFile.payload.fileRecordUid
 }
 
 fun downloadFile(file: KeeperFile): ByteArray {
@@ -283,6 +325,10 @@ private fun downloadFile(file: KeeperFile, url: String): ByteArray {
         }
         return decrypt(data, file.fileKey)
     }
+}
+
+private fun uploadFile(url: String, parameters: String, data: ByteArray): KeeperFileUploadResult {
+    return KeeperFileUploadResult(200, "asd")
 }
 
 @ExperimentalSerializationApi
@@ -424,6 +470,54 @@ private fun prepareCreatePayload(
         folderUid,
         bytesToBase64(encryptedFolderKey),
         webSafe64FromBytes(encryptedRecord))
+}
+
+@ExperimentalSerializationApi
+private fun prepareFileUploadPayload(
+    storage: KeyValueStorage,
+    ownerRecord: KeeperRecord,
+    file: KeeperFileUpload
+): FileUploadPayloadAndFile {
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    val ownerPublicKey = storage.getBytes(KEY_OWNER_PUBLIC_KEY) ?: throw Exception("Application owner public key is missing from the configuration")
+
+    val fileData = KeeperFileData(
+        file.title,
+        file.name,
+        file.type,
+        file.data.size.toLong(),
+        Instant.now().toEpochMilli()
+    )
+
+    val fileRecordBytes = stringToBytes(Json.encodeToString(file))
+    val fileRecordKey = getRandomBytes(32)
+    val fileRecordUid = webSafe64FromBytes(getRandomBytes(16))
+    val encryptedFileRecord = encrypt(fileRecordBytes, fileRecordKey)
+    val encryptedFileRecordKey = publicEncrypt(fileRecordKey, ownerPublicKey)
+    val encryptedLinkKey = encrypt(fileRecordKey, ownerRecord.recordKey)
+    val encryptedFileData = encrypt(file.data, fileRecordKey)
+
+    val fileRef = ownerRecord.data.getField<FileRef>()
+    if (fileRef == null) {
+        ownerRecord.data.fields.add(FileRef(value = mutableListOf(fileRecordUid)))
+    } else {
+        fileRef.value.add(fileRecordUid)
+    }
+    val ownerRecordBytes = stringToBytes(Json.encodeToString(ownerRecord.data))
+    val encryptedOwnerRecord = encrypt(ownerRecordBytes, ownerRecord.recordKey)
+
+    return FileUploadPayloadAndFile(
+        FileUploadPayload(toKeeperAppClientString(ManifestLoader.version), clientId,
+            fileRecordUid,
+            bytesToBase64(encryptedFileRecordKey),
+            webSafe64FromBytes(encryptedFileRecord),
+            ownerRecord.recordUid,
+            webSafe64FromBytes(encryptedOwnerRecord),
+            bytesToBase64(encryptedLinkKey),
+            encryptedFileData.size
+        ),
+        encryptedFileData
+    )
 }
 
 fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload): KeeperHttpResponse {

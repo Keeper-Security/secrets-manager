@@ -241,8 +241,8 @@ const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: K
     const fileRecordKey = platform.getRandomBytes(32)
     const fileRecordUid = webSafe64FromBytes(platform.getRandomBytes(16))
     const encryptedFileRecord = await platform.encryptWithKey(fileRecordBytes, fileRecordKey)
-    const encryptedRecordKey = await platform.publicEncrypt(fileRecordKey, ownerPublicKey)
-    const encryptedLinkRecordKey = await platform.encrypt(fileRecordKey, ownerRecord.recordUid)
+    const encryptedFileRecordKey = await platform.publicEncrypt(fileRecordKey, ownerPublicKey)
+    const encryptedLinkKey = await platform.encrypt(fileRecordKey, ownerRecord.recordUid)
     const encryptedFileData = await platform.encryptWithKey(file.data, fileRecordKey)
 
     let fileRef = ownerRecord.data.fields.find(x => x.type == 'fileRef')
@@ -259,11 +259,11 @@ const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: K
             clientVersion: 'ms' + packageVersion,
             clientId: clientId,
             fileRecordUid: fileRecordUid,
-            fileRecordKey: platform.bytesToBase64(encryptedRecordKey),
+            fileRecordKey: platform.bytesToBase64(encryptedFileRecordKey),
             fileRecordData: webSafe64FromBytes(encryptedFileRecord),
             ownerRecordUid: ownerRecord.recordUid,
             ownerRecordData: webSafe64FromBytes(encryptedOwnerRecord),
-            linkKey: platform.bytesToBase64(encryptedLinkRecordKey),
+            linkKey: platform.bytesToBase64(encryptedLinkKey),
             fileSize: encryptedFileData.length
         },
         encryptedFileData

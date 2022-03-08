@@ -9,8 +9,8 @@ import kotlinx.serialization.Serializable
 data class KeeperRecordData @JvmOverloads constructor(
     var title: String,
     val type: String,
-    val fields: List<KeeperRecordField>,
-    val custom: List<KeeperRecordField>? = null,
+    val fields: MutableList<KeeperRecordField>,
+    val custom: MutableList<KeeperRecordField>? = null,
     var notes: String? = null
 ) {
     inline fun <reified T> getField(): T? {
@@ -489,7 +489,7 @@ data class LicenseNumber @JvmOverloads constructor(
 data class KeeperFileData(
     val title: String,
     val name: String,
-    val type: String,
+    val type: String?,
     val size: Long,
     val lastModified: Long
 )
