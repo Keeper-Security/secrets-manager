@@ -72,11 +72,12 @@ type CreatePayload = {
 type FileUploadPayload = {
     clientVersion: string
     clientId: string
-    recordUid: string
-    recordKey: string
-    linkRecordUid: string
-    linkRecordKey: string
-    data: string
+    fileRecordUid: string
+    fileRecordKey: string
+    fileRecordData: string
+    ownerRecordUid: string
+    ownerRecordData: string
+    linkKey: string
     fileSize: number
 }
 
@@ -217,7 +218,7 @@ const prepareCreatePayload = async (storage: KeyValueStorage, folderUid: string,
     }
 }
 
-const prepareFileUploadPayload = async (storage: KeyValueStorage, record: KeeperRecord, file: KeeperFileUpload): Promise<{
+const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: KeeperRecord, file: KeeperFileUpload): Promise<{
     payload: FileUploadPayload,
     encryptedFileData: Uint8Array
 }> => {
@@ -236,22 +237,33 @@ const prepareFileUploadPayload = async (storage: KeyValueStorage, record: Keeper
         lastModified: new Date().getTime(),
         type: file.type
     }
-    const recordBytes = platform.stringToBytes(JSON.stringify(fileData))
+    const fileRecordBytes = platform.stringToBytes(JSON.stringify(fileData))
     const fileRecordKey = platform.getRandomBytes(32)
-    const fileRecordUid = platform.getRandomBytes(16)
-    const encryptedRecord = await platform.encryptWithKey(recordBytes, fileRecordKey)
+    const fileRecordUid = webSafe64FromBytes(platform.getRandomBytes(16))
+    const encryptedFileRecord = await platform.encryptWithKey(fileRecordBytes, fileRecordKey)
     const encryptedRecordKey = await platform.publicEncrypt(fileRecordKey, ownerPublicKey)
-    const encryptedLinkRecordKey = await platform.encrypt(fileRecordKey, record.recordUid)
+    const encryptedLinkRecordKey = await platform.encrypt(fileRecordKey, ownerRecord.recordUid)
     const encryptedFileData = await platform.encryptWithKey(file.data, fileRecordKey)
+
+    let fileRef = ownerRecord.data.fields.find(x => x.type == 'fileRef')
+    if (fileRef) {
+        fileRef.value.push(fileRecordUid)
+    } else {
+        fileRef = {type: 'fileRef', value: [fileRecordUid]}
+    }
+    const ownerRecordBytes = platform.stringToBytes(JSON.stringify(ownerRecord.data))
+    const encryptedOwnerRecord = await platform.encrypt(ownerRecordBytes, ownerRecord.recordUid)
+
     return {
         payload: {
             clientVersion: 'ms' + packageVersion,
             clientId: clientId,
-            recordUid: webSafe64FromBytes(fileRecordUid),
-            recordKey: platform.bytesToBase64(encryptedRecordKey),
-            linkRecordUid: record.recordUid,
-            linkRecordKey: platform.bytesToBase64(encryptedLinkRecordKey),
-            data: webSafe64FromBytes(encryptedRecord),
+            fileRecordUid: fileRecordUid,
+            fileRecordKey: platform.bytesToBase64(encryptedRecordKey),
+            fileRecordData: webSafe64FromBytes(encryptedFileRecord),
+            ownerRecordUid: ownerRecord.recordUid,
+            ownerRecordData: webSafe64FromBytes(encryptedOwnerRecord),
+            linkKey: platform.bytesToBase64(encryptedLinkRecordKey),
             fileSize: encryptedFileData.length
         },
         encryptedFileData
@@ -475,14 +487,13 @@ export const downloadThumbnail = async (file: KeeperFile): Promise<Uint8Array> =
     return platform.decrypt(fileResponse.data, file.fileUid)
 }
 
-export const uploadFile = async (options: SecretManagerOptions, record: KeeperRecord, file: KeeperFileUpload): Promise<Uint8Array> => {
-    const {payload, encryptedFileData } = await prepareFileUploadPayload(options.storage, record, file)
+export const uploadFile = async (options: SecretManagerOptions, ownerRecord: KeeperRecord, file: KeeperFileUpload): Promise<string> => {
+    const { payload, encryptedFileData } = await prepareFileUploadPayload(options.storage, ownerRecord, file)
     const responseData = await postQuery(options, 'add_file', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerAddFileResponse
-    console.log(response)
     const uploadResult = await platform.fileUpload(response.url, JSON.parse(response.parameters), encryptedFileData)
     if (uploadResult.statusCode !== response.successStatusCode) {
         throw new Error(`Upload failed (${uploadResult.statusMessage}), code ${uploadResult.statusCode}`)
     }
-    return new Uint8Array()
+    return payload.fileRecordUid
 }
