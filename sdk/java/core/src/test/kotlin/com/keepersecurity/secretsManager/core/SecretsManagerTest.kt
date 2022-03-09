@@ -8,6 +8,7 @@ import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider
 //import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.BufferedReader
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileReader
 import java.security.Security
 import kotlin.test.*
@@ -109,14 +110,14 @@ internal class SecretsManagerTest {
         assertEquals("fake.keepersecurity.com", storage.getString("hostname"))
     }
 
-//    @Test // uncomment to debug the integration test
+    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (
             url: String,
             transmissionKey: TransmissionKey,
             payload: EncryptedPayload,
         ) -> KeeperHttpResponse = { url, transmissionKey, payload -> postFunction(url, transmissionKey, payload, true) }
-        val storage = LocalConfigStorage("config-dev.json")
+        val storage = LocalConfigStorage("config-dev-ksmu.json")
 //        initializeStorage(storage, "US:ONE_TIME_TOKEN")
         val options = SecretsManagerOptions(storage, trustAllPostFunction)
 //        val options = SecretsManagerOptions(storage, ::cachingPostFunction)
@@ -129,6 +130,12 @@ internal class SecretsManagerTest {
 //            record.updatePassword("new password")
 //            updateSecret(options, record)
         }
+
+        val fis = FileInputStream("config-dev-ksmu.json")
+        val bytes = fis.readBytes()
+        println(bytes.size)
+        uploadFile(options, record, KeeperFileUpload("config-dev-ksmu.json", "config-dev-ksmu.json", "application/json", bytes))
+
 //        if (record.folderUid != null) {
 //            record.data.title = record.data.title + " Copy (Java)"
 //            val recordUid = createSecret(options, record.folderUid!!, record.data, secrets)

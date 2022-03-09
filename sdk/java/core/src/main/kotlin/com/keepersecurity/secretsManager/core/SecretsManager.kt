@@ -7,6 +7,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import java.net.HttpURLConnection.HTTP_OK
 import java.net.URL
 import java.security.KeyManagementException
@@ -196,8 +198,6 @@ data class KeeperFileUpload(
     val data: ByteArray
 )
 
-data class KeeperFileUploadResult(val statusCode: Int, val statusMessage: String)
-
 @JvmOverloads
 fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: String? = null) {
     val tokenParts = oneTimeToken.split(':')
@@ -296,7 +296,7 @@ fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: 
     val response = nonStrictJson.decodeFromString<SecretsManagerAddFileResponse>(bytesToString(responseData))
     val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile)
     if (uploadResult.statusCode != response.successStatusCode) {
-        throw Exception("Upload failed (${uploadResult.statusMessage}), code ${uploadResult.statusCode}")
+        throw Exception("Upload failed (${uploadResult.statusCode}), code ${uploadResult.statusCode}")
     }
     return payloadAndFile.payload.fileRecordUid
 }
@@ -327,8 +327,37 @@ private fun downloadFile(file: KeeperFile, url: String): ByteArray {
     }
 }
 
-private fun uploadFile(url: String, parameters: String, data: ByteArray): KeeperFileUploadResult {
-    return KeeperFileUploadResult(200, "asd")
+private fun uploadFile(url: String, parameters: String, fileData: ByteArray): KeeperHttpResponse {
+    var statusCode: Int
+    var data: ByteArray
+    val boundary = String.format("----------%x", Instant.now().epochSecond)
+    val boundaryBytes: ByteArray = stringToBytes("\r\n--$boundary")
+    val paramJson = Json.parseToJsonElement(parameters) as JsonObject
+    with(URL(url).openConnection() as HttpsURLConnection) {
+        requestMethod = "POST"
+        useCaches = false
+        doInput = true
+        doOutput = true
+        setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        with(outputStream) {
+            for (param in paramJson.entries) {
+                write(boundaryBytes)
+                write(stringToBytes("\r\nContent-Disposition: form-data; name=\"${param.key}\"\r\n\r\n${param.value}"))
+            }
+            val fileName = "file.txt"
+            write(boundaryBytes)
+            write(stringToBytes("\r\nContent-Disposition: form-data; name=\"file\"\r\nContent-Type: application/octet-stream\r\n\r\n"))
+            write(fileData)
+            write(boundaryBytes)
+            write(stringToBytes("--\r\n"))
+        }
+        statusCode = responseCode
+        data = when {
+            errorStream != null -> errorStream.readBytes()
+            else -> inputStream.readBytes()
+        }
+    }
+    return KeeperHttpResponse(statusCode, data)
 }
 
 @ExperimentalSerializationApi
@@ -489,7 +518,7 @@ private fun prepareFileUploadPayload(
         Instant.now().toEpochMilli()
     )
 
-    val fileRecordBytes = stringToBytes(Json.encodeToString(file))
+    val fileRecordBytes = stringToBytes(Json.encodeToString(fileData))
     val fileRecordKey = getRandomBytes(32)
     val fileRecordUid = webSafe64FromBytes(getRandomBytes(16))
     val encryptedFileRecord = encrypt(fileRecordBytes, fileRecordKey)
