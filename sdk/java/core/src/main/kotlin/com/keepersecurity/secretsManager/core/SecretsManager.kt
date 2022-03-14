@@ -8,7 +8,7 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.jsonPrimitive
 import java.net.HttpURLConnection.HTTP_OK
 import java.net.URL
 import java.security.KeyManagementException
@@ -342,9 +342,8 @@ private fun uploadFile(url: String, parameters: String, fileData: ByteArray): Ke
         with(outputStream) {
             for (param in paramJson.entries) {
                 write(boundaryBytes)
-                write(stringToBytes("\r\nContent-Disposition: form-data; name=\"${param.key}\"\r\n\r\n${param.value}"))
+                write(stringToBytes("\r\nContent-Disposition: form-data; name=\"${param.key}\"\r\n\r\n${param.value.jsonPrimitive.content}"))
             }
-            val fileName = "file.txt"
             write(boundaryBytes)
             write(stringToBytes("\r\nContent-Disposition: form-data; name=\"file\"\r\nContent-Type: application/octet-stream\r\n\r\n"))
             write(fileData)
