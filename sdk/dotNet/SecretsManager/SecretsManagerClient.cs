@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -148,6 +149,37 @@ namespace SecretsManager
             this.data = data;
         }
     }
+    
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    internal class FileUploadPayload
+    {
+        public string clientVersion { get; }
+        public string clientId { get; }
+        public string fileRecordUid { get; }
+        public string fileRecordKey { get; }
+        public string fileRecordData { get; }
+        public string ownerRecordUid { get; }
+        public string ownerRecordData { get; }
+        public string linkKey { get; }
+        public int fileSize { get; }
+
+        public FileUploadPayload(string clientVersion, string clientId, 
+            string fileRecordUid, string fileRecordKey, string fileRecordData, 
+            string ownerRecordUid, string ownerRecordData, string linkKey, int fileSize)
+        {
+            this.clientVersion = clientVersion;
+            this.clientId = clientId;
+            this.fileRecordUid = fileRecordUid;
+            this.fileRecordKey = fileRecordKey;
+            this.fileRecordData = fileRecordData;
+            this.ownerRecordUid = ownerRecordUid;
+            this.ownerRecordData = ownerRecordData;
+            this.linkKey = linkKey;
+            this.fileSize = fileSize;
+        }
+    }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
@@ -163,6 +195,16 @@ namespace SecretsManager
         public string[] warnings { get; set; }
     }
 
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
+    public class SecretsManagerAddFileResponse
+    {
+        public string url { get; set; }
+        public string parameters { get; set; }
+        public int successStatusCode { get; set; }
+    }
+    
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
@@ -294,6 +336,24 @@ namespace SecretsManager
         public string ThumbnailUrl { get; }
     }
 
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    public class KeeperFileUpload
+    {
+        public string Name { get; }
+        public string Title { get; }
+        public string Type { get; }
+        public byte[] Data { get; }
+
+        public KeeperFileUpload(string name, string title, string type, byte[] data)
+        {
+            Name = name;
+            Title = title;
+            Type = type;
+            Data = data;
+        }
+    }
+    
     public static class SecretsManagerClient
     {
         private const string KeyHostname = "hostname"; // base url for the Secrets Manager service
@@ -381,6 +441,15 @@ namespace SecretsManager
             await PostQuery(options, "create_secret", payload);
             return payload.recordUid;
         }
+        
+        public static async Task<string> UploadFile(SecretsManagerOptions options, KeeperRecord ownerRecord, KeeperFileUpload file)
+        {
+            var (payload, encryptedFileData) = PrepareFileUploadPayload(options.Storage, ownerRecord, file);
+            var responseData = await PostQuery(options, "add_file", payload);
+            var response = JsonUtils.ParseJson<SecretsManagerAddFileResponse>(responseData);
+            await UploadFile(response.url, response.parameters, response.successStatusCode, encryptedFileData);
+            return payload.fileRecordUid;
+        }
 
         public static byte[] DownloadFile(KeeperFile file)
         {
@@ -405,7 +474,58 @@ namespace SecretsManager
             using var responseStream = response.GetResponseStream();
             return CryptoUtils.Decrypt(StreamToBytes(responseStream), file.FileKey);
         }
+        
+        private static async Task UploadFile(string url, string parameters, int successStatusCode, byte[] fileData)
+        {
+            var request = (HttpWebRequest)WebRequest.Create(url);
+            request.Method = "POST";
+            var boundary = "----------" + DateTime.Now.Ticks.ToString("x");
+            var boundaryBytes = Encoding.ASCII.GetBytes("\r\n--" + boundary);
+            request.ContentType = "multipart/form-data; boundary=" + boundary;
+            var parsedParameters = JsonUtils.ParseJson<Dictionary<string, string>>(CryptoUtils.StringToBytes(parameters));
 
+            using (var requestStream = await Task.Factory.FromAsync(request.BeginGetRequestStream, request.EndGetRequestStream, null))
+            {
+                const string parameterTemplate = "\r\nContent-Disposition: form-data; name=\"{0}\"\r\n\r\n{1}";
+                    foreach (var pair in parsedParameters)
+                    {
+                        await requestStream.WriteAsync(boundaryBytes, 0, boundaryBytes.Length);
+                        var formItem = string.Format(parameterTemplate, pair.Key, pair.Value);
+                        var formItemBytes = Encoding.UTF8.GetBytes(formItem);
+                        await requestStream.WriteAsync(formItemBytes, 0, formItemBytes.Length);
+                    }
+
+                await requestStream.WriteAsync(boundaryBytes, 0, boundaryBytes.Length);
+                var fileBytes = Encoding.UTF8.GetBytes("\r\nContent-Disposition: form-data; name=\"file\"\r\nContent-Type: application/octet-stream\r\n\r\n");
+                await requestStream.WriteAsync(fileBytes, 0, fileBytes.Length);
+
+                await new MemoryStream(fileData).CopyToAsync(requestStream);
+
+                await requestStream.WriteAsync(boundaryBytes, 0, boundaryBytes.Length);
+                var trailer = Encoding.ASCII.GetBytes("--\r\n");
+                await requestStream.WriteAsync(trailer, 0, trailer.Length);
+            }
+
+            try
+            {
+                var response = (HttpWebResponse) await Task.Factory.FromAsync(request.BeginGetResponse, request.EndGetResponse, null);
+                if ((int) response.StatusCode != successStatusCode)
+                {
+                    throw new Exception($"Upload failed, code {response.StatusCode}");
+                }
+            }
+            catch (WebException e)
+            {
+                if (e.Response == null) throw;
+                var errorResponseStream = ((HttpWebResponse)e.Response).GetResponseStream();
+                if (errorResponseStream == null)
+                {
+                    throw new InvalidOperationException("Response was expected but not received");
+                }
+                throw new Exception($"Upload failed ({CryptoUtils.BytesToString(StreamToBytes(errorResponseStream))})");
+            }
+        }
+        
         private static async Task<Tuple<KeeperSecrets, bool>> FetchAndDecryptSecrets(SecretsManagerOptions options, string[] recordsFilter)
         {
             var storage = options.Storage;
@@ -561,6 +681,61 @@ namespace SecretsManager
                 CryptoUtils.WebSafe64FromBytes(recordUid), CryptoUtils.BytesToBase64(encryptedRecordKey),
                 folderUid, CryptoUtils.BytesToBase64(encryptedFolderKey),
                 CryptoUtils.WebSafe64FromBytes(encryptedRecord));
+        }
+        
+        private static Tuple<FileUploadPayload, byte[]> PrepareFileUploadPayload(IKeyValueStorage storage, KeeperRecord ownerRecord, KeeperFileUpload file)
+        {
+            var clientId = storage.GetString(KeyClientId);
+            if (clientId == null)
+            {
+                throw new Exception("Client Id is missing from the configuration");
+            }
+
+            var ownerPublicKey = storage.GetBytes(KeyOwnerPublicKey);
+            if (ownerPublicKey == null)
+            {
+                throw new Exception("Application owner public key is missing from the configuration");
+            }
+
+            var fileData = new KeeperFileData
+            {
+                title = file.Title,
+                name = file.Name,
+                type = file.Type,
+                size = file.Data.Length,
+                lastModified = DateTimeOffset.Now.ToUnixTimeMilliseconds()
+            };
+
+            var fileRecordBytes = JsonUtils.SerializeJson(fileData);
+            var fileRecordKey = CryptoUtils.GetRandomBytes(32);
+            var fileRecordUid = CryptoUtils.WebSafe64FromBytes(CryptoUtils.GetRandomBytes(16));
+            var encryptedFileRecord = CryptoUtils.Encrypt(fileRecordBytes, fileRecordKey);
+            var encryptedFileRecordKey = CryptoUtils.PublicEncrypt(fileRecordKey, ownerPublicKey);
+            var encryptedLinkKey = CryptoUtils.Encrypt(fileRecordKey, ownerRecord.RecordKey);
+            var encryptedFileData = CryptoUtils.Encrypt(file.Data, fileRecordKey);
+
+            var fileRef = ownerRecord.Data.fields.FirstOrDefault(x => x.type == "fileRef");
+            if (fileRef != null)
+            {
+                fileRef.value = new List<object>(fileRef.value) { fileRecordUid }.ToArray();
+            }
+            else
+            {
+                fileRef = new KeeperRecordField { type = "fileRef", value = new object[] { fileRecordUid } };
+                ownerRecord.Data.fields = new List<KeeperRecordField>(ownerRecord.Data.fields) { fileRef }.ToArray();
+            }
+            var ownerRecordBytes = JsonUtils.SerializeJson(ownerRecord.Data);
+            var encryptedOwnerRecord = CryptoUtils.Encrypt(ownerRecordBytes, ownerRecord.RecordKey);
+            
+            var fileUploadPayload = new FileUploadPayload(GetClientVersion(), clientId,
+                fileRecordUid,
+                CryptoUtils.BytesToBase64(encryptedFileRecordKey),
+                CryptoUtils.WebSafe64FromBytes(encryptedFileRecord),
+                ownerRecord.RecordUid, 
+                CryptoUtils.WebSafe64FromBytes(encryptedOwnerRecord), 
+                CryptoUtils.BytesToBase64(encryptedLinkKey),  
+                encryptedFileData.Length);
+            return Tuple.Create(fileUploadPayload, encryptedFileData);
         }
 
         private static string GetClientVersion()

@@ -296,7 +296,7 @@ fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: 
     val response = nonStrictJson.decodeFromString<SecretsManagerAddFileResponse>(bytesToString(responseData))
     val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile)
     if (uploadResult.statusCode != response.successStatusCode) {
-        throw Exception("Upload failed (${uploadResult.statusCode}), code ${uploadResult.statusCode}")
+        throw Exception("Upload failed (${bytesToString(uploadResult.data)}), code ${uploadResult.statusCode}")
     }
     return payloadAndFile.payload.fileRecordUid
 }

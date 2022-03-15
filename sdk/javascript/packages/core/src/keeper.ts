@@ -250,6 +250,7 @@ const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: K
         fileRef.value.push(fileRecordUid)
     } else {
         fileRef = {type: 'fileRef', value: [fileRecordUid]}
+        ownerRecord.data.fields.push(fileRef)
     }
     const ownerRecordBytes = platform.stringToBytes(JSON.stringify(ownerRecord.data))
     const encryptedOwnerRecord = await platform.encrypt(ownerRecordBytes, ownerRecord.recordUid)
