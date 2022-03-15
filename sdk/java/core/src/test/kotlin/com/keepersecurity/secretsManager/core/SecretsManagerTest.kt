@@ -110,14 +110,14 @@ internal class SecretsManagerTest {
         assertEquals("fake.keepersecurity.com", storage.getString("hostname"))
     }
 
-    @Test // uncomment to debug the integration test
+//    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (
             url: String,
             transmissionKey: TransmissionKey,
             payload: EncryptedPayload,
         ) -> KeeperHttpResponse = { url, transmissionKey, payload -> postFunction(url, transmissionKey, payload, true) }
-        val storage = LocalConfigStorage("config-dev-ksmu.json")
+        val storage = LocalConfigStorage("config-dev.json")
 //        initializeStorage(storage, "US:ONE_TIME_TOKEN")
         val options = SecretsManagerOptions(storage, trustAllPostFunction)
 //        val options = SecretsManagerOptions(storage, ::cachingPostFunction)
@@ -131,10 +131,9 @@ internal class SecretsManagerTest {
 //            updateSecret(options, record)
         }
 
-        val fis = FileInputStream("config-dev-ksmu.json")
+        val fis = FileInputStream("config-dev.json")
         val bytes = fis.readBytes()
-        println(bytes.size)
-        uploadFile(options, record, KeeperFileUpload("config-dev-ksmu.json", "config-dev-ksmu.json", "application/json", bytes))
+        uploadFile(options, record, KeeperFileUpload("config-dev.json", "Sample File", "application/json", bytes))
 
 //        if (record.folderUid != null) {
 //            record.data.title = record.data.title + " Copy (Java)"
