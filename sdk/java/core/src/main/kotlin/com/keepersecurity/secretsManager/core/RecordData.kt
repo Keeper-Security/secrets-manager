@@ -1,3 +1,4 @@
+@file:JvmName("RecordData")
 @file:Suppress("unused")
 
 package com.keepersecurity.secretsManager.core
