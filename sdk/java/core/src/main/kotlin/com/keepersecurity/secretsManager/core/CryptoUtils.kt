@@ -1,3 +1,4 @@
+@file:JvmName("CryptoUtils")
 @file:Suppress("JAVA_MODULE_DOES_NOT_EXPORT_PACKAGE")
 
 package com.keepersecurity.secretsManager.core
@@ -205,74 +206,95 @@ private fun base32ToBytes(base32Text: String): ByteArray {
     return output
 }
 
-data class TotpCode(val code: String, val timeLeft: Int, val period: Int)
-
+/**
+ * Generate a TOTP code from a TOTP Key URI
+ * @param url TOTP Key URI. Ex. `otpauth://totp/Example:alice@google.com?secret=JBSWY3DPEHPK3PXP&issuer=Example`
+ * @param unixTimeSeconds Initial time. Usually set to 0 an is mostly used for testing purposes to test the value at a specific timestamp
+ */
+@JvmOverloads
 fun getTotpCode(url: String, unixTimeSeconds: Long = 0): TotpCode? {
-    // java.net.MalformedURLException: unknown protocol: otpauth
-    val protocol: String = if (url.startsWith("otpauth://", true)) "otpauth" else ""
-    if (protocol != "otpauth")
-        return null
+    return TotpCode.uriToTotpCode(url, unixTimeSeconds)
+}
 
-    val totpUrl = URL("http://" + url.substring(10))
-    val queryPairs = mutableMapOf<String, String>()
-    val pairs: List<String> = totpUrl.query.split("&")
-    for (pair in pairs) {
-        val idx: Int = pair.indexOf("=")
-        val key = URLDecoder.decode(pair.substring(0, idx), "UTF-8")
-        val value = URLDecoder.decode(pair.substring(idx + 1), "UTF-8")
-        if (!value.isNullOrBlank())
-            queryPairs[key] = value
+data class TotpCode(val code: String, val timeLeft: Int, val period: Int) {
+
+    companion object {
+
+        /**
+         * Generate a TOTP code from a TOTP Key URI
+         * @param url TOTP Key URI. Ex. "otpauth://totp/Example:alice@google.com?secret=JBSWY3DPEHPK3PXP&issuer=Example"
+         * @param unixTimeSeconds Initial time. Usually set to 0 an is mostly used for testing purposes to test the value at a specific timestamp
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun uriToTotpCode(url: String, unixTimeSeconds: Long = 0): TotpCode? {
+            // java.net.MalformedURLException: unknown protocol: otpauth
+            val protocol: String = if (url.startsWith("otpauth://", true)) "otpauth" else ""
+            if (protocol != "otpauth")
+                return null
+
+            val totpUrl = URL("http://" + url.substring(10))
+            val queryPairs = mutableMapOf<String, String>()
+            val pairs: List<String> = totpUrl.query.split("&")
+            for (pair in pairs) {
+                val idx: Int = pair.indexOf("=")
+                val key = URLDecoder.decode(pair.substring(0, idx), "UTF-8")
+                val value = URLDecoder.decode(pair.substring(idx + 1), "UTF-8")
+                if (!value.isNullOrBlank())
+                    queryPairs[key] = value
+            }
+
+            val secret: String = queryPairs.getOrDefault("secret", "").uppercase()
+            val algorithm: String = queryPairs.getOrDefault("algorithm", "SHA1").uppercase()
+            var digits = queryPairs.getOrDefault("digits", "").toIntOrNull() ?: DEFAULT_DIGITS
+            var period = queryPairs.getOrDefault("period", "").toIntOrNull() ?: DEFAULT_TIME_STEP
+
+            if (digits == 0) digits = DEFAULT_DIGITS
+            if (period == 0) period = DEFAULT_TIME_STEP
+            if (secret.isEmpty())
+                return null
+
+            val tmBase = if (unixTimeSeconds != 0L) unixTimeSeconds else System.currentTimeMillis() / 1000L
+            val tm = tmBase / period
+            val msg: ByteArray = ByteBuffer.allocate(8).putLong(tm).array()
+
+            val secretBytes: ByteArray = base32ToBytes(secret)
+            if (secretBytes.isEmpty())
+                return null
+
+            var hmac: Mac? = null
+            when (algorithm) {
+                // although once part of Google Key Uri Format - https://github.com/google/google-authenticator/wiki/Key-Uri-Format/_history
+                // removed MD5 as unreliable - only digests of length >= 20 can be used (MD5 has a digest length of 16)
+                //"MD5" -> hmac = Mac.getInstance("MD5")
+                "SHA1" -> hmac = Mac.getInstance("HmacSHA1")
+                "SHA256" -> hmac = Mac.getInstance("HmacSHA256")
+                "SHA512" -> hmac = Mac.getInstance("HmacSHA512")
+            }
+            if (hmac == null)
+                return null
+
+            var digest: ByteArray = byteArrayOf()
+            try {
+                val spec = SecretKeySpec(secretBytes, "RAW")
+                hmac.init(spec)
+                digest = hmac.doFinal(msg)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            val offset: Int = digest[digest.size - 1].toInt() and 0x0f
+            val codeBytes: ByteArray = digest.copyOfRange(offset, offset + 4)
+            codeBytes[0] = (codeBytes[0].toInt() and 0x7f).toByte()
+            var codeInt: Int = ByteBuffer.wrap(codeBytes).int
+            codeInt %= 10.0.pow(digits.toDouble()).toInt()
+            val codeStr: String = codeInt.toString().padStart(digits, '0')
+            val elapsed: Int = (tmBase % period).toInt() // time elapsed in current period in seconds
+            val ttl: Int = period - elapsed // time to live in seconds
+
+            return TotpCode(codeStr, ttl, period)
+        }
     }
-
-    val secret: String = queryPairs.getOrDefault("secret", "").uppercase()
-    val algorithm: String = queryPairs.getOrDefault("algorithm", "SHA1").uppercase()
-    var digits = queryPairs.getOrDefault("digits", "").toIntOrNull() ?: DEFAULT_DIGITS
-    var period = queryPairs.getOrDefault("period", "").toIntOrNull() ?: DEFAULT_TIME_STEP
-
-    if (digits == 0) digits = DEFAULT_DIGITS
-    if (period == 0) period = DEFAULT_TIME_STEP
-    if (secret.isEmpty())
-        return null
-
-    val tmBase = if (unixTimeSeconds != 0L) unixTimeSeconds else System.currentTimeMillis() / 1000L
-    val tm = tmBase / period
-    val msg: ByteArray = ByteBuffer.allocate(8).putLong(tm).array()
-
-    val secretBytes: ByteArray = base32ToBytes(secret)
-    if (secretBytes.isEmpty())
-        return null
-
-    var hmac: Mac? = null
-    when (algorithm) {
-        // although once part of Google Key Uri Format - https://github.com/google/google-authenticator/wiki/Key-Uri-Format/_history
-        // removed MD5 as unreliable - only digests of length >= 20 can be used (MD5 has a digest length of 16)
-        //"MD5" -> hmac = Mac.getInstance("MD5")
-        "SHA1" -> hmac = Mac.getInstance("HmacSHA1")
-        "SHA256" -> hmac = Mac.getInstance("HmacSHA256")
-        "SHA512" -> hmac = Mac.getInstance("HmacSHA512")
-    }
-    if (hmac == null)
-        return null
-
-    var digest: ByteArray = byteArrayOf()
-    try {
-        val spec = SecretKeySpec(secretBytes, "RAW")
-        hmac.init(spec)
-        digest = hmac.doFinal(msg)
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-
-    val offset: Int = digest[digest.size - 1].toInt() and 0x0f
-    val codeBytes: ByteArray = digest.copyOfRange(offset, offset + 4)
-    codeBytes[0] = (codeBytes[0].toInt() and 0x7f).toByte()
-    var codeInt: Int = ByteBuffer.wrap(codeBytes).int
-    codeInt %= 10.0.pow(digits.toDouble()).toInt()
-    val codeStr: String = codeInt.toString().padStart(digits, '0')
-    val elapsed: Int = (tmBase % period).toInt() // time elapsed in current period in seconds
-    val ttl: Int = period - elapsed // time to live in seconds
-
-    return TotpCode(codeStr, ttl, period)
 }
 
 // password generation
