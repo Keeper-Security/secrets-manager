@@ -268,6 +268,14 @@ namespace SecretsManager
             return Files.FirstOrDefault(x => x.Data.name == fileName);
         }
 
+        /**
+         * Return file by title
+         */
+        public KeeperFile GetFileByTitle(string fileTitle)
+        {
+            return Files.FirstOrDefault(f => f.Data.title == fileTitle);
+        }
+
         public KeeperFile GetFileByUid(string fileUid)
         {
             return Files.FirstOrDefault(x => x.FileUid == fileUid);
