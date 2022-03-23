@@ -15,7 +15,7 @@ install_requires = [
 
 setup(
     name="keeper-secrets-manager-helper",
-    version="1.0.1",
+    version="1.0.2",
     description="Keeper Secrets Manager SDK helper for managing records.",
     long_description=long_description,
     long_description_content_type="text/markdown",
