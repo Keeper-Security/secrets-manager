@@ -141,6 +141,14 @@ data class KeeperRecord(
         return if (passwordField.value.size > 0) passwordField.value[0] else null
     }
 
+    fun getTitle(): String {
+        return data.title
+    }
+
+    fun getType(): String {
+        return data.type
+    }
+
     fun updatePassword(newPassword: String) {
         val passwordField = data.getField<Password>() ?: throw Exception("Password field is not present on the record $recordUid")
 
