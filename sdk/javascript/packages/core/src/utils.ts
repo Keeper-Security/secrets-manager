@@ -59,11 +59,11 @@ export const getTotpCode = async (url: string, unixTimeSeconds: number = 0) : Pr
         algorithm = 'SHA1'; // default algorithm
 
     const strDigits: string = (totpUrl.searchParams.get('digits') || '').trim();
-    let digits: number = (isNaN(+strDigits) ? 6 : parseInt(strDigits));
+    let digits: number = ((isNaN(+strDigits) || !Boolean(strDigits)) ? 6 : parseInt(strPeriod));
     digits = digits == 0 ? 6 : digits;
 
     const strPeriod: string = (totpUrl.searchParams.get('period') || '').trim();
-    let period: number = (isNaN(+strPeriod) ? 30 : parseInt(strPeriod));
+    let period: number = ((isNaN(+strPeriod) || !Boolean(strPeriod)) ? 30 : parseInt(strPeriod));
     period = period == 0 ? 30 : period;
 
     const tmBase: number = unixTimeSeconds != 0 ? unixTimeSeconds : Math.floor(Date.now() / 1000);
