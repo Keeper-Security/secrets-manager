@@ -59,7 +59,7 @@ export const getTotpCode = async (url: string, unixTimeSeconds: number = 0) : Pr
         algorithm = 'SHA1'; // default algorithm
 
     const strDigits: string = (totpUrl.searchParams.get('digits') || '').trim();
-    let digits: number = ((isNaN(+strDigits) || !Boolean(strDigits)) ? 6 : parseInt(strPeriod));
+    let digits: number = ((isNaN(+strDigits) || !Boolean(strDigits)) ? 6 : parseInt(strDigits));
     digits = digits == 0 ? 6 : digits;
 
     const strPeriod: string = (totpUrl.searchParams.get('period') || '').trim();
