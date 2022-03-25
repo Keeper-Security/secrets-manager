@@ -80,10 +80,11 @@ class Exec:
             # Python 3.6's subprocess.run does not have a capture flag. Instead it used the PIPE with
             # the stderr parameter.
             kwargs = {}
-            if (sys.version_info[0] == 3 and sys.version_info[1] < 7) and capture_output is True:
-                kwargs["stdout"] = subprocess.PIPE
-            else:
-                kwargs["capture_output"] = capture_output
+            if capture_output is True:
+                if sys.version_info[0] == 3 and sys.version_info[1] < 7:
+                    kwargs["stdout"] = subprocess.PIPE
+                else:
+                    kwargs["capture_output"] = capture_output
 
             try:
                 completed = subprocess.run(cmd, **kwargs)
