@@ -1,0 +1,10 @@
+.DS_Store
+.idea
+.vscode
+
+vault-plugin-secrets-ksm
+vault-plugin-secrets-ksm-*
+SHA256SUM*
+
+test/
+/vault

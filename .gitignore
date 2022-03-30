@@ -1,5 +1,6 @@
 
 # Editors
+.vs/
 .vscode/
 .idea/
 *.iml
