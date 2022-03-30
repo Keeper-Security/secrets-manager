@@ -71,6 +71,11 @@ func (b *backend) pathRecords() *framework.Path {
 				Description: descRecordUid,
 				Required:    true,
 			},
+			keyRecordData: {
+				Type:        framework.TypeString,
+				Description: descRecordData,
+				Required:    false,
+			},
 		},
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.ReadOperation: &framework.PathOperation{
@@ -111,7 +116,7 @@ func (b *backend) pathRecordsCreate() *framework.Path {
 				Callback: withFieldValidator(b.pathRecordCreate),
 			},
 		},
-		ExistenceCheck:  b.recordExistenceCheck,
+		ExistenceCheck:  b.recordCreateExistenceCheck,
 		HelpSynopsis:    pathRecordCreateHelpSyn,
 		HelpDescription: pathRecordCreateHelpDesc,
 	}
@@ -167,12 +172,19 @@ func (b *backend) pathRecordList(ctx context.Context, req *logical.Request, d *f
 }
 
 func (b *backend) recordExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
-	uid := d.Get("uid").(string)
+	uid := strings.TrimSpace(d.Get("uid").(string))
 	if uid == "" {
 		return false, fmt.Errorf("missing record UID")
 	}
 
-	records, err := b.client.SecretsManager.GetSecrets([]string{uid})
+	client, done, err := b.Client(req.Storage)
+	if err != nil {
+		return false, err
+	}
+	defer done()
+
+	records, err := client.SecretsManager.GetSecrets([]string{uid})
+
 	if err != nil {
 		return false, err
 	}
@@ -181,6 +193,29 @@ func (b *backend) recordExistenceCheck(ctx context.Context, req *logical.Request
 	}
 
 	return strings.TrimSpace(records[0].RawJson) != "", nil
+}
+
+func (b *backend) recordCreateExistenceCheck(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
+	uid := strings.TrimSpace(d.Get("uid").(string))
+	if uid == "" {
+		return false, nil
+	}
+
+	client, done, err := b.Client(req.Storage)
+	if err != nil {
+		return false, err
+	}
+	defer done()
+
+	records, err := client.SecretsManager.GetSecrets([]string{uid})
+	if err != nil {
+		return false, err
+	}
+	if len(records) == 0 {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // pathRecordRead reads record from Keeper Vault on /ksm/record.
@@ -216,21 +251,64 @@ func (b *backend) pathRecordRead(ctx context.Context, req *logical.Request, d *f
 
 // pathRecordWrite updates new record on /ksm/record.
 func (b *backend) pathRecordWrite(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
-	_, done, err := b.Client(req.Storage)
+	if err := validateFields(req, d); err != nil {
+		return nil, logical.CodedError(http.StatusUnprocessableEntity, err.Error())
+	}
+
+	client, done, err := b.Client(req.Storage)
 	if err != nil {
 		return nil, err
 	}
 
 	defer done()
 
+	if req.ClientToken == "" {
+		return nil, fmt.Errorf("client token empty")
+	}
+
 	// Safely parse any options from interface types.
 	opts := new(recordOptions)
 
 	if uid, ok := d.GetOk(keyRecordUid); ok {
-		opts.Uid = uid.(string)
+		opts.Uid = strings.TrimSpace(uid.(string))
+	}
+	if recordData, ok := d.GetOk(keyRecordData); ok {
+		opts.RecordData = recordData.(string)
+	}
+	if opts.Uid == "" || len(core.Base64ToBytes(opts.Uid)) != 16 {
+		return nil, fmt.Errorf("invalid record UID: '%s' - expected 16 bytes UID in URL safe base 64 encoding", opts.Uid)
+	}
+	if opts.RecordData == "" {
+		return nil, fmt.Errorf("invalid record data '%s' - expected valid JSON", opts.RecordData)
 	}
 
-	recordRes := &logical.Response{}
+	// Validate record JSON to make sure it matches exactly all known field types
+	// Client cannot validate the record type because of custom record types
+	// Record type change is allowed but any other client (on edit) may move fields around according to the new template
+	if _, err := core.NewRecordCreateFromJsonDecoder(opts.RecordData, true); err != nil {
+		return nil, err
+	}
+
+	records, err := client.SecretsManager.GetSecrets([]string{opts.Uid})
+	if err != nil {
+		return nil, err
+	} else if len(records) < 1 {
+		return nil, fmt.Errorf("record UID: %s not found or not shared to your KSM application", opts.Uid)
+	} else if len(records) > 1 {
+		return nil, fmt.Errorf("found multiple records with the same UID: %s", opts.Uid)
+	}
+
+	record := records[0]
+
+	record.RawJson = opts.RecordData
+	record.RecordDict = core.JsonToDict(record.RawJson)
+
+	if err := client.SecretsManager.Save(record); err != nil {
+		return nil, err
+	}
+
+	// return the updated record/JSON
+	recordRes := &logical.Response{Data: record.RecordDict}
 	return recordRes, nil
 }
 
@@ -255,13 +333,23 @@ func (b *backend) pathRecordCreate(ctx context.Context, req *logical.Request, d 
 	opts := new(recordOptions)
 
 	if uid, ok := d.GetOk(keyRecordUid); ok {
-		opts.Uid = uid.(string)
+		opts.Uid = strings.TrimSpace(uid.(string))
 	}
 	if folderUid, ok := d.GetOk(keyFolderUid); ok {
-		opts.FolderUid = folderUid.(string)
+		opts.FolderUid = strings.TrimSpace(folderUid.(string))
 	}
 	if recordData, ok := d.GetOk(keyRecordData); ok {
 		opts.RecordData = recordData.(string)
+	}
+
+	if opts.Uid != "" && len(core.Base64ToBytes(opts.Uid)) != 16 {
+		return nil, fmt.Errorf("invalid record UID: '%s' - expected 16 bytes UID in URL safe base 64 encoding", opts.Uid)
+	}
+	if opts.FolderUid != "" && len(core.Base64ToBytes(opts.FolderUid)) != 16 {
+		return nil, fmt.Errorf("invalid folder UID: '%s' - expected 16 bytes FUID in URL safe base 64 encoding", opts.FolderUid)
+	}
+	if opts.RecordData == "" {
+		return nil, fmt.Errorf("invalid record data '%s' - expected valid JSON", opts.RecordData)
 	}
 
 	records, err := client.SecretsManager.GetSecrets([]string{})
@@ -280,10 +368,21 @@ func (b *backend) pathRecordCreate(ctx context.Context, req *logical.Request, d 
 		return nil, fmt.Errorf("folder UID: %s not found or the folder is empty", opts.FolderUid)
 	}
 
-	newRecord, err := core.NewRecord(templateRecordUid, records, "")
+	// Create record will fail if record with that UID exists even if it is in you trash bin
+	// and KSM client can't purge your trash bin so do not re-use hardcoded record UIDs
+	// Use auto generated record UIDs by omitting the uid param or passing an empty string
+	newRecord, err := core.NewRecord(templateRecordUid, records, opts.Uid)
 	if err != nil {
 		return nil, err
 	}
+
+	// Validate record JSON to make sure it matches exactly all known field types
+	// Client cannot validate the record type because of custom record types
+	// Record type change is allowed but any other client (on edit) may move fields around according to the new template
+	if _, err := core.NewRecordCreateFromJsonDecoder(opts.RecordData, true); err != nil {
+		return nil, err
+	}
+
 	newRecord.RawJson = opts.RecordData
 	newRecord.RecordDict = core.JsonToDict(newRecord.RawJson)
 
@@ -292,6 +391,7 @@ func (b *backend) pathRecordCreate(ctx context.Context, req *logical.Request, d 
 		return nil, err
 	}
 
+	// return the UID and title of the new record
 	resData := map[string]interface{}{newRecUID: newRecord.Title()}
 	recordRes := &logical.Response{Data: resData}
 	return recordRes, nil
