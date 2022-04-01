@@ -640,8 +640,7 @@ class SecretsManager:
                     # Get the except below handle it
                     raise ValueError()
             except IndexError:
-                raise ValueError("Keeper url [{}] missing information about the uid, field type, and field key."
-                                 .format(url))
+                raise ValueError("Keeper url missing information about the uid, field type, and field key.")
 
         try:
             (uid, file_data_type, key) = url.split('/')
