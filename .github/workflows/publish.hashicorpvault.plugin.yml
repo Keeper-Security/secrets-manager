@@ -38,11 +38,11 @@ jobs:
       - name: Create binaries
         run: | # initially `github.ref` == "ref/tags/vault-plugin-secrets-ksm/vX.Y.Z"
           PLUGIN_NAME="$(cut -d'/' -f3 <<<${{ github.ref }})"
-          PLUGIN_VERSION=${"$(cut -d'/' -f4 <<<${{ github.ref }})":1}
+          PLUGIN_VERSION="$(cut -d'/' -f4 <<<${{ github.ref }})"
           
           echo "Plugin name: [${PLUGIN_NAME}]"
-          echo "Plugin version: [${PLUGIN_VERSION}]"
-          make release-all PLUGIN_NAME="${PLUGIN_NAME}" PLUGIN_VERSION="${PLUGIN_VERSION}"
+          echo "Plugin version: [${PLUGIN_VERSION:1}]"
+          make release-all PLUGIN_NAME="${PLUGIN_NAME}" PLUGIN_VERSION="${PLUGIN_VERSION:1}"
 
       - name: "Info: List created files"
         run: |
