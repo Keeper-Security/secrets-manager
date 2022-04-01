@@ -1,6 +1,6 @@
 {
   "name": "@keeper-security/secrets-manager-core",
-  "version": "16.2.4",
+  "version": "16.2.5",
   "description": "Keeper Secrets Manages Javascript SDK",
   "browser": "dist/index.es.js",
   "main": "dist/index.cjs.js",
@@ -27,8 +27,8 @@
     "rollup-plugin-sourcemaps": "^0.6.3",
     "rollup-plugin-typescript2": "^0.31.2",
     "rollup-plugin-version-injector": "^1.3.3",
-    "ts-jest": "^27.1.3",
+    "ts-jest": "^27.1.4",
     "ts-node": "^10.7.0",
-    "typescript": "^4.4.2"
+    "typescript": "^4.6.3"
   }
 }
