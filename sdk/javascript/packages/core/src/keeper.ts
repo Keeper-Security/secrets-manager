@@ -137,7 +137,7 @@ const prepareGetPayload = async (storage: KeyValueStorage, recordsFilter?: strin
         throw new Error('Client Id is missing from the configuration')
     }
     const payload: GetPayload = {
-        clientVersion: 'ms' + packageVersion,
+        clientVersion: 'ms' + packageVersion, // TODO generate client version for SM
         clientId: clientId
     }
     const appKey = await storage.getBytes(KEY_APP_KEY)
@@ -159,7 +159,7 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperReco
     const recordBytes = platform.stringToBytes(JSON.stringify(record.data))
     const encryptedRecord = await platform.encrypt(recordBytes, record.recordUid)
     return {
-        clientVersion: 'ms' + packageVersion,
+        clientVersion: 'ms' + packageVersion, // TODO generate client version for SM
         clientId: clientId,
         recordUid: record.recordUid,
         data: webSafe64FromBytes(encryptedRecord),
@@ -183,7 +183,7 @@ const prepareCreatePayload = async (storage: KeyValueStorage, folderUid: string,
     const encryptedRecordKey = await platform.publicEncrypt(recordKey, ownerPublicKey)
     const encryptedFolderKey = await platform.encrypt(recordKey, folderUid)
     return {
-        clientVersion: 'ms' + packageVersion,
+        clientVersion: 'ms' + packageVersion, // TODO generate client version for SM
         clientId: clientId,
         recordUid: webSafe64FromBytes(recordUid),
         recordKey: platform.bytesToBase64(encryptedRecordKey),
@@ -218,7 +218,7 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
     }
 }
 
-const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: any): Promise<EncryptedPayload> => {
+const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload): Promise<EncryptedPayload> => {
     const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
     const encryptedPayload = await platform.encryptWithKey(payloadBytes, transmissionKey.key)
     const signatureBase = Uint8Array.of(...transmissionKey.encryptedKey, ...encryptedPayload)
@@ -226,7 +226,7 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     return {payload: encryptedPayload, signature}
 }
 
-const postQuery = async (options: SecretManagerOptions, path: string, payload: any): Promise<Uint8Array> => {
+const postQuery = async (options: SecretManagerOptions, path: string, payload: GetPayload | UpdatePayload): Promise<Uint8Array> => {
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
         throw new Error('hostname is missing from the configuration')
@@ -398,19 +398,6 @@ export const createSecret = async (options: SecretManagerOptions, folderUid: str
     const payload = await prepareCreatePayload(options.storage, folderUid, recordData)
     await postQuery(options, 'create_secret', payload)
     return payload.recordUid
-}
-
-export const postPayload = async (options: SecretManagerOptions, path: string, payload: any): Promise<string> => {
-    const clientId = await options.storage.getString(KEY_CLIENT_ID)
-    if (!clientId) {
-        throw new Error('Client Id is missing from the configuration')
-    }
-    const response = await postQuery(options, path, {
-        clientVersion: 'ms' + packageVersion,
-        clientId: clientId,
-        ...payload
-    })
-    return JSON.parse(platform.bytesToString(response))
 }
 
 export const downloadFile = async (file: KeeperFile): Promise<Uint8Array> => {
