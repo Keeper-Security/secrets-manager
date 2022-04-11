@@ -276,6 +276,8 @@ class SecretTest(unittest.TestCase):
         queue = mock.ResponseQueue(client=secrets_manager)
         queue.add_response(res)
         queue.add_response(res)
+        queue.add_response(res)
+        queue.add_response(res)
 
         def mock_download_get(_):
             mock_res = Response()
@@ -295,6 +297,25 @@ class SecretTest(unittest.TestCase):
                     runner = CliRunner()
                     result = runner.invoke(cli, [
                         'secret', 'download', '-u', one.uid, '--name', 'my.mp4',
+                        '--file-output', tf.name
+                    ], catch_exceptions=False)
+                    tf.seek(0)
+                    the_content = tf.read()
+                    self.assertEqual(0, result.exit_code, "the exit code was not 0")
+                    self.assertEqual(mock_content, the_content.decode(), 'the downloaded file does not match')
+            self.assertEqual(1, mock_get.call_count, "the mock get call count is not 1")
+
+        with patch('requests.get', side_effect=mock_download_get) as mock_get:
+            with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
+                    as mock_client:
+                mock_client.return_value = secrets_manager
+
+                Profile.init(token='MY_TOKEN')
+
+                with tempfile.NamedTemporaryFile() as tf:
+                    runner = CliRunner()
+                    result = runner.invoke(cli, [
+                        'secret', 'download', '-u', one.uid, '--file-uid', mocked_file.uid,
                         '--file-output', tf.name
                     ], catch_exceptions=False)
                     tf.seek(0)

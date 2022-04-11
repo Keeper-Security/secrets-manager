@@ -153,6 +153,7 @@ class Secret:
             "fields": standard_fields,
             "custom_fields": custom_fields,
             "files": [{
+                "file_uid": x.f.get("fileUid"),
                 "name": x.name,
                 "title": x.title,
                 "type": x.type,
@@ -251,8 +252,14 @@ class Secret:
             table.add_column("File Name", allow_wrap=True, data_color=Fore.GREEN)
             table.add_column("Type")
             table.add_column("Size", align=ColumnAlign.RIGHT)
+            table.add_column("File UID")
             for file in record_dict["files"]:
-                row = [file["title"], file["type"], "{:n}".format(int(file["size"]))]
+                row = [
+                    file["title"],
+                    file["type"],
+                    "{:n}".format(int(file["size"])),
+                    file["file_uid"]
+                ]
                 table.add_row(row)
             ret += table.get_string() + "\n"
 
@@ -370,7 +377,11 @@ class Secret:
         if len(titles) == 0:
             fetch_uids = uids
 
-        for record in self.cli.client.get_secrets(uids=fetch_uids):
+        secrets = self.cli.client.get_secrets(uids=fetch_uids)
+        if len(secrets) == 0 and fetch_uids is not None:
+            raise KsmCliException("Cannot find requested record(s).")
+
+        for record in secrets:
             add_record = False
 
             # If we are searching by title, the fetch_uids was None, we have all the records. We need to filter
@@ -427,13 +438,20 @@ class Secret:
                        for x in record_dict]
             self.cli.output(json.dumps(records, indent=4))
 
-    def download(self, uid, name, file_output, create_folders=False):
+    def download(self, uid, name, file_uid, file_output, create_folders=False):
 
         record = self.cli.client.get_secrets(uids=[uid])
         if len(record) == 0:
             raise KsmCliException("Cannot find a record for UID {}. Cannot download {}".format(uid, name))
 
-        file = record[0].find_file_by_title(name)
+        file = None
+        if file_uid is not None:
+            for check_file in record[0].files:
+                if check_file.f.get("fileUid") == file_uid:
+                    file = check_file
+                    break
+        else:
+            file = record[0].find_file_by_title(name)
         if file is None:
             raise KsmCliException("Cannot find a file named {} for UID {}. Cannot download file".format(name, uid))
 

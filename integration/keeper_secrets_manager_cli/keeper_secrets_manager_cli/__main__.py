@@ -128,7 +128,11 @@ class AliasedGroup(HelpColorsGroup):
         for item in args:
             # 22 is the length of the UID. We don't want to change the case of that if it starts with a -
             if item.startswith("-") and len(item) != 22:
-                item = item.lower()
+                item_parts = item.split("=")
+                item = item_parts[0].lower()
+                item_parts = item_parts[1:]
+                if len(item_parts) > 0:
+                    item += "=" + "=".join(item_parts)
             new_args.append(item)
 
         return super().parse_args(ctx, new_args)
@@ -495,16 +499,21 @@ def secret_update_command(ctx, uid, field, custom_field, field_json, custom_fiel
     help_options_color='blue'
 )
 @click.option('--uid', '-u', required=True, type=str, help="UID of the secret.")
-@click.option('--name', required=True, type=str, help='Name of the file to download.')
+@click.option('--name', type=str, help='Name of the file to download.')
+@click.option('--file-uid', type=str, help='Unique id of the file to download.')
 @click.option('--file-output', required=True, type=str, help="Where to write the file's content. "
                                                              "[filename|stdout|stderr]")
 @click.option('--create-folders', is_flag=True, help='Create folder for filename path.')
 @click.pass_context
-def secret_download_command(ctx, uid, name, file_output, create_folders):
+def secret_download_command(ctx, uid, name, file_uid, file_output, create_folders):
     """Download a file from a secret record"""
+    if name is None and file_uid is None:
+        raise KsmCliException("Either the name or file uid needs to be specified.")
+
     ctx.obj["secret"].download(
         uid=uid,
         name=name,
+        file_uid=file_uid,
         file_output=file_output,
         create_folders=create_folders
     )
@@ -993,7 +1002,7 @@ def shell_command():
 
     KsmCliException.in_a_shell = True
     repl(click.get_current_context(), prompt_kwargs={
-        "message": u'KSM Shell (? for help) > '
+        "message": u'\nKSM Shell (? for help) > '
     })
 
 
