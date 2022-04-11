@@ -20,6 +20,7 @@ from .exec import Exec
 from .secret import Secret
 from .profile import Profile
 from .init import Init
+from .config import Config
 import sys
 import os
 import keeper_secrets_manager_core
@@ -28,6 +29,9 @@ import importlib_metadata
 import difflib
 import typing as t
 from update_checker import UpdateChecker
+
+
+global_config = None
 
 
 # NOTE: For the CLI, all groups and command are lowercase. All arguments are lower case, so you cannot use
@@ -225,8 +229,15 @@ def base_command_help(f):
 def cli(ctx, ini_file, profile_name, output, color, cache):
     """Keeper Secrets Manager CLI
     """
+
     ctx.obj = {
-        "cli": _get_cli(ini_file=ini_file, profile_name=profile_name, output=output, use_color=color, use_cache=cache),
+        "cli": _get_cli(
+            ini_file=ini_file,
+            profile_name=profile_name,
+            output=output,
+            use_color=color,
+            use_cache=cache,
+            global_config=global_config),
         "ini_file": ini_file,
         "profile_name": profile_name,
         "output": output,
@@ -295,7 +306,7 @@ def profile_list_command(ctx, json):
     if json is True:
         output = "json"
 
-    Profile(cli=ctx.obj["cli"]).list_profiles(output=output)
+    Profile(cli=ctx.obj["cli"], config=global_config).list_profiles(output=output)
 
 
 @click.command(
@@ -307,7 +318,7 @@ def profile_list_command(ctx, json):
 @click.pass_context
 def profile_active_command(ctx, profile_name):
     """Set the active profile"""
-    Profile(cli=ctx.obj["cli"]).set_active(
+    Profile(cli=ctx.obj["cli"], config=global_config).set_active(
         profile_name=profile_name
     )
 
@@ -324,7 +335,7 @@ def profile_active_command(ctx, profile_name):
 @click.pass_context
 def profile_export_command(ctx, plain, file_format, profile_name):
     """Create a new config file from a profile"""
-    Profile(cli=ctx.obj["cli"]).export_config(
+    Profile(cli=ctx.obj["cli"], config=global_config).export_config(
         plain=plain,
         file_format=file_format,
         profile_name=profile_name
@@ -341,7 +352,7 @@ def profile_export_command(ctx, plain, file_format, profile_name):
 @click.pass_context
 def profile_import_command(ctx, output_file, config_base64):
     """Import an encrypted config file"""
-    Profile(cli=ctx.obj["cli"]).import_config(
+    Profile(cli=ctx.obj["cli"], config=global_config).import_config(
         file=output_file,
         config_base64=config_base64
     )
@@ -769,7 +780,7 @@ def exec_command(ctx, capture_output, inline, cmd):
 @click.pass_context
 def config_command(ctx):
     """Configure the command line tool"""
-    ctx.obj["profile"] = Profile(cli=ctx.obj["cli"])
+    ctx.obj["profile"] = Profile(cli=ctx.obj["cli"], config=global_config)
     pass
 
 
@@ -867,7 +878,7 @@ config_command.add_command(config_editor_command)
 @click.pass_context
 def init_command(ctx):
     """Initialize a configuration file for integrations"""
-    ctx.obj["profile"] = Profile(cli=ctx.obj["cli"])
+    ctx.obj["profile"] = Profile(cli=ctx.obj["cli"], config=global_config)
 
 
 @click.command(
@@ -956,6 +967,9 @@ def version_command(ctx):
 )
 def shell_command():
     """Run KSM in a shell"""
+
+    global global_config
+    global_config = Config()
 
     # https://manytools.org/hacker-tools/ascii-banner/
     logo = """

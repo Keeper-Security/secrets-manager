@@ -128,6 +128,7 @@ class SecretTest(unittest.TestCase):
                 runner = CliRunner()
                 result = runner.invoke(cli, ['-o', tf.name, 'secret', 'get', '-u', one.uid, '--json'],
                                        catch_exceptions=False)
+                tf.seek(0)
                 self.assertEqual(0, result.exit_code, "the exit code was not 0")
                 tf.seek(0)
                 secret = json.load(tf)
@@ -140,6 +141,7 @@ class SecretTest(unittest.TestCase):
                 'secret', 'get', '-u', one.uid, '--json',
                 '--query', 'fields[*]'
             ], catch_exceptions=False)
+
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
             fields = json.loads(result.output)
             self.assertEqual(4, len(fields), "didn't find 4 objects in array")
@@ -498,7 +500,6 @@ class SecretTest(unittest.TestCase):
                 '--field', '"login=New Login"',
                 '--custom-field', '"my_custom=New Custom text"',
             ], catch_exceptions=False)
-            print(result.output)
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
 
             # Blow up on bad field.
@@ -799,7 +800,6 @@ class SecretTest(unittest.TestCase):
                                          '-sc', '7'],
                                    catch_exceptions=False)
             self.assertEqual(1, result.exit_code, "the exit code was not 1")
-            print(result.stdout)
             tf.close()
 
     def test_template_record_types(self):
@@ -820,7 +820,6 @@ class SecretTest(unittest.TestCase):
             runner.invoke(cli, ['secret', 'template', 'record', '-f', tf.name, 'login'], catch_exceptions=False)
             tf.seek(0)
             schema = json.loads(tf.read().decode())
-            print(schema)
             self.assertEqual("v3", schema.get("version"), "did not get the correct version")
             self.assertEqual("KeeperRecord", schema.get("kind"), "did not get the correct kind")
             self.assertIsInstance(schema.get("data"), list, "data is not a list")

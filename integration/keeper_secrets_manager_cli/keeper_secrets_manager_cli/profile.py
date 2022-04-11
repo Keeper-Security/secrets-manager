@@ -11,14 +11,14 @@
 #
 
 import os
-import configparser
 from keeper_secrets_manager_cli.exception import KsmCliException
-from keeper_secrets_manager_cli.common import find_ksm_path
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperAccessDenied
 from .table import Table, ColumnAlign
 from .export import Export
+from .config import Config
+from .common import find_ksm_path
 from colorama import Fore
 import sys
 import json
@@ -27,58 +27,45 @@ import base64
 
 class Profile:
 
-    config_profile = "_config"
-    active_profile_key = "active_profile"
     default_profile = os.environ.get("KSM_CLI_PROFILE", "_default")
-    default_ini_file = os.environ.get("KSM_INI_FILE", "keeper.ini")
-    color_key = "color"
-    cache_key = "cache"
-    record_type_dir_key = "record_type_dir"
-    editor_key = "editor"
-    editor_use_blocking_key = "editor_use_blocking"
-    editor_process_name_key = "editor_process_name"
 
-    def __init__(self, cli, ini_file=None):
+    def __init__(self, cli, ini_file=None, config=None):
 
         self.cli = cli
+        self.ini_file = None
+        self.has_profiles = False
 
-        # If the INI file is not set, find it.
-        if ini_file is None:
-            ini_file = Profile.find_ini_config()
+        if config is not None:
+            self._config = config
+        else:
+            self._config = Config()
 
-            # If we can't find it, and the KSM_TOKEN env is set, auto create it. We do this because
-            # this might be a container startup and there is not INI file, but we have passed in the client key.
-            token = os.environ.get("KSM_TOKEN")
-            if token is not None:
+        if ini_file is not None:
+            self._config = Config(ini_file=ini_file)
+            self._config.load()
+            self.ini_file = self._config
+        # Else try to find it
+        else:
+            if os.environ.get("KSM_CONFIG") is not None:
+                self._config.set_profile_using_base64(Profile.default_profile, os.environ.get("KSM_CONFIG"))
+            elif os.environ.get("KSM_CONFIG_BASE64_1") is not None:
+                self._auto_config_from_env_var(self._config)
+            elif os.environ.get("KSM_TOKEN") is not None:
                 Profile.init(
-                    token=token,
+                    token=os.environ.get("KSM_TOKEN"),
                     server=os.environ.get("KSM_HOSTNAME", "US")
                 )
-                # Check again for the INI config file
-                ini_file = Profile.find_ini_config()
+            else:
+                ini_file = find_ksm_path(Config.default_ini_file)
+                if ini_file is not None:
+                    self._config.ini_file = ini_file
+                    self._config.has_config_file = True
+                    self._config.load()
 
-            # Auto generate config file from base64 encode env vars.
-            # This can import multiple profiles.
-            elif os.environ.get("KSM_CONFIG_BASE64_1") is not None:
-                self._auto_config_from_env_var()
-                ini_file = Profile.find_ini_config()
-            # This can only import one. Move the KSM_CONFIG to KSM_CONFIG_BASE64_1
-            elif os.environ.get("KSM_CONFIG") is not None:
-                os.environ["KSM_CONFIG_BASE64_1"] = os.environ["KSM_CONFIG"]
-                self._auto_config_from_env_var()
-                ini_file = Profile.find_ini_config()
-
-        self.ini_file = ini_file
-
-        # Lazy load in the config
-        self._config = None
-        self.is_loaded = False
-
-        if self.ini_file is not None:
-            self._load_config()
+        self.has_profiles = len(self._config.profile_list()) > 0
 
     @staticmethod
-    def _auto_config_from_env_var():
+    def _auto_config_from_env_var(config):
 
         """Build config from a Base64 config in environmental variables.
 
@@ -88,73 +75,21 @@ class Profile:
         while True:
             config_base64 = os.environ.get("KSM_CONFIG_BASE64_{}".format(index))
             if config_base64 is not None:
-                Profile.import_config(
-                    config_base64=config_base64,
-                    profile_name=os.environ.get("KSM_CONFIG_BASE64_DESC_{}".format(index), "App{}".format(index)))
+                profile_name = os.environ.get("KSM_CONFIG_BASE64_DESC_{}".format(index), "App{}".format(index))
+                config.set_profile_using_base64(profile_name, config_base64)
             else:
                 break
             index += 1
-
-    def _load_config(self):
-        if self._config is None:
-
-            if self.ini_file is None:
-                raise FileNotFoundError("Cannot find the Keeper INI file {}".format(Profile.default_ini_file))
-            elif os.path.exists(self.ini_file) is False:
-                raise FileNotFoundError("Keeper INI files does not exists at {}".format(self.ini_file))
-
-            self._config = configparser.ConfigParser()
-            self._config.read(self.ini_file)
-
-            self.is_loaded = True
-
-    def save(self):
-        with open(self.ini_file, 'w') as configfile:
-            self._config.write(configfile)
-
-    @staticmethod
-    def find_ini_config():
-        file = find_ksm_path(Profile.default_ini_file, is_file=True)
-        return file
-
-    def get_config(self):
-        self._load_config()
-        return self._config
-
-    def get_profile_config(self, profile_name):
-        config = self.get_config()
-        if profile_name not in config:
-            raise KsmCliException("The profile {} does not exist in the INI config.".format(profile_name))
-
-        return config[profile_name]
+        config.config.active_profile = os.environ.get("KSM_CONFIG_BASE64_DESC_1", "App1")
 
     def get_active_profile_name(self):
-        common_config = self.get_profile_config(Profile.config_profile)
-        return os.environ.get("KSM_CLI_PROFILE", common_config.get(Profile.active_profile_key))
+        return os.environ.get("KSM_CLI_PROFILE", self._config.config.active_profile)
 
-    def _get_common_config(self, error_prefix):
-        try:
-            return self.get_profile_config(Profile.config_profile)
-        except Exception as err:
-            raise KsmCliException("{} {}".format(error_prefix, err))
+    def get_profile_config(self, profile_name):
+        return self._config.get_profile(profile_name)
 
-    @staticmethod
-    def _init_config_file(profile_name=None):
-
-        if profile_name is None:
-            profile_name = Profile.default_profile
-
-        config = configparser.ConfigParser()
-
-        # Create our default section name.
-        config[profile_name] = {}
-
-        # Create our config section name.
-        config[Profile.config_profile] = {
-            Profile.active_profile_key: profile_name
-        }
-
-        return config
+    def get_common_config(self):
+        return self._config.config
 
     @staticmethod
     def init(token, ini_file=None, server=None, profile_name=None):
@@ -163,31 +98,23 @@ class Profile:
 
         # If the ini is not set, default the file in the current directory.
         if ini_file is None:
-            ini_file = os.path.join(
-                os.environ.get("KSM_INI_DIR", os.getcwd()),
-                Profile.default_ini_file
-            )
+            ini_file = Config.get_default_ini_file()
 
         if profile_name is None:
             profile_name = os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
 
-        if profile_name == Profile.config_profile:
+        if profile_name == Config.CONFIG_KEY:
             raise KsmCliException("The profile '{}' is a reserved profile name. Cannot not init profile.".format(
                 profile_name))
+
+        config = Config(ini_file=ini_file)
+
+        if os.path.exists(ini_file) is True:
+            config.load()
 
         # We want to flag if we create a INI file. If there is an error, remove it so it
         # doesn't get picked up if we try again.
         created_ini = False
-
-        # If the ini file doesn't exists, create it with the common profile
-        if os.path.exists(ini_file) is False:
-            config = Profile._init_config_file()
-            with open(ini_file, 'w') as configfile:
-                config.write(configfile)
-            created_ini = True
-        else:
-            config = configparser.ConfigParser()
-            config.read(ini_file)
 
         # if the token has a ":" in it, the region code/server is concat'd to the token. Split them.
         if ":" in token:
@@ -213,21 +140,20 @@ class Profile:
                 os.unlink(ini_file)
             raise KsmCliException("Could not init the profile: {}".format(err))
 
-        config[profile_name] = {
-            "clientKey": "",
-            "clientId": "",
-            "privateKey": "",
-            "appKey": "",
-            "hostname": "",
-            "appOwnerPublicKey": ""
-        }
+        config_storage = client.config
 
-        for k, v in config_storage.config.items():
-            if v is None:
-                continue
-            config[profile_name][k.value] = v
-        with open(ini_file, 'w') as configfile:
-            config.write(configfile)
+        config.set_profile(profile_name,
+                           client_id=config_storage.get(ConfigKeys.KEY_CLIENT_ID),
+                           private_key=config_storage.get(ConfigKeys.KEY_PRIVATE_KEY),
+                           app_key=config_storage.get(ConfigKeys.KEY_APP_KEY),
+                           hostname=config_storage.get(ConfigKeys.KEY_HOSTNAME),
+                           app_owner_public_key=config_storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
+                           server_public_key_id=config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID))
+
+        if config.config.active_profile is None:
+            config.config.active_profile = profile_name
+
+        config.save()
 
         print("Added profile {} to INI config file located at {}".format(profile_name, ini_file), file=sys.stderr)
 
@@ -239,15 +165,9 @@ class Profile:
         profiles = []
 
         try:
-            active_profile = self.get_active_profile_name()
-
-            for profile in self.get_config():
-                if profile == Profile.config_profile:
-                    continue
-                elif profile == "DEFAULT":
-                    continue
+            for profile in self._config.profile_list():
                 profiles.append({
-                    "active": profile == active_profile,
+                    "active": profile == self._config.config.active_profile,
                     "name": profile
                 })
 
@@ -269,13 +189,8 @@ class Profile:
 
     def set_active(self, profile_name):
 
-        common_config = self._get_common_config("Cannot set active profile.")
-
-        if profile_name not in self.get_config():
-            raise Exception("Cannot set profile {} to active. It does not exists.".format(profile_name))
-
-        common_config[Profile.active_profile_key] = profile_name
-        self.save()
+        self._config.config.active_profile = profile_name
+        self._config.save()
 
         print("{} is now the active profile.".format(profile_name), file=sys.stderr)
 
@@ -290,51 +205,26 @@ class Profile:
 
         # If the profile name is not set, use the active profile.
         if profile_name is None:
-            profile_name = self.get_active_profile_name()
-        profile_config = self.get_profile_config(profile_name)
+            profile_name = self._config.config.active_profile
+        profile_config = self._config.get_profile(profile_name)
 
         config_str = Export(config=profile_config, file_format=file_format, plain=plain).run()
 
         self.cli.output(config_str)
 
     @staticmethod
-    def _import_json_config(config_data, file=None, profile_name=None):
-
-        if os.path.exists(file) and os.path.isfile(file):
-            config = configparser.ConfigParser()
-            config.read(file)
-        else:
-            config = Profile._init_config_file(profile_name=profile_name)
-
-        if profile_name is None:
-            profile_name = Profile.default_profile
-
-        config[profile_name] = {
-            "clientKey": "",
-            "clientId": "",
-            "privateKey": "",
-            "appKey": "",
-            "hostname": ""
-        }
-
-        for k, v in config_data.items():
-            if v is None:
-                continue
-            config[profile_name][k] = v
-        with open(file, 'w') as configfile:
-            config.write(configfile)
-
-    @staticmethod
     def import_config(config_base64, file=None, profile_name=None):
 
-        """Take base64 config file and write it back to disk.
         """
+        Take base64 config file and write it back to disk.
 
-        if file is None:
-            file = Profile.default_ini_file
+        This file could be a JSON or a Keeper ini file.
+
+        """
 
         config_data = base64.urlsafe_b64decode(config_base64.encode())
 
+        # Check if the data is JSON
         is_json = False
         try:
             config_data = json.loads(config_data)
@@ -342,10 +232,19 @@ class Profile:
         except json.JSONDecodeError as _:
             pass
 
+        if file is None:
+            file = Config.get_default_ini_file()
+
         # If a JSON file was import, convert the JSON to a INI.
         if is_json is True:
-            Profile._import_json_config(config_data, file, profile_name)
-        # Else just save the INI
+            config = Config(ini_file=file)
+            config.set_profile_using_base64(
+                profile_name=Profile.default_profile,
+                base64_config=config_base64
+            )
+            config.save()
+
+        # Else just save the INI. It's in the right format, just save it. No processing needed.
         else:
             with open(file, "w") as fh:
                 fh.write(config_data.decode())
@@ -354,59 +253,62 @@ class Profile:
         print("Imported config saved to profile {} at {}.".format(profile_name, file), file=sys.stderr)
 
     def set_color(self, on_off):
-        common_config = self._get_common_config("Cannot set color settings.")
-        common_config[Profile.color_key] = str(on_off)
+        common_config = self._config.config
+        common_config.color = str(on_off)
         self.cli.use_color = on_off
-        self.save()
+        self._config.save()
 
     def set_cache(self, on_off):
-        common_config = self._get_common_config("Cannot set record cache.")
-        common_config[Profile.cache_key] = str(on_off)
-        self.cli.use_color = on_off
-        self.save()
+        common_config = self._config.config
+        common_config.cache = str(on_off)
+        self.cli.use_cache = on_off
+        self._config.save()
 
     def set_record_type_dir(self, directory):
-        common_config = self._get_common_config("Cannot set the record type directory.")
+        common_config = self._config.config
         if directory is None:
-            del common_config[Profile.record_type_dir_key]
+            common_config.record_type_dir = None
         else:
             if os.path.exists(directory) is False:
                 raise FileNotFoundError(f"Cannot find the directory 'directory' for record type schemas.")
-            common_config[Profile.record_type_dir_key] = str(directory)
+            common_config.record_type_dir = str(directory)
         self.cli.record_type_dir = directory
-        self.save()
+        self._config.save()
 
     def set_editor(self, editor, use_blocking=None, process_name=None):
-        common_config = self._get_common_config("Cannot set editor.")
+        common_config = self._config.config
         if editor is None:
-            common_config.pop(Profile.editor_key, None)
-            common_config.pop(Profile.editor_use_blocking_key, None)
-            common_config.pop(Profile.editor_process_name_key, None)
+            common_config.editor = None
+            common_config.editor_use_blocking = False
+            common_config.editor_process_name = None
         else:
-            common_config[Profile.editor_key] = editor
+            common_config.editor = editor
             if use_blocking is not None:
-                common_config[Profile.editor_use_blocking_key] = str(use_blocking)
+                common_config.editor_use_blocking = str(use_blocking)
             if process_name is not None:
-                common_config[Profile.editor_process_name_key] = process_name
+                common_config.editor_process_name = process_name
         self.cli.editor = editor
         self.cli.editor_use_blocking = use_blocking
-        self.save()
+        self._config.save()
 
     def show_config(self):
-        common_config = self._get_common_config("Cannot show the config.")
+
+        def _check_set(value):
+            if value is None:
+                return "-NOT SET-"
+            return value
+
+        common_config = self._config.config
 
         table = Table(use_color=self.cli.use_color)
         table.add_column("Config Item", data_color=Fore.GREEN)
         table.add_column("Value", data_color=Fore.YELLOW, allow_wrap=True)
 
-        not_set_text = "-NOT SET-"
-        table.add_row(["Active Profile", common_config.get(Profile.active_profile_key, not_set_text)])
-        table.add_row(["Cache Enabled", common_config.get(Profile.cache_key, not_set_text)])
-        table.add_row(["Color Enabled", common_config.get(Profile.color_key, not_set_text)])
-        table.add_row(["Record Type Directory", common_config.get(Profile.record_type_dir_key, not_set_text)])
-        table.add_row(["Editor", "{} ({})".format(
-            common_config.get(Profile.editor_key, not_set_text),
-            common_config.get(Profile.editor_process_name_key, "NA")
-        )])
-        table.add_row(["Editor Blocking", common_config.get(Profile.editor_use_blocking_key, not_set_text)])
+        table.add_row(["Active Profile", _check_set(common_config.active_profile)])
+        table.add_row(["Cache Enabled", _check_set(common_config.cache)])
+        table.add_row(["Color Enabled", _check_set(common_config.color)])
+        table.add_row(["Record Type Directory", _check_set(common_config.record_type_dir)])
+        table.add_row(["Editor", "{} ({})".format(_check_set(common_config.editor),
+                                                  _check_set(common_config.editor_process_name))])
+        table.add_row(["Editor Blocking", _check_set(common_config.editor_use_blocking)])
         self.cli.output(table.get_string())

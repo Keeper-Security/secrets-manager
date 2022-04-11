@@ -568,7 +568,7 @@ class Secret:
         # Check to see if appOwnerPublicKey is in the keeper.ini. It's a newly added key and if the
         # profile is too old we can't add a record.
         profile_config = self.cli.profile.get_profile_config(self.cli.profile.get_active_profile_name())
-        if profile_config.get("appOwnerPublicKey") is None:
+        if profile_config.app_owner_public_key is None:
             raise KsmCliException("Your profile is out of date. It is missing the application order key. "
                                   "To create a record you will need to init a profile with a new token.")
 
