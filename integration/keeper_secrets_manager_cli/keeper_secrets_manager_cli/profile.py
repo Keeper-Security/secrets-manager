@@ -189,6 +189,9 @@ class Profile:
 
     def set_active(self, profile_name):
 
+        if self._config.get_profile(profile_name) is None:
+            raise KsmCliException("Profile {} does not exists.".format(profile_name))
+
         self._config.config.active_profile = profile_name
         self._config.save()
 

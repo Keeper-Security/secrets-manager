@@ -111,8 +111,6 @@ class Config:
             for profile in self._profiles:
                 config[profile] = self._profiles[profile].to_dict()
 
-            print("SAVING")
-
             with open(self.ini_file, 'w') as fh:
                 config.write(fh)
                 fh.close()
