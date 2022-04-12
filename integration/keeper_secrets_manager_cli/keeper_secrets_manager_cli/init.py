@@ -14,6 +14,7 @@ from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from .export import Export
+from .config import Config
 import subprocess
 import sys
 
@@ -34,19 +35,24 @@ class Init:
         self.token = token
         self.skip_ssl_verify = skip_ssl_verify
 
-        self.config = Init.init_config()
-        redeem_sm = Init.get_client(config=self.config, token=token, hostname=hostname,
+        redeem_sm = Init.get_client(config=Init.init_config(), token=token, hostname=hostname,
                                     verify_ssl_certs=not skip_ssl_verify)
         redeem_sm.get_secrets()
+        in_memory_config = redeem_sm.config
 
-        self.config_dict = {}
-        for e in ConfigKeys:
-            if self.config.contains(e):
-                self.config_dict[e.value] = self.config.get(e)
+        config = Config()
+        config.set_profile("NA",
+                           client_id=in_memory_config.get(ConfigKeys.KEY_CLIENT_ID),
+                           private_key=in_memory_config.get(ConfigKeys.KEY_PRIVATE_KEY),
+                           app_key=in_memory_config.get(ConfigKeys.KEY_APP_KEY),
+                           hostname=in_memory_config.get(ConfigKeys.KEY_HOSTNAME),
+                           app_owner_public_key=in_memory_config.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
+                           server_public_key_id=in_memory_config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID))
+        self.config = config.get_profile("NA")
 
     def get_k8s(self, name, namespace, apply=False, immutable=False):
 
-        base64_config = Export(config=self.config_dict, file_format="json", plain=False).run()
+        base64_config = Export(config=self.config, file_format="json", plain=False).run()
 
         if apply is True:
             subprocess.run([
@@ -74,7 +80,7 @@ class Init:
 
     def get_json(self, plain=False):
 
-        config_str = Export(config=self.config_dict, file_format="json", plain=plain).run()
+        config_str = Export(config=self.config, file_format="json", plain=plain).run()
 
         print("", file=sys.stderr)
         self.cli.output(config_str)

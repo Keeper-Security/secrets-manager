@@ -105,4 +105,5 @@ class ConfigTest(unittest.TestCase):
 
         runner = CliRunner()
         result = runner.invoke(cli, ['config', 'show'], catch_exceptions=False)
+        print("OK", result.output)
         self.assertEqual(0, result.exit_code, "did not get a success on editor set")

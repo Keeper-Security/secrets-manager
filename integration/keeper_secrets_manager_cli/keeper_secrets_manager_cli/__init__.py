@@ -15,10 +15,12 @@ from keeper_secrets_manager_core.core import KSMCache
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_cli.common import find_ksm_path
+from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_helper.record_type import RecordType
 from distutils.util import strtobool
 from .exception import KsmCliException
 from .profile import Profile
+from .config import Config
 import sys
 import os
 
@@ -30,9 +32,10 @@ class KeeperCli:
         return SecretsManager(**kwargs)
 
     def __init__(self, ini_file=None, profile_name=None, output=None, use_color=None, use_cache=None,
-                 record_type_dir=None, editor=None, editor_use_blocking=False, editor_process_name=None):
+                 record_type_dir=None, editor=None, editor_use_blocking=False, editor_process_name=None,
+                 global_config=None):
 
-        self.profile = Profile(cli=self, ini_file=ini_file)
+        self.profile = Profile(cli=self, ini_file=ini_file, config=global_config)
         self._client = None
 
         self.log_level = os.environ.get("KSM_DEBUG", None)
@@ -48,8 +51,8 @@ class KeeperCli:
 
         self.use_cache = use_cache
 
-        # If no config file is loaded, then don't init the SDK
-        if self.profile.is_loaded is True:
+        # If we have profiles
+        if self.profile.has_profiles is True:
 
             # If the profile is not set
             if profile_name is None:
@@ -62,33 +65,35 @@ class KeeperCli:
             self.config = self.profile.get_profile_config(profile_name)
 
             config_storage = InMemoryKeyValueStorage()
-            config_storage.set(ConfigKeys.KEY_CLIENT_KEY, self.config.get("clientKey"))
-            config_storage.set(ConfigKeys.KEY_CLIENT_ID, self.config.get("clientId"))
-            config_storage.set(ConfigKeys.KEY_PRIVATE_KEY, self.config.get("privateKey"))
-            config_storage.set(ConfigKeys.KEY_APP_KEY, self.config.get("appKey"))
-            config_storage.set(ConfigKeys.KEY_HOSTNAME, self.config.get("hostname"))
-            config_storage.set(ConfigKeys.KEY_OWNER_PUBLIC_KEY, self.config.get("appOwnerPublicKey"))
+            config_storage.set(ConfigKeys.KEY_CLIENT_ID, self.config.client_id)
+            config_storage.set(ConfigKeys.KEY_PRIVATE_KEY, self.config.private_key)
+            config_storage.set(ConfigKeys.KEY_APP_KEY, self.config.app_key)
+            config_storage.set(ConfigKeys.KEY_HOSTNAME, self.config.hostname)
+            config_storage.set(ConfigKeys.KEY_OWNER_PUBLIC_KEY, self.config.app_owner_public_key)
 
-            common_profile = self.profile.get_profile_config(Profile.config_profile)
+            common_config = self.profile.get_common_config()
 
             # Get the active configuration
 
             # By default, don't use the cache.
             if self.use_cache is None:
-                self.use_cache = bool(strtobool(common_profile.get(Profile.cache_key, str(False))))
+                self.use_cache = bool(strtobool(str(common_config.cache)))
 
-            self._client = self.get_client(
-                config=config_storage,
-                log_level=self.log_level,
-                custom_post_function=KSMCache.caching_post_function if self.use_cache is True else None
-            )
+            try:
+                self._client = self.get_client(
+                    config=config_storage,
+                    log_level=self.log_level,
+                    custom_post_function=KSMCache.caching_post_function if self.use_cache is True else None
+                )
+            except Exception as err:
+                raise KsmCliException(str(err))
 
             # By default, use colors.
             if self.use_color is None:
-                self.use_color = bool(strtobool(common_profile.get(Profile.color_key, str(True))))
+                self.use_color = bool(strtobool(str(common_config.color)))
 
             if self.record_type_dir is None:
-                self.record_type_dir = common_profile.get(Profile.record_type_dir_key, None)
+                self.record_type_dir = common_config.record_type_dir
                 if self.record_type_dir is None:
                     self.record_type_dir = find_ksm_path("record_type", is_file=False)
 
@@ -99,10 +104,9 @@ class KeeperCli:
 
             # Get the editor to use for visual editing a record
             if self.editor is None:
-                self.editor = common_profile.get(Profile.editor_key, None)
-            self.editor_use_blocking = bool(strtobool(common_profile.get(Profile.editor_use_blocking_key,
-                                                                         str(editor_use_blocking))))
-            self.editor_process_name = common_profile.get(Profile.editor_process_name_key, editor_process_name)
+                self.editor = common_config.editor
+            self.editor_use_blocking = bool(strtobool(str(common_config.editor_use_blocking)))
+            self.editor_process_name = common_config.editor_process_name
         else:
             # Set the log level. We don't have the client to set the level, so set it here.
             if use_color is None:
