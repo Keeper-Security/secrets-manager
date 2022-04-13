@@ -84,7 +84,6 @@ data:
       - type: password
       - type: url
       - type: fileRef
-      - type: securityQuestion
   - class: Membership
     name: membership
     fields:
@@ -92,7 +91,6 @@ data:
       - type: name
       - type: password
       - type: fileRef
-      - type: securityQuestion
   - class: Passport
     name: passport
     fields:
