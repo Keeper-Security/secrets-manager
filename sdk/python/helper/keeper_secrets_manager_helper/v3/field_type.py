@@ -415,6 +415,7 @@ class Address(FieldType):
             "street1": {"value_type": str, "desc": "Street"},
             "street2": {"value_type": str, "desc": "Street 2"},
             "city": {"value_type": str, "desc": "City"},
+            "state": {"value_type": str, "desc": "State"},
             "zip": {"value_type": str, "desc": "Zip/Postal Code"},
             "country": {"value_type": CountryEnum, "desc": "ISO3166 Alpha-2 Country Code"},
         }
