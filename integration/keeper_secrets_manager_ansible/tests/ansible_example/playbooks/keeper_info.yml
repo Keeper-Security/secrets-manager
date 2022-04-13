@@ -1,0 +1,15 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Info
+  hosts: "my_systems"
+  vars:
+    keeper_record_types:
+      - |
+        {
+          "recordTypeId": 35,
+          "content": "{\"$id\":\"CUSTOM\",\"fields\":[{\"$ref\":\"fileRef\",\"label\":\"File or Photo\"},{\"$ref\":\"login\",\"label\":\"Login\"},{\"$ref\":\"password\",\"label\":\"Password\",\"required\":true,\"enforceGeneration\":false,\"privacyScreen\":false,\"complexity\":{\"length\":8,\"caps\":0,\"lowercase\":0,\"digits\":0,\"special\":0}},{\"$ref\":\"text\",\"label\":\"System Login\",\"required\":true},{\"$ref\":\"secret\",\"label\":\"System Password / Pin Code\"},{\"$ref\":\"url\",\"label\":\"Keeper VPN Wiki\",\"required\":true},{\"$ref\":\"url\",\"label\":\"Password Best Practices FAQ's and Tips\",\"required\":true}]}"
+        }
+
+  tasks:
+  - name: "Get Info"
+    keeper_info:

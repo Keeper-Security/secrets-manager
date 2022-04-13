@@ -65,7 +65,9 @@ If you omit the `collections` , you will need to use the full plugin name.
 * `keepersecurity.keeper_secrets_manager.keeper_copy` - Copy file, or value, from your vault to a remote server.
 * `keepersecurity.keeper_secrets_manager.keeper_get` - Get a value from your vault.
 * `keepersecurity.keeper_secrets_manager.keeper_set` - Set a value of an existing record in your vault.
+* `keepersecurity.keeper_secrets_manager.keeper_create` - Create a new record in your vault.
 * `keepersecurity.keeper_secrets_manager.keeper_cleanup` - Clean up Keeper related files.
+* `keepersecurity.keeper_secrets_manager.keeper_info` - Display information about plugin, record and field types.
 * `keepersecurity.keeper_secrets_manager.keeper_init` - Init a one-time access token. Returns a configuration.
 
 ## Lookup
