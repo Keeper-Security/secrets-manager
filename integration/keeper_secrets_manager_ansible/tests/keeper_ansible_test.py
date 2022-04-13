@@ -100,7 +100,7 @@ class KeeperAnsibleTest(unittest.TestCase):
 
         stdout = io.StringIO()
         with redirect_stdout(stdout):
-            main(["--keeper_token", "US:MY_TOKEN"])
+            main(["--token", "US:MY_TOKEN"])
         content = stdout.getvalue()
         self.assertRegex(content, r'Config file created', 'did not find expected text')
         with open("client-config.json", "r") as fh:
