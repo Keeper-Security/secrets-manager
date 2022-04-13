@@ -1,0 +1,28 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Create
+  hosts: "my_systems"
+
+  tasks:
+  - name: "Create Record"
+    keeper_create:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      record_type: login
+      generate_password: True
+      title: "My New Record"
+      note: "This is my note"
+      fields:
+        - type: login
+          value: "johndoe@localhost"
+        - type: url
+          value: "https://localhost"
+      custom_fields:
+        - type: text
+          label: "My Custom Label"
+          valye: "This is custom text"
+    register: "new_record"
+
+  - name: "Print Record UID"
+    debug:
+      var: new_record.record_uid
+      verbosity: 0

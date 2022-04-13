@@ -257,6 +257,14 @@ class KeeperAnsible:
 
         return records[0]
 
+    def create_record(self, new_record, shared_folder_uid):
+        try:
+            record_uid = self.client.create_secret(shared_folder_uid, new_record)
+        except Exception as err:
+            raise Exception("Cannot get create record: {}".format(err))
+
+        return record_uid
+
     @staticmethod
     def _gather_secrets(obj):
         """ Walk the secret structure and get values. These should just be str, list, and dict. Warn if the SDK
