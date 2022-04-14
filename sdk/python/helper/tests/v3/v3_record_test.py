@@ -25,7 +25,7 @@ class ParserTest(unittest.TestCase):
             record_type='login',
             title="My Login Record",
             notes="This is my note",
-            fields=fields
+            fields=fields,
         )
         # Passing fields in on the constructor will automatically call build_record.
         # r.build_record()
@@ -119,7 +119,11 @@ class ParserTest(unittest.TestCase):
             record_type='login',
             title="Custom Fields",
             fields=fields,
-            password_generate=True
+            password_generate=True,
+            password_complexity={
+                "length": 64,
+                "filter_characters": ["$", "!"]
+            }
         )
 
         self.assertEqual(2, len(r.custom_fields), "there were not 2 custom fields")

@@ -114,6 +114,7 @@ class Record:
         }
 
         self.password_generate = kwargs.get("password_generate", False)
+        self.password_complexity = kwargs.get("password_complexity", None)
 
         self.valid_fields = []
 
@@ -303,6 +304,8 @@ class Record:
             field_type_kwargs = field.to_dict()
             self._remove_private_keys(field_type_kwargs.get("value"))
             field_type_kwargs["password_generate"] = self.password_generate
+            if self.password_complexity is not None:
+                field_type_kwargs["complexity"] = self.password_complexity
             field_type_obj = get_field_type_class(field.type)(**field_type_kwargs)
             self.fields.append(field_type_obj.to_dict())
 
@@ -312,6 +315,8 @@ class Record:
             field_type_kwargs = field.to_dict()
             self._remove_private_keys(field_type_kwargs.get("value"))
             field_type_kwargs["password_generate"] = self.password_generate
+            if self.password_complexity is not None:
+                field_type_kwargs["complexity"] = self.password_complexity
             field_type_obj = get_field_type_class(field.type)(**field_type_kwargs)
             self.custom_fields.append(field_type_obj.to_dict())
 

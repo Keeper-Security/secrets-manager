@@ -1,11 +1,12 @@
 import unittest
 from keeper_secrets_manager_helper.record import Record
 from keeper_secrets_manager_core.dto.dtos import RecordCreate
+from keeper_secrets_manager_helper.field import Field, FieldSectionEnum
 
 
 class RecordTest(unittest.TestCase):
 
-    def test_build_record_simple(self):
+    def test_build_record_field_args(self):
 
         """Test the ingress in the helper create record
 
@@ -45,3 +46,85 @@ class RecordTest(unittest.TestCase):
                              {"number": "5551111111", "type": "Home"}])
         self.assertListEqual(record_create_obj.fields[4].value, ["PpR0AKIZAtUiyvq1r2BC1w"])
         self.assertNotEqual(0, len(record_create_obj.custom[0].value))
+
+    def test_build_record_field_obj(self):
+
+        field_list = [
+            Field(
+                type="login",
+                field_section=FieldSectionEnum.STANDARD,
+                value="john.smith@localhost"
+            ),
+            Field(
+                type="url",
+                field_section=FieldSectionEnum.STANDARD,
+                value="https://localhost"
+            ),
+            Field(
+                type="text",
+                field_section=FieldSectionEnum.CUSTOM,
+                label="Custom Label",
+                value="custom value"
+            )
+        ]
+
+        kwargs = dict(
+            record_type='login',
+            title="Login Record",
+            fields=field_list,
+            password_generate=True,
+            password_complexity={
+                "length": 64,
+            }
+        )
+
+        r = Record(version="v3").create_from_field_list(**kwargs)
+        record_create_obj = r[0].get_record_create_obj()
+        self.assertIsInstance(record_create_obj, RecordCreate)
+        self.assertEqual("Login Record", record_create_obj.title)
+        self.assertIsNone(record_create_obj.notes)
+        self.assertListEqual(record_create_obj.fields[0].value, ["john.smith@localhost"])
+        self.assertIsNotNone(record_create_obj.fields[1].value[0])
+        self.assertListEqual(record_create_obj.fields[2].value, ["https://localhost"])
+        self.assertListEqual(record_create_obj.custom[0].value, ["custom value"])
+
+    def test_build_record_field_obj_no_password(self):
+
+        field_list = [
+            Field(
+                type="login",
+                field_section=FieldSectionEnum.STANDARD,
+                value="john.smith@localhost"
+            ),
+            Field(
+                type="url",
+                field_section=FieldSectionEnum.STANDARD,
+                value="https://localhost"
+            ),
+            Field(
+                type="text",
+                field_section=FieldSectionEnum.CUSTOM,
+                label="Custom Label",
+                value="custom value"
+            )
+        ]
+
+        kwargs = dict(
+            record_type='login',
+            title="Login Record",
+            fields=field_list
+        )
+
+        r = Record(version="v3").create_from_field_list(**kwargs)
+        record_create_obj = r[0].get_record_create_obj()
+        self.assertIsInstance(record_create_obj, RecordCreate)
+        self.assertEqual("Login Record", record_create_obj.title)
+        self.assertIsNone(record_create_obj.notes)
+        self.assertListEqual(record_create_obj.fields[0].value, ["john.smith@localhost"])
+        # Make sure no password is set
+        self.assertListEqual(record_create_obj.fields[1].value, [])
+        self.assertListEqual(record_create_obj.fields[2].value, ["https://localhost"])
+        self.assertListEqual(record_create_obj.custom[0].value, ["custom value"])
+
+
+

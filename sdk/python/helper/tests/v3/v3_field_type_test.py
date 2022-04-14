@@ -36,6 +36,20 @@ class FieldTypeTest(unittest.TestCase):
         password = pc.generate_password()
         self.assertEqual(9, len(password), "password is too short")
 
+    def test_password_filter(self):
+
+        # Only the filter_characters is used, the rest of the params don't mean anything for this test beside flags
+        pc = PasswordComplexity(length=20, caps=0, lowercase=0, digits=10, special=10, filter_characters=["$", "%"])
+        password = pc.filter_password("123$$123%123")
+        self.assertNotEqual("$$", password[3:5])
+        self.assertNotEqual("%", password[8:9])
+
+        pc = PasswordComplexity(length=64, caps=22, lowercase=22, digits=22, special=22,
+                                filter_characters="abcdefghijklmnopqrstuvwxyz")
+        password = pc.filter_password("abc123xyz$$!!")
+        self.assertNotEqual("abc", password[0:3])
+        self.assertNotEqual("xyz", password[6:9])
+
     def test_load_map(self):
         get_field_type_map()
 
