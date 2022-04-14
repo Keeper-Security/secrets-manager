@@ -152,3 +152,17 @@ class KeeperAnsibleTest(unittest.TestCase):
                              'did not find PS ANSIBLE_ACTION_PLUGINS')
             self.assertRegex(content, r'\$env:ANSIBLE_LOOKUP_PLUGINS',
                              'did not find PS ANSIBLE_LOOKUP_PLUGINS')
+
+    def test_password_complexity(self):
+
+        complexity = KeeperAnsible.password_complexity_translation(length=64)
+        self.assertEqual(16, complexity.get("lowercase"), "lowercase is not 16")
+        self.assertEqual(16, complexity.get("caps"), "uppercase is not 16")
+        self.assertEqual(16, complexity.get("digits"), "digits is not 16")
+        self.assertEqual(16, complexity.get("special"), "special_characters is not 16")
+
+        complexity = KeeperAnsible.password_complexity_translation(length=64, allow_symbols=False)
+        self.assertEqual(22, complexity.get("lowercase"), "lowercase is not 22")
+        self.assertEqual(21, complexity.get("caps"), "uppercase is not 21")
+        self.assertEqual(21, complexity.get("digits"), "digits is not 21")
+        self.assertEqual(0, complexity.get("special"), "special_characters is not 0")

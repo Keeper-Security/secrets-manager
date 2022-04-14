@@ -9,6 +9,10 @@
       shared_folder_uid: "{{ shared_folder_uid }}"
       record_type: login
       generate_password: True
+      password_complexity:
+        length: 128
+        # Filter out all the lower case letters for out test.
+        filter_characters: "abcdefghijklmnopqrstuvwxyz"
       title: "My New Record"
       note: "This is my note"
       fields:

@@ -66,6 +66,7 @@ If you omit the `collections` , you will need to use the full plugin name.
 * `keepersecurity.keeper_secrets_manager.keeper_get` - Get a value from your vault.
 * `keepersecurity.keeper_secrets_manager.keeper_set` - Set a value of an existing record in your vault.
 * `keepersecurity.keeper_secrets_manager.keeper_create` - Create a new record in your vault.
+* `keepersecurity.keeper_secrets_manager.keeper_password` - Generate a random password.
 * `keepersecurity.keeper_secrets_manager.keeper_cleanup` - Clean up Keeper related files.
 * `keepersecurity.keeper_secrets_manager.keeper_info` - Display information about plugin, record and field types.
 * `keepersecurity.keeper_secrets_manager.keeper_init` - Init a one-time access token. Returns a configuration.
@@ -107,8 +108,24 @@ keeper_app_key: +U5Jao ... l5FmXymVI=
 keeper_client_id: Fokc6j ... PlBwzAKlMUgFZHqLg==
 keeper_hostname: US
 keeper_private_key: MIGHf ... IcvCihUHyA7Oy
+keeper_app_owner_public_key: AXY ... Nlaks==
 keeper_server_public_key_id: '10'
 ```
 The content of this YAML file can then be cut-n-pasted into a **group_vars**, **host_vars**, **all**
 configuration file or even a playbook.
 
+# Changes
+
+## 1.1.2
+
+* Added `keeper_create`, `keeper_password`, `keeper_info` action plugins.
+* Fixed complex strings not regular expressions escaping properly for 
+`keeper_redact`. 
+* Added `keeper_app_owner_public_key` to the `keeper_init` plugin configuration
+generation. `keeper_app_owner_public_key` also added to Ansible variables.
+
+## 1.1.1
+* Fixed misspelled collection name in `README.md`
+
+## 1.1.0
+* First Ansible Galaxy release

@@ -45,9 +45,49 @@ options:
     required: yes
   generate_password:
     description:
-    - Generate any blank passwords.
+    - Generate any passwords that has not been set.
     type: bool
     required: no
+  password_complexity:
+    description:
+    - Control the content of the password.
+    type: dict
+    required: no
+    suboptions:
+      length:
+        description: 
+          - Length of the password. Defaults to 64.
+          - The length will be distributes to the allow_* params.
+          - For example, the length of 64 will generate 21 lowercase, 21 uppercase, 21 digits, and 21 symbols.
+        type: int
+        required: no
+      allow_lowercase:
+        description: 
+          - Allow lowercase letters. Defaults to True.
+        type: bool
+        required: no
+      allow_uppercase:
+        description: 
+          - Allow uppercase letters. Defaults to True.
+        type: bool
+        required: no
+      allow_digits:
+        description: 
+          - Allow digits. Defaults to True.
+        type: bool
+        required: no
+      allow_symbols:
+        description: 
+          - Allow symbols. Defaults to True.
+          - The symbol set is \"!@#$%()+;<>=?[]{}^.,
+        type: bool
+        required: no
+      filter_characters:
+        description: 
+          - Character not allowed in the password.
+          - Application specific password may not allow certain characters.
+        type: list
+        required: no
   title:
     description:
     - The title of the record.
@@ -233,12 +273,17 @@ class ActionModule(ActionBase):
                 ))
                 keeper.stash_secret_value(str(field.get("value")))
 
+            password_complexity = self._task.args.get("password_complexity")
+            if password_complexity is not None:
+                password_complexity = keeper.password_complexity_translation(**password_complexity)
+
             record = Record(version=version).create_from_field_list(
                 record_type=record_type,
                 title=title,
                 notes=self._task.args.get("note"),
                 fields=fields,
-                password_generate=self._task.args.get("generate_password")
+                password_generate=self._task.args.get("generate_password"),
+                password_complexity=password_complexity
             )
             record_create = record[0].get_record_create_obj()
             record_uid = keeper.create_record(record_create, shared_folder_uid=shared_folder_uid)
