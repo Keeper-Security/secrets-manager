@@ -400,7 +400,7 @@ export const createSecret = async (options: SecretManagerOptions, folderUid: str
     return payload.recordUid
 }
 
-export const postPayload = async (options: SecretManagerOptions, path: string, payload: any): Promise<string> => {
+export const postPayload = async (options: SecretManagerOptions, path: string, payload: any): Promise<any> => {
     const clientId = await options.storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
@@ -408,9 +408,11 @@ export const postPayload = async (options: SecretManagerOptions, path: string, p
     const response = await postQuery(options, path, {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
-        ...payload
+        payload
     })
-    return JSON.parse(platform.bytesToString(response))
+    return response.length == 0
+        ? undefined
+        : JSON.parse(platform.bytesToString(response))
 }
 
 export const downloadFile = async (file: KeeperFile): Promise<Uint8Array> => {
