@@ -261,10 +261,19 @@ fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
 @ExperimentalSerializationApi
 @JvmOverloads
 fun createSecret(options: SecretsManagerOptions, folderUid: String, recordData: KeeperRecordData, secrets: KeeperSecrets = getSecrets(options)): String {
-
     val payload = prepareCreatePayload(options.storage, folderUid, recordData, secrets)
     postQuery(options, "create_secret", payload)
     return payload.recordUid
+}
+
+@ExperimentalSerializationApi
+@JvmOverloads
+fun postPayload(options: SecretsManagerOptions, path: String, payload: String): String {
+    val clientId = options.storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    val clientVersion = toKeeperAppClientString(ManifestLoader.version)
+    val payloadWrapper = "{\"clientVersion\":\"${clientVersion}\",\"clientId\":\"${clientId}\",\"payload\":${payload}}"
+    val response = postQuery(options, path, payloadWrapper)
+    return if (response.isEmpty()) "" else bytesToString(response)
 }
 
 fun downloadFile(file: KeeperFile): ByteArray {
@@ -515,7 +524,8 @@ private inline fun <reified T> encryptAndSignPayload(
     transmissionKey: TransmissionKey,
     payload: T
 ): EncryptedPayload {
-    val payloadBytes = stringToBytes(Json.encodeToString(payload))
+    val jsonString = if (payload is String) payload else Json.encodeToString(payload)
+    val payloadBytes = stringToBytes(jsonString)
     val encryptedPayload = encrypt(payloadBytes, transmissionKey.key)
     val privateKey = storage.getBytes(KEY_PRIVATE_KEY) ?: throw Exception("Private key is missing from the storage")
     val signatureBase = transmissionKey.encryptedKey + encryptedPayload
