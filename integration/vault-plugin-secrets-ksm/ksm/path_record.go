@@ -242,6 +242,11 @@ func (b *backend) pathRecordRead(ctx context.Context, req *logical.Request, d *f
 		return nil, err
 	}
 	if len(records) < 1 {
+		if found, err := folderExists(client.SecretsManager, opts.Uid); err != nil {
+			return nil, err
+		} else if found {
+			return nil, fmt.Errorf("%s is a folder UID - please provide a record UID", opts.Uid)
+		}
 		return nil, fmt.Errorf("record UID: %s not found", opts.Uid)
 	}
 	record := records[0]
@@ -293,6 +298,11 @@ func (b *backend) pathRecordWrite(ctx context.Context, req *logical.Request, d *
 	if err != nil {
 		return nil, err
 	} else if len(records) < 1 {
+		if found, err := folderExists(client.SecretsManager, opts.Uid); err != nil {
+			return nil, err
+		} else if found {
+			return nil, fmt.Errorf("%s is a folder UID - please provide a record UID", opts.Uid)
+		}
 		return nil, fmt.Errorf("record UID: %s not found or not shared to your KSM application", opts.Uid)
 	} else if len(records) > 1 {
 		return nil, fmt.Errorf("found multiple records with the same UID: %s", opts.Uid)
@@ -395,4 +405,19 @@ func (b *backend) pathRecordCreate(ctx context.Context, req *logical.Request, d 
 	resData := map[string]interface{}{newRecUID: newRecord.Title()}
 	recordRes := &logical.Response{Data: resData}
 	return recordRes, nil
+}
+
+func folderExists(sm *core.SecretsManager, uid string) (bool, error) {
+	records, err := sm.GetSecrets([]string{})
+	if err != nil {
+		return false, err
+	}
+
+	for _, rec := range records {
+		if folderUid := strings.TrimSpace(rec.FolderUid()); folderUid == uid {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
