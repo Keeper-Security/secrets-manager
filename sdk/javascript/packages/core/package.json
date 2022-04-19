@@ -1,7 +1,7 @@
 {
   "name": "@keeper-security/secrets-manager-core",
-  "version": "16.2.5",
-  "description": "Keeper Secrets Manages Javascript SDK",
+  "version": "16.2.6",
+  "description": "Keeper Secrets Manager Javascript SDK",
   "browser": "dist/index.es.js",
   "main": "dist/index.cjs.js",
   "types": "dist/node/index.d.ts",
