@@ -70,6 +70,11 @@ func (b *backend) pathTotpRead(ctx context.Context, req *logical.Request, d *fra
 		return nil, err
 	}
 	if len(records) < 1 {
+		if found, err := folderExists(client.SecretsManager, opts.Uid); err != nil {
+			return nil, err
+		} else if found {
+			return nil, fmt.Errorf("%s is a folder UID - please provide a record UID", opts.Uid)
+		}
 		return nil, fmt.Errorf("record UID: %s not found", opts.Uid)
 	}
 	totpItems := []interface{}{}
