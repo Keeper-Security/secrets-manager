@@ -82,6 +82,11 @@ keeper_app_key:
   description: Application key for the application.
   returned: success
   sample: zhLwB .... LPGY
+keeper_app_owner_public_key:
+  description: Public key that allows creation of records.
+  returned: success
+  version_added: '1.1.2' 
+  sample: zhLwB .... LPGY
 keeper_server_public_key_id:
   description: Id of the public key to use when sending request.
   returned: success
@@ -102,6 +107,7 @@ class ActionModule(ActionBase):
         for enum_key, ansible_key in {"clientId": "keeper_client_id", "appKey": "keeper_app_key",
                                       "privateKey": "keeper_private_key",
                                       "serverPublicKeyId": "keeper_server_public_key_id",
+                                      "appOwnerPublicKey": "keeper_app_owner_public_key",
                                       "hostname": "keeper_hostname"}.items():
             e = ConfigKeys.get_enum(enum_key)
             if config.contains(e):

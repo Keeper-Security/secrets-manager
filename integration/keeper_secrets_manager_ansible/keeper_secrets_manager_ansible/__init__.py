@@ -18,6 +18,7 @@ import os
 import sys
 import re
 import json
+import random
 from re import sub
 from enum import Enum
 import traceback
@@ -32,6 +33,7 @@ else:
     from keeper_secrets_manager_core import SecretsManager
     from keeper_secrets_manager_core.core import KSMCache
     from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
+    from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password
 
 display = Display()
 
@@ -184,7 +186,7 @@ class KeeperAnsible:
                     config_option = {}
                     # Convert Ansible variables into the keys used by Secrets Manager's config.
                     for key in ["url", "client_id", "client_key", "app_key", "private_key", "bat", "binding_key",
-                                "hostname"]:
+                                "hostname", "server_public_key_id", "app_owner_public_key"]:
                         keeper_key = KeeperAnsible.keeper_key(key)
                         camel_key = camel_case(key)
                         if keeper_key in task_vars:
@@ -256,6 +258,14 @@ class KeeperAnsible:
             raise Exception("Cannot get record: {}".format(err))
 
         return records[0]
+
+    def create_record(self, new_record, shared_folder_uid):
+        try:
+            record_uid = self.client.create_secret(shared_folder_uid, new_record)
+        except Exception as err:
+            raise Exception("Cannot get create record: {}".format(err))
+
+        return record_uid
 
     @staticmethod
     def _gather_secrets(obj):
@@ -380,6 +390,159 @@ class KeeperAnsible:
         if self.has_redact is True:
             results["_secrets"] = self.secret_values
         return results
+
+    @staticmethod
+    def password_complexity_translation(**kwargs):
+        """
+        Generate a password complexity dictionary
+
+        Password complexity differ from place to place :(
+
+        This is in more tune with the Vault UI since most service just want a specific set of characters, but not
+        a quantity. And some character are illegal for specific services. Neither the SDK and Vault UI address this.
+        So this is the third standard.
+
+        kwargs
+
+        * length - Length of the password
+        * allow_lowercase - Allow lowercase letters. Default is True.
+        * allow_uppercase - Allow uppercase letters. Default is True.
+        * allow_digits - Allow digits. Default is True.
+        * allow_symbols - Allow symbols. Default is True
+        * filter_characters - An array of characters not to use. Some servies don't like some characters.
+
+        The length is divided by the allowed characters. So with a length of 64, each would get 16 of each characters.
+        If the length cannot be unevenly divided, additional will be added to the first allowed character in the above
+        list.
+
+        """
+
+        # This maps nicer human readable keys to the ones used the records' complexity.
+        kwargs_map = [
+            {"param": "allow_lowercase", "key": "lowercase"},
+            {"param": "allow_uppercase", "key": "caps"},
+            {"param": "allow_digits", "key": "digits"},
+            {"param": "allow_symbols", "key": "special"},
+        ]
+
+        length = kwargs.get("length", 64)
+
+        count = 0
+        for key in [x["param"] for x in kwargs_map]:
+            # not False, because None == True
+            count += 1 if kwargs.get(key) is not False else 0
+        if count == 0:
+            raise AnsibleError()
+        per_amount = int(length / count)
+
+        filter_characters = kwargs.get("filter_characters")
+        if filter_characters is not None:
+            if isinstance(filter_characters, list) is False:
+                filter_characters = str(filter_characters)
+
+        complexity = {
+            "length": length,
+
+            # This is not part of the standard, however it's important because some service will not accept certain
+            # characters.
+            "filter_characters": filter_characters
+        }
+        for item in kwargs_map:
+            if kwargs.get(item.get("param")) is not False:
+                complexity[item.get("key")] = per_amount
+                length -= per_amount
+            else:
+                complexity[item.get("key")] = 0
+        if length > 0:
+            for item in kwargs_map:
+                if kwargs.get(item.get("param")) is not False:
+                    complexity[item.get("key")] += length
+                    break
+        return complexity
+
+    @staticmethod
+    def replacement_char(**kwargs):
+
+        """
+        Get a replacement character that doesn't match the bad character.
+        """
+
+        lowercase = kwargs.get("lowercase", 0)
+        caps = kwargs.get("caps", 0)
+        digits = kwargs.get("digits", 0)
+        special = kwargs.get("special", 0)
+
+        new_char = None
+        all_true = (lowercase + caps + digits + special) == 0
+
+        attempt = 0
+        while True:
+            # If allow everything, then just get a lowercase letter
+            if all_true is True:
+                new_char = "abcdefghijklmnopqrstuvwxyz"[random.randint(0, 25)]
+
+            # Else we need to find the first allowed character set.
+            else:
+                pick_one = random.randint(0, 3)
+                if pick_one == 0 and lowercase > 0:
+                    new_char = "abcdefghijklmnopqrstuvwxyz"[random.randint(0, 25)]
+                if pick_one == 1 and caps > 0:
+                    new_char = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[random.randint(0, 25)]
+                if pick_one == 2 and digits > 0:
+                    new_char = "0123456789"[random.randint(0, 9)]
+                if pick_one == 3 and special > 0:
+                    new_char = "!@#$%^&*()"[random.randint(0, 9)]
+
+                if new_char is None:
+                    continue
+
+            # If our new character is not in the list of bad characters, break out of the while
+            if new_char not in kwargs.get("filter_characters"):
+                break
+
+            # Ok, some user might go crazy and filter out every letter, digit, and symbol and cause an invite loop.
+            # If we can't find a good character after 25 attempts, error out.
+            attempt += 1
+            if attempt > 25:
+                raise ValueError("Cannot filter character from password. The password complexity is too complex.")
+
+        return new_char
+
+    @staticmethod
+    def filter_password(password, **kwargs):
+
+        # Make sure the bad_char is a str, and not something like an int
+        for bad_char in kwargs.get("filter_characters"):
+            while str(bad_char) in password:
+                password = password.replace(str(bad_char), KeeperAnsible.replacement_char(**kwargs), 1)
+        return password
+
+    @staticmethod
+    def generate_password(**kwargs):
+
+        # The SDK generate_password doesn't know what the filter_characters is, remove it for now.
+        filter_characters = kwargs.pop("filter_characters", None)
+
+        # The SDK uses these a params, record complexity use the ones on the right. Translate them.
+        kwargs["uppercase"] = kwargs.pop("caps", None)
+        kwargs["special_characters"] = kwargs.pop("special", None)
+
+        # Generate the password
+        password = sdk_generate_password(**kwargs)
+
+        # If we have a character filter, remove bad characters from the password
+        if filter_characters is not None:
+            if isinstance(filter_characters, str) is True:
+                temp = []
+                temp.extend(filter_characters)
+                filter_characters = temp
+
+            # Add back the filter_characters in the right data type
+            kwargs["filter_characters"] = filter_characters
+
+            password = KeeperAnsible.filter_password(password, **kwargs)
+
+        return password
 
     def cleanup(self):
 
