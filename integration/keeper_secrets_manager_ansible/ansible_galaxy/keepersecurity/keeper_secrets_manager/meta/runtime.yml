@@ -6,3 +6,6 @@ action_groups:
     - keeper_get
     - keeper_set
     - keeper_cleanup
+    - keeper_create
+    - keeper_password
+    - keeper_info

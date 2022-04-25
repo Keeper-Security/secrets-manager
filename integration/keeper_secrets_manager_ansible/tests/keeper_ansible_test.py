@@ -61,19 +61,30 @@ class KeeperAnsibleTest(unittest.TestCase):
 
         values = MockConfig.make_config()
 
-        # Make some non-camel case.
-        values["client_key"] = values.pop("clientKey")
-        values["private_key"] = values.pop("privateKey")
-
         task_vars = {
-            "keeper_verify_ssl_certs": False
+            "keeper_verify_ssl_certs": False,
+            "keeper_client_id": values.get("clientId"),
+            "keeper_app_key": values.get("appKey"),
+            "keeper_private_key": values.get("privateKey"),
+            "keeper_app_owner_public_key": values.get("appOwnerPublicKey")
         }
-        for key in values:
-            task_vars[KeeperAnsible.keeper_key(key)] = values[key]
 
         ka = KeeperAnsible(task_vars=task_vars)
         ka.client.get_secrets()
         mock_get_secrets.assert_called_once()
+
+        self.assertIsNotNone(ka.client.config.get(ConfigKeys.KEY_CLIENT_ID), "client id is none")
+        self.assertEqual(values.get("clientId"), ka.client.config.get(ConfigKeys.KEY_CLIENT_ID),
+                         "base64 client ids are not the same")
+        self.assertIsNotNone(ka.client.config.get(ConfigKeys.KEY_APP_KEY), "app key is none")
+        self.assertEqual(values.get("appKey"), ka.client.config.get(ConfigKeys.KEY_APP_KEY),
+                         "base64 app key are not the same")
+        self.assertIsNotNone(ka.client.config.get(ConfigKeys.KEY_PRIVATE_KEY), "private key is none")
+        self.assertEqual(values.get("privateKey"), ka.client.config.get(ConfigKeys.KEY_PRIVATE_KEY),
+                         "base64 private key are not the same")
+        self.assertIsNotNone(ka.client.config.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY), "owner public key is none")
+        self.assertEqual(values.get("appOwnerPublicKey"), ka.client.config.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
+                         "base64 owner public key are not the same")
 
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
     def test_config_base_64(self, mock_get_secrets):
@@ -88,19 +99,25 @@ class KeeperAnsibleTest(unittest.TestCase):
         ka = KeeperAnsible(task_vars=task_vars)
         ka.client.get_secrets()
         mock_get_secrets.assert_called_once()
+        self.assertIsNotNone(ka.client.config.get(ConfigKeys.KEY_CLIENT_ID), "client id is none")
         self.assertEqual(values.get("clientId"), ka.client.config.get(ConfigKeys.KEY_CLIENT_ID),
                          "base64 client ids are not the same")
+        self.assertIsNotNone(ka.client.config.get(ConfigKeys.KEY_APP_KEY), "app key is none")
         self.assertEqual(values.get("appKey"), ka.client.config.get(ConfigKeys.KEY_APP_KEY),
                          "base64 app key are not the same")
+        self.assertIsNotNone(ka.client.config.get(ConfigKeys.KEY_PRIVATE_KEY), "private key is none")
         self.assertEqual(values.get("privateKey"), ka.client.config.get(ConfigKeys.KEY_PRIVATE_KEY),
                          "base64 private key are not the same")
+        self.assertIsNotNone(ka.client.config.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY), "owner public key is none")
+        self.assertEqual(values.get("appOwnerPublicKey"), ka.client.config.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
+                         "base64 owner public key are not the same")
 
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
     def test_ansible_cli_init(self, _):
 
         stdout = io.StringIO()
         with redirect_stdout(stdout):
-            main(["--keeper_token", "US:MY_TOKEN"])
+            main(["--token", "US:MY_TOKEN"])
         content = stdout.getvalue()
         self.assertRegex(content, r'Config file created', 'did not find expected text')
         with open("client-config.json", "r") as fh:
@@ -152,3 +169,17 @@ class KeeperAnsibleTest(unittest.TestCase):
                              'did not find PS ANSIBLE_ACTION_PLUGINS')
             self.assertRegex(content, r'\$env:ANSIBLE_LOOKUP_PLUGINS',
                              'did not find PS ANSIBLE_LOOKUP_PLUGINS')
+
+    def test_password_complexity(self):
+
+        complexity = KeeperAnsible.password_complexity_translation(length=64)
+        self.assertEqual(16, complexity.get("lowercase"), "lowercase is not 16")
+        self.assertEqual(16, complexity.get("caps"), "uppercase is not 16")
+        self.assertEqual(16, complexity.get("digits"), "digits is not 16")
+        self.assertEqual(16, complexity.get("special"), "special_characters is not 16")
+
+        complexity = KeeperAnsible.password_complexity_translation(length=64, allow_symbols=False)
+        self.assertEqual(22, complexity.get("lowercase"), "lowercase is not 22")
+        self.assertEqual(21, complexity.get("caps"), "uppercase is not 21")
+        self.assertEqual(21, complexity.get("digits"), "digits is not 21")
+        self.assertEqual(0, complexity.get("special"), "special_characters is not 0")

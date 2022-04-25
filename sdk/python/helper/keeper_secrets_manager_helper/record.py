@@ -29,6 +29,17 @@ class Record:
         except ImportError as err:
             raise Exception(f"Version {self.version} is not supported: " + str(err))
 
+    def create_from_field_list(self, record_type, fields, title=None, notes=None,
+                               password_generate=None, password_complexity=None):
+        return [getattr(self.record_mod, "Record")(
+            record_type=record_type,
+            title=title,
+            notes=notes,
+            fields=fields,
+            password_generate=password_generate,
+            password_complexity=password_complexity
+        )]
+
     def create_from_field_args(self, **kwargs):
         kwargs["fields"] = getattr(self.parser_mod, "Parser")().parse_field(kwargs.get("field_args"))
         return [getattr(self.record_mod, "Record")(**kwargs)]

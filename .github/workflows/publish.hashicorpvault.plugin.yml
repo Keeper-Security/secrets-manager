@@ -1,0 +1,61 @@
+name: Release HV Plugin
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'vault-plugin-secrets-ksm/v*'
+
+jobs:
+  release-hv-plugin:
+    environment: prod
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: integration/vault-plugin-secrets-ksm
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v3.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.17
+
+      # Cache GoLang libs
+      - uses: actions/cache@v2
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Create binaries
+        run: | # initially `github.ref` == "ref/tags/vault-plugin-secrets-ksm/vX.Y.Z"
+          PLUGIN_NAME="$(cut -d'/' -f3 <<<${{ github.ref }})"
+          PLUGIN_VERSION="$(cut -d'/' -f4 <<<${{ github.ref }})"
+          
+          echo "Plugin name: [${PLUGIN_NAME}]"
+          echo "Plugin version: [${PLUGIN_VERSION:1}]"
+          make release-all PLUGIN_NAME="${PLUGIN_NAME}" PLUGIN_VERSION="${PLUGIN_VERSION:1}"
+
+      - name: "Info: List created files"
+        run: |
+          pwd
+          ls -la
+
+      # Publish binaries
+      - name: Release Binaries
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: integration/vault-plugin-secrets-ksm/vault-plugin-secrets-ksm*
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
+          body: "KSM Hashicorp Vault Secrets Plugin ${{ github.ref }}"

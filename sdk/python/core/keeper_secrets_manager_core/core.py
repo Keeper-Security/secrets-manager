@@ -619,11 +619,11 @@ class SecretsManager:
 
         Example:
 
-            RECORD_UID/field/password                => MyPasswprd
+            RECORD_UID/field/password                => MyPassword
             RECORD_UID/field/password[0]             => MyPassword
             RECORD_UID/field/password[]              => ["MyPassword"]
             RECORD_UID/custom_field/name[first]      => John
-            RECORD_UID/custom_field/name[last]       => Smitht
+            RECORD_UID/custom_field/name[last]       => Smith
             RECORD_UID/custom_field/phone[0][number] => "555-5555555"
             RECORD_UID/custom_field/phone[1][number] => "777-7777777"
             RECORD_UID/custom_field/phone[]          => [{"number": "555-555...}, { "number": "777.....}]
@@ -654,7 +654,7 @@ class SecretsManager:
         if key is None:
             raise ValueError("file key is missing the in the keeper url.")
 
-        # By default we want to return a single value, which is the first item in the array
+        # By default, we want to return a single value, which is the first item in the array
         return_single = True
         index = 0
         dict_key = None

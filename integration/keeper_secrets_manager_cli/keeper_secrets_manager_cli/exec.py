@@ -15,14 +15,17 @@ import sys
 import subprocess
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_core.core import SecretsManager
+from keeper_secrets_manager_core.keeper_globals import logger_name
 import re
 import json
+import logging
 
 
 class Exec:
 
     def __init__(self, cli):
         self.cli = cli
+        self.logger = logging.getLogger(logger_name)
 
         # Since the cli is short lived, this won't stick around long.
         self.local_cache = {}
@@ -42,8 +45,16 @@ class Exec:
 
         for env_key, env_value in list(os.environ.items()):
             if env_value.startswith(SecretsManager.notation_prefix) is True:
-                os.environ["_" + env_key] = "_" + env_value
-                os.environ[env_key] = self._get_secret(env_value)
+                try:
+                    os.environ["_" + env_key] = "_" + env_value
+                    os.environ[env_key] = self._get_secret(env_value)
+                except ValueError as err:
+                    # TODO: Change the SDK to throw a different exception when might not be notation.
+                    # If the notation isn't actually notation, skip it, don't raise an exception
+                    if str(err).startswith("Keeper url missing"):
+                        self.logger.info("Possible notation for env key {} was not used.".format(env_key))
+                    else:
+                        raise KsmCliException(str(err))
 
     def inline_replace(self, cmd=None):
 
@@ -54,11 +65,18 @@ class Exec:
         for item in cmd:
             # Due to custom fields, that allow spaces in the label, we have not idea
             # where the notation ends.
-            results = re.search(r'{}://.*?$'.format(SecretsManager.notation_prefix), item)
-            if results is not None:
-                env_value = results.group()
-                item = item.replace(env_value, self._get_secret(env_value))
-            new_cmd.append(item)
+            try:
+                results = re.search(r'{}://.*?$'.format(SecretsManager.notation_prefix), item)
+                if results is not None:
+                    env_value = results.group()
+                    item = item.replace(env_value, self._get_secret(env_value))
+                new_cmd.append(item)
+            except ValueError as err:
+                # If the notation isn't actually notation, skip it, don't raise an exception
+                if str(err).startswith("Keeper url missing"):
+                    self.logger.info("Possible notation for inline param {} was not used.".format(item))
+                else:
+                    raise KsmCliException(str(err))
         cmd = new_cmd
 
         return cmd
@@ -80,10 +98,11 @@ class Exec:
             # Python 3.6's subprocess.run does not have a capture flag. Instead it used the PIPE with
             # the stderr parameter.
             kwargs = {}
-            if (sys.version_info[0] == 3 and sys.version_info[1] < 7) and capture_output is True:
-                kwargs["stdout"] = subprocess.PIPE
-            else:
-                kwargs["capture_output"] = capture_output
+            if capture_output is True:
+                if sys.version_info[0] == 3 and sys.version_info[1] < 7:
+                    kwargs["stdout"] = subprocess.PIPE
+                else:
+                    kwargs["capture_output"] = capture_output
 
             try:
                 completed = subprocess.run(cmd, **kwargs)

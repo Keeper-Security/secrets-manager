@@ -1,4 +1,4 @@
-import configparser
+from .config import Config
 import tempfile
 import base64
 import json
@@ -9,7 +9,15 @@ from keeper_secrets_manager_core.keeper_globals import keeper_servers
 
 class Export:
 
+    """
+    Export a specific profile config
+    """
+
     def __init__(self, config, file_format=None, plain=False):
+        # If the JSON dictionary is passed in convert it to a Config
+        if isinstance(config, dict) is True:
+            config = Config.create_from_json(config).get_profile(Config.default_profile)
+
         self.config = config
         self.file_format = file_format
         self.plain = plain
@@ -34,19 +42,20 @@ class Export:
 
         from .profile import Profile
 
-        export_config = configparser.ConfigParser()
-        export_config[Profile.default_profile] = self.config
-        export_config[Profile.config_profile] = {
-            Profile.active_profile_key: Profile.default_profile
-        }
-
         # Apparently the config parser doesn't like temp files. So create a
         # temp file, then open a file for writing and use that to write
         # the config. Then read the temp file to get our new config.
         with tempfile.NamedTemporaryFile() as tf:
-
-            with open(tf.name, 'w') as configfile:
-                export_config.write(configfile)
+            config = Config(ini_file=tf.name)
+            config.set_profile(Profile.default_profile,
+                               client_id=self.config.client_id,
+                               private_key=self.config.private_key,
+                               app_key=self.config.app_key,
+                               hostname=self.config.hostname,
+                               app_owner_public_key=self.config.app_owner_public_key,
+                               server_public_key_id=self.config.server_public_key_id)
+            config.config.active_profile = Profile.default_profile
+            config.save()
 
             tf.seek(0)
             config_str = tf.read()
@@ -56,25 +65,19 @@ class Export:
 
     def _format_json(self):
 
-        mapping = {
-            "clientId": {"key": "clientId", "isBase64": True},
-            "privateKey": {"key": "privateKey", "isBase64": True},
-            "appKey": {"key": "appKey", "isBase64": True},
-            "hostname": {"key": "hostname", "isBase64": False, "transformMap": keeper_servers},
-            "serverPublicKeyId": {"key": "serverPublicKeyId", "isBase64": False}
+        def _base64(value):
+            if value is not None:
+                value_bytes = base64_to_bytes(value)
+                value = base64.b64encode(value_bytes).decode()
+            return value
+
+        config_dict = {
+            "clientId": _base64(self.config.client_id),
+            "privateKey": _base64(self.config.private_key),
+            "appKey": _base64(self.config.app_key),
+            "hostname": keeper_servers.get(self.config.hostname, self.config.hostname),
+            "serverPublicKeyId": self.config.server_public_key_id,
+            "appOwnerPublicKey": self.config.app_owner_public_key
         }
 
-        config_dict = {}
-
-        for key, info in mapping.items():
-            if key in self.config:
-                if info["isBase64"] is True:
-                    value_bytes = base64_to_bytes(self.config[key])
-                    # Encode a non-url safe base64
-                    config_dict[info["key"]] = base64.b64encode(value_bytes).decode()
-                else:
-                    if "transformMap" in info:
-                        config_dict[info["key"]] = info["transformMap"].get(self.config[key], self.config[key])
-                    else:
-                        config_dict[info["key"]] = self.config[key]
         return json.dumps(config_dict, indent=4)

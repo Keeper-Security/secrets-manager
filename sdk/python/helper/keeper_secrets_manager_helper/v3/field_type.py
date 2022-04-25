@@ -5,6 +5,7 @@ import json
 from importlib import import_module
 import inspect
 import sys
+import random
 
 
 UID_REGEX = r'^[a-zA-Z0-9\-_]{22}$'
@@ -83,7 +84,7 @@ def get_field_type_schema(field_type):
 
 class PasswordComplexity:
 
-    def __init__(self, value=None, length=64, caps=0, lowercase=0, digits=0, special=0):
+    def __init__(self, value=None, length=64, caps=0, lowercase=0, digits=0, special=0, filter_characters=None):
 
         # If a dictionary is passed in, use that get the attributes.
         if value is not None and type(value) is dict:
@@ -92,12 +93,18 @@ class PasswordComplexity:
             lowercase = value.get("lowercase", lowercase)
             digits = value.get("digits", digits)
             special = value.get("special", special)
+            filter_characters = value.get("filter_characters", filter_characters)
 
         self.length = length
         self.caps = caps
         self.lowercase = lowercase
         self.digits = digits
         self.special = special
+
+        self.filter_characters = filter_characters
+        if isinstance(self.filter_characters, str):
+            self.filter_characters = []
+            self.filter_characters.extend(filter_characters)
 
     def to_dict(self):
 
@@ -106,8 +113,58 @@ class PasswordComplexity:
             "caps": self.caps,
             "lowercase": self.lowercase,
             "digits": self.digits,
-            "special": self.special
+            "special": self.special,
+            "filter_characters": self.filter_characters
         }
+
+    def replacement_char(self):
+
+        """
+        Get a replacement character that doesn't match the bad character.
+        """
+
+        new_char = None
+        all_true = (self.lowercase + self.caps + self.digits + self.special) == 0
+
+        attempt = 0
+        while True:
+            # If allow everything, then just get a lowercase letter
+            if all_true is True:
+                new_char = "abcdefghijklmnopqrstuvwxyz"[random.randint(0, 25)]
+
+            # Else we need to find the first allowed character set.
+            else:
+                pick_one = random.randint(0, 3)
+                if pick_one == 0 and self.lowercase > 0:
+                    new_char = "abcdefghijklmnopqrstuvwxyz"[random.randint(0, 25)]
+                if pick_one == 1 and self.caps > 0:
+                    new_char = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[random.randint(0, 25)]
+                if pick_one == 2 and self.digits > 0:
+                    new_char = "0123456789"[random.randint(0, 9)]
+                if pick_one == 3 and self.special > 0:
+                    new_char = "!@#$%^&*()"[random.randint(0, 9)]
+
+                if new_char is None:
+                    continue
+
+            # If our new character is not in the list of bad characters, break out of the while
+            if new_char not in self.filter_characters:
+                break
+
+            # Ok, some user might go crazy and filter out every letter, digit, and symbol and cause an invite loop.
+            # If we can't find a good character after 25 attempts, error out.
+            attempt += 1
+            if attempt > 25:
+                raise ValueError("Cannot filter character from password. The password complexity is too complex.")
+
+        return new_char
+
+    def filter_password(self, password):
+
+        for bad_char in self.filter_characters:
+            while bad_char in password:
+                password = password.replace(bad_char, self.replacement_char(), 1)
+        return password
 
     def generate_password(self):
         try:
@@ -119,6 +176,11 @@ class PasswordComplexity:
                 digits=self.digits,
                 special_characters=self.special
             )
+
+            # If we have a character filter, remove bad characters
+            if self.filter_characters is not None:
+                password = self.filter_password(password)
+
         except ImportError as _:
             raise Exception("Cannot generate a random password. Requires keeper-secrets-manager-core module.")
 
@@ -415,6 +477,7 @@ class Address(FieldType):
             "street1": {"value_type": str, "desc": "Street"},
             "street2": {"value_type": str, "desc": "Street 2"},
             "city": {"value_type": str, "desc": "City"},
+            "state": {"value_type": str, "desc": "State"},
             "zip": {"value_type": str, "desc": "Zip/Postal Code"},
             "country": {"value_type": CountryEnum, "desc": "ISO3166 Alpha-2 Country Code"},
         }

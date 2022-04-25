@@ -1,11 +1,11 @@
 import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
 import {privateDerToPublicRaw} from '../utils'
 
-const bytesToBase64 = (data: Uint8Array): string => btoa(bytesToString(data))
+const bytesToBase64 = (data: Uint8Array): string => btoa(String.fromCharCode(...data))
 
 const base64ToBytes = (data: string): Uint8Array => Uint8Array.from(atob(data), c => c.charCodeAt(0))
 
-const bytesToString = (data: Uint8Array): string => String.fromCharCode(...data)
+const bytesToString = (data: Uint8Array): string => new TextDecoder().decode(data)
 
 const stringToBytes = (data: string): Uint8Array => new TextEncoder().encode(data)
 

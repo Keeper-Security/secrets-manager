@@ -9,6 +9,7 @@ from keeper_secrets_manager_core import mock
 from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_cli.profile import Profile
 from keeper_secrets_manager_cli.__main__ import cli
+from keeper_secrets_manager_cli.config import Config
 import tempfile
 import configparser
 import json
@@ -23,6 +24,7 @@ class ProfileTest(unittest.TestCase):
         os.chdir(self.temp_dir.name)
 
         # Clear env var from other tests
+        os.environ.pop("KSM_CONFIG", None)
         os.environ.pop("KSM_CONFIG_BASE64_1", None)
         os.environ.pop("KSM_CONFIG_BASE64_DESC_1", None)
         os.environ.pop("KSM_CONFIG_BASE64_2", None)
@@ -30,6 +32,12 @@ class ProfileTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         os.chdir(self.orig_dir)
+
+        os.environ.pop("KSM_CONFIG", None)
+        os.environ.pop("KSM_CONFIG_BASE64_1", None)
+        os.environ.pop("KSM_CONFIG_BASE64_DESC_1", None)
+        os.environ.pop("KSM_CONFIG_BASE64_2", None)
+        os.environ.pop("KSM_CONFIG_BASE64_DESC_2", None)
 
     def test_the_works(self):
 
@@ -55,28 +63,26 @@ class ProfileTest(unittest.TestCase):
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
             mock_client.return_value = secrets_manager
 
+            # Create a keeper.ini with the default profile
             default_token = "XYZ321"
             runner = CliRunner()
             result = runner.invoke(cli, ['profile', 'init', '-t', default_token], catch_exceptions=False)
-            print(result.output)
             self.assertEqual(0, result.exit_code, "did not get a success for default init")
-            self.assertTrue(os.path.exists(Profile.default_ini_file), "could not find ini file")
+            self.assertTrue(os.path.exists(Config.default_ini_file), "could not find ini file")
 
+            # Add to the keeper.ini a new profile
             test_token = "ABC123"
             result = runner.invoke(cli, ['profile', 'init', "-p", "test", '-t',
                                          test_token], catch_exceptions=False)
             self.assertEqual(0, result.exit_code, "did not get a success for test init")
-            self.assertTrue(os.path.exists(Profile.default_ini_file), "could not find ini file")
+            self.assertTrue(os.path.exists(Config.default_ini_file), "could not find ini file")
 
-            config = configparser.ConfigParser()
-            config.read(Profile.default_ini_file)
+            config = configparser.ConfigParser(allow_no_value=True)
+            config.read(Config.default_ini_file)
 
+            # We should have two profiles now.
             self.assertTrue(Profile.default_profile in config, "Could not find the default profile in the config.")
             self.assertTrue("test" in config, "Could not find the test profile in the config.")
-
-            self.assertEqual(default_token, config[Profile.default_profile]["clientkey"],
-                             "could not find default client key")
-            self.assertEqual(test_token, config["test"]["clientkey"], "could not find default client key")
 
             # ------------------------
 
@@ -115,14 +121,12 @@ class ProfileTest(unittest.TestCase):
 
         ini_config = '''
 [_default]
-clientkey = D_XXXXX_CK
 clientid = D_XXXXX_CI
 privatekey = D_XXXXX_PK
 appkey = D_XXXX_AK
 hostname = {}
 
 [Another]
-clientkey = A_XXXXX_CK
 clientid = A_XXXXX_CI
 privatekey = A_XXXXX_PK
 appkey = A_XXXX_AK
@@ -156,8 +160,8 @@ color = True
 
         try:
             config = base64.urlsafe_b64decode(config_data).decode()
-            self.assertRegex(config, r'A_XXXXX_CK', 'did not find the Another client key')
-            self.assertFalse(re.search(r'D_XXXXX_CK', config, re.MULTILINE), 'found the default client key')
+            self.assertRegex(config, r'A_XXXXX_CI', 'did not find the Another client id')
+            self.assertFalse(re.search(r'D_XXXXX_CI', config, re.MULTILINE), 'found the default client id')
         except Exception as err:
             self.fail("Could not base64 decode the config: {}".format(err))
 
@@ -181,9 +185,9 @@ color = True
             assert json_config["clientId"] in file_config, "did not find the client id"
             assert json_config["privateKey"] in file_config, "blah"
 
-        config = configparser.ConfigParser()
+        config = configparser.ConfigParser(allow_no_value=True)
         config.read("keeper.ini")
-        self.assertEqual(json_config["clientKey"], config["_default"].get("clientkey"),  "client keys match")
+        self.assertEqual(json_config["clientId"], config["_default"].get("clientid"),  "client keys match")
 
         result = runner.invoke(cli, ['profile', 'export', '--file-format=json'],
                                catch_exceptions=False)
@@ -234,15 +238,24 @@ color = True
         self.assertEqual(0, result.exit_code, "did not get a success on list")
         self.assertTrue(os.path.exists("keeper.ini"), "the ini config doesn't exists")
 
-        config = configparser.ConfigParser()
-        config.read(Profile.default_ini_file)
+        config = configparser.ConfigParser(allow_no_value=True)
+        config.read(Config.default_ini_file)
 
         profile = config["_default"]
         self.assertIsNotNone(profile, "could not find the profile")
         self.assertEqual(mock_config.get("appKey"), profile.get("appKey"), "did not get the correct app key")
         self.assertEqual(mock_config.get("hostname"), profile.get("hostname"), "did not get the correct hostname")
 
-    def test_auto_config_sdk_json(self):
+    def test_auto_config_sdk_jenkins_json(self):
+
+        """
+        Test a multi config via env vars.
+
+        The Jenkins plugin can export multiple configs. This allows the KSM CLI inside of a
+        build to use two application. Most likely no one will ever use this, but we need to
+        test for it.
+
+        """
 
         mock_config = MockConfig.make_config()
         base64_json = MockConfig.make_base64(config=mock_config)
@@ -251,25 +264,60 @@ color = True
 
         # Create two configs
         os.environ["KSM_CONFIG_BASE64_1"] = base64_json
-        os.environ["KSM_CONFIG_BASE64_DESC_1"] = "SDK"
+        os.environ["KSM_CONFIG_BASE64_DESC_1"] = "SDK 1"
+        os.environ["KSM_CONFIG_BASE64_2"] = base64_json
+        os.environ["KSM_CONFIG_BASE64_DESC_2"] = "SDK 2"
 
         # Using a file output due to cli runner joining stdout and stderr
         with tempfile.NamedTemporaryFile() as tf:
+
+            # Make sure keeper ini file doesn't exists
+            if os.path.exists(Config.default_ini_file) is True:
+                os.unlink(Config.default_ini_file)
+
             result = runner.invoke(cli, [
                 '-o', tf.name,
                 'profile', 'list', '--json'], catch_exceptions=False)
             self.assertEqual(0, result.exit_code, "did not get a success on list")
             tf.seek(0)
             profile_data = json.load(tf)
-            self.assertEqual("SDK", profile_data[0]["name"], "found first app")
+            self.assertEqual("SDK 1", profile_data[0]["name"], "did not find first app")
+            self.assertEqual("SDK 2", profile_data[1]["name"], "did not find second app")
 
-            config = configparser.ConfigParser()
-            config.read(Profile.default_ini_file)
+            self.assertFalse(os.path.exists(Config.default_ini_file), "keeper.ini exists when it should not")
 
-            profile = config["SDK"]
-            self.assertIsNotNone(profile, "could not find the profile")
-            self.assertEqual(mock_config.get("appKey"), profile.get("appKey"), "did not get the correct app key")
-            self.assertEqual(mock_config.get("hostname"), profile.get("hostname"), "did not get the correct hostname")
+    def test_auto_config_sdk_base64_json(self):
+
+        """
+        Test a base64 config via env vars.
+
+        Most people will use it this way.
+
+        """
+
+        mock_config = MockConfig.make_config()
+        base64_json = MockConfig.make_base64(config=mock_config)
+
+        runner = CliRunner()
+
+        # Create two configs
+        os.environ["KSM_CONFIG"] = base64_json
+
+        # Using a file output due to cli runner joining stdout and stderr
+        with tempfile.NamedTemporaryFile() as tf:
+            # Make sure keeper ini file doesn't exists
+            if os.path.exists(Config.default_ini_file) is True:
+                os.unlink(Config.default_ini_file)
+
+            result = runner.invoke(cli, [
+                '-o', tf.name,
+                'profile', 'list', '--json'], catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "did not get a success on list")
+            tf.seek(0)
+            profile_data = json.load(tf)
+            self.assertEqual(Profile.default_profile, profile_data[0]["name"], "did not find default profile")
+
+            self.assertFalse(os.path.exists(Config.default_ini_file), "keeper.ini exists when it should not")
 
 
 if __name__ == '__main__':

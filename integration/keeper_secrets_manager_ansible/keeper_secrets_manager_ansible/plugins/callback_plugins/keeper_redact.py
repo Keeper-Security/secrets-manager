@@ -62,22 +62,15 @@ class CallbackModule(DefaultCallbackBase):
         # Remove keeper config vars that are secret.
         self._remove_special_keeper_values(clean_result)
 
+        json_result = json.dumps(clean_result, indent=4)
+
         # If we have secrets, then remove them from results, sort them in descending lengths, and make a
         # regular expression to replace them with ****
         secrets = result.pop("_secrets", None)
-        redact_regexp = None
         if secrets is not None and len(secrets) > 0:
-            reg_exp_items = []
             # Sort secret from longest to shortest
             sorted_secrets = sorted(secrets, key=len, reverse=True)
             for item in sorted_secrets:
-                # Escape an regular expression characters. Item will be ansible.utils.unsafe_proxy.AnsibleUnsafeText,
-                # which we will just convert to a str.
-                reg_exp_items.append(re.escape(str(item)))
-            redact_regexp = "|".join(reg_exp_items)
-
-        json_result = json.dumps(clean_result, indent=4)
-        if redact_regexp is not None:
-            json_result = re.sub(redact_regexp, '****', json_result, re.MULTILINE)
+                json_result = json_result.replace(str(item), "****")
 
         return json_result

@@ -48,3 +48,10 @@ class RecordType:
                         RecordType.load_record_types(os.path.join(root, file))
                     except (Exception,):
                         pass
+
+    @staticmethod
+    def get_record_type_list(version=None):
+        if version is None:
+            version = RecordType.default_version
+        mod = import_module(f"keeper_secrets_manager_helper.{version}.record_type")
+        return getattr(mod, "get_record_type_list")()

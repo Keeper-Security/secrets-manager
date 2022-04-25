@@ -6,6 +6,7 @@ from ansible.parsing.dataloader import DataLoader
 from ansible.inventory.manager import InventoryManager
 from ansible.vars.manager import VariableManager
 from ansible.plugins.loader import add_all_plugin_dirs
+from ansible.plugins.callback.default import CallbackModule
 from ansible.utils.display import Display
 from keeper_secrets_manager_core.dto.dtos import Record
 from keeper_secrets_manager_core.crypto import CryptoUtils
@@ -101,7 +102,15 @@ class AnsibleTestFramework:
                 passwords={}
             )
 
-            Display.verbosity = 4
+            callback = CallbackModule()
+
+            # Still not there. Trying to get display to show debug or v{1,5} messages
+            callback._display.verbosity = 4
+            callback.display_ok_hosts = True
+            callback.display_skipped_hosts = False
+            callback.show_per_host_start = False
+            callback.display_failed_stderr = True
+            playbook_exec._tqm._stdout_callback = callback
 
             playbook_exec.run()
             stats = playbook_exec._tqm._stats

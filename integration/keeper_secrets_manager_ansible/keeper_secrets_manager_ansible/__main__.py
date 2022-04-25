@@ -79,12 +79,10 @@ def _init(args):
     task_args = {
         "keeper_force_config_write": True
     }
-    if args.keeper_token is not None:
-        task_args["keeper_token"] = args.keeper_token
-    if args.keeper_config_file is not None:
-        task_args["keeper_config_file"] = args.keeper_config_file
-    if args.keeper_hostname is not None:
-        task_args["keeper_hostname"] = args.keeper_hostname
+    if args.token is not None:
+        task_args["keeper_token"] = args.token
+    if args.config_file is not None:
+        task_args["keeper_config_file"] = args.config_file
 
     if task_args.get("keeper_token") is not None and ":" in task_args["keeper_token"]:
         task_args["keeper_hostname"], task_args["keeper_token"] = task_args["keeper_token"].split(":")
@@ -100,9 +98,8 @@ def _init(args):
 
 def main(*args):
     parser = argparse.ArgumentParser(description='Ansible config generator')
-    parser.add_argument('--keeper_token', metavar='-t', type=str, required=False, help='client key')
-    parser.add_argument('--keeper_config_file', metavar='--cf', type=str, help='config file name', required=False)
-    parser.add_argument('--keeper_hostname', metavar='--host', type=str, help='host name', required=False)
+    parser.add_argument('--token', type=str, required=False, help='One time access token')
+    parser.add_argument('--config-file', type=str, help='Config file name', required=False)
     parser.add_argument('--config', help='Get configuration information', action='store_true')
     parser.add_argument('--version', help='Get version information', action='store_true')
     parsed_args = parser.parse_args(*args)
