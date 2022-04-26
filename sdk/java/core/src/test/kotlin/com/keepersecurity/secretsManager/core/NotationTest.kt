@@ -13,11 +13,11 @@ internal class NotationTest {
     private val recordData = KeeperRecordData(
         "My Record 1",
         "login",
-        listOf(
+        mutableListOf(
             Login(value = mutableListOf("My Login 1")),
             Password(value = mutableListOf("My Password 1"))
         ),
-        listOf(
+        mutableListOf(
             Text(label = "My Custom 1", value = mutableListOf("custom1")),
             Text(label = "My Custom 1", value = mutableListOf("custom1")),
             Text(label = "My Custom 2", value = mutableListOf("one", "two", "three")),

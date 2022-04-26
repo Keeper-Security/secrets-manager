@@ -8,6 +8,7 @@ import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider
 //import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.BufferedReader
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileReader
 import java.security.Security
 import kotlin.test.*
@@ -129,6 +130,11 @@ internal class SecretsManagerTest {
 //            record.updatePassword("new password")
 //            updateSecret(options, record)
         }
+
+        val fis = FileInputStream("config-dev.json")
+        val bytes = fis.readBytes()
+        uploadFile(options, record, KeeperFileUpload("config-dev.json", "Sample File", "application/json", bytes))
+
 //        if (record.folderUid != null) {
 //            record.data.title = record.data.title + " Copy (Java)"
 //            val recordUid = createSecret(options, record.folderUid!!, record.data, secrets)

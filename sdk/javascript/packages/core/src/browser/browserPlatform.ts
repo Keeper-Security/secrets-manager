@@ -318,6 +318,38 @@ const post = async (
     }
 }
 
+const fileUpload = (
+    url: string,
+    uploadParameters: { [key: string]: string },
+    data: Blob
+): Promise<any> => new Promise<any>((resolve, reject) => {
+    const form = new FormData();
+
+    for (const key in uploadParameters) {
+        form.append(key, uploadParameters[key]);
+    }
+    form.append('file', data)
+
+    const fetchCfg = {
+        method: 'PUT',
+        body: form,
+    }
+
+    fetch(url, fetchCfg)
+        .then(response => response.json())
+        .then(res => {
+            resolve({
+                headers: res.headers,
+                statusCode: res.statusCode,
+                statusMessage: res.statusMessage
+            })
+        })
+        .catch(error => {
+            console.error('Error uploading file:', error);
+            reject(error)
+        });
+})
+
 const cleanKeyCache = () => {
     for (const key in keyCache) {
         delete keyCache[key]
@@ -382,6 +414,7 @@ export const browserPlatform: Platform = {
     sign: sign,
     get: get,
     post: post,
+    fileUpload: fileUpload,
     cleanKeyCache: cleanKeyCache,
     hasKeysCached: hasKeysCached,
     getHmacDigest: getHmacDigest,

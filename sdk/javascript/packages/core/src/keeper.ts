@@ -69,6 +69,18 @@ type CreatePayload = {
     data: string
 }
 
+type FileUploadPayload = {
+    clientVersion: string
+    clientId: string
+    fileRecordUid: string
+    fileRecordKey: string
+    fileRecordData: string
+    ownerRecordUid: string
+    ownerRecordData: string
+    linkKey: string
+    fileSize: number
+}
+
 type SecretsManagerResponseFolder = {
     folderUid: string
     folderKey: string
@@ -101,6 +113,12 @@ type SecretsManagerResponse = {
     warnings: string[]
 }
 
+type SecretsManagerAddFileResponse = {
+    url: string
+    parameters: string
+    successStatusCode: number
+}
+
 export type KeeperSecrets = {
     appData: {
         title: string
@@ -126,6 +144,13 @@ export type KeeperFile = {
     thumbnailUrl?: string
 }
 
+export type KeeperFileUpload = {
+    name: string
+    title: string
+    type?: string
+    data: Uint8Array
+}
+
 type KeeperError = {
     error?: string
     key_id?: number
@@ -137,7 +162,7 @@ const prepareGetPayload = async (storage: KeyValueStorage, recordsFilter?: strin
         throw new Error('Client Id is missing from the configuration')
     }
     const payload: GetPayload = {
-        clientVersion: 'ms' + packageVersion, // TODO generate client version for SM
+        clientVersion: 'ms' + packageVersion,
         clientId: clientId
     }
     const appKey = await storage.getBytes(KEY_APP_KEY)
@@ -159,7 +184,7 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperReco
     const recordBytes = platform.stringToBytes(JSON.stringify(record.data))
     const encryptedRecord = await platform.encrypt(recordBytes, record.recordUid)
     return {
-        clientVersion: 'ms' + packageVersion, // TODO generate client version for SM
+        clientVersion: 'ms' + packageVersion,
         clientId: clientId,
         recordUid: record.recordUid,
         data: webSafe64FromBytes(encryptedRecord),
@@ -183,13 +208,66 @@ const prepareCreatePayload = async (storage: KeyValueStorage, folderUid: string,
     const encryptedRecordKey = await platform.publicEncrypt(recordKey, ownerPublicKey)
     const encryptedFolderKey = await platform.encrypt(recordKey, folderUid)
     return {
-        clientVersion: 'ms' + packageVersion, // TODO generate client version for SM
+        clientVersion: 'ms' + packageVersion,
         clientId: clientId,
         recordUid: webSafe64FromBytes(recordUid),
         recordKey: platform.bytesToBase64(encryptedRecordKey),
         folderUid: folderUid,
         folderKey: platform.bytesToBase64(encryptedFolderKey),
         data: webSafe64FromBytes(encryptedRecord)
+    }
+}
+
+const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: KeeperRecord, file: KeeperFileUpload): Promise<{
+    payload: FileUploadPayload,
+    encryptedFileData: Uint8Array
+}> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
+    const ownerPublicKey = await storage.getBytes(KEY_OWNER_PUBLIC_KEY)
+    if (!ownerPublicKey) {
+        throw new Error('Application owner public key is missing from the configuration')
+    }
+    const fileData = {
+        name: file.name,
+        size: file.data.length,
+        title: file.title,
+        lastModified: new Date().getTime(),
+        type: file.type
+    }
+    const fileRecordBytes = platform.stringToBytes(JSON.stringify(fileData))
+    const fileRecordKey = platform.getRandomBytes(32)
+    const fileRecordUid = webSafe64FromBytes(platform.getRandomBytes(16))
+    const encryptedFileRecord = await platform.encryptWithKey(fileRecordBytes, fileRecordKey)
+    const encryptedFileRecordKey = await platform.publicEncrypt(fileRecordKey, ownerPublicKey)
+    const encryptedLinkKey = await platform.encrypt(fileRecordKey, ownerRecord.recordUid)
+    const encryptedFileData = await platform.encryptWithKey(file.data, fileRecordKey)
+
+    let fileRef = ownerRecord.data.fields.find(x => x.type == 'fileRef')
+    if (fileRef) {
+        fileRef.value.push(fileRecordUid)
+    } else {
+        fileRef = {type: 'fileRef', value: [fileRecordUid]}
+        ownerRecord.data.fields.push(fileRef)
+    }
+    const ownerRecordBytes = platform.stringToBytes(JSON.stringify(ownerRecord.data))
+    const encryptedOwnerRecord = await platform.encrypt(ownerRecordBytes, ownerRecord.recordUid)
+
+    return {
+        payload: {
+            clientVersion: 'ms' + packageVersion,
+            clientId: clientId,
+            fileRecordUid: fileRecordUid,
+            fileRecordKey: platform.bytesToBase64(encryptedFileRecordKey),
+            fileRecordData: webSafe64FromBytes(encryptedFileRecord),
+            ownerRecordUid: ownerRecord.recordUid,
+            ownerRecordData: webSafe64FromBytes(encryptedOwnerRecord),
+            linkKey: platform.bytesToBase64(encryptedLinkKey),
+            fileSize: encryptedFileData.length
+        },
+        encryptedFileData
     }
 }
 
@@ -218,7 +296,7 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
     }
 }
 
-const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload): Promise<EncryptedPayload> => {
+const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload | FileUploadPayload): Promise<EncryptedPayload> => {
     const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
     const encryptedPayload = await platform.encryptWithKey(payloadBytes, transmissionKey.key)
     const signatureBase = Uint8Array.of(...transmissionKey.encryptedKey, ...encryptedPayload)
@@ -226,7 +304,7 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     return {payload: encryptedPayload, signature}
 }
 
-const postQuery = async (options: SecretManagerOptions, path: string, payload: GetPayload | UpdatePayload): Promise<Uint8Array> => {
+const postQuery = async (options: SecretManagerOptions, path: string, payload: GetPayload | UpdatePayload | FileUploadPayload): Promise<Uint8Array> => {
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
         throw new Error('hostname is missing from the configuration')
@@ -408,4 +486,15 @@ export const downloadFile = async (file: KeeperFile): Promise<Uint8Array> => {
 export const downloadThumbnail = async (file: KeeperFile): Promise<Uint8Array> => {
     const fileResponse = await platform.get(file.thumbnailUrl!, {})
     return platform.decrypt(fileResponse.data, file.fileUid)
+}
+
+export const uploadFile = async (options: SecretManagerOptions, ownerRecord: KeeperRecord, file: KeeperFileUpload): Promise<string> => {
+    const { payload, encryptedFileData } = await prepareFileUploadPayload(options.storage, ownerRecord, file)
+    const responseData = await postQuery(options, 'add_file', payload)
+    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerAddFileResponse
+    const uploadResult = await platform.fileUpload(response.url, JSON.parse(response.parameters), encryptedFileData)
+    if (uploadResult.statusCode !== response.successStatusCode) {
+        throw new Error(`Upload failed (${uploadResult.statusMessage}), code ${uploadResult.statusCode}`)
+    }
+    return payload.fileRecordUid
 }

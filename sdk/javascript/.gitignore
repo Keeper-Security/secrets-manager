@@ -1,4 +1,4 @@
 **/dist
 **/node_modules
-/packages/core/client-config-*.json
+/packages/core/configs
 /packages/core/cache.dat
