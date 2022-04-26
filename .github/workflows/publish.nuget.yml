@@ -4,6 +4,7 @@ on:
 
 jobs:
   publish-nuget:
+    environment: prod
     runs-on: ubuntu-latest
 
     defaults:
