@@ -72,7 +72,7 @@ class Init:
 
             # Kubernetes v1.21
             if immutable is True:
-                secret += "immutable: True\n"
+                secret += "\nimmutable: True\n"
 
             print("", file=sys.stderr)
             self.cli.output(secret)
