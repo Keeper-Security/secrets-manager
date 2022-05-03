@@ -1,7 +1,19 @@
 import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
 import {privateDerToPublicRaw} from '../utils'
 
-const bytesToBase64 = (data: Uint8Array): string => btoa(String.fromCharCode(...data))
+const bytesToBase64 = (data: Uint8Array): string => {
+    const chunkSize = 0x10000 // max size accepted by String.fromCharCode
+    if (data.length <= chunkSize) {
+        // @ts-ignore
+        return btoa(String.fromCharCode(...data))
+    }
+    let chunks: string = ''
+    for (let i = 0; i < data.length; i = i + chunkSize) {
+        // @ts-ignore
+        chunks = chunks + String.fromCharCode(...data.slice(i, i + chunkSize))
+    }
+    return btoa(chunks)
+}
 
 const base64ToBytes = (data: string): Uint8Array => Uint8Array.from(atob(data), c => c.charCodeAt(0))
 
