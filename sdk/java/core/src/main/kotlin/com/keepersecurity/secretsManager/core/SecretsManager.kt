@@ -146,6 +146,14 @@ data class KeeperSecrets(val appData: AppData, val records: List<KeeperRecord>, 
     fun getRecordByUid(recordUid: String): KeeperRecord? {
         return records.find { it.recordUid == recordUid }
     }
+
+    fun getSecretsByTitle(recordTitle: String): List<KeeperRecord> {
+        return records.filter { it.data.title == recordTitle }
+    }
+
+    fun getSecretByTitle(recordTitle: String): KeeperRecord? {
+        return records.find { it.data.title == recordTitle }
+    }
 }
 
 @Serializable
