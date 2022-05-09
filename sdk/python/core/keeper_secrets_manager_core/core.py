@@ -546,6 +546,27 @@ class SecretsManager:
 
             return records
 
+    def get_secrets_by_title(self, record_title):
+        """
+        Retrieve all records with specified title
+        """
+
+        recs = self.get_secrets()
+        records = [x for x in recs if x.title == record_title]
+
+        return records
+
+    def get_secret_by_title(self, record_title):
+        """
+        Retrieve first record with specified title
+        """
+
+        records = self.get_secrets_by_title(record_title) or []
+        if len(records) > 0:
+            return records[0]
+
+        return None
+
     def create_secret(self, folder_uid, record_data):
 
         #   Backend only need a JSON string of the record, so we have different ways of handing data:
