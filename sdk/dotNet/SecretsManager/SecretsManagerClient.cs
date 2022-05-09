@@ -427,6 +427,31 @@ namespace SecretsManager
             return keeperSecrets;
         }
 
+        public static async Task<IEnumerable<KeeperRecord>> GetSecretsByTitle(SecretsManagerOptions options, string recordTitle)
+        {
+            string[] recordsFilter = null;
+            var (keeperSecrets, justBound) = await FetchAndDecryptSecrets(options, recordsFilter);
+            if (justBound)
+            {
+                try
+                {
+                    await FetchAndDecryptSecrets(options, recordsFilter);
+                }
+                catch (Exception e)
+                {
+                    Console.Error.WriteLine(e);
+                }
+            }
+
+            return keeperSecrets.Records.Where(r => r.Data.title == recordTitle);
+        }
+
+        public static async Task<KeeperRecord> GetSecretByTitle(SecretsManagerOptions options, string recordTitle)
+        {
+            var recorddsByTitle = await GetSecretsByTitle(options, recordTitle);
+            return recorddsByTitle.ElementAtOrDefault(0);
+        }
+
         public static async Task UpdateSecret(SecretsManagerOptions options, KeeperRecord record)
         {
             var payload = PrepareUpdatePayload(options.Storage, record);
