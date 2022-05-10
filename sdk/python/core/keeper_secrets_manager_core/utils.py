@@ -17,6 +17,7 @@ import logging
 import os
 import random
 import string
+import time
 from json import JSONDecodeError
 from sys import platform as _platform
 from typing import Tuple
@@ -92,6 +93,10 @@ def json_to_dict(json_str):
         resp = None
 
     return resp
+
+
+def now_milliseconds():
+    return int(time.time() * 1000)
 
 
 class TotpCode:

@@ -8,8 +8,10 @@
 # Copyright 2021 Keeper Security Inc.
 # Contact: ops@keepersecurity.com
 import json
+import mimetypes
 import os
 from datetime import datetime
+from pathlib import Path
 
 import requests
 from keeper_secrets_manager_core.crypto import CryptoUtils
@@ -364,6 +366,46 @@ class KeeperFile:
         return "[KeeperFile - name: %s, title: %s]" % (self.name, self.title)
 
 
+class KeeperFileUpload:
+
+    def __init__(self, name=None, title=None, mime_type=None, data=None):
+        self.Name = name
+        self.Title = title
+        self.Type = mime_type
+        self.Data = data
+
+    @staticmethod
+    def from_file(path, file_name=None, file_title=None, mime_type=None):
+
+        """Helper method to get Keeper File Upload object from the file path"""
+        file_name = file_name if file_name else Path(path).name
+        file_title = file_title if file_title else file_name
+
+        if not mime_type:
+            mime_type = mimetypes.guess_type(path)[0]
+
+            if not mime_type:
+                # fall back to `application/octet-stream` if type was not determined
+                mime_type = 'application/octet-stream'
+
+        in_file = open(path, 'rb')  # opening for [r]eading as [b]inary
+        file_bytes_data = in_file.read()
+
+        file_upload = KeeperFileUpload(name=file_name, title=file_title, mime_type=mime_type, data=file_bytes_data)
+
+        return file_upload
+
+
+class KeeperFileData:
+
+    def __init__(self):
+        self.name = None
+        self.size = None
+        self.title = None
+        self.lastModified = None
+        self.type = None
+
+
 class RecordField:
 
     def __init__(self, field_type=None, value=None, label=None, required=None):
@@ -444,3 +486,11 @@ class SecretsManagerResponse:
         Retrieve string formatted expiration date
         """
         return datetime.fromtimestamp(self.expiresOn/1000).strftime(date_format)
+
+
+class SecretsManagerAddFileResponse:
+
+    def __init__(self):
+        self.url = None
+        self.parameters = None
+        self.successStatusCode = None
