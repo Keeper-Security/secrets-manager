@@ -45,6 +45,20 @@ class CreatePayload:
         self.data = None
 
 
+class FileUploadPayload:
+
+    def __init__(self):
+        self.clientVersion = None
+        self.clientId = None
+        self.fileRecordUid = None
+        self.fileRecordKey = None
+        self.fileRecordData = None
+        self.ownerRecordUid = None
+        self.ownerRecordData = None
+        self.linkKey = None
+        self.fileSize = None
+
+
 class UpdatePayload:
 
     def __init__(self):
