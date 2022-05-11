@@ -376,7 +376,7 @@ class SecretsManager:
         file_refs = [f for f in fields if f['type'] == 'fileRef']
 
         if not file_refs:
-            fields.append = {'type': 'fileRef', 'value': [file_record_uid_str]}
+            fields.append({'type': 'fileRef', 'value': [file_record_uid_str]})
         else:
             file_uid_list = file_refs[0].get('value')
             file_uid_list.append(file_record_uid_str)
