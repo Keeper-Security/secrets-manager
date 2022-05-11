@@ -464,14 +464,22 @@ export const getSecrets = async (options: SecretManagerOptions, recordsFilter?: 
     return secrets
 }
 
+export const findSecretsByTitle = async (records: KeeperRecord[], recordTitle: string): Promise<KeeperRecord[]> => {
+    return records.filter(record => record.data.title === recordTitle)
+}
+
+export const findSecretByTitle = async (records: KeeperRecord[], recordTitle: string): Promise<KeeperRecord | undefined> => {
+    return records.find(record => record.data.title === recordTitle)
+}
+
 export const getSecretsByTitle = async (options: SecretManagerOptions, recordTitle: string): Promise<KeeperRecord[]> => {
     const secrets  = await getSecrets(options)
     return secrets.records.filter(record => record.data.title === recordTitle)
 }
 
 export const getSecretByTitle = async (options: SecretManagerOptions, recordTitle: string): Promise<KeeperRecord | undefined> => {
-    const secrets  = await getSecretsByTitle(options, recordTitle)
-    return secrets.shift()
+    const secrets  = await getSecrets(options)
+    return secrets.records.find(record => record.data.title === recordTitle)
 }
 
 export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord): Promise<void> => {
