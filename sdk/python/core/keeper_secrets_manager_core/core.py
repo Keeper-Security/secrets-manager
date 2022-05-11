@@ -21,15 +21,17 @@ import requests
 from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.crypto import CryptoUtils
-from keeper_secrets_manager_core.dto.dtos import Folder, Record, RecordCreate, SecretsManagerResponse, AppData
+from keeper_secrets_manager_core.dto.dtos import Folder, Record, RecordCreate, SecretsManagerResponse, AppData, \
+    KeeperFileUpload
 from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, TransmissionKey, \
-    EncryptedPayload, KSMHttpResponse, CreatePayload
+    EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys, \
     logger_name, keeper_servers
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage, InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
-    url_safe_str_to_bytes, bytes_to_base64, generate_random_bytes
+    url_safe_str_to_bytes, bytes_to_base64, generate_random_bytes, now_milliseconds, string_to_bytes, json_to_dict, \
+    bytes_to_string
 
 
 class SecretsManager:
@@ -236,7 +238,8 @@ class SecretsManager:
         if not (
                 isinstance(payload, GetPayload) or
                 isinstance(payload, UpdatePayload) or
-                isinstance(payload, CreatePayload)):
+                isinstance(payload, CreatePayload) or
+                isinstance(payload, FileUploadPayload)):
             raise Exception('Unknown payload type "%s"' % payload.__class__.__name__)
 
         payload_json_str = dict_to_json(payload.__dict__)
@@ -327,13 +330,81 @@ class SecretsManager:
         payload.recordUid = record.uid
         payload.revision = record.revision
 
-        # TODO: This is where we need to get JSON of the updated Record
         raw_json_bytes = utils.string_to_bytes(record.raw_json)
         encrypted_raw_json_bytes = CryptoUtils.encrypt_aes(raw_json_bytes, record.record_key_bytes)
 
         payload.data = bytes_to_base64(encrypted_raw_json_bytes)
 
         return payload
+
+    @staticmethod
+    def prepare_file_upload_payload(storage, owner_record, file: KeeperFileUpload):
+
+        owner_public_key = storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY)
+
+        if not owner_public_key:
+            raise KeeperError('Unable to upload file - owner key is missing. Looks like application was created '
+                              'using out date client (Web Vault or Commander)')
+
+        owner_public_key_bytes = url_safe_str_to_bytes(owner_public_key)
+
+        file_record_dict = {
+            'name': file.Name,
+            'size': len(file.Data),
+            'title': file.Title,
+            'lastModified': now_milliseconds(),
+            'type': file.Type
+        }
+
+        file_record_json_str = dict_to_json(file_record_dict)
+        file_record_bytes = utils.string_to_bytes(file_record_json_str)
+
+        file_record_key = generate_random_bytes(32)
+        file_record_uid = generate_random_bytes(16)
+        file_record_uid_str = CryptoUtils.bytes_to_url_safe_str(file_record_uid)
+
+        encrypted_file_record_bytes = CryptoUtils.encrypt_aes(file_record_bytes, file_record_key)
+        encrypted_file_record_key = CryptoUtils.public_encrypt(file_record_key, owner_public_key_bytes)
+        encrypted_link_key_bytes = CryptoUtils.encrypt_aes(file_record_key, owner_record.record_key_bytes)
+
+        encrypted_file_data = CryptoUtils.encrypt_aes(file.Data, file_record_key)
+
+        # Add fileRef here
+        rec_dict = owner_record.dict
+        fields = rec_dict.get('fields')
+
+        file_refs = [f for f in fields if f['type'] == 'fileRef']
+
+        if not file_refs:
+            fields.append = {'type': 'fileRef', 'value': [file_record_uid_str]}
+        else:
+            file_uid_list = file_refs[0].get('value')
+            file_uid_list.append(file_record_uid_str)
+
+        owner_record.raw_json = utils.dict_to_json(rec_dict)
+
+        owner_record_bytes = string_to_bytes(owner_record.raw_json)
+
+        encrypted_owner_record_bytes = CryptoUtils.encrypt_aes(owner_record_bytes, owner_record.record_key_bytes)
+        encrypted_owner_record_str = CryptoUtils.bytes_to_url_safe_str(encrypted_owner_record_bytes)
+
+        payload = FileUploadPayload()
+        payload.clientVersion = keeper_secrets_manager_sdk_client_id
+        payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
+        payload.fileRecordUid = file_record_uid_str
+        payload.fileRecordData = CryptoUtils.bytes_to_url_safe_str(encrypted_file_record_bytes)
+        payload.fileRecordKey = bytes_to_base64(encrypted_file_record_key)
+        payload.ownerRecordUid = owner_record.uid
+
+        payload.ownerRecordData = encrypted_owner_record_str
+
+        payload.linkKey = bytes_to_base64(encrypted_link_key_bytes)
+
+        payload.fileSize = len(encrypted_file_data)
+        return {
+            'payload': payload,
+            'encryptedFileData': encrypted_file_data
+        }
 
     def _post_query(self, path, payload):
 
@@ -384,6 +455,25 @@ class SecretsManager:
         ksm_rs = KSMHttpResponse(rs.status_code, rs.content, rs)
 
         return ksm_rs
+
+    @staticmethod
+    def __upload_file_function(url, upload_parameters, encrypted_file_data):
+        """Upload file to the server"""
+        files = {'file': encrypted_file_data}
+
+        rs = requests.post(url,
+                           data=upload_parameters,
+                           files=files,
+                           )
+
+        rs_status_code = rs.status_code
+        rs_data = rs.text
+
+        return {
+            'isOk': rs.ok,
+            'statusCode': rs_status_code,
+            'data': rs_data
+        }
 
     def handler_http_error(self, rs):
 
@@ -591,6 +681,47 @@ class SecretsManager:
         self._post_query('create_secret', payload)
 
         return payload.recordUid
+
+    def upload_file(self, owner_record, file: KeeperFileUpload):
+        """
+        Upload file using provided file upload object
+        """
+
+        self.logger.info(f"Uploading file: {file.Name} to record uid {owner_record.uid}")
+
+        self.logger.debug(f"Preparing upload payload. owner_record.uid=[{owner_record.uid}], file name: [{file.Name}], file size: [{len(file.Data)}]")
+
+        upload_payload = self.prepare_file_upload_payload(self.config, owner_record, file)
+        payload = upload_payload.get('payload')
+        encrypted_file_data = upload_payload.get('encryptedFileData')
+
+        self.logger.debug(f"Posting prepare data")
+        response_data = self._post_query('add_file', payload)
+
+        response_json_str = bytes_to_string(response_data)
+        response_dict = json_to_dict(response_json_str)
+        upload_url = response_dict.get('url')
+        parameters_json_str = response_dict.get('parameters')
+        parameters_dict = json_to_dict(parameters_json_str)
+
+        self.logger.debug(f"Uploading file data: upload url=[{upload_url}], file name: [{file.Name}], encrypted file size: [{len(encrypted_file_data)}]")
+        upload_result = SecretsManager.__upload_file_function(upload_url, parameters_dict, encrypted_file_data)
+
+        self.logger.debug(f"Finished uploading file data. Status code: {upload_result.get('statusCode')}, response data: {upload_result.get('data')}")
+
+        if not upload_result.get('isOk'):
+            raise KeeperError('Failed to upload a file')
+        else:
+            return payload.fileRecordUid
+
+    def upload_file_path(self, owner_record, file_path):
+        """
+        Upload file using provided file path
+        """
+
+        file_to_upload = KeeperFileUpload.from_file(file_path)
+
+        return self.upload_file(owner_record, file_to_upload)
 
     def save(self, record):
         """
