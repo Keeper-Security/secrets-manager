@@ -34,15 +34,13 @@ from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
 
 def find_secrets_by_title(record_title, records):
     # Find all records with specified title
-    if records:
-        return [x for x in records if x.title == record_title]
-    return None
+    records = records or []
+    return [x for x in records if x.title == record_title]
 
 def find_secret_by_title(record_title, records):
     # Find first record with specified title
-    if records:
-        return next((x for x in records if x.title == record_title), None)
-    return None
+    records = records or []
+    return next((x for x in records if x.title == record_title), None)
 
 class SecretsManager:
 
@@ -574,10 +572,7 @@ class SecretsManager:
         """
 
         records = self.get_secrets_by_title(record_title) or []
-        if len(records) > 0:
-            return records[0]
-
-        return None
+        return next((iter(records)), None)
 
     def create_secret(self, folder_uid, record_data):
 
