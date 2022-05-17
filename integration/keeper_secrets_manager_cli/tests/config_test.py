@@ -19,7 +19,7 @@ class ConfigTest(unittest.TestCase):
         # Make a fake keeper.ini file.
         export = Export(config=MockConfig().make_config(), file_format="ini", plain=True)
         with open("keeper.ini", "w") as fh:
-            fh.write(export.run().decode())
+            fh.write(export.run())
             fh.close()
 
     def tearDown(self) -> None:
