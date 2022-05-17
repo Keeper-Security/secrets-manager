@@ -2,9 +2,11 @@ from .config import Config
 import tempfile
 import base64
 import json
+import os
 
 from keeper_secrets_manager_core.utils import base64_to_bytes
 from keeper_secrets_manager_core.keeper_globals import keeper_servers
+from .exception import KsmCliException
 
 
 class Export:
@@ -45,8 +47,17 @@ class Export:
         # Apparently the config parser doesn't like temp files. So create a
         # temp file, then open a file for writing and use that to write
         # the config. Then read the temp file to get our new config.
-        with tempfile.NamedTemporaryFile() as tf:
-            config = Config(ini_file=tf.name)
+
+        temp_file_name = None
+        try:
+            # Create temp file and close it. We want a filename. Prevent the temp file from being deleted
+            # when we close it. Remove it with a "finally".
+            tf = tempfile.NamedTemporaryFile(delete=False)
+            temp_file_name = tf.name
+            tf.close()
+
+            # Make a configuration with one profile and the save it to the temp file.
+            config = Config(ini_file=temp_file_name)
             config.set_profile(Profile.default_profile,
                                client_id=self.config.client_id,
                                private_key=self.config.private_key,
@@ -57,9 +68,16 @@ class Export:
             config.config.active_profile = Profile.default_profile
             config.save()
 
-            tf.seek(0)
-            config_str = tf.read()
-            tf.close()
+            # Open the temp file and read the configuration that was created above.
+            with open(temp_file_name, "r") as config_fh:
+                config_str = config_fh.read()
+                config_fh.close()
+        except Exception as err:
+            raise KsmCliException("Could not export profile: {}".format(err))
+        finally:
+            # Make sure we delete the temp file.
+            if temp_file_name is not None and os.path.exists(temp_file_name) is True:
+                os.unlink(temp_file_name)
 
         return config_str
 
