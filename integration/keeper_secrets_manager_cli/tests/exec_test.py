@@ -12,6 +12,8 @@ from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_cli.__main__ import cli
 from keeper_secrets_manager_cli.profile import Profile
 
+from sys import platform
+
 
 class ExecTest(unittest.TestCase):
 
@@ -59,15 +61,24 @@ class ExecTest(unittest.TestCase):
 
             Profile.init(token='MY_TOKEN')
 
-            # Make a temp shell script
-            with tempfile.NamedTemporaryFile(delete=False) as script:
+            # Make a temp shell script. Call it .BAT so it works under windows, Linux won't care.
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".BAT") as script:
                 self.delete_me.append(script.name)
-                the_script = [
-                    "#!/bin/sh",
-                    "echo ${EXEC_VAR_ONE}",
-                    "echo ${EXEC_VAR_TWO}",
-                    "echo ${EXEC_NOT_ONE}"
-                ]
+                if platform == "win32":
+                    the_script = [
+                        "@echo off",
+                        "setlocal enableDelayedExpansion",
+                        "echo '%EXEC_VAR_ONE%'",
+                        "echo '%EXEC_VAR_TWO%'",
+                        "echo '%EXEC_NOT_ONE%'"
+                    ]
+                else:
+                    the_script = [
+                        "#!/bin/sh",
+                        "echo ${EXEC_VAR_ONE}",
+                        "echo ${EXEC_VAR_TWO}",
+                        "echo ${EXEC_NOT_ONE}"
+                    ]
                 script.write("\n".join(the_script).encode())
                 script.close()
                 os.chmod(script.name, 0o777)
@@ -118,14 +129,23 @@ class ExecTest(unittest.TestCase):
             Profile.init(token='MY_TOKEN')
 
             # Make a temp shell script
-            with tempfile.NamedTemporaryFile(delete=False) as script:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".BAT") as script:
                 self.delete_me.append(script.name)
-                the_script = [
-                    "#!/bin/sh",
-                    "echo ${EXEC_VAR_ONE}",
-                    "echo ${EXEC_VAR_TWO}",
-                    "echo ${1}"
-                ]
+                if platform == "win32":
+                    the_script = [
+                        "@echo off",
+                        "setlocal enableDelayedExpansion",
+                        "echo '%EXEC_VAR_ONE%'",
+                        "echo '%EXEC_VAR_TWO%'",
+                        "echo '%~1'"
+                    ]
+                else:
+                    the_script = [
+                        "#!/bin/sh",
+                        "echo ${EXEC_VAR_ONE}",
+                        "echo ${EXEC_VAR_TWO}",
+                        "echo ${1}"
+                    ]
                 script.write("\n".join(the_script).encode())
                 script.close()
                 os.chmod(script.name, 0o777)
@@ -148,8 +168,7 @@ class ExecTest(unittest.TestCase):
                 self.assertIsNotNone(re.search('My Password 1', result.output, flags=re.MULTILINE),
                                      "did not find the custom field password")
 
-                # For coverage we request the full array value for this one, hence ["PASS"]
-                self.assertIsNotNone(re.search(r'\["PASS"\]', result.output, flags=re.MULTILINE),
+                self.assertIsNotNone(re.search(r'PASS', result.output, flags=re.MULTILINE),
                                      "did not find the field password")
 
     def test_cmd_bad(self):
