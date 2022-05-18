@@ -53,7 +53,8 @@ class Profile:
             elif os.environ.get("KSM_TOKEN") is not None:
                 Profile.init(
                     token=os.environ.get("KSM_TOKEN"),
-                    server=os.environ.get("KSM_HOSTNAME", "US")
+                    server=os.environ.get("KSM_HOSTNAME", "US"),
+                    launched_from_app=self._config.launched_from_app
                 )
             else:
                 ini_file = find_ksm_path(Config.default_ini_file)
@@ -92,13 +93,13 @@ class Profile:
         return self._config.config
 
     @staticmethod
-    def init(token, ini_file=None, server=None, profile_name=None):
+    def init(token, ini_file=None, server=None, profile_name=None, launched_from_app=False):
 
         from . import KeeperCli
 
         # If the ini is not set, default the file in the current directory.
         if ini_file is None:
-            ini_file = Config.get_default_ini_file()
+            ini_file = Config.get_default_ini_file(launched_from_app)
 
         if profile_name is None:
             profile_name = os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
@@ -216,7 +217,7 @@ class Profile:
         self.cli.output(config_str)
 
     @staticmethod
-    def import_config(config_base64, file=None, profile_name=None):
+    def import_config(config_base64, file=None, profile_name=None, launched_from_app=False):
 
         """
         Take base64 config file and write it back to disk.
@@ -236,7 +237,7 @@ class Profile:
             pass
 
         if file is None:
-            file = Config.get_default_ini_file()
+            file = Config.get_default_ini_file(launched_from_app)
 
         # If a JSON file was import, convert the JSON to a INI.
         if is_json is True:

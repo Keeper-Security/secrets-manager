@@ -31,7 +31,7 @@ import typing as t
 from update_checker import UpdateChecker
 
 
-global_config = None
+global_config = Config()
 
 
 # NOTE: For the CLI, all groups and command are lowercase. All arguments are lower case, so you cannot use
@@ -292,7 +292,8 @@ def profile_init_command(ctx, token, hostname, ini_file, profile_name, token_arg
         token=token,
         server=hostname,
         ini_file=ini_file,
-        profile_name=profile_name
+        profile_name=profile_name,
+        launched_from_app=global_config.launched_from_app
     )
 
 
@@ -358,7 +359,8 @@ def profile_import_command(ctx, output_file, config_base64):
     """Import an encrypted config file"""
     Profile(cli=ctx.obj["cli"], config=global_config).import_config(
         file=output_file,
-        config_base64=config_base64
+        config_base64=config_base64,
+        launched_from_app=global_config.launched_from_app
     )
 
 
@@ -953,7 +955,7 @@ def version_command(ctx):
     print("CLI Install: {}".format(os.path.dirname(os.path.realpath(__file__))))
     print("SDK Version: {}".format(versions["keeper-secrets-manager-core"]))
     print("SDK Install: {}".format(os.path.dirname(os.path.realpath(keeper_secrets_manager_core.__file__))))
-    print("Config file: {}".format(ctx.obj["cli"].profile.ini_file))
+    print("Config file: {}".format(global_config.ini_file))
 
     try:
         if versions["keeper-secrets-manager-cli"] != "Unknown":
@@ -974,11 +976,15 @@ def version_command(ctx):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-def shell_command():
+@click.option('--app', is_flag=True, help='Launched from application.')
+def shell_command(app):
     """Run KSM in a shell"""
 
     global global_config
     global_config = Config()
+
+    # Flag that the application was launched as a Windows/MacOS application.
+    global_config.launched_from_app = True
 
     # https://manytools.org/hacker-tools/ascii-banner/
     logo = """
