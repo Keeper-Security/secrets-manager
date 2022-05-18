@@ -30,6 +30,8 @@ class ProfileTest(unittest.TestCase):
         os.environ.pop("KSM_CONFIG_BASE64_2", None)
         os.environ.pop("KSM_CONFIG_BASE64_DESC_2", None)
 
+        self.delete_me = []
+
     def tearDown(self) -> None:
         os.chdir(self.orig_dir)
 
@@ -38,6 +40,10 @@ class ProfileTest(unittest.TestCase):
         os.environ.pop("KSM_CONFIG_BASE64_DESC_1", None)
         os.environ.pop("KSM_CONFIG_BASE64_2", None)
         os.environ.pop("KSM_CONFIG_BASE64_DESC_2", None)
+
+        for item in self.delete_me:
+            if os.path.exists(item) is True:
+                os.unlink(item)
 
     def test_the_works(self):
 
@@ -217,15 +223,21 @@ color = True
         os.environ["KSM_CONFIG_BASE64_DESC_2"] = "App2"
 
         # Using a file output due to cli runner joining stdout and stderr
-        with tempfile.NamedTemporaryFile() as tf:
+        with tempfile.NamedTemporaryFile(delete=True) as tf:
+            tf_name = tf.name
+            self.delete_me.append(tf_name)
+            tf.close()
+
             result = runner.invoke(cli, [
-                '-o', tf.name,
+                '-o', tf_name,
                 'profile', 'list', '--json'], catch_exceptions=False)
             self.assertEqual(0, result.exit_code, "did not get a success on list")
-            tf.seek(0)
-            profile_data = json.load(tf)
-            self.assertEqual("App1", profile_data[0]["name"], "found first app")
-            self.assertEqual("App2", profile_data[1]["name"], "found second app")
+
+            with open(tf_name, "r") as fh:
+                profile_data = json.load(fh)
+                self.assertEqual("App1", profile_data[0]["name"], "found first app")
+                self.assertEqual("App2", profile_data[1]["name"], "found second app")
+                fh.close()
 
     def test_import_sdk_json(self):
 
@@ -269,22 +281,27 @@ color = True
         os.environ["KSM_CONFIG_BASE64_DESC_2"] = "SDK 2"
 
         # Using a file output due to cli runner joining stdout and stderr
-        with tempfile.NamedTemporaryFile() as tf:
+        with tempfile.NamedTemporaryFile(delete=False) as tf:
+            tf_name = tf.name
+            self.delete_me.append(tf_name)
+            tf.close()
 
             # Make sure keeper ini file doesn't exists
             if os.path.exists(Config.default_ini_file) is True:
                 os.unlink(Config.default_ini_file)
 
             result = runner.invoke(cli, [
-                '-o', tf.name,
+                '-o', tf_name,
                 'profile', 'list', '--json'], catch_exceptions=False)
             self.assertEqual(0, result.exit_code, "did not get a success on list")
-            tf.seek(0)
-            profile_data = json.load(tf)
-            self.assertEqual("SDK 1", profile_data[0]["name"], "did not find first app")
-            self.assertEqual("SDK 2", profile_data[1]["name"], "did not find second app")
 
-            self.assertFalse(os.path.exists(Config.default_ini_file), "keeper.ini exists when it should not")
+            with open(tf_name, "r") as fh:
+                profile_data = json.load(fh)
+                self.assertEqual("SDK 1", profile_data[0]["name"], "did not find first app")
+                self.assertEqual("SDK 2", profile_data[1]["name"], "did not find second app")
+
+                self.assertFalse(os.path.exists(Config.default_ini_file), "keeper.ini exists when it should not")
+                fh.close()
 
     def test_auto_config_sdk_base64_json(self):
 
@@ -305,19 +322,25 @@ color = True
 
         # Using a file output due to cli runner joining stdout and stderr
         with tempfile.NamedTemporaryFile() as tf:
+            tf_name = tf.name
+            self.delete_me.append(tf_name)
+            tf.close()
+
             # Make sure keeper ini file doesn't exists
             if os.path.exists(Config.default_ini_file) is True:
                 os.unlink(Config.default_ini_file)
 
             result = runner.invoke(cli, [
-                '-o', tf.name,
+                '-o', tf_name,
                 'profile', 'list', '--json'], catch_exceptions=False)
             self.assertEqual(0, result.exit_code, "did not get a success on list")
-            tf.seek(0)
-            profile_data = json.load(tf)
-            self.assertEqual(Profile.default_profile, profile_data[0]["name"], "did not find default profile")
 
-            self.assertFalse(os.path.exists(Config.default_ini_file), "keeper.ini exists when it should not")
+            with open(tf_name, "r") as fh:
+                profile_data = json.load(fh)
+                self.assertEqual(Profile.default_profile, profile_data[0]["name"], "did not find default profile")
+
+                self.assertFalse(os.path.exists(Config.default_ini_file), "keeper.ini exists when it should not")
+                fh.close()
 
 
 if __name__ == '__main__':

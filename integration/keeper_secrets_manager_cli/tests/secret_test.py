@@ -31,8 +31,22 @@ class SecretTest(unittest.TestCase):
         # Because of click/testing.py:278 ResourceWarning: unclosed file <_io.FileIO ...
         warnings.simplefilter("ignore", ResourceWarning)
 
+        self.delete_me = []
+
     def tearDown(self) -> None:
         os.chdir(self.orig_dir)
+
+        for item in self.delete_me:
+            if os.path.exists(item) is True:
+                os.unlink(item)
+
+    def _make_temp_file(self):
+
+        tf = tempfile.NamedTemporaryFile(delete=False)
+        tf_name = tf.name
+        self.delete_me.append(tf_name)
+        tf.close()
+        return tf_name
 
     def test_list(self):
 
@@ -73,27 +87,29 @@ class SecretTest(unittest.TestCase):
             Profile.init(token='MY_TOKEN')
 
             # JSON Output
-            with tempfile.NamedTemporaryFile() as tf:
-                runner = CliRunner()
-                result = runner.invoke(cli, ['-o', tf.name, 'secret', 'list', '--json'], catch_exceptions=False)
-                self.assertEqual(0, result.exit_code, "the exit code was not 0")
-                tf.seek(0)
-                secret_list = json.load(tf)
+            tf_name = self._make_temp_file()
+            runner = CliRunner()
+            result = runner.invoke(cli, ['-o', tf_name, 'secret', 'list', '--json'], catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+            with open(tf_name, "r") as fh:
+                secret_list = json.load(fh)
                 for record in secret_list:
                     self.assertEqual(fast_lookup[record["title"]], record["uid"], "Bad UID for record: {}".format(
                         record["uid"]))
-                tf.close()
+                fh.close()
 
             # Text Output
-            with tempfile.NamedTemporaryFile() as tf:
-                runner = CliRunner()
-                result = runner.invoke(cli, ['-o', tf.name, 'secret', 'list'], catch_exceptions=False)
-                self.assertEqual(0, result.exit_code, "the exit code was not 0")
-                tf.seek(0)
-                table = tf.read()
+            tf_name = self._make_temp_file()
+            runner = CliRunner()
+            result = runner.invoke(cli, ['-o', tf_name, 'secret', 'list'], catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+            with open(tf_name, "rb") as fh:
+                table = fh.read()
                 self.assertIsNotNone(re.search(one.uid, table.decode(), flags=re.MULTILINE),
                                      "did not find UID in table")
-                tf.close()
+                fh.close()
 
     def test_get(self):
 
@@ -124,16 +140,16 @@ class SecretTest(unittest.TestCase):
             Profile.init(token='MY_TOKEN')
 
             # JSON Output to file
-            with tempfile.NamedTemporaryFile() as tf:
-                runner = CliRunner()
-                result = runner.invoke(cli, ['-o', tf.name, 'secret', 'get', '-u', one.uid, '--json'],
-                                       catch_exceptions=False)
-                tf.seek(0)
-                self.assertEqual(0, result.exit_code, "the exit code was not 0")
-                tf.seek(0)
-                secret = json.load(tf)
+            tf_name = self._make_temp_file()
+            runner = CliRunner()
+            result = runner.invoke(cli, ['-o', tf_name, 'secret', 'get', '-u', one.uid, '--json'],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+            with open(tf_name, "r") as fh:
+                secret = json.load(fh)
                 self.assertEqual(one.uid, secret["uid"], "didn't get the correct uid for secret")
-                tf.close()
+                fh.close()
 
             # JSON Output w/ JQ to stdout
             runner = CliRunner()
@@ -147,15 +163,16 @@ class SecretTest(unittest.TestCase):
             self.assertEqual(4, len(fields), "didn't find 4 objects in array")
 
             # Text Output to file
-            with tempfile.NamedTemporaryFile() as tf:
-                runner = CliRunner()
-                result = runner.invoke(cli, ['-o', tf.name, 'secret', 'get', '-u', one.uid], catch_exceptions=False)
-                self.assertEqual(0, result.exit_code, "the exit code was not 0")
-                tf.seek(0)
-                table = tf.read()
+            tf_name = self._make_temp_file()
+            runner = CliRunner()
+            result = runner.invoke(cli, ['-o', tf_name, 'secret', 'get', '-u', one.uid], catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+            with open(tf_name, "rb") as fh:
+                table = fh.read()
                 self.assertIsNotNone(re.search(one.uid, table.decode(), flags=re.MULTILINE),
                                      "did not find UID in table")
-                tf.close()
+                fh.close()
 
             # Text Output w/ JQ to stdout (force results to array, then adjust jq to handle arrays)
 
@@ -198,15 +215,17 @@ class SecretTest(unittest.TestCase):
             Profile.init(token='MY_TOKEN')
 
             # JSON Output to file
-            with tempfile.NamedTemporaryFile() as tf:
-                runner = CliRunner()
-                result = runner.invoke(cli, ['-o', tf.name, 'secret', 'get', '-u', one.uid, '--json'],
-                                       catch_exceptions=False)
-                self.assertEqual(0, result.exit_code, "the exit code was not 0")
-                tf.seek(0)
-                secret = json.load(tf)
+
+            tf_name = self._make_temp_file()
+            runner = CliRunner()
+            result = runner.invoke(cli, ['-o', tf_name, 'secret', 'get', '-u', one.uid, '--json'],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+            with open(tf_name, "r") as fh:
+                secret = json.load(fh)
                 self.assertEqual(dash_uid, secret["uid"], "didn't get the correct uid for secret")
-                tf.close()
+                fh.close()
 
     def test_get_list_field(self):
 
@@ -245,15 +264,16 @@ class SecretTest(unittest.TestCase):
             runner = CliRunner()
 
             # JSON Output to file
-            with tempfile.NamedTemporaryFile() as tf:
-                result = runner.invoke(cli, ['-o', tf.name,
-                                             'secret', 'get', '--title', two.title, '--json'],
-                                       catch_exceptions=False)
-                self.assertEqual(0, result.exit_code, "the exit code was not 0")
-                tf.seek(0)
-                secret = json.load(tf)
+            tf_name = self._make_temp_file()
+            result = runner.invoke(cli, ['-o', tf_name,
+                                         'secret', 'get', '--title', two.title, '--json'],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+            with open(tf_name, "r") as fh:
+                secret = json.load(fh)
                 self.assertEqual(two.uid, secret["uid"], "didn't get the correct uid for secret")
-                tf.close()
+                fh.close()
 
             result = runner.invoke(cli, ['secret', 'get',
                                          '--title', two.title, '--field', 'My Custom'], catch_exceptions=False)
@@ -293,16 +313,18 @@ class SecretTest(unittest.TestCase):
 
                 Profile.init(token='MY_TOKEN')
 
-                with tempfile.NamedTemporaryFile() as tf:
-                    runner = CliRunner()
-                    result = runner.invoke(cli, [
-                        'secret', 'download', '-u', one.uid, '--name', 'my.mp4',
-                        '--file-output', tf.name
-                    ], catch_exceptions=False)
-                    tf.seek(0)
-                    the_content = tf.read()
+                tf_name = self._make_temp_file()
+                runner = CliRunner()
+                result = runner.invoke(cli, [
+                    'secret', 'download', '-u', one.uid, '--name', 'my.mp4',
+                    '--file-output', tf_name
+                ], catch_exceptions=False)
+
+                with open(tf_name, "rb") as fh:
+                    the_content = fh.read()
                     self.assertEqual(0, result.exit_code, "the exit code was not 0")
                     self.assertEqual(mock_content, the_content.decode(), 'the downloaded file does not match')
+                    fh.close()
             self.assertEqual(1, mock_get.call_count, "the mock get call count is not 1")
 
         with patch('requests.get', side_effect=mock_download_get) as mock_get:
@@ -312,16 +334,18 @@ class SecretTest(unittest.TestCase):
 
                 Profile.init(token='MY_TOKEN')
 
-                with tempfile.NamedTemporaryFile() as tf:
-                    runner = CliRunner()
-                    result = runner.invoke(cli, [
-                        'secret', 'download', '-u', one.uid, '--file-uid', mocked_file.uid,
-                        '--file-output', tf.name
-                    ], catch_exceptions=False)
-                    tf.seek(0)
-                    the_content = tf.read()
+                tf_name = self._make_temp_file()
+                runner = CliRunner()
+                result = runner.invoke(cli, [
+                    'secret', 'download', '-u', one.uid, '--file-uid', mocked_file.uid,
+                    '--file-output', tf_name
+                ], catch_exceptions=False)
+
+                with open(tf_name, "rb") as fh:
+                    the_content = fh.read()
                     self.assertEqual(0, result.exit_code, "the exit code was not 0")
                     self.assertEqual(mock_content, the_content.decode(), 'the downloaded file does not match')
+                    fh.close()
             self.assertEqual(1, mock_get.call_count, "the mock get call count is not 1")
 
     def test_notation(self):
@@ -440,32 +464,35 @@ class SecretTest(unittest.TestCase):
                 Profile.init(token='MY_TOKEN')
 
                 # Write png to file. This will be binary data.
-                with tempfile.NamedTemporaryFile() as tf:
-                    notation = "keeper://{}/{}/{}".format(file_record.uid, "file", "Tiny Png")
-                    runner = CliRunner()
-                    result = runner.invoke(cli, [
-                        "-o", tf.name,
-                        'secret', 'notation', notation
-                    ], catch_exceptions=False)
-                    self.assertEqual(0, result.exit_code, "the exit code was not 0")
-                    tf.seek(0)
-                    self.assertEqual("png", imghdr.what(tf), "did not get a PNG")
-                    tf.close()
+                tf_name = self._make_temp_file()
+                notation = "keeper://{}/{}/{}".format(file_record.uid, "file", "Tiny Png")
+                runner = CliRunner()
+                result = runner.invoke(cli, [
+                    "-o", tf_name,
+                    'secret', 'notation', notation
+                ], catch_exceptions=False)
+                self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+                with open(tf_name, "rb") as fh:
+                    self.assertEqual("png", imghdr.what(fh), "did not get a PNG")
+                    fh.close()
 
                 # Write plain text to file. This should not be binary data.
-                with tempfile.NamedTemporaryFile() as tf:
-                    notation = "keeper://{}/{}/{}".format(file_record.uid, "file", "my_text.txt")
-                    runner = CliRunner()
-                    result = runner.invoke(cli, [
-                        "-o", tf.name,
-                        'secret', 'notation', notation
-                    ], catch_exceptions=False)
-                    self.assertEqual(0, result.exit_code, "the exit code was not 0")
-                    tf.seek(0)
-                    data = tf.read()
+                tf_name = self._make_temp_file()
+                notation = "keeper://{}/{}/{}".format(file_record.uid, "file", "my_text.txt")
+                runner = CliRunner()
+                result = runner.invoke(cli, [
+                    "-o", tf_name,
+                    'secret', 'notation', notation
+                ], catch_exceptions=False)
+                self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+                with open(tf_name, "rb") as fh:
+                    data = fh.read()
                     # TODO: I hate this. Plain text comes back a binary from mock since it's not going
                     #  threw a response handler.
                     self.assertEqual(b'My Text', data, "did not get my text file")
+                    fh.close()
 
                 # TODO: Need to capture to stdout. Can do it, however there is a charset encoding problem.
                 #  The saved file looks like "<89>PNG^M" in the first line if saved. We need to emulated it. Stuff
@@ -658,17 +685,18 @@ class SecretTest(unittest.TestCase):
             Profile.init(token='MY_TOKEN')
 
             # JSON Output
-            with tempfile.NamedTemporaryFile() as tf:
-                runner = CliRunner()
-                result = runner.invoke(cli, [
-                    '-o', tf.name,
-                    'secret', 'get', '-u', one.uid, '--json'], catch_exceptions=False)
-                self.assertEqual(0, result.exit_code, "the exit code was not 0")
-                tf.seek(0)
-                secret = json.load(tf)
+            tf_name = self._make_temp_file()
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                '-o', tf_name,
+                'secret', 'get', '-u', one.uid, '--json'], catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+            with open(tf_name, "r") as fh:
+                secret = json.load(fh)
                 self.assertEqual(dict, type(secret), "record is not a dictionary")
                 self.assertEqual(0, len(secret["custom_fields"]), "custom fields were not empty")
-                tf.close()
+                fh.close()
 
     def test_get_with_replacement(self):
 
@@ -710,20 +738,21 @@ class SecretTest(unittest.TestCase):
             Profile.init(token='MY_TOKEN')
 
             # JSON Output to file
-            with tempfile.NamedTemporaryFile() as tf:
-                runner = CliRunner()
-                result = runner.invoke(cli, ['-o', tf.name, 'secret', 'get', '-u', login_record.uid, '--json'],
-                                       catch_exceptions=False)
-                self.assertEqual(0, result.exit_code, "the exit code was not 0")
-                tf.seek(0)
-                secret = json.load(tf)
+            tf_name = self._make_temp_file()
+            runner = CliRunner()
+            result = runner.invoke(cli, ['-o', tf_name, 'secret', 'get', '-u', login_record.uid, '--json'],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+            with open(tf_name, "r") as fh:
+                secret = json.load(fh)
                 self.assertEqual(login_record.uid, secret["uid"], "didn't get the correct uid for secret")
 
                 address = secret["custom_fields"][0]
                 self.assertEqual(dict, type(address), "address value is not a dict")
                 self.assertEqual("My Address", address["label"], "did not get the addressRef")
 
-                tf.close()
+                fh.close()
 
     def test_totp(self):
 
@@ -753,17 +782,18 @@ class SecretTest(unittest.TestCase):
             Profile.init(token='MY_TOKEN')
 
             # JSON Output to file
-            with tempfile.NamedTemporaryFile() as tf:
-                runner = CliRunner()
-                result = runner.invoke(cli, ['-o', tf.name, 'secret', 'totp', totp_record.uid],
-                                       catch_exceptions=False)
-                self.assertEqual(0, result.exit_code, "the exit code was not 0")
-                tf.seek(0)
-                code = tf.readline()
+            tf_name = self._make_temp_file()
+            runner = CliRunner()
+            result = runner.invoke(cli, ['-o', tf_name, 'secret', 'totp', totp_record.uid],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+            with open(tf_name, "rb") as fh:
+                code = fh.readline()
                 code = code.decode()
                 self.assertEqual(6, len(code), "code is not 6 character long")
                 self.assertRegex(code, r'^\d{6}$', 'code is not all digits')
-                tf.close()
+                fh.close()
 
     def test_generate_password(self):
 
@@ -771,57 +801,59 @@ class SecretTest(unittest.TestCase):
         """
 
         #  Default values
-        with tempfile.NamedTemporaryFile() as tf:
-            runner = CliRunner()
-            result = runner.invoke(cli, ['-o', tf.name, 'secret', 'password'],
-                                   catch_exceptions=False)
-            self.assertEqual(0, result.exit_code, "the exit code was not 0")
-            tf.seek(0)
-            password = tf.readline().decode()
+        tf_name = self._make_temp_file()
+        runner = CliRunner()
+        result = runner.invoke(cli, ['-o', tf_name, 'secret', 'password'],
+                               catch_exceptions=False)
+        self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+        with open(tf_name, "rb") as fh:
+            password = fh.readline().decode()
             self.assertEqual(len(password), 64, "Default password is not 64 characters.")
 
-            tf.close()
+            fh.close()
 
         #  Set the length to 32
-        with tempfile.NamedTemporaryFile() as tf:
-            runner = CliRunner()
-            result = runner.invoke(cli, ['-o', tf.name, 'secret', 'password', '--length', '32'],
-                                   catch_exceptions=False)
-            self.assertEqual(0, result.exit_code, "the exit code was not 0")
-            tf.seek(0)
-            password = tf.readline().decode()
+        tf_name = self._make_temp_file()
+        runner = CliRunner()
+        result = runner.invoke(cli, ['-o', tf_name, 'secret', 'password', '--length', '32'],
+                               catch_exceptions=False)
+        self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+        with open(tf_name, "rb") as fh:
+            password = fh.readline().decode()
             self.assertEqual(len(password), 32, "Default password is not 64 characters.")
 
-            tf.close()
+            fh.close()
 
         #  Set character groups
-        with tempfile.NamedTemporaryFile() as tf:
-            runner = CliRunner()
-            result = runner.invoke(cli, ['-o', tf.name, 'secret', 'password',
-                                         '-lc', '4',
-                                         '-uc', '5',
-                                         '-d', '6',
-                                         '-sc', '7'],
-                                   catch_exceptions=False)
-            self.assertEqual(0, result.exit_code, "the exit code was not 0")
-            tf.seek(0)
-            password = tf.readline().decode()
+        tf_name = self._make_temp_file()
+        runner = CliRunner()
+        result = runner.invoke(cli, ['-o', tf_name, 'secret', 'password',
+                                     '-lc', '4',
+                                     '-uc', '5',
+                                     '-d', '6',
+                                     '-sc', '7'],
+                               catch_exceptions=False)
+        self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+        with open(tf_name, "rb") as fh:
+            password = fh.readline().decode()
             self.assertEqual(len(password), 22, "Default password is not 64 characters.")
 
-            tf.close()
+            fh.close()
 
         #  Bad
-        with tempfile.NamedTemporaryFile() as tf:
-            runner = CliRunner()
-            result = runner.invoke(cli, ['-o', tf.name, 'secret', 'password',
-                                         '-l', '100',
-                                         '-lc', '4',
-                                         '-uc', '5',
-                                         '-d', '6',
-                                         '-sc', '7'],
-                                   catch_exceptions=False)
-            self.assertEqual(1, result.exit_code, "the exit code was not 1")
-            tf.close()
+        tf_name = self._make_temp_file()
+        runner = CliRunner()
+        result = runner.invoke(cli, ['-o', tf_name, 'secret', 'password',
+                                     '-l', '100',
+                                     '-lc', '4',
+                                     '-uc', '5',
+                                     '-d', '6',
+                                     '-sc', '7'],
+                               catch_exceptions=False)
+        self.assertEqual(1, result.exit_code, "the exit code was not 1")
 
     def test_template_record_types(self):
 
@@ -836,11 +868,12 @@ class SecretTest(unittest.TestCase):
         self.assertRegex(output, r'login', 'found the login record type')
 
         # Get a record type as JSON and write it to a file
-        with tempfile.NamedTemporaryFile() as tf:
-            runner = CliRunner()
-            runner.invoke(cli, ['secret', 'template', 'record', '-f', tf.name, 'login'], catch_exceptions=False)
-            tf.seek(0)
-            schema = json.loads(tf.read().decode())
+        tf_name = self._make_temp_file()
+        runner = CliRunner()
+        runner.invoke(cli, ['secret', 'template', 'record', '-f', tf_name, 'login'], catch_exceptions=False)
+
+        with open(tf_name, "rb") as fh:
+            schema = json.loads(fh.read().decode())
             self.assertEqual("v3", schema.get("version"), "did not get the correct version")
             self.assertEqual("KeeperRecord", schema.get("kind"), "did not get the correct kind")
             self.assertIsInstance(schema.get("data"), list, "data is not a list")
@@ -857,7 +890,7 @@ class SecretTest(unittest.TestCase):
             self.assertEqual("login", field.get("type"), "field type is not login")
             self.assertIsNotNone(field.get("value"), "value was None")
 
-            tf.close()
+            fh.close()
 
     def test_template_field_types(self):
 
