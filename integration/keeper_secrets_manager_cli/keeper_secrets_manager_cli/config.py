@@ -1,5 +1,6 @@
 from keeper_secrets_manager_cli.common import find_ksm_path
 from keeper_secrets_manager_cli.exception import KsmCliException
+from sys import platform
 import configparser
 import os
 import base64
@@ -23,10 +24,18 @@ class Config:
         self.base64_config = base64_config
         self.config = ConfigCommon()
         self.has_config_file = True
+
+        # Was KSM launched from an application (like Windows or MacOS)
+        self.launched_from_app = False
+
         if ini_file is None:
             self.has_config_file = False
 
         self._profiles = {}
+
+    def clear(self):
+        self._profiles = {}
+        self.config = ConfigCommon()
 
     @staticmethod
     def create_from_json(json_config):
@@ -42,8 +51,17 @@ class Config:
         return config
 
     @staticmethod
-    def get_default_ini_file():
-        default_ini_dir = os.environ.get("KSM_INI_DIR", os.getcwd())
+    def get_default_ini_file(launched_from_app=False):
+        working_directory = os.getcwd()
+
+        # If launched from an application, the current working directory might not be writeable. Use
+        # the user's "HOME" directory.
+        if launched_from_app is True:
+            if platform == "win32":
+                working_directory = os.environ["USERPROFILE"]
+            else:
+                working_directory = os.environ["HOME"]
+        default_ini_dir = os.environ.get("KSM_INI_DIR", working_directory)
         return os.path.join(default_ini_dir, Config.default_ini_file)
 
     @staticmethod

@@ -44,7 +44,7 @@ class KeeperCli:
 
         # The editor to launch ... however this might be a bat or cmd file, not the real application
         self.editor = editor
-        # Some application don't block. To enabling blocking the CLI, set this to True
+        # Some applications don't block. To enabling blocking the CLI, set this to True
         self.editor_use_blocking = editor_use_blocking
         # Blocking might be waiting until a process in the task list goes away. This is that process.
         self.editor_process_name = editor_process_name
