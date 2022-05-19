@@ -33,6 +33,10 @@ class Config:
 
         self._profiles = {}
 
+    def clear(self):
+        self._profiles = {}
+        self.config = ConfigCommon()
+
     @staticmethod
     def create_from_json(json_config):
         config = Config()

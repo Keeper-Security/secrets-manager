@@ -35,8 +35,8 @@ global_config = Config()
 
 
 # NOTE: For the CLI, all groups and command are lowercase. All arguments are lower case, so you cannot use
-# -n and -N for an arg flag. If you add a command, you need to add it to the list of known commands so we can
-# do a best match.
+# -n and -N for an arg flag. If you add a command, you need to add it to the list of known commands, so we can
+# do a "best match."
 
 
 class AliasedGroup(HelpColorsGroup):
@@ -150,7 +150,7 @@ def get_versions():
         "keeper-secrets-manager-cli": "Unknown"
     }
 
-    # Inside of the binaries, it's hard to get versions # so we create a versions.txt file in the build.
+    # In the binaries, it's hard to get versions # so we create a versions.txt file in the build.
     # If the versions.txt file exists, read the versions from that file.
 
     ksm_bin_path = os.path.dirname(__file__)
@@ -983,8 +983,8 @@ def shell_command(app):
     global global_config
     global_config = Config()
 
-    # Flag that the application was launched as a Windows/MacOS application.
-    global_config.launched_from_app = True
+    # Flag that the application was launched as a Windows/macOS application.
+    global_config.launched_from_app = app
 
     # https://manytools.org/hacker-tools/ascii-banner/
     logo = """

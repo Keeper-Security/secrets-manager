@@ -47,6 +47,7 @@ class Profile:
         # Else try to find it
         else:
             if os.environ.get("KSM_CONFIG") is not None:
+                self._config.clear()
                 self._config.set_profile_using_base64(Profile.default_profile, os.environ.get("KSM_CONFIG"))
             elif os.environ.get("KSM_CONFIG_BASE64_1") is not None:
                 self._auto_config_from_env_var(self._config)
@@ -71,6 +72,9 @@ class Profile:
         """Build config from a Base64 config in environmental variables.
 
         """
+
+        # Remove any existing configuration.
+        config.clear()
 
         index = 1
         while True:
