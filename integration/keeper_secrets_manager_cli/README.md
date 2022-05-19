@@ -6,6 +6,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.0.13
+
+* For the Windows and macOS application create the keeper.ini file in the user's "HOME" directory.
+
 ## 1.0.12
 
 * Fix problem with the same temp file being opened when exporting profile. Was causing a `Permission denied` error.
