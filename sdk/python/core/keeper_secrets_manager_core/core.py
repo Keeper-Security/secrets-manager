@@ -34,6 +34,16 @@ from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
     bytes_to_string
 
 
+def find_secrets_by_title(record_title, records):
+    # Find all records with specified title
+    records = records or []
+    return [x for x in records if x.title == record_title]
+
+def find_secret_by_title(record_title, records):
+    # Find first record with specified title
+    records = records or []
+    return next((x for x in records if x.title == record_title), None)
+
 class SecretsManager:
 
     notation_prefix = "keeper"
@@ -635,6 +645,24 @@ class SecretsManager:
             records = records_resp.records or []
 
             return records
+
+    def get_secrets_by_title(self, record_title):
+        """
+        Retrieve all records with specified title
+        """
+
+        recs = self.get_secrets()
+        records = [x for x in recs if x.title == record_title]
+
+        return records
+
+    def get_secret_by_title(self, record_title):
+        """
+        Retrieve first record with specified title
+        """
+
+        records = self.get_secrets_by_title(record_title) or []
+        return next((iter(records)), None)
 
     def create_secret(self, folder_uid, record_data):
 
