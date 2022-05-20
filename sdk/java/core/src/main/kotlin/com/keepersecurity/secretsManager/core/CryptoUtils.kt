@@ -63,7 +63,7 @@ internal fun webSafe64ToBytes(data: String): ByteArray {
 }
 
 internal fun webSafe64FromBytes(data: ByteArray): String {
-    return Base64.getUrlEncoder().encodeToString(data)
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(data)
 }
 
 internal fun bytesToString(data: ByteArray): String {
