@@ -167,11 +167,17 @@ internal class CryptoUtilsTest {
 
     @Test
     fun testWebSafe64FromBytes() {
-        val urlSafeRegex = "^[a-zA-Z0-9._~-]*\$".toRegex()
+        val urlSafeRegex = "^[a-zA-Z0-9_-]*\$".toRegex()
 
         for (i in 1..3){
             val paddedStr = webSafe64FromBytes(getRandomBytes(i))
             assertTrue(urlSafeRegex.containsMatchIn(paddedStr))
         }
+
+        assertEquals("YQ", webSafe64FromBytes("a".toByteArray()))
+        assertEquals("YWE", webSafe64FromBytes("aa".toByteArray()))
+        assertEquals("YWFh", webSafe64FromBytes("aaa".toByteArray()))
+        assertEquals("YWFhYQ", webSafe64FromBytes("aaaa".toByteArray()))
+        assertEquals("8J-Ygw", webSafe64FromBytes("\uD83D\uDE03".toByteArray())) // encoded 😃 and will produce padded string along with the hyphen =>  `8J-Ygw==`
     }
 }
