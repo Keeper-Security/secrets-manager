@@ -164,4 +164,14 @@ internal class CryptoUtilsTest {
         assertTrue { password.length == 32 }
         assertTrue { password.filter { "\"!@#$%()+;<>=?[\\]{}^.,".contains(it) }.length == password.length }
     }
+
+    @Test
+    fun testWebSafe64FromBytes() {
+        val urlSafeRegex = "^[a-zA-Z0-9._~-]*\$".toRegex()
+
+        for (i in 1..3){
+            val paddedStr = webSafe64FromBytes(getRandomBytes(i))
+            assertTrue(urlSafeRegex.containsMatchIn(paddedStr))
+        }
+    }
 }
