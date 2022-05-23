@@ -1075,10 +1075,10 @@ def quit_command():
 @click.option('--preserve-missing', '-p', is_flag=True, help='Preserve destination value when source value is deleted.')
 @click.option('--map', '-m', nargs=2, type=(str, str), multiple=True, required=True, metavar="<KEY NOTATION>...", help='Map destination key names to values using notation URI.')
 @click.pass_context
-def sync_command(ctx, credentials, type, dry_run, dont_delete, map):
+def sync_command(ctx, credentials, type, dry_run, preserve_missing, map):
     """Sync selected keys from Keeper vault to secure cloud based key value store"""
     sync = Sync(cli=ctx.obj["cli"])
-    sync.sync_values(type=type, credentials=credentials, dry_run=dry_run, dont_delete=dont_delete, map=map)
+    sync.sync_values(type=type, credentials=credentials, dry_run=dry_run, preserve_missing=preserve_missing, map=map)
 
 
 # TOP LEVEL COMMANDS

@@ -89,7 +89,7 @@ class Sync:
             print("Azure SDK was not able to connect to Key Vault. Skipping key=" + str(key), e)
             result["error"] = str(e)
         except ResourceNotFoundError:
-            # Deleted or non existing key during get_secret.
+            # Deleted or non existing key.
             # Note: ResourceNotFoundError is HttpResponseError so check NotFound first
             result["not_found"] = True
         except HttpResponseError as e:
@@ -138,11 +138,11 @@ class Sync:
             print("Azure SDK was not able to connect to Key Vault. Skipping key=" + str(key), e)
             result["error"] = str(e)
         except ResourceNotFoundError as e:
-            # Deleted or non existing key during get_secret.
+            # Deleted or non existing key.
             # Note: ResourceNotFoundError is HttpResponseError so check ResourceNotFound first
             result["error"] = str(e)
         except ResourceExistsError as e:
-            # Deleted key with soft-delete enabled during set_secret.
+            # Deleted key with soft-delete enabled.
             # Note: ResourceExistsError is HttpResponseError so check ResourceExists first
             try:
                 client.begin_recover_deleted_secret(key).wait()
@@ -210,7 +210,7 @@ class Sync:
             print("Azure SDK was not able to connect to Key Vault. Skipping key=" + str(key), e)
             result["error"] = str(e)
         except ResourceNotFoundError as e:
-            # Deleted or non existing key during get_secret.
+            # Deleted or non existing key.
             # Note: ResourceNotFoundError is HttpResponseError so check NotFound first
             result["success"] = True # already deleted
             result["error"] = str(e)
@@ -266,7 +266,7 @@ class Sync:
                 print("AWS SDK detected a parameter value that is not valid for the current state of the resource. Skipping key=" + str(key), e)
                 result["error"] = str(e)
             elif error_code == 'ResourceNotFoundException':
-                # Can't find the resource. Deleted or non existing key during get_secret_value.
+                # Can't find the resource. Deleted or non existing key.
                 result["not_found"] = True
             elif error_code == 'UnrecognizedClientException':
                 # The security token included in the request is invalid.
@@ -313,16 +313,23 @@ class Sync:
             if exists:
                 if value != dst_value:
                     response = client.put_secret_value(SecretId=key, SecretString=value)
-                else:
-                    print("New value is the same as old value. Skipping key=" + str(key))
+                # else:
+                #     print("New value is the same as old value. Skipping key=" + str(key))
             else:
                 response = client.create_secret(Name=key, SecretString=value)
             result["success"] = True
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', '')
-            if error_code == 'DecryptionFailureException':
+            if error_code == 'LimitExceededException':
+                # API request quota exceeded, Secrets Manager throttles the request
+                print("AWS SDK request quota exceeded - throttled. Skipping key=" + str(key), e)
+                result["error"] = str(e)
+            elif error_code == 'DecryptionFailureException':
                 # Secrets Manager can't decrypt the protected secret text using the provided KMS key.
                 print("AWS SDK was unable decrypt the value. Skipping key=" + str(key), e)
+                result["error"] = str(e)
+            elif error_code == 'EncryptionFailure':
+                print("AWS SDK was unable encrypt the value. Skipping key=" + str(key), e)
                 result["error"] = str(e)
             elif error_code == 'InternalServiceErrorException':
                 # An error occurred on the server side.
@@ -372,8 +379,17 @@ class Sync:
                     print("AWS SDK detected a parameter value that is not valid for the current state of the resource. Skipping key=" + str(key), e)
                     result["error"] = str(e)
             elif error_code == 'ResourceNotFoundException':
-                # Can't find the resource. Deleted or non existing key during get_secret_value.
+                # Can't find the resource. Deleted or non existing key.
                 result["not_found"] = True
+            elif error_code == 'ResourceExistsException':
+                print("AWS SDK detected that resource exists. Skipping key=" + str(key), e)
+                result["error"] = str(e)
+            elif error_code == 'MalformedPolicyDocumentException':
+                print("AWS SDK detected malformed policy document. Skipping key=" + str(key), e)
+                result["error"] = str(e)
+            elif error_code == 'PreconditionNotMetException':
+                print("AWS SDK precondition not met. Skipping key=" + str(key), e)
+                result["error"] = str(e)
             elif error_code == 'UnrecognizedClientException':
                 # The security token included in the request is invalid.
                 print("AWS SDK detected that the security token included in the request is invalid. Skipping key=" + str(key), e)
@@ -402,11 +418,7 @@ class Sync:
             result["success"] = True
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', '')
-            if error_code == 'DecryptionFailureException':
-                # Secrets Manager can't decrypt the protected secret text using the provided KMS key.
-                print("AWS SDK was unable decrypt the value. Skipping key=" + str(key), e)
-                result["error"] = str(e)
-            elif error_code == 'InternalServiceErrorException':
+            if error_code == 'InternalServiceErrorException':
                 # An error occurred on the server side.
                 print("AWS SDK detected an error on server side. Skipping key=" + str(key), e)
                 result["error"] = str(e)
@@ -419,7 +431,7 @@ class Sync:
                 print("AWS SDK detected a parameter value that is not valid for the current state of the resource. Skipping key=" + str(key), e)
                 result["error"] = str(e)
             elif error_code == 'ResourceNotFoundException':
-                # Can't find the resource. Deleted or non existing key during get_secret_value.
+                # Can't find the resource. Deleted or non existing key.
                 print("AWS SDK can't find the resource. Skipping key=" + str(key), e)
                 result["error"] = str(e)
             elif error_code == 'UnrecognizedClientException':
@@ -436,7 +448,7 @@ class Sync:
             result["error"] = str(e)
         return result
 
-    def sync_values(self, type:str, credentials:str=None, dry_run=False, dont_delete=False, map=None):
+    def sync_values(self, type:str, credentials:str=None, dry_run=False, preserve_missing=False, map=None):
 
         map = map or []
         result = []
@@ -493,13 +505,13 @@ class Sync:
         if type == 'json':
             self.cli.output(json.dumps(result, indent=4))
         elif type == 'azure':
-            self.sync_azure(credentials, dry_run, dont_delete, result)
+            self.sync_azure(credentials, dry_run, preserve_missing, result)
         elif type == 'aws':
-            self.sync_aws(credentials, dry_run, dont_delete, result)
+            self.sync_aws(credentials, dry_run, preserve_missing, result)
         else:
             raise KsmCliException(f"Invalid option `--type {type}`. Allowed values are (json, azure, aws).")
 
-    def sync_azure(self, credentials:str=None, dry_run=False, dont_delete=False, map:dict=None):
+    def sync_azure(self, credentials:str=None, dry_run=False, preserve_missing=False, map:dict=None):
         try:
             from azure.keyvault.secrets import SecretClient
             from azure.identity import ClientSecretCredential
@@ -560,7 +572,7 @@ class Sync:
                 key = m["mapKey"]
                 val = m["srcValue"]
                 if val is None:
-                    if dont_delete:
+                    if preserve_missing:
                         continue
                     else:
                         res = self._delete_secret_az(client, key)
@@ -572,7 +584,7 @@ class Sync:
                         print("Error setting new value for key=" + key + " - " + res.get("error", ""))
 
 
-    def sync_aws(self, credentials:str=None, dry_run=False, dont_delete=False, map:dict=None):
+    def sync_aws(self, credentials:str=None, dry_run=False, preserve_missing=False, map:dict=None):
         try:
             import boto3
         except ImportError as ie:
@@ -628,7 +640,7 @@ class Sync:
                 key = m["mapKey"]
                 val = m["srcValue"]
                 if val is None:
-                    if dont_delete:
+                    if preserve_missing:
                         continue
                     else:
                         res = self._delete_secret_aws(secretsmanager, key)
