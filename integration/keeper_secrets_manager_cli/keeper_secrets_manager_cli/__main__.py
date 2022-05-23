@@ -18,6 +18,7 @@ from . import KeeperCli
 from .exception import KsmCliException
 from .exec import Exec
 from .secret import Secret
+from .sync import Sync
 from .profile import Profile
 from .init import Init
 from .config import Config
@@ -50,6 +51,7 @@ class AliasedGroup(HelpColorsGroup):
         "export",
         "import",
         "init",
+        "sync",
         "secret",
         "totp",
         "download",
@@ -82,6 +84,7 @@ class AliasedGroup(HelpColorsGroup):
         "n": "notation",
         "u": "update",
         "v": "version",
+        "y": "sync",
         "exit": "quit",
         "pass": "password",
         "q": "quit",
@@ -215,6 +218,45 @@ def base_command_help(f):
     f.__doc__ = doc
 
     return f
+
+
+class Mutex(click.Option):
+    def __init__(self, *args, **kwargs):
+        # Detect mutually exclusive or required options - search by key only or key and value
+        self.required_if:t.List[t.Tuple[str,str]] = kwargs.pop("required_if", [])
+        self.not_required_if:t.List[t.Tuple[str,str]] = kwargs.pop("not_required_if", [])
+
+        # at least one search parameter is required
+        assert self.required_if or self.not_required_if, "'required_if' and/or 'not_required_if' parameter required"
+
+        # if both params present they shouldn't overlap
+        if self.required_if and self.not_required_if:
+            overlap = [x for x in self.required_if if x in self.not_required_if]
+            assert not overlap, "'required_if' and 'not_required_if' parameters should not overlap in " + ", ".join("(%s)" % ",".join(x) for x in overlap)
+
+        exclusive_msg = ("Option is mutually exclusive with " + ", ".join("(%s)" % ",".join(tup) for tup in self.not_required_if) + ".") if self.not_required_if else ""
+        required_msg  = ("Option is required with " + ", ".join("(%s)" % ",".join(tup) for tup in self.required_if) + ".") if self.required_if else ""
+        kwargs["help"] = (kwargs.get("help", "") + " " + required_msg + " " + exclusive_msg).strip()
+
+        super(Mutex, self).__init__(*args, **kwargs)
+
+    def handle_parse_result(self, ctx, opts, args):
+        # ('option','value') - option present with the specified value assigned
+        # ('option',) - option present with or without any value
+        current_opt:bool = self.name in opts
+        for mutex_opt in self.not_required_if:
+            if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
+                if current_opt:
+                    raise click.UsageError("Illegal usage: '" + str(self.name) + "' is mutually exclusive with " + str(mutex_opt) + ".")
+                else:
+                    self.prompt = None
+        for mutex_opt in self.required_if:
+            if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
+                if not current_opt:
+                    raise click.UsageError("Illegal usage: '" + str(self.name) + "' is required with " + str(mutex_opt) + ".")
+                else:
+                    self.prompt = None
+        return super(Mutex, self).handle_parse_result(ctx, opts, args)
 
 
 # MAIN GROUP
@@ -1016,8 +1058,32 @@ def quit_command():
     repl_exit()
 
 
+# SYNC COMMAND
+
+@click.command(
+    name='sync',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--credentials', '-c', type=str, metavar="UID", help="Keeper record with credentials to access destination key/value store.",
+    cls=Mutex,
+    # not_required_if=[('type','json')],
+    required_if=[('type','azure'), ('type','aws')]
+)
+@click.option('--type', '-t', type=click.Choice(['aws', 'azure', 'json']), default='json', help="Type of the target key/value storage (aws, azure, json).", show_default=True)
+@click.option('--dry-run', '-n', is_flag=True, help='Perform a trial run with no changes made.')
+@click.option('--preserve-missing', '-p', is_flag=True, help='Preserve destination value when source value is deleted.')
+@click.option('--map', '-m', nargs=2, type=(str, str), multiple=True, required=True, metavar="<KEY NOTATION>...", help='Map destination key names to values using notation URI.')
+@click.pass_context
+def sync_command(ctx, credentials, type, dry_run, dont_delete, map):
+    """Sync selected keys from Keeper vault to secure cloud based key value store"""
+    sync = Sync(cli=ctx.obj["cli"])
+    sync.sync_values(type=type, credentials=credentials, dry_run=dry_run, dont_delete=dont_delete, map=map)
+
+
 # TOP LEVEL COMMANDS
 cli.add_command(profile_command)
+cli.add_command(sync_command)
 cli.add_command(secret_command)
 cli.add_command(exec_command)
 cli.add_command(config_command)
