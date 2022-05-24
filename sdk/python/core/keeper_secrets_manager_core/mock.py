@@ -318,15 +318,8 @@ class Record:
         self.is_editable = False
         self.files = {}
 
-        # Some default data
-        self._fields = {
-            Record.no_label: {
-                "login": "Login {}".format(uid),
-                "password": "******** {}".format(uid),
-                "url": "http://localhost/{}".format(uid)
-            }
-        }
-        self._custom_fields = {}
+        self._fields = []
+        self._custom_fields = []
 
     @staticmethod
     def convert_keeper_record(keeper_record):
@@ -351,25 +344,33 @@ class Record:
         # TODO - Add files
         return new_record
 
-    def field(self, field_type, value, label=None):
-
-        # Field can sometime shave a label
-        if label is None:
-            label = Record.no_label
-
-        if type(value) is not list:
+    @staticmethod
+    def _field(field_type, value, label=None, required=None, privacy_screen=None):
+        if isinstance(value, list) is False:
             value = [value]
 
-        if label not in self._fields:
-            self._fields[label] = {}
-        self._fields[label][field_type] = value
+        field = {
+            "type": field_type,
+            "value": value,
+        }
+        if label is not None:
+            field["label"] = label
+        if required is not None:
+            field["required"] = required
+        if privacy_screen is not None:
+            field["privacyScreen"] = privacy_screen
 
-    def custom_field(self, label, value, field_type="text"):
-        if type(value) is not list:
-            value = [value]
-        if label not in self._custom_fields:
-            self._custom_fields[label] = {}
-        self._custom_fields[label][field_type] = value
+        return field
+
+    def field(self, field_type, value, label=None, required=None, privacy_screen=None):
+        self._fields.append(
+            self._field(field_type, value, label, required, privacy_screen)
+        )
+
+    def custom_field(self, label, value, field_type="text", required=None, privacy_screen=None):
+        self._custom_fields.append(
+            self._field(field_type, value, label, required, privacy_screen)
+        )
 
     def add_file(self, name, title=None, content_type=None, url=None, content=None, last_modified=None):
 
@@ -386,37 +387,19 @@ class Record:
 
     def dump(self, secret, flags=None):
 
+        fields = list(self._fields)
+
         # If no files, the JSON has null
         files = None
         if len(self.files) > 0:
             files = [self.files[uid].dump(secret=secret, flags=flags) for uid in self.files]
-
-        fields = [{"type": "fileRef", "value": [uid for uid in self.files]}]
-        for label in self._fields:
-            for field_type in self._fields[label]:
-                data = {
-                    "type": field_type,
-                    "value": self._fields[label][field_type],
-                }
-                if label != Record.no_label:
-                    data["label"] = label
-
-                fields.append(data)
-
-        custom = []
-        for label in self._custom_fields:
-            for field_type in self._custom_fields[label]:
-                custom.append({
-                    "type": field_type,
-                    "label": label,
-                    "value": self._custom_fields[label][field_type]
-                })
+            fields.append({"type": "fileRef", "value": [uid for uid in self.files]})
 
         record_data = {
             "title": self.title,
             "type": self.record_type,
             "fields": fields,
-            "custom": custom
+            "custom": self._custom_fields
         }
 
         if flags is not None:
@@ -445,7 +428,7 @@ class Record:
 class MockConfig:
 
     @staticmethod
-    def make_config(skip_list=None, token=None, app_key=None, owner_key = None):
+    def make_config(skip_list=None, token=None, app_key=None, owner_key=None):
 
         if skip_list is None:
             skip_list = []
