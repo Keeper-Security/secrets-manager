@@ -113,6 +113,9 @@ namespace SecretsManager
             var ka = AgreementUtilities.GetBasicAgreement("ECDHC");
             ka.Init(privateKey);
             var commonSecret = ka.CalculateAgreement(recipientPublicKey).ToByteArrayUnsigned();
+            // CalculateAgreement may return less than 32 bytes - pad with leading 0
+            if (commonSecret.Length < 32)
+                commonSecret = Enumerable.Repeat<Byte>(0, 32 - commonSecret.Length).Concat(commonSecret).ToArray();
             return SHA256.Create().ComputeHash(commonSecret);
         }
 
