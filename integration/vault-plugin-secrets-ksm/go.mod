@@ -6,7 +6,7 @@ require (
 	github.com/hashicorp/go-hclog v1.2.0
 	github.com/hashicorp/vault/api v1.5.0
 	github.com/hashicorp/vault/sdk v0.4.1
-	github.com/keeper-security/secrets-manager-go/core v1.3.1
+	github.com/keeper-security/secrets-manager-go/core v1.3.2
 )
 
 require (
