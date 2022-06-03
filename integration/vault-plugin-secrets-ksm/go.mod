@@ -6,7 +6,7 @@ require (
 	github.com/hashicorp/go-hclog v1.2.0
 	github.com/hashicorp/vault/api v1.5.0
 	github.com/hashicorp/vault/sdk v0.4.1
-	github.com/keeper-security/secrets-manager-go/core v0.8.1
+	github.com/keeper-security/secrets-manager-go/core v1.3.1
 )
 
 require (
@@ -57,5 +57,4 @@ require (
 	google.golang.org/grpc v1.45.0 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
-	gotest.tools v2.2.0+incompatible
 )
