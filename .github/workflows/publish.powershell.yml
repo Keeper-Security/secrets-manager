@@ -27,7 +27,7 @@ jobs:
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
-        uses: Keeper-Security/ksm-action@master
+        uses: Keeper-Security/ksm-action@feature/check-for-empty-config
         with:
           keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
           secrets: |
