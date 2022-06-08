@@ -11,9 +11,9 @@
 #
 
 import base64
-import enum
 import json
 import logging
+import sys
 from colorama import Fore, Style
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_core.keeper_globals import logger_name
@@ -85,28 +85,35 @@ class Sync:
         try:
             result["value"] = client.get_secret(key)
         except ClientAuthenticationError as e:
-            # Can occur if either tenant_id, client_id or client_secret is incorrect
-            print("Azure SDK was not able to connect to Key Vault. Skipping key=" + str(key), e)
-            result["error"] = str(e)
-        except ResourceNotFoundError:
+            # # Can occur if either tenant_id, client_id or client_secret is incorrect
+            # print("Azure SDK was not able to connect to Key Vault. {e.message} Skipping key={key}", file=sys.stderr)
+            # self.logger.error("Azure SDK was not able to connect to Key Vault. " + str(e))
+            # result["error"] = str(e)
+            raise KsmCliException(f"Azure SDK was not able to connect to Key Vault. Check your credentials. Message: {e.message}")
+        except ResourceNotFoundError as e:
             # Deleted or non existing key.
             # Note: ResourceNotFoundError is HttpResponseError so check NotFound first
+            self.logger.debug(f"Azure SDK: resource not found. key={key} Message: {e.message}")
             result["not_found"] = True
         except HttpResponseError as e:
             # One reason is when Key Vault Name is incorrect
-            print("Azure SDK HttpResponseError - Possible wrong Vault name given", e)
+            print("Azure SDK HttpResponseError - Possible wrong Vault name given. {e.message} Skipping key={key}", file=sys.stderr)
+            self.logger.error("Azure SDK HttpResponseError - Possible wrong Vault name given. " + str(e))
             result["error"] = str(e)
         except ServiceRequestError as e:
             # Network error
-            print("Azure SDK Network error", e)
+            print("Azure SDK Network error. {e.message} Skipping key={key}", file=sys.stderr)
+            self.logger.error("Azure SDK Network error. " + str(e))
             result["error"] = str(e)
         except AzureError as e:
             # Will catch everything that is from Azure SDK, but not the two previous
-            print("Azure SDK error", e)
+            print(f"Azure SDK error. {e.message} Skipping key={key}", file=sys.stderr)
+            self.logger.error("Azure SDK error. " + str(e))
             result["error"] = str(e)
         except Exception as e:
             # Anything else that is not Azure related (network, stdlib, etc.)
-            print("Unknown error", e)
+            print(f"Unknown error. Skipping key={key}", file=sys.stderr)
+            self.logger.error("Unknown error. " + str(e))
             result["error"] = str(e)
         return result
 
@@ -132,14 +139,21 @@ class Sync:
             if secret.value == value:
                 result["success"] = True
             else:
-                result["error"] = f"set secret succeeded but values don't match - '{key}': {secret.value} != {value}"
+                msg = f"set secret succeeded but values don't match - '{key}': {secret.value} != {value}"
+                print(msg, file=sys.stderr)
+                self.logger.error(msg)
+                result["error"] = msg
         except ClientAuthenticationError as e:
-            # Can occur if either tenant_id, client_id or client_secret is incorrect
-            print("Azure SDK was not able to connect to Key Vault. Skipping key=" + str(key), e)
-            result["error"] = str(e)
+            # # Can occur if either tenant_id, client_id or client_secret is incorrect
+            # print("Azure SDK was not able to connect to Key Vault. {e.message} Skipping key={key}", file=sys.stderr)
+            # self.logger.error("Azure SDK was not able to connect to Key Vault. " + str(e))
+            # result["error"] = str(e)
+            raise KsmCliException(f"Azure SDK was not able to connect to Key Vault. Check your credentials. Message: {e.message}")
         except ResourceNotFoundError as e:
-            # Deleted or non existing key.
+            # Deleted keys with soft-delete enabled produce ResourceExistsError
             # Note: ResourceNotFoundError is HttpResponseError so check ResourceNotFound first
+            print("Azure SDK: Resource not found. {e.message} Skipping key={key}", file=sys.stderr)
+            self.logger.error("Azure SDK: Resource not found. " + str(e))
             result["error"] = str(e)
         except ResourceExistsError as e:
             # Deleted key with soft-delete enabled.
@@ -148,13 +162,17 @@ class Sync:
                 client.begin_recover_deleted_secret(key).wait()
                 result["restored"] = True
             except Exception as re:
-                result["error"] = f" secret --name '{key}' was deleted and failed to restore. " + str(re)
+                # try to recover: restore failed try to purge instead
+                # result["error"] = f" secret --name '{key}' was deleted and failed to restore. " + str(re)
+                self.logger.debug(f" secret --name '{key}' was deleted and failed to restore. " + str(re))
                 try:
                     # client.begin_delete_secret(secretName).wait()
                     client.purge_deleted_secret(key)
                     result["purged"] = True
                 except Exception as pe:
-                    result["error"] += f" secret --name '{key}' was deleted and failed to purge. " + str(pe)
+                    msg = f" secret --name '{key}' was deleted and failed to purge. " + str(pe)
+                    self.logger.error(msg)
+                    result["error"] += msg
             # retry on successful restore/purge
             if result.get("restored", False) or result.get("purged", False):
                 try:
@@ -162,28 +180,37 @@ class Sync:
                     if secret.value == value:
                         result["success"] = True
                     else:
-                        result["error"] = f"set secret succeeded but values don't match - '{key}': {secret.value} != {value}"
+                        msg = f"set secret succeeded but values don't match - '{key}': {secret.value} != {value}"
+                        self.logger.error(msg)
+                        result["error"] = msg
                 except Exception as e:
-                    result["error"] += f" Retry attempt failed to set new value for secret --name '{key}'. " \
-                        f" You may have to manually inspect and delete the secret if it exists in the vault. " \
+                    msg = f" Retry attempt failed to set new value for secret --name '{key}'. " \
+                        " You may have to manually inspect and delete the secret if it exists in the vault. " \
                         " Error: " + str(e)
+                    self.logger.error(msg)
+                    result["error"] += msg
             else:
+                self.logger.error(f"Failed to restore/purge deleted secret '{key}' and cannot set to a new value.")
                 result["error"] += f" Failed to restore/purge deleted secret '{key}' and cannot set to a new value."
         except HttpResponseError as e:
             # One reason is when Key Vault Name is incorrect
-            print("Azure SDK HttpResponseError - Possible wrong Vault name given", e)
+            print("Azure SDK HttpResponseError - Possible wrong Vault name given. {e.message} Skipping key={key}", file=sys.stderr)
+            self.logger.error("Azure SDK HttpResponseError - Possible wrong Vault name given. " + str(e))
             result["error"] = str(e)
         except ServiceRequestError as e:
             # Network error
-            print("Azure SDK Network error", e)
+            print("Azure SDK Network error. {e.message} Skipping key={key}", file=sys.stderr)
+            self.logger.error("Azure SDK Network error. " + str(e))
             result["error"] = str(e)
         except AzureError as e:
             # Will catch everything that is from Azure SDK, but not the two previous
-            print("Azure SDK error", e)
+            print(f"Azure SDK error. {e.message} Skipping key={key}", file=sys.stderr)
+            self.logger.error("Azure SDK error. " + str(e))
             result["error"] = str(e)
         except Exception as e:
             # Anything else that is not Azure related (network, stdlib, etc.)
-            print("Unknown error", e)
+            print(f"Unknown error. Skipping key={key}", file=sys.stderr)
+            self.logger.error("Unknown error. " + str(e))
             result["error"] = str(e)
         return result
 
@@ -206,29 +233,36 @@ class Sync:
             # client.purge_deleted_secret(secretName)
             result["success"] = True
         except ClientAuthenticationError as e:
-            # Can occur if either tenant_id, client_id or client_secret is incorrect
-            print("Azure SDK was not able to connect to Key Vault. Skipping key=" + str(key), e)
-            result["error"] = str(e)
+            # # Can occur if either tenant_id, client_id or client_secret is incorrect
+            # print("Azure SDK was not able to connect to Key Vault. {e.message} Skipping key={key}", file=sys.stderr)
+            # self.logger.error("Azure SDK was not able to connect to Key Vault. " + str(e))
+            # result["error"] = str(e)
+            raise KsmCliException(f"Azure SDK was not able to connect to Key Vault. Check your credentials. Message: {e.message}")
         except ResourceNotFoundError as e:
             # Deleted or non existing key.
             # Note: ResourceNotFoundError is HttpResponseError so check NotFound first
+            self.logger.debug(f"Azure SDK ResourceNotFoundError while trying to delete secret. key={key} already deleted. Message: {e.message}")
             result["success"] = True # already deleted
             result["error"] = str(e)
         except HttpResponseError as e:
             # One reason is when Key Vault Name is incorrect
-            print("Azure SDK HttpResponseError - Possible wrong Vault name given", e)
+            print("Azure SDK HttpResponseError - Possible wrong Vault name given. {e.message} Skipping key={key}", file=sys.stderr)
+            self.logger.error("Azure SDK HttpResponseError - Possible wrong Vault name given. " + str(e))
             result["error"] = str(e)
         except ServiceRequestError as e:
             # Network error
-            print("Azure SDK Network error", e)
+            print("Azure SDK Network error. {e.message} Skipping key={key}", file=sys.stderr)
+            self.logger.error("Azure SDK Network error. " + str(e))
             result["error"] = str(e)
         except AzureError as e:
             # Will catch everything that is from Azure SDK, but not the two previous
-            print("Azure SDK error", e)
+            print(f"Azure SDK error. {e.message} Skipping key={key}", file=sys.stderr)
+            self.logger.error("Azure SDK error. " + str(e))
             result["error"] = str(e)
         except Exception as e:
             # Anything else that is not Azure related (network, stdlib, etc.)
-            print("Unknown error", e)
+            print(f"Unknown error. Skipping key={key}", file=sys.stderr)
+            self.logger.error("Unknown error. " + str(e))
             result["error"] = str(e)
         return result
 
@@ -249,38 +283,52 @@ class Sync:
                 result["value"] = base64.b64decode(get_secret_value_response['SecretBinary'])
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', '')
-            if error_code == 'DecryptionFailureException':
+            error_msg  = e.response.get('Error', {}).get('Message', '')
+            if error_code == 'InvalidSignatureException':
+                # # Can occur if credentials are incorrect or expired
+                # print("AWS SDK was not able to connect to Secrets Manager. {error_msg} Skipping key={key}", file=sys.stderr)
+                # self.logger.error("AWS SDK was not able to connect to Secrets Manager. " + str(e))
+                # result["error"] = str(e)
+                raise KsmCliException(f"AWS SDK was not able to connect to Secrets Manager. Check your credentials. Message: {error_msg}")
+            elif error_code == 'DecryptionFailureException':
                 # Secrets Manager can't decrypt the protected secret text using the provided KMS key.
-                print("AWS SDK was unable decrypt the value. Skipping key=" + str(key), e)
+                print("AWS SDK: decryption failure. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: decryption failure. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'InternalServiceErrorException':
                 # An error occurred on the server side.
-                print("AWS SDK detected an error on server side. Skipping key=" + str(key), e)
+                print(f"AWS SDK: an error occurred on the server side. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: an error occurred on the server side. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'InvalidParameterException':
                 # You provided an invalid value for a parameter.
-                print("AWS SDK detected an invalid value for a parameter. Skipping key=" + str(key), e)
+                print(f"AWS SDK: provided an invalid value for a parameter. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: provided an invalid value for a parameter. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'InvalidRequestException':
                 # You provided a parameter value that is not valid for the current state of the resource.
-                print("AWS SDK detected a parameter value that is not valid for the current state of the resource. Skipping key=" + str(key), e)
+                print(f"AWS SDK: provided parameter value that is not valid for the current state of the resource. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: provided parameter value that is not valid for the current state of the resource. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'ResourceNotFoundException':
                 # Can't find the resource. Deleted or non existing key.
+                self.logger.debug(f"AWS SDK: resource not found. key={key}")
                 result["not_found"] = True
             elif error_code == 'UnrecognizedClientException':
                 # The security token included in the request is invalid.
-                print("AWS SDK detected that the security token included in the request is invalid. Skipping key=" + str(key), e)
+                print(f"AWS SDK: security token included in the request is invalid. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: security token included in the request is invalid. " + str(e))
                 result["error"] = str(e)
             else:
                 # Unknown client error
-                print("AWS SDK detected unknown client error. Skipping key=" + str(key), e)
+                print(f"AWS SDK: unknown client error. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: unknown client error. " + str(e))
                 result["error"] = str(e)
         except Exception as e:
             # Anything else that is not AWS related (network, stdlib, etc.)
-            print("Unknown error", e)
+            print(f"Unknown error. Skipping key={key}", file=sys.stderr)
+            self.logger.error("Unknown error. " + str(e))
             result["error"] = str(e)
-
         return result
 
     def _set_secret_aws(self, client, key:str, value:str):
@@ -313,31 +361,43 @@ class Sync:
             if exists:
                 if value != dst_value:
                     response = client.put_secret_value(SecretId=key, SecretString=value)
-                # else:
-                #     print("New value is the same as old value. Skipping key=" + str(key))
+                else:
+                    self.logger.warning(f"New value is the same as old value. Skipping key={key}")
             else:
                 response = client.create_secret(Name=key, SecretString=value)
             result["success"] = True
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', '')
-            if error_code == 'LimitExceededException':
+            error_msg  = e.response.get('Error', {}).get('Message', '')
+            if error_code == 'InvalidSignatureException':
+                # # Can occur if credentials are incorrect or expired
+                # print("AWS SDK was not able to connect to Secrets Manager. {error_msg} Skipping key={key}", file=sys.stderr)
+                # self.logger.error("AWS SDK was not able to connect to Secrets Manager. " + str(e))
+                # result["error"] = str(e)
+                raise KsmCliException(f"AWS SDK was not able to connect to Secrets Manager. Check your credentials. Message: {error_msg}")
+            elif error_code == 'LimitExceededException':
                 # API request quota exceeded, Secrets Manager throttles the request
-                print("AWS SDK request quota exceeded - throttled. Skipping key=" + str(key), e)
+                print("AWS SDK: request quota exceeded - throttled. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: request quota exceeded - throttled. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'DecryptionFailureException':
                 # Secrets Manager can't decrypt the protected secret text using the provided KMS key.
-                print("AWS SDK was unable decrypt the value. Skipping key=" + str(key), e)
+                print("AWS SDK: decryption failure. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: decryption failure. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'EncryptionFailure':
-                print("AWS SDK was unable encrypt the value. Skipping key=" + str(key), e)
+                print("AWS SDK: encryption failure. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: encryption failure. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'InternalServiceErrorException':
                 # An error occurred on the server side.
-                print("AWS SDK detected an error on server side. Skipping key=" + str(key), e)
+                print(f"AWS SDK: an error occurred on the server side. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: an error occurred on the server side. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'InvalidParameterException':
                 # You provided an invalid value for a parameter.
-                print("AWS SDK detected an invalid value for a parameter. Skipping key=" + str(key), e)
+                print(f"AWS SDK: provided an invalid value for a parameter. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: provided an invalid value for a parameter. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'InvalidRequestException':
                 # You provided a parameter value that is not valid for the current state of the resource.
@@ -345,16 +405,19 @@ class Sync:
                 err_msg = e.response.get('Error', {}).get('Message', '')
                 if http_code == 400 and err_msg.endswith('scheduled for deletion.'):
                     # "You can't create this secret because a secret with this name is already scheduled for deletion."
-                    # probably delete_secret(SecretId=key, RecoveryWindowInDays=30)
+                    # ex. delete_secret(SecretId=key, RecoveryWindowInDays=30)
                     try:
                         res = client.restore_secret(SecretId=key)
                         result["restored"] = True
                     except Exception as re:
-                        result["error"] = f" secret --name '{key}' was deleted and failed to restore. " + str(re)
+                        # try to recover: restore failed try to purge instead
+                        # result["error"] = f" secret --name '{key}' was deleted and failed to restore. " + str(re)
+                        self.logger.debug(f" secret --name '{key}' was deleted and failed to restore. " + str(re))
                         try:
                             res = client.delete_secret(SecretId=key, ForceDeleteWithoutRecovery=True)
                             result["purged"] = True
                         except Exception as pe:
+                            self.logger.error(f" secret --name '{key}' was deleted and failed to purge. " + str(pe))
                             result["error"] += f" secret --name '{key}' was deleted and failed to purge. " + str(pe)
                     # retry on successful restore/purge
                     if result.get("restored", False):
@@ -362,45 +425,60 @@ class Sync:
                             response = client.put_secret_value(SecretId=key, SecretString=value)
                             result["success"] = True
                         except Exception as e:
-                            result["error"] += f" Retry attempt failed to set new value for secret --name '{key}'. " \
-                                f" You may have to manually inspect and delete the secret if it exists in the vault. " \
+                            msg = f" Retry attempt failed to set new value for secret --name '{key}'. " \
+                                " You may have to manually inspect and delete the secret if it exists in the vault. " \
                                 " Error: " + str(e)
+                            self.logger.error(msg)
+                            result["error"] += msg
                     elif result.get("purged", False):
                         try:
                             response = client.create_secret(Name=key, SecretString=value)
                             result["success"] = True
                         except Exception as e:
-                            result["error"] += f" Retry attempt failed to set new value for secret --name '{key}'. " \
+                            msg = f" Retry attempt failed to set new value for secret --name '{key}'. " \
                                 f" You may have to manually inspect and delete the secret if it exists in the vault. " \
-                                " Error: " + str(e)
+                                " Error:  " + str(e)
+                            self.logger.error(msg)
+                            result["error"] += msg
                     else:
+                        self.logger.error(f"Failed to restore/purge deleted secret '{key}' and cannot set to a new value.")
                         result["error"] += f" Failed to restore/purge deleted secret '{key}' and cannot set to a new value."
                 else:
-                    print("AWS SDK detected a parameter value that is not valid for the current state of the resource. Skipping key=" + str(key), e)
+                    print(f"AWS SDK: a parameter value is not valid for the current state of the resource. {error_msg} Skipping key={key}", file=sys.stderr)
+                    self.logger.error("AWS SDK: a parameter value is not valid for the current state of the resource. " + str(e))
                     result["error"] = str(e)
             elif error_code == 'ResourceNotFoundException':
-                # Can't find the resource. Deleted or non existing key.
+                # Can't find the resource.
+                print(f"AWS SDK: resource not found. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: resource not found. " + str(e))
                 result["not_found"] = True
+                result["error"] = str(e)
             elif error_code == 'ResourceExistsException':
-                print("AWS SDK detected that resource exists. Skipping key=" + str(key), e)
+                print(f"AWS SDK: resource exists. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: resource exists. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'MalformedPolicyDocumentException':
-                print("AWS SDK detected malformed policy document. Skipping key=" + str(key), e)
+                print(f"AWS SDK: malformed policy document. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: malformed policy document. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'PreconditionNotMetException':
-                print("AWS SDK precondition not met. Skipping key=" + str(key), e)
+                print(f"AWS SDK: precondition not met. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: precondition not met. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'UnrecognizedClientException':
                 # The security token included in the request is invalid.
-                print("AWS SDK detected that the security token included in the request is invalid. Skipping key=" + str(key), e)
+                print(f"AWS SDK: security token included in the request is invalid. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: security token included in the request is invalid. " + str(e))
                 result["error"] = str(e)
             else:
                 # Unknown client error
-                print("AWS SDK detected unknown client error. Skipping key=" + str(key), e)
+                print(f"AWS SDK: unknown client error. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: unknown client error. " + str(e))
                 result["error"] = str(e)
         except Exception as e:
             # Anything else that is not AWS related (network, stdlib, etc.)
-            print("Unknown error", e)
+            print(f"Unknown error. Skipping key={key}", file=sys.stderr)
+            self.logger.error("Unknown error. " + str(e))
             result["error"] = str(e)
         return result
 
@@ -418,38 +496,51 @@ class Sync:
             result["success"] = True
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', '')
-            if error_code == 'InternalServiceErrorException':
+            error_msg  = e.response.get('Error', {}).get('Message', '')
+            if error_code == 'InvalidSignatureException':
+                # # Can occur if credentials are incorrect or expired
+                # print("AWS SDK was not able to connect to Secrets Manager. {error_msg} Skipping key={key}", file=sys.stderr)
+                # self.logger.error("AWS SDK was not able to connect to Secrets Manager. " + str(e))
+                # result["error"] = str(e)
+                raise KsmCliException(f"AWS SDK was not able to connect to Secrets Manager. Check your credentials. Message: {error_msg}")
+            elif error_code == 'InternalServiceErrorException':
                 # An error occurred on the server side.
-                print("AWS SDK detected an error on server side. Skipping key=" + str(key), e)
+                print(f"AWS SDK: an error occurred on the server side. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: an error occurred on the server side. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'InvalidParameterException':
                 # You provided an invalid value for a parameter.
-                print("AWS SDK detected an invalid value for a parameter. Skipping key=" + str(key), e)
+                print(f"AWS SDK: provided an invalid value for a parameter. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: provided an invalid value for a parameter. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'InvalidRequestException':
                 # You provided a parameter value that is not valid for the current state of the resource.
-                print("AWS SDK detected a parameter value that is not valid for the current state of the resource. Skipping key=" + str(key), e)
+                print(f"AWS SDK: provided parameter value that is not valid for the current state of the resource. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: provided parameter value that is not valid for the current state of the resource. " + str(e))
                 result["error"] = str(e)
             elif error_code == 'ResourceNotFoundException':
                 # Can't find the resource. Deleted or non existing key.
-                print("AWS SDK can't find the resource. Skipping key=" + str(key), e)
+                self.logger.debug(f"AWS SDK: ResourceNotFoundException while trying to delete secret. key={key} already deleted. Message: {error_msg}")
+                result["success"] = True # already deleted
                 result["error"] = str(e)
             elif error_code == 'UnrecognizedClientException':
                 # The security token included in the request is invalid.
-                print("AWS SDK detected that the security token included in the request is invalid. Skipping key=" + str(key), e)
+                print(f"AWS SDK: security token included in the request is invalid. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: security token included in the request is invalid. " + str(e))
                 result["error"] = str(e)
             else:
                 # Unknown client error
-                print("AWS SDK detected unknown client error. Skipping key=" + str(key), e)
+                print(f"AWS SDK: unknown client error. {error_msg} Skipping key={key}", file=sys.stderr)
+                self.logger.error("AWS SDK: unknown client error. " + str(e))
                 result["error"] = str(e)
         except Exception as e:
             # Anything else that is not AWS related (network, stdlib, etc.)
-            print("Unknown error", e)
+            print(f"Unknown error. Skipping key={key}", file=sys.stderr)
+            self.logger.error("Unknown error. " + str(e))
             result["error"] = str(e)
         return result
 
     def sync_values(self, type:str, credentials:str=None, dry_run=False, preserve_missing=False, map=None):
-
         map = map or []
         result = []
 
@@ -517,15 +608,15 @@ class Sync:
             from azure.identity import ClientSecretCredential
         except ImportError as ie:
             print(Fore.RED + "Missing Azure dependencies. To install missing packages run: \r\n" +
-                Fore.YELLOW + "pip3 install azure-identity azure-keyvault-secrets\r\n" + Style.RESET_ALL)
+                Fore.YELLOW + "pip3 install azure-identity azure-keyvault-secrets\r\n" + Style.RESET_ALL, file=sys.stderr)
             raise KsmCliException("Missing Azure Dependencies: " + str(ie))
 
         if not map or len(map) == 0:
-            print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`" + Style.RESET_ALL)
+            print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`" + Style.RESET_ALL, file=sys.stderr)
             return
 
         if not credentials or not str(credentials).strip():
-            print(Fore.YELLOW + "Missing credentials' record UID - please provide UID with `--credentials <UID>`" + Style.RESET_ALL)
+            print(Fore.YELLOW + "Missing credentials' record UID - please provide UID with `--credentials <UID>`" + Style.RESET_ALL, file=sys.stderr)
             return
 
         credentials = str(credentials).strip()
@@ -541,13 +632,13 @@ class Sync:
         client_secret = self._get_secret_field(creds, AZURE_CLIENT_SECRET_LABEL)
 
         if not vault_name:
-            print(Fore.YELLOW + "Missing Vault Name in credentials record " + credentials + Style.RESET_ALL)
+            print(Fore.YELLOW + "Missing Vault Name in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
         if not tenant_id:
-            print(Fore.YELLOW + "Missing Tenant Id in credentials record " + credentials + Style.RESET_ALL)
+            print(Fore.YELLOW + "Missing Tenant Id in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
         if not client_id:
-            print(Fore.YELLOW + "Missing Client Id in credentials record " + credentials + Style.RESET_ALL)
+            print(Fore.YELLOW + "Missing Client Id in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
         if not client_secret:
-            print(Fore.YELLOW + "Missing Client Secret in credentials record " + credentials + Style.RESET_ALL)
+            print(Fore.YELLOW + "Missing Client Secret in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
         if not(vault_name and tenant_id and client_id and client_secret):
             raise KsmCliException(f"Cannot find all required credentials in record UID {credentials}.")
 
@@ -558,6 +649,7 @@ class Sync:
             client_secret=client_secret)
         client = SecretClient(vault_url=vault_url, credential=az_credential)
 
+        failed = 0
         if dry_run:
             for m in map:
                 key = m["mapKey"]
@@ -565,7 +657,8 @@ class Sync:
                 val = res.get("value", None)
                 m["dstValue"] = val.value if val else None
                 if not res.get("not_found", False) and res.get("error", ""):
-                    print("Error reading the value from Azure Vault for key=" + key +" - " + res.get("error", ""))
+                    failed += 1
+                    print("Error reading the value from Azure Vault for key=" + key, file=sys.stderr)
             self.cli.output(json.dumps(map, indent=4))
         else:
             for m in map:
@@ -576,28 +669,36 @@ class Sync:
                         continue
                     else:
                         res = self._delete_secret_az(client, key)
-                        if res.get("error", ""):
-                            print("Error deleting key=" + key + " - " + res.get("error", ""))
+                        err_msg = res.get("error", "")
+                        if err_msg:
+                            if "(SecretNotFound)" in err_msg:
+                                self.logger.debug("Failed to delete key=" + key)
+                            else:
+                                failed += 1
+                                self.logger.error("Failed to delete key=" + key)
                 else:
                     res = self._set_secret_az(client, key, val)
                     if res.get("error", ""):
-                        print("Error setting new value for key=" + key + " - " + res.get("error", ""))
-
+                        failed += 1
+                        self.logger.error("Failed to set new value for key=" + key)
+        print(f"\nProcessed: {len(map)} keys", file=sys.stderr)
+        if failed > 0:
+            print(f"Failed: {failed} keys\r\nSet KSM_DEBUG=DEBUG to get full error details.", file=sys.stderr)
 
     def sync_aws(self, credentials:str=None, dry_run=False, preserve_missing=False, map:dict=None):
         try:
             import boto3
         except ImportError as ie:
             print(Fore.RED + "Missing AWS dependencies. Install missing packages with: \r\n" +
-                Fore.YELLOW + "pip3 install boto3\r\n" + Style.RESET_ALL)
+                Fore.YELLOW + "pip3 install boto3\r\n" + Style.RESET_ALL, file=sys.stderr)
             raise KsmCliException("Missing AWS Dependencies: " + str(ie))
 
         if not map or len(map) == 0:
-            print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`" + Style.RESET_ALL)
+            print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`" + Style.RESET_ALL, file=sys.stderr)
             return
 
         if not credentials or not str(credentials).strip():
-            print(Fore.YELLOW + "Missing credentials' record UID - please provide UID with `--credentials <UID>`" + Style.RESET_ALL)
+            print(Fore.YELLOW + "Missing credentials' record UID - please provide UID with `--credentials <UID>`" + Style.RESET_ALL, file=sys.stderr)
             return
 
         credentials = str(credentials).strip()
@@ -612,11 +713,11 @@ class Sync:
         aws_region_name = self._get_secret_field(creds, AWS_REGION_NAME_LABEL)
 
         if not aws_access_key_id:
-            print(Fore.YELLOW + "Missing AWS Access Key in credentials record " + credentials + Style.RESET_ALL)
+            print(Fore.YELLOW + "Missing AWS Access Key in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
         if not aws_secret_access_key:
-            print(Fore.YELLOW + "Missing AWS Secret Access Key in credentials record " + credentials + Style.RESET_ALL)
+            print(Fore.YELLOW + "Missing AWS Secret Access Key in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
         if not aws_region_name:
-            print(Fore.YELLOW + "Missing AWS Region Name in credentials record " + credentials + Style.RESET_ALL)
+            print(Fore.YELLOW + "Missing AWS Region Name in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
         if not(aws_access_key_id and aws_secret_access_key and aws_region_name):
             raise KsmCliException(f"Cannot find all required credentials in record UID {credentials}.")
 
@@ -626,6 +727,7 @@ class Sync:
             region_name=aws_region_name
         )
 
+        failed = 0
         if dry_run:
             for m in map:
                 key = m["mapKey"]
@@ -633,7 +735,8 @@ class Sync:
                 val = res.get("value", None)
                 m["dstValue"] = val.value if val else None
                 if not res.get("not_found", False) and res.get("error", ""):
-                    print("Error reading the value from AWS Secrets Manager for key=" + key +" - " + res.get("error", ""))
+                    failed += 1
+                    print("Error reading the value from AWS Secrets Manager for key=" + key, file=sys.stderr)
             self.cli.output(json.dumps(map, indent=4))
         else:
             for m in map:
@@ -644,9 +747,18 @@ class Sync:
                         continue
                     else:
                         res = self._delete_secret_aws(secretsmanager, key)
-                        if res.get("error", ""):
-                            print("Error deleting key=" + key + " - " + res.get("error", ""))
+                        err_msg = res.get("error", "")
+                        if err_msg:
+                            if "(ResourceNotFoundException)" in err_msg:
+                                self.logger.debug("Failed to delete key=" + key)
+                            else:
+                                failed += 1
+                                self.logger.error("Failed to delete key=" + key)
                 else:
                     res = self._set_secret_aws(secretsmanager, key, val)
                     if res.get("error", ""):
-                        print("Error setting new value for key=" + key + " - " + res.get("error", ""))
+                        failed += 1
+                        self.logger.error("Failed to set new value for key=" + key)
+        print(f"\nProcessed: {len(map)} keys", file=sys.stderr)
+        if failed > 0:
+            print(f"Failed: {failed} keys\r\nSet KSM_DEBUG=DEBUG to get full error details.", file=sys.stderr)
