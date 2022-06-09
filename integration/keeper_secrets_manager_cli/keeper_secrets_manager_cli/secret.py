@@ -341,18 +341,27 @@ class Secret:
         self.cli.output(value)
         print("", file=sys.stderr)
 
-    def _query_jsonpath(self, jsonpath_query, records, force_array):
+    def _query_jsonpath(self, jsonpath_query, records, force_array, raw):
         # Adjust records here so the JQ query works with the displayed JSON.
         record_list = Secret._adjust_records(records, force_array)
 
         try:
             results = self._get_jsonpath_results(record_list, jsonpath_query)
-            self.cli.output(json.dumps(results, indent=4))
+            output = json.dumps(results, indent=4)
+
+            # If the results was a string, converting it to JSON will place quotes around the value. That is
+            # bad when piping it into an env var. Just return the non-JSON results string.
+            if raw is True and isinstance(results, str) is True and output.startswith('"') is True and \
+                    output.endswith('"') is True:
+                output = results
+
+            self.cli.output(output)
         except Exception as err:
             raise KsmCliException("JSONPath failed: {}".format(err))
 
     def query(self, uids=None, titles=None, field=None, output_format='json', jsonpath_query=None,
-              force_array=False, load_references=False, unmask=False, use_color=None, inflate=True):
+              force_array=False, load_references=False, unmask=False, use_color=None, inflate=True,
+              raw=False):
 
         if use_color is None:
             use_color = self.cli.use_color
@@ -410,6 +419,7 @@ class Secret:
                 jsonpath_query=jsonpath_query,
                 records=records,
                 force_array=force_array,
+                raw=raw
             )
         else:
             return self.output_results(records=records, output_format=output_format, force_array=force_array,

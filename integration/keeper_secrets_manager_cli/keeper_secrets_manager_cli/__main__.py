@@ -421,9 +421,10 @@ def secret_list_command(ctx, uid, json):
 @click.option('--force-array', is_flag=True, help="Return secrets as array even if a single record.")
 @click.option('--unmask', is_flag=True, help="Show password like values in table views.")
 @click.option('--inflate/--deflate', default=True, help="Load in outside records.")
+@click.option('--raw', is_flag=True, help='Remove surrounding quotes on value when using query.')
 @click.argument('extra-uid', type=str, nargs=-1)
 @click.pass_context
-def secret_get_command(ctx, uid, title, field, query, json, force_array, unmask, inflate, extra_uid):
+def secret_get_command(ctx, uid, title, field, query, json, force_array, unmask, inflate, extra_uid, raw):
     """Get secret record(s)"""
 
     uid_list = []
@@ -456,7 +457,8 @@ def secret_get_command(ctx, uid, title, field, query, json, force_array, unmask,
         load_references=True,
         unmask=unmask,
         use_color=ctx.obj["cli"].use_color,
-        inflate=inflate
+        inflate=inflate,
+        raw=raw
     )
 
 
