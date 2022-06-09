@@ -85,7 +85,13 @@ class Config:
         return self._profiles[name]
 
     def set_profile_using_base64(self, profile_name, base64_config):
-        json_config = base64.urlsafe_b64decode(base64_config).decode()
+
+        # If the base64_config has already been decoded, the no need to
+        # base64 decode.
+        if base64_config.strip().startswith("{") is True:
+            json_config = base64_config
+        else:
+            json_config = base64.urlsafe_b64decode(base64_config).decode()
         data = json.loads(json_config)
         kwargs = dict(
             client_id=data.get("clientId"),

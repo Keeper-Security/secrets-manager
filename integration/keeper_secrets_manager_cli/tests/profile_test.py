@@ -342,6 +342,45 @@ color = True
                 self.assertFalse(os.path.exists(Config.default_ini_file), "keeper.ini exists when it should not")
                 fh.close()
 
+    def test_auto_config_sdk_json(self):
+
+        """
+        Test JSON in an environmental variable
+
+        A K8S secret may return the Base64 decoded.
+
+        """
+
+        mock_config = MockConfig.make_config()
+        json_config = MockConfig.make_json(config=mock_config)
+
+        runner = CliRunner()
+
+        # Create two configs
+        os.environ["KSM_CONFIG"] = json_config
+
+        # Using a file output due to cli runner joining stdout and stderr
+        with tempfile.NamedTemporaryFile() as tf:
+            tf_name = tf.name
+            self.delete_me.append(tf_name)
+            tf.close()
+
+            # Make sure keeper ini file doesn't exists
+            if os.path.exists(Config.default_ini_file) is True:
+                os.unlink(Config.default_ini_file)
+
+            result = runner.invoke(cli, [
+                '-o', tf_name,
+                'profile', 'list', '--json'], catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "did not get a success on list")
+
+            with open(tf_name, "r") as fh:
+                profile_data = json.load(fh)
+                self.assertEqual(Profile.default_profile, profile_data[0]["name"], "did not find default profile")
+
+                self.assertFalse(os.path.exists(Config.default_ini_file), "keeper.ini exists when it should not")
+                fh.close()
+
 
 if __name__ == '__main__':
     unittest.main()

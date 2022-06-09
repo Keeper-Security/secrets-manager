@@ -6,6 +6,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.0.14
+
+* Accept JSON via the KSM_CONFIG environmental variable. K8S secrets will show up as JSON in the enviromental variable.
+
 ## 1.0.13
 
 * For the Windows and macOS application create the keeper.ini file in the user's "HOME" directory.
