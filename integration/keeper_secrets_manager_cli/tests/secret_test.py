@@ -130,7 +130,7 @@ class SecretTest(unittest.TestCase):
         # TODO: Add dup custom fields. The problem is the mock record won't let you :(
 
         queue = mock.ResponseQueue(client=secrets_manager)
-        for test in range(0, 6):
+        for test in range(0, 8):
             queue.add_response(res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
@@ -187,6 +187,27 @@ class SecretTest(unittest.TestCase):
             ], catch_exceptions=True)
             data = json.loads(result.output)
             self.assertEqual(4, len(data), "found 4 rows")
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+            # Query the login without removing quotes
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                'secret', 'get', '-u', one.uid,
+                '-q', "$.fields[?(@.type=='login')].value[0]"
+            ], catch_exceptions=True)
+            data = result.output
+            self.assertEqual('"My Login 1"', data, "did not find quoted login")
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+            # Query the login removing quotes
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                'secret', 'get', '-u', one.uid,
+                '-q', "$.fields[?(@.type=='login')].value[0]",
+                '--raw'
+            ], catch_exceptions=True)
+            data = result.output
+            self.assertEqual('My Login 1', data, "did not find non-quoted login")
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
 
     def test_get_dash_uid(self):
