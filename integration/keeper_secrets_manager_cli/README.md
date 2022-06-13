@@ -11,6 +11,7 @@ For more information see our official documentation page https://docs.keeper.io/
 * Accept JSON via the KSM_CONFIG environmental variable. K8S secrets will show up as JSON in the environmental variable.
 * Add `--raw` parameter to `secret get` command. When using `--query` this flag will remove the double quotes around 
 the value, if a string.
+* Add `sync` command to sync Vault secrets to AWS and Azure secret managers.
 
 ## 1.0.13
 
