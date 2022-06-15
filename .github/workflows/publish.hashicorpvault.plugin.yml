@@ -25,7 +25,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.17
+          go-version: 1.18
 
       # Cache GoLang libs
       - uses: actions/cache@v2
@@ -35,11 +35,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      - name: Install External Dependencies
+        shell: bash
+        run: |
+          sudo apt update
+          sudo apt install -y osslsigncode
+
       - name: Create binaries
         run: | # initially `github.ref` == "ref/tags/vault-plugin-secrets-ksm/vX.Y.Z"
           PLUGIN_NAME="$(cut -d'/' -f3 <<<${{ github.ref }})"
           PLUGIN_VERSION="$(cut -d'/' -f4 <<<${{ github.ref }})"
-          
+          SIGNING_KEY="keepersecurity.pfx"
           echo "Plugin name: [${PLUGIN_NAME}]"
           echo "Plugin version: [${PLUGIN_VERSION:1}]"
           make release-all PLUGIN_NAME="${PLUGIN_NAME}" PLUGIN_VERSION="${PLUGIN_VERSION:1}"
