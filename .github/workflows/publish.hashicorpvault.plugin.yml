@@ -59,6 +59,7 @@ jobs:
           echo "Plugin name: [${PLUGIN_NAME}]"
           echo "Plugin version: [${PLUGIN_VERSION:1}]"
           make release-all PLUGIN_NAME="${PLUGIN_NAME}" PLUGIN_VERSION="${PLUGIN_VERSION:1}" SIGNING_KEY="${SIGNING_KEY}" KEY_PASSPHRASE="${KEY_PASSPHRASE}"
+        shell: bash
 
       - name: "Info: List created files"
         run: |
