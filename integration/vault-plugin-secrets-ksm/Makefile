@@ -38,24 +38,24 @@ release-other:
 
 release-win-x86: gen-keys
 	$(eval GOOS=windows) $(eval GOARCH=386)   GOOS=${GOOS} GOARCH=${GOARCH} go build -o ${NAME}.exe
-	if [ -s ks.spc && -s ks.key ]; then \
+	if [[ -s ks.spc && -s ks.key ]]; then \
 		osslsigncode sign -spc ks.spc -key ks.key -n "Vault Plugin Secrets KSM" -i "https://keepersecurity.com" -t "http://timestamp.digicert.com" -in ${NAME}.exe -out ${NAME}_signed.exe ; \
-		test -s ${NAME}_signed.exe && mv -f ${NAME}_signed.exe ${NAME}.exe ; \
+		[[ -s ${NAME}_signed.exe ]] && mv -f ${NAME}_signed.exe ${NAME}.exe ; \
 		echo "Signed release-win-x86" ; \
 	fi
 	zip -m ${NAME}_${VERSION}_${GOOS}_${GOARCH}.zip ${NAME}.exe
 
 release-win-x64: gen-keys
 	$(eval GOOS=windows) $(eval GOARCH=amd64) GOOS=${GOOS} GOARCH=${GOARCH} go build -o ${NAME}.exe
-	if [ -s ks.spc && -s ks.key ]; then \
+	if [[ -s ks.spc && -s ks.key ]]; then \
 		osslsigncode sign -spc ks.spc -key ks.key -n "Vault Plugin Secrets KSM" -i "https://keepersecurity.com" -t "http://timestamp.digicert.com" -in ${NAME}.exe -out ${NAME}_signed.exe ; \
-		test -s ${NAME}_signed.exe && mv -f ${NAME}_signed.exe ${NAME}.exe ; \
+		[[ -s ${NAME}_signed.exe ]] && mv -f ${NAME}_signed.exe ${NAME}.exe ; \
 		echo "Signed release-win-x64" ; \
 	fi
 	zip -m ${NAME}_${VERSION}_${GOOS}_${GOARCH}.zip ${NAME}.exe
 
 gen-keys:
-	if [ -n "${KEY}" ]; then \
+	if [[ -n "${KEY}" ]]; then \
 		openssl pkcs12 -in ${KEY} -nocerts -nodes -out key.pem  -passin pass:${PASSPHRASE} ; \
 		openssl pkcs12 -in ${KEY}          -nodes -out cert.pem -passin pass:${PASSPHRASE} ; \
 		openssl rsa -in key.pem -outform DER -out ks.key ; \
