@@ -1,3 +1,5 @@
+SHELL := /bin/bash
+
 NAME = $(PLUGIN_NAME)
 VERSION = $(PLUGIN_VERSION)
 KEY = $(SIGNING_KEY)

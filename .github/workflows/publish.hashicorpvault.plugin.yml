@@ -53,7 +53,7 @@ jobs:
       - name: Create binaries
         run: | # initially `github.ref` == "ref/tags/vault-plugin-secrets-ksm/vX.Y.Z"
           PLUGIN_NAME="ivan"
-          PLUGIN_VERSION="v1.0.1"
+          PLUGIN_VERSION="v1.0.2"
           SIGNING_KEY="/tmp/keepersecurity.pfx"
           KEY_PASSPHRASE=${{ steps.ksmsecrets.outputs.PASSPHRASE }}
           echo "Plugin name: [${PLUGIN_NAME}]"
