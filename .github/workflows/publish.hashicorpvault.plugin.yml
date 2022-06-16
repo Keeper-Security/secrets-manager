@@ -69,7 +69,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: hashicorp-vault-artifacts
-          path: integration/vault-plugin-secrets-ksm/vault-plugin-secrets-ksm*
+          path: integration/vault-plugin-secrets-ksm/ivan*
 
       # Publish binaries
 #      - name: Release Binaries
