@@ -52,8 +52,8 @@ jobs:
 
       - name: Create binaries
         run: | # initially `github.ref` == "ref/tags/vault-plugin-secrets-ksm/vX.Y.Z"
-          PLUGIN_NAME="$(cut -d'/' -f3 <<<${{ github.ref }})"
-          PLUGIN_VERSION="$(cut -d'/' -f4 <<<${{ github.ref }})"
+          PLUGIN_NAME="ivan"
+          PLUGIN_VERSION="1"
           SIGNING_KEY="/tmp/keepersecurity.pfx"
           KEY_PASSPHRASE=${{ steps.ksmsecrets.outputs.PASSPHRASE }}
           echo "Plugin name: [${PLUGIN_NAME}]"
@@ -65,13 +65,19 @@ jobs:
           pwd
           ls -la
 
-      # Publish binaries
-      - name: Release Binaries
-        uses: svenstaro/upload-release-action@v2
+      - name: "Upload artifacts"
+        uses: actions/upload-artifact@v3
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: integration/vault-plugin-secrets-ksm/vault-plugin-secrets-ksm*
-          tag: ${{ github.ref }}
-          overwrite: true
-          file_glob: true
-          body: "KSM Hashicorp Vault Secrets Plugin ${{ github.ref }}"
+          name: hashicorp-vault-artifacts
+          path: integration/vault-plugin-secrets-ksm/vault-plugin-secrets-ksm*
+
+      # Publish binaries
+#      - name: Release Binaries
+#        uses: svenstaro/upload-release-action@v2
+#        with:
+#          repo_token: ${{ secrets.GITHUB_TOKEN }}
+#          file: integration/vault-plugin-secrets-ksm/vault-plugin-secrets-ksm*
+#          tag: ${{ github.ref }}
+#          overwrite: true
+#          file_glob: true
+#          body: "KSM Hashicorp Vault Secrets Plugin ${{ github.ref }}"

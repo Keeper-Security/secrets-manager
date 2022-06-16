@@ -20,7 +20,8 @@ build:
 release:
 	go build; zip -m ${NAME}.zip ${NAME} ${NAME}.exe
 
-release-all: release-other release-win-x86 release-win-x64 release-checksum
+#release-all: release-other release-win-x86 release-win-x64 release-checksum
+release-all: release-win-x64 release-checksum
 
 release-other:
 	$(eval GOOS=darwin)  $(eval GOARCH=amd64) GOOS=${GOOS} GOARCH=${GOARCH} go build -o ${NAME} ; zip -m ${NAME}_${VERSION}_${GOOS}_${GOARCH}.zip ${NAME}
