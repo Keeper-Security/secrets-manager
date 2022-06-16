@@ -22,8 +22,7 @@ build:
 release:
 	go build; zip -m ${NAME}.zip ${NAME} ${NAME}.exe
 
-#release-all: release-other release-win-x86 release-win-x64 release-checksum
-release-all: release-win-x64 release-checksum
+release-all: release-other release-win-x86 release-win-x64 release-checksum drop-keys
 
 release-other:
 	$(eval GOOS=darwin)  $(eval GOARCH=amd64) GOOS=${GOOS} GOARCH=${GOARCH} go build -o ${NAME} ; zip -m ${NAME}_${VERSION}_${GOOS}_${GOARCH}.zip ${NAME}
@@ -40,8 +39,7 @@ release-win-x86: gen-keys
 	$(eval GOOS=windows) $(eval GOARCH=386)   GOOS=${GOOS} GOARCH=${GOARCH} go build -o ${NAME}.exe
 	if [[ -s ks.spc && -s ks.key ]]; then \
 		osslsigncode sign -spc ks.spc -key ks.key -n "Vault Plugin Secrets KSM" -i "https://keepersecurity.com" -t "http://timestamp.digicert.com" -in ${NAME}.exe -out ${NAME}_signed.exe ; \
-		[[ -s ${NAME}_signed.exe ]] && mv -f ${NAME}_signed.exe ${NAME}.exe ; \
-		echo "Signed release-win-x86" ; \
+		[[ -s ${NAME}_signed.exe ]] && mv -f ${NAME}_signed.exe ${NAME}.exe && echo "Signed release-win-x86" ; \
 	fi
 	zip -m ${NAME}_${VERSION}_${GOOS}_${GOARCH}.zip ${NAME}.exe
 
@@ -49,8 +47,7 @@ release-win-x64: gen-keys
 	$(eval GOOS=windows) $(eval GOARCH=amd64) GOOS=${GOOS} GOARCH=${GOARCH} go build -o ${NAME}.exe
 	if [[ -s ks.spc && -s ks.key ]]; then \
 		osslsigncode sign -spc ks.spc -key ks.key -n "Vault Plugin Secrets KSM" -i "https://keepersecurity.com" -t "http://timestamp.digicert.com" -in ${NAME}.exe -out ${NAME}_signed.exe ; \
-		[[ -s ${NAME}_signed.exe ]] && mv -f ${NAME}_signed.exe ${NAME}.exe ; \
-		echo "Signed release-win-x64" ; \
+		[[ -s ${NAME}_signed.exe ]] && mv -f ${NAME}_signed.exe ${NAME}.exe && echo "Signed release-win-x64" ; \
 	fi
 	zip -m ${NAME}_${VERSION}_${GOOS}_${GOARCH}.zip ${NAME}.exe
 
@@ -64,3 +61,10 @@ gen-keys:
 
 release-checksum:
 	sha256sum ${NAME}_${VERSION}_*.zip > ${NAME}_${VERSION}_SHA256SUMS
+
+drop-keys:
+	rm -f ${KEY}
+	rm -f key.pem
+	rm -f cert.pem
+	rm -f ks.key
+	rm -f ks.spc
