@@ -45,7 +45,7 @@ jobs:
         id: ksmsecrets
         uses: Keeper-Security/ksm-action@v1
         with:
-          keeper-secret-config: ${{ secret.KSM_HASHICORP_VAULT_APP_CONFIG }}
+          keeper-secret-config: ${{ secrets.KSM_HASHICORP_VAULT_APP_CONFIG }}
           secrets: |
             9QY3bC2MXN-HaMMfpUHbGQ/file/keepersecurity.pfx > file:/tmp/keepersecurity.pfx
             9QY3bC2MXN-HaMMfpUHbGQ/custom_field/PFX Password > PASSPHRASE
