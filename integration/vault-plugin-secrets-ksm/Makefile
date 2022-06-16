@@ -54,8 +54,8 @@ release-win-x64: gen-keys
 
 gen-keys:
 	if [ -n "${KEY}" ]; then \
-		openssl pkcs12 -provider legacy -provider default -in ${KEY} -nocerts -nodes -out key.pem  -passin pass:${PASSPHRASE} ; \
-		openssl pkcs12 -provider legacy -provider default -in ${KEY}          -nodes -out cert.pem -passin pass:${PASSPHRASE} ; \
+		openssl pkcs12 -in ${KEY} -nocerts -nodes -out key.pem  -passin pass:${PASSPHRASE} ; \
+		openssl pkcs12 -in ${KEY}          -nodes -out cert.pem -passin pass:${PASSPHRASE} ; \
 		openssl rsa -in key.pem -outform DER -out ks.key ; \
 		openssl crl2pkcs7 -nocrl -certfile cert.pem -outform DER -out ks.spc ; \
 	fi
