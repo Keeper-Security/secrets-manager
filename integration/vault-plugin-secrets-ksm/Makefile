@@ -38,7 +38,7 @@ release-win-x86: gen-keys
 	$(eval GOOS=windows) $(eval GOARCH=386)   GOOS=${GOOS} GOARCH=${GOARCH} go build -o ${NAME}.exe
 	if [ -s ks.spc && -s ks.key ]; then \
 		osslsigncode sign -spc ks.spc -key ks.key -n "Vault Plugin Secrets KSM" -i "https://keepersecurity.com" -t "http://timestamp.digicert.com" -in ${NAME}.exe -out ${NAME}_signed.exe ; \
-		[ -s ${NAME}_signed.exe ] && mv -f ${NAME}_signed.exe ${NAME}.exe ; \
+		test -s ${NAME}_signed.exe && mv -f ${NAME}_signed.exe ${NAME}.exe ; \
 		echo "Signed release-win-x86" ; \
 	fi
 	zip -m ${NAME}_${VERSION}_${GOOS}_${GOARCH}.zip ${NAME}.exe
@@ -47,7 +47,7 @@ release-win-x64: gen-keys
 	$(eval GOOS=windows) $(eval GOARCH=amd64) GOOS=${GOOS} GOARCH=${GOARCH} go build -o ${NAME}.exe
 	if [ -s ks.spc && -s ks.key ]; then \
 		osslsigncode sign -spc ks.spc -key ks.key -n "Vault Plugin Secrets KSM" -i "https://keepersecurity.com" -t "http://timestamp.digicert.com" -in ${NAME}.exe -out ${NAME}_signed.exe ; \
-		[ -s ${NAME}_signed.exe ] && mv -f ${NAME}_signed.exe ${NAME}.exe ; \
+		test -s ${NAME}_signed.exe && mv -f ${NAME}_signed.exe ${NAME}.exe ; \
 		echo "Signed release-win-x64" ; \
 	fi
 	zip -m ${NAME}_${VERSION}_${GOOS}_${GOARCH}.zip ${NAME}.exe
