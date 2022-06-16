@@ -41,11 +41,21 @@ jobs:
           sudo apt update
           sudo apt install -y osslsigncode
 
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@v1
+        with:
+          keeper-secret-config: ${{ secret.KSM_HASHICORP_VAULT_APP_CONFIG }}
+          secrets: |
+            9QY3bC2MXN-HaMMfpUHbGQ/file/keepersecurity.pfx > file:/tmp/keepersecurity.pfx
+            9QY3bC2MXN-HaMMfpUHbGQ/custom_field/PFX Password > PASSPHRASE
+
       - name: Create binaries
         run: | # initially `github.ref` == "ref/tags/vault-plugin-secrets-ksm/vX.Y.Z"
           PLUGIN_NAME="$(cut -d'/' -f3 <<<${{ github.ref }})"
           PLUGIN_VERSION="$(cut -d'/' -f4 <<<${{ github.ref }})"
-          SIGNING_KEY="keepersecurity.pfx"
+          SIGNING_KEY="/tmp/keepersecurity.pfx"
+          KEY_PASSPHRASE=${{ steps.ksmsecrets.outputs.PASSPHRASE }}
           echo "Plugin name: [${PLUGIN_NAME}]"
           echo "Plugin version: [${PLUGIN_VERSION:1}]"
           make release-all PLUGIN_NAME="${PLUGIN_NAME}" PLUGIN_VERSION="${PLUGIN_VERSION:1}"
