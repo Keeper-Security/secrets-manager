@@ -104,7 +104,8 @@ class Record:
 
         # Find the password in the field and update the password attribute
         password_field = next((item for item in self.dict["fields"] if item["type"] == "password"), None)
-        self.password = password_field.get('value')[0]
+        if password_field is not None and len(password_field.get('value', [])) > 0:
+            self.password = password_field.get('value')[0]
 
         self.raw_json = utils.dict_to_json(self.dict)
 
