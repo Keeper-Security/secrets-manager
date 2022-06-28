@@ -68,15 +68,30 @@ class FileKeyValueStorage(KeyValueStorage):
         self.create_config_file_if_missing()
 
         try:
-            with open(self.default_config_file_location, "r", encoding=ENCODING) as config_file:
+            with open(self.default_config_file_location, "r", encoding=ENCODING) as fh:
+                config_data = None
                 try:
+                    config_data = fh.read()
+                    config = json.loads(config_data)
+                except UnicodeDecodeError:
+                    logging.getLogger(logger_name).error("Config file is not utf-8 encoded.")
+                    raise Exception("{} is not a utf-8 encoded file".format(self.default_config_file_location))
+                except JSONDecodeError as err:
 
-                    config = json.load(config_file)
-                except JSONDecodeError:
+                    # If the JSON file was not empty, it's a legit JSON error. Throw an exception.
+                    if config_data is not None and config_data.strip() != "":
+                        raise Exception("{} may contain JSON format problems or is not utf-8 encoded"
+                                        ": {}".format(self.default_config_file_location, err))
+
+                    # If it was an empty file, overwrite with the JSON config
                     logging.getLogger(logger_name).warning("Looks like config file is empty.")
-
                     config = {}
                     self.save_storage(config)
+                except Exception as err:
+                    logging.getLogger(logger_name).error("Config JSON has problems: {}".format(err))
+                    if "codec" in str(err):
+                        raise Exception("{} is not a utf-8 encoded file.".format(self.default_config_file_location))
+                    raise err
 
         except IOError:
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.default_config_file_location)
@@ -198,5 +213,5 @@ class InMemoryKeyValueStorage(KeyValueStorage):
     def is_base64(s):
         try:
             return base64.b64encode(base64.b64decode(s)) == str.encode(s)
-        except:
+        except (Exception,):
             return False
