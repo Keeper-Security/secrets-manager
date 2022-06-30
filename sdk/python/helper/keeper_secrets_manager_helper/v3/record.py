@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from keeper_secrets_manager_helper.field import Field, FieldSectionEnum
 from keeper_secrets_manager_helper.common import load_file
 from keeper_secrets_manager_helper.v3.record_type import get_class_by_type as get_record_type_class

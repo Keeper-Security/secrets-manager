@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from .common import load_file
 from importlib import import_module
 import os

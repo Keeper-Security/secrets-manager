@@ -1,7 +1,19 @@
+# -*- coding: utf-8 -*-
+#  _  __
+# | |/ /___ ___ _ __  ___ _ _ (R)
+# | ' </ -_) -_) '_ \/ -_) '_|
+# |_|\_\___\___| .__/\___|_|
+#              |_|
+#
+# Keeper Secrets Manager
+# Copyright 2022 Keeper Security Inc.
+# Contact: ops@keepersecurity.com
+#
+
 from ansible.plugins.callback.default import CallbackModule as DefaultCallbackBase
 from ansible.plugins.callback import strip_internal_keys, module_response_deepcopy
 import json
-import re
+
 
 DOCUMENTATION = '''
     name: keeper_redact
