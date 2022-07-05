@@ -260,14 +260,22 @@ internal object ManifestLoader {
         val filePath = if (libPathEnd > 0) {
             val libPath = classPath.substring(0, libPathEnd)
             "$libPath!/META-INF/MANIFEST.MF"
-        } else { // we might be testing
+        } else {
+            // we might be testing
             var buildPathCoreIdx = classPath.lastIndexOf("build/classes")
             if (buildPathCoreIdx < 0) {
                 buildPathCoreIdx = classPath.lastIndexOf("out/production/classes")
             }
-            val buildPath = classPath.substring(0, buildPathCoreIdx)
-            "${buildPath}build/tmp/jar/MANIFEST.MF"
-        }
+            if (buildPathCoreIdx > 0) {
+                val buildPath = classPath.substring(0, buildPathCoreIdx)
+                "${buildPath}build/tmp/jar/MANIFEST.MF"
+            } else {
+                // Java Web Archive - *.war
+                val classpath = "/" + clazz.canonicalName.toString().replace(".", "/") + ".class"
+                val classpathIdx = classPath.lastIndexOf(classpath)
+                val classpathRoot = classPath.substring(0, classpathIdx)
+                "$classpathRoot/META-INF/MANIFEST.MF"
+            }
         val manifest = Manifest(URL(filePath).openStream())
         version = manifest.mainAttributes.getValue("Implementation-Version")
     }
