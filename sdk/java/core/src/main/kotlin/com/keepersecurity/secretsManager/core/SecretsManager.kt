@@ -276,6 +276,7 @@ internal object ManifestLoader {
                 val classpathRoot = classPath.substring(0, classpathIdx)
                 "$classpathRoot/META-INF/MANIFEST.MF"
             }
+        }
         val manifest = Manifest(URL(filePath).openStream())
         version = manifest.mainAttributes.getValue("Implementation-Version")
     }
