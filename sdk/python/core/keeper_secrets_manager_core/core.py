@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 #  _  __
-# | |/ /___ ___ _ __  ___ _ _ ®
+# | |/ /___ ___ _ __  ___ _ _ (R)
 # | ' </ -_) -_) '_ \/ -_) '_|
 # |_|\_\___\___| .__/\___|_|
 #              |_|
@@ -11,6 +12,7 @@
 import hmac
 import logging
 import os
+import sys
 from distutils.util import strtobool
 import re
 import json
@@ -44,6 +46,7 @@ def find_secret_by_title(record_title, records):
     records = records or []
     return next((x for x in records if x.title == record_title), None)
 
+
 class SecretsManager:
 
     notation_prefix = "keeper"
@@ -58,6 +61,11 @@ class SecretsManager:
     def __init__(self,
                  token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None,
                  custom_post_function=None):
+
+        # Make sure the Python is 3.6 or higher. We'll handle Python 4 in the future :)
+        python_version = sys.version_info
+        if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 6):
+            raise Exception("KSM SDK requires Python 3.6 or greater")
 
         self.token = None
         self.hostname = None

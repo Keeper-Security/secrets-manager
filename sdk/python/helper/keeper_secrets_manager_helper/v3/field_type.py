@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from keeper_secrets_manager_helper.v3.enum import BaseEnum, PhoneTypeEnum, CountryEnum, AccountTypeEnum
 import keeper_secrets_manager_helper.format
 import re

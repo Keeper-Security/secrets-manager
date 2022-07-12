@@ -116,6 +116,10 @@ configuration file or even a playbook.
 
 # Changes
 
+## 1.1.3
+
+* Per PEP 263, added `# -*- coding: utf-8 -*-` to top of file to prevent errors on system that are not UTF-8.
+
 ## 1.1.2
 
 * Added `keeper_create`, `keeper_password`, `keeper_info` action plugins.
