@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from keeper_secrets_manager_helper.v3.field_type import FieldType, get_field_type_map
 from keeper_secrets_manager_helper.v3.enum import BaseEnum
 from keeper_secrets_manager_helper.common import load_file
