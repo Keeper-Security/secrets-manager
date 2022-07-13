@@ -20,7 +20,6 @@ import java.util.*
 import java.util.concurrent.*
 import java.util.jar.Manifest
 import javax.net.ssl.*
-import kotlin.concurrent.thread
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -286,38 +285,42 @@ fun toKeeperAppClientString(version: String): String {
 private const val FAST_SECURE_RANDOM_PREFIX = "Fast SecureRandom detected! "
 private const val SLOW_SECURE_RANDOM_PREFIX = "Slow SecureRandom detected! "
 private const val SLOW_SECURE_RANDOM_MESSAGE =
-    " Install one of the following packages to improve speed: apt install haveged ; apt install rng-tools"
+    " Install one of the following entropy sources to improve speed of random number generator on your platform: 'haveged' or 'rng-tools'"
 private var SecureRandomTestResult = ""
 
 private fun testSecureRandom() {
     if (SecureRandomTestResult.isNotBlank()) {
         if (SecureRandomTestResult.startsWith(SLOW_SECURE_RANDOM_PREFIX)) {
-            println(SecureRandomTestResult);
+            println(SecureRandomTestResult)
         }
-        return;
+        return
     }
-    val es = Executors.newSingleThreadExecutor();
-    val future = es.submit(Callable<Boolean>{
+    val es = Executors.newSingleThreadExecutor()
+    val future = es.submit(Callable {
         // on some Linux machines the default secure random provider is blocking
         // and waiting too long for entropy to accumulate.
-        val secureRandom = SecureRandom.getInstanceStrong();
-        secureRandom.nextInt(); // could block for many seconds
-        true;
-    });
+        val secureRandom = SecureRandom.getInstanceStrong()
+        secureRandom.nextInt() // could block for many seconds
+        true
+    })
 
     try {
         future.get(3, TimeUnit.SECONDS);
-        SecureRandomTestResult = FAST_SECURE_RANDOM_PREFIX;
+        SecureRandomTestResult = FAST_SECURE_RANDOM_PREFIX
     } catch (e: TimeoutException) {
-        SecureRandomTestResult = SLOW_SECURE_RANDOM_PREFIX + SLOW_SECURE_RANDOM_MESSAGE;
-        println(SecureRandomTestResult);
-        future.cancel(true);
-        throw Exception(SecureRandomTestResult)
+        SecureRandomTestResult = SLOW_SECURE_RANDOM_PREFIX + SLOW_SECURE_RANDOM_MESSAGE
+        println(SecureRandomTestResult)
+        future.cancel(true)
+        throw SecureRandomSlowGenerationException(SecureRandomTestResult)
     } catch (e: InterruptedException) {
+        throw SecureRandomException(e.message ?: e.localizedMessage)
     } catch (e: ExecutionException) {
-    } catch (e: Exception) { }
+        throw SecureRandomException(e.message ?: e.localizedMessage)
+    } catch (e: Exception) {
+        throw SecureRandomException(e.message ?: e.localizedMessage)
+    }
 
-    es.shutdown();
+    es.shutdown()
 }
 
 @ExperimentalSerializationApi
