@@ -45,7 +45,11 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val storage: KeyValueStorage,
     val queryFunction: QueryFunction? = null,
     val allowUnverifiedCertificate: Boolean = false
-)
+) {
+    init {
+        testSecureRandom()
+    }
+}
 
 typealias QueryFunction = (url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload) -> KeeperHttpResponse
 
@@ -292,35 +296,33 @@ private fun testSecureRandom() {
         }
         return;
     }
-    thread {
-        val es = Executors.newSingleThreadExecutor();
-        val future = es.submit(Callable<Boolean>{
-            // on some Linux machines the default secure random provider is blocking
-            // and waiting too long for entropy to accumulate.
-            val secureRandom = SecureRandom.getInstanceStrong();
-            secureRandom.nextInt(); // could block for many seconds
-            true;
-        });
+    val es = Executors.newSingleThreadExecutor();
+    val future = es.submit(Callable<Boolean>{
+        // on some Linux machines the default secure random provider is blocking
+        // and waiting too long for entropy to accumulate.
+        val secureRandom = SecureRandom.getInstanceStrong();
+        secureRandom.nextInt(); // could block for many seconds
+        true;
+    });
 
-        try {
-            future.get(3, TimeUnit.SECONDS);
-            SecureRandomTestResult = FAST_SECURE_RANDOM_PREFIX;
-        } catch (e: TimeoutException) {
-            SecureRandomTestResult = SLOW_SECURE_RANDOM_PREFIX + SLOW_SECURE_RANDOM_MESSAGE;
-            println(SecureRandomTestResult);
-            future.cancel(true);
-        } catch (e: InterruptedException) {
-        } catch (e: ExecutionException) {
-        } catch (e: Exception) { }
+    try {
+        future.get(3, TimeUnit.SECONDS);
+        SecureRandomTestResult = FAST_SECURE_RANDOM_PREFIX;
+    } catch (e: TimeoutException) {
+        SecureRandomTestResult = SLOW_SECURE_RANDOM_PREFIX + SLOW_SECURE_RANDOM_MESSAGE;
+        println(SecureRandomTestResult);
+        future.cancel(true);
+        throw Exception(SecureRandomTestResult)
+    } catch (e: InterruptedException) {
+    } catch (e: ExecutionException) {
+    } catch (e: Exception) { }
 
-        es.shutdown();
-    }
+    es.shutdown();
 }
 
 @ExperimentalSerializationApi
 @JvmOverloads
 fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emptyList()): KeeperSecrets {
-    testSecureRandom()
     val (secrets, justBound) = fetchAndDecryptSecrets(options, recordsFilter)
     if (justBound) {
         try {
