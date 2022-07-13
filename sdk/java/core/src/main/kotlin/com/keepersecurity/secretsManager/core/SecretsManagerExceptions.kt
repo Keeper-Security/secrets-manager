@@ -1,3 +1,5 @@
+@file:JvmName("SecretsManagerException")
+
 package com.keepersecurity.secretsManager.core
 
 internal open class SecretsManagerException(message: String): Exception(message)
