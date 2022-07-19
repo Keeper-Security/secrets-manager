@@ -55,6 +55,13 @@ data class KeeperHttpResponse(val statusCode: Int, val data: ByteArray)
 data class KeeperError(val key_id: Int, val error: String)
 
 @Serializable
+private data class DeletePayload(
+    val clientVersion: String,
+    val clientId: String,
+    var recordUids: List<String>? = null,
+)
+
+@Serializable
 private data class GetPayload(
     val clientVersion: String,
     val clientId: String,
@@ -266,6 +273,13 @@ fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emp
 }
 
 @ExperimentalSerializationApi
+fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>) {
+    val payload = prepareDeletePayload(options.storage, recordUids)
+    postQuery(options, "delete_secret", payload)
+}
+
+
+@ExperimentalSerializationApi
 fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
     val payload = prepareUpdatePayload(options.storage, record)
     postQuery(options, "update_secret", payload)
@@ -450,6 +464,15 @@ private fun prepareGetPayload(
         payload.requestedRecords = recordsFilter
     }
     return payload
+}
+
+@ExperimentalSerializationApi
+private fun prepareDeletePayload(
+        storage: KeyValueStorage,
+        recordUids: List<String>
+): DeletePayload {
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    return DeletePayload(toKeeperAppClientString(ManifestLoader.version), clientId, recordUids)
 }
 
 @ExperimentalSerializationApi
