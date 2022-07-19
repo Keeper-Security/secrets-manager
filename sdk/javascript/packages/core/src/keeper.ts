@@ -51,6 +51,12 @@ type GetPayload = {
     requestedRecords?: string[] // only return these records
 }
 
+type DeletePayload = {
+    clientVersion: string
+    clientId: string
+    recordUids: string[]
+}
+
 type UpdatePayload = {
     clientVersion: string
     clientId: string
@@ -189,6 +195,19 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperReco
         recordUid: record.recordUid,
         data: webSafe64FromBytes(encryptedRecord),
         revision: record.revision
+    }
+}
+
+const prepareDeletePayload = async (storage: KeyValueStorage, recordUids: string[]): Promise<DeletePayload> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
+    console.log("recordUIDs: ", recordUids);
+    return {
+        clientVersion: 'ms' + packageVersion,
+        clientId: clientId,
+        recordUids: recordUids
     }
 }
 
@@ -485,6 +504,11 @@ export const getSecretByTitle = async (options: SecretManagerOptions, recordTitl
 export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord): Promise<void> => {
     const payload = await prepareUpdatePayload(options.storage, record)
     await postQuery(options, 'update_secret', payload)
+}
+
+export const deleteSecret = async (options: SecretManagerOptions, recordUids: string[]): Promise<void> => {
+    const payload = await prepareDeletePayload(options.storage, recordUids)
+    await postQuery(options, 'delete_secret', payload)
 }
 
 export const createSecret = async (options: SecretManagerOptions, folderUid: string, recordData: any): Promise<string> => {
