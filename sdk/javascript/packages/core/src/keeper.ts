@@ -87,6 +87,12 @@ type FileUploadPayload = {
     fileSize: number
 }
 
+type SecretsManagerDeleteResponseRecord = {
+    errorMessage: string
+    recordUid: string
+    responseCode: string
+}
+
 type SecretsManagerResponseFolder = {
     folderUid: string
     folderKey: string
@@ -117,6 +123,10 @@ type SecretsManagerResponse = {
     records: SecretsManagerResponseRecord[]
     expiresOn: number
     warnings: string[]
+}
+
+type SecretsManagerDeleteResponse = {
+    records: SecretsManagerDeleteResponseRecord[]
 }
 
 type SecretsManagerAddFileResponse = {
@@ -506,9 +516,11 @@ export const updateSecret = async (options: SecretManagerOptions, record: Keeper
     await postQuery(options, 'update_secret', payload)
 }
 
-export const deleteSecret = async (options: SecretManagerOptions, recordUids: string[]): Promise<void> => {
+export const deleteSecret = async (options: SecretManagerOptions, recordUids: string[]): Promise<SecretsManagerDeleteResponse> => {
     const payload = await prepareDeletePayload(options.storage, recordUids)
-    await postQuery(options, 'delete_secret', payload)
+    const responseData = await postQuery(options, 'delete_secret', payload)
+    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
+    return response
 }
 
 export const createSecret = async (options: SecretManagerOptions, folderUid: string, recordData: any): Promise<string> => {

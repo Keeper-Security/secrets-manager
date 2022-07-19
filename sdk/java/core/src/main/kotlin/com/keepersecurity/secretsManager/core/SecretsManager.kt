@@ -62,6 +62,18 @@ private data class DeletePayload(
 )
 
 @Serializable
+data class SecretsManagerDeleteResponse(
+        val records: List<SecretsManagerDeleteResponseRecord>
+)
+
+@Serializable
+data class SecretsManagerDeleteResponseRecord(
+        val errorMessage: String? = null,
+        val recordUid: String,
+        val responseCode: String
+)
+
+@Serializable
 private data class GetPayload(
     val clientVersion: String,
     val clientId: String,
@@ -273,9 +285,10 @@ fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emp
 }
 
 @ExperimentalSerializationApi
-fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>) {
+fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>): SecretsManagerDeleteResponse {
     val payload = prepareDeletePayload(options.storage, recordUids)
-    postQuery(options, "delete_secret", payload)
+    val responseData = postQuery(options, "delete_secret", payload)
+    return nonStrictJson.decodeFromString<SecretsManagerDeleteResponse>(bytesToString(responseData))
 }
 
 
@@ -472,7 +485,7 @@ private fun prepareDeletePayload(
         recordUids: List<String>
 ): DeletePayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
-    return DeletePayload(toKeeperAppClientString(ManifestLoader.version), clientId, recordUids)
+    return DeletePayload(KEEPER_CLIENT_VERSION, clientId, recordUids)
 }
 
 @ExperimentalSerializationApi
