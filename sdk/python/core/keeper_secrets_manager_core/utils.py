@@ -16,13 +16,16 @@ import hmac
 import json
 import logging
 import os
+import sys
 import random
 import string
 import time
 from json import JSONDecodeError
 from sys import platform as _platform
-from typing import Tuple
 from urllib import parse
+import subprocess
+import stat
+from distutils.util import strtobool
 
 from keeper_secrets_manager_core.keeper_globals import logger_name
 
@@ -168,12 +171,13 @@ def get_totp_code(url):
         base[0] = base[0] & 0x7f
         code_int = int.from_bytes(base, byteorder='big')
         code = str(code_int % (10 ** digits)).zfill(digits)
-        elapsed = tm_base % period; # time elapsed in current period in seconds
-        ttl = period - elapsed; # time to live in seconds
+        elapsed = tm_base % period  # time elapsed in current period in seconds
+        ttl = period - elapsed  # time to live in seconds
 
         return TotpCode(code, ttl, period)
 
-# password generation
+
+#  password generation
 def random_sample(sample_length=0, sample_string=''):
     use_secrets = False
     try:
@@ -194,6 +198,7 @@ def random_sample(sample_length=0, sample_string=''):
             sample += sample_string[pos]
 
     return sample
+
 
 def generate_password(length=64, lowercase=0, uppercase=0, digits=0, special_characters=0):
     # type: (int, int, int, int, int) -> string or None
@@ -219,5 +224,71 @@ def generate_password(length=64, lowercase=0, uppercase=0, digits=0, special_cha
     if special_characters:
         password += random_sample(special_characters, SPECIAL_CHARACTERS)
 
-    newpass = ''.join(random.sample(password,len(password)))
+    newpass = ''.join(random.sample(password, len(password)))
     return newpass
+
+
+def set_config_mode(file):
+
+    # Allow the user skip locking down the configuration file's mode.
+    if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE", "FALSE"))) is False:
+        # For Windows, use icacls. cacls is obsolete.
+        if _platform == "Windows":
+
+            # Remove mode inherited by the directory.
+            # Remove everyone's access
+            # Grant the current user full access
+            commands = [
+                ["icacls", file, "/inheritance:r"],
+                ["icacls", file, "/remove:g", "Everyone"],
+                ["icacls", file, "/grant:r", "$($env:USERNAME):(F)"]
+            ]
+            for command in commands:
+                output = subprocess.run(command)
+                if "Access is denied" in output.stderr.decode():
+                    raise Exception("Access denied to configuration file {}.".format(file))
+                if "Failed processing 0 files" not in output.stdout.decode():
+                    raise Exception("Could not change ACL for file {}. Set the environmental variable "
+                                    "KSM_CONFIG_SKIP_MODE to TRUE to skip setting the ACL mode.".format(file))
+        else:
+            # In Linux/MacOs get file permissions to 0600.
+            os.chmod(file, stat.S_IREAD | stat.S_IWRITE)
+
+
+def check_config_mode(file):
+
+    # If we are skipping setting the mode, skip checking.
+    if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE", "FALSE"))) is False:
+        # For Windows, use icacls. cacls is obsolete.
+        if _platform == "Windows":
+            output = subprocess.run(["icacls", file])
+            if "Access is denied" in output.stderr.decode():
+                raise PermissionError("Access denied to configuration file {}.".format(file))
+
+            if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is False:
+                user_output = subprocess.run(["$env:USERNAME"])
+                user = user_output.stdout.decode()
+                for line in output.stderr.decode().split("\n"):
+                    line = line[:len(file)].strip()
+                    if "{}:(".format(user) not in line:
+                        print("The config file mode is too open. Use `icacls` to remove access for other "
+                              "users and groups".format(file), file=sys.stderr)
+        else:
+            # Can the user read the file? First check if the file exists. If it does, os.access might throw
+            # and exception about it not existing. This mean we don't have access.
+            if os.path.exists(file) is True:
+                try:
+                    if os.access(file, os.R_OK) is False:
+                        raise PermissionError("Access denied to configuration file {}.".format(file))
+                except FileNotFoundError:
+                    raise PermissionError("Access denied to configuration file {}.".format(file))
+
+            # Allow user to skip being nagged by warning message.
+            if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is False:
+                mode = oct(os.stat(file).st_mode)
+                # Make sure group and user have no rights. Allow owner to have anything.
+                if mode[-2:] != "00":
+                    print("The config file mode, {}, is too open. "
+                          "It is recommended to execute 'chmod 0600 {}' to remove group and user "
+                          "access. To disable this warning, set the environment variable "
+                          "'KSM_CONFIG_SKIP_MODE_WARNING' to 'TRUE'.".format(mode[-4:], file), file=sys.stderr)

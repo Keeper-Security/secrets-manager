@@ -155,6 +155,7 @@ color = True
         with open("keeper.ini", "r") as fh:
             file_config = fh.read()
             fh.close()
+            os.chmod("keeper.ini", 0o0600)
             self.assertEqual(ini_config, file_config, "config on disk and defined above are not the same.")
 
         # Test INI export. Get the 'Another' profile

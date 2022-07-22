@@ -12,8 +12,9 @@
 
 from keeper_secrets_manager_cli.common import find_ksm_path
 from keeper_secrets_manager_cli.exception import KsmCliException
-from sys import platform
+from keeper_secrets_manager_core.utils import set_config_mode, check_config_mode
 import configparser
+import platform
 import os
 import base64
 import json
@@ -45,6 +46,10 @@ class Config:
 
         self._profiles = {}
 
+    @staticmethod
+    def is_windows():
+        return True if platform.system() == "Windows" else False
+
     def clear(self):
         self._profiles = {}
         self.config = ConfigCommon()
@@ -69,7 +74,7 @@ class Config:
         # If launched from an application, the current working directory might not be writeable. Use
         # the user's "HOME" directory.
         if launched_from_app is True:
-            if platform == "win32":
+            if Config.is_windows() is True:
                 working_directory = os.environ["USERPROFILE"]
             else:
                 working_directory = os.environ["HOME"]
@@ -124,6 +129,9 @@ class Config:
         elif os.path.exists(self.ini_file) is False:
             raise FileNotFoundError("Keeper INI files does not exists at {}".format(self.ini_file))
 
+        # Make sure the user is allowed to access the configuration.
+        check_config_mode(self.ini_file)
+
         config = configparser.ConfigParser(allow_no_value=True)
         config.read(self.ini_file)
         self.config = ConfigCommon(**config[Config.CONFIG_KEY])
@@ -142,6 +150,10 @@ class Config:
 
     def save(self):
         if self.has_config_file is True:
+
+            # Check if the file exists
+            file_exists = os.path.exists(self.ini_file)
+
             config = configparser.ConfigParser(allow_no_value=True)
             config[Config.CONFIG_KEY] = self.config.to_dict()
             for profile in self._profiles:
@@ -150,6 +162,10 @@ class Config:
             with open(self.ini_file, 'w') as fh:
                 config.write(fh)
                 fh.close()
+
+            # If the file exists, don't change the permissions.
+            if file_exists is False:
+                set_config_mode(self.ini_file)
 
     def to_dict(self):
         return {
