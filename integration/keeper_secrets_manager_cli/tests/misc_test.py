@@ -63,14 +63,11 @@ class MiscTest(unittest.TestCase):
 
             if platform.lower().startswith("win"):
                 sid, user = get_windows_user_sid_and_name()
-                print("SID", sid)
-                print("USER", user)
                 sp = subprocess.run(["icacls.exe", Config.default_ini_file], capture_output=True)
                 if sp.stderr is not None and sp.stderr.decode() != "":
                     self.fail("Could not icacls.exe {}: {}".format(Config.default_ini_file,sp.stderr.decode()))
                 allowed_users = [user.lower(), "Administrators".lower()]
                 for line in sp.stdout.decode().split("\n"):
-                    print("icacls.exe >", line)
                     parts = line[len(Config.default_ini_file):].split(":")
                     if len(parts) == 2:
                         found_user = parts[0].split("\\").pop()
