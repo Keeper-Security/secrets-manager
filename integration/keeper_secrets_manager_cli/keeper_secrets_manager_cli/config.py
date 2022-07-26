@@ -137,21 +137,27 @@ class Config:
         # Make sure the user is allowed to access the configuration.
         check_config_mode(self.ini_file, color_mod=colorama, logger=self.logger)
 
-        config = configparser.ConfigParser(allow_no_value=True)
-        config.read(self.ini_file)
-        self.config = ConfigCommon(**config[Config.CONFIG_KEY])
-        self._profiles = {}
-        for profile_name in config.sections():
-            if profile_name == Config.CONFIG_KEY:
-                continue
+        try:
+            config = configparser.ConfigParser(allow_no_value=True)
+            with open(self.ini_file, "r") as fh:
+                config.read_file(fh)
+                self.config = ConfigCommon(**config[Config.CONFIG_KEY])
+                self._profiles = {}
+                for profile_name in config.sections():
+                    if profile_name == Config.CONFIG_KEY:
+                        continue
 
-            self._profiles[profile_name] = ConfigProfile(
-                client_id=config[profile_name].get("clientid"),
-                private_key=config[profile_name].get("privatekey"),
-                app_key=config[profile_name].get("appkey"),
-                hostname=config[profile_name].get("hostname"),
-                app_owner_public_key=config[profile_name].get("appownerpublickey"),
-                server_public_key_id=config[profile_name].get("serverpublickeyid"))
+                    self._profiles[profile_name] = ConfigProfile(
+                        client_id=config[profile_name].get("clientid"),
+                        private_key=config[profile_name].get("privatekey"),
+                        app_key=config[profile_name].get("appkey"),
+                        hostname=config[profile_name].get("hostname"),
+                        app_owner_public_key=config[profile_name].get("appownerpublickey"),
+                        server_public_key_id=config[profile_name].get("serverpublickeyid"))
+        except PermissionError:
+            raise PermissionError("Access denied to configuration file {}.".format(self.ini_file))
+        except FileNotFoundError:
+            raise PermissionError("Cannot find configuration file {}.".format(self.ini_file))
 
     def save(self):
         if self.has_config_file is True:

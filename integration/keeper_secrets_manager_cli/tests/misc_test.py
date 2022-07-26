@@ -7,9 +7,12 @@ import tempfile
 from keeper_secrets_manager_cli.config import Config
 from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
+from keeper_secrets_manager_core.utils import get_windows_user_sid_and_name
 from keeper_secrets_manager_core import mock
 from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_cli.__main__ import cli
+from sys import platform
+import subprocess
 
 
 class MiscTest(unittest.TestCase):
@@ -19,6 +22,7 @@ class MiscTest(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         os.chdir(self.temp_dir.name)
         self.delete_me = []
+        os.environ.pop("KSM_CONFIG_SKIP_MODE_WARNING", None)
 
     def tearDown(self) -> None:
         os.chdir(self.orig_dir)
@@ -27,6 +31,7 @@ class MiscTest(unittest.TestCase):
         # Cannot execute command: [Errno 26] Text file busy: '/tmp/tmpsp3v5vqb'
         for item in self.delete_me:
             os.unlink(item)
+        os.environ.pop("KSM_CONFIG_SKIP_MODE_WARNING", None)
 
     def test_config_mode_dog_food(self):
 
@@ -56,8 +61,24 @@ class MiscTest(unittest.TestCase):
             self.assertEqual(0, result.exit_code, "did not get a success for default init")
             self.assertTrue(os.path.exists(Config.default_ini_file), "could not find ini file")
 
-            stat = os.stat(Config.default_ini_file)
-            self.assertEqual("600", oct(stat.st_mode)[-3:], "the keeper.ini has the wrong mode")
+            if platform.lower().startswith("win"):
+                sid, user = get_windows_user_sid_and_name()
+                print("SID", sid)
+                print("USER", user)
+                sp = subprocess.run(["icacls.exe", Config.default_ini_file], capture_output=True)
+                if sp.stderr is not None and sp.stderr.decode() != "":
+                    self.fail("Could not icacls.exe {}: {}".format(Config.default_ini_file,sp.stderr.decode()))
+                allowed_users = [user.lower(), "Administrators".lower()]
+                for line in sp.stdout.decode().split("\n"):
+                    print("icacls.exe >", line)
+                    parts = line[len(Config.default_ini_file):].split(":")
+                    if len(parts) == 2:
+                        found_user = parts[0].split("\\").pop()
+                        if found_user.lower() not in allowed_users:
+                            self.fail("Found user {} access on config file".format(found_user))
+            else:
+                stat = os.stat(Config.default_ini_file)
+                self.assertEqual("600", oct(stat.st_mode)[-3:], "the keeper.ini has the wrong mode")
 
             result = runner.invoke(cli, ['secrets', 'list'], catch_exceptions=False)
             self.assertEqual(0, result.exit_code, "did not get a success for secrets list")
@@ -96,7 +117,14 @@ class MiscTest(unittest.TestCase):
             self.assertTrue(os.path.exists(Config.default_ini_file), "could not find ini file")
 
             # Open up the config
-            os.chmod(Config.default_ini_file, 0o0644)
+            if platform.lower().startswith("win"):
+                sp = subprocess.run('icacls.exe "{}" /grant Guest:F'.format(Config.default_ini_file))
+                if sp.stderr is not None and sp.stderr.decode() != "":
+                    self.fail("Could not icacls.exe {}: {}".format(Config.default_ini_file, sp.stderr.decode()))
+                sp = subprocess.run(["icacls.exe", Config.default_ini_file], capture_output=True)
+                print(sp.stdout.decode())
+            else:
+                os.chmod(Config.default_ini_file, 0o0644)
 
             result = runner.invoke(cli, ['secrets', 'list'], catch_exceptions=False)
             self.assertEqual(0, result.exit_code, "did not get a success for secrets list")
@@ -105,7 +133,7 @@ class MiscTest(unittest.TestCase):
             # The phrase "too open" should appear in the warning message
             assert "too open" in result.output
 
-    def test_config_mode_access_denined(self):
+    def test_config_mode_access_denied(self):
 
         mock_config = MockConfig.make_config()
 
@@ -134,11 +162,18 @@ class MiscTest(unittest.TestCase):
             self.assertTrue(os.path.exists(Config.default_ini_file), "could not find ini file")
 
             # Remove all rights from the ini file
-            os.chmod(Config.default_ini_file, 0o0000)
+            if platform.lower().startswith("win"):
+
+                for cmd in ['icacls.exe {} /reset'.format(Config.default_ini_file),
+                            'icacls.exe {} /inheritance:r'.format(Config.default_ini_file),
+                            'icacls.exe {} /remove Everyone'.format(Config.default_ini_file)]:
+                    subprocess.run(cmd, capture_output=True)
+            else:
+                os.chmod(Config.default_ini_file, 0o0000)
 
             try:
-                result = runner.invoke(cli, ['secrets', 'list'], catch_exceptions=False)
+                result = runner.invoke(cli, ['--log-level', 'DEBUG', 'secrets', 'list'], catch_exceptions=False)
                 self.assertEqual(0, result.exit_code, "did not get a success for secrets list")
-                self.fail("Should fail due to file mode 0o0000")
+                self.fail("Should fail due to file mode change")
             except Exception as err:
                 assert "Access denied" in str(err)

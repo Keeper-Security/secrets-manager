@@ -228,6 +228,43 @@ def generate_password(length=64, lowercase=0, uppercase=0, digits=0, special_cha
     return newpass
 
 
+def get_windows_user_sid_and_name(logger=None):
+
+    # Get the current user. Subprocess will run CMD. Getting from os.environ.get("USERNAME") can be flaky.
+    user_output = subprocess.run(["whoami"], capture_output=True)
+    if user_output.stdout is None:
+        if logger is not None:
+            logger.info("Cannot get current window user via 'whoami'")
+        return None, None
+
+    # Get only the username, not the machine
+    user_parts = user_output.stdout.decode().strip().split("\\")
+    user = user_parts[1] if len(user_parts) == 2 else user_parts[0]
+
+    # Get the SID for the user. The 'where' command doesn't seem to work :(, so get them all.
+    sid_output = subprocess.run(["wmic", "useraccount", "get",  "name,sid"], capture_output=True)
+    if sid_output.stdout is None:
+        if logger is not None:
+            logger.info("Cannot user account list for SID lookup")
+        return None, None
+
+    sid = None
+    if sid_output.stdout is not None:
+        lines = sid_output.stdout.decode().split("\n")
+        first_line = lines[0].lower()
+        lines = lines[1:]
+        index = first_line.index("sid")
+        for line in lines:
+            if line.lower().startswith(user) is True:
+                sid = line[index:].strip()
+                break
+    if sid is None:
+        if logger is not None:
+            logger.info("Cannot find the SID for user " + user)
+
+    return sid, user
+
+
 def set_config_mode(file, logger=None):
 
     # Allow the user skip locking down the configuration file's mode.
@@ -236,38 +273,7 @@ def set_config_mode(file, logger=None):
 
         if _platform.lower().startswith("win") is True:
 
-            # Get the current user. Subprocess will run CMD
-            user_output = subprocess.run(["whoami"], capture_output=True)
-            if user_output.stdout is None:
-                if logger is not None:
-                    logger.info("Cannot get current window user via 'whoami'")
-                return
-
-            # Get only the username, not the machine
-            user_parts = user_output.stdout.decode().strip().split("\\")
-            user = user_parts[1] if len(user_parts) == 2 else user_parts[0]
-
-            # Get the SID for the user. The 'where' command doesn't seem to work :(, so get them all.
-            sid_output = subprocess.run(["wmic", "useraccount", "get",  "name,sid"], capture_output=True)
-            if sid_output.stdout is None:
-                if logger is not None:
-                    logger.info("Cannot user account list for SID lookup")
-                return
-
-            sid = None
-            if sid_output.stdout is not None:
-                lines = sid_output.stdout.decode().split("\n")
-                first_line = lines[0].lower()
-                lines = lines[1:]
-                index = first_line.index("sid")
-                for line in lines:
-                    if line.lower().startswith(user) is True:
-                        sid = line[index:].strip()
-                        break
-            if sid is None:
-                if logger is not None:
-                    logger.info("Cannot find the SID for user " + user)
-                return
+            sid, user = get_windows_user_sid_and_name()
 
             # https://stackoverflow.com/questions/5264595/windows-chmod-600
             # https://github.com/PowerShell/Win32-OpenSSH/issues/132
@@ -277,6 +283,7 @@ def set_config_mode(file, logger=None):
             # Grant the current user full access
             # Allow Administrators full access
             commands = [
+                'icacls.exe "{}" /reset'.format(file),
                 'icacls.exe "{}" /inheritance:r'.format(file),
                 'icacls.exe "{}" /remove:g Everyone:F'.format(file),
                 'icacls.exe "{}" /grant:r Administrators:F'.format(file),
@@ -306,33 +313,44 @@ def check_config_mode(file, color_mod=None, logger=None):
 
     # If we are skipping setting the mode, skip checking.
     if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE", "FALSE"))) is False:
+
         # For Windows, use icacls. cacls is obsolete.
         if _platform.lower().startswith("win") is True:
-            output = subprocess.run(["icacls", file], capture_output=True)
 
-            if output.stderr is not None and "Access is denied" in output.stderr.decode():
+            # If this doesn't error out, then we know the file exists
+            output = subprocess.run(["icacls.exe", file], capture_output=True)
+            if output.stderr is not None:
+                if "Access is denied" in output.stderr.decode():
+                    raise PermissionError("Access denied to configuration file {}.".format(file))
+                if "cannot find" in output.stderr.decode():
+                    raise FileNotFoundError("Cannot find configuration file {}.".format(file))
+
+            # Try to access the file. If it now can't be found, it's a permission problem.
+            try:
+                with open(file, "r") as fh:
+                    fh.close()
+            except (FileNotFoundError, PermissionError):
                 raise PermissionError("Access denied to configuration file {}.".format(file))
 
             if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is False:
                 # We need to figure out who we are. subprocess run will use cmd
-                user_output = subprocess.run(["whoami"], capture_output=True)
-                if user_output.stdout is not None:
-                    user = user_output.stdout.decode().strip()
 
-                    allowed = [user.lower(), r"BUILTIN\Administrators".lower()]
+                sid, user = get_windows_user_sid_and_name()
+                if sid is not None:
+                    allowed_users = [user.lower(), "Administrators".lower()]
+                    for line in output.stdout.decode().split("\n"):
+                        parts = line[len(file):].split(":")
+                        if len(parts) == 2:
+                            found_user = parts[0].split("\\").pop()
+                            if found_user.lower() not in allowed_users:
 
-                    if output.stdout is not None:
-                        for line in output.stdout.decode().split("\n"):
-                            if line.strip() == "":
-                                break
-                            parts = line[len(file):].strip().split(":")
-                            if parts[0].lower() not in allowed:
                                 message = "The config file mode is too open for '{}'. Use `icacls` to remove access " \
                                           "for other users and groups.\n\n".format(file)
+                                message += '> icacls.exe "{}" /reset\n'.format(file)
                                 message += '> icacls.exe "{}" /inheritance:r\n'.format(file)
                                 message += '> icacls.exe "{}" /remove:g Everyone:F\n'.format(file)
                                 message += '> icacls.exe "{}" /grant:r Administrators:F\n'.format(file)
-                                message += '> icacls.exe "{}" /grant:r *<USER SID>:F\n'.format(file)
+                                message += '> icacls.exe "{}" /grant:r *{}:F\n'.format(file, sid)
                                 message += "\nTo disable this check, set the environmental variable " \
                                            "'KSM_CONFIG_SKIP_MODE_WARNING' to 'TRUE'."
                                 if color_mod is not None:
