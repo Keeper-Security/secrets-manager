@@ -330,7 +330,7 @@ class ConfigTest(unittest.TestCase):
                 self.fail("Should have gotten an exception")
             except Exception as err:
                 print("EXPECTED ERROR", err)
-            
+
             os.chdir(self.orig_working_dir)
 
     def test_config_file_mode(self):
