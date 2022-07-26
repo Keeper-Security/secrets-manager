@@ -10,6 +10,8 @@ from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.mock import MockConfig
 import io
 from contextlib import redirect_stderr
+from sys import platform
+import subprocess
 
 
 class ConfigTest(unittest.TestCase):
@@ -328,9 +330,12 @@ class ConfigTest(unittest.TestCase):
                 self.fail("Should have gotten an exception")
             except Exception as err:
                 print("EXPECTED ERROR", err)
+            
+            os.chdir(self.orig_working_dir)
 
     def test_config_file_mode(self):
 
+        file = FileKeyValueStorage.default_config_file_location
         mock_config = MockConfig.make_config()
 
         # Dog food
@@ -342,9 +347,13 @@ class ConfigTest(unittest.TestCase):
             config.set(ConfigKeys.KEY_APP_KEY, mock_config.get("appKey"))
             config.set(ConfigKeys.KEY_PRIVATE_KEY, mock_config.get("privateKey"))
 
-            assert os.path.exists(FileKeyValueStorage.default_config_file_location)
-            self.assertEqual("0600", oct(os.stat(FileKeyValueStorage.default_config_file_location).st_mode)[-4:],
-                             "config file mode is not correct")
+            assert os.path.exists(file)
+
+            if platform.lower().startswith("win") is True:
+                pass
+            else:
+                self.assertEqual("0600", oct(os.stat(file).st_mode)[-4:],
+                                 "config file mode is not correct")
 
             with io.StringIO() as buf, redirect_stderr(buf):
                 new_config = FileKeyValueStorage()
@@ -353,9 +362,12 @@ class ConfigTest(unittest.TestCase):
                 stderr = buf.getvalue()
                 assert "too open" not in stderr
 
-            # Remove and make new too open config file.
-            os.unlink(FileKeyValueStorage.default_config_file_location)
-            with open(FileKeyValueStorage.default_config_file_location, "w") as fh:
+            # Open up the file
+            if platform.lower().startswith("win") is True:
+                subprocess.run('icacls.exe "{}" /grant Guest:F'.format(file))
+            else:
+                os.chmod(file, 0o644)
+            with open(file, "w") as fh:
                 fh.write("{}")
                 fh.close()
 
@@ -366,7 +378,14 @@ class ConfigTest(unittest.TestCase):
                     stderr = buf.getvalue()
                     assert "too open" in stderr
 
-            os.chmod(FileKeyValueStorage.default_config_file_location, 0o000)
+            # Lock down the file too much
+            if platform.lower().startswith("win") is True:
+                for cmd in ['icacls.exe {} /reset'.format(file),
+                            'icacls.exe {} /inheritance:r'.format(file),
+                            'icacls.exe {} /remove Everyone'.format(file)]:
+                    subprocess.run(cmd)
+            else:
+                os.chmod(file, 0o000)
             try:
                 no_access = FileKeyValueStorage()
                 no_access.read_storage()
@@ -375,3 +394,9 @@ class ConfigTest(unittest.TestCase):
                 assert "Access denied" in str(err)
             except Exception as err:
                 self.fail("Got the wrong exceptions for access defined: {}".format(err))
+
+            # Windows won't delete the temp directory it does not have permissions.
+            if platform.lower().startswith("win") is True:
+                subprocess.run('icacls.exe "{}" /grant Everyone:F'.format(file))
+            os.unlink(file)
+            os.chdir(self.orig_working_dir)
