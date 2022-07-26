@@ -13,6 +13,9 @@
 from keeper_secrets_manager_cli.common import find_ksm_path
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_core.utils import set_config_mode, check_config_mode
+from keeper_secrets_manager_core.keeper_globals import logger_name
+import logging
+import colorama
 import configparser
 import platform
 import os
@@ -45,6 +48,8 @@ class Config:
             self.has_config_file = False
 
         self._profiles = {}
+
+        self.logger = logging.getLogger(logger_name)
 
     @staticmethod
     def is_windows():
@@ -130,7 +135,7 @@ class Config:
             raise FileNotFoundError("Keeper INI files does not exists at {}".format(self.ini_file))
 
         # Make sure the user is allowed to access the configuration.
-        check_config_mode(self.ini_file)
+        check_config_mode(self.ini_file, color_mod=colorama, logger=self.logger)
 
         config = configparser.ConfigParser(allow_no_value=True)
         config.read(self.ini_file)
@@ -165,7 +170,7 @@ class Config:
 
             # If the file exists, don't change the permissions.
             if file_exists is False:
-                set_config_mode(self.ini_file)
+                set_config_mode(self.ini_file, logger=self.logger)
 
     def to_dict(self):
         return {
