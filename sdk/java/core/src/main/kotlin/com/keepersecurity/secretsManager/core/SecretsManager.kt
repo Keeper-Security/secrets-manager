@@ -17,8 +17,9 @@ import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.time.Instant
 import java.util.*
-import java.util.jar.Manifest
 import javax.net.ssl.*
+
+const val KEEPER_CLIENT_VERSION = "mj16.3.4"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -250,33 +251,6 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
     storage.saveBytes(KEY_PUBLIC_KEY, extractPublicRaw(keyPair.public)) // public key stored raw
 }
 
-internal object ManifestLoader {
-    internal val version: String
-
-    init {
-        val clazz = javaClass
-        val classPath: String = clazz.getResource(clazz.simpleName.toString() + ".class")!!.toString()
-        val libPathEnd = classPath.lastIndexOf("!")
-        val filePath = if (libPathEnd > 0) {
-            val libPath = classPath.substring(0, libPathEnd)
-            "$libPath!/META-INF/MANIFEST.MF"
-        } else { // we might be testing
-            var buildPathCoreIdx = classPath.lastIndexOf("build/classes")
-            if (buildPathCoreIdx < 0) {
-                buildPathCoreIdx = classPath.lastIndexOf("out/production/classes")
-            }
-            val buildPath = classPath.substring(0, buildPathCoreIdx)
-            "${buildPath}build/tmp/jar/MANIFEST.MF"
-        }
-        val manifest = Manifest(URL(filePath).openStream())
-        version = manifest.mainAttributes.getValue("Implementation-Version")
-    }
-}
-
-fun toKeeperAppClientString(version: String): String {
-    return "mj${version.replace("-SNAPSHOT", "")}"
-}
-
 @ExperimentalSerializationApi
 @JvmOverloads
 fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emptyList()): KeeperSecrets {
@@ -462,7 +436,7 @@ private fun prepareGetPayload(
 ): GetPayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val payload = GetPayload(
-        toKeeperAppClientString(ManifestLoader.version),
+        KEEPER_CLIENT_VERSION,
         clientId,
         null,
         null
@@ -486,7 +460,7 @@ private fun prepareUpdatePayload(
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val recordBytes = stringToBytes(Json.encodeToString(record.data))
     val encryptedRecord = encrypt(recordBytes, record.recordKey)
-    return UpdatePayload(toKeeperAppClientString(ManifestLoader.version), clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision)
+    return UpdatePayload(KEEPER_CLIENT_VERSION, clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision)
 }
 
 @ExperimentalSerializationApi
@@ -508,7 +482,7 @@ private fun prepareCreatePayload(
     val encryptedRecord = encrypt(recordBytes, recordKey)
     val encryptedRecordKey = publicEncrypt(recordKey, ownerPublicKey)
     val encryptedFolderKey = encrypt(recordKey, recordFromFolder.folderKey!!)
-    return CreatePayload(toKeeperAppClientString(ManifestLoader.version), clientId,
+    return CreatePayload(KEEPER_CLIENT_VERSION, clientId,
         webSafe64FromBytes(recordUid),
         bytesToBase64(encryptedRecordKey),
         folderUid,
@@ -551,7 +525,7 @@ private fun prepareFileUploadPayload(
     val encryptedOwnerRecord = encrypt(ownerRecordBytes, ownerRecord.recordKey)
 
     return FileUploadPayloadAndFile(
-        FileUploadPayload(toKeeperAppClientString(ManifestLoader.version), clientId,
+        FileUploadPayload(KEEPER_CLIENT_VERSION, clientId,
             fileRecordUid,
             bytesToBase64(encryptedFileRecordKey),
             webSafe64FromBytes(encryptedFileRecord),
