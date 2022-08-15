@@ -6,6 +6,7 @@ from keeper_secrets_manager_core.storage import FileKeyValueStorage
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core import mock
 from keeper_secrets_manager_core.mock import MockConfig
+from keeper_secrets_manager_core.dto.dtos import helpers, RecordField
 
 
 class RecordTest(unittest.TestCase):
@@ -43,7 +44,7 @@ class RecordTest(unittest.TestCase):
                 bad.field("login", "My Login")
                 bad.field("password", [])
 
-                # A ugly record. The application didn't even add the field. We need to set flags to prune empty fields.
+                # An ugly record. The application didn't even add the field. We need to set flags to prune empty fields.
                 # 'fields': [...]
                 ugly_res = mock.Response(flags={"prune_empty_fields": True})
                 ugly = ugly_res.add_record(title="Ugly Record", record_type='login')
@@ -73,3 +74,28 @@ class RecordTest(unittest.TestCase):
                 os.unlink(fh.name)
             except OSError:
                 pass
+
+    def test_record_field(self):
+
+        rf = RecordField(field_type="login", value="test", label="Test", required=True, enforceGeneration=False,
+                         privacyScreen=True, complexity={"foo": "bar"})
+
+        value = helpers.obj_to_dict(rf)
+        self.assertEqual("login", value.get("type"), "type is not correct")
+        self.assertEqual(["test"], value.get("value"), "value is not correct")
+        self.assertEqual("Test", value.get("label"), "label is not correct")
+        self.assertTrue(value.get("required"), "required is not correct")
+        self.assertFalse(value.get("enforceGeneration"), "enforceGeneration is not correct")
+        self.assertTrue(value.get("privacyScreen"), "privacyScreen is not correct")
+        self.assertIsNotNone(value.get("complexity"), "complexity is not correct")
+
+        rf = RecordField(field_type="login", value="test")
+
+        value = helpers.obj_to_dict(rf)
+        self.assertEqual("login", value.get("type"), "type is not correct")
+        self.assertEqual(["test"], value.get("value"), "value is not correct")
+        self.assertIsNone(value.get("label"), "label is not correct")
+        self.assertIsNone(value.get("required"), "required is not correct")
+        self.assertIsNone(value.get("enforceGeneration"), "enforceGeneration is not correct")
+        self.assertIsNone(value.get("privacyScreen"), "privacyScreen is not correct")
+        self.assertIsNone(value.get("complexity"), "complexity is not correct")

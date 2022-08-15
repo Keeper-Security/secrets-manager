@@ -4,6 +4,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.3.5
+
+* Allow enforceGeneration, privacyScreen, and complexity in record fields when creating a record.
+
 ## 16.3.4
 
 * Provide better exception messages when the config JSON file is not utf-8 encoded.
