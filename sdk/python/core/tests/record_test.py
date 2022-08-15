@@ -89,7 +89,7 @@ class RecordTest(unittest.TestCase):
         self.assertTrue(value.get("privacyScreen"), "privacyScreen is not correct")
         self.assertIsNotNone(value.get("complexity"), "complexity is not correct")
 
-        rf = RecordField(field_type="login", value="test")
+        rf = RecordField(field_type="login", value="test", privacyScreen=None)
 
         value = helpers.obj_to_dict(rf)
         self.assertEqual("login", value.get("type"), "type is not correct")
@@ -97,5 +97,6 @@ class RecordTest(unittest.TestCase):
         self.assertIsNone(value.get("label"), "label is not correct")
         self.assertIsNone(value.get("required"), "required is not correct")
         self.assertIsNone(value.get("enforceGeneration"), "enforceGeneration is not correct")
+        assert "privacyScreen" not in value, "privacyScreen exists in dictionary"
         self.assertIsNone(value.get("privacyScreen"), "privacyScreen is not correct")
         self.assertIsNone(value.get("complexity"), "complexity is not correct")
