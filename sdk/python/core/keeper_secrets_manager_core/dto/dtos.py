@@ -455,7 +455,7 @@ class RecordCreate:
             raise KeeperError(f"Record title should be a string. Provided type {type(self.title)}")
 
         # Validate notes
-        if not isinstance(self.notes, str):
+        if self.notes and not isinstance(self.notes, str):
             raise KeeperError(f"Record notes should be a string. Provided type {type(self.notes)}")
 
         field_type_errors = []
