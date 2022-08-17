@@ -11,3 +11,29 @@ This module contains plugins that allow your Ansible automations to use Keeper S
 * `keeper_redact` - Stdout Callback plugin to redact secrets from logs.
 
 For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/integrations/ansible-plugin
+
+# Changes
+
+## 1.1.4
+
+* Move check for custom record type in `keeper_create` plugin.
+* Keeper Secret Manager SDK version pinned to 16.3.5 or greater. Allows extra field parameters
+that come from Keeper Commander.
+
+## 1.1.3
+
+* Per PEP 263, added `# -*- coding: utf-8 -*-` to top of file to prevent errors on system that are not UTF-8.
+
+## 1.1.2
+
+* Added `keeper_create`, `keeper_password`, `keeper_info` action plugins.
+* Fixed complex strings not regular expressions escaping properly for 
+`keeper_redact`. 
+* Added `keeper_app_owner_public_key` to the `keeper_init` plugin configuration
+generation. `keeper_app_owner_public_key` also added to Ansible variables.
+
+## 1.1.1
+* Fixed misspelled collection name in `README.md`
+
+## 1.1.0
+* First Ansible Galaxy release
