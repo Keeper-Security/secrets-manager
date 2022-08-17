@@ -416,7 +416,8 @@ VALID_RECORD_FIELDS = ['login', 'password', 'url', 'fileRef', 'oneTimeCode', 'ot
 
 class RecordField:
 
-    def __init__(self, field_type=None, value=None, label=None, required=None):
+    def __init__(self, field_type=None, value=None, label=None, required=None, enforceGeneration=None,
+                 privacyScreen=None, complexity=None):
 
         self.type = field_type
 
@@ -427,9 +428,14 @@ class RecordField:
 
         if label:
             self.label = label
-
         if required:
             self.required = required
+        if enforceGeneration:
+            self.enforceGeneration = enforceGeneration
+        if privacyScreen:
+            self.privacyScreen = privacyScreen
+        if complexity:
+            self.complexity = complexity
 
 
 class RecordCreate:
