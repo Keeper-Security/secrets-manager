@@ -408,6 +408,12 @@ class KeeperFileData:
         self.type = None
 
 
+VALID_RECORD_FIELDS = ['login', 'password', 'url', 'fileRef', 'oneTimeCode', 'otp', 'name', 'birthDate', 'date',
+                       'expirationDate', 'text', 'securityQuestion', 'multiline', 'email', 'cardRef', 'addressRef',
+                       'pinCode', 'phone', 'secret', 'note', 'accountNumber', 'paymentCard', 'bankAccount', 'keyPair',
+                       'host', 'address', 'licenseNumber']
+
+
 class RecordField:
 
     def __init__(self, field_type=None, value=None, label=None, required=None):
@@ -436,7 +442,42 @@ class RecordCreate:
         self.fields = None
         self.custom = None
 
+    def _validate(self):
+
+        # Validate title
+        if not isinstance(self.title, str):
+            raise KeeperError(f"Record title should be a string. Provided type {type(self.title)}")
+
+        # Validate notes
+        if not isinstance(self.notes, str):
+            raise KeeperError(f"Record notes should be a string. Provided type {type(self.notes)}")
+
+        field_type_errors = []
+        field_value_errors = []
+
+        if self.fields:
+            for field in self.fields:
+                field_type = field.type
+                if field_type not in VALID_RECORD_FIELDS:
+                    field_type_errors.append(field_type)
+
+                field_value = field.value
+                if not isinstance(field_value, list):
+                    field_value_errors.append(field_type)
+
+            # Validate field types - only legit field type names
+            if len(field_type_errors) > 0:
+                raise KeeperError(f"Following field types are not allowed [{', '.join(field_type_errors)}]. "
+                                  f"Allowed field types are [{', '.join(VALID_RECORD_FIELDS)}]")
+
+            # Validate field values - arrays only
+            if len(field_value_errors) > 0:
+                raise KeeperError(f"Fields with the following types are of a list type [{', '.join(field_value_errors)}]. "
+                                  f"Make sure that those fields have values as a list type")
+
     def to_dict(self):
+
+        self._validate()
 
         rec_dict = {
             'type': self.record_type,
