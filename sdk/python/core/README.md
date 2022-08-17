@@ -6,7 +6,8 @@ For more information see our official documentation page https://docs.keeper.io/
 
 ## 16.3.5
 
-* Allow enforceGeneration, privacyScreen, and complexity in record fields when creating a record.
+* Allow `enforceGeneration`, `privacyScreen`, and `complexity` in record fields when creating a record.
+* Record creation validation. Making sure that only legitimate record field types, notes section, and title of the record can be saved
 
 ## 16.3.4
 
