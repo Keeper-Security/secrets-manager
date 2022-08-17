@@ -46,3 +46,14 @@ class RecordTest(unittest.TestCase):
 
         self.assertRaises(KeeperError, login_record_create.to_dict)
 
+    def test_notes_none(self):
+        login_record_create = RecordCreate('CUSTOM TYPE', "Test record 1")
+        login_record_create.fields = [
+            RecordField(field_type='login', value='username@email.com'),
+            RecordField(field_type='password', value='password1')
+        ]
+        login_record_create.notes = None
+
+        login_record_create_dict = login_record_create.to_dict()
+
+        self.assertEqual("CUSTOM TYPE", login_record_create_dict.get('type'), "type didn't match")
