@@ -116,6 +116,16 @@ configuration file or even a playbook.
 
 # Changes
 
+## 1.1.4
+
+* Move check for custom record type in `keeper_create` plugin.
+* Keeper Secret Manager SDK version pinned to 16.3.5 or greater. Allows extra field parameters
+that come from Keeper Commander.
+
+## 1.1.3
+
+* Per PEP 263, added `# -*- coding: utf-8 -*-` to top of file to prevent errors on system that are not UTF-8.
+
 ## 1.1.2
 
 * Added `keeper_create`, `keeper_password`, `keeper_info` action plugins.

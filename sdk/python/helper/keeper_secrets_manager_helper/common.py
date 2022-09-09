@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from .exception import FileSyntaxException
 import yaml
 import json

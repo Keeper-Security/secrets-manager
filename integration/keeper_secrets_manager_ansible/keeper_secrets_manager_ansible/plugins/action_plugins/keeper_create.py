@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 #  _  __
-# | |/ /___ ___ _ __  ___ _ _ ®
+# | |/ /___ ___ _ __  ___ _ _ (R)
 # | ' </ -_) -_) '_ \/ -_) '_|
 # |_|\_\___\___| .__/\___|_|
 #              |_|
@@ -233,8 +234,6 @@ class ActionModule(ActionBase):
         record_type = self._task.args.get("record_type")
         if record_type is None:
             raise AnsibleError("The record_type is blank. keeper_create requires this value to be set.")
-        if record_type not in RecordType.get_record_type_list():
-            raise AnsibleError("The record_type {} is not a valid record type.".format(record_type))
         title = self._task.args.get("title")
         if title is None:
             raise AnsibleError("The title is blank. keeper_create requires this value to be set.")
@@ -251,6 +250,9 @@ class ActionModule(ActionBase):
                     if isinstance(keeper_record_type, dict) is True:
                         keeper_record_type = [keeper_record_type]
                 RecordType.load_commander_record_types(keeper_record_type)
+
+        if record_type not in RecordType.get_record_type_list():
+            raise AnsibleError("The record_type {} is not a valid record type.".format(record_type))
 
         fields = []
 

@@ -2,6 +2,7 @@ import unittest
 import os
 import tempfile
 import json
+import codecs
 
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
 from keeper_secrets_manager_core import SecretsManager
@@ -286,3 +287,37 @@ class ConfigTest(unittest.TestCase):
         # App key should be removed.
         self.assertIsNone(secrets_manager.config.get(ConfigKeys.KEY_CLIENT_KEY),
                           "client key (one time token) was removed successfully")
+
+    def test_encoding(self):
+
+        mock_config = MockConfig.make_config()
+        json_config = MockConfig.make_json(config=mock_config)
+
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            os.chdir(temp_dir_name)
+
+            # This one causes a JSON that looks OK (Python will print it), however the json.loads won't decode it.
+            with codecs.open("client-config.json", "w", 'utf-16-be') as fh:
+                fh.write(json_config)
+                fh.close()
+
+            config = FileKeyValueStorage()
+
+            try:
+                config.read_storage()
+                self.fail("Should have gotten an exception")
+            except Exception as err:
+                print("EXPECTED ERROR", err)
+
+            # This one causes "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+            with codecs.open("client-config.json", "wb") as fh:
+                fh.write(json_config.encode("utf-16"))
+                fh.close()
+
+            config = FileKeyValueStorage()
+
+            try:
+                config.read_storage()
+                self.fail("Should have gotten an exception")
+            except Exception as err:
+                print("EXPECTED ERROR", err)

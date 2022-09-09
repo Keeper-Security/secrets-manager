@@ -1,3 +1,15 @@
+# -*- coding: utf-8 -*-
+#  _  __
+# | |/ /___ ___ _ __  ___ _ _ (R)
+# | ' </ -_) -_) '_ \/ -_) '_|
+# |_|\_\___\___| .__/\___|_|
+#              |_|
+#
+# Keeper Secrets Manager
+# Copyright 2021 Keeper Security Inc.
+# Contact: ops@keepersecurity.com
+#
+
 from keeper_secrets_manager_cli.common import find_ksm_path
 from keeper_secrets_manager_cli.exception import KsmCliException
 from sys import platform
