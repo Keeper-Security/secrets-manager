@@ -19,7 +19,7 @@ import java.time.Instant
 import java.util.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj16.3.4"
+const val KEEPER_CLIENT_VERSION = "mj16.3.6"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
