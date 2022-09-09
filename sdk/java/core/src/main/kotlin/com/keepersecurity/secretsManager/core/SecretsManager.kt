@@ -18,7 +18,6 @@ import java.security.cert.X509Certificate
 import java.time.Instant
 import java.util.*
 import java.util.concurrent.*
-import java.util.jar.Manifest
 import javax.net.ssl.*
 
 const val KEEPER_CLIENT_VERSION = "mj16.3.6"
@@ -257,15 +256,9 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
     storage.saveBytes(KEY_PUBLIC_KEY, extractPublicRaw(keyPair.public)) // public key stored raw
 }
 
-
-fun toKeeperAppClientString(version: String): String {
-    return "mj${version.replace("-SNAPSHOT", "")}"
-}
-
 private const val FAST_SECURE_RANDOM_PREFIX = "Fast SecureRandom detected! "
 private const val SLOW_SECURE_RANDOM_PREFIX = "Slow SecureRandom detected! "
-private const val SLOW_SECURE_RANDOM_MESSAGE =
-    " Install one of the following entropy sources to improve speed of random number generator on your platform: 'haveged' or 'rng-tools'"
+private const val SLOW_SECURE_RANDOM_MESSAGE = " Install one of the following entropy sources to improve speed of random number generator on your platform: 'haveged' or 'rng-tools'"
 private var SecureRandomTestResult = ""
 
 private fun testSecureRandom() {
