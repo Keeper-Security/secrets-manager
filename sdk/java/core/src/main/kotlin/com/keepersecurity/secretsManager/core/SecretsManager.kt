@@ -234,6 +234,8 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
             "EU" -> "keepersecurity.eu"
             "AU" -> "keepersecurity.com.au"
             "GOV" -> "govcloud.keepersecurity.us"
+            "JP" -> "keepersecurity.jp"
+            "CA" -> "keepersecurity.ca"
             else -> tokenParts[0]
         }
         clientKey = tokenParts[1]
