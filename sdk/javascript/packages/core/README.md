@@ -7,4 +7,3 @@ For more information see our official documentation page https://docs.keeper.io/
 ## 16.3.3
 
 - KSM-273 - Avoid reliance on external package for file upload with Node
-- Bump dev dependency versions
