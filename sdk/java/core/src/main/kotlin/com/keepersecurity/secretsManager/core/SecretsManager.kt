@@ -17,9 +17,10 @@ import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.time.Instant
 import java.util.*
+import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj16.3.4"
+const val KEEPER_CLIENT_VERSION = "mj16.3.6"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -44,7 +45,11 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val storage: KeyValueStorage,
     val queryFunction: QueryFunction? = null,
     val allowUnverifiedCertificate: Boolean = false
-)
+) {
+    init {
+        testSecureRandom()
+    }
+}
 
 typealias QueryFunction = (url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload) -> KeeperHttpResponse
 
@@ -229,6 +234,8 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
             "EU" -> "keepersecurity.eu"
             "AU" -> "keepersecurity.com.au"
             "GOV" -> "govcloud.keepersecurity.us"
+            "JP" -> "keepersecurity.jp"
+            "CA" -> "keepersecurity.ca"
             else -> tokenParts[0]
         }
         clientKey = tokenParts[1]
@@ -249,6 +256,46 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
     val keyPair = generateKeyPair()
     storage.saveBytes(KEY_PRIVATE_KEY, keyPair.private.encoded) // private key is stored in DER, to be compatible with other SDK's
     storage.saveBytes(KEY_PUBLIC_KEY, extractPublicRaw(keyPair.public)) // public key stored raw
+}
+
+private const val FAST_SECURE_RANDOM_PREFIX = "Fast SecureRandom detected! "
+private const val SLOW_SECURE_RANDOM_PREFIX = "Slow SecureRandom detected! "
+private const val SLOW_SECURE_RANDOM_MESSAGE = " Install one of the following entropy sources to improve speed of random number generator on your platform: 'haveged' or 'rng-tools'"
+private var SecureRandomTestResult = ""
+
+private fun testSecureRandom() {
+    if (SecureRandomTestResult.isNotBlank()) {
+        if (SecureRandomTestResult.startsWith(SLOW_SECURE_RANDOM_PREFIX)) {
+            println(SecureRandomTestResult)
+        }
+        return
+    }
+    val es = Executors.newSingleThreadExecutor()
+    val future = es.submit(Callable {
+        // on some Linux machines the default secure random provider is blocking
+        // and waiting too long for entropy to accumulate.
+        val secureRandom = SecureRandom.getInstanceStrong()
+        secureRandom.nextInt() // could block for many seconds
+        true
+    })
+
+    try {
+        future.get(3, TimeUnit.SECONDS);
+        SecureRandomTestResult = FAST_SECURE_RANDOM_PREFIX
+    } catch (e: TimeoutException) {
+        SecureRandomTestResult = SLOW_SECURE_RANDOM_PREFIX + SLOW_SECURE_RANDOM_MESSAGE
+        println(SecureRandomTestResult)
+        future.cancel(true)
+        throw SecureRandomSlowGenerationException(SecureRandomTestResult)
+    } catch (e: InterruptedException) {
+        throw SecureRandomException(e.message ?: e.localizedMessage)
+    } catch (e: ExecutionException) {
+        throw SecureRandomException(e.message ?: e.localizedMessage)
+    } catch (e: Exception) {
+        throw SecureRandomException(e.message ?: e.localizedMessage)
+    }
+
+    es.shutdown()
 }
 
 @ExperimentalSerializationApi
