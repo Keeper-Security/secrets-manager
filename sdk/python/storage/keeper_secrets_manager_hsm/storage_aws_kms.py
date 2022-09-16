@@ -41,6 +41,14 @@ class AwsSessionConfig():
         # HSMs cannot change regions
 
 
+# Usage:
+# from keeper_secrets_manager_core import SecretsManager
+# from keeper_secrets_manager_hsm.storage_aws_kms import AwsKmsKeyValueStorage
+# key_id = 'c5ebe966-xxxx-yyyy-zzzz-9248e834c576'
+# config = AwsKmsKeyValueStorage(key_id, 'client-config.json') # auto encrypt
+# secrets_manager = SecretsManager(config=config)
+# all_records = secrets_manager.get_secrets()
+
 class AwsKmsKeyValueStorage(KeyValueStorage):
     """AWS KMS encrypted key-value storage"""
 

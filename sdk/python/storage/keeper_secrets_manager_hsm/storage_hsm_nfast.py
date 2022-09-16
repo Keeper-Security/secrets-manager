@@ -43,9 +43,12 @@ HSM_BLOB_HEADER = b"\xff\xff" # Encrypted BLOB Header: U+FFFF is a noncharacter
 HSM_CHUNK_SIZE = 8000
 
 # Example usage:
-# /opt/nfast/bin/generatekey -b simple protect=module type=AES size=256 ident=ksm
-# config = HsmNfastKeyValueStorage('simple', 'ksm', 'client-config.json')
-# Note! Any existing plaintext client-config.json will be automatically encrypted
+# # /opt/nfast/bin/generatekey -b simple protect=module type=AES size=256 ident=ksm
+# from keeper_secrets_manager_core import SecretsManager
+# from keeper_secrets_manager_hsm.storage_hsm_nfast import HsmNfastKeyValueStorage
+# config = HsmNfastKeyValueStorage('simple', 'ksm', 'client-config.json') # auto encrypt
+# secrets_manager = SecretsManager(config=config)
+# all_records = secrets_manager.get_secrets()
 
 class HsmNfastKeyValueStorage(KeyValueStorage):
     """ HSM encrypted key value storage - using nCipher nShield HSM"""
