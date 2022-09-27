@@ -14,7 +14,7 @@ install_requires = [
 setup(
     name="keeper-secrets-manager-storage",
     version="1.0.0",
-    description="Keeper Secrets Manager SDK helper for managing configrations key-value storage.",
+    description="Keeper Secrets Manager SDK helper for managing configurations key-value storage.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Keeper Security",
@@ -30,8 +30,7 @@ setup(
     python_requires='>=3.6',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
-        "Documentation": "https://app.gitbook.com/"
-                         "@keeper-security/s/secrets-manager/secrets-manager",
+        "Documentation": "https://docs.keeper.io/secrets-manager/secrets-manager/overview",
         "Source Code": "https://github.com/Keeper-Security/secrets-manager",
     },
     classifiers=[
