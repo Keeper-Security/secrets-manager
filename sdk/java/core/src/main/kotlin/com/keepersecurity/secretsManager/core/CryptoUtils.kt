@@ -1,9 +1,7 @@
 @file:JvmName("CryptoUtils")
-@file:Suppress("JAVA_MODULE_DOES_NOT_EXPORT_PACKAGE")
 
 package com.keepersecurity.secretsManager.core
 
-import sun.security.util.DerInputStream
 import java.math.BigInteger
 import java.net.URL
 import java.net.URLDecoder
@@ -121,10 +119,7 @@ internal fun decrypt(data: String, key: ByteArray): ByteArray {
 }
 
 internal fun importPrivateKey(privateKeyDer: ByteArray): ECPrivateKey {
-    val seq0 = DerInputStream(privateKeyDer).getSequence(0)
-    val rawBytes = DerInputStream(seq0[2].octetString).getSequence(0)[1].dataBytes
-    val privateKeySpec = ECPrivateKeySpec(BigInteger(1, rawBytes), KeeperCryptoParameters.ecParameterSpec)
-    return KeeperCryptoParameters.keyFactory.generatePrivate(privateKeySpec) as ECPrivateKey
+    return KeeperCryptoParameters.keyFactory.generatePrivate(PKCS8EncodedKeySpec(privateKeyDer)) as ECPrivateKey
 }
 
 internal fun importPublicKey(rawBytes: ByteArray): PublicKey {
@@ -149,7 +144,7 @@ internal fun getEciesSymmetricKey(privateKey: Key, publicKey: Key): ByteArray {
 }
 
 internal fun extractPublicRaw(publicKey: PublicKey): ByteArray {
-    return DerInputStream(publicKey.encoded).getSequence(0)[1].bitString
+    return publicKey.encoded.takeLast(65).toByteArray()
 }
 
 internal fun publicEncrypt(data: ByteArray, key: ByteArray): ByteArray {
