@@ -196,7 +196,7 @@ def random_sample(sample_length=0, sample_string=''):
 
     return sample
 
-def generate_password(min_length: int = DEFAULT_PASSWORD_LENGTH,
+def generate_password(length: int = DEFAULT_PASSWORD_LENGTH,
                       lowercase: Optional[int] = None,
                       uppercase: Optional[int] = None,
                       digits: Optional[int] = None,
