@@ -33,6 +33,9 @@ Common use cases for Secrets Manager include:
 **Docker Runtime** | [Docs](https://docs.keeper.io/secrets-manager/secrets-manager/integrations/docker-runtime)| |
 **Kubernetes** | [Docs](https://docs.keeper.io/secrets-manager/secrets-manager/integrations/kubernetes)| |
 **GitLab** | [Docs](https://docs.keeper.io/secrets-manager/secrets-manager/integrations/gitlab-plugin)| |
+**XSOAR** | [Docs](https://docs.keeper.io/secrets-manager/secrets-manager/integrations/xsoar)| |
+**AWS HSM (Python)** | [Docs](https://docs.keeper.io/secrets-manager/secrets-manager/integrations/aws-kms)| |
+**Entrust HSM (Python)** | [Docs](https://docs.keeper.io/secrets-manager/secrets-manager/integrations/entrust-hsm)| |
 
 
 ### Tools
