@@ -21,13 +21,14 @@ import string
 import time
 from json import JSONDecodeError
 from sys import platform as _platform
-from typing import Tuple
+from typing import Optional, Tuple
 from urllib import parse
 
 from keeper_secrets_manager_core.keeper_globals import logger_name
 
 ENCODING = 'UTF-8'
 SPECIAL_CHARACTERS = '''"!@#$%()+;<>=?[]{}^.,'''
+DEFAULT_PASSWORD_LENGTH = 32
 
 
 def get_os():
@@ -195,29 +196,48 @@ def random_sample(sample_length=0, sample_string=''):
 
     return sample
 
-def generate_password(length=64, lowercase=0, uppercase=0, digits=0, special_characters=0):
-    # type: (int, int, int, int, int) -> string or None
-    """ Generate a password of specified length with specified number of """
-    """ uppercase, lowercase, digits and special characters """
-    """ If all character groups have length=0 then total length is split evenly"""
-    """ with last group 'special_characters' taking any extra charcters"""
-    if length <= 0:
-        length = 64
-    if lowercase == 0 and uppercase == 0 and digits == 0 and special_characters == 0:
-        increment = length // 4
-        lastincrement = increment + (length % 4)
-        lowercase, uppercase, digits, special_characters = increment, increment, increment, lastincrement
+def generate_password(length: int = DEFAULT_PASSWORD_LENGTH,
+                      lowercase: Optional[int] = None,
+                      uppercase: Optional[int] = None,
+                      digits: Optional[int] = None,
+                      symbols: Optional[int] = None,
+                      special_characters: str = SPECIAL_CHARACTERS):
+    """
+    generate_password generates a new password of specified length
+    with specified number of uppercase, lowercase, digits and special characters.
+    If all character groups are unspecified or have length = 0
+    then password characters are chosen from all groups uniformly at random.
 
-    password = ''
-
-    if lowercase:
-        password += random_sample(lowercase, string.ascii_lowercase)
-    if uppercase:
-        password += random_sample(uppercase, string.ascii_uppercase)
-    if digits:
-        password += random_sample(digits, string.digits)
-    if special_characters:
-        password += random_sample(special_characters, SPECIAL_CHARACTERS)
-
-    newpass = ''.join(random.sample(password,len(password)))
-    return newpass
+    :param length: length of password - default: 32
+    :param lowercase: minimum number of lowercase characters if positive, exact if 0 or negative
+    :param uppercase: minimum number of uppercase characters if positive, exact if 0 or negative
+    :param digits: minimum number of digits if positive, exact if 0 or negative
+    :param symbols: minimum number of special characters if positive, exact if 0 or negative
+    :param special_characters: string containing custom set of special characters to pick from
+    :return: generated password string
+    """
+    sum_categories = sum((abs(i) if isinstance(i, int) else 0) for i in (lowercase, uppercase, digits, symbols))
+    extra_count = length - sum_categories if length > sum_categories else 0
+    extra_chars = ''
+    if lowercase is None or isinstance(lowercase, int) and lowercase > 0:
+        extra_chars += special_characters
+    if uppercase is None or isinstance(uppercase, int) and uppercase > 0:
+        extra_chars += string.digits
+    if digits is None or isinstance(digits, int) and digits > 0:
+        extra_chars += string.ascii_uppercase
+    if symbols is None or isinstance(symbols, int) and symbols > 0:
+        extra_chars += string.ascii_lowercase
+    if extra_count > 0 and not extra_chars:
+        extra_chars = special_characters + string.digits + string.ascii_uppercase + string.ascii_lowercase
+    category_map = [
+        (abs(lowercase) if isinstance(lowercase, int) else 0, special_characters),
+        (abs(uppercase) if isinstance(uppercase, int) else 0, string.digits),
+        (abs(digits) if isinstance(digits, int) else 0, string.ascii_uppercase),
+        (abs(symbols) if isinstance(symbols, int) else 0, string.ascii_lowercase),
+        (extra_count, extra_chars)
+    ]
+    password_list = []
+    for count, chars in category_map:
+        password_list.extend(list(random_sample(count, chars)))
+    random.shuffle(password_list)
+    return ''.join(password_list)
