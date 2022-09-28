@@ -196,19 +196,21 @@ def random_sample(sample_length=0, sample_string=''):
 
     return sample
 
-def generate_password(length: int = DEFAULT_PASSWORD_LENGTH,
+def generate_password(min_length: int = DEFAULT_PASSWORD_LENGTH,
                       lowercase: Optional[int] = None,
                       uppercase: Optional[int] = None,
                       digits: Optional[int] = None,
                       symbols: Optional[int] = None,
                       special_characters: str = SPECIAL_CHARACTERS):
     """
-    generate_password generates a new password of specified length
+    generate_password generates a new password of specified minimum length
     with specified number of uppercase, lowercase, digits and special characters.
-    If all character groups are unspecified or have length = 0
+    Note: If all character groups are unspecified or all have exact zero length
     then password characters are chosen from all groups uniformly at random.
+    Note: If all charset lengths are negative or 0 but can't reach min_length
+    then all exact/negative charset lengths will be treated as minimum number of characters instead.
 
-    :param length: length of password - default: 32
+    :param min_length: minimum password length - default: 32
     :param lowercase: minimum number of lowercase characters if positive, exact if 0 or negative
     :param uppercase: minimum number of uppercase characters if positive, exact if 0 or negative
     :param digits: minimum number of digits if positive, exact if 0 or negative
@@ -216,26 +218,40 @@ def generate_password(length: int = DEFAULT_PASSWORD_LENGTH,
     :param special_characters: string containing custom set of special characters to pick from
     :return: generated password string
     """
-    sum_categories = sum((abs(i) if isinstance(i, int) else 0) for i in (lowercase, uppercase, digits, symbols))
-    extra_count = length - sum_categories if length > sum_categories else 0
+
+    counts = (lowercase, uppercase, digits, symbols)
+    sum_categories = sum((abs(i) if isinstance(i, int) else 0) for i in counts)
+
+    # If all lengths are exact/negative but don't reach min_length - convert to minimum/positive lengths
+    num_exact_counts = sum(1 for i in counts if isinstance(i, int) and i <= 0)
+    if len(counts) == num_exact_counts and sum_categories < min_length:
+        lowercase = abs(lowercase) if isinstance(lowercase, int) and lowercase < 0 else lowercase
+        uppercase = abs(uppercase) if isinstance(uppercase, int) and uppercase < 0 else uppercase
+        digits = abs(digits) if isinstance(digits, int) and digits < 0 else digits
+        symbols = abs(symbols) if isinstance(symbols, int) and symbols < 0 else symbols
+        logging.getLogger(logger_name).warning("Bad charset lengths - converting exact lengths to minimum lengths")
+
+    extra_count = min_length - sum_categories if min_length > sum_categories else 0
     extra_chars = ''
     if lowercase is None or isinstance(lowercase, int) and lowercase > 0:
-        extra_chars += special_characters
-    if uppercase is None or isinstance(uppercase, int) and uppercase > 0:
-        extra_chars += string.digits
-    if digits is None or isinstance(digits, int) and digits > 0:
-        extra_chars += string.ascii_uppercase
-    if symbols is None or isinstance(symbols, int) and symbols > 0:
         extra_chars += string.ascii_lowercase
+    if uppercase is None or isinstance(uppercase, int) and uppercase > 0:
+        extra_chars += string.ascii_uppercase
+    if digits is None or isinstance(digits, int) and digits > 0:
+        extra_chars += string.digits
+    if symbols is None or isinstance(symbols, int) and symbols > 0:
+        extra_chars += special_characters
     if extra_count > 0 and not extra_chars:
-        extra_chars = special_characters + string.digits + string.ascii_uppercase + string.ascii_lowercase
+        extra_chars = string.ascii_lowercase + string.ascii_uppercase + string.digits + special_characters
+
     category_map = [
-        (abs(lowercase) if isinstance(lowercase, int) else 0, special_characters),
-        (abs(uppercase) if isinstance(uppercase, int) else 0, string.digits),
-        (abs(digits) if isinstance(digits, int) else 0, string.ascii_uppercase),
-        (abs(symbols) if isinstance(symbols, int) else 0, string.ascii_lowercase),
+        (abs(lowercase) if isinstance(lowercase, int) else 0, string.ascii_lowercase),
+        (abs(uppercase) if isinstance(uppercase, int) else 0, string.ascii_uppercase),
+        (abs(digits) if isinstance(digits, int) else 0, string.digits),
+        (abs(symbols) if isinstance(symbols, int) else 0, special_characters),
         (extra_count, extra_chars)
     ]
+
     password_list = []
     for count, chars in category_map:
         password_list.extend(list(random_sample(count, chars)))
