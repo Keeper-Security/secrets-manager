@@ -10,7 +10,7 @@
   "version": {
     "Major": 1,
     "Minor": 0,
-    "Patch": 1
+    "Patch": 2
   },
   "instanceNameFormat": "KeeperSecretsManager",
   "inputs": [
@@ -26,7 +26,7 @@
       "name": "secrets",
       "type": "multiLine",
       "label": "Secrets",
-      "defaultValue": "[UID1]/field/[FIEND NAME] > var:[NAME]\n[UID1]/custom_field/[FIEND NAME] > out:[NAME]",
+      "defaultValue": "[UID1]/field/[FIELD NAME] > var:[NAME]\n[UID1]/custom_field/[FIELD NAME] > out:[NAME]",
       "required": true,
       "properties": {
         "resizable": true,
