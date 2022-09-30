@@ -53,12 +53,12 @@ export const parseSecretsInputs = (inputs: string[]): SecretsInput[] => {
             destination = destination.slice(5)
         }
 
-        if (notation.trim().split('/')[1] === 'file') {
+        if (notation.split('/')[1] === 'file') {
             destinationType = DestinationType.file
         }
 
         results.push({
-            notation: inputParts[0],
+            notation: notation,
             destination,
             destinationType
         })
