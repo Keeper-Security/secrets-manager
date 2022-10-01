@@ -228,7 +228,7 @@ test('TOTP', async () => {
 test('GeneratePassword', async () => {
     let password = await generatePassword()
     expect(password).not.toBeNull()
-    expect(password.length).toBe(64)
+    expect(password.length).toBe(32)
 
     password = await generatePassword(32, 32)
     expect(/^[a-z]{32}$/.test(password)).toBe(true)
