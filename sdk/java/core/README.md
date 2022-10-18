@@ -4,7 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
-## 16.3.6
+## 16.3.7
+- Allow to run under Java 16+
 
+## 16.3.6
 - Support for new regions: Japan and Canada
 - Checking for SecureRandom to work properly. Throw exception if `haveged` or `rng-tools` are not installed
