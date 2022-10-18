@@ -18,6 +18,7 @@ import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.math.pow
+import kotlin.math.abs
 
 internal object KeeperCryptoParameters {
 
@@ -298,6 +299,7 @@ data class TotpCode(val code: String, val timeLeft: Int, val period: Int) {
 }
 
 // password generation
+const val DefaultPasswordLength = 32
 const val AsciiLowercase = "abcdefghijklmnopqrstuvwxyz"
 const val AsciiUppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const val AsciiDigits = "0123456789"
@@ -318,38 +320,84 @@ internal fun randomSample(sampleLength: Int = 0, sampleString: String = ""): Str
     return result
 }
 
+/**
+ * Generates a new password of specified minimum length
+ * using provided number of uppercase, lowercase, digits and special characters.
+ *
+ * Note: If all character groups are unspecified or all have exact zero length
+ * then password characters are chosen from all groups uniformly at random.
+ *
+ * Note: If all charset lengths are negative or 0 but can't reach min_length
+ * then all exact/negative charset lengths will be treated as minimum number of characters instead.
+ *
+ * @param minLength Minimum password length - default: 32
+ * @param lowercase Minimum number of lowercase characters if positive, exact if 0 or negative
+ * @param uppercase Minimum number of uppercase characters if positive, exact if 0 or negative
+ * @param digits Minimum number of digits if positive, exact if 0 or negative
+ * @param specialCharacters Minimum number of special characters if positive, exact if 0 or negative
+ * @param specialCharacterSet String containing custom set of special characters to pick from
+ * @return Generated password string
+ */
 @JvmOverloads
 fun generatePassword(
-    length: Int = 64,
-    lowercase: Int = 0,
-    uppercase: Int = 0,
-    digits: Int = 0,
-    specialCharacters: Int = 0
+    minLength: Int = DefaultPasswordLength,
+    lowercase: Int? = null,
+    uppercase: Int? = null,
+    digits: Int? = null,
+    specialCharacters: Int? = null,
+    specialCharacterSet: String = AsciiSpecialCharacters
 ): String {
-    val totalLength: Int = if (length <= 0) 64 else length
-    var numLowercase: Int = lowercase
-    var numUppercase: Int = uppercase
-    var numDigits: Int = digits
-    var numSpecialCharacters: Int = specialCharacters
+    var lowercaseLen = lowercase
+    var uppercaseLen = uppercase
+    var digitsLen = digits
+    var specialCharactersLen = specialCharacters
+    val counts = listOf<Int?>(lowercase, uppercase, digits, specialCharacters)
+    val sumCategories: Int = counts.sumOf { abs(it ?: 0) }
 
-    if (lowercase == 0 && uppercase == 0 && digits == 0 && specialCharacters == 0) {
-        val increment: Int = totalLength / 4
-        val lastIncrement: Int = increment + totalLength % 4
-        numLowercase = increment
-        numUppercase = increment
-        numDigits = increment
-        numSpecialCharacters = lastIncrement
+    // If all lengths are exact/negative but don't reach min_length - convert to minimum/positive lengths
+    val numExactCounts = counts.sumOf { (((it ?: 1) <= 0)).compareTo(false) }
+    if ((counts.size == numExactCounts) && (sumCategories < minLength)) {
+        if ((lowercaseLen ?: 0) < 0) {
+            lowercaseLen = abs(lowercaseLen!!)
+        }
+        if ((uppercaseLen ?: 0) < 0) {
+            uppercaseLen = abs(uppercaseLen!!)
+        }
+        if ((digitsLen ?: 0) < 0) {
+            digitsLen = abs(digitsLen!!)
+        }
+        if ((specialCharactersLen ?: 0) < 0) {
+            specialCharactersLen = abs(specialCharactersLen!!)
+        }
     }
-    var passwordCharacters = ""
-    if (numLowercase > 0)
-        passwordCharacters += randomSample(numLowercase, AsciiLowercase)
-    if (numUppercase > 0)
-        passwordCharacters += randomSample(numUppercase, AsciiUppercase)
-    if (numDigits > 0)
-        passwordCharacters += randomSample(numDigits, AsciiDigits)
-    if (numSpecialCharacters > 0)
-        passwordCharacters += randomSample(numSpecialCharacters, AsciiSpecialCharacters)
+    var extraChars: String = ""
+    var extraCount: Int = 0
+    if (minLength > sumCategories)
+        extraCount = minLength - sumCategories;
+    if ((lowercaseLen ?: 1) > 0)
+        extraChars += AsciiLowercase;
+    if ((uppercaseLen ?: 1) > 0)
+        extraChars += AsciiUppercase;
+    if ((digitsLen ?: 1) > 0)
+        extraChars += AsciiDigits;
+    if ((specialCharactersLen ?: 1) > 0)
+        extraChars += specialCharacterSet;
+    if (extraCount > 0 && extraChars.isEmpty())
+        extraChars = AsciiLowercase + AsciiUppercase + AsciiDigits + specialCharacterSet;
 
+    val categoryMap = listOf(
+        abs(lowercaseLen ?: 0) to AsciiLowercase,
+        abs(uppercaseLen ?: 0) to AsciiUppercase,
+        abs(digitsLen ?: 0) to AsciiDigits,
+        abs(specialCharactersLen ?: 0) to specialCharacterSet,
+        extraCount to extraChars
+    )
+
+    var passwordCharacters: String = ""
+    categoryMap.forEach {
+        if (it.first > 0)
+            passwordCharacters += randomSample(it.first, it.second)
+    }
     val pCharArray = passwordCharacters.toCharArray()
     pCharArray.shuffle()
     return String(pCharArray)
