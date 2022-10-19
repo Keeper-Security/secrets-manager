@@ -37,9 +37,10 @@ export const parseSecretsInputs = (inputs: string[]): SecretsInput[] => {
     const results: SecretsInput[] = []
 
     for (const input of inputs) {
-        const inputParts = input.replace(/\s/g, '').split('>')
+        const inputParts = input.split('>')
+        const notation = inputParts[0].trim()
         let destinationType: DestinationType = DestinationType.output
-        let destination = inputParts[1]
+        let destination = inputParts[1].trim()
 
         if (destination.startsWith('out:')) {
             destinationType = DestinationType.output
@@ -52,12 +53,12 @@ export const parseSecretsInputs = (inputs: string[]): SecretsInput[] => {
             destination = destination.slice(5)
         }
 
-        if (inputParts[0].split('/')[1] === 'file') {
+        if (notation.split('/')[1] === 'file') {
             destinationType = DestinationType.file
         }
 
         results.push({
-            notation: inputParts[0],
+            notation: notation,
             destination,
             destinationType
         })

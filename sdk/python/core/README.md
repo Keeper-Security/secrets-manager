@@ -13,6 +13,8 @@ For Unix, `client-config.json` is set to `0600` mode. For Windows, `client-confi
 the `client-config.json` and the **Administrator** group.
 * Removed non-ASCII characters from source code. Added Python comment flag to allow non-ASCII to source code, just in
 case.
+* Allow `enforceGeneration`, `privacyScreen`, and `complexity` in record fields when creating a record.
+* Record creation validation. Making sure that only legitimate record field types, notes section, and title of the record can be saved
 
 ## 16.3.4
 

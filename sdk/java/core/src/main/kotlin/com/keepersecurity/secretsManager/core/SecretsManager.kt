@@ -17,8 +17,10 @@ import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.time.Instant
 import java.util.*
-import java.util.jar.Manifest
+import java.util.concurrent.*
 import javax.net.ssl.*
+
+const val KEEPER_CLIENT_VERSION = "mj16.3.6"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -43,7 +45,11 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val storage: KeyValueStorage,
     val queryFunction: QueryFunction? = null,
     val allowUnverifiedCertificate: Boolean = false
-)
+) {
+    init {
+        testSecureRandom()
+    }
+}
 
 typealias QueryFunction = (url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload) -> KeeperHttpResponse
 
@@ -228,6 +234,8 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
             "EU" -> "keepersecurity.eu"
             "AU" -> "keepersecurity.com.au"
             "GOV" -> "govcloud.keepersecurity.us"
+            "JP" -> "keepersecurity.jp"
+            "CA" -> "keepersecurity.ca"
             else -> tokenParts[0]
         }
         clientKey = tokenParts[1]
@@ -250,31 +258,44 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
     storage.saveBytes(KEY_PUBLIC_KEY, extractPublicRaw(keyPair.public)) // public key stored raw
 }
 
-internal object ManifestLoader {
-    internal val version: String
+private const val FAST_SECURE_RANDOM_PREFIX = "Fast SecureRandom detected! "
+private const val SLOW_SECURE_RANDOM_PREFIX = "Slow SecureRandom detected! "
+private const val SLOW_SECURE_RANDOM_MESSAGE = " Install one of the following entropy sources to improve speed of random number generator on your platform: 'haveged' or 'rng-tools'"
+private var SecureRandomTestResult = ""
 
-    init {
-        val clazz = javaClass
-        val classPath: String = clazz.getResource(clazz.simpleName.toString() + ".class")!!.toString()
-        val libPathEnd = classPath.lastIndexOf("!")
-        val filePath = if (libPathEnd > 0) {
-            val libPath = classPath.substring(0, libPathEnd)
-            "$libPath!/META-INF/MANIFEST.MF"
-        } else { // we might be testing
-            var buildPathCoreIdx = classPath.lastIndexOf("build/classes")
-            if (buildPathCoreIdx < 0) {
-                buildPathCoreIdx = classPath.lastIndexOf("out/production/classes")
-            }
-            val buildPath = classPath.substring(0, buildPathCoreIdx)
-            "${buildPath}build/tmp/jar/MANIFEST.MF"
+private fun testSecureRandom() {
+    if (SecureRandomTestResult.isNotBlank()) {
+        if (SecureRandomTestResult.startsWith(SLOW_SECURE_RANDOM_PREFIX)) {
+            println(SecureRandomTestResult)
         }
-        val manifest = Manifest(URL(filePath).openStream())
-        version = manifest.mainAttributes.getValue("Implementation-Version")
+        return
     }
-}
+    val es = Executors.newSingleThreadExecutor()
+    val future = es.submit(Callable {
+        // on some Linux machines the default secure random provider is blocking
+        // and waiting too long for entropy to accumulate.
+        val secureRandom = SecureRandom.getInstanceStrong()
+        secureRandom.nextInt() // could block for many seconds
+        true
+    })
 
-fun toKeeperAppClientString(version: String): String {
-    return "mj${version.replace("-SNAPSHOT", "")}"
+    try {
+        future.get(3, TimeUnit.SECONDS);
+        SecureRandomTestResult = FAST_SECURE_RANDOM_PREFIX
+    } catch (e: TimeoutException) {
+        SecureRandomTestResult = SLOW_SECURE_RANDOM_PREFIX + SLOW_SECURE_RANDOM_MESSAGE
+        println(SecureRandomTestResult)
+        future.cancel(true)
+        throw SecureRandomSlowGenerationException(SecureRandomTestResult)
+    } catch (e: InterruptedException) {
+        throw SecureRandomException(e.message ?: e.localizedMessage)
+    } catch (e: ExecutionException) {
+        throw SecureRandomException(e.message ?: e.localizedMessage)
+    } catch (e: Exception) {
+        throw SecureRandomException(e.message ?: e.localizedMessage)
+    }
+
+    es.shutdown()
 }
 
 @ExperimentalSerializationApi
@@ -462,7 +483,7 @@ private fun prepareGetPayload(
 ): GetPayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val payload = GetPayload(
-        toKeeperAppClientString(ManifestLoader.version),
+        KEEPER_CLIENT_VERSION,
         clientId,
         null,
         null
@@ -486,7 +507,7 @@ private fun prepareUpdatePayload(
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val recordBytes = stringToBytes(Json.encodeToString(record.data))
     val encryptedRecord = encrypt(recordBytes, record.recordKey)
-    return UpdatePayload(toKeeperAppClientString(ManifestLoader.version), clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision)
+    return UpdatePayload(KEEPER_CLIENT_VERSION, clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision)
 }
 
 @ExperimentalSerializationApi
@@ -508,7 +529,7 @@ private fun prepareCreatePayload(
     val encryptedRecord = encrypt(recordBytes, recordKey)
     val encryptedRecordKey = publicEncrypt(recordKey, ownerPublicKey)
     val encryptedFolderKey = encrypt(recordKey, recordFromFolder.folderKey!!)
-    return CreatePayload(toKeeperAppClientString(ManifestLoader.version), clientId,
+    return CreatePayload(KEEPER_CLIENT_VERSION, clientId,
         webSafe64FromBytes(recordUid),
         bytesToBase64(encryptedRecordKey),
         folderUid,
@@ -551,7 +572,7 @@ private fun prepareFileUploadPayload(
     val encryptedOwnerRecord = encrypt(ownerRecordBytes, ownerRecord.recordKey)
 
     return FileUploadPayloadAndFile(
-        FileUploadPayload(toKeeperAppClientString(ManifestLoader.version), clientId,
+        FileUploadPayload(KEEPER_CLIENT_VERSION, clientId,
             fileRecordUid,
             bytesToBase64(encryptedFileRecordKey),
             webSafe64FromBytes(encryptedFileRecord),
