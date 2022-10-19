@@ -26,7 +26,7 @@ from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.dto.dtos import Folder, Record, RecordCreate, SecretsManagerResponse, AppData, \
     KeeperFileUpload
 from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, TransmissionKey, \
-    EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload
+    EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, DeletePayload
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys, \
     logger_name, keeper_servers
@@ -257,7 +257,8 @@ class SecretsManager:
                 isinstance(payload, GetPayload) or
                 isinstance(payload, UpdatePayload) or
                 isinstance(payload, CreatePayload) or
-                isinstance(payload, FileUploadPayload)):
+                isinstance(payload, FileUploadPayload) or
+                isinstance(payload, DeletePayload)):
             raise Exception('Unknown payload type "%s"' % payload.__class__.__name__)
 
         payload_json_str = dict_to_json(payload.__dict__)
@@ -276,6 +277,16 @@ class SecretsManager:
             encrypted_payload,
             signature
         )
+
+    @staticmethod
+    def prepare_delete_payload(storage, record_uids):
+        payload = DeletePayload()
+
+        payload.clientVersion = keeper_secrets_manager_sdk_client_id
+        payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
+        payload.recordUids = record_uids
+
+        return payload
 
     @staticmethod
     def prepare_get_payload(storage, records_filter):
@@ -656,7 +667,7 @@ class SecretsManager:
 
     def get_secrets_by_title(self, record_title):
         """
-        Retrieve all records with specified title
+        Retrieve all secret records with specified title
         """
 
         recs = self.get_secrets()
@@ -666,11 +677,26 @@ class SecretsManager:
 
     def get_secret_by_title(self, record_title):
         """
-        Retrieve first record with specified title
+        Retrieve first secret record with specified title
         """
 
         records = self.get_secrets_by_title(record_title) or []
         return next((iter(records)), None)
+
+    def delete_secret(self, record_uids):
+        """
+        Delete secret records with specified uids
+        """
+
+        if isinstance(record_uids, str):
+            record_uids = [record_uids]
+
+        payload = SecretsManager.prepare_delete_payload(self.config, record_uids=record_uids)
+        response = self._post_query('delete_secret', payload)
+        response_str = bytes_to_string(response)
+        response_dict = json_to_dict(response_str)
+
+        return response_dict.get('records')
 
     def create_secret(self, folder_uid, record_data):
 
