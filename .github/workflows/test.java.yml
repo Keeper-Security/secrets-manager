@@ -26,6 +26,6 @@ jobs:
     - name: Setup, Build and Test
       uses: gradle/gradle-build-action@v2
       with:
-        gradle-version: 6.5
+        gradle-version: 7.5
         arguments: build test
 
