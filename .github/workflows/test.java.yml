@@ -28,4 +28,6 @@ jobs:
       with:
         gradle-version: 7.5
         arguments: build test
+        build-root-directory: ./sdk/java/core
+
 
