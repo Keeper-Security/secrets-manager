@@ -26,7 +26,7 @@ namespace SecretsManager.Test
         public void TestPasswordGeneration()
         {
             var password = CryptoUtils.GeneratePassword();
-            Assert.AreEqual(64, password?.Length);
+            Assert.AreEqual(32, password?.Length);
 
             password = CryptoUtils.GeneratePassword(32, 32);
             Assert.IsTrue(Regex.IsMatch(password, @"^[a-z]{32}$"));
