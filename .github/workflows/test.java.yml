@@ -23,10 +23,9 @@ jobs:
         distribution: 'zulu'
         java-version: ${{ matrix.java-version }}
 
-    - name: Setup Gradle
+    - name: Setup, Build and Test
       uses: gradle/gradle-build-action@v2
       with:
         gradle-version: 6.5
-
-    - run: gradle build test
+        arguments: build test
 
