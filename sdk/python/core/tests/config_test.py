@@ -8,6 +8,10 @@ from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKey
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.mock import MockConfig
+import io
+from contextlib import redirect_stderr
+from sys import platform
+import subprocess
 
 
 class ConfigTest(unittest.TestCase):
@@ -23,6 +27,13 @@ class ConfigTest(unittest.TestCase):
 
         os.chdir(self.orig_working_dir)
         os.environ.pop("KSM_CONFIG", None)
+
+    @staticmethod
+    def _save_config(default_config_name, mock_config):
+        with open(default_config_name, "w") as fh:
+            fh.write(json.dumps(mock_config))
+            fh.close()
+            os.chmod(default_config_name, 0o600)
 
     def test_missing_config(self):
 
@@ -55,9 +66,7 @@ class ConfigTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir_name:
             os.chdir(temp_dir_name)
-            with open(default_config_name, "w") as fh:
-                fh.write(json.dumps(mock_config))
-                fh.close()
+            ConfigTest._save_config(default_config_name, mock_config)
 
             c = SecretsManager()
             self.assertEqual(c.config.get(ConfigKeys.KEY_HOSTNAME), mock_config.get("hostname"),
@@ -80,9 +89,7 @@ class ConfigTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir_name:
             os.chdir(temp_dir_name)
-            with open(default_config_name, "w") as fh:
-                fh.write(json.dumps(mock_config))
-                fh.close()
+            ConfigTest._save_config(default_config_name, mock_config)
 
             # Pass in the client key and server
             secrets_manager = SecretsManager(token="ABC123", hostname='localhost')
@@ -300,6 +307,7 @@ class ConfigTest(unittest.TestCase):
             with codecs.open("client-config.json", "w", 'utf-16-be') as fh:
                 fh.write(json_config)
                 fh.close()
+                os.chmod("client-config.json", 0o600)
 
             config = FileKeyValueStorage()
 
@@ -313,6 +321,7 @@ class ConfigTest(unittest.TestCase):
             with codecs.open("client-config.json", "wb") as fh:
                 fh.write(json_config.encode("utf-16"))
                 fh.close()
+                os.chmod("client-config.json", 0o600)
 
             config = FileKeyValueStorage()
 
@@ -321,3 +330,73 @@ class ConfigTest(unittest.TestCase):
                 self.fail("Should have gotten an exception")
             except Exception as err:
                 print("EXPECTED ERROR", err)
+
+            os.chdir(self.orig_working_dir)
+
+    def test_config_file_mode(self):
+
+        file = FileKeyValueStorage.default_config_file_location
+        mock_config = MockConfig.make_config()
+
+        # Dog food
+        with tempfile.TemporaryDirectory() as temp_dir_name:
+            os.chdir(temp_dir_name)
+
+            config = FileKeyValueStorage()
+            config.set(ConfigKeys.KEY_CLIENT_ID, mock_config.get("clientId"))
+            config.set(ConfigKeys.KEY_APP_KEY, mock_config.get("appKey"))
+            config.set(ConfigKeys.KEY_PRIVATE_KEY, mock_config.get("privateKey"))
+
+            assert os.path.exists(file)
+
+            if platform.lower().startswith("win") is True:
+                pass
+            else:
+                self.assertEqual("0600", oct(os.stat(file).st_mode)[-4:],
+                                 "config file mode is not correct")
+
+            with io.StringIO() as buf, redirect_stderr(buf):
+                new_config = FileKeyValueStorage()
+                self.assertEqual(mock_config.get("clientId"), new_config.get(ConfigKeys.KEY_CLIENT_ID))
+
+                stderr = buf.getvalue()
+                assert "too open" not in stderr
+
+            # Open up the file
+            if platform.lower().startswith("win") is True:
+                subprocess.run('icacls.exe "{}" /grant Guest:F'.format(file))
+            else:
+                os.chmod(file, 0o644)
+            with open(file, "w") as fh:
+                fh.write("{}")
+                fh.close()
+
+                with io.StringIO() as buf, redirect_stderr(buf):
+                    too_open = FileKeyValueStorage()
+                    too_open.read_storage()
+
+                    stderr = buf.getvalue()
+                    assert "too open" in stderr
+
+            # Lock down the file too much
+            if platform.lower().startswith("win") is True:
+                for cmd in ['icacls.exe {} /reset'.format(file),
+                            'icacls.exe {} /inheritance:r'.format(file),
+                            'icacls.exe {} /remove Everyone'.format(file)]:
+                    subprocess.run(cmd)
+            else:
+                os.chmod(file, 0o000)
+            try:
+                no_access = FileKeyValueStorage()
+                no_access.read_storage()
+                self.fail("Should not have access to config file")
+            except PermissionError as err:
+                assert "Access denied" in str(err)
+            except Exception as err:
+                self.fail("Got the wrong exceptions for access defined: {}".format(err))
+
+            # Windows won't delete the temp directory it does not have permissions.
+            if platform.lower().startswith("win") is True:
+                subprocess.run('icacls.exe "{}" /grant Everyone:F'.format(file))
+            os.unlink(file)
+            os.chdir(self.orig_working_dir)

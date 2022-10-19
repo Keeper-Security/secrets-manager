@@ -8,6 +8,7 @@
 # Keeper Secrets Manager
 # Copyright 2021 Keeper Security Inc.
 # Contact: ops@keepersecurity.com
+
 import base64
 import logging
 import os
@@ -20,7 +21,7 @@ from json import JSONDecodeError
 from keeper_secrets_manager_core import exceptions, utils
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.keeper_globals import logger_name
-from keeper_secrets_manager_core.utils import ENCODING, json_to_dict
+from keeper_secrets_manager_core.utils import ENCODING, json_to_dict, set_config_mode, check_config_mode
 
 
 class KeyValueStorage:
@@ -69,6 +70,8 @@ class FileKeyValueStorage(KeyValueStorage):
         self.create_config_file_if_missing()
 
         try:
+            check_config_mode(self.default_config_file_location)
+
             with open(self.default_config_file_location, "r", encoding=ENCODING) as fh:
                 config_data = None
                 try:
@@ -94,6 +97,9 @@ class FileKeyValueStorage(KeyValueStorage):
                         raise Exception("{} is not a utf-8 encoded file.".format(self.default_config_file_location))
                     raise err
 
+        # PermissionError is an IOError child. Handle before IOError.
+        except PermissionError as err:
+            raise err
         except IOError:
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.default_config_file_location)
 
@@ -153,6 +159,9 @@ class FileKeyValueStorage(KeyValueStorage):
             f = open(self.default_config_file_location, "w+")
             f.write(json.dumps({}))
             f.close()
+
+            # Make sure the new config file has the correct mode.
+            set_config_mode(self.default_config_file_location)
 
     def is_empty(self):
         config = self.read_storage()

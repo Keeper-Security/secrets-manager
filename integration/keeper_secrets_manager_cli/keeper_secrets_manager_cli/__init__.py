@@ -33,12 +33,16 @@ class KeeperCli:
 
     def __init__(self, ini_file=None, profile_name=None, output=None, use_color=None, use_cache=None,
                  record_type_dir=None, editor=None, editor_use_blocking=False, editor_process_name=None,
-                 global_config=None):
+                 global_config=None, log_level=None):
+
+        self.log_level = os.environ.get("KSM_DEBUG", log_level)
+        # If set via the command line, make sure the environmental variable gets set.
+        if self.log_level is not None:
+            os.environ["KSM_DEBUG"] = self.log_level
 
         self.profile = Profile(cli=self, ini_file=ini_file, config=global_config)
         self._client = None
 
-        self.log_level = os.environ.get("KSM_DEBUG", None)
         self.use_color = use_color
         self.record_type_dir = record_type_dir
 
@@ -97,7 +101,7 @@ class KeeperCli:
                 if self.record_type_dir is None:
                     self.record_type_dir = find_ksm_path("record_type", is_file=False)
 
-            # If the have a directory where record type schema files may exists, attempt to load
+            # If they have a directory where record type schema files may exist, attempt to load
             # them.
             if self.record_type_dir is not None and os.path.exists(self.record_type_dir) is True:
                 RecordType.find_and_load_record_type_schema_files(self.record_type_dir)

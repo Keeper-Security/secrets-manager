@@ -270,9 +270,10 @@ class Mutex(click.Option):
 @click.option('--output', '-o', type=str, help='Output [stdout|stderr|filename]', default='stdout')
 @click.option('--color/--no-color', '-c/-nc', default=None, help="Use color in table views, where applicable.")
 @click.option('--cache/--no-cache', default=None, help="Enable/disable record caching.")
+@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR']), help="Debug log level.")
 @click.pass_context
 @base_command_help
-def cli(ctx, ini_file, profile_name, output, color, cache):
+def cli(ctx, ini_file, profile_name, output, color, cache, log_level):
     """Keeper Secrets Manager CLI
     """
 
@@ -283,12 +284,15 @@ def cli(ctx, ini_file, profile_name, output, color, cache):
             output=output,
             use_color=color,
             use_cache=cache,
-            global_config=global_config),
+            global_config=global_config,
+            log_level=log_level
+        ),
         "ini_file": ini_file,
         "profile_name": profile_name,
         "output": output,
         "use_color": color,
-        "use_cache": cache
+        "use_cache": cache,
+        "log_level": log_level
     }
 
 
