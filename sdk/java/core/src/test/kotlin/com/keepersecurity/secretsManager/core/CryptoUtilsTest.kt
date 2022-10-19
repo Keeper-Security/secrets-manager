@@ -149,7 +149,7 @@ internal class CryptoUtilsTest {
     @Test
     fun testGeneratePassword() {
         var password = generatePassword()
-        assertEquals(64, password.length)
+        assertEquals(32, password.length)
 
         password = generatePassword(32, 32)
         assertTrue { "^[a-z]{32}$".toRegex().matches(password) }
