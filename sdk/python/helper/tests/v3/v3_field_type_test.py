@@ -30,11 +30,11 @@ class FieldTypeTest(unittest.TestCase):
         self.assertEqual(4, d.get("digits"))
         self.assertEqual(0, d.get("special"))
 
-        # Uhm, so how a password is generate is up in the air. This is based on the Python SDK, which will use the
-        # counts over the length. So the password is going to be 9 characters, not 16 :/
+        # Uhm, so how a password is generated is up in the air. This is based on the Python SDK, which will use the
+        # length over the counts. So the password is going to be 16 characters, not 9
         pc = PasswordComplexity({"length": 16, "caps": 2, "lowercase": 3, "digits": 4, "special": 0})
         password = pc.generate_password()
-        self.assertEqual(9, len(password), "password is too short")
+        self.assertEqual(16, len(password), "password is too short")
 
     def test_password_filter(self):
 
