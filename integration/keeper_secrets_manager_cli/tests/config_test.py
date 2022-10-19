@@ -21,6 +21,7 @@ class ConfigTest(unittest.TestCase):
         with open("keeper.ini", "w") as fh:
             fh.write(export.run())
             fh.close()
+        os.chmod("keeper.ini", 0o600)
 
     def tearDown(self) -> None:
         os.chdir(self.orig_dir)

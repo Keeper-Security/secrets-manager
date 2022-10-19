@@ -6,6 +6,13 @@ For more information see our official documentation page https://docs.keeper.io/
 
 ## 16.3.5
 
+* Create new client-config.json with locked down permission/ACL mode. Print STDERR warning if client-config.json ACL mode is too
+open. To disable ACL mode checking and setting, set environmental variable `KSM_CONFIG_SKIP_MODE` to `TRUE`. To prevent
+warnings of the client-config.json being too open, set environmental variable `KSM_CONFIG_SKIP_MODE_WARNING` to `TRUE`.
+For Unix, `client-config.json` is set to `0600` mode. For Windows, `client-config.json` has only the user that created 
+the `client-config.json` and the **Administrator** group.
+* Removed non-ASCII characters from source code. Added Python comment flag to allow non-ASCII to source code, just in
+case.
 * Allow `enforceGeneration`, `privacyScreen`, and `complexity` in record fields when creating a record.
 * Record creation validation. Making sure that only legitimate record field types, notes section, and title of the record can be saved
 
