@@ -62,6 +62,18 @@ namespace SecretsManager.Test
             Assert.AreEqual("keepersecurity.com.au", storage.GetString("hostname"));
 
             storage = new InMemoryStorage();
+            SecretsManagerClient.InitializeStorage(storage, "GOV:ONE_TIME_TOKEN");
+            Assert.AreEqual("govcloud.keepersecurity.us", storage.GetString("hostname"));
+
+            storage = new InMemoryStorage();
+            SecretsManagerClient.InitializeStorage(storage, "JP:ONE_TIME_TOKEN");
+            Assert.AreEqual("keepersecurity.jp", storage.GetString("hostname"));
+
+            storage = new InMemoryStorage();
+            SecretsManagerClient.InitializeStorage(storage, "CA:ONE_TIME_TOKEN");
+            Assert.AreEqual("keepersecurity.ca", storage.GetString("hostname"));
+
+            storage = new InMemoryStorage();
             SecretsManagerClient.InitializeStorage(storage, "eu:ONE_TIME_TOKEN");
             Assert.AreEqual("keepersecurity.eu", storage.GetString("hostname"));
 
