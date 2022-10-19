@@ -1,44 +1,40 @@
-import os
-from codecs import open
 from setuptools import setup, find_packages
+import os
 
 here = os.path.abspath(os.path.dirname(__file__))
 
-os.chdir(here)
-
 # Get the long description from the README.md file
-with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
-    long_description = fp.read()
+with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
+    long_description = f.read()
 
 install_requires = [
-    'ecdsa',
-    'cryptography>=3.1',
-    'requests',
-    'importlib_metadata'
+    'keeper-secrets-manager-core>=16.3.5'
 ]
 
 setup(
-    name="keeper-secrets-manager-core",
-    version="16.3.5",
-    description="Keeper Secrets Manager for Python 3",
+    name="keeper-secrets-manager-storage",
+    version="1.0.0",
+    description="Keeper Secrets Manager SDK helper for managing configurations key-value storage.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Keeper Security",
-    author_email="ops@keepersecurity.com",
+    author_email="sm@keepersecurity.com",
     url="https://github.com/Keeper-Security/secrets-manager",
     license="MIT",
-    keywords="Keeper Password Manager SDK",
+    keywords="Keeper Password Secrets Manager Storage Key-Value HSM",
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
+    package_data={},
+    include_package_data=True,
     install_requires=install_requires,
     python_requires='>=3.6',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
-        "Documentation": "https://github.com/Keeper-Security/secrets-manager",
+        "Documentation": "https://docs.keeper.io/secrets-manager/secrets-manager/overview",
         "Source Code": "https://github.com/Keeper-Security/secrets-manager",
     },
     classifiers=[
-        "Development Status :: 5 - Production/Stable",
+        "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
@@ -49,5 +45,5 @@ setup(
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Topic :: Security",
-    ],
+    ]
 )

@@ -17,9 +17,10 @@ import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.time.Instant
 import java.util.*
+import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj16.3.4"
+const val KEEPER_CLIENT_VERSION = "mj16.4.0"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -44,7 +45,11 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val storage: KeyValueStorage,
     val queryFunction: QueryFunction? = null,
     val allowUnverifiedCertificate: Boolean = false
-)
+) {
+    init {
+        testSecureRandom()
+    }
+}
 
 typealias QueryFunction = (url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload) -> KeeperHttpResponse
 
@@ -53,6 +58,25 @@ data class KeeperHttpResponse(val statusCode: Int, val data: ByteArray)
 
 @Serializable
 data class KeeperError(val key_id: Int, val error: String)
+
+@Serializable
+private data class DeletePayload(
+    val clientVersion: String,
+    val clientId: String,
+    var recordUids: List<String>? = null,
+)
+
+@Serializable
+data class SecretsManagerDeleteResponse(
+        val records: List<SecretsManagerDeleteResponseRecord>
+)
+
+@Serializable
+data class SecretsManagerDeleteResponseRecord(
+        val errorMessage: String? = null,
+        val recordUid: String,
+        val responseCode: String
+)
 
 @Serializable
 private data class GetPayload(
@@ -229,6 +253,8 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
             "EU" -> "keepersecurity.eu"
             "AU" -> "keepersecurity.com.au"
             "GOV" -> "govcloud.keepersecurity.us"
+            "JP" -> "keepersecurity.jp"
+            "CA" -> "keepersecurity.ca"
             else -> tokenParts[0]
         }
         clientKey = tokenParts[1]
@@ -251,6 +277,46 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
     storage.saveBytes(KEY_PUBLIC_KEY, extractPublicRaw(keyPair.public)) // public key stored raw
 }
 
+private const val FAST_SECURE_RANDOM_PREFIX = "Fast SecureRandom detected! "
+private const val SLOW_SECURE_RANDOM_PREFIX = "Slow SecureRandom detected! "
+private const val SLOW_SECURE_RANDOM_MESSAGE = " Install one of the following entropy sources to improve speed of random number generator on your platform: 'haveged' or 'rng-tools'"
+private var SecureRandomTestResult = ""
+
+private fun testSecureRandom() {
+    if (SecureRandomTestResult.isNotBlank()) {
+        if (SecureRandomTestResult.startsWith(SLOW_SECURE_RANDOM_PREFIX)) {
+            println(SecureRandomTestResult)
+        }
+        return
+    }
+    val es = Executors.newSingleThreadExecutor()
+    val future = es.submit(Callable {
+        // on some Linux machines the default secure random provider is blocking
+        // and waiting too long for entropy to accumulate.
+        val secureRandom = SecureRandom.getInstanceStrong()
+        secureRandom.nextInt() // could block for many seconds
+        true
+    })
+
+    try {
+        future.get(3, TimeUnit.SECONDS);
+        SecureRandomTestResult = FAST_SECURE_RANDOM_PREFIX
+    } catch (e: TimeoutException) {
+        SecureRandomTestResult = SLOW_SECURE_RANDOM_PREFIX + SLOW_SECURE_RANDOM_MESSAGE
+        println(SecureRandomTestResult)
+        future.cancel(true)
+        throw SecureRandomSlowGenerationException(SecureRandomTestResult)
+    } catch (e: InterruptedException) {
+        throw SecureRandomException(e.message ?: e.localizedMessage)
+    } catch (e: ExecutionException) {
+        throw SecureRandomException(e.message ?: e.localizedMessage)
+    } catch (e: Exception) {
+        throw SecureRandomException(e.message ?: e.localizedMessage)
+    }
+
+    es.shutdown()
+}
+
 @ExperimentalSerializationApi
 @JvmOverloads
 fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emptyList()): KeeperSecrets {
@@ -264,6 +330,14 @@ fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emp
     }
     return secrets
 }
+
+@ExperimentalSerializationApi
+fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>): SecretsManagerDeleteResponse {
+    val payload = prepareDeletePayload(options.storage, recordUids)
+    val responseData = postQuery(options, "delete_secret", payload)
+    return nonStrictJson.decodeFromString<SecretsManagerDeleteResponse>(bytesToString(responseData))
+}
+
 
 @ExperimentalSerializationApi
 fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
@@ -450,6 +524,15 @@ private fun prepareGetPayload(
         payload.requestedRecords = recordsFilter
     }
     return payload
+}
+
+@ExperimentalSerializationApi
+private fun prepareDeletePayload(
+        storage: KeyValueStorage,
+        recordUids: List<String>
+): DeletePayload {
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    return DeletePayload(KEEPER_CLIENT_VERSION, clientId, recordUids)
 }
 
 @ExperimentalSerializationApi

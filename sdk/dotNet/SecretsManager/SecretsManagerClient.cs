@@ -128,6 +128,23 @@ namespace SecretsManager
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    internal class DeletePayload
+    {
+        public string clientVersion { get; }
+        public string clientId { get; }
+        public string[] recordUids { get; }
+
+        public DeletePayload(string clientVersion, string clientId, string[] recordUids)
+        {
+            this.clientVersion = clientVersion;
+            this.clientId = clientId;
+            this.recordUids = recordUids;
+        }
+    }
+    
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     internal class CreatePayload
     {
         public string clientVersion { get; }
@@ -384,6 +401,8 @@ namespace SecretsManager
                     "EU" => "keepersecurity.eu",
                     "AU" => "keepersecurity.com.au",
                     "GOV" => "govcloud.keepersecurity.us",
+                    "JP" => "keepersecurity.jp",
+                    "CA" => "keepersecurity.ca",
                     _ => tokenParts[0]
                 };
                 clientKey = tokenParts[1];
@@ -454,6 +473,12 @@ namespace SecretsManager
             await PostQuery(options, "update_secret", payload);
         }
 
+        public static async Task DeleteSecret(SecretsManagerOptions options, string[] recordsUids)
+        {
+            var payload = PrepareDeletePayload(options.Storage, recordsUids);
+            await PostQuery(options, "delete_secret", payload);
+        }
+        
         public static async Task<string> CreateSecret(SecretsManagerOptions options, string folderUid, KeeperRecordData recordData, KeeperSecrets secrets = null)
         {
             secrets ??= await GetSecrets(options);
@@ -671,6 +696,17 @@ namespace SecretsManager
             return new UpdatePayload(GetClientVersion(), clientId, record.RecordUid, CryptoUtils.WebSafe64FromBytes(encryptedRecord), record.Revision);
         }
 
+        private static DeletePayload PrepareDeletePayload(IKeyValueStorage storage, string[] recordsUids)
+        {
+            var clientId = storage.GetString(KeyClientId);
+            if (clientId == null)
+            {
+                throw new Exception("Client Id is missing from the configuration");
+            }
+
+            return new DeletePayload(GetClientVersion(), clientId, recordsUids);
+        }
+        
         private static CreatePayload PrepareCreatePayload(IKeyValueStorage storage, string folderUid, KeeperRecordData recordData, KeeperSecrets secrets)
         {
             var clientId = storage.GetString(KeyClientId);

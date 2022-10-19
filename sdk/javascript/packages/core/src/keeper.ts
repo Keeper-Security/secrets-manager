@@ -51,6 +51,12 @@ type GetPayload = {
     requestedRecords?: string[] // only return these records
 }
 
+type DeletePayload = {
+    clientVersion: string
+    clientId: string
+    recordUids: string[]
+}
+
 type UpdatePayload = {
     clientVersion: string
     clientId: string
@@ -79,6 +85,12 @@ type FileUploadPayload = {
     ownerRecordData: string
     linkKey: string
     fileSize: number
+}
+
+type SecretsManagerDeleteResponseRecord = {
+    errorMessage: string
+    recordUid: string
+    responseCode: string
 }
 
 type SecretsManagerResponseFolder = {
@@ -111,6 +123,10 @@ type SecretsManagerResponse = {
     records: SecretsManagerResponseRecord[]
     expiresOn: number
     warnings: string[]
+}
+
+type SecretsManagerDeleteResponse = {
+    records: SecretsManagerDeleteResponseRecord[]
 }
 
 type SecretsManagerAddFileResponse = {
@@ -189,6 +205,19 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperReco
         recordUid: record.recordUid,
         data: webSafe64FromBytes(encryptedRecord),
         revision: record.revision
+    }
+}
+
+const prepareDeletePayload = async (storage: KeyValueStorage, recordUids: string[]): Promise<DeletePayload> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
+    console.log("recordUIDs: ", recordUids);
+    return {
+        clientVersion: 'ms' + packageVersion,
+        clientId: clientId,
+        recordUids: recordUids
     }
 }
 
@@ -428,7 +457,10 @@ export const initializeStorage = async (storage: KeyValueStorage, oneTimeToken: 
             US: 'keepersecurity.com',
             EU: 'keepersecurity.eu',
             AU: 'keepersecurity.com.au',
-            GOV: 'govcloud.keepersecurity.us'
+            GOV: 'govcloud.keepersecurity.us',
+            JP: 'keepersecurity.jp',
+            CA: 'keepersecurity.ca'
+
         }[tokenParts[0].toUpperCase()]
         if (!host) {
             host = tokenParts[0]
@@ -485,6 +517,13 @@ export const getSecretByTitle = async (options: SecretManagerOptions, recordTitl
 export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord): Promise<void> => {
     const payload = await prepareUpdatePayload(options.storage, record)
     await postQuery(options, 'update_secret', payload)
+}
+
+export const deleteSecret = async (options: SecretManagerOptions, recordUids: string[]): Promise<SecretsManagerDeleteResponse> => {
+    const payload = await prepareDeletePayload(options.storage, recordUids)
+    const responseData = await postQuery(options, 'delete_secret', payload)
+    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
+    return response
 }
 
 export const createSecret = async (options: SecretManagerOptions, folderUid: string, recordData: any): Promise<string> => {

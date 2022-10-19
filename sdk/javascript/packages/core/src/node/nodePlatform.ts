@@ -11,7 +11,6 @@ import {
     generateKeyPair,
     randomBytes
 } from 'crypto'
-import * as FormData from "form-data"
 import * as https from "https";
 
 const bytesToBase64 = (data: Uint8Array): string => Buffer.from(data).toString('base64')
@@ -221,18 +220,14 @@ const fileUpload = (
     uploadParameters: { [key: string]: string },
     data: Uint8Array
 ): Promise<any> => new Promise<any>((resolve, reject) => {
-    const form = new FormData()
-
-    for (const key in uploadParameters) {
-        form.append(key, uploadParameters[key]);
-    }
-    form.append('file', data)
-
+    const boundary = `----------${Date.now()}`
+    const boundaryBytes = stringToBytes(`\r\n--${boundary}`)
     let post = https.request(url, {
         method: "post",
-        headers: form.getHeaders()
+        headers: {
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        }
     });
-    form.pipe(post)
     post.on('response', function (res: any) {
         resolve({
             headers: res.headers,
@@ -240,6 +235,17 @@ const fileUpload = (
             statusMessage: res.statusMessage
         })
     })
+    post.on('error', reject)
+    for (const key in uploadParameters) {
+        post.write(boundaryBytes)
+        post.write(stringToBytes(`\r\nContent-Disposition: form-data; name=\"${key}\"\r\n\r\n${uploadParameters[key]}`))
+    }
+    post.write(boundaryBytes)
+    post.write(stringToBytes(`\r\nContent-Disposition: form-data; name=\"file\"\r\nContent-Type: application/octet-stream\r\n\r\n`))
+    post.write(data)
+    post.write(boundaryBytes)
+    post.write(stringToBytes(`--\r\n`))
+    post.end()
 })
 
 const cleanKeyCache = () => {

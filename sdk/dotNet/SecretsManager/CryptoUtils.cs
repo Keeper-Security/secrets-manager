@@ -332,6 +332,7 @@ namespace SecretsManager
         }
 
         // password generation
+        const int DefaultPasswordLength = 32;
         const string AsciiLowercase = @"abcdefghijklmnopqrstuvwxyz";
         const string AsciiUppercase = @"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         const string AsciiDigits = @"0123456789";
@@ -392,39 +393,71 @@ namespace SecretsManager
         }
 
         /// <summary>
-        /// Generate a password of specified length with specified number of
-        /// uppercase, lowercase, digits and special characters
-        /// If all character groups have length=0 then total length is split evenly
-        /// with last group 'specialCharacters' taking any extra charcters
+        /// Generates a new password of specified minimum length
+        /// using provided number of uppercase, lowercase, digits and special characters.<para/>
+        /// Note: If all character groups are unspecified or all have exact zero length
+        /// then password characters are chosen from all groups uniformly at random.<para/>
+        /// Note: If all charset lengths are negative or 0 but can't reach min_length
+        /// then all exact/negative charset lengths will be treated as minimum number of characters instead.<para/>
         /// </summary>
-        /// <param name="length">Password length</param>
-        /// <param name="lowercase">Number of lowercase characters</param>
-        /// <param name="uppercase">Number of uppercase characters</param>
-        /// <param name="digits">Number of digits</param>
-        /// <param name="specialCharacters">Number of special characters</param>
-        /// <returns></returns>
-        public static string GeneratePassword(int length = 64, int lowercase = 0, int uppercase = 0, int digits = 0, int specialCharacters = 0)
+        /// <param name="minLength">Minimum password length - default: 32</param>
+        /// <param name="lowercase">Minimum number of lowercase characters if positive, exact if 0 or negative</param>
+        /// <param name="uppercase">Minimum number of uppercase characters if positive, exact if 0 or negative</param>
+        /// <param name="digits">Minimum number of digits if positive, exact if 0 or negative</param>
+        /// <param name="specialCharacters">Minimum number of special characters if positive, exact if 0 or negative</param>
+        /// <param name="specialCharacterSet">String containing custom set of special characters to pick from</param>
+        /// <returns>Generated password string</returns>
+        public static string GeneratePassword(
+            int minLength = DefaultPasswordLength,
+            int? lowercase = null,
+            int? uppercase = null,
+            int? digits = null,
+            int? specialCharacters = null,
+            string specialCharacterSet = AsciiSpecialCharacters)
         {
-            if (length <= 0)
-                length = 64;
-            if (lowercase == 0 && uppercase == 0 && digits == 0 && specialCharacters == 0)
+            List<int?> counts = new List<int?> { lowercase, uppercase, digits, specialCharacters };
+            int sumCategories = counts.Sum(x => x.HasValue ? Math.Abs(x.Value) : 0);
+
+            // If all lengths are exact/negative but don't reach min_length - convert to minimum/positive lengths
+            int numExactCounts = counts.Sum(x => x.HasValue && x.Value <= 0 ? 1 : 0);
+            if (counts.Count == numExactCounts && sumCategories < minLength)
             {
-                int increment = length / 4;
-                int lastIncrement = increment + (length % 4);
-                lowercase = uppercase = digits = increment;
-                specialCharacters = lastIncrement;
+                if (lowercase.HasValue && lowercase.Value < 0) lowercase = Math.Abs(lowercase.Value);
+                if (uppercase.HasValue && uppercase.Value < 0) uppercase = Math.Abs(uppercase.Value);
+                if (digits.HasValue && digits.Value < 0) digits = Math.Abs(digits.Value);
+                if (specialCharacters.HasValue && specialCharacters.Value < 0) specialCharacters = Math.Abs(specialCharacters.Value);
             }
 
-            string passwordCharacters = "";
-            if (lowercase > 0)
-                passwordCharacters += RandomSample(lowercase, AsciiLowercase);
-            if (uppercase > 0)
-                passwordCharacters += RandomSample(uppercase, AsciiUppercase);
-            if (digits > 0)
-                passwordCharacters += RandomSample(digits, AsciiDigits);
-            if (specialCharacters > 0)
-                passwordCharacters += RandomSample(specialCharacters, AsciiSpecialCharacters);
+            string extraChars = "";
+            int extraCount = 0;
+            if (minLength > sumCategories)
+                extraCount = minLength - sumCategories;
+            if (!lowercase.HasValue || lowercase.Value > 0)
+                extraChars += AsciiLowercase;
+            if (!uppercase.HasValue || uppercase.Value > 0)
+                extraChars += AsciiUppercase;
+            if (!digits.HasValue || digits.Value > 0)
+                extraChars += AsciiDigits;
+            if (!specialCharacters.HasValue || specialCharacters.Value > 0)
+                extraChars += specialCharacterSet;
+            if (extraCount > 0 && string.IsNullOrEmpty(extraChars))
+                extraChars = AsciiLowercase + AsciiUppercase + AsciiDigits + specialCharacterSet;
 
+            var categoryMap = new List<KeyValuePair<int, string>>
+            {
+                new KeyValuePair<int, string>(lowercase.HasValue ? Math.Abs(lowercase.Value) : 0, AsciiLowercase),
+                new KeyValuePair<int, string>(uppercase.HasValue ? Math.Abs(uppercase.Value) : 0, AsciiUppercase),
+                new KeyValuePair<int, string>(digits.HasValue ? Math.Abs(digits.Value) : 0, AsciiDigits),
+                new KeyValuePair<int, string>(specialCharacters.HasValue ? Math.Abs(specialCharacters.Value) : 0, specialCharacterSet),
+                new KeyValuePair<int, string>(extraCount, extraChars)
+            };
+
+            string passwordCharacters = "";
+            foreach (KeyValuePair<int, string> kvp in categoryMap)
+            {
+                if (kvp.Key > 0)
+                    passwordCharacters += RandomSample(kvp.Key, kvp.Value);
+            }
             string password = Shuffle(passwordCharacters);
             return password;
         }
