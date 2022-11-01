@@ -12,7 +12,7 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
 
 install_requires = [
     'ecdsa',
-    'cryptography>=3.1',
+    'cryptography>=38.0.3',
     'requests',
     'importlib_metadata'
 ]
