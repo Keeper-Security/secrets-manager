@@ -9,7 +9,7 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
 install_requires = [
-    'keeper-secrets-manager-core>=16.3.5',
+    'keeper-secrets-manager-core>=16.4.1',
     'keeper-secrets-manager-helper>=1.0.4',
     'importlib_metadata',
     'ansible'
@@ -17,7 +17,7 @@ install_requires = [
 
 setup(
     name="keeper-secrets-manager-ansible",
-    version='1.1.4',
+    version='1.1.5',
     description="Keeper Secrets Manager plugins for Ansible.",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -37,7 +37,7 @@ setup(
         "Source Code": "https://github.com/Keeper-Security/secrets-manager",
     },
     classifiers=[
-        "Development Status :: 1 - Planning",
+        "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
         "Intended Audience :: System Administrators",
         "License :: OSI Approved :: MIT License",
@@ -48,6 +48,8 @@ setup(
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
         "Topic :: Security",
         "Topic :: System :: Installation/Setup",
         "Topic :: System :: Systems Administration"
