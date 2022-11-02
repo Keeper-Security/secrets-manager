@@ -12,19 +12,19 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
 
 install_requires = [
     'ecdsa',
-    'cryptography>=3.1',
+    'cryptography>=38.0.3',
     'requests',
     'importlib_metadata'
 ]
 
 setup(
     name="keeper-secrets-manager-core",
-    version="16.4.0",
+    version="16.4.1",
     description="Keeper Secrets Manager for Python 3",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Keeper Security",
-    author_email="ops@keepersecurity.com",
+    author_email="sm@keepersecurity.com",
     url="https://github.com/Keeper-Security/secrets-manager",
     license="MIT",
     keywords="Keeper Password Manager SDK",

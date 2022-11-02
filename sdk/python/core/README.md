@@ -4,6 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.4.1
+* Upgrading and pinning `cryptography` dependency to 38.0.3
+
 ## 16.4.0
 * Record deletion
 * KSM-305 - Support for Canada and Japan data centers
