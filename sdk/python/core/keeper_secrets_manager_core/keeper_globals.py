@@ -49,8 +49,10 @@ def get_client_version(hardcode=False):
             raise Exception(err)
     return version
 
+
 # Right now the client version is being hardcoded.
-keeper_secrets_manager_sdk_client_id = "mp{}".format(get_client_version(hardcode=True))
+keeper_secrets_manager_sdk_client_id = "mp{}".format(get_client_version(hardcode=False))
+
 
 keeper_public_keys = {
     '1': 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM',
