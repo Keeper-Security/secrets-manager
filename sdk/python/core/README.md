@@ -4,6 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.4.2
+* Fix to support dynamic client version
+
 ## 16.4.1
 * Upgrading and pinning `cryptography` dependency to 38.0.3
 
