@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 [assembly: InternalsVisibleTo("SecretsManager.Test.Core")]
@@ -452,6 +453,206 @@ namespace SecretsManager
             }
 
             return keeperSecrets;
+        }
+
+        /// <summary>
+        /// TryGetNotationResults returns a string list with all values specified by the notation or empty list on error.
+        /// It simply logs any errors and continue returning an empty string list on error.
+        /// </summary>
+        /// <param name="options"></param>
+        /// <param name="notation"></param>
+        /// <returns></returns>
+        public static async Task<List<string>> TryGetNotationResults(SecretsManagerOptions options, string notation)
+        {
+            try
+            {
+                return await GetNotationResults(options, notation);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e.Message);
+            }
+            return new List<string> { };
+        }
+
+        // Notation:
+        // keeper://<uid|title>/<field|custom_field>/<type|label>[INDEX][PROPERTY]
+        // keeper://<uid|title>/file/<filename|fileUID>
+        // Record title, field label, filename sections need to escape the delimiters /[]\ -> \/ \[ \] \\
+        //
+        // GetNotationResults returns selection of the value(s) from a single field as a string list.
+        // Multiple records or multiple fields found results in error.
+        // Use record UID or unique record titles and field labels so that notation finds a single record/field.
+        //
+        // If field has multiple values use indexes - numeric INDEX specifies the position in the value list
+        // and PROPERTY specifies a single JSON object property to extract (see examples below for usage)
+        // If no indexes are provided - whole value list is returned (same as [])
+        // If PROPERTY is provided then INDEX must be provided too - even if it's empty [] which means all
+        //
+        // Extracting two or more but not all field values simultaneously is not supported - use multiple notation requests.
+        //
+        // Files are returned as URL safe base64 encoded string of the binary content
+        //
+        // Note: Integrations and plugins usually return single string value - result[0] or ""
+        //
+        // Examples:
+        //  RECORD_UID/file/filename.ext             => ["URL Safe Base64 encoded binary content"]
+        //  RECORD_UID/field/url                     => ["127.0.0.1", "127.0.0.2"] or [] if empty
+        //  RECORD_UID/field/url[]                   => ["127.0.0.1", "127.0.0.2"] or [] if empty
+        //  RECORD_UID/field/url[0]                  => ["127.0.0.1"] or error if empty
+        //  RECORD_UID/custom_field/name[first]      => Error, numeric index is required to access field property
+        //  RECORD_UID/custom_field/name[][last]     => ["Smith", "Johnson"]
+        //  RECORD_UID/custom_field/name[0][last]    => ["Smith"]
+        //  RECORD_UID/custom_field/phone[0][number] => "555-5555555"
+        //  RECORD_UID/custom_field/phone[1][number] => "777-7777777"
+        //  RECORD_UID/custom_field/phone[]          => ["{\"number\": \"555-555...\"}", "{\"number\": \"777...\"}"]
+        //  RECORD_UID/custom_field/phone[0]         => ["{\"number\": \"555-555...\"}"]
+
+        /// <summary>
+        /// GetNotationResults returns a string list with all values specified by the notation or throws an error.
+        /// Use <see cref="TryGetNotationResults" /> to just log errors and continue returning an empty string list on error.
+        /// </summary>
+        /// <param name="options"></param>
+        /// <param name="notation"></param>
+        /// <returns></returns>
+        public static async Task<List<string>> GetNotationResults(SecretsManagerOptions options, string notation)
+        {
+            var result = new List<string> { };
+
+            var parsedNotation = Notation.ParseNotation(notation); // prefix, record, selector, footer
+            if ((parsedNotation?.Count ?? 0) < 3)
+                throw new Exception($"Invalid notation {notation}");
+
+            string selector = parsedNotation[2]?.Text?.Item1; // type|title|notes or file|field|custom_field
+            if (selector == null)
+                throw new Exception($"Invalid notation {notation}");
+            string recordToken = parsedNotation[1]?.Text?.Item1; // UID or Title
+            if (recordToken == null)
+                throw new Exception($"Invalid notation {notation}");
+
+            // to minimize traffic - if it looks like a Record UID try to pull a single record
+            var records = new KeeperRecord[] { };
+            if (Regex.IsMatch(recordToken, @"^[A-Za-z0-9_-]{22}$"))
+            {
+                var secrets = await GetSecrets(options, new string[] { recordToken });
+                records = secrets?.Records;
+                if ((records?.Count() ?? 0) > 1)
+                    throw new Exception($"Notation error - found multiple records with same UID '{recordToken}'");
+            }
+
+            // If RecordUID is not found - pull all records and search by title
+            if ((records?.Count() ?? 0) < 1)
+            {
+                var secrets = await GetSecrets(options);
+                records = (secrets?.Records != null ? secrets.Records.Where(x => recordToken.Equals(x?.Data?.title)).ToArray() : null);
+            }
+
+            if ((records?.Count() ?? 0) > 1)
+                throw new Exception($"Notation error - multiple records match record '{recordToken}'");
+            if ((records?.Count() ?? 0) < 1)
+                throw new Exception($"Notation error - no records match record '{recordToken}'");
+
+            var record = records[0];
+            string parameter = parsedNotation[2]?.Parameter?.Item1;
+            string index1 = parsedNotation[2]?.Index1?.Item1;
+            string index2 = parsedNotation[2]?.Index2?.Item1;
+
+            switch (selector.ToLower())
+            {
+                case "type": if (record?.Data?.type != null) result.Add(record.Data.type); break;
+                case "title": if (record?.Data?.title != null) result.Add(record.Data.title); break;
+                case "notes": if (record?.Data?.notes != null) result.Add(record.Data.notes); break;
+                case "file":
+                    if (parameter == null)
+                        throw new Exception($"Notation error - Missing required parameter: filename or file UID for files in record '{recordToken}'");
+                    if ((record?.Files?.Count() ?? 0) < 1)
+                        throw new Exception($"Notation error - Record {recordToken} has no file attachments.");
+                    var files = record.Files;
+                    files = files.Where(x => parameter.Equals(x?.Data?.name) || parameter.Equals(x?.FileUid)).ToArray();
+                    // file searches do not use indexes and rely on unique file names or fileUid
+                    if ((files?.Length ?? 0) > 1)
+                        throw new Exception($"Notation error - Record {recordToken} has multiple files matching the search criteria '{parameter}'");
+                    if ((files?.Length ?? 0) < 1)
+                        throw new Exception($"Notation error - Record {recordToken} has no files matching the search criteria '{parameter}'");
+                    var contents = DownloadFile(files[0]);
+                    var text = CryptoUtils.WebSafe64FromBytes(contents);
+                    result.Add(text);
+                    break;
+                case "field":
+                case "custom_field":
+                    if (parameter == null)
+                        throw new Exception($"Notation error - Missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel");
+
+                    var fields = selector.ToLower() switch
+                    {
+                        "field" => record.Data.fields,
+                        "custom_field" => record.Data.custom,
+                        _ => throw new Exception($"Notation error - Expected /field or /custom_field but found /{selector}")
+                    };
+
+                    var flds = fields.Where(x => parameter.Equals(x?.type) || parameter.Equals(x?.label)).ToList();
+                    if ((flds?.Count ?? 0) > 1)
+                        throw new Exception($"Notation error - Record {recordToken} has multiple fields matching the search criteria '{parameter}'");
+                    if ((flds?.Count ?? 0) < 1)
+                        throw new Exception($"Notation error - Record {recordToken} has no fields matching the search criteria '{parameter}'");
+                    var field = flds[0];
+                    var fieldType = field?.type ?? "";
+
+                    var isValid = int.TryParse(index1, out int idx);
+                    if (!isValid) idx = -1; // full value
+                    // valid only if [] or missing - ex. /field/phone or /field/phone[]
+                    if (idx == -1 && !(string.IsNullOrEmpty(parsedNotation[2]?.Index1?.Item2) || parsedNotation[2]?.Index1?.Item2 == "[]"))
+                        throw new Exception($"Notation error - Invalid field index {idx}.");
+
+                    var values = (field?.value != null ? new List<object>(field.value) : new List<object>());
+                    if (idx >= values.Count)
+                        throw new Exception($"Notation error - Field index out of bounds {idx} >= {values.Count} for field {parameter}.");
+                    if (idx >= 0) // single index
+                        values = new List<object> { values[idx] };
+
+                    bool fullObjValue = (string.IsNullOrEmpty(parsedNotation[2]?.Index2?.Item2) || parsedNotation[2]?.Index2?.Item2 == "[]") ? true : false;
+                    string objPropertyName = parsedNotation[2]?.Index2?.Item1 ?? "";
+
+                    var res = new List<string> { };
+                    foreach (var fldValue in values)
+                    {
+                        // Do not throw here to allow for ex. field/name[][middle] to pull [middle] only where present
+                        // NB! Not all properties of a value are always required even when the field is marked as required
+                        // ex. On a required `name` field only "first" and "last" properties are required but not "middle"
+                        // so missing property in a field value is not always an error
+                        if (fldValue == null)
+                            Console.Error.WriteLine($"Notation error - Empty field value for field {parameter}."); // throw?
+
+                        if (fullObjValue)
+                        {
+                            res.Add((fldValue is JsonElement je && je.ValueKind == JsonValueKind.String) ?
+                                je.ToString() :
+                                CryptoUtils.BytesToString(JsonUtils.SerializeJson(fldValue)));
+                        }
+                        else if (fldValue != null)
+                        {
+                            if (fldValue is JsonElement je)
+                            {
+                                if (je.TryGetProperty(objPropertyName, out JsonElement jvalue))
+                                    res.Add(jvalue.ValueKind == JsonValueKind.String ?
+                                        jvalue.ToString() :
+                                        CryptoUtils.BytesToString(JsonUtils.SerializeJson(jvalue)));
+                                else
+                                    Console.Error.WriteLine($"Notation error - value object has no property '{objPropertyName}'."); // skip
+                            }
+                        }
+                        else
+                            Console.Error.WriteLine($"Notation error - Cannot extract property '{objPropertyName}' from null value.");
+                    }
+                    if (res.Count != values.Count)
+                        Console.Error.WriteLine($"Notation warning - extracted {res.Count} out of {values.Count} values for '{objPropertyName}' property.");
+                    if (res.Count > 0)
+                        result.AddRange(res);
+                    break;
+                default: throw new Exception($"Invalid notation {notation}");
+            }
+
+            return result;
         }
 
         public static IEnumerable<KeeperRecord> FindSecretsByTitle(IEnumerable<KeeperRecord> records, string recordTitle)
