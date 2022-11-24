@@ -1,6 +1,7 @@
 import {
     KeeperSecrets,
-    getValue
+    getValue,
+    parseNotation
 } from '../'
 
 const recordUID = 'k9qMpcO0aszz9w3li5XbaQ'
@@ -58,60 +59,113 @@ const secrets: KeeperSecrets = {
     ]
 }
 
-test('Notations', () => {
+test('Notations', async () => {
     let value
 
-    value = getValue(secrets, `keeper://${recordUID}/field/login`)
+    value = await getValue(secrets, `keeper://${recordUID}/field/login`)
     expect(value).toBe('My Login 1')
 
-    value = getValue(secrets, `${recordUID}/field/login`)
+    value = await getValue(secrets, `${recordUID}/field/login`)
     expect(value).toBe('My Login 1')
 
-    value = getValue(secrets, `keeper://${recordUID}/field/login[0]`)
+    value = await getValue(secrets, `keeper://${recordUID}/field/login[0]`)
     expect(value).toBe('My Login 1')
 
     try {
-        value = getValue(secrets, `keeper://${recordUID}/field/login[1]`)
+        value = await getValue(secrets, `keeper://${recordUID}/field/login[1]`)
         fail('Getting wrong index did not throw')
     } catch ({message}) {
-        expect(message).toContain(`The index 1 for field value of login in the record ${recordUID} is out of range`)
+        expect(message).toContain(`Notation error - Field index out of bounds`)
     }
 
-    value = getValue(secrets, `keeper://${recordUID}/field/login[]`)
+    value = await getValue(secrets, `keeper://${recordUID}/field/login[]`)
     expect(value).toStrictEqual(['My Login 1'])
 
-    value = getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 1`)
+    value = await getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 1`)
     expect(value).toBe('custom1')
 
-    value = getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 2`)
+    value = await getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 2`)
     expect(value).toBe('one')
 
-    value = getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 2[1]`)
+    value = await getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 2[1]`)
     expect(value).toBe('two')
 
-    value = getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 2[]`)
+    value = await getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 2[]`)
     expect(value).toStrictEqual(['one','two','three'])
 
-    value = getValue(secrets, `keeper://${recordUID}/custom_field/phone[0][number]`)
+    value = await getValue(secrets, `keeper://${recordUID}/custom_field/phone[0][number]`)
     expect(value).toBe('555-5555555')
 
-    value = getValue(secrets, `keeper://${recordUID}/custom_field/phone[1][number]`)
+    value = await getValue(secrets, `keeper://${recordUID}/custom_field/phone[1][number]`)
     expect(value).toBe('777-7777777')
 
-    value = getValue(secrets, `keeper://${recordUID}/custom_field/phone[2]`)
+    value = await getValue(secrets, `keeper://${recordUID}/custom_field/phone[2]`)
     expect(value).toStrictEqual({number: "888-8888888", ext: "", type: "Home"})
 
-    value = getValue(secrets, `keeper://${recordUID}/custom_field/name[first]`)
+    value = await getValue(secrets, `keeper://${recordUID}/custom_field/name[first]`)
     expect(value).toBe('Jenny')
 
-    value = getValue(secrets, `keeper://${recordUID}/custom_field/name[last]`)
+    value = await getValue(secrets, `keeper://${recordUID}/custom_field/name[last]`)
     expect(value).toBe('Smith')
 
-    value = getValue(secrets, `keeper://${recordUID}/file/QR Code`)
-    expect(value.fileUid).toBe('HKGdx7dSrtuTfA67wiEZkw')
-    expect(value.url).toBe('QR Code File Url')
+    try {
+        value = await getValue(secrets, `keeper://${recordUID}/file/QR Code`)
+        fail('File download did not throw')
+    } catch ({message}) {
+        expect(message).toContain(`Notation error - download failed for Record: ${recordUID},`)
+        expect(message).toContain(`FileUID: HKGdx7dSrtuTfA67wiEZkw,`)
+        expect(message).toContain(`Message: TypeError [ERR_INVALID_URL]: Invalid URL`)
+    }
 
-    value = getValue(secrets, `keeper://${recordUID}/file/qr.png`)
-    expect(value.fileUid).toBe('HKGdx7dSrtuTfA67wiEZkw')
-    expect(value.url).toBe('QR Code File Url')
+    try {
+        value = await getValue(secrets, `keeper://${recordUID}/file/qr.png`)
+        fail('File download did not throw')
+    } catch ({message}) {
+        expect(message).toContain(`Notation error - download failed for Record: ${recordUID},`)
+        expect(message).toContain(`FileUID: HKGdx7dSrtuTfA67wiEZkw,`)
+        expect(message).toContain(`Message: TypeError [ERR_INVALID_URL]: Invalid URL`)
+    }
+})
+
+test('NotationParser', () => {
+    try {
+        parseNotation("/file"); // file requires parameters
+        fail('Parsing bad notation did not throw')
+    } catch {}
+
+    try {
+        parseNotation("/type/extra"); // extra characters after last section
+        fail('Parsing bad notation did not throw')
+    } catch {}
+
+    let res = parseNotation("/type")
+    expect(res[2].text?.[0]).toBe("type")
+
+    res = parseNotation("/title")
+    expect(res[2].text?.[0]).toBe("title")
+
+    res = parseNotation("/notes")
+    expect(res[2].text?.[0]).toBe("notes")
+
+    res = parseNotation("/file/filename.ext")
+    expect(res[2].text?.[0]).toBe("file")
+    expect(res[2].parameter?.[0]).toBe("filename.ext")
+
+    res = parseNotation("/field/text")
+    expect(res[2].text?.[0]).toBe("field")
+    expect(res[2].parameter?.[0]).toBe("text")
+
+    res = parseNotation(String.raw`/custom_field/label with \[[0][middle]`)
+    expect(res[1].text?.[0]).toBe("") // empty title
+    expect(res[2].text?.[0]).toBe("custom_field")
+    expect(res[2].parameter?.[0]).toBe("label with [")
+    expect(res[2].index1?.[0]).toBe("0")
+    expect(res[2].index2?.[0]).toBe("middle")
+
+    res = parseNotation(String.raw`title with \[\]\//custom_field/label with \[[0][middle]`)
+    expect(res[1].text?.[0]).toBe("title with []/")
+    expect(res[2].text?.[0]).toBe("custom_field")
+    expect(res[2].parameter?.[0]).toBe("label with [")
+    expect(res[2].index1?.[0]).toBe("0")
+    expect(res[2].index2?.[0]).toBe("middle")
 })
