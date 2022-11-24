@@ -10,21 +10,22 @@
 # Contact: ops@keepersecurity.com
 
 import hmac
+import json
 import logging
 import os
-import sys
-from distutils.util import strtobool
 import re
-import json
-from http import HTTPStatus
-
 import requests
+import sys
+from base64 import urlsafe_b64decode
+from distutils.util import strtobool
+from http import HTTPStatus
+from typing import List, Tuple
 
 from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.dto.dtos import Folder, Record, RecordCreate, SecretsManagerResponse, AppData, \
-    KeeperFileUpload
+    KeeperFileUpload, KeeperFile
 from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, TransmissionKey, \
     EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, DeletePayload
 from keeper_secrets_manager_core.exceptions import KeeperError
@@ -46,6 +47,18 @@ def find_secret_by_title(record_title, records):
     records = records or []
     return next((x for x in records if x.title == record_title), None)
 
+
+# data class to represent parsed notation section
+class NotationSection:
+    def __init__(self, section: str):
+        self.section: str = section     # section name - ex. prefix
+        self.is_present: bool = False   # presence flag
+        self.start_pos: int = -1        # section start pos in URI
+        self.end_pos: int = -1          # section end pos in URI
+        self.text: Tuple[str,str]|None = None       # [unescaped, raw] text
+        self.parameter: Tuple[str,str]|None = None  # <field type>|<field label>|<file name>
+        self.index1: Tuple[str,str]|None = None     # numeric index [N] or []
+        self.index2: Tuple[str,str]|None = None     # property index - ex. field/name[0][middle]
 
 class SecretsManager:
 
@@ -570,7 +583,7 @@ class SecretsManager:
         )
 
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
-        decrypted_response_dict = utils.json_to_dict(decrypted_response_str)
+        decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
 
         records = []
         shared_folders = []
@@ -661,13 +674,13 @@ class SecretsManager:
         if full_response:
             return records_resp
         else:
-            records = records_resp.records or []
+            records: list = records_resp.records or []
 
             return records
 
     def get_secrets_by_title(self, record_title):
         """
-        Retrieve all secret records with specified title
+        Retrieve all records with specified title
         """
 
         recs = self.get_secrets()
@@ -677,7 +690,7 @@ class SecretsManager:
 
     def get_secret_by_title(self, record_title):
         """
-        Retrieve first secret record with specified title
+        Retrieve first record with specified title
         """
 
         records = self.get_secrets_by_title(record_title) or []
@@ -801,6 +814,7 @@ class SecretsManager:
 
         return True
 
+    # deprecated - use get_notation_results instead
     def get_notation(self, url):
 
         """Simple string notation to get a value
@@ -942,6 +956,357 @@ class SecretsManager:
             except IndexError:
                 raise ValueError("The value at index {} does not exist for {}.".format(index, url))
         return ret
+
+    @staticmethod
+    def __parse_subsection(text: str, pos: int, delimiters: str, escaped: bool=False) -> Tuple[str,str]|None:
+        escape_char = "\\"
+        escape_chars = "/[]\\" # /[]\ -> \/ ,\[, \], \\
+        # escape the characters in plaintext sections only - title, label or filename
+
+        # raw string excludes start delimiter (if '/') but includes end delimiter or both (if '[',']')
+        if text is None or text == "" or pos < 0 or pos >= len(text):
+            return None
+        if not delimiters or len(delimiters) > 2:
+            raise ValueError(f"Notation parser: Internal error - Incorrect delimiters count. Delimiters: '{delimiters}'")
+
+        token = ""
+        raw = ""
+        while pos < len(text):
+            if escaped and escape_char == text[pos]:
+                # notation cannot end in single char incomplete escape sequence
+                # and only escape_chars should be escaped
+                if (((pos + 1) >= len(text)) or
+                    (text[pos+1] not in escape_chars)):
+                    raise ValueError(f"Notation parser: Incorrect escape sequence at position {pos}")
+                # copy the properly escaped character
+                token += text[pos+1]
+                raw += text[pos] + text[pos+1]
+                pos += 2
+            else: # escaped == False or escape_char != text[pos]
+                raw += text[pos] # delimiter is included in raw text
+                if len(delimiters) == 1:
+                    if text[pos] == delimiters[0]:
+                        break
+                    else:
+                        token += text[pos]
+                else: # 2 delimiters
+                    if raw[0] != delimiters[0]:
+                        raise ValueError("Notation parser error: Index sections must start with '['")
+                    if (len(raw) > 1 and text[pos] == delimiters[0]):
+                        raise ValueError("Notation parser error: Index sections do not allow extra '[' inside.")
+                    if text[pos] not in delimiters:
+                        token += text[pos]
+                    elif text[pos] == delimiters[1]:
+                        break
+                pos += 1
+
+        # pos = len(text)-1 if (pos >= len(text)) else pos
+        if (len(delimiters) == 2 and (
+            (len(raw) < 2 or raw[0] != delimiters[0] or raw[-1] != delimiters[1]) or
+            (escaped and raw[-2] == escape_char))):
+            raise ValueError("Notation parser error: Index sections must be enclosed in '[' and ']'")
+
+        return (token, raw)
+
+    @staticmethod
+    def __parse_section(notation: str, section: str, pos: int) -> NotationSection:
+        if not notation:
+            raise ValueError("Keeper notation parsing error - missing notation URI")
+
+        section_name = (section or "").lower()
+        sections = ("prefix", "record", "selector", "footer")
+        if section_name not in sections:
+            raise ValueError(f"Keeper notation parsing error - unknown section: {section_name}")
+
+        result = NotationSection(section)
+        result.start_pos = pos
+
+        # prefix "keeper://" is not mandatory
+        if section_name == "prefix":
+            uri_prefix = SecretsManager.notation_prefix + "://"
+            if notation.lower().startswith(uri_prefix.lower()):
+                result.is_present = True
+                result.start_pos = 0
+                result.end_pos = len(uri_prefix)-1
+                result.text = (notation[:len(uri_prefix)], notation[:len(uri_prefix)])
+
+        # footer should not be present - used only for verification
+        elif section_name == "footer":
+            result.is_present = True if pos < len(notation) else False
+            if result.is_present:
+                result.start_pos = pos
+                result.end_pos = len(notation)-1
+                result.text = (notation[pos:], notation[pos:])
+
+        # record is always present - either UID or title
+        elif section_name == "record":
+            result.is_present = True if pos < len(notation) else False
+            if result.is_present:
+                parsed = SecretsManager.__parse_subsection(notation, pos, "/", True)
+                if parsed is not None:
+                    result.start_pos = pos
+                    result.end_pos = pos + len(parsed[1]) - 1
+                    result.text = parsed
+
+        # selector is always present - type|title|notes | field|custom_field|file
+        elif section_name == "selector":
+            result.is_present = True if pos < len(notation) else False
+            if result.is_present:
+                parsed = SecretsManager.__parse_subsection(notation, pos, "/", False)
+                if parsed is not None:
+                    result.start_pos = pos
+                    result.end_pos = pos + len(parsed[1]) - 1
+                    result.text = parsed
+
+                    # selector.parameter - <field type>|<field label> | <file name>
+                    # field/name[0][middle], custom_field/my label[0][middle], file/my file[0]
+                    longSelectors = ("field", "custom_field", "file")
+                    if parsed[0].lower() in longSelectors:
+                        # TODO: File metadata extraction: ex. filename[1][size] - that requires filename to be escaped
+                        parsed = SecretsManager.__parse_subsection(notation, result.end_pos+1, "[", True)
+                        if parsed is not None:
+                            result.parameter = parsed # <field type>|<field label> | <filename>
+                            plen = len(parsed[1]) - (1 if (parsed[1][-1:] == "[" and parsed[1][-2:] != "\\[") else 0)
+                            result.end_pos += plen
+                            parsed = SecretsManager.__parse_subsection(notation, result.end_pos+1, "[]", True)
+                            if parsed is not None:
+                                result.index1 = parsed # selector.index1 [int] or []
+                                result.end_pos += len(parsed[1])
+                                parsed = SecretsManager.__parse_subsection(notation, result.end_pos+1, "[]", True)
+                                if parsed is not None:
+                                    result.index2 = parsed # selector.index2 [str]
+                                    result.end_pos += len(parsed[1])
+        else:
+            raise ValueError(f"Keeper notation parsing error - unknown section '{section_name}'")
+
+        return result
+
+    def parse_notation(self, notation: str, legacy_mode: bool = False) -> List[NotationSection]:
+        if not (notation and isinstance(notation, str)):
+            raise ValueError(f"Keeper notation is missing or invalid.'")
+
+        # Notation is either plaintext keeper URI format or URL safe base64 string (UTF8)
+        # auto detect format - '/' is not part of base64 URL safe alphabet
+        if "/" not in notation:
+            try:
+                plaintext = urlsafe_b64decode(notation)
+                notation = plaintext.decode()
+            except:
+                raise ValueError("Keeper notation is in invalid format - plaintext URI or URL safe base64 string expected.")
+
+        prefix = SecretsManager.__parse_section(notation, "prefix", 0)  # keeper://
+        pos = prefix.end_pos+1 if prefix.is_present else 0 # prefix is optional
+        record = SecretsManager.__parse_section(notation, "record", pos)  # <UID> or <Title>
+        pos = record.end_pos+1 if record.is_present else len(notation) # record is required
+        selector = SecretsManager.__parse_section(notation, "selector", pos)  # type|title|notes | field|custom_field|file
+        pos = selector.end_pos+1 if selector.is_present else len(notation) # selector is required, indexes are optional
+        footer = SecretsManager.__parse_section(notation, "footer", pos)  # Any text after the last section
+
+        # verify parsed query
+        # prefix is optional, record UID/Title and selector are mandatory
+        short_selectors = ("type", "title", "notes")
+        full_selectors = ("field", "custom_field", "file")
+        selectors = ("type", "title", "notes", "field", "custom_field", "file")
+        if not record.is_present or not selector.is_present:
+            raise ValueError("Keeper notation URI missing information about the uid, file, field type, or field key.")
+        if footer.is_present:
+            raise ValueError("Keeper notation is invalid - extra characters after last section.")
+        if not selector.text or selector.text[0].lower() not in selectors:
+            raise ValueError("Keeper notation is invalid - bad selector, must be one of (type, title, notes, field, custom_field, file).")
+        if selector.text and selector.text[0].lower() in short_selectors and selector.parameter:
+            raise ValueError("Keeper notation is invalid - selectors (type, title, notes) do not have parameters.")
+        if selector.text and selector.text[0].lower() in full_selectors:
+            if selector.parameter is None:
+                raise ValueError("Keeper notation is invalid - selectors (field, custom_field, file) require parameters.")
+            if selector.text[0].lower() == "file" and not(selector.index1 is None and selector.index2 is None):
+                raise ValueError("Keeper notation is invalid - file selectors don't accept indexes.")
+            if selector.text[0].lower() != "file" and selector.index1 is None and selector.index2 is not None:
+                raise ValueError("Keeper notation is invalid - two indexes required.")
+            if selector.index1 is not None and not re.fullmatch(r"^\[\d*\]$", selector.index1[1]):
+                if not legacy_mode:
+                    raise ValueError("Keeper notation is invalid - first index must be numeric: [n] or []")
+                # in legacy mode convert /name[middle] to name[][middle]
+                if selector.index2 is None:
+                    selector.index2 = selector.index1
+                    selector.index1 = ("", "[]")
+
+        return [prefix, record, selector, footer]
+
+    def try_get_notation_results(self, notation: str) -> List[str]:
+        """
+        Returns a string list with all values specified by the notation or empty list on error.
+        It simply logs any errors and continue returning an empty string list on error.
+        """
+        try:
+            return self.get_notation_results(notation)
+        except Exception as e:
+            self.logger.error(e)
+        return []
+
+    # Notation:
+    # keeper://<uid|title>/<field|custom_field>/<type|label>[INDEX][PROPERTY]
+    # keeper://<uid|title>/file/<filename|fileUID>
+    # Record title, field label, filename sections need to escape the delimiters /[]\ -> \/ \[ \] \\
+    #
+    # GetNotationResults returns selection of the value(s) from a single field as a string list.
+    # Multiple records or multiple fields found results in error.
+    # Use record UID or unique record titles and field labels so that notation finds a single record/field.
+    #
+    # If field has multiple values use indexes - numeric INDEX specifies the position in the value list
+    # and PROPERTY specifies a single JSON object property to extract (see examples below for usage)
+    # If no indexes are provided - whole value list is returned (same as [])
+    # If PROPERTY is provided then INDEX must be provided too - even if it's empty [] which means all
+    #
+    # Extracting two or more but not all field values simultaneously is not supported - use multiple notation requests.
+    #
+    # Files are returned as URL safe base64 encoded string of the binary content
+    #
+    # Note: Integrations and plugins usually return single string value - result[0] or ""
+    #
+    # Examples:
+    #  RECORD_UID/file/filename.ext             => ["URL Safe Base64 encoded binary content"]
+    #  RECORD_UID/field/url                     => ["127.0.0.1", "127.0.0.2"] or [] if empty
+    #  RECORD_UID/field/url[]                   => ["127.0.0.1", "127.0.0.2"] or [] if empty
+    #  RECORD_UID/field/url[0]                  => ["127.0.0.1"] or error if empty
+    #  RECORD_UID/custom_field/name[first]      => Error, numeric index is required to access field property
+    #  RECORD_UID/custom_field/name[][last]     => ["Smith", "Johnson"]
+    #  RECORD_UID/custom_field/name[0][last]    => ["Smith"]
+    #  RECORD_UID/custom_field/phone[0][number] => "555-5555555"
+    #  RECORD_UID/custom_field/phone[1][number] => "777-7777777"
+    #  RECORD_UID/custom_field/phone[]          => ["{\"number\": \"555-555...\"}", "{\"number\": \"777...\"}"]
+    #  RECORD_UID/custom_field/phone[0]         => ["{\"number\": \"555-555...\"}"]
+
+    def get_notation_results(self, notation: str) -> List[str]:
+        """
+        Returns a string list with all values specified by the notation or throws an error.
+        Use try_get_notation_results to just log errors and continue returning an empty string list on error.
+        """
+
+        result: List[str] = []
+
+        parsed_notation = self.parse_notation(notation) # [prefix, record, selector, footer]
+        if len(parsed_notation) < 3:
+            raise ValueError(f"Invalid notation '{notation}'")
+
+        if parsed_notation[2].text is None:
+            raise ValueError(f"Invalid notation '{notation}'")
+        selector = parsed_notation[2].text[0] # type|title|notes or file|field|custom_field
+        if parsed_notation[1].text is None:
+            raise ValueError(f"Invalid notation '{notation}'")
+        record_token = parsed_notation[1].text[0] # UID or Title
+
+        # to minimize traffic - if it looks like a Record UID try to pull a single record
+        records = []
+        if re.fullmatch(r"^[A-Za-z0-9_-]{22}$", record_token):
+            secrets = self.get_secrets([record_token])
+            records = secrets if isinstance(secrets, list) else []
+            if len(records) > 1:
+                raise ValueError(f"Notation error - found multiple records with same UID '{record_token}'")
+
+        # If RecordUID is not found - pull all records and search by title
+        if len(records) < 1:
+            secrets = self.get_secrets() or []
+            if isinstance(secrets, list) and len(secrets) > 0:
+                records = [x for x in secrets if x.title == record_token]
+
+        if len(records) > 1:
+                raise ValueError(f"Notation error - multiple records match record '{record_token}'")
+        if len(records) < 1:
+                raise ValueError(f"Notation error - no records match record '{record_token}'")
+
+        record = records[0]
+        parameter = parsed_notation[2].parameter[0] if parsed_notation[2].parameter else None
+        index1 = parsed_notation[2].index1[0] if parsed_notation[2].index1 else None
+        index2 = parsed_notation[2].index2[0] if parsed_notation[2].index2 else None
+
+        if selector.lower() == "type":
+            if record.type is not None: result.append(record.type)
+        elif selector.lower() == "title":
+            if record.title is not None: result.append(record.title)
+        elif selector.lower() == "notes":
+            if record.dict.get("notes", None) is not None: result.append(record.dict.get("notes", ""))
+        elif selector.lower() == "file":
+            if parameter is None:
+                raise ValueError(f"Notation error - Missing required parameter: filename or file UID for files in record '{record_token}'")
+            if not isinstance(record.files, list) or len(record.files) < 1:
+                raise ValueError(f"Notation error - Record {record_token} has no file attachments.")
+            files = record.files or []
+            files = [x for x in files if parameter == x.name or parameter == x.f.get("fileUid", "")]
+            # file searches do not use indexes and rely on unique file names or fileUid
+            if len(files) > 1:
+                raise ValueError(f"Notation error - Record {record_token} has multiple files matching the search criteria '{parameter}'")
+            if len(files) < 1:
+                raise ValueError(f"Notation error - Record {record_token} has no files matching the search criteria '{parameter}'")
+            if isinstance(files[0], KeeperFile):
+                contents = files[0].get_file_data()
+                text = CryptoUtils.bytes_to_url_safe_str(contents)
+                result.append(text)
+            else:
+                raise ValueError(f"Notation error - Record {record_token} has corrupted KeeperFile data.")
+        elif selector.lower() in ("field", "custom_field"):
+            if parameter is None:
+                raise ValueError(f"Notation error - Missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel")
+
+            fields = record.dict.get("fields", [])
+            if selector.lower() == "custom_field":
+                fields = record.dict.get("custom", [])
+            fields = fields or []
+
+            flds = [x for x in fields if parameter == x.get("type", None) or parameter == x.get("label", None)]
+            if len(flds) > 1:
+                    raise ValueError(f"Notation error - Record {record_token} has multiple fields matching the search criteria '{parameter}'")
+            if len(flds) < 1:
+                    raise ValueError(f"Notation error - Record {record_token} has no fields matching the search criteria '{parameter}'")
+            field = flds[0]
+            fieldType = field.get("type", "")
+
+            idx = -1 # // -1 == full value
+            try: idx = int(str(index1))
+            except: idx = -1
+            # valid only if [] or missing - ex. /field/phone or /field/phone[]
+            if idx == -1 and not(parsed_notation[2].index1 is None or parsed_notation[2].index1[1] == "" or parsed_notation[2].index1[1] == "[]"):
+                raise ValueError(f"Notation error - Invalid field index '{idx}'")
+
+            values = []
+            if isinstance(field.get("value", []), list):
+                values = field.get("value", [])
+            if idx >= len(values):
+                raise ValueError(f"Notation error - Field index out of bounds {idx} >= {len(values)} for field '{parameter}'")
+            if idx >= 0: # single index
+                values = [values[idx]]
+
+            fullObjValue = parsed_notation[2].index2 is None or parsed_notation[2].index2[1] == "" or parsed_notation[2].index2[1] == "[]"
+            objPropertyName = parsed_notation[2].index2[0] if parsed_notation[2].index2 is not None else ""
+
+            res: List[str] = []
+            for fldValue in values:
+                # Do not throw here to allow for ex. field/name[][middle] to pull [middle] only where present
+                # NB! Not all properties of a value are always required even when the field is marked as required
+                # ex. On a required `name` field only "first" and "last" properties are required but not "middle"
+                # so missing property in a field value is not always an error
+                if fldValue is None:
+                    self.logger.error(f"Notation error - Empty field value for field '{parameter}'") # raise?
+
+                if fullObjValue:
+                    v = fldValue if isinstance(fldValue, str) else json.dumps(fldValue)
+                    res.append(v)
+                elif fldValue is not None and isinstance(fldValue, dict):
+                    if objPropertyName in fldValue:
+                        prop = fldValue.get(objPropertyName, None)
+                        v = prop if isinstance(prop, str) else json.dumps(prop)
+                        res.append(v)
+                    else:
+                        self.logger.error(f"Notation error - value object has no property '{objPropertyName}'") # skip
+                else:
+                    self.logger.error(f"Notation error - Cannot extract property '{objPropertyName}' from null value.")
+            if len(res) != len(values):
+                self.logger.error(f"Notation warning - extracted {len(res)} out of {len(values)} values for '{objPropertyName}' property.")
+            if len(res) > 0:
+                result.extend(res)
+        else:
+            raise ValueError(f"Invalid notation {notation}")
+
+        return result
 
     @staticmethod
     def get_inflate_ref_types(field_type):
