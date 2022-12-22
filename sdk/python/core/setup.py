@@ -20,12 +20,12 @@ install_requires = [
 
 setup(
     name="keeper-secrets-manager-core",
-    version="16.4.0",
+    version="16.4.2",
     description="Keeper Secrets Manager for Python 3",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Keeper Security",
-    author_email="ops@keepersecurity.com",
+    author_email="sm@keepersecurity.com",
     url="https://github.com/Keeper-Security/secrets-manager",
     license="MIT",
     keywords="Keeper Password Manager SDK",
