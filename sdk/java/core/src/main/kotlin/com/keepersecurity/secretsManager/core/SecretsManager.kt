@@ -425,7 +425,7 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
                 throw Exception("Notation error - Missing required parameter: filename or file UID for files in record '$recordToken'")
             if ((record.files?.size ?: 0) < 1)
                 throw Exception("Notation error - Record $recordToken has no file attachments.")
-            val files = record.files!!.filter { parameter == it.data.name || parameter == it.fileUid }
+            val files = record.files!!.filter { parameter == it.data.name || parameter == it.data.title || parameter == it.fileUid }
             // file searches do not use indexes and rely on unique file names or fileUid
             if (files.size > 1)
                 throw Exception("Notation error - Record $recordToken has multiple files matching the search criteria '$parameter'")

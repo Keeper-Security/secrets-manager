@@ -8,50 +8,102 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.reflect.full.memberProperties
 
-// deprecated - use getNotationResults
+@Deprecated(message = "Use getNotationResults instead.")
 @ExperimentalSerializationApi
 fun getValue(secrets: KeeperSecrets, notation: String): String {
-    val (record, queryParts) = getRecord(secrets, notation)
-    val fields: List<KeeperRecordField> =
-        when (queryParts[1]) {
-            "field" -> record.data.fields
-            "custom_field" -> record.data.custom ?: listOf()
-            else -> throw Exception("Expected /field or /custom_field but found /${queryParts[1]}")
+    val parsedNotation = parseNotation(notation, true); // prefix, record, selector, footer
+    if (parsedNotation.size < 3) {
+        throw Exception("Invalid notation $notation")
+    }
+
+    val selector = parsedNotation[2].text?.first ?: // type|title|notes or file|field|custom_field
+        throw Exception("Invalid notation $notation")
+    val recordToken = parsedNotation[1].text?.first ?: // UID or Title
+        throw Exception("Invalid notation $notation")
+    val record = secrets.records.find { (it.recordUid == recordToken) || (it.data.title == recordToken) } ?:
+        throw Exception("Record '$recordToken' not found")
+
+    val parameter = parsedNotation[2].parameter?.first
+    val index1 = parsedNotation[2].index1?.first
+    val index2 = parsedNotation[2].index2?.first
+
+    when (selector.lowercase()) {
+        "type" -> { return record.data.type }
+        "title" -> { return record.data.title }
+        "notes" -> { return record.data.notes ?: "" }
+        "file" -> {
+            if (parameter == null)
+                throw Exception("Notation error - Missing required parameter: filename or file UID for files in record '$recordToken'")
+            if (record.files.isNullOrEmpty())
+                throw Exception("Notation error - Record $recordToken has no file attachments.")
+            // file searches do not use indexes and rely on unique file names or fileUid
+            val files = record.files.filter { (it.data.name == parameter) || (it.data.title == parameter) || (it.fileUid == parameter) }
+            if (files.size > 1)
+                throw Exception("Notation error - Record $recordToken has multiple files matching the search criteria '$parameter'")
+            if (files.isEmpty())
+                throw Exception("Notation error - Record $recordToken has no files matching the search criteria '$parameter'")
+            val contents = downloadFile(files[0])
+            return webSafe64FromBytes(contents)
         }
+        "field", "custom_field" -> {
+            if (parameter == null)
+                throw Exception("Notation error - Missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel")
 
-    fun findField(fieldName: String): KeeperRecordField {
-        return fields.find { x -> x.label == fieldName || fieldType(x) == fieldName }
-            ?: throw Exception("Field $fieldName not found in the record ${record.recordUid}")
+            val fields = when(selector.lowercase()) {
+                "field" -> record.data.fields
+                "custom_field" -> record.data.custom ?: mutableListOf<KeeperRecordField>()
+                else -> throw Exception("Notation error - Expected /field or /custom_field but found /$selector")
+            }
+
+            val field = fields.find { parameter == fieldType(it) || parameter == it.label } ?:
+                throw Exception("Field $parameter not found in the record ${record.recordUid}")
+
+            // /<type|label>[index1][index2], ex. /url == /url[] == /url[][] == full value
+            val idx = index1?.toIntOrNull() ?: -1 // -1 full value
+            // valid only if [] or missing - ex. /field/phone or /field/phone[]
+            if (idx == -1 && !(parsedNotation[2].index1?.second.isNullOrEmpty() || parsedNotation[2].index1?.second == "[]"))
+                throw Exception("Notation error - Invalid field index $idx")
+
+            val valuesCount = getFieldValuesCount(field)
+            if (idx >= valuesCount)
+                throw Exception("Notation error - Field index out of bounds $idx >= $valuesCount for field $parameter")
+
+            //val fullObjValue = (parsedNotation[2].index2?.second.isNullOrEmpty() || parsedNotation[2].index2?.second == "[]")
+            val objPropertyName = parsedNotation[2].index2?.first
+
+            // Legacy compat. - full field JSON value only if explicitly specified - ex. /url[]
+            //if (idx == -1 && fullObjValue) return getFieldJsonValue(field)
+
+            // legacy compatibility mode - empty index, ex. /url[] returns ["value"]
+            if ("[]" == (parsedNotation[2].index1?.second ?: "") && index2.isNullOrEmpty())
+                return getFieldJsonValue(field)
+            // legacy compatibility mode - index2 only, ex. /name[first] returns value[0][first]
+            //if (index1.isNullOrEmpty() && !index2.isNullOrEmpty()) {...}
+            // handled by parseNotation w/ legacyMode=true converts /name[middle] to name[][middle]
+            // and return first string only
+
+            val expectedSize = if (idx >= 0) 1 else valuesCount
+            val res = getFieldStringValues(field, idx, objPropertyName)
+            if (res.size != expectedSize)
+                print("Notation warning - extracted ${res.size} out of $valuesCount values for '$objPropertyName' property.")
+            if (res.isNotEmpty()) {
+                // legacy compatibility mode - no indexes, ex. /url returns value[0]
+                if(parsedNotation[2].index1?.second.isNullOrEmpty() && parsedNotation[2].index2?.second.isNullOrEmpty())
+                    return res[0]
+                // legacy compatibility mode - returns only single field value
+                return res[0]
+            }
+            return "";
+        }
+        else -> throw Exception("Invalid notation $notation")
     }
-
-    if (queryParts[2].endsWith("[]")) {
-        val field = findField(queryParts[2].slice(0..queryParts[2].length - 3))
-        return getFieldJsonValue(field)
-    }
-
-    val fieldParts = queryParts[2]
-        .replace(Regex("""[\[\]]"""), "/")
-        .split('/')
-        .filter { x -> x.isNotEmpty() }
-
-    val field = findField(fieldParts[0])
-
-    if (fieldParts.size == 1) {
-        return getFieldStringValue(field, 0)
-    }
-    val fieldValueIdx = fieldParts[1].toIntOrNull() ?: return getFieldValueProperty(field, 0, fieldParts[1])
-
-    if (fieldParts.size == 2) {
-        return getFieldStringValue(field, fieldValueIdx)
-    }
-    return getFieldValueProperty(field, fieldValueIdx, fieldParts[2])
 }
 
 fun getFile(secrets: KeeperSecrets, notation: String): KeeperFile {
     val (record, queryParts) = getRecord(secrets, notation)
     if (queryParts[1] == "file") {
         val fileId = queryParts[2]
-        return record.files?.find { x -> x.data.title == fileId || x.data.name == fileId }
+        return record.files?.find { x -> x.data.name == fileId || x.data.title == fileId || x.fileUid == fileId }
             ?: throw Exception("File $fileId not found in the record ${record.recordUid}")
     } else {
         throw Exception("Notation should include file tag")
@@ -131,7 +183,7 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
                 else field.value.map { getObjectProperty(it, property) }.toList()
             } else {
                 if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-                else listOf<String>(Json.encodeToString(getObjectProperty(field.value[index], property)))
+                else listOf<String>(getObjectProperty(field.value[index], property))
             }
         is BankAccounts -> if (index >= field.value.size) emptyRes
         else if (index < 0) {
@@ -139,7 +191,7 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
             else field.value.map { getObjectProperty(it, property) }.toList()
         } else {
             if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-            else listOf<String>(Json.encodeToString(getObjectProperty(field.value[index], property)))
+            else listOf<String>(getObjectProperty(field.value[index], property))
         }
         is BirthDate -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value.map { it.toString() }.toList() else listOf<String>(field.value[index].toString())
@@ -161,7 +213,7 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
                 else field.value.map { getObjectProperty(it, property) }.toList()
             } else {
                 if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-                else listOf<String>(Json.encodeToString(getObjectProperty(field.value[index], property)))
+                else listOf<String>(getObjectProperty(field.value[index], property))
             }
         is KeyPairs -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value.map { it.toString() }.toList() else listOf<String>(field.value[index].toString())
@@ -177,7 +229,7 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
                 else field.value.map { getObjectProperty(it, property) }.toList()
             } else {
                 if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-                else listOf<String>(Json.encodeToString(getObjectProperty(field.value[index], property)))
+                else listOf<String>(getObjectProperty(field.value[index], property))
             }
         is OneTimeCode -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value else listOf<String>(field.value[index])
@@ -191,7 +243,7 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
                 else field.value.map { getObjectProperty(it, property) }.toList()
             } else {
                 if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-                else listOf<String>(Json.encodeToString(getObjectProperty(field.value[index], property)))
+                else listOf<String>(getObjectProperty(field.value[index], property))
             }
         is Phones -> if (index >= field.value.size) emptyRes
             else if (index < 0) {
@@ -199,7 +251,7 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
                 else field.value.map { getObjectProperty(it, property) }.toList()
             } else {
                 if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-                else listOf<String>(Json.encodeToString(getObjectProperty(field.value[index], property)))
+                else listOf<String>(getObjectProperty(field.value[index], property))
             }
         is PinCode -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value else listOf<String>(field.value[index])
@@ -211,7 +263,7 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
                 else field.value.map { getObjectProperty(it, property) }.toList()
             } else {
                 if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-                else listOf<String>(Json.encodeToString(getObjectProperty(field.value[index], property)))
+                else listOf<String>(getObjectProperty(field.value[index], property))
             }
         is Text -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value else listOf<String>(field.value[index])
