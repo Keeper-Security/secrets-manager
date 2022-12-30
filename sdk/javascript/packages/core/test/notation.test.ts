@@ -62,69 +62,59 @@ const secrets: KeeperSecrets = {
 test('Notations', async () => {
     let value
 
-    value = await getValue(secrets, `keeper://${recordUID}/field/login`)
+    value = getValue(secrets, `keeper://${recordUID}/field/login`)
     expect(value).toBe('My Login 1')
 
-    value = await getValue(secrets, `${recordUID}/field/login`)
+    value = getValue(secrets, `${recordUID}/field/login`)
     expect(value).toBe('My Login 1')
 
-    value = await getValue(secrets, `keeper://${recordUID}/field/login[0]`)
+    value = getValue(secrets, `keeper://${recordUID}/field/login[0]`)
     expect(value).toBe('My Login 1')
 
     try {
-        value = await getValue(secrets, `keeper://${recordUID}/field/login[1]`)
+        value = getValue(secrets, `keeper://${recordUID}/field/login[1]`)
         fail('Getting wrong index did not throw')
     } catch ({message}) {
         expect(message).toContain(`Notation error - Field index out of bounds`)
     }
 
-    value = await getValue(secrets, `keeper://${recordUID}/field/login[]`)
+    value = getValue(secrets, `keeper://${recordUID}/field/login[]`)
     expect(value).toStrictEqual(['My Login 1'])
 
-    value = await getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 1`)
+    value = getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 1`)
     expect(value).toBe('custom1')
 
-    value = await getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 2`)
+    value = getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 2`)
     expect(value).toBe('one')
 
-    value = await getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 2[1]`)
+    value = getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 2[1]`)
     expect(value).toBe('two')
 
-    value = await getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 2[]`)
+    value = getValue(secrets, `keeper://${recordUID}/custom_field/My Custom 2[]`)
     expect(value).toStrictEqual(['one','two','three'])
 
-    value = await getValue(secrets, `keeper://${recordUID}/custom_field/phone[0][number]`)
+    value = getValue(secrets, `keeper://${recordUID}/custom_field/phone[0][number]`)
     expect(value).toBe('555-5555555')
 
-    value = await getValue(secrets, `keeper://${recordUID}/custom_field/phone[1][number]`)
+    value = getValue(secrets, `keeper://${recordUID}/custom_field/phone[1][number]`)
     expect(value).toBe('777-7777777')
 
-    value = await getValue(secrets, `keeper://${recordUID}/custom_field/phone[2]`)
+    value = getValue(secrets, `keeper://${recordUID}/custom_field/phone[2]`)
     expect(value).toStrictEqual({number: "888-8888888", ext: "", type: "Home"})
 
-    value = await getValue(secrets, `keeper://${recordUID}/custom_field/name[first]`)
+    value = getValue(secrets, `keeper://${recordUID}/custom_field/name[first]`)
     expect(value).toBe('Jenny')
 
-    value = await getValue(secrets, `keeper://${recordUID}/custom_field/name[last]`)
+    value = getValue(secrets, `keeper://${recordUID}/custom_field/name[last]`)
     expect(value).toBe('Smith')
 
-    try {
-        value = await getValue(secrets, `keeper://${recordUID}/file/QR Code`)
-        fail('File download did not throw')
-    } catch ({message}) {
-        expect(message).toContain(`Notation error - download failed for Record: ${recordUID},`)
-        expect(message).toContain(`FileUID: HKGdx7dSrtuTfA67wiEZkw,`)
-        expect(message).toContain(`Message: TypeError [ERR_INVALID_URL]: Invalid URL`)
-    }
+    value = getValue(secrets, `keeper://${recordUID}/file/QR Code`)
+    expect(value.fileUid).toBe('HKGdx7dSrtuTfA67wiEZkw')
+    expect(value.url).toBe('QR Code File Url')
 
-    try {
-        value = await getValue(secrets, `keeper://${recordUID}/file/qr.png`)
-        fail('File download did not throw')
-    } catch ({message}) {
-        expect(message).toContain(`Notation error - download failed for Record: ${recordUID},`)
-        expect(message).toContain(`FileUID: HKGdx7dSrtuTfA67wiEZkw,`)
-        expect(message).toContain(`Message: TypeError [ERR_INVALID_URL]: Invalid URL`)
-    }
+    value = getValue(secrets, `keeper://${recordUID}/file/qr.png`)
+    expect(value.fileUid).toBe('HKGdx7dSrtuTfA67wiEZkw')
+    expect(value.url).toBe('QR Code File Url')
 })
 
 test('NotationParser', () => {

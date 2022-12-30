@@ -1,5 +1,5 @@
-import {downloadFile, KeeperSecrets} from './keeper'
-import {tryParseInt, webSafe64FromBytes, webSafe64ToBytes} from './utils'
+import {KeeperSecrets} from './keeper'
+import {tryParseInt, webSafe64ToBytes} from './utils'
 
 type KeeperField = {
     type: string
@@ -10,7 +10,7 @@ type KeeperField = {
 /**
  * @deprecated Use `getNotationResults()` instead.
  */
-export async function getValue(secrets: KeeperSecrets, notation: string): Promise<any> {
+export function getValue(secrets: KeeperSecrets, notation: string): any {
     const parsedNotation = parseNotation(notation, true) // prefix, record, selector, footer
     if (parsedNotation.length < 3)
         throw Error(`Invalid notation ${notation}`)
@@ -23,7 +23,7 @@ export async function getValue(secrets: KeeperSecrets, notation: string): Promis
     const recordToken = parsedNotation[1].text[0] // UID or Title
     const record = secrets.records.find(x => x.recordUid === recordToken || x.data.title === recordToken)
     if (!record)
-		throw Error(`Record '${recordToken}' not found`)
+        throw Error(`Record '${recordToken}' not found`)
 
     const parameter = parsedNotation[2]?.parameter?.at(0) ?? null
     const index1 = parsedNotation[2]?.index1?.at(0) ?? null
@@ -35,26 +35,29 @@ export async function getValue(secrets: KeeperSecrets, notation: string): Promis
         case 'notes': return record.data.notes ?? ''
         case 'file': {
             if (parameter == null)
-				throw Error(`Notation error - Missing required parameter: filename or file UID for files in record '${recordToken}'`)
+                throw Error(`Notation error - Missing required parameter: filename or file UID for files in record '${recordToken}'`)
             if ((record?.files?.length ?? 0) < 1)
-				throw Error(`Notation error - Record ${recordToken} has no file attachments.`)
+                throw Error(`Notation error - Record ${recordToken} has no file attachments.`)
             let files = record.files ?? []
             files = files.filter(x => parameter == x.data?.name || parameter == x.data?.title || parameter == x.fileUid)
             // file searches do not use indexes and rely on unique file names or fileUid
-			if ((files?.length ?? 0) < 1)
-				throw Error(`Notation error - Record ${recordToken} has no files matching the search criteria '${parameter}'`)
-            if ((files?.length ?? 0) > 1)
-				throw Error(`Notation error - Record ${recordToken} has multiple files matching the search criteria '${parameter}'`)
-            try {
-            const contents = await downloadFile(files[0])
-			const text = webSafe64FromBytes(contents)
-			return text
-            } catch (e) { throw Error(`Notation error - download failed for Record: ${recordToken}, File: ${parameter}, FileUID: ${files[0].fileUid}, Message: ${e}`)}
+            if ((files?.length ?? 0) < 1)
+                throw Error(`Notation error - Record ${recordToken} has no files matching the search criteria '${parameter}'`)
+
+            // legacy compat. mode
+            return files[0]
+            // if ((files?.length ?? 0) > 1)
+            //     throw Error(`Notation error - Record ${recordToken} has multiple files matching the search criteria '${parameter}'`)
+            // try {
+            //     const contents = await downloadFile(files[0])
+            //     const text = webSafe64FromBytes(contents)
+            //     return text
+            // } catch (e) { throw Error(`Notation error - download failed for Record: ${recordToken}, File: ${parameter}, FileUID: ${files[0].fileUid}, Message: ${e}`)}
         }
         case 'field':
         case 'custom_field': {
             if (parameter == null)
-				throw Error(`Notation error - Missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel`)
+                throw Error(`Notation error - Missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel`)
 
             const fields = (selector.toLowerCase() == 'field' ? record.data.fields :
                 selector.toLowerCase() == 'custom_field' ? record.data.custom : null)
@@ -111,7 +114,7 @@ export async function getValue(secrets: KeeperSecrets, notation: string): Promis
                     throw Error(`Notation error - value object has no property '${objPropertyName}'`)
             } else
                 throw Error(`Notation error - Cannot extract property '${objPropertyName}' from null value.`)
-			return ''
+            return ''
         }
         default: throw Error(`Invalid notation ${notation}`)
     }
