@@ -11,7 +11,7 @@ import kotlin.reflect.full.memberProperties
 @Deprecated(message = "Use getNotationResults instead.")
 @ExperimentalSerializationApi
 fun getValue(secrets: KeeperSecrets, notation: String): String {
-    val parsedNotation = parseNotation(notation, true); // prefix, record, selector, footer
+    val parsedNotation = parseNotation(notation, true) // prefix, record, selector, footer
     if (parsedNotation.size < 3) {
         throw Exception("Invalid notation $notation")
     }
@@ -51,7 +51,7 @@ fun getValue(secrets: KeeperSecrets, notation: String): String {
 
             val fields = when(selector.lowercase()) {
                 "field" -> record.data.fields
-                "custom_field" -> record.data.custom ?: mutableListOf<KeeperRecordField>()
+                "custom_field" -> record.data.custom ?: mutableListOf()
                 else -> throw Exception("Notation error - Expected /field or /custom_field but found /$selector")
             }
 
@@ -93,7 +93,7 @@ fun getValue(secrets: KeeperSecrets, notation: String): String {
                 // legacy compatibility mode - returns only single field value
                 return res[0]
             }
-            return "";
+            return ""
         }
         else -> throw Exception("Invalid notation $notation")
     }
@@ -174,101 +174,101 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
     val emptyRes = listOf<String>()
     return when (field) {
         is AccountNumber -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is AddressRef -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is Addresses -> if (index >= field.value.size) emptyRes
             else if (index < 0) {
                 if (property == null) field.value.map { Json.encodeToString(it) }.toList()
                 else field.value.map { getObjectProperty(it, property) }.toList()
             } else {
-                if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-                else listOf<String>(getObjectProperty(field.value[index], property))
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
             }
         is BankAccounts -> if (index >= field.value.size) emptyRes
         else if (index < 0) {
             if (property == null) field.value.map { Json.encodeToString(it) }.toList()
             else field.value.map { getObjectProperty(it, property) }.toList()
         } else {
-            if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-            else listOf<String>(getObjectProperty(field.value[index], property))
+            if (property == null) listOf(Json.encodeToString(field.value[index]))
+            else listOf(getObjectProperty(field.value[index], property))
         }
         is BirthDate -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value.map { it.toString() }.toList() else listOf<String>(field.value[index].toString())
+            else if (index < 0) field.value.map { it.toString() }.toList() else listOf(field.value[index].toString())
         is CardRef -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is Date -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value.map { it.toString() }.toList() else listOf<String>(field.value[index].toString())
+            else if (index < 0) field.value.map { it.toString() }.toList() else listOf(field.value[index].toString())
         is Email -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is ExpirationDate -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value.map { it.toString() }.toList() else listOf<String>(field.value[index].toString())
+            else if (index < 0) field.value.map { it.toString() }.toList() else listOf(field.value[index].toString())
         is FileRef -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is HiddenField -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is Hosts -> if (index >= field.value.size) emptyRes
             else if (index < 0) {
                 if (property == null) field.value.map { Json.encodeToString(it) }.toList()
                 else field.value.map { getObjectProperty(it, property) }.toList()
             } else {
-                if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-                else listOf<String>(getObjectProperty(field.value[index], property))
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
             }
         is KeyPairs -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value.map { it.toString() }.toList() else listOf<String>(field.value[index].toString())
+            else if (index < 0) field.value.map { it.toString() }.toList() else listOf(field.value[index].toString())
         is LicenseNumber -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is Login -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is Multiline -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is Names -> if (index >= field.value.size) emptyRes
             else if (index < 0) {
                 if (property == null) field.value.map { Json.encodeToString(it) }.toList()
                 else field.value.map { getObjectProperty(it, property) }.toList()
             } else {
-                if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-                else listOf<String>(getObjectProperty(field.value[index], property))
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
             }
         is OneTimeCode -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is OneTimePassword -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is Password -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is PaymentCards -> if (index >= field.value.size) emptyRes
             else if (index < 0) {
                 if (property == null) field.value.map { Json.encodeToString(it) }.toList()
                 else field.value.map { getObjectProperty(it, property) }.toList()
             } else {
-                if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-                else listOf<String>(getObjectProperty(field.value[index], property))
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
             }
         is Phones -> if (index >= field.value.size) emptyRes
             else if (index < 0) {
                 if (property == null) field.value.map { Json.encodeToString(it) }.toList()
                 else field.value.map { getObjectProperty(it, property) }.toList()
             } else {
-                if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-                else listOf<String>(getObjectProperty(field.value[index], property))
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
             }
         is PinCode -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is SecureNote -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is SecurityQuestions -> if (index >= field.value.size) emptyRes
             else if (index < 0) {
                 if (property == null) field.value.map { Json.encodeToString(it) }.toList()
                 else field.value.map { getObjectProperty(it, property) }.toList()
             } else {
-                if (property == null) listOf<String>(Json.encodeToString(field.value[index]))
-                else listOf<String>(getObjectProperty(field.value[index], property))
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
             }
         is Text -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
         is Url -> if (index >= field.value.size || property != null) emptyRes
-            else if (index < 0) field.value else listOf<String>(field.value[index])
+            else if (index < 0) field.value else listOf(field.value[index])
     }
 }
 
