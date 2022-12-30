@@ -568,7 +568,7 @@ namespace SecretsManager
                     if ((record?.Files?.Count() ?? 0) < 1)
                         throw new Exception($"Notation error - Record {recordToken} has no file attachments.");
                     var files = record.Files;
-                    files = files.Where(x => parameter.Equals(x?.Data?.name) || parameter.Equals(x?.FileUid)).ToArray();
+                    files = files.Where(x => parameter.Equals(x?.Data?.name) || parameter.Equals(x?.Data?.title) || parameter.Equals(x?.FileUid)).ToArray();
                     // file searches do not use indexes and rely on unique file names or fileUid
                     if ((files?.Length ?? 0) > 1)
                         throw new Exception($"Notation error - Record {recordToken} has multiple files matching the search criteria '{parameter}'");
