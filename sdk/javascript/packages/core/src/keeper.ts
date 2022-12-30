@@ -595,7 +595,7 @@ export const getNotationResults = async (options: SecretManagerOptions, notation
                 throw new Error(`Notation error - Missing required parameter: filename or file UID for files in record '${recordToken}'`)
             if ((record?.files?.length || 0) < 1)
                 throw new Error(`Notation error - Record ${recordToken} has no file attachments.`)
-            let files = record.files!.filter(x => parameter == x?.data?.name || parameter == x.fileUid)
+            let files = record.files!.filter(x => parameter == x?.data?.name || parameter == x?.data?.title || parameter == x.fileUid)
             // file searches do not use indexes and rely on unique file names or fileUid
             const numFiles = (files == null ? 0 : files.length)
             if (numFiles > 1)
