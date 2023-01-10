@@ -213,7 +213,7 @@ class Folder:
 
     def __init__(self, uid=None):
         if uid is None:
-            uid = str(uuid.uuid4())
+            uid = uuid.uuid4().hex[:22]
         self.uid = uid
         self.records = {}
 
@@ -241,7 +241,7 @@ class Folder:
 class File:
 
     def __init__(self, name, title=None, content_type=None, url=None, content=None, last_modified=None):
-        self.uid = str(uuid.uuid4())
+        self.uid = uuid.uuid4().hex[:22]
         self.secret_used = None
 
         self.name = name
@@ -309,13 +309,14 @@ class Record:
     def __init__(self, record_type=None, uid=None, title=None):
 
         if uid is None:
-            uid = str(uuid.uuid4())
+            uid = uuid.uuid4().hex[:22]
         if record_type is None:
             record_type = "login"
 
         self.uid = uid
         self.record_type = record_type
         self.title = title
+        self.notes = ""
         self.is_editable = False
         self.files = {}
 
@@ -330,6 +331,7 @@ class Record:
             uid=keeper_record.uid,
             title=keeper_record.title
         )
+        new_record.notes = keeper_record.dict.get("notes", "")
         for item in keeper_record.dict.get("fields"):
             new_record.field(
                 label=item.get("label"),
@@ -397,8 +399,9 @@ class Record:
             fields.append({"type": "fileRef", "value": [uid for uid in self.files]})
 
         record_data = {
-            "title": self.title,
             "type": self.record_type,
+            "title": self.title,
+            "notes": self.notes,
             "fields": fields,
             "custom": self._custom_fields
         }

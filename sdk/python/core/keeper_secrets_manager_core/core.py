@@ -838,124 +838,137 @@ class SecretsManager:
 
         """
 
-        # If the URL starts with keeper:// we want to remove it.
-        if url.startswith(SecretsManager.notation_prefix) is True:
-            url_parts = url.split('//')
-            try:
-                url = url_parts[1]
-                if url is None:
-                    # Get the except below handle it
-                    raise ValueError()
-            except IndexError:
-                raise ValueError("Keeper url missing information about the uid, field type, and field key.")
+        parsed_notation = self.parse_notation(url, True) # prefix, record, selector, footer
+        if len(parsed_notation) < 3:
+            raise ValueError(f"Invalid notation '{url}'")
 
-        try:
-            (uid, file_data_type, key) = url.split('/')
-        except Exception as _:
-            raise ValueError("Could not parse the notation {}. Is it valid?".format(url))
+        if parsed_notation[1].text is None:
+            raise ValueError(f"Invalid notation '{url}' - UID/Title is missing in the keeper url.")
+        record_token = parsed_notation[1].text[0] # UID or Title
+        if parsed_notation[2].text is None:
+            raise ValueError(f"Invalid notation '{url}' - field type/selector is missing in the keeper url.")
+        selector = parsed_notation[2].text[0] # type|title|notes or file|field|custom_field
 
-        if uid is None:
-            raise ValueError("UID is missing the in the keeper url.")
-        if file_data_type is None:
-            raise ValueError("file type is missing the in the keeper url.")
-        if key is None:
-            raise ValueError("file key is missing the in the keeper url.")
+        # legacy compat mode:
+        # index1 is always the numeric index, and index2 is property name string
+        # parse_notation() in legacy mode converts ex. name[last] to name[][last]
+        # but legacy get_notation() would pick first field only ex. name[0][last]
+        if (parsed_notation[2].index1 and parsed_notation[2].index2 and
+            parsed_notation[2].index1[1] == "[]" and parsed_notation[2].index2[1] != "[]"):
+            parsed_notation[2].index1 = ("0", "[0]")
+
+        parameter = parsed_notation[2].parameter[0] if parsed_notation[2].parameter else None
+        index1 = parsed_notation[2].index1[0] if parsed_notation[2].index1 else None
+        index2 = parsed_notation[2].index2[0] if parsed_notation[2].index2 else None
+        selectors_with_params = ("file", "field", "custom_field")
+        if (parameter is None and selector in selectors_with_params):
+            raise ValueError(f"Invalid notation '{url}' - field key/parameter is missing in the keeper url.")
+        if (parameter is not None and selector not in selectors_with_params):
+            raise ValueError(f"Invalid notation '{url}' - field key/parameter is required only for fields/file.")
+
+        # Legacy to new parser mapping:
+        # (uid, field_data_type, key[index][dict_key]) == (record_token, selector, parameter[index1][index2])
 
         # By default, we want to return a single value, which is the first item in the array
         return_single = True
         index = 0
         dict_key = None
 
-        # Check it see if the key has a predicate, possibly with an index.
-        predicate = re.search(r'\[.*]', key)
-        if predicate is not None:
+        if parameter is not None:
+            # Is the first predicate an index into an array?
+            if (index1 or "").isdigit() is True:
+                index = int(index1 or "")
+            # Is the first predicate a key to a dictionary?
+            elif index1 != "":
+                dict_key = index1
+            # Else it was an array indicator. Return all the values.
+            else:
+                return_single = False
 
-            # If we do, get the predicate and remove the brackets, to get the index if one exists
-            match = predicate.group()
-
-            predicate_parts = match.split("]")
-            while "" in predicate_parts:
-                predicate_parts.remove("")
-
-            if len(predicate_parts) == 0:
-                raise ValueError("The predicate of the notation appears to be invalid. Syntax error?")
-            if len(predicate_parts) > 2:
-                raise ValueError("The predicate of the notation appears to be invalid. Too many [], max 2 allowed.")
-
-            # This will remove the preceding '['
-            first_predicate = predicate_parts[0][1:]
-            if first_predicate is not None:
-                # Is the first predicate an index into an array?
-                if first_predicate.isdigit() is True:
-                    index = int(first_predicate)
-                # Is the first predicate a key to a dictionary?
-                elif re.match(r'^[a-zA-Z0-9_]+$', first_predicate):
-                    dict_key = first_predicate
-                # Else it was an array indicator. Return all the values.
-                else:
-                    return_single = False
-
-            if len(predicate_parts) == 2:
+            if index2 is not None:
                 if return_single is False:
                     raise ValueError("If the second [] is a dictionary key, the first [] needs to have any index.")
-                # Remove the preceding '['
-                second_predicate = predicate_parts[1][1:]
-                if second_predicate.isdigit() is True:
+                if (index2 or "").isdigit() is True:
                     raise ValueError("The second [] can only by a key for the dictionary. It cannot be an index.")
-                # Is the first predicate a key to a dictionary?
-                elif re.match(r'^[a-zA-Z0-9_]+$', second_predicate):
-                    dict_key = second_predicate
+                # Is the second predicate a key to a dictionary?
+                elif index2 != "":
+                    dict_key = index2
                 else:
                     raise ValueError("The second [] must have key for the dictionary. Cannot be blank.")
 
-            # Remove the predicate from the key, if it exists
-            key = re.sub(r'\[.*', '', key)
+        # to minimize traffic - if it looks like a Record UID try to pull a single record
+        records = []
+        if re.fullmatch(r"^[A-Za-z0-9_-]{22}$", record_token):
+            secrets = self.get_secrets([record_token])
+            records = secrets if isinstance(secrets, list) else []
+            if len(records) > 1:
+                raise ValueError(f"Notation error - found multiple records with same UID '{record_token}'")
 
-        records = self.get_secrets([uid])
-        if len(records) == 0:
-            raise ValueError("Could not find a record with the UID {}".format(uid))
+        # If RecordUID is not found - pull all records and search by title
+        if len(records) < 1:
+            secrets = self.get_secrets() or []
+            if isinstance(secrets, list) and len(secrets) > 0:
+                records = [x for x in secrets if x.title == record_token]
+
+        if len(records) < 1:
+                raise ValueError(f"Notation error - no records match record UID/Title: '{record_token}'")
+        if len(records) > 1:
+                raise ValueError(f"Notation error - multiple records match record UID/Title: '{record_token}'")
 
         record = records[0]
 
-        field_type = None
-        if file_data_type == "field":
-            field = record.get_standard_field(key)
+        if selector.lower() == "type":
+            return record.type
+        elif selector.lower() == "title":
+            return record.title
+        elif selector.lower() == "notes":
+            return record.dict.get("notes", None)
+        elif selector.lower() == "file":
+            if parameter is None:
+                raise ValueError(f"Notation error - Missing required parameter 'filename' or 'fileUID' for files in record '{record_token}'")
+            if not isinstance(record.files, list) or len(record.files) < 1:
+                raise ValueError(f"Notation error - Record {record_token} has no file attachments.")
+            files = record.files or []
+            files = [x for x in files if parameter == x.name or parameter == x.title or parameter == x.f.get("fileUid", "")]
+            # file searches do not use indexes and rely on unique file names or fileUid
+            if len(files) > 1:
+                raise ValueError(f"Notation error - Record {record_token} has multiple files matching the search criteria '{parameter}'")
+            if len(files) < 1:
+                raise ValueError(f"Notation error - Record {record_token} has no files matching the search criteria '{parameter}'")
+            if isinstance(files[0], KeeperFile):
+                return files[0].get_file_data()
+            else:
+                raise ValueError(f"Notation error - Record {record_token} has corrupted KeeperFile data.")
+        elif selector.lower() in ("field", "custom_field"):
+            field_kind = "standard" if selector.lower() == "field" else "custom"
+            field = (record.get_standard_field(parameter)
+                     if field_kind == "standard"
+                     else record.get_custom_field(parameter))
             if field is None:
-                raise ValueError("Cannot find standard field {}".format(key))
+                raise ValueError(f"Cannot find {field_kind} field '{parameter}'")
             value = field.get("value")
             field_type = field.get("type")
-        elif file_data_type == "custom_field":
-            field = record.get_custom_field(key)
-            if field is None:
-                raise ValueError("Cannot find custom field {}".format(key))
-            value = field.get("value")
-            field_type = field.get("type")
-        elif file_data_type == "file":
-            file = record.find_file_by_title(key)
-            if file is None:
-                raise FileNotFoundError("Cannot find the file {} in record {}.".format(key, uid))
-            value = file.get_file_data()
+
+            # Inflate the value if its part of list of types to inflate.
+            # This will request additional records from secrets manager.
+            if field_type in SecretsManager.inflate_ref_types:
+                value = self.inflate_field_value(value, SecretsManager.inflate_ref_types[field_type])
+
+            ret = value
+            if return_single is True and type(value) is list:
+                if len(value) == 0:
+                    return None
+                try:
+                    ret = value[index]
+                    if dict_key is not None:
+                        if dict_key not in ret:
+                            raise ValueError(f"Cannot find the dictionary key {dict_key} in the value")
+                        ret = ret[dict_key]
+                except IndexError:
+                    raise ValueError(f"The value at index {index} does not exist for {url}.")
+            return ret
         else:
-            raise ValueError("Field type of {} is not valid.".format(file_data_type))
-
-        # Inflate the value if its part of list of types to inflate. This will request additional records
-        # from secrets manager.
-        if field_type in SecretsManager.inflate_ref_types:
-            value = self.inflate_field_value(value, SecretsManager.inflate_ref_types[field_type])
-
-        ret = value
-        if return_single is True and type(value) is list:
-            if len(value) == 0:
-                return None
-            try:
-                ret = value[index]
-                if dict_key is not None:
-                    if dict_key not in ret:
-                        raise ValueError("Cannot find the dictionary key {} in the value".format(dict_key))
-                    ret = ret[dict_key]
-            except IndexError:
-                raise ValueError("The value at index {} does not exist for {}.".format(index, url))
-        return ret
+            raise ValueError(f"Invalid notation {url} - Bad selector '{selector}'")
 
     @staticmethod
     def __parse_subsection(text: str, pos: int, delimiters: str, escaped: bool=False) -> Tuple[str,str]|None:
@@ -1081,9 +1094,10 @@ class SecretsManager:
 
         return result
 
-    def parse_notation(self, notation: str, legacy_mode: bool = False) -> List[NotationSection]:
+    @staticmethod
+    def parse_notation(notation: str, legacy_mode: bool = False) -> List[NotationSection]:
         if not (notation and isinstance(notation, str)):
-            raise ValueError(f"Keeper notation is missing or invalid.'")
+            raise ValueError(f"Keeper notation is missing or invalid. Notation: '{notation}'")
 
         # Notation is either plaintext keeper URI format or URL safe base64 string (UTF8)
         # auto detect format - '/' is not part of base64 URL safe alphabet
@@ -1231,7 +1245,7 @@ class SecretsManager:
             if not isinstance(record.files, list) or len(record.files) < 1:
                 raise ValueError(f"Notation error - Record {record_token} has no file attachments.")
             files = record.files or []
-            files = [x for x in files if parameter == x.name or parameter == x.f.get("fileUid", "")]
+            files = [x for x in files if parameter == x.name or parameter == x.title or parameter == x.f.get("fileUid", "")]
             # file searches do not use indexes and rely on unique file names or fileUid
             if len(files) > 1:
                 raise ValueError(f"Notation error - Record {record_token} has multiple files matching the search criteria '{parameter}'")
