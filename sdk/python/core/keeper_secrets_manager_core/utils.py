@@ -257,11 +257,16 @@ def set_config_mode(file, logger=None):
             os.chmod(file, stat.S_IREAD | stat.S_IWRITE)
 
 
-def check_config_mode(file, color_mod=None, logger=None):
+def check_config_mode(file, color_mod=None, logger=None) -> bool:
+    """Check for correct permissions on file
+
+        Return result of check as boolean
+    """
 
     # If we are skipping setting the mode, skip checking.
-    if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE", "FALSE"))) is False:
-
+    if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE", "FALSE"))) is True:
+        retval = True
+    else:
         # For Windows, use icacls. cacls is obsolete.
         if _platform.lower().startswith("win") is True:
 
@@ -280,11 +285,15 @@ def check_config_mode(file, color_mod=None, logger=None):
             except (FileNotFoundError, PermissionError):
                 raise PermissionError("Access denied to configuration file {}.".format(file))
 
-            if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is False:
+            if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is True:
+                retval = True
+            else:
                 # We need to figure out who we are. subprocess run will use cmd
-
                 sid, user = get_windows_user_sid_and_name()
-                if sid is not None:
+                if sid is None:
+                    # Don't fail check when user SID is missing.
+                    retval = True
+                else:
                     allowed_users = [u.lower() for u in ALLOWED_WINDOWS_CONFIG_ADMINS + [user]]
                     for line in output.stdout.decode().split("\n"):
                         parts = line[len(file):].split(":")
@@ -307,7 +316,10 @@ def check_config_mode(file, color_mod=None, logger=None):
                                 print(message, file=sys.stderr)
                                 # Prevent multiple nagging per execution.
                                 os.environ["KSM_CONFIG_SKIP_MODE_WARNING"] = "TRUE"
+                                retval = False
                                 break
+                    else:
+                        retval = True
         else:
             # Can the user read the file? First check if the file exists. If it does, os.access might throw
             # and exception about it not existing. This mean we don't have access.
@@ -319,14 +331,23 @@ def check_config_mode(file, color_mod=None, logger=None):
                     raise PermissionError("Access denied to configuration file {}.".format(file))
 
             # Allow user to skip being nagged by warning message.
-            if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is False:
+            if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is True:
+                retval = True
+            else:
                 mode = oct(os.stat(file).st_mode)
                 # Make sure group and user have no rights. Allow owner to have anything.
-                if mode[-2:] != "00":
+                if mode[-2:] == "00":
+                    retval = True
+                else:
                     print("The config file mode, {}, is too open. "
                           "It is recommended to execute 'chmod 0600 {}' to remove group and user "
                           "access. To disable this warning, set the environment variable "
                           "'KSM_CONFIG_SKIP_MODE_WARNING' to 'TRUE'.".format(mode[-4:], file), file=sys.stderr)
+                    retval = False
+
+    return retval
+
+
 def generate_password(length: int = DEFAULT_PASSWORD_LENGTH,
                       lowercase: Optional[int] = None,
                       uppercase: Optional[int] = None,
