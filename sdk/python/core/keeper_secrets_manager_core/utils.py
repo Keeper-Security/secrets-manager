@@ -30,6 +30,7 @@ from distutils.util import strtobool
 
 from keeper_secrets_manager_core.keeper_globals import logger_name
 
+ALLOWED_WINDOWS_CONFIG_ADMINS = ['Administrators', 'SYSTEM']
 ENCODING = 'UTF-8'
 SPECIAL_CHARACTERS = '''"!@#$%()+;<>=?[]{}^.,'''
 DEFAULT_PASSWORD_LENGTH = 32
@@ -284,7 +285,7 @@ def check_config_mode(file, color_mod=None, logger=None):
 
                 sid, user = get_windows_user_sid_and_name()
                 if sid is not None:
-                    allowed_users = [user.lower(), "Administrators".lower()]
+                    allowed_users = [u.lower() for u in ALLOWED_WINDOWS_CONFIG_ADMINS + [user]]
                     for line in output.stdout.decode().split("\n"):
                         parts = line[len(file):].split(":")
                         if len(parts) == 2:
