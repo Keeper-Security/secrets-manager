@@ -203,40 +203,13 @@ def random_sample(sample_length=0, sample_string=''):
 
 
 def get_windows_user_sid_and_name(logger=None):
-
-    # Get the current user. Subprocess will run CMD. Getting from os.environ.get("USERNAME") can be flaky.
-    user_output = subprocess.run(["whoami"], capture_output=True)
-    if user_output.stdout is None:
-        if logger is not None:
-            logger.info("Cannot get current window user via 'whoami'")
+    try:
+        user_sid = subprocess.check_output(['whoami', '/user'], encoding='utf-8').splitlines()[-1]
+    except subprocess.CalledProcessError as e:
+        logger.info(f'Cannot get current window user via "whoami": {e}')
         return None, None
-
-    # Get only the username, not the machine
-    user_parts = user_output.stdout.decode().strip().split("\\")
-    user = user_parts[1] if len(user_parts) == 2 else user_parts[0]
-
-    # Get the SID for the user. The 'where' command doesn't seem to work :(, so get them all.
-    sid_output = subprocess.run(["wmic", "useraccount", "get",  "name,sid"], capture_output=True)
-    if sid_output.stdout is None:
-        if logger is not None:
-            logger.info("Cannot user account list for SID lookup")
-        return None, None
-
-    sid = None
-    if sid_output.stdout is not None:
-        lines = sid_output.stdout.decode().split("\n")
-        first_line = lines[0].lower()
-        lines = lines[1:]
-        index = first_line.index("sid")
-        for line in lines:
-            if line.lower().startswith(user) is True:
-                sid = line[index:].strip()
-                break
-    if sid is None:
-        if logger is not None:
-            logger.info("Cannot find the SID for user " + user)
-
-    return sid, user
+    else:
+        return reversed(user_sid.split('\\')[-1].split())
 
 
 def set_config_mode(file, logger=None):
