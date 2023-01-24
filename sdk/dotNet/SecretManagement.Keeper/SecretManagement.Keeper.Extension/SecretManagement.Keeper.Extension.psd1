@@ -7,9 +7,8 @@
     Author = 'Sergey Aldoukhov'
     CompanyName = 'Keeper Security'
     Copyright = '(c) 2023 Keeper Security, Inc.'
-    FunctionsToExport = 'Set-Secret', 'Get-Secret', 'Remove-Secret', 'Get-SecretInfo', 'Test-SecretVault', 'Set-KeeperVault'
+    FunctionsToExport = 'Set-Secret', 'Get-Secret', 'Remove-Secret', 'Get-SecretInfo', 'Test-SecretVault', 'Set-KeeperVault', 'Get-Notation'
     CmdletsToExport = @()    
     VariablesToExport = @()
     AliasesToExport = @()
 }
-

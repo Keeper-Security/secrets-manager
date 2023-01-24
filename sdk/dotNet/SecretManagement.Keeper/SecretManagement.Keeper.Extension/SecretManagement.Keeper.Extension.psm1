@@ -116,3 +116,13 @@ function Test-SecretVault {
 
     return [SecretManagement.Keeper.Client]::TestVault($config).GetAwaiter().GetResult()
 }
+
+function Get-Notation {
+    [CmdletBinding()]
+    param (
+        [string] $Config,
+        [string] $Notation
+    )
+
+    return [SecretManagement.Keeper.Client]::GetNotation($Config, $Notation).GetAwaiter().GetResult()
+}

@@ -40,7 +40,6 @@ namespace QuickTest
             // Console.WriteLine(fileBytes.Length);
             // firstRecord.UpdateFieldValue("password", "111111111");
             // await SecretsManagerClient.UpdateSecret(options, firstRecord);
-            
         }
     }
 }
