@@ -241,5 +241,14 @@ namespace SecretManagement.Keeper
             var secrets = await SecretsManagerClient.GetSecrets(options);
             return new Tuple<KeeperRecord[], SecretsManagerOptions>(secrets.Records, options);
         }
+
+        public static async Task<string> GetNotation(string config, string notation)
+        {
+            var storage = new InMemoryStorage(config);
+            var options = new SecretsManagerOptions(storage);
+            var secrets = await SecretsManagerClient.GetNotationResults(options, notation);
+            string result = (secrets != null && secrets.Count > 0) ? secrets[0] : "";
+            return result;
+        }
     }
 }
