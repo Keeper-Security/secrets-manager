@@ -167,9 +167,32 @@ class SecretsManager:
 
     def _init(self):
 
+        if not self.verify_ssl_certs:
+            self.logger.warning("WARNING: Running without SSL cert verification. "
+                                "Execute 'SecretsManager(..., verify_ssl_certs=True)' or 'KSM_SKIP_VERIFY=FALSE' "
+                                "to enable verification.")
+
         client_id = self.config.get(ConfigKeys.KEY_CLIENT_ID)
 
-        if client_id:
+        unbound_token = False
+        if self.token:
+            unbound_token = True
+            if client_id: # config is initialized
+                client_key = self.token
+                client_key_bytes = url_safe_str_to_bytes(client_key)
+                client_key_hash = hmac.new(client_key_bytes, b'KEEPER_SECRETS_MANAGER_CLIENT_ID', 'sha512').digest()
+                token_client_id = bytes_to_base64(client_key_hash)
+                if token_client_id == client_id: # with same token - check if bound
+                    app_key = self.config.get(ConfigKeys.KEY_APP_KEY)
+                    if app_key: # and bound
+                        unbound_token = False
+                        self.logger.warning(f"The storage is already initialized with same token")
+                    else: # not bound
+                        self.logger.warning(f"The storage is already initialized but not bound")
+                else: # initialized with different token
+                    raise ValueError(f"The storage is already initialized with a different token - Client ID: {client_id}")
+
+        if client_id and not unbound_token:
             self.logger.debug("Already bound")
 
             if self.config.get(ConfigKeys.KEY_CLIENT_KEY):
@@ -200,11 +223,6 @@ class SecretsManager:
             if not private_key_str:
                 private_key_der = CryptoUtils.generate_private_key_der()
                 self.config.set(ConfigKeys.KEY_PRIVATE_KEY, bytes_to_base64(private_key_der))
-
-        if not self.verify_ssl_certs:
-            self.logger.warning("WARNING: Running without SSL cert verification. "
-                                "Execute 'SecretsManager(..., verify_ssl_certs=True)' or 'KSM_SKIP_VERIFY=FALSE' "
-                                "to enable verification.")
 
     def load_secret_key(self):
 
