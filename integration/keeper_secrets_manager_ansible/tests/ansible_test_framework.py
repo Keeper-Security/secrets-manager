@@ -102,15 +102,13 @@ class AnsibleTestFramework:
                 passwords={}
             )
 
-            callback = CallbackModule()
-
-            # Still not there. Trying to get display to show debug or v{1,5} messages
-            callback._display.verbosity = 4
-            callback.display_ok_hosts = True
-            callback.display_skipped_hosts = False
-            callback.show_per_host_start = False
-            callback.display_failed_stderr = True
-            playbook_exec._tqm._stdout_callback = callback
+            # callback = CallbackModule()
+            #
+            # # Still not there. Trying to get display to show debug or v{1,5} message
+            # callback.display_skipped_hosts = False
+            # callback.show_per_host_start = False
+            # callback.display_failed_stderr = True
+            # playbook_exec._tqm._stdout_callback = callback
 
             playbook_exec.run()
             stats = playbook_exec._tqm._stats
