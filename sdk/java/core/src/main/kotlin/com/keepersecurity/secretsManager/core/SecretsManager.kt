@@ -92,7 +92,8 @@ private data class UpdatePayload(
     val clientId: String,
     val recordUid: String,
     val data: String,
-    val revision: Long? = null
+    val revision: Long? = null,
+    val links2Remove: List<String>? = null
 )
 
 @Serializable
@@ -340,8 +341,8 @@ fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>): Secr
 
 
 @ExperimentalSerializationApi
-fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
-    val payload = prepareUpdatePayload(options.storage, record)
+fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord, referencesToRemove: List<String>? = null) {
+    val payload = prepareUpdatePayload(options.storage, record, referencesToRemove)
     postQuery(options, "update_secret", payload)
 }
 
@@ -535,15 +536,43 @@ private fun prepareDeletePayload(
     return DeletePayload(KEEPER_CLIENT_VERSION, clientId, recordUids)
 }
 
+private inline fun <reified T> removeReference(record: KeeperRecord, ref2Remove: String): Boolean {
+    val refField = record.data.getField<T>() ?: return false
+    val fieldValue = when (refField) {
+        is FileRef -> refField.value
+        is CardRef -> refField.value
+        is AddressRef -> refField.value
+        else -> null
+    }
+    if (fieldValue != null && fieldValue.removeIf { x -> x == ref2Remove }) {
+        return true
+    }
+    return false
+}
+
 @ExperimentalSerializationApi
 private fun prepareUpdatePayload(
     storage: KeyValueStorage,
-    record: KeeperRecord
+    record: KeeperRecord,
+    referencesToRemove: List<String>?
 ): UpdatePayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+
+    val refsToRemove = mutableListOf<String>()
+    if (referencesToRemove != null) {
+        for (ref2remove in referencesToRemove) {
+            if (
+                removeReference<FileRef>(record, ref2remove) ||
+                removeReference<CardRef>(record, ref2remove) ||
+                removeReference<AddressRef>(record, ref2remove)) {
+                refsToRemove.add(ref2remove)
+            }
+        }
+    }
+
     val recordBytes = stringToBytes(Json.encodeToString(record.data))
     val encryptedRecord = encrypt(recordBytes, record.recordKey)
-    return UpdatePayload(KEEPER_CLIENT_VERSION, clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision)
+    return UpdatePayload(KEEPER_CLIENT_VERSION, clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision, if (refsToRemove.size > 0) refsToRemove else null)
 }
 
 @ExperimentalSerializationApi

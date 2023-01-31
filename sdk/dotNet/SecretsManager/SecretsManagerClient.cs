@@ -115,14 +115,16 @@ namespace SecretsManager
         public string recordUid { get; }
         public string data { get; }
         public long revision { get; }
+        public string[] linksToRemove { get; }
 
-        public UpdatePayload(string clientVersion, string clientId, string recordUid, string data, long revision)
+        public UpdatePayload(string clientVersion, string clientId, string recordUid, string data, long revision, string[] linksToRemove)
         {
             this.clientVersion = clientVersion;
             this.clientId = clientId;
             this.recordUid = recordUid;
             this.data = data;
             this.revision = revision;
+            this.linksToRemove = linksToRemove;
         }
     }
 
@@ -676,9 +678,9 @@ namespace SecretsManager
             return FindSecretByTitle(keeperSecrets.Records, recordTitle);
         }
 
-        public static async Task UpdateSecret(SecretsManagerOptions options, KeeperRecord record)
+        public static async Task UpdateSecret(SecretsManagerOptions options, KeeperRecord record, string[] referencesToRemove = null)
         {
-            var payload = PrepareUpdatePayload(options.Storage, record);
+            var payload = PrepareUpdatePayload(options.Storage, record, referencesToRemove);
             await PostQuery(options, "update_secret", payload);
         }
 
@@ -892,7 +894,25 @@ namespace SecretsManager
             return new GetPayload(GetClientVersion(), clientId, publicKey, recordsFilter);
         }
 
-        private static UpdatePayload PrepareUpdatePayload(IKeyValueStorage storage, KeeperRecord record)
+        private static bool RemoveReference(KeeperRecord record, string fieldName, string ref2Remove)
+        {
+            var refField = record.Data.fields.FirstOrDefault(x => x.type == fieldName);
+            if (refField == null)
+            {
+                return false;
+            }
+
+            var excludeRef = refField.value.Where(x => (string)x != ref2Remove).ToArray();
+            if (excludeRef.Length != refField.value.Length)
+            {
+                refField.value = excludeRef;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static UpdatePayload PrepareUpdatePayload(IKeyValueStorage storage, KeeperRecord record, string[] referencesToRemove)
         {
             var clientId = storage.GetString(KeyClientId);
             if (clientId == null)
@@ -900,9 +920,19 @@ namespace SecretsManager
                 throw new Exception("Client Id is missing from the configuration");
             }
 
+            var refs2Remove = new List<string>();
+            if (referencesToRemove != null)
+            {
+                refs2Remove.AddRange(referencesToRemove.Where(ref2Remove =>
+                    RemoveReference(record, "fileRef", ref2Remove) || 
+                    RemoveReference(record, "cardRef", ref2Remove) || 
+                    RemoveReference(record, "addressRef", ref2Remove)));
+            }
+
             var recordBytes = JsonUtils.SerializeJson(record.Data);
             var encryptedRecord = CryptoUtils.Encrypt(recordBytes, record.RecordKey);
-            return new UpdatePayload(GetClientVersion(), clientId, record.RecordUid, CryptoUtils.WebSafe64FromBytes(encryptedRecord), record.Revision);
+            return new UpdatePayload(GetClientVersion(), clientId, record.RecordUid, CryptoUtils.WebSafe64FromBytes(encryptedRecord), record.Revision,
+                refs2Remove.Count > 0 ? refs2Remove.ToArray() : null);
         }
 
         private static DeletePayload PrepareDeletePayload(IKeyValueStorage storage, string[] recordsUids)

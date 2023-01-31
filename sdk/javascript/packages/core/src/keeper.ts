@@ -63,6 +63,7 @@ type UpdatePayload = {
     recordUid: string
     data: string
     revision?: number
+    linksToRemove?: string[]
 }
 
 type CreatePayload = {
@@ -192,20 +193,49 @@ const prepareGetPayload = async (storage: KeyValueStorage, recordsFilter?: strin
     return payload
 }
 
-const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord): Promise<UpdatePayload> => {
+const removeReference = (record: KeeperRecord, fieldName: string, ref2remove: string): boolean => {
+    const fields: { type: string, value: string[] }[] = record.data.fields
+    const refField = fields.find(x => x.type == fieldName)
+    if (!refField) {
+        return false
+    }
+    const refIdx = refField.value.indexOf(ref2remove)
+    if (refIdx >= 0) {
+        refField.value.splice(refIdx, 1)
+        return true
+    }
+    return false
+}
+
+const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord, referencesToRemove?: string[]): Promise<UpdatePayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
     }
+    const refs2remove: string[] = []
+    if (referencesToRemove) {
+        for (const ref2remove of referencesToRemove) {
+            if (
+                removeReference(record, 'fileRef', ref2remove) ||
+                removeReference(record, 'cardRef', ref2remove) ||
+                removeReference(record, 'addressRef', ref2remove)) {
+                refs2remove.push(ref2remove)
+            }
+        }
+    }
     const recordBytes = platform.stringToBytes(JSON.stringify(record.data))
     const encryptedRecord = await platform.encrypt(recordBytes, record.recordUid)
-    return {
+    let payload: UpdatePayload = {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
         recordUid: record.recordUid,
         data: webSafe64FromBytes(encryptedRecord),
         revision: record.revision
     }
+    if (refs2remove.length > 0) {
+        payload.linksToRemove = refs2remove
+    }
+    return payload
 }
 
 const prepareDeletePayload = async (storage: KeyValueStorage, recordUids: string[]): Promise<DeletePayload> => {
@@ -514,8 +544,8 @@ export const getSecretByTitle = async (options: SecretManagerOptions, recordTitl
     return secrets.records.find(record => record.data.title === recordTitle)
 }
 
-export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord): Promise<void> => {
-    const payload = await prepareUpdatePayload(options.storage, record)
+export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord, referencesToRemove?: string[]): Promise<void> => {
+    const payload = await prepareUpdatePayload(options.storage, record, referencesToRemove)
     await postQuery(options, 'update_secret', payload)
 }
 
