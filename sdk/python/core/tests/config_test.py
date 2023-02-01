@@ -85,7 +85,7 @@ class ConfigTest(unittest.TestCase):
         # Make instance using default config file. Create a JSON config file and store under the default file
         # name. This will pass because the JSON file exists.
 
-        mock_config = MockConfig.make_config()
+        mock_config = MockConfig.make_config(token="localhost:ABC123")
 
         with tempfile.TemporaryDirectory() as temp_dir_name:
             os.chdir(temp_dir_name)
@@ -101,7 +101,7 @@ class ConfigTest(unittest.TestCase):
 
     def test_onetime_token_formats_abbrev(self):
 
-        mock_config = MockConfig.make_config(skip_list=["clientKey"])
+        mock_config = MockConfig.make_config(skip_list=["clientKey"], token="US:ABC123")
         b64config_str = MockConfig.make_base64(config=mock_config)
 
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(b64config_str), token="US:ABC123",
@@ -116,7 +116,7 @@ class ConfigTest(unittest.TestCase):
 
     def test_onetime_token_formats_hostname(self):
 
-        mock_config = MockConfig.make_config(skip_list=["clientKey"])
+        mock_config = MockConfig.make_config(skip_list=["clientKey"], token="fake.keepersecurity.com:ABC123")
         b64config_str = MockConfig.make_base64(config=mock_config)
 
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(b64config_str),
