@@ -19,7 +19,7 @@ import sys
 from base64 import urlsafe_b64decode
 from distutils.util import strtobool
 from http import HTTPStatus
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.configkeys import ConfigKeys
@@ -55,10 +55,10 @@ class NotationSection:
         self.is_present: bool = False   # presence flag
         self.start_pos: int = -1        # section start pos in URI
         self.end_pos: int = -1          # section end pos in URI
-        self.text: Tuple[str,str]|None = None       # [unescaped, raw] text
-        self.parameter: Tuple[str,str]|None = None  # <field type>|<field label>|<file name>
-        self.index1: Tuple[str,str]|None = None     # numeric index [N] or []
-        self.index2: Tuple[str,str]|None = None     # property index - ex. field/name[0][middle]
+        self.text: Optional[Tuple[str, str]] = None       # [unescaped, raw] text
+        self.parameter: Optional[Tuple[str, str]] = None  # <field type>|<field label>|<file name>
+        self.index1: Optional[Tuple[str, str]] = None     # numeric index [N] or []
+        self.index2: Optional[Tuple[str, str]] = None     # property index - ex. field/name[0][middle]
 
 class SecretsManager:
 
@@ -989,7 +989,7 @@ class SecretsManager:
             raise ValueError(f"Invalid notation {url} - Bad selector '{selector}'")
 
     @staticmethod
-    def __parse_subsection(text: str, pos: int, delimiters: str, escaped: bool=False) -> Tuple[str,str]|None:
+    def __parse_subsection(text: str, pos: int, delimiters: str, escaped: bool=False) -> Optional[Tuple[str, str]]:
         escape_char = "\\"
         escape_chars = "/[]\\" # /[]\ -> \/ ,\[, \], \\
         # escape the characters in plaintext sections only - title, label or filename
