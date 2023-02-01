@@ -15,9 +15,10 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
+from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.exceptions import KeeperError
-from keeper_secrets_manager_core import utils, helpers
+from keeper_secrets_manager_helper.v3.field_type import FieldType
 
 
 class Record:
@@ -178,6 +179,17 @@ class Record:
             value = [value]
         field["value"] = value
         self._update()
+
+    def add_custom_field(self, field: FieldType) -> bool:
+        if issubclass(type(field), FieldType):
+            if self.dict.get('custom', None) is None:
+                self.dict['custom'] = []
+            custom = self.dict['custom']
+            fdict = field.to_dict()
+            custom.append(fdict)
+            self._update()
+            return True
+        return False
 
     # TODO: Deprecate this for better getter and setters
     def field(self, field_type, value=None, single=False):

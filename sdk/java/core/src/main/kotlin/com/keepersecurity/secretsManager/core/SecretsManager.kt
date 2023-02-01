@@ -338,11 +338,19 @@ fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>): Secr
     return nonStrictJson.decodeFromString<SecretsManagerDeleteResponse>(bytesToString(responseData))
 }
 
-
 @ExperimentalSerializationApi
 fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
     val payload = prepareUpdatePayload(options.storage, record)
     postQuery(options, "update_secret", payload)
+}
+
+@ExperimentalSerializationApi
+fun addCustomField(record: KeeperRecord, field: KeeperRecordField) {
+    if (field.javaClass.superclass == KeeperRecordField::class.java) {
+        if (record.data.custom == null)
+            record.data.custom = mutableListOf()
+        record.data.custom!!.add(field)
+    }
 }
 
 @ExperimentalSerializationApi
