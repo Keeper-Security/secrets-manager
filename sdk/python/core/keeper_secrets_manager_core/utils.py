@@ -232,6 +232,21 @@ def get_windows_user_sid_and_name(logger=None):
             if line.lower().startswith(user) is True:
                 sid = line[index:].strip()
                 break
+
+    # On Azure AD accounts (ex. azuread\username) user/SID mapping fails
+    # Get full user details from `whoami` and parse user/SID
+    if sid is None:
+        user_output = subprocess.run(["whoami", "/user", "/fo", "list"], capture_output=True)
+        if user_output.stdout is not None:
+            lines = user_output.stdout.decode().split("\n")
+            for line in lines:
+                if line.startswith("User Name:"):
+                    # Get only the username, not the machine
+                    user_parts = line[len("User Name:"):].strip().split("\\")
+                    user = user_parts[1] if len(user_parts) == 2 else user_parts[0]
+                elif line.startswith("SID:"):
+                    sid = line[len("SID:"):].strip()
+
     if sid is None:
         if logger is not None:
             logger.info("Cannot find the SID for user " + user)
