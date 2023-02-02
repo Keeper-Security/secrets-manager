@@ -5,7 +5,7 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 16.5.0
-* KSM-313 - Improved Keeper Notations
+* KSM-313 - Improved Keeper Notations. New parser, Notation URI, search records by title and other meta data values in the record
 * KSM-319 - `KEY_CLIENT_KEY` in configurations is missing in certain situations
 * KSM-356 - Ability to create of the new custom field
 
