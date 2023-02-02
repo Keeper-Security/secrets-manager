@@ -402,14 +402,14 @@ class SecretTest(unittest.TestCase):
             bad_notation = "IM_BAD!!!!"
             runner = CliRunner()
             result = runner.invoke(cli, ['secret', 'notation', bad_notation], catch_exceptions=False)
-            self.assertRegex(result.output, r'Error: Could not parse the notation', 'got bad parse error')
+            self.assertRegex(result.output, r'Error: Keeper notation is in invalid format', 'got bad parse error')
             self.assertEqual(1, result.exit_code, "the exit code was not 1")
 
             # Too many / parameters
             too_much_notation = f"keeper://{one.uid}/field/login/BAD"
             runner = CliRunner()
             result = runner.invoke(cli, ['secret', 'notation', too_much_notation], catch_exceptions=False)
-            self.assertRegex(result.output, r'Error: Could not parse the notation', 'got bad parse error')
+            self.assertRegex(result.output, r'Error: Keeper notation is in invalid format', 'got bad parse error')
             self.assertEqual(1, result.exit_code, "the exit code was not 1")
 
             # Bad field
