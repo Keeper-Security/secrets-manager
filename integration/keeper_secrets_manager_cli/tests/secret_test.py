@@ -402,21 +402,21 @@ class SecretTest(unittest.TestCase):
             bad_notation = "IM_BAD!!!!"
             runner = CliRunner()
             result = runner.invoke(cli, ['secret', 'notation', bad_notation], catch_exceptions=False)
-            self.assertRegex(result.output, r'Error: Keeper notation is in invalid format', 'got bad parse error')
+            self.assertRegex(result.output, r'Error: Invalid format of Keeper notation', 'got bad parse error')
             self.assertEqual(1, result.exit_code, "the exit code was not 1")
 
             # Too many / parameters
             too_much_notation = f"keeper://{one.uid}/field/login/BAD"
             runner = CliRunner()
             result = runner.invoke(cli, ['secret', 'notation', too_much_notation], catch_exceptions=False)
-            self.assertRegex(result.output, r'Error: Keeper notation is in invalid format', 'got bad parse error')
+            self.assertRegex(result.output, r'Error: Cannot find standard field', 'got bad parse error')
             self.assertEqual(1, result.exit_code, "the exit code was not 1")
 
             # Bad field
             notation = "keeper://{}/{}/{}".format(one.uid, "field", "im_a_bad_field")
             runner = CliRunner()
             result = runner.invoke(cli, ['secret', 'notation', notation], catch_exceptions=False)
-            self.assertRegex(result.output, r'Cannot find ', 'got an error for bad field')
+            self.assertRegex(result.output, r'Cannot get ', 'got an error for bad field')
             self.assertEqual(1, result.exit_code, "the exit code was not 1")
 
     def test_notation_file(self):

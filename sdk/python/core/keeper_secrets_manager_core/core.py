@@ -1124,7 +1124,8 @@ class SecretsManager:
                 plaintext = urlsafe_b64decode(notation)
                 notation = plaintext.decode()
             except:
-                raise ValueError("Keeper notation is in invalid format - plaintext URI or URL safe base64 string expected.")
+                raise ValueError("Invalid format of Keeper notation - plaintext URI or URL safe base64 string "
+                                 "expected.")
 
         prefix = SecretsManager.__parse_section(notation, "prefix", 0)  # keeper://
         pos = prefix.end_pos+1 if prefix.is_present else 0 # prefix is optional

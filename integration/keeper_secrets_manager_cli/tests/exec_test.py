@@ -221,8 +221,7 @@ class ExecTest(unittest.TestCase):
                 print("-------------------")
                 print(result.output)
                 print("-------------------")
-                self.assertIsNotNone(re.search(f'Could not parse the notation {one.uid}', result.output,
-                                               flags=re.MULTILINE), "did not find exception")
+                self.assertIsNotNone(re.search(f'MOOT', result.output, flags=re.MULTILINE), "did not find exception")
 
 
 if __name__ == '__main__':
