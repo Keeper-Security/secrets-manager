@@ -7,7 +7,7 @@ For more information see our official documentation page https://docs.keeper.io/
 ## 16.5.0
 * KSM-313 - Improved Keeper Notations
 * KSM-319 - `KEY_CLIENT_KEY` in configurations is missing in certain situations
-* KSM-356 - Ability to create of the new new custom field
+* KSM-356 - Ability to create of the new custom field
 
 ## 16.4.2
 * Fix to support dynamic client version
