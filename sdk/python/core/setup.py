@@ -11,15 +11,16 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
 install_requires = [
+    'keeper-secrets-manager-helper>=1.0.4',
     'ecdsa',
-    'cryptography>=38.0.3',
-    'requests',
-    'importlib_metadata'
+    'requests==2.28.2',
+    'cryptography>=39.0.0',
+    'importlib_metadata==6.0.0'
 ]
 
 setup(
     name="keeper-secrets-manager-core",
-    version="16.4.2",
+    version="16.5.0",
     description="Keeper Secrets Manager for Python 3",
     long_description=long_description,
     long_description_content_type="text/markdown",
