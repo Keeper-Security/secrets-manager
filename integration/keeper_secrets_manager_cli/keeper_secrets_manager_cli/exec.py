@@ -51,7 +51,7 @@ class Exec:
                 except ValueError as err:
                     # TODO: Change the SDK to throw a different exception when might not be notation.
                     # If the notation isn't actually notation, skip it, don't raise an exception
-                    if str(err).startswith("Keeper url missing"):
+                    if str(err).startswith("Keeper notation is in invalid format"):
                         self.logger.info("Possible notation for env key {} was not used.".format(env_key))
                     else:
                         raise KsmCliException(str(err))
