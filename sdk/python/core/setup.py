@@ -11,11 +11,11 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
 install_requires = [
-    'cryptography>=38.0.3',
-    'ecdsa',
-    'importlib_metadata',
     'keeper-secrets-manager-helper>=1.0.4',
-    'requests'
+    'ecdsa',
+    'requests==2.28.2',
+    'cryptography>=39.0.0',
+    'importlib_metadata==6.0.0'
 ]
 
 setup(
