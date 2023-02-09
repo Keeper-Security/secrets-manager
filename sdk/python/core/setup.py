@@ -14,7 +14,7 @@ install_requires = [
     'keeper-secrets-manager-helper>=1.0.4',
     'ecdsa',
     'requests==2.28.2',
-    'cryptography>=39.0.0',
+    'cryptography>=39.0.1',
     'importlib_metadata==6.0.0'
 ]
 
