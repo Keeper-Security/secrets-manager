@@ -1,6 +1,7 @@
 import {
     KeeperSecrets,
-    getValue
+    getValue,
+    parseNotation
 } from '../'
 
 const recordUID = 'k9qMpcO0aszz9w3li5XbaQ'
@@ -58,7 +59,7 @@ const secrets: KeeperSecrets = {
     ]
 }
 
-test('Notations', () => {
+test('Notations', async () => {
     let value
 
     value = getValue(secrets, `keeper://${recordUID}/field/login`)
@@ -74,7 +75,7 @@ test('Notations', () => {
         value = getValue(secrets, `keeper://${recordUID}/field/login[1]`)
         fail('Getting wrong index did not throw')
     } catch ({message}) {
-        expect(message).toContain(`The index 1 for field value of login in the record ${recordUID} is out of range`)
+        expect(message).toContain(`Notation error - Field index out of bounds`)
     }
 
     value = getValue(secrets, `keeper://${recordUID}/field/login[]`)
@@ -114,4 +115,47 @@ test('Notations', () => {
     value = getValue(secrets, `keeper://${recordUID}/file/qr.png`)
     expect(value.fileUid).toBe('HKGdx7dSrtuTfA67wiEZkw')
     expect(value.url).toBe('QR Code File Url')
+})
+
+test('NotationParser', () => {
+    try {
+        parseNotation("/file"); // file requires parameters
+        fail('Parsing bad notation did not throw')
+    } catch {}
+
+    try {
+        parseNotation("/type/extra"); // extra characters after last section
+        fail('Parsing bad notation did not throw')
+    } catch {}
+
+    let res = parseNotation("/type")
+    expect(res[2].text?.[0]).toBe("type")
+
+    res = parseNotation("/title")
+    expect(res[2].text?.[0]).toBe("title")
+
+    res = parseNotation("/notes")
+    expect(res[2].text?.[0]).toBe("notes")
+
+    res = parseNotation("/file/filename.ext")
+    expect(res[2].text?.[0]).toBe("file")
+    expect(res[2].parameter?.[0]).toBe("filename.ext")
+
+    res = parseNotation("/field/text")
+    expect(res[2].text?.[0]).toBe("field")
+    expect(res[2].parameter?.[0]).toBe("text")
+
+    res = parseNotation(String.raw`/custom_field/label with \[[0][middle]`)
+    expect(res[1].text?.[0]).toBe("") // empty title
+    expect(res[2].text?.[0]).toBe("custom_field")
+    expect(res[2].parameter?.[0]).toBe("label with [")
+    expect(res[2].index1?.[0]).toBe("0")
+    expect(res[2].index2?.[0]).toBe("middle")
+
+    res = parseNotation(String.raw`title with \[\]\//custom_field/label with \[[0][middle]`)
+    expect(res[1].text?.[0]).toBe("title with []/")
+    expect(res[2].text?.[0]).toBe("custom_field")
+    expect(res[2].parameter?.[0]).toBe("label with [")
+    expect(res[2].index1?.[0]).toBe("0")
+    expect(res[2].index2?.[0]).toBe("middle")
 })
