@@ -41,7 +41,10 @@ internal class NotationTest {
         )
     )
 
-    private val secrets = KeeperSecrets(AppData("", ""), listOf(KeeperRecord(ByteArray(0), recordUID, data = recordData, files = recordFiles)))
+    private val secrets = KeeperSecrets(
+        AppData("", ""),
+        listOf(KeeperRecord(ByteArray(0), recordUID, data = recordData, files = recordFiles))
+    )
 
     @Test
     fun notationsWork() {
@@ -57,7 +60,7 @@ internal class NotationTest {
         try {
             getValue(secrets, "keeper://${recordUID}/field/login[1]")
             fail("Getting wrong index did not throw")
-        } catch (e: Exception) {
+        } catch (_: Exception) {
         }
         value = getValue(secrets, "keeper://${recordUID}/field/login[]")
         assertEquals("[\"My Login 1\"]", value)
@@ -98,4 +101,49 @@ internal class NotationTest {
         assertEquals("QR Code File Url", file.url)
     }
 
+    @Test
+    fun notationParserWork() {
+        try {
+            parseNotation("/file") // file requires parameters
+            fail("Parsing bad notation did not throw")
+        } catch (_: Exception) {
+        }
+
+        try {
+            parseNotation("/type/extra") // extra characters after last section
+            fail("Parsing bad notation did not throw")
+        } catch (_: Exception) {
+        }
+
+        var res = parseNotation("/type")
+        assertEquals("type", res[2].text!!.first)
+
+        res = parseNotation("/title")
+        assertEquals("title", res[2].text!!.first)
+
+        res = parseNotation("/notes")
+        assertEquals("notes", res[2].text!!.first)
+
+        res = parseNotation("/file/filename.ext")
+        assertEquals("file", res[2].text!!.first)
+        assertEquals("filename.ext", res[2].parameter!!.first)
+
+        res = parseNotation("/field/text")
+        assertEquals("field", res[2].text!!.first)
+        assertEquals("text", res[2].parameter!!.first)
+
+        res = parseNotation("""/custom_field/label with \[[0][middle]""")
+        assertEquals("", res[1].text!!.first) // empty title
+        assertEquals("custom_field", res[2].text!!.first)
+        assertEquals("""label with [""", res[2].parameter!!.first)
+        assertEquals("0", res[2].index1!!.first)
+        assertEquals("middle", res[2].index2!!.first)
+
+        res = parseNotation("""title with \[\]\//custom_field/label with \[[0][middle]""")
+        assertEquals("""title with []/""", res[1].text!!.first)
+        assertEquals("custom_field", res[2].text!!.first)
+        assertEquals("""label with [""", res[2].parameter!!.first)
+        assertEquals("0", res[2].index1!!.first)
+        assertEquals("middle", res[2].index2!!.first)
+    }
 }

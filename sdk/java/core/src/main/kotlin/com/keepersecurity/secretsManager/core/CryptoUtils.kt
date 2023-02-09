@@ -368,17 +368,17 @@ fun generatePassword(
     var extraChars: String = ""
     var extraCount: Int = 0
     if (minLength > sumCategories)
-        extraCount = minLength - sumCategories;
+        extraCount = minLength - sumCategories
     if ((lowercaseLen ?: 1) > 0)
-        extraChars += AsciiLowercase;
+        extraChars += AsciiLowercase
     if ((uppercaseLen ?: 1) > 0)
-        extraChars += AsciiUppercase;
+        extraChars += AsciiUppercase
     if ((digitsLen ?: 1) > 0)
-        extraChars += AsciiDigits;
+        extraChars += AsciiDigits
     if ((specialCharactersLen ?: 1) > 0)
-        extraChars += specialCharacterSet;
+        extraChars += specialCharacterSet
     if (extraCount > 0 && extraChars.isEmpty())
-        extraChars = AsciiLowercase + AsciiUppercase + AsciiDigits + specialCharacterSet;
+        extraChars = AsciiLowercase + AsciiUppercase + AsciiDigits + specialCharacterSet
 
     val categoryMap = listOf(
         abs(lowercaseLen ?: 0) to AsciiLowercase,
