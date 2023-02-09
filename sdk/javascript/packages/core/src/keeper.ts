@@ -1,5 +1,6 @@
 import {KeeperHttpResponse, KeyValueStorage, TransmissionKey, EncryptedPayload, platform} from './platform'
-import {webSafe64FromBytes, webSafe64ToBytes} from './utils'
+import {tryParseInt, webSafe64FromBytes, webSafe64ToBytes} from './utils'
+import {parseNotation} from './notation'
 
 export {KeyValueStorage} from './platform'
 
