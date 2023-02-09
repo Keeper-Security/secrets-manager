@@ -196,3 +196,16 @@ export const generatePassword = async (
     const password: string = await shuffle(passwordCharacters)
     return password
 }
+
+/**
+ * Try to parse an integer value from a string. Returns the number if successful, otherwise return a default value.
+ * @param value The string with an integer to parse.
+ * @param defaultValue Default value to return if parsing fails.
+ */
+export function tryParseInt(value: string, defaultValue: number = 0): number {
+    let parsedValue = parseInt(value, 10)
+    if (isNaN(parsedValue))
+		return defaultValue // Failed to parse. Return the default value.
+	else
+		return parsedValue // Return the parsed value.
+}

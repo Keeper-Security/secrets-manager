@@ -4,6 +4,11 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.5.0
+- Notation improvements - new parser, notation URIs using record title, new escape characters
+- Creation of the custom fields
+- Logging improvement
+
 ## 16.4.0
 - KSM-310 - Improved password generation entropy
 - Record deletion

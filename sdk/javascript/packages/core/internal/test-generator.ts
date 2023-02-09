@@ -18,7 +18,7 @@ const platformPost = platform.post;
 const platformRandomBytes = platform.getRandomBytes
 const responses: { transmissionKey: string; data: string, statusCode: number } [] = []
 
-const oneTimeToken = 'ONE_TIME_TOKEN'       // TODO: Add user prompt for this variables
+const oneTimeToken = 'ONE_TIME_TOKEN'       // TODO: Add user prompt for this variable
 const ksmServer = 'fake.keepersecurity.com' // TODO: Add user prompt for this variable
 
 async function generateTests() {
