@@ -11,7 +11,7 @@ data class KeeperRecordData @JvmOverloads constructor(
     var title: String,
     val type: String,
     val fields: MutableList<KeeperRecordField>,
-    val custom: MutableList<KeeperRecordField>? = null,
+    var custom: MutableList<KeeperRecordField>? = null,
     var notes: String? = null
 ) {
     inline fun <reified T> getField(): T? {

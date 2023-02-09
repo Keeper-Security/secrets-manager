@@ -45,7 +45,7 @@ class NotationTest(unittest.TestCase):
                 # The frontend allows for custom field to not have unique names :(. The best way we
                 # can handle this is to set label and field type.
                 one.custom_field("My Custom 1", "custom1")
-                one.custom_field("My Custom 2", ['one', 'two', 'three'])
+                one.custom_field("My Custom 2", ["one", "two", "three"])
                 one.custom_field("phone", [
                     {"number": "555-5555555", "ext": "55"},
                     {"number": "777-7777777", "ext": "77"},
@@ -81,7 +81,7 @@ class NotationTest(unittest.TestCase):
                     secrets_manager.get_notation("{}://{}/field/login[1]".format(prefix, one.uid))
                     self.fail("Should not have gotten here.")
                 except ValueError as err:
-                    self.assertRegex(str(err), r'value at index', 'did not get correct exception')
+                    self.assertRegex(str(err), r"value at index", "did not get correct exception")
 
                 # We should get an array instead of a single value.
                 value = secrets_manager.get_notation("{}://{}/field/login[]".format(prefix, one.uid))
@@ -118,11 +118,11 @@ class NotationTest(unittest.TestCase):
 
                 # Custom field, get first name
                 value = secrets_manager.get_notation("{}/custom_field/name[first]".format(one.uid))
-                self.assertEqual("Jenny", value, "custom field name, got the first name")
+                self.assertEqual("Jenny", value, "custom field name, did not get the first name")
 
                 # Custom field, get last name
                 value = secrets_manager.get_notation("{}/custom_field/name[last]".format(one.uid))
-                self.assertEqual("Smith", value, "custom field name, got the last name")
+                self.assertEqual("Smith", value, "custom field name, did not get the last name")
         finally:
             try:
                 os.unlink(fh.name)
@@ -146,7 +146,7 @@ class NotationTest(unittest.TestCase):
 
                 # --------------------------
 
-                # We want to remove the 'custom' key from the JSON
+                # We want to remove the "custom" key from the JSON
                 res_1 = mock.Response(flags={
                     "prune_custom_fields": True
                 })
@@ -168,7 +168,7 @@ class NotationTest(unittest.TestCase):
                     secrets_manager.get_notation("{}/custom_field/My Custom 1".format(one.uid))
                     self.fail("Should not have gotten here.")
                 except ValueError as err:
-                    self.assertRegex(str(err), r'Cannot find ', 'did not get correct exception')
+                    self.assertRegex(str(err), r"Cannot find ", "did not get correct exception")
                 except Exception as err:
                     self.fail("Didn't get the correct exception message: {}".format(err))
         finally:
@@ -230,9 +230,9 @@ class NotationTest(unittest.TestCase):
 
                 value = secrets_manager.get_notation("{}://{}/field/cardRef".format(prefix, main.uid))
 
-                self.assertEqual('5555555555555555', value.get("cardNumber"), 'card number is wrong')
-                self.assertEqual('Cardholder', value.get("Cardholder Name"), 'Cardholder Name is wrong')
-                self.assertEqual('100 West Street', value.get("street1"), 'street1 is wrong')
+                self.assertEqual("5555555555555555", value.get("cardNumber"), "card number is wrong")
+                self.assertEqual("Cardholder", value.get("Cardholder Name"), "Cardholder Name is wrong")
+                self.assertEqual("100 West Street", value.get("street1"), "street1 is wrong")
 
                 # Get a value in the dictionary
                 queue.add_response(main_res)
@@ -278,9 +278,229 @@ class NotationTest(unittest.TestCase):
 
                 value = secrets_manager.get_notation("{}://{}/field/cardRef".format(prefix, main.uid))
 
-                self.assertEqual('5555555555555555', value.get("cardNumber"), 'card number is wrong')
-                self.assertEqual('Cardholder', value.get("Cardholder Name"), 'Cardholder Name is wrong')
-                self.assertEqual('100 West Street', value.get("street1"), 'street1 is wrong')
+                self.assertEqual("5555555555555555", value.get("cardNumber"), "card number is wrong")
+                self.assertEqual("Cardholder", value.get("Cardholder Name"), "Cardholder Name is wrong")
+                self.assertEqual("100 West Street", value.get("street1"), "street1 is wrong")
+        finally:
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass
+
+    def test_notation_parser(self):
+
+        """ Performs a notation parser test
+
+        This test is checking special characters escape sequences
+        and testing both search by UID and title
+
+        """
+
+        try:
+            SecretsManager.parse_notation("/file") # file requires parameters
+            self.fail("Parsing bad notation '/file' did not throw")
+        except Exception:
+            pass
+
+        try:
+            SecretsManager.parse_notation("/type/extra") # extra characters after last section
+            self.fail("Parsing bad notation '/type/extra' did not throw")
+        except Exception:
+            pass
+
+        res = SecretsManager.parse_notation("/type")
+        selector = (res[2].text or ("",""))[0]
+        self.assertEqual("type", selector, "record type is wrong")
+
+        res = SecretsManager.parse_notation("/title")
+        selector = (res[2].text or ("",""))[0]
+        self.assertEqual("title", selector, "record title is wrong")
+
+        res = SecretsManager.parse_notation("/notes")
+        selector = (res[2].text or ("",""))[0]
+        self.assertEqual("notes", selector, "record notes are wrong")
+
+        res = SecretsManager.parse_notation("/file/filename.ext")
+        selector = (res[2].text or ("",""))[0]
+        parameter = (res[2].parameter or ("",""))[0]
+        self.assertEqual("file", selector, "selector is wrong")
+        self.assertEqual("filename.ext", parameter, "parameter is wrong")
+
+        res = SecretsManager.parse_notation("/field/text")
+        selector = (res[2].text or ("",""))[0]
+        parameter = (res[2].parameter or ("",""))[0]
+        self.assertEqual("field", selector, "selector is wrong")
+        self.assertEqual("text", parameter, "parameter is wrong")
+
+        res = SecretsManager.parse_notation(r"/custom_field/label with \[[0][middle]")
+        title = (res[1].text or ("",""))[0]
+        selector = (res[2].text or ("",""))[0]
+        parameter = (res[2].parameter or ("",""))[0]
+        index1 = (res[2].index1 or ("",""))[0]
+        index2 = (res[2].index2 or ("",""))[0]
+        self.assertEqual("", title, "title is wrong") # empty title
+        self.assertEqual("custom_field", selector, "selector is wrong")
+        self.assertEqual("label with [", parameter, "parameter is wrong")
+        self.assertEqual("0", index1, "index1 is wrong")
+        self.assertEqual("middle", index2, "index2 is wrong")
+
+        res = SecretsManager.parse_notation(r"title with \[\]\//custom_field/label with \[[0][middle]")
+        title = (res[1].text or ("",""))[0]
+        selector = (res[2].text or ("",""))[0]
+        parameter = (res[2].parameter or ("",""))[0]
+        index1 = (res[2].index1 or ("",""))[0]
+        index2 = (res[2].index2 or ("",""))[0]
+        self.assertEqual("title with []/", title, "title is wrong")
+        self.assertEqual("custom_field", selector, "selector is wrong")
+        self.assertEqual("label with [", parameter, "parameter is wrong")
+        self.assertEqual("0", index1, "index1 is wrong")
+        self.assertEqual("middle", index2, "index2 is wrong")
+
+    def test_get_notation_results(self):
+
+        """ Perform a simple get_notation_results
+        """
+
+        try:
+            with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+                fh.write(MockConfig.make_json())
+                fh.seek(0)
+                secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
+
+                res1 = mock.Response()
+
+                one = res1.add_record(title="My Title", record_type="login")
+                one.notes = "My Notes"
+                one.field("login", "My Login 1")
+                one.field("password", "My Password 1")
+                one.custom_field("My Custom 1", "custom1")
+                one.custom_field("My Custom 2", ["one", "two", "three"])
+                one.custom_field("phone", [
+                    {"number": "555-5555555", "ext": "55"},
+                    {"number": "777-7777777", "ext": "77"},
+                    {"number": "888-8888888", "ext": "", "type": "Home"},
+                    {"number": "999-9999999", "type": "Work"}
+                ])
+                one.custom_field("name", [
+                    {"first": "Jenny", "middle": "D", "last": "Smith"},
+                    {"first": "Jennifer", "middle": "Doe", "last": "Smith"}
+                ])
+
+                res_queue = mock.ResponseQueue(client=secrets_manager)
+
+                # Add the same response for each call
+                for t in range(0, 16):
+                    res_queue.add_response(res1)
+
+                record_title = r"""My Special Title /[]\ , " ' : ; <>!@#$%^&*()-=+_."""
+                escaped_record_title = r"""My Special Title \/\[\]\\ , " ' : ; <>!@#$%^&*()-=+_."""
+                field_label = r"""My Label /[]\ , " ' : ; <>!@#$%^&*()-=+_["""
+                escaped_field_label = r"""My Label \/\[\]\\ , " ' : ; <>!@#$%^&*()-=+_\["""
+                field_value = r"""special text /[]\ , " ' : ; <>!@#$%^&*()-=+_."""
+
+                # remaining tests need unique record UIDs
+                res2 = mock.Response()
+                res2.add_record(title=record_title, record_type="file") # /type
+                res_queue.add_response(res2)
+
+                res3 = mock.Response()
+                res3.add_record(title=record_title, record_type="file") # /title
+                res_queue.add_response(res3)
+
+                res4 = mock.Response()
+                two = res4.add_record(title=record_title, record_type="file") # search by title and label
+                two.custom_field(label=field_label, value=field_value)
+                res_queue.add_response(res4)
+
+                res5 = mock.Response()
+                three = res5.add_record(title=record_title, record_type="file") # search by title and label
+                three.custom_field(label=field_label, value=field_value)
+                res_queue.add_response(res5)
+
+
+                prefix = SecretsManager.notation_prefix
+
+                # Simple call. With prefix
+                value = secrets_manager.get_notation_results(f"{prefix}://{one.uid}/field/login")
+                self.assertEqual(["My Login 1"], value, "field login is not correct for simple call w/ prefix")
+
+                # Simple call. Without prefix
+                value = secrets_manager.get_notation_results(f"{one.uid}/field/login")
+                self.assertEqual(["My Login 1"], value, "field login is not correct for simple call w/o prefix")
+
+                # Same call, but specifically telling to return value at index 0
+                value = secrets_manager.get_notation_results(f"{prefix}://{one.uid}/field/login[0]")
+                self.assertEqual(["My Login 1"], value, "field login is not correct for predicate of index 0")
+
+                # There is only 1 value. Asking for second item should throw an error.
+                try:
+                    secrets_manager.get_notation_results(f"{prefix}://{one.uid}/field/login[1]")
+                    self.fail("Should not have gotten here.")
+                except ValueError as err:
+                    self.assertRegex(str(err), r"index out of bounds", "did not get correct exception")
+
+                # Custom field, simple
+                value = secrets_manager.get_notation_results(f"{prefix}://{one.uid}/custom_field/My Custom 1")
+                self.assertEqual(["custom1"], value, "custom field My Custom 1 is not correct")
+
+                # We should get an array instead of a single value
+                value = secrets_manager.get_notation_results(f"{prefix}://{one.uid}/custom_field/My Custom 2[]")
+                self.assertEqual(["one", "two", "three"], value, "custom field My Custom 2, full value, is not correct")
+
+                # Custom field, full value
+                value = secrets_manager.get_notation_results(f"{prefix}://{one.uid}/custom_field/My Custom 2")
+                self.assertEqual(["one", "two", "three"], value, "custom field My Custom 2, full value, is not correct")
+
+                # Custom field, get the second value
+                value = secrets_manager.get_notation_results(f"{prefix}://{one.uid}/custom_field/My Custom 2[1]")
+                self.assertEqual(["two"], value, "custom field My Custom 1, second value, is not correct")
+
+                # Custom field, get first phone number
+                value = secrets_manager.get_notation_results(f"{prefix}://{one.uid}/custom_field/phone[0][number]")
+                self.assertEqual(["555-5555555"], value, "custom field phone, did not get first home number")
+
+                # Custom field, get second phone number
+                value = secrets_manager.get_notation_results(f"{prefix}://{one.uid}/custom_field/phone[1][number]")
+                self.assertEqual(["777-7777777"], value, "custom field phone, did not get second home number")
+
+                # Custom field, get all of the third phone number
+                value = secrets_manager.get_notation_results(f"{prefix}://{one.uid}/custom_field/phone[2]")
+                self.assertEqual(['{"number": "888-8888888", "ext": "", "type": "Home"}'], value,
+                                 "custom field phone, did not get correct value for third")
+
+                # Custom field, get the first first name
+                value = secrets_manager.get_notation_results(f"{one.uid}/custom_field/name[0][first]")
+                self.assertEqual(["Jenny"], value, "custom field name, did not get the first name")
+
+                # Custom field, get all middle names
+                value = secrets_manager.get_notation_results(f"{one.uid}/custom_field/name[][middle]")
+                self.assertEqual(["D", "Doe"], value, "custom field name, did not get all middle names")
+
+                # Get record type
+                value = secrets_manager.get_notation_results(f"{prefix}://{one.uid}/type")
+                self.assertEqual(["login"], value, "did not get correct record type")
+
+                # Get record title
+                value = secrets_manager.get_notation_results(f"{prefix}://{one.uid}/title")
+                self.assertEqual(["My Title"], value, "did not get correct record title")
+
+                # Get record notes
+                value = secrets_manager.get_notation_results(f"{prefix}://{one.uid}/notes")
+                self.assertEqual(["My Notes"], value, "did not get correct record notes")
+
+                # Get record type from record with special characters (escaped notation)
+                value = secrets_manager.get_notation_results(f"{prefix}://{escaped_record_title}/type")
+                self.assertEqual(["file"], value, "did not get correct record type from (escaped notation)")
+
+                # Get record title from record with special characters (escaped notation)
+                value = secrets_manager.get_notation_results(f"{prefix}://{escaped_record_title}/title")
+                self.assertEqual([record_title], value, "did not get correct record title from (escaped notation)")
+
+                # Get text field value from record with special characters (escaped notation)
+                value = secrets_manager.get_notation_results(f"{prefix}://{escaped_record_title}/custom_field/{escaped_field_label}")
+                self.assertEqual([field_value], value, "did not get correct field value from (escaped notation)")
+                value = secrets_manager.get_notation_results(f"{prefix}://{escaped_record_title}/custom_field/{escaped_field_label}[]")
+                self.assertEqual([field_value], value, "did not get correct field value from (escaped notation)")
         finally:
             try:
                 os.unlink(fh.name)

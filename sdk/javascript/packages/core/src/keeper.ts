@@ -42,7 +42,7 @@ export const initialize = (pkgVersion?: string) => {
 export type SecretManagerOptions = {
     storage: KeyValueStorage
     queryFunction?: (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean) => Promise<KeeperHttpResponse>
-    allowUnverifiedCertificate?: boolean
+    allowUnverifiedCertificate?: boolean;
 }
 
 type GetPayload = {
@@ -214,7 +214,6 @@ const prepareDeletePayload = async (storage: KeyValueStorage, recordUids: string
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
     }
-    console.log('recordUIDs: ', recordUids)
     return {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
@@ -497,184 +496,6 @@ export const getSecrets = async (options: SecretManagerOptions, recordsFilter?: 
     return secrets
 }
 
-// tryGetNotationResults returns a string list with all values specified by the notation or empty list on error.
-// It simply logs any errors and continue returning an empty string list on error.
-export const tryGetNotationResults = async (options: SecretManagerOptions, notation: string): Promise<string[]> => {
-    try {
-        return await getNotationResults(options, notation)
-    }
-    catch (e)
-    {
-        console.error(e)
-    }
-    return [] as string[]
-}
-
-// Notation:
-// keeper://<uid|title>/<field|custom_field>/<type|label>[INDEX][PROPERTY]
-// keeper://<uid|title>/file/<filename|fileUID>
-// Record title, field label, filename sections need to escape the delimiters /[]\ -> \/ \[ \] \\
-//
-// GetNotationResults returns selection of the value(s) from a single field as a string list.
-// Multiple records or multiple fields found results in error.
-// Use record UID or unique record titles and field labels so that notation finds a single record/field.
-//
-// If field has multiple values use indexes - numeric INDEX specifies the position in the value list
-// and PROPERTY specifies a single JSON object property to extract (see examples below for usage)
-// If no indexes are provided - whole value list is returned (same as [])
-// If PROPERTY is provided then INDEX must be provided too - even if it's empty [] which means all
-//
-// Extracting two or more but not all field values simultaneously is not supported - use multiple notation requests.
-//
-// Files are returned as URL safe base64 encoded string of the binary content
-//
-// Note: Integrations and plugins usually return single string value - result[0] or ''
-//
-// Examples:
-//  RECORD_UID/file/filename.ext             => ['URL Safe Base64 encoded binary content']
-//  RECORD_UID/field/url                     => ['127.0.0.1', '127.0.0.2'] or [] if empty
-//  RECORD_UID/field/url[]                   => ['127.0.0.1', '127.0.0.2'] or [] if empty
-//  RECORD_UID/field/url[0]                  => ['127.0.0.1'] or error if empty
-//  RECORD_UID/custom_field/name[first]      => Error, numeric index is required to access field property
-//  RECORD_UID/custom_field/name[][last]     => ['Smith', 'Johnson']
-//  RECORD_UID/custom_field/name[0][last]    => ['Smith']
-//  RECORD_UID/custom_field/phone[0][number] => '555-5555555'
-//  RECORD_UID/custom_field/phone[1][number] => '777-7777777'
-//  RECORD_UID/custom_field/phone[]          => ['{\'number\': \'555-555...\'}', '{\'number\': \'777...\'}']
-//  RECORD_UID/custom_field/phone[0]         => ['{\'number\': \'555-555...\'}']
-
-// getNotationResults returns a string list with all values specified by the notation or throws an error.
-// Use tryGetNotationResults() to just log errors and continue returning an empty string list on error.
-export const getNotationResults = async (options: SecretManagerOptions, notation: string): Promise<string[]> => {
-    let result: string[] = []
-
-    const parsedNotation = parseNotation(notation) // prefix, record, selector, footer
-    if (parsedNotation.length < 3)
-        throw new Error(`Invalid notation ${notation}`)
-
-    if (parsedNotation[2].text == null)
-        throw new Error(`Invalid notation ${notation}`)
-    const selector = parsedNotation[2].text[0] // type|title|notes or file|field|custom_field
-    if (parsedNotation[1].text == null)
-        throw new Error(`Invalid notation ${notation}`)
-    const recordToken = parsedNotation[1].text[0] // UID or Title
-
-    // to minimize traffic - if it looks like a Record UID try to pull a single record
-    let records: KeeperRecord[] = []
-    if (/^[A-Za-z0-9_-]{22}$/.test(recordToken)) {
-        const secrets = await getSecrets(options, [recordToken])
-        records = secrets.records
-        if (records.length > 1)
-            throw new Error(`Notation error - found multiple records with same UID '${recordToken}'`)
-    }
-
-    // If RecordUID is not found - pull all records and search by title
-    if (records.length < 1)
-    {
-        const secrets = await getSecrets(options)
-        if (secrets?.records != null)
-            records = await findSecretsByTitle(secrets.records, recordToken)
-    }
-
-    if (records.length > 1)
-        throw new Error(`Notation error - multiple records match record '${recordToken}'`)
-    if (records.length < 1)
-        throw new Error(`Notation error - no records match record '${recordToken}'`)
-
-    const record = records[0]
-    const parameter = parsedNotation[2].parameter != null ? parsedNotation[2].parameter[0] : ''
-    const index1 = parsedNotation[2].index1 != null ? parsedNotation[2].index1[0] : ''
-    const index2 = parsedNotation[2].index2 != null ? parsedNotation[2].index2[0] : ''
-
-    switch (selector.toLowerCase()) {
-        case 'type': { if (record?.data?.type != null) result.push(record.data.type); break }
-        case 'title': { if (record?.data?.title != null) result.push(record.data.title); break }
-        case 'notes': { if (record?.data?.notes != null) result.push(record.data.notes); break }
-        case 'file': {
-            if (parsedNotation[2].parameter == null)
-                throw new Error(`Notation error - Missing required parameter: filename or file UID for files in record '${recordToken}'`)
-            if ((record?.files?.length || 0) < 1)
-                throw new Error(`Notation error - Record ${recordToken} has no file attachments.`)
-            let files = record.files!.filter(x => parameter == x?.data?.name || parameter == x?.data?.title || parameter == x.fileUid)
-            // file searches do not use indexes and rely on unique file names or fileUid
-            const numFiles = (files == null ? 0 : files.length)
-            if (numFiles > 1)
-                throw new Error(`Notation error - Record ${recordToken} has multiple files matching the search criteria '${parameter}'`)
-            if (numFiles < 1)
-                throw new Error(`Notation error - Record ${recordToken} has no files matching the search criteria '${parameter}'`)
-            const contents = await downloadFile(files[0])
-            const text = webSafe64FromBytes(contents)
-            result.push(text)
-            break
-        }
-        case 'field':
-        case 'custom_field': {
-            if (parsedNotation[2].parameter == null)
-                throw new Error('Notation error - Missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel')
-
-            const fields = (selector.toLowerCase() == 'field' ? record.data.fields :
-                            selector.toLowerCase() == 'custom_field' ? record.data.custom : null)
-            if (!fields)
-                throw new Error(`Notation error - Expected /field or /custom_field but found /${selector}`)
-
-            const flds = fields.filter(x => parameter == x.type || parameter == x.label)
-            if ((flds?.length || 0) > 1)
-                throw new Error(`Notation error - Record {recordToken} has multiple fields matching the search criteria '${parameter}'`)
-            if ((flds?.length || 0) < 1)
-                throw new Error(`Notation error - Record {recordToken} has no fields matching the search criteria '${parameter}'`)
-            const field = flds[0]
-            //const fieldType = field?.type || ''
-
-            const idx = tryParseInt(index1, -1) // -1 = full value
-            // valid only if [] or missing - ex. /field/phone or /field/phone[]
-            if (idx == -1 && !(parsedNotation[2].index1 == null || parsedNotation[2].index1[1] == '' || parsedNotation[2].index1[1] == '[]'))
-                throw new Error(`Notation error - Invalid field index ${idx}.`)
-
-            let values = (field?.value != null ? field.value as Object[] : [] as Object[])
-            if (idx >= values.length)
-                throw new Error(`Notation error - Field index out of bounds ${idx} >= ${values.length} for field ${parameter}`)
-            if (idx >= 0) // single index
-                values = [ values[idx] ]
-
-            const fullObjValue = (parsedNotation[2].index2 == null || parsedNotation[2].index2[1] == '' || parsedNotation[2].index2[1] == '[]')
-            let objPropertyName = ''
-            if (parsedNotation[2].index2 != null)
-                objPropertyName = parsedNotation[2].index2[0]
-
-            const res: string[] = []
-            for (let i = 0; i < values.length; i++) {
-                const fldValue = values[i]
-                // Do not throw here to allow for ex. field/name[][middle] to pull [middle] only where present
-                // NB! Not all properties of a value are always required even when the field is marked as required
-                // ex. On a required `name` field only 'first' and 'last' properties are required but not 'middle'
-                // so missing property in a field value is not always an error
-                if (fldValue == null)
-                    console.log('Notation error - Empty field value for field ', parameter) // throw?
-
-                if (fullObjValue) {
-                    res.push(typeof fldValue === 'string' ? fldValue as string : JSON.stringify(fldValue))
-                } else if (fldValue != null) {
-                    if (objPropertyName in fldValue) {
-                        let propKey = objPropertyName as keyof typeof fldValue
-                        const propValue = fldValue[propKey]
-                        res.push(typeof propValue === 'string' ? propValue as string : JSON.stringify(propValue))
-                    } else
-                        console.log(`Notation error - value object has no property '${objPropertyName}'`) // skip
-                } else
-                    console.log(`Notation error - Cannot extract property '${objPropertyName}' from null value.`)
-            }
-
-            if (res.length != values.length)
-                console.log(`Notation warning - extracted ${res.length} out of ${values.length} values for '${objPropertyName}' property.`)
-            if (res.length > 0)
-                result.push.apply(result, res)
-            break
-        }
-        default: { throw new Error(`Invalid notation ${notation}`) }
-    }
-    return result
-}
-
 export const findSecretsByTitle = async (records: KeeperRecord[], recordTitle: string): Promise<KeeperRecord[]> => {
     return records.filter(record => record.data.title === recordTitle)
 }
@@ -733,4 +554,360 @@ export const uploadFile = async (options: SecretManagerOptions, ownerRecord: Kee
         throw new Error(`Upload failed (${uploadResult.statusMessage}), code ${uploadResult.statusCode}`)
     }
     return payload.fileRecordUid
+}
+
+export const addCustomField = (record: KeeperRecord, field: KeeperRecordField): void => {
+    if (record.data.custom == null || record.data.custom == undefined)
+        record.data.custom = []
+    record.data.custom.push(field)
+}
+
+export class KeeperRecordField {
+    type: string = ''
+    label?: string
+}
+
+export class LoginField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'login'
+        this.value = [value]
+      }
+}
+
+export type PasswordComplexity = {
+    length?: number
+    caps?: number
+    lowercase?: number
+    digits?: number
+    special?: number
+}
+
+export class PasswordField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    enforceGeneration? : boolean
+    complexity? : PasswordComplexity
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'password'
+        this.value = [value]
+      }
+}
+
+export class UrlField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'url'
+        this.value = [value]
+      }
+}
+
+export class FileRefField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'fileRef'
+        this.value = [value]
+      }
+}
+
+export class OneTimeCodeField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'oneTimeCode'
+        this.value = [value]
+      }
+}
+
+export type Name = {
+    first?: string
+    middle?: string
+    last?: string
+}
+
+export class NameField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: Name[]
+    constructor(value: Name) {
+        super()
+        this.type = 'name'
+        this.value = [value]
+      }
+}
+
+export class BirthDateField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: number[]
+    constructor(value: number) {
+        super()
+        this.type = 'birthDate'
+        this.value = [value]
+      }
+}
+
+export class DateField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: number[]
+    constructor(value: number) {
+        super()
+        this.type = 'date'
+        this.value = [value]
+      }
+}
+
+export class ExpirationDateField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: number[]
+    constructor(value: number) {
+        super()
+        this.type = 'expirationDate'
+        this.value = [value]
+      }
+}
+
+export class TextField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'text'
+        this.value = [value]
+      }
+}
+
+export type SecurityQuestion = {
+    question?: string
+    answer?: string
+}
+
+export class SecurityQuestionField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: SecurityQuestion[]
+    constructor(value: SecurityQuestion) {
+        super()
+        this.type = 'securityQuestion'
+        this.value = [value]
+      }
+}
+
+export class MultilineField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'multiline'
+        this.value = [value]
+      }
+}
+
+export class EmailField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'email'
+        this.value = [value]
+      }
+}
+
+export class CardRefField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'cardRef'
+        this.value = [value]
+      }
+}
+
+export class AddressRefField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'addressRef'
+        this.value = [value]
+      }
+}
+
+export class PinCodeField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'pinCode'
+        this.value = [value]
+      }
+}
+
+export type Phone = {
+    region?: string
+    number?: string
+    ext?: string
+    type?: string
+}
+
+export class PhoneField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: Phone[]
+    constructor(value: Phone) {
+        super()
+        this.type = 'phone'
+        this.value = [value]
+      }
+}
+
+export class SecretField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'secret'
+        this.value = [value]
+      }
+}
+
+export class SecureNoteField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'note'
+        this.value = [value]
+      }
+}
+
+export class AccountNumberField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'accountNumber'
+        this.value = [value]
+      }
+}
+
+export type PaymentCard = {
+    cardNumber?: string
+    cardExpirationDate?: string
+    cardSecurityCode?: string
+}
+
+export class PaymentCardField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: PaymentCard[]
+    constructor(value: PaymentCard) {
+        super()
+        this.type = 'paymentCard'
+        this.value = [value]
+      }
+}
+
+export type BankAccount = {
+    accountType?: string
+    routingNumber?: string
+    accountNumber?: string
+    otherType?: string
+}
+
+export class BankAccountField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: BankAccount[]
+    constructor(value: BankAccount) {
+        super()
+        this.type = 'bankAccount'
+        this.value = [value]
+      }
+}
+
+export type KeyPair = {
+    publicKey?: string
+    privateKey?: string
+}
+
+export class KeyPairField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: KeyPair[]
+    constructor(value: KeyPair) {
+        super()
+        this.type = 'keyPair'
+        this.value = [value]
+      }
+}
+
+export type Host = {
+    hostName?: string
+    port?: string
+}
+
+export class HostField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: Host[]
+    constructor(value: Host) {
+        super()
+        this.type = 'host'
+        this.value = [value]
+      }
+}
+
+export type Address = {
+    street1?: string
+    street2?: string
+    city?: string
+    state?: string
+    country?: string
+    zip?: string
+}
+
+export class AddresseField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: Address[]
+    constructor(value: Address) {
+        super()
+        this.type = 'address'
+        this.value = [value]
+      }
+}
+
+export class LicenseNumberField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'licenseNumber'
+        this.value = [value]
+      }
 }

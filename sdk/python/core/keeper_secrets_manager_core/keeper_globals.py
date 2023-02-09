@@ -6,8 +6,8 @@
 #              |_|
 #
 # Keeper Secrets Manager
-# Copyright 2021 Keeper Security Inc.
-# Contact: ops@keepersecurity.com
+# Copyright 2023 Keeper Security Inc.
+# Contact: sm@keepersecurity.com
 
 import importlib_metadata
 import re
@@ -31,7 +31,7 @@ def get_client_version(hardcode=False):
     """
     # Get the version of the keeper secrets manager core
     version_major = "16"
-    version = "{}.2.0".format(version_major)
+    version = "{}.4.0".format(version_major)
 
     # Allow the default version to be hard coded. If not build the client version from the module
     # version.
@@ -49,8 +49,10 @@ def get_client_version(hardcode=False):
             raise Exception(err)
     return version
 
+
 # Right now the client version is being hardcoded.
-keeper_secrets_manager_sdk_client_id = "mp{}".format(get_client_version(hardcode=True))
+keeper_secrets_manager_sdk_client_id = "mp{}".format(get_client_version(hardcode=False))
+
 
 keeper_public_keys = {
     '1': 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM',
