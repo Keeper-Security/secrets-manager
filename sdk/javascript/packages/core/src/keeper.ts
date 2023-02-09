@@ -213,7 +213,6 @@ const prepareDeletePayload = async (storage: KeyValueStorage, recordUids: string
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
     }
-    console.log('recordUIDs: ', recordUids);
     return {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
