@@ -6,8 +6,8 @@
 #              |_|
 #
 # Keeper Secrets Manager
-# Copyright 2021 Keeper Security Inc.
-# Contact: ops@keepersecurity.com
+# Copyright 2023 Keeper Security Inc.
+# Contact: sm@keepersecurity.com
 
 import base64
 import datetime
@@ -207,7 +207,7 @@ def get_windows_user_sid_and_name(logger=None):
     try:
         user_sid = subprocess.check_output(['whoami', '/user'], encoding='utf-8').splitlines()[-1]
     except subprocess.CalledProcessError as e:
-        logger.info(f'Cannot get current window user via "whoami": {e}')
+        logger.info(f'Cannot get current Windows user via "whoami": {e}')
         return None, None
     else:
         return reversed(user_sid.split('\\')[-1].split())

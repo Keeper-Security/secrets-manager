@@ -20,7 +20,7 @@ import java.util.*
 import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj16.4.0"
+const val KEEPER_CLIENT_VERSION = "mj16.5.0"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -299,7 +299,7 @@ private fun testSecureRandom() {
     })
 
     try {
-        future.get(3, TimeUnit.SECONDS);
+        future.get(3, TimeUnit.SECONDS)
         SecureRandomTestResult = FAST_SECURE_RANDOM_PREFIX
     } catch (e: TimeoutException) {
         SecureRandomTestResult = SLOW_SECURE_RANDOM_PREFIX + SLOW_SECURE_RANDOM_MESSAGE
@@ -331,6 +331,152 @@ fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emp
     return secrets
 }
 
+// tryGetNotationResults returns a string list with all values specified by the notation or empty list on error.
+// It simply logs any errors and continue returning an empty string list on error.
+@ExperimentalSerializationApi
+fun tryGetNotationResults(options: SecretsManagerOptions, notation: String): List<String> {
+    try {
+        return getNotationResults(options, notation)
+    } catch (e: Exception) {
+        println(e.message)
+    }
+    return emptyList()
+}
+
+// Notation:
+// keeper://<uid|title>/<field|custom_field>/<type|label>[INDEX][PROPERTY]
+// keeper://<uid|title>/file/<filename|fileUID>
+// Record title, field label, filename sections need to escape the delimiters /[]\ -> \/ \[ \] \\
+//
+// GetNotationResults returns selection of the value(s) from a single field as a string list.
+// Multiple records or multiple fields found results in error.
+// Use record UID or unique record titles and field labels so that notation finds a single record/field.
+//
+// If field has multiple values use indexes - numeric INDEX specifies the position in the value list
+// and PROPERTY specifies a single JSON object property to extract (see examples below for usage)
+// If no indexes are provided - whole value list is returned (same as [])
+// If PROPERTY is provided then INDEX must be provided too - even if it's empty [] which means all
+//
+// Extracting two or more but not all field values simultaneously is not supported - use multiple notation requests.
+//
+// Files are returned as URL safe base64 encoded string of the binary content
+//
+// Note: Integrations and plugins usually return single string value - result[0] or ""
+//
+// Examples:
+//  RECORD_UID/file/filename.ext             => ["URL Safe Base64 encoded binary content"]
+//  RECORD_UID/field/url                     => ["127.0.0.1", "127.0.0.2"] or [] if empty
+//  RECORD_UID/field/url[]                   => ["127.0.0.1", "127.0.0.2"] or [] if empty
+//  RECORD_UID/field/url[0]                  => ["127.0.0.1"] or error if empty
+//  RECORD_UID/custom_field/name[first]      => Error, numeric index is required to access field property
+//  RECORD_UID/custom_field/name[][last]     => ["Smith", "Johnson"]
+//  RECORD_UID/custom_field/name[0][last]    => ["Smith"]
+//  RECORD_UID/custom_field/phone[0][number] => "555-5555555"
+//  RECORD_UID/custom_field/phone[1][number] => "777-7777777"
+//  RECORD_UID/custom_field/phone[]          => ["{\"number\": \"555-555...\"}", "{\"number\": \"777...\"}"]
+//  RECORD_UID/custom_field/phone[0]         => ["{\"number\": \"555-555...\"}"]
+
+// GetNotationResults returns a string list with all values specified by the notation or throws an error.
+// Use TryGetNotationResults to just log errors and continue returning an empty string list on error.
+@ExperimentalSerializationApi
+fun getNotationResults(options: SecretsManagerOptions, notation: String): List<String> {
+    val result = mutableListOf<String>()
+
+    val parsedNotation = parseNotation(notation) // prefix, record, selector, footer
+    if (parsedNotation.size < 3)
+        throw Exception("Invalid notation '$notation'")
+
+    val selector = parsedNotation[2].text?.first ?: // type|title|notes or file|field|custom_field
+        throw Exception("Invalid notation '$notation'")
+    val recordToken = parsedNotation[1].text?.first ?: // UID or Title
+        throw Exception("Invalid notation $'notation'")
+
+    // to minimize traffic - if it looks like a Record UID try to pull a single record
+    var records = listOf<KeeperRecord>()
+    if (recordToken.matches(Regex("""^[A-Za-z0-9_-]{22}$"""))) {
+        val secrets = getSecrets(options, listOf<String>(recordToken))
+        records = secrets.records
+        if (records.size > 1)
+            throw Exception("Notation error - found multiple records with same UID '$recordToken'")
+    }
+
+    // If RecordUID is not found - pull all records and search by title
+    if (records.isEmpty()) {
+        val secrets = getSecrets(options)
+        records = secrets.records.filter { it.data.title == recordToken }
+    }
+
+    if (records.size > 1)
+        throw Exception("Notation error - multiple records match record '$recordToken'")
+    if (records.isEmpty())
+        throw Exception("Notation error - no records match record '$recordToken'")
+
+    val record = records[0]
+    val parameter = parsedNotation[2].parameter?.first
+    val index1 = parsedNotation[2].index1?.first
+    //val index2 = parsedNotation[2].index2?.first
+
+    when (selector.lowercase()) {
+        "type" -> result.add(record.data.type)
+        "title" -> result.add(record.data.title)
+        "notes" -> if (record.data.notes != null) result.add(record.data.notes!!)
+        "file" -> {
+            if (parameter == null)
+                throw Exception("Notation error - Missing required parameter: filename or file UID for files in record '$recordToken'")
+            if ((record.files?.size ?: 0) < 1)
+                throw Exception("Notation error - Record $recordToken has no file attachments.")
+            val files = record.files!!.filter { parameter == it.data.name || parameter == it.data.title || parameter == it.fileUid }
+            // file searches do not use indexes and rely on unique file names or fileUid
+            if (files.size > 1)
+                throw Exception("Notation error - Record $recordToken has multiple files matching the search criteria '$parameter'")
+            if (files.isEmpty())
+                throw Exception("Notation error - Record $recordToken has no files matching the search criteria '$parameter'")
+            val contents = downloadFile(files[0])
+            val text = webSafe64FromBytes(contents)
+            result.add(text)
+        }
+        "field", "custom_field" -> {
+            if (parameter == null)
+                throw Exception("Notation error - Missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel")
+
+            val fields = when(selector.lowercase()) {
+                "field" -> record.data.fields
+                "custom_field" -> record.data.custom ?: mutableListOf<KeeperRecordField>()
+                else -> throw Exception("Notation error - Expected /field or /custom_field but found /$selector")
+            }
+
+            val flds = fields.filter { parameter == fieldType(it) || parameter == it.label }
+            if (flds.size > 1)
+                throw Exception("Notation error - Record $recordToken has multiple fields matching the search criteria '$parameter'")
+            if (flds.isEmpty())
+                throw Exception("Notation error - Record $recordToken has no fields matching the search criteria '$parameter'")
+            val field = flds[0]
+            //val fieldType = fieldType(field)
+
+            val idx = index1?.toIntOrNull() ?: -1 // -1 full value
+            // valid only if [] or missing - ex. /field/phone or /field/phone[]
+            if (idx == -1 && !(parsedNotation[2].index1?.second.isNullOrEmpty() || parsedNotation[2].index1?.second == "[]"))
+                throw Exception("Notation error - Invalid field index $idx")
+
+            val valuesCount = getFieldValuesCount(field)
+            if (idx >= valuesCount)
+                throw Exception("Notation error - Field index out of bounds $idx >= $valuesCount for field $parameter")
+
+            //val fullObjValue = (parsedNotation[2].index2?.second.isNullOrEmpty() || parsedNotation[2].index2?.second == "[]")
+            val objPropertyName = parsedNotation[2].index2?.first
+
+            val res = getFieldStringValues(field, idx, objPropertyName)
+            val expectedSize = if (idx >= 0) 1 else valuesCount
+            if (res.size != expectedSize)
+                print("Notation warning - extracted ${res.size} out of $valuesCount values for '$objPropertyName' property.")
+            if (res.isNotEmpty())
+                result.addAll(res)
+        }
+        else -> throw Exception("Invalid notation '$notation'")
+    }
+    return result
+}
+
 @ExperimentalSerializationApi
 fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>): SecretsManagerDeleteResponse {
     val payload = prepareDeletePayload(options.storage, recordUids)
@@ -338,11 +484,19 @@ fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>): Secr
     return nonStrictJson.decodeFromString<SecretsManagerDeleteResponse>(bytesToString(responseData))
 }
 
-
 @ExperimentalSerializationApi
 fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
     val payload = prepareUpdatePayload(options.storage, record)
     postQuery(options, "update_secret", payload)
+}
+
+@ExperimentalSerializationApi
+fun addCustomField(record: KeeperRecord, field: KeeperRecordField) {
+    if (field.javaClass.superclass == KeeperRecordField::class.java) {
+        if (record.data.custom == null)
+            record.data.custom = mutableListOf()
+        record.data.custom!!.add(field)
+    }
 }
 
 @ExperimentalSerializationApi
@@ -734,7 +888,7 @@ private inline fun <reified T> postQuery(
                     options.storage.saveString(KEY_SERVER_PUBIC_KEY_ID, error.key_id.toString())
                     continue
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
             }
             throw Exception(errorMessage)
         }

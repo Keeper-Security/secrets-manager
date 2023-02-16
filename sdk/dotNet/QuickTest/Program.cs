@@ -39,8 +39,8 @@ namespace QuickTest
             // var fileBytes = SecretsManagerClient.DownloadFile(firstRecord.Files[0]);
             // Console.WriteLine(fileBytes.Length);
             // firstRecord.UpdateFieldValue("password", "111111111");
+            // firstRecord.AddCustomField(new Text("Additional notes") { label = "Custom notes" });
             // await SecretsManagerClient.UpdateSecret(options, firstRecord);
-            
         }
     }
 }

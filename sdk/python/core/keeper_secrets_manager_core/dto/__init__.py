@@ -6,6 +6,6 @@
 #              |_|
 #
 # Keeper Secrets Manager
-# Copyright 2021 Keeper Security Inc.
-# Contact: ops@keepersecurity.com
+# Copyright 2023 Keeper Security Inc.
+# Contact: sm@keepersecurity.com
 #

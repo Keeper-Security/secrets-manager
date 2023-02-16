@@ -1,5 +1,6 @@
 import {KeeperHttpResponse, KeyValueStorage, TransmissionKey, EncryptedPayload, platform} from './platform'
-import {webSafe64FromBytes, webSafe64ToBytes} from './utils'
+import {tryParseInt, webSafe64FromBytes, webSafe64ToBytes} from './utils'
+import {parseNotation} from './notation'
 
 export {KeyValueStorage} from './platform'
 
@@ -213,7 +214,6 @@ const prepareDeletePayload = async (storage: KeyValueStorage, recordUids: string
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
     }
-    console.log("recordUIDs: ", recordUids);
     return {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
@@ -554,4 +554,360 @@ export const uploadFile = async (options: SecretManagerOptions, ownerRecord: Kee
         throw new Error(`Upload failed (${uploadResult.statusMessage}), code ${uploadResult.statusCode}`)
     }
     return payload.fileRecordUid
+}
+
+export const addCustomField = (record: KeeperRecord, field: KeeperRecordField): void => {
+    if (record.data.custom == null || record.data.custom == undefined)
+        record.data.custom = []
+    record.data.custom.push(field)
+}
+
+export class KeeperRecordField {
+    type: string = ''
+    label?: string
+}
+
+export class LoginField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'login'
+        this.value = [value]
+      }
+}
+
+export type PasswordComplexity = {
+    length?: number
+    caps?: number
+    lowercase?: number
+    digits?: number
+    special?: number
+}
+
+export class PasswordField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    enforceGeneration? : boolean
+    complexity? : PasswordComplexity
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'password'
+        this.value = [value]
+      }
+}
+
+export class UrlField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'url'
+        this.value = [value]
+      }
+}
+
+export class FileRefField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'fileRef'
+        this.value = [value]
+      }
+}
+
+export class OneTimeCodeField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'oneTimeCode'
+        this.value = [value]
+      }
+}
+
+export type Name = {
+    first?: string
+    middle?: string
+    last?: string
+}
+
+export class NameField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: Name[]
+    constructor(value: Name) {
+        super()
+        this.type = 'name'
+        this.value = [value]
+      }
+}
+
+export class BirthDateField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: number[]
+    constructor(value: number) {
+        super()
+        this.type = 'birthDate'
+        this.value = [value]
+      }
+}
+
+export class DateField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: number[]
+    constructor(value: number) {
+        super()
+        this.type = 'date'
+        this.value = [value]
+      }
+}
+
+export class ExpirationDateField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: number[]
+    constructor(value: number) {
+        super()
+        this.type = 'expirationDate'
+        this.value = [value]
+      }
+}
+
+export class TextField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'text'
+        this.value = [value]
+      }
+}
+
+export type SecurityQuestion = {
+    question?: string
+    answer?: string
+}
+
+export class SecurityQuestionField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: SecurityQuestion[]
+    constructor(value: SecurityQuestion) {
+        super()
+        this.type = 'securityQuestion'
+        this.value = [value]
+      }
+}
+
+export class MultilineField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'multiline'
+        this.value = [value]
+      }
+}
+
+export class EmailField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'email'
+        this.value = [value]
+      }
+}
+
+export class CardRefField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'cardRef'
+        this.value = [value]
+      }
+}
+
+export class AddressRefField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'addressRef'
+        this.value = [value]
+      }
+}
+
+export class PinCodeField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'pinCode'
+        this.value = [value]
+      }
+}
+
+export type Phone = {
+    region?: string
+    number?: string
+    ext?: string
+    type?: string
+}
+
+export class PhoneField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: Phone[]
+    constructor(value: Phone) {
+        super()
+        this.type = 'phone'
+        this.value = [value]
+      }
+}
+
+export class SecretField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'secret'
+        this.value = [value]
+      }
+}
+
+export class SecureNoteField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'note'
+        this.value = [value]
+      }
+}
+
+export class AccountNumberField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'accountNumber'
+        this.value = [value]
+      }
+}
+
+export type PaymentCard = {
+    cardNumber?: string
+    cardExpirationDate?: string
+    cardSecurityCode?: string
+}
+
+export class PaymentCardField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: PaymentCard[]
+    constructor(value: PaymentCard) {
+        super()
+        this.type = 'paymentCard'
+        this.value = [value]
+      }
+}
+
+export type BankAccount = {
+    accountType?: string
+    routingNumber?: string
+    accountNumber?: string
+    otherType?: string
+}
+
+export class BankAccountField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: BankAccount[]
+    constructor(value: BankAccount) {
+        super()
+        this.type = 'bankAccount'
+        this.value = [value]
+      }
+}
+
+export type KeyPair = {
+    publicKey?: string
+    privateKey?: string
+}
+
+export class KeyPairField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: KeyPair[]
+    constructor(value: KeyPair) {
+        super()
+        this.type = 'keyPair'
+        this.value = [value]
+      }
+}
+
+export type Host = {
+    hostName?: string
+    port?: string
+}
+
+export class HostField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: Host[]
+    constructor(value: Host) {
+        super()
+        this.type = 'host'
+        this.value = [value]
+      }
+}
+
+export type Address = {
+    street1?: string
+    street2?: string
+    city?: string
+    state?: string
+    country?: string
+    zip?: string
+}
+
+export class AddresseField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: Address[]
+    constructor(value: Address) {
+        super()
+        this.type = 'address'
+        this.value = [value]
+      }
+}
+
+export class LicenseNumberField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'licenseNumber'
+        this.value = [value]
+      }
 }

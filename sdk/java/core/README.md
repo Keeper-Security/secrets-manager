@@ -4,6 +4,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.5.0
+- KSM-314 - Notation improvements
+- KSM-356 - Create custom fields
+
 ## 16.4.0
 - KSM-293 - Allow to run under Java 16+
 - KSM-309 - Improved password generation
