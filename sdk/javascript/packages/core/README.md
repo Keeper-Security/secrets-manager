@@ -4,6 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.5.1
+- Adding back missing methods for the Notation improvements
+
 ## 16.5.0
 - Notation improvements - new parser, notation URIs using record title, new escape characters
 - Creation of the custom fields
