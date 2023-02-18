@@ -4,6 +4,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.5.1
+* KSM-371 - Fix Windows Config file permissions issue
+* KSM-370 - Upgrade to latest cryptography>=39.0.1 library
+
 ## 16.5.0
 * KSM-313 - Improved Keeper Notations. New parser, new escape characters, Notation URI, search records by title and other meta data values in the record
 * KSM-319 - `KEY_CLIENT_KEY` in configurations is missing in certain situations

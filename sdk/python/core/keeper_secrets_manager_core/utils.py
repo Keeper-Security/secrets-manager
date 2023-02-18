@@ -30,6 +30,7 @@ from distutils.util import strtobool
 
 from keeper_secrets_manager_core.keeper_globals import logger_name
 
+ALLOWED_WINDOWS_CONFIG_ADMINS = ['Administrators', 'SYSTEM']
 ENCODING = 'UTF-8'
 SPECIAL_CHARACTERS = '''"!@#$%()+;<>=?[]{}^.,'''
 DEFAULT_PASSWORD_LENGTH = 32
@@ -203,55 +204,13 @@ def random_sample(sample_length=0, sample_string=''):
 
 
 def get_windows_user_sid_and_name(logger=None):
-
-    # Get the current user. Subprocess will run CMD. Getting from os.environ.get("USERNAME") can be flaky.
-    user_output = subprocess.run(["whoami"], capture_output=True)
-    if user_output.stdout is None:
-        if logger is not None:
-            logger.info("Cannot get current window user via 'whoami'")
+    try:
+        user_sid = subprocess.check_output(['whoami', '/user'], encoding='utf-8').splitlines()[-1]
+    except subprocess.CalledProcessError as e:
+        logger.info(f'Cannot get current Windows user via "whoami": {e}')
         return None, None
-
-    # Get only the username, not the machine
-    user_parts = user_output.stdout.decode().strip().split("\\")
-    user = user_parts[1] if len(user_parts) == 2 else user_parts[0]
-
-    # Get the SID for the user. The 'where' command doesn't seem to work :(, so get them all.
-    sid_output = subprocess.run(["wmic", "useraccount", "get",  "name,sid"], capture_output=True)
-    if sid_output.stdout is None:
-        if logger is not None:
-            logger.info("Cannot user account list for SID lookup")
-        return None, None
-
-    sid = None
-    if sid_output.stdout is not None:
-        lines = sid_output.stdout.decode().split("\n")
-        first_line = lines[0].lower()
-        lines = lines[1:]
-        index = first_line.index("sid")
-        for line in lines:
-            if line.lower().startswith(user) is True:
-                sid = line[index:].strip()
-                break
-
-    # On Azure AD accounts (ex. azuread\username) user/SID mapping fails
-    # Get full user details from `whoami` and parse user/SID
-    if sid is None:
-        user_output = subprocess.run(["whoami", "/user", "/fo", "list"], capture_output=True)
-        if user_output.stdout is not None:
-            lines = user_output.stdout.decode().split("\n")
-            for line in lines:
-                if line.startswith("User Name:"):
-                    # Get only the username, not the machine
-                    user_parts = line[len("User Name:"):].strip().split("\\")
-                    user = user_parts[1] if len(user_parts) == 2 else user_parts[0]
-                elif line.startswith("SID:"):
-                    sid = line[len("SID:"):].strip()
-
-    if sid is None:
-        if logger is not None:
-            logger.info("Cannot find the SID for user " + user)
-
-    return sid, user
+    else:
+        return reversed(user_sid.split('\\')[-1].split())
 
 
 def set_config_mode(file, logger=None):
@@ -298,11 +257,16 @@ def set_config_mode(file, logger=None):
             os.chmod(file, stat.S_IREAD | stat.S_IWRITE)
 
 
-def check_config_mode(file, color_mod=None, logger=None):
+def check_config_mode(file, color_mod=None, logger=None) -> bool:
+    """Check for correct permissions on file
+
+        Return result of check as boolean
+    """
 
     # If we are skipping setting the mode, skip checking.
-    if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE", "FALSE"))) is False:
-
+    if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE", "FALSE"))) is True:
+        retval = True
+    else:
         # For Windows, use icacls. cacls is obsolete.
         if _platform.lower().startswith("win") is True:
 
@@ -321,12 +285,16 @@ def check_config_mode(file, color_mod=None, logger=None):
             except (FileNotFoundError, PermissionError):
                 raise PermissionError("Access denied to configuration file {}.".format(file))
 
-            if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is False:
+            if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is True:
+                retval = True
+            else:
                 # We need to figure out who we are. subprocess run will use cmd
-
                 sid, user = get_windows_user_sid_and_name()
-                if sid is not None:
-                    allowed_users = [user.lower(), "Administrators".lower()]
+                if sid is None:
+                    # Don't fail check when user SID is missing.
+                    retval = True
+                else:
+                    allowed_users = [u.lower() for u in ALLOWED_WINDOWS_CONFIG_ADMINS + [user]]
                     for line in output.stdout.decode().split("\n"):
                         parts = line[len(file):].split(":")
                         if len(parts) == 2:
@@ -348,7 +316,10 @@ def check_config_mode(file, color_mod=None, logger=None):
                                 print(message, file=sys.stderr)
                                 # Prevent multiple nagging per execution.
                                 os.environ["KSM_CONFIG_SKIP_MODE_WARNING"] = "TRUE"
+                                retval = False
                                 break
+                    else:
+                        retval = True
         else:
             # Can the user read the file? First check if the file exists. If it does, os.access might throw
             # and exception about it not existing. This mean we don't have access.
@@ -360,14 +331,23 @@ def check_config_mode(file, color_mod=None, logger=None):
                     raise PermissionError("Access denied to configuration file {}.".format(file))
 
             # Allow user to skip being nagged by warning message.
-            if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is False:
+            if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is True:
+                retval = True
+            else:
                 mode = oct(os.stat(file).st_mode)
                 # Make sure group and user have no rights. Allow owner to have anything.
-                if mode[-2:] != "00":
+                if mode[-2:] == "00":
+                    retval = True
+                else:
                     print("The config file mode, {}, is too open. "
                           "It is recommended to execute 'chmod 0600 {}' to remove group and user "
                           "access. To disable this warning, set the environment variable "
                           "'KSM_CONFIG_SKIP_MODE_WARNING' to 'TRUE'.".format(mode[-4:], file), file=sys.stderr)
+                    retval = False
+
+    return retval
+
+
 def generate_password(length: int = DEFAULT_PASSWORD_LENGTH,
                       lowercase: Optional[int] = None,
                       uppercase: Optional[int] = None,

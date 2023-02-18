@@ -14,13 +14,13 @@ install_requires = [
     'keeper-secrets-manager-helper>=1.0.4',
     'ecdsa',
     'requests==2.28.2',
-    'cryptography>=39.0.0',
+    'cryptography>=39.0.1',
     'importlib_metadata==6.0.0'
 ]
 
 setup(
     name="keeper-secrets-manager-core",
-    version="16.5.0",
+    version="16.5.1",
     description="Keeper Secrets Manager for Python 3",
     long_description=long_description,
     long_description_content_type="text/markdown",
