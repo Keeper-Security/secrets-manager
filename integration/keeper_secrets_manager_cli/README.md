@@ -6,6 +6,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.0.16
+
+* KSM-Synchronize secrets to GCP
+
 ## 1.0.15
 
 * Update pinned KSM SDK version. The KSM SDK has been updated to use OpenSSL 3.0.7 which fixes CVE-2022-3602, CVE-2022-3786.
