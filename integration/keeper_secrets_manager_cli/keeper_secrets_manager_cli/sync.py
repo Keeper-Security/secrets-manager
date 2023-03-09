@@ -30,6 +30,9 @@ AWS_ACCESS_KEY_ID_LABEL = "AWS Access Key ID"
 AWS_SECRET_ACCESS_KEY_LABEL = "AWS Secret Access Key"
 AWS_REGION_NAME_LABEL = "AWS Region Name"
 
+GOOGLE_CLOUD_PROJECT_ID_LABEL = "Google Cloud Project ID"
+GOOGLE_APPLICATION_CREDENTIALS_LABEL = "Google Application Credentials" # If missing use default creds (ADC)
+
 
 class Sync:
     def __init__(self, cli):
@@ -41,7 +44,7 @@ class Sync:
         self.local_cache = {}
 
     def _output(self, data: list, hide_data:bool=False):
-        data = data or {}
+        data = data or []
         failed = sum(1 for x in data if x.get("error", "") != "")
         output = {
             "data": data,
@@ -555,11 +558,176 @@ class Sync:
             result["error"] = str(e)
         return result
 
-    def sync_values(self, type:str, credentials:str=None, dry_run=False, preserve_missing=False, map=None):
+    def _get_secret_gcp(self, client, project_id, secret_id):
+        from google.api_core.exceptions import (
+            ClientError,
+            GoogleAPIError,
+            NotFound,
+            ServerError
+        )
+
+        result = {
+            "value": None,
+            "not_found": False,
+            "error": None
+        }
+
+        try:
+            version_id="latest"
+            name = f"projects/{project_id}/secrets/{secret_id}/versions/{version_id}"
+            secret = client.access_secret_version(request={"name": name})
+            result["value"] = secret.payload.data.decode("UTF-8")
+            # crc32c = google_crc32c.Checksum()
+            # crc32c.update(secret.payload.data)
+            # if secret.payload.data_crc32c != int(crc32c.hexdigest(), 16):
+            #     result["error"] =  f"Data corruption detected for key={secret_id}"
+        except NotFound as e:
+            # Deleted or non existing key.
+            self.logger.debug(f"GCP Client: secret not found. key={secret_id} Message: {e.message}")
+            result["not_found"] = True
+        except ClientError as e:
+            # Includes - PermissionDenied, Forbidden, Unauthenticated, Unauthorized
+            self.log.append(f"GCP SDK Client error. {e.message} Skipping key={secret_id}")
+            self.logger.error("GCP SDK Client error. " + str(e))
+            result["error"] = str(e)
+        except ServerError as e:
+            self.log.append(f"GCP SDK Server error. {e.message} Skipping key={secret_id}")
+            self.logger.error("GCP SDK Server error. " + str(e))
+            result["error"] = str(e)
+        except GoogleAPIError as e:
+            # Will catch everything that is from GCP SDK
+            self.log.append(f"GCP API error. {str(e)} Skipping key={secret_id}")
+            self.logger.error("GCP API error. " + str(e))
+            result["error"] = str(e)
+        except Exception as e:
+            self.log.append(f"Error retrieving secret. Skipping key={secret_id}")
+            self.logger.error("Error retrieving secret. " + str(e))
+            result["error"] = str(e)
+        return result
+
+    def _set_secret_gcp(self, client, project_id:str, secret_id:str, value:str):
+        from google.api_core.exceptions import (
+            AlreadyExists,
+            ClientError,
+            GoogleAPIError,
+            NotFound,
+            ServerError
+        )
+
+        result = {
+            "success": False,
+            "error": None
+        }
+
+        existing_value = None
+        try:
+            version_id="latest"
+            name = f"projects/{project_id}/secrets/{secret_id}/versions/{version_id}"
+            secret = client.access_secret_version(request={"name": name})
+            existing_value = secret.payload.data.decode("UTF-8")
+        except Exception:
+            pass
+
+        # avoid creating new versions with the same value
+        if existing_value == value:
+            result["success"] = True
+            return result
+
+        err = ""
+        if existing_value is None: # key doesn't exist - create
+            try:
+                parent = f"projects/{project_id}"
+                secret = client.create_secret(
+                    request={
+                        "parent": parent,
+                        "secret_id": secret_id,
+                        "secret": {"replication": {"automatic": {}}},
+                    }
+                )
+                if not(secret and secret.create_time):
+                    err = f"Failed to create secret {secret_id} "
+            except AlreadyExists as e:
+                pass
+            except Exception as e:
+                err = f"Failed to create secret {secret_id} - Error: {str(e)}"
+
+        try:
+            parent = client.secret_path(project_id, secret_id)
+            response = client.add_secret_version(request={"parent": parent, "payload": {"data": value.encode("UTF-8")}})
+            if response and response.create_time:
+                result["success"] = True
+        except NotFound as e:
+            # Deleted or non existing key.
+            self.logger.debug(f"GCP Client: secret not found. key={secret_id} Message: {e.message}")
+            result["error"] = "Key not found. Error: " + err + str(e)
+        except ClientError as e:
+            # Includes - PermissionDenied, Forbidden, Unauthenticated, Unauthorized
+            self.log.append(f"GCP SDK Client error. {e.message} Skipping key={secret_id}")
+            self.logger.error("GCP SDK Client error. " + str(e))
+            result["error"] = err + str(e)
+        except ServerError as e:
+            self.log.append(f"GCP SDK Server error. {e.message} Skipping key={secret_id}")
+            self.logger.error("GCP SDK Server error. " + str(e))
+            result["error"] = err + str(e)
+        except GoogleAPIError as e:
+            # Will catch everything that is from GCP SDK
+            self.log.append(f"GCP API error. {str(e)} Skipping key={secret_id}")
+            self.logger.error("GCP API error. " + str(e))
+            result["error"] = err + str(e)
+        except Exception as e:
+            self.log.append(f"Unknown error. Skipping key={secret_id}")
+            self.logger.error("Unknown error. " + str(e) + " : " + err)
+            result["error"] = err + str(e)
+        return result
+
+    def _delete_secret_gcp(self, client, project_id:str, secret_id:str):
+        from google.api_core.exceptions import (
+            ClientError,
+            GoogleAPIError,
+            NotFound,
+            ServerError
+        )
+
+        result = {
+            "success": False,
+            "error": None
+        }
+
+        try:
+            # Delete the secret with the given name and all of its versions.
+            name = client.secret_path(project_id, secret_id)
+            client.delete_secret(request={"name": name})
+            result["success"] = True
+        except NotFound as e:
+            # Deleted or non existing key.
+            self.logger.debug(f"GCP Client Error: NotFound while trying to delete secret. key={secret_id} already deleted. Message: {e.message}")
+            result["success"] = True # already deleted
+            result["error"] = str(e)
+        except ClientError as e:
+            # Includes - PermissionDenied, Forbidden, Unauthenticated, Unauthorized
+            self.log.append(f"GCP SDK Client error. {e.message} Skipping key={secret_id}")
+            self.logger.error("GCP SDK Client error. " + str(e))
+            result["error"] = str(e)
+        except ServerError as e:
+            self.log.append(f"GCP SDK Server error. {e.message} Skipping key={secret_id}")
+            self.logger.error("GCP SDK Server error. " + str(e))
+            result["error"] = str(e)
+        except GoogleAPIError as e:
+            # Will catch everything that is from GCP SDK
+            self.log.append(f"GCP API error. {str(e)} Skipping key={secret_id}")
+            self.logger.error("GCP API error. " + str(e))
+            result["error"] = str(e)
+        except Exception as e:
+            self.log.append(f"Error deleting secret. Skipped delete key={secret_id}")
+            self.logger.error("Error deleting secret. " + str(e))
+            result["error"] = str(e)
+        return result
+
+    def sync_values(self, type:str, credentials:str="", dry_run=False, preserve_missing=False, map=None):
         map = map or []
         result = []
 
-        """
+        r"""
         stats = {
             "totalMappings": 0,
             "badMappings": [], # bad notation
@@ -617,10 +785,12 @@ class Sync:
             self.sync_azure(credentials, dry_run, preserve_missing, result)
         elif type == 'aws':
             self.sync_aws(credentials, dry_run, preserve_missing, result)
+        elif type == 'gcp':
+            self.sync_gcp(credentials, dry_run, preserve_missing, result)
         else:
-            raise KsmCliException(f"Invalid option `--type {type}`. Allowed values are (json, azure, aws).")
+            raise KsmCliException(f"Invalid option `--type {type}`. Allowed values are (json, azure, aws, gcp).")
 
-    def sync_azure(self, credentials:str=None, dry_run=False, preserve_missing=False, map:dict=None):
+    def sync_azure(self, credentials:str="", dry_run=False, preserve_missing=False, map:list=[]):
         try:
             from azure.keyvault.secrets import SecretClient
             from azure.identity import ClientSecretCredential
@@ -689,7 +859,7 @@ class Sync:
                         err_msg = res.get("error", "")
                         if err_msg:
                             if "(SecretNotFound)" in err_msg:
-                                self.logger.debug("Failed to delete key=" + key) # already deleted
+                                self.logger.debug(f"Failed to delete key={key} - Already deleted.") # already deleted
                             else:
                                 m["error"] = "Failed to delete remote key value pair."
                                 self.log.append(f"Failed to delete key={key}")
@@ -702,7 +872,7 @@ class Sync:
                         self.logger.error("Failed to set new value for key=" + key)
             self._output(map, True)
 
-    def sync_aws(self, credentials:str=None, dry_run=False, preserve_missing=False, map:dict=None):
+    def sync_aws(self, credentials:str="", dry_run=False, preserve_missing=False, map:list=[]):
         try:
             import boto3
         except ImportError as ie:
@@ -774,6 +944,88 @@ class Sync:
                                 self.logger.error("Failed to delete key=" + key)
                 else:
                     res = self._set_secret_aws(secretsmanager, key, val)
+                    if res.get("error", ""):
+                        m["error"] = "Failed to set new value for the key."
+                        self.log.append(f"Failed to set new value for key={key}")
+                        self.logger.error("Failed to set new value for key=" + key)
+            self._output(map, True)
+
+    def sync_gcp(self, credentials:str="", dry_run=False, preserve_missing=False, map:list=[]):
+        try:
+            from google.cloud import secretmanager
+            from google.oauth2 import service_account
+        except ImportError as ie:
+            print(Fore.RED + "Missing GCP dependencies. To install missing packages run: \r\n" +
+                Fore.YELLOW + "pip3 install --upgrade google-cloud-secret-manager google-auth\r\n" + Style.RESET_ALL, file=sys.stderr)
+            raise KsmCliException("Missing GCP Dependencies: " + str(ie))
+
+        if not map or len(map) == 0:
+            print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`" + Style.RESET_ALL, file=sys.stderr)
+            return
+
+        if not credentials or not str(credentials).strip():
+            print(Fore.YELLOW + "Missing credentials' record UID - please provide UID with `--credentials <UID>`" + Style.RESET_ALL, file=sys.stderr)
+            return
+
+        credentials = str(credentials).strip()
+        secrets = self.cli.client.get_secrets(uids=[credentials])
+        if len(secrets) == 0:
+            raise KsmCliException("Cannot find the record with GCP credentials " + credentials)
+        creds = secrets[0]
+
+        # NB! Labels are case sensitive. Use Hidden Field fields in custom section of the record.
+        app_credentials = self._get_secret_field(creds, GOOGLE_APPLICATION_CREDENTIALS_LABEL) or ""
+        project_id = self._get_secret_field(creds, GOOGLE_CLOUD_PROJECT_ID_LABEL)
+
+        if not project_id:
+            print(Fore.YELLOW + "Missing Project Id in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
+            raise KsmCliException(f"Cannot find all required credentials in record UID {credentials}.")
+
+        # If credentials are provided, the corresponding JSON is used first, then it defaults to ADC
+        # If credentials are empty GCP client will use Application Default Credentials (ADC)
+        # ADC can be acquired by running `gcloud auth application-default login` on same host
+        # To specify non-default credentials location set env var: GOOGLE_APPLICATION_CREDENTIALS="/path/to/credentials.json"
+        # https://cloud.google.com/docs/authentication/provide-credentials-adc
+
+        client:secretmanager.SecretManagerServiceClient|None = None
+        if str(app_credentials).strip():
+            gcp_json_credentials_dict = json.loads(app_credentials)
+            credentialz = service_account.Credentials.from_service_account_info(gcp_json_credentials_dict)
+            client = secretmanager.SecretManagerServiceClient(credentials=credentialz)
+
+        if client is None:
+            client = secretmanager.SecretManagerServiceClient()
+
+        if dry_run:
+            for m in map:
+                key = m["mapKey"]
+                res = self._get_secret_gcp(client, project_id, key)
+                val = res.get("value", None)
+                m["dstValue"] = val if val else None
+                if not res.get("not_found", False) and res.get("error", ""):
+                    self.log.append(f"Error reading the value from GCP for key={key}")
+            self._output(map)
+        else:
+            for m in map:
+                key = m["mapKey"]
+                val = m["srcValue"]
+                m["dstValue"] = m["srcValue"]
+                if val is None:
+                    if preserve_missing:
+                        continue
+                    else:
+                        res = self._delete_secret_gcp(client, project_id, key)
+                        err_msg = res.get("error", "")
+                        if err_msg:
+                            # '404 Secret [projects/123456789012/secrets/key_name] not found.'
+                            if err_msg.startswith('404 ') and err_msg.endswith(' not found.'):
+                                self.logger.debug(f"Failed to delete key={key} - Already deleted.") # already deleted
+                            else:
+                                m["error"] = "Failed to delete remote key value pair."
+                                self.log.append(f"Failed to delete key={key}")
+                                self.logger.error("Failed to delete key=" + key)
+                else:
+                    res = self._set_secret_gcp(client, project_id, key, val)
                     if res.get("error", ""):
                         m["error"] = "Failed to set new value for the key."
                         self.log.append(f"Failed to set new value for key={key}")
