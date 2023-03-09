@@ -9,6 +9,7 @@ For more information see our official documentation page https://docs.keeper.io/
 ## 1.0.16
 
 * KSM-Synchronize secrets to GCP
+* Dropped support for Python 3.6 (EOL 2021-12-23)
 
 ## 1.0.15
 
