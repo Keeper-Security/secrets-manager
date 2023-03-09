@@ -4,6 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.5.1
+- KSM-374 - Add support for PAM record types
+
 ## 16.5.0
 - KSM-314 - Notation improvements
 - KSM-356 - Create custom fields
