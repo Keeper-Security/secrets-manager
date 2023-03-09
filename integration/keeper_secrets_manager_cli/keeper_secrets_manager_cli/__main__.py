@@ -117,7 +117,7 @@ class AliasedGroup(HelpColorsGroup):
 
             if best_score > 0.50:
                 cmd_name = best_command
-        return super().get_command(ctx, cmd_name)
+        return super().get_command(ctx, str(cmd_name))
 
     def parse_args(self, ctx, args: t.List[str]):
 
@@ -194,8 +194,8 @@ def base_command_help(f):
     doc = f.__doc__
 
     versions = get_versions()
-    cli_version = versions.get("keeper-secrets-manager-cli")
-    sdk_version = versions.get("keeper-secrets-manager-core")
+    cli_version = versions.get("keeper-secrets-manager-cli", "")
+    sdk_version = versions.get("keeper-secrets-manager-core", "")
 
     doc = "{} Version: {} ".format(
         Fore.RED + doc + Style.RESET_ALL,
@@ -1047,7 +1047,7 @@ def shell_command(app):
 
     versions = get_versions()
 
-    print(Fore.CYAN + "Current Version: " + Fore.GREEN + versions.get("keeper-secrets-manager-cli") + Style.RESET_ALL)
+    print(Fore.CYAN + "Current Version: " + Fore.GREEN + versions.get("keeper-secrets-manager-cli", "") + Style.RESET_ALL)
     update = update_available("keeper-secrets-manager-cli", versions)
     if update is not None:
         print(Fore.YELLOW + "Version {} is available.".format(update.available_version) + Style.RESET_ALL)
@@ -1080,9 +1080,9 @@ def quit_command():
 @click.option('--credentials', '-c', type=str, metavar="UID", help="Keeper record with credentials to access destination key/value store.",
     cls=Mutex,
     # not_required_if=[('type','json')],
-    required_if=[('type','azure'), ('type','aws')]
+    required_if=[('type','azure'), ('type','aws'), ('type','gcp')]
 )
-@click.option('--type', '-t', type=click.Choice(['aws', 'azure', 'json']), default='json', help="Type of the target key/value storage (aws, azure, json).", show_default=True)
+@click.option('--type', '-t', type=click.Choice(['aws', 'azure', 'gcp', 'json']), default='json', help="Type of the target key/value storage (aws, azure, gcp, json).", show_default=True)
 @click.option('--dry-run', '-n', is_flag=True, help='Perform a trial run with no changes made.')
 @click.option('--preserve-missing', '-p', is_flag=True, help='Preserve destination value when source value is deleted.')
 @click.option('--map', '-m', nargs=2, type=(str, str), multiple=True, required=True, metavar="<KEY NOTATION>...", help='Map destination key names to values using notation URI.')

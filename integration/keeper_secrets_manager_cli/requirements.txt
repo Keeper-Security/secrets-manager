@@ -1,4 +1,4 @@
-keeper-secrets-manager-core>=16.4.1
+keeper-secrets-manager-core>=16.5.1
 keeper-secrets-manager-helper
 prompt-toolkit~=2.0
 jsonpath-rw-ext
