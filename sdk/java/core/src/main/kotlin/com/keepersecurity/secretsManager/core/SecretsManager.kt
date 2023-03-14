@@ -51,6 +51,16 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     }
 }
 
+data class QueryOptions @JvmOverloads constructor(
+    val recordsFilter: List<String> = emptyList(),
+    val foldersFilter: List<String> = emptyList(),
+)
+
+data class CreateOptions @JvmOverloads constructor(
+    val folderUid: String,
+    val subFolderUid: String? = null,
+)
+
 typealias QueryFunction = (url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload) -> KeeperHttpResponse
 
 data class TransmissionKey(var publicKeyId: Int, var key: ByteArray, val encryptedKey: ByteArray)
@@ -59,57 +69,79 @@ data class KeeperHttpResponse(val statusCode: Int, val data: ByteArray)
 @Serializable
 data class KeeperError(val key_id: Int, val error: String)
 
-@Serializable
-private data class DeletePayload(
-    val clientVersion: String,
-    val clientId: String,
-    var recordUids: List<String>? = null,
-)
-
-@Serializable
-data class SecretsManagerDeleteResponse(
-        val records: List<SecretsManagerDeleteResponseRecord>
-)
-
-@Serializable
-data class SecretsManagerDeleteResponseRecord(
-        val errorMessage: String? = null,
-        val recordUid: String,
-        val responseCode: String
-)
+abstract class CommonPayload {
+    abstract val clientVersion: String
+    abstract val clientId: String
+}
 
 @Serializable
 private data class GetPayload(
-    val clientVersion: String,
-    val clientId: String,
+    override val clientVersion: String,
+    override val clientId: String,
     var publicKey: String? = null,
-    var requestedRecords: List<String>? = null
-)
+    var requestedRecords: List<String>? = null,
+    var requestedFolders: List<String>? = null
+): CommonPayload()
 
 @Serializable
 private data class UpdatePayload(
-    val clientVersion: String,
-    val clientId: String,
+    override val clientVersion: String,
+    override val clientId: String,
     val recordUid: String,
     val data: String,
-    val revision: Long? = null
-)
+    val revision: Long
+): CommonPayload()
 
 @Serializable
 private data class CreatePayload(
-    val clientVersion: String,
-    val clientId: String,
+    override val clientVersion: String,
+    override val clientId: String,
     val recordUid: String,
     val recordKey: String,
     val folderUid: String,
     val folderKey: String,
     val data: String,
-)
+    val subFolderUid: String?
+): CommonPayload()
+
+@Serializable
+private data class DeletePayload(
+    override val clientVersion: String,
+    override val clientId: String,
+    val recordUids: List<String>? = null,
+): CommonPayload()
+
+@Serializable
+private data class DeleteFolderPayload(
+    override val clientVersion: String,
+    override val clientId: String,
+    val folderUids: List<String>? = null,
+    val forceDeletion: Boolean
+): CommonPayload()
+
+@Serializable
+private data class CreateFolderPayload(
+    override val clientVersion: String,
+    override val clientId: String,
+    val folderUid: String,
+    val sharedFolderUid: String,
+    val sharedFolderKey: String,
+    val data: String,
+    val parentUid: String?
+): CommonPayload()
+
+@Serializable
+private data class UpdateFolderPayload(
+    override val clientVersion: String,
+    override val clientId: String,
+    val folderUid: String,
+    val data: String
+): CommonPayload()
 
 @Serializable
 private data class FileUploadPayload(
-    val clientVersion: String,
-    val clientId: String,
+    override val clientVersion: String,
+    override val clientId: String,
     val fileRecordUid: String,
     val fileRecordKey: String,
     val fileRecordData: String,
@@ -117,7 +149,7 @@ private data class FileUploadPayload(
     val ownerRecordData: String,
     val linkKey: String,
     val fileSize: Int, // we will not allow upload size > 2GB due to memory constraints
-)
+): CommonPayload()
 
 data class EncryptedPayload(val payload: ByteArray, val signature: ByteArray)
 
@@ -127,7 +159,9 @@ private data class FileUploadPayloadAndFile(val payload: FileUploadPayload, val 
 private data class SecretsManagerResponseFolder(
     val folderUid: String,
     val folderKey: String,
-    val records: List<SecretsManagerResponseRecord>
+    val data: String?,
+    val parent: String?,
+    val records: List<SecretsManagerResponseRecord>?
 )
 
 @Serializable
@@ -135,7 +169,7 @@ private data class SecretsManagerResponseRecord(
     val recordUid: String,
     val recordKey: String,
     val data: String,
-    val revision: Long? = null,
+    val revision: Long,
     val isEditable: Boolean,
     val files: List<SecretsManagerResponseFile>?
 )
@@ -158,6 +192,18 @@ private data class SecretsManagerResponse(
     val records: List<SecretsManagerResponseRecord>?,
     val expiresOn: Long? = null,
     val warnings: List<String>? = null
+)
+
+@Serializable
+data class SecretsManagerDeleteResponse(
+    val records: List<SecretsManagerDeleteResponseRecord>
+)
+
+@Serializable
+data class SecretsManagerDeleteResponseRecord(
+    val errorMessage: String? = null,
+    val recordUid: String,
+    val responseCode: String
 )
 
 @Serializable
@@ -190,7 +236,7 @@ data class KeeperRecord(
     var folderUid: String? = null,
     var folderKey: ByteArray? = null,
     val data: KeeperRecordData,
-    val revision: Long? = 0,
+    val revision: Long,
     val files: List<KeeperFile>? = null
 ) {
     fun getPassword(): String? {
@@ -223,6 +269,18 @@ data class KeeperRecord(
         return files?.find { it.fileUid == fileUid }
     }
 }
+
+data class KeeperFolder(
+    val folderKey: ByteArray,
+    val folderUid: String,
+    val parentUid: String? = null,
+    val name: String
+)
+
+@Serializable
+data class KeeperFolderName(
+    val name: String
+)
 
 data class KeeperFile(
     val fileKey: ByteArray,
@@ -320,15 +378,35 @@ private fun testSecureRandom() {
 @ExperimentalSerializationApi
 @JvmOverloads
 fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emptyList()): KeeperSecrets {
-    val (secrets, justBound) = fetchAndDecryptSecrets(options, recordsFilter)
+    val queryOptions = QueryOptions(recordsFilter)
+    val (secrets, justBound) = fetchAndDecryptSecrets(options, queryOptions)
     if (justBound) {
         try {
-            fetchAndDecryptSecrets(options, recordsFilter)
+            fetchAndDecryptSecrets(options, queryOptions)
         } catch (e: Exception) {
             println(e)
         }
     }
     return secrets
+}
+
+@ExperimentalSerializationApi
+@JvmOverloads
+fun getSecrets2(options: SecretsManagerOptions, queryOptions: QueryOptions? = null): KeeperSecrets {
+    val (secrets, justBound) = fetchAndDecryptSecrets(options, queryOptions)
+    if (justBound) {
+        try {
+            fetchAndDecryptSecrets(options, queryOptions)
+        } catch (e: Exception) {
+            println(e)
+        }
+    }
+    return secrets
+}
+
+@ExperimentalSerializationApi
+fun getFolders(options: SecretsManagerOptions): List<KeeperFolder> {
+    return fetchAndDecryptFolders(options)
 }
 
 // tryGetNotationResults returns a string list with all values specified by the notation or empty list on error.
@@ -481,7 +559,14 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
 fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>): SecretsManagerDeleteResponse {
     val payload = prepareDeletePayload(options.storage, recordUids)
     val responseData = postQuery(options, "delete_secret", payload)
-    return nonStrictJson.decodeFromString<SecretsManagerDeleteResponse>(bytesToString(responseData))
+    return nonStrictJson.decodeFromString(bytesToString(responseData))
+}
+
+@ExperimentalSerializationApi
+fun deleteFolder(options: SecretsManagerOptions, folderUids: List<String>, forceDeletion: Boolean = false): SecretsManagerDeleteResponse {
+    val payload = prepareDeleteFolderPayload(options.storage, folderUids, forceDeletion)
+    val responseData = postQuery(options, "delete_folder", payload)
+    return nonStrictJson.decodeFromString(bytesToString(responseData))
 }
 
 @ExperimentalSerializationApi
@@ -502,9 +587,42 @@ fun addCustomField(record: KeeperRecord, field: KeeperRecordField) {
 @ExperimentalSerializationApi
 @JvmOverloads
 fun createSecret(options: SecretsManagerOptions, folderUid: String, recordData: KeeperRecordData, secrets: KeeperSecrets = getSecrets(options)): String {
-    val payload = prepareCreatePayload(options.storage, folderUid, recordData, secrets)
+    val recordFromFolder = secrets.records.find { it.folderUid == folderUid }
+    if (recordFromFolder?.folderKey == null) {
+        throw Exception("Unable to create record - folder key for $folderUid not found")
+    }
+    val payload = prepareCreatePayload(options.storage, CreateOptions(folderUid), recordData, recordFromFolder.folderKey!!)
     postQuery(options, "create_secret", payload)
     return payload.recordUid
+}
+
+@ExperimentalSerializationApi
+@JvmOverloads
+fun createSecret2(options: SecretsManagerOptions, createOptions: CreateOptions, recordData: KeeperRecordData, folders: List<KeeperFolder> = getFolders(options)): String {
+    val sharedFolder: KeeperFolder = folders.find { it.folderUid == createOptions.folderUid }
+        ?: throw Exception("Unable to create record - folder key for ${createOptions.folderUid} not found")
+    val payload = prepareCreatePayload(options.storage, createOptions, recordData, sharedFolder.folderKey)
+    postQuery(options, "create_secret", payload)
+    return payload.recordUid
+}
+
+@ExperimentalSerializationApi
+@JvmOverloads
+fun createFolder(options: SecretsManagerOptions, createOptions: CreateOptions, folderName: String, folders: List<KeeperFolder> = getFolders(options)): String {
+    val sharedFolder: KeeperFolder = folders.find { it.folderUid == createOptions.folderUid }
+        ?: throw Exception("Unable to create folder - folder key for ${createOptions.folderUid} not found")
+    val payload = prepareCreateFolderPayload(options.storage, createOptions, folderName, sharedFolder.folderKey)
+    postQuery(options, "create_folder", payload)
+    return payload.folderUid
+}
+
+@ExperimentalSerializationApi
+@JvmOverloads
+fun updateFolder(options: SecretsManagerOptions, folderUid: String, folderName: String, folders: List<KeeperFolder> = getFolders(options)) {
+    val folder: KeeperFolder = folders.find { it.folderUid == folderUid }
+        ?: throw Exception("Unable to update folder - folder key for $folderUid not found")
+    val payload = prepareUpdateFolderPayload(options.storage, folderUid, folderName, folder.folderKey)
+    postQuery(options, "update_folder", payload)
 }
 
 @ExperimentalSerializationApi
@@ -580,10 +698,10 @@ private fun uploadFile(url: String, parameters: String, fileData: ByteArray): Ke
 @ExperimentalSerializationApi
 private fun fetchAndDecryptSecrets(
     options: SecretsManagerOptions,
-    recordsFilter: List<String>
+    queryOptions: QueryOptions?
 ): Pair<KeeperSecrets, Boolean> {
     val storage = options.storage
-    val payload = prepareGetPayload(storage, recordsFilter)
+    val payload = prepareGetPayload(storage, queryOptions)
     val responseData = postQuery(options, "get_secret", payload)
     val jsonString = bytesToString(responseData)
     val response = nonStrictJson.decodeFromString<SecretsManagerResponse>(jsonString)
@@ -613,7 +731,7 @@ private fun fetchAndDecryptSecrets(
     if (response.folders != null) {
         response.folders.forEach { folder ->
             val folderKey = decrypt(folder.folderKey, appKey)
-            folder.records.forEach { record ->
+            folder.records!!.forEach { record ->
                 val recordKey = decrypt(record.recordKey, folderKey)
                 val decryptedRecord = decryptRecord(record, recordKey)
                 decryptedRecord.folderUid = folder.folderUid
@@ -658,9 +776,46 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
     return KeeperRecord(recordKey, record.recordUid, null, null, Json.decodeFromString(bytesToString(decryptedRecord)), record.revision, files)
 }
 
+@ExperimentalSerializationApi
+private fun fetchAndDecryptFolders(
+    options: SecretsManagerOptions
+): List<KeeperFolder> {
+    val storage = options.storage
+    val payload = prepareGetPayload(storage, null)
+    val responseData = postQuery(options, "get_folders", payload)
+    val jsonString = bytesToString(responseData)
+    val response = nonStrictJson.decodeFromString<SecretsManagerResponse>(jsonString)
+    if (response.folders == null) {
+        return emptyList()
+    }
+    val folders: MutableList<KeeperFolder> = mutableListOf()
+    val appKey = storage.getBytes(KEY_APP_KEY) ?: throw Exception("App key is missing from the storage")
+    response.folders.forEach { folder ->
+        val folderKey: ByteArray = if (folder.parent == null) {
+            decrypt(folder.folderKey, appKey)
+        } else {
+            val sharedFolderKey = getSharedFolderKey(folders, response.folders, folder.parent) ?: throw Exception("Folder data inconsistent - unable to locate shared folder")
+            decrypt(folder.folderKey, sharedFolderKey, true)
+        }
+        val decryptedData = decrypt(folder.data!!, folderKey, true)
+        val folderNameJson = bytesToString(decryptedData)
+        val folderName = nonStrictJson.decodeFromString<KeeperFolderName>(folderNameJson)
+        folders.add(KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name))
+    }
+    return folders
+}
+
+private fun getSharedFolderKey(folders: List<KeeperFolder>, responseFolders: List<SecretsManagerResponseFolder>, parent: String): ByteArray? {
+    var currentParent = parent
+    while (true) {
+        val parentFolder = responseFolders.find { x -> x.folderUid == currentParent } ?: return null
+        currentParent = parentFolder.parent ?: return folders.find { it.folderUid == parentFolder.folderUid }?.folderKey
+    }
+}
+
 private fun prepareGetPayload(
     storage: KeyValueStorage,
-    recordsFilter: List<String>
+    queryOptions: QueryOptions?
 ): GetPayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val payload = GetPayload(
@@ -674,19 +829,34 @@ private fun prepareGetPayload(
         val publicKey = storage.getBytes(KEY_PUBLIC_KEY) ?: throw Exception("Public key is missing from the storage")
         payload.publicKey = bytesToBase64(publicKey)
     }
-    if (recordsFilter.isNotEmpty()) {
-        payload.requestedRecords = recordsFilter
+    if (queryOptions != null) {
+        if (queryOptions.recordsFilter.isNotEmpty()) {
+            payload.requestedRecords = queryOptions.recordsFilter
+        }
+        if (queryOptions.foldersFilter.isNotEmpty()) {
+            payload.requestedRecords = queryOptions.foldersFilter
+        }
     }
     return payload
 }
 
 @ExperimentalSerializationApi
 private fun prepareDeletePayload(
-        storage: KeyValueStorage,
-        recordUids: List<String>
+    storage: KeyValueStorage,
+    recordUids: List<String>
 ): DeletePayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     return DeletePayload(KEEPER_CLIENT_VERSION, clientId, recordUids)
+}
+
+@ExperimentalSerializationApi
+private fun prepareDeleteFolderPayload(
+    storage: KeyValueStorage,
+    folderUids: List<String>,
+    forceDeletion: Boolean
+): DeleteFolderPayload {
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    return DeleteFolderPayload(KEEPER_CLIENT_VERSION, clientId, folderUids, forceDeletion)
 }
 
 @ExperimentalSerializationApi
@@ -703,28 +873,61 @@ private fun prepareUpdatePayload(
 @ExperimentalSerializationApi
 private fun prepareCreatePayload(
     storage: KeyValueStorage,
-    folderUid: String,
+    createOptions: CreateOptions,
     recordData: KeeperRecordData,
-    secrets: KeeperSecrets
+    folderKey: ByteArray
 ): CreatePayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val ownerPublicKey = storage.getBytes(KEY_OWNER_PUBLIC_KEY) ?: throw Exception("Application owner public key is missing from the configuration")
-    val recordFromFolder = secrets.records.find { it.folderUid == folderUid }
-    if (recordFromFolder?.folderKey == null) {
-        throw Exception("Unable to create record - folder key for $folderUid not found")
-    }
     val recordBytes = stringToBytes(Json.encodeToString(recordData))
     val recordKey = getRandomBytes(32)
     val recordUid = getRandomBytes(16)
     val encryptedRecord = encrypt(recordBytes, recordKey)
     val encryptedRecordKey = publicEncrypt(recordKey, ownerPublicKey)
-    val encryptedFolderKey = encrypt(recordKey, recordFromFolder.folderKey!!)
+    val encryptedFolderKey = encrypt(recordKey, folderKey)
     return CreatePayload(KEEPER_CLIENT_VERSION, clientId,
         webSafe64FromBytes(recordUid),
         bytesToBase64(encryptedRecordKey),
-        folderUid,
+        createOptions.folderUid,
         bytesToBase64(encryptedFolderKey),
-        webSafe64FromBytes(encryptedRecord))
+        webSafe64FromBytes(encryptedRecord),
+        createOptions.subFolderUid)
+}
+
+@ExperimentalSerializationApi
+private fun prepareCreateFolderPayload(
+    storage: KeyValueStorage,
+    createOptions: CreateOptions,
+    folderName: String,
+    sharedFolderKey: ByteArray
+): CreateFolderPayload {
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    val folderDataBytes = stringToBytes(Json.encodeToString(KeeperFolderName(folderName)))
+    val folderKey = getRandomBytes(32)
+    val folderUid = getRandomBytes(16)
+    val encryptedFolderData = encrypt(folderDataBytes, folderKey, true)
+    val encryptedFolderKey = encrypt(folderKey, sharedFolderKey, true)
+    return CreateFolderPayload(KEEPER_CLIENT_VERSION, clientId,
+        webSafe64FromBytes(folderUid),
+        createOptions.folderUid,
+        webSafe64FromBytes(encryptedFolderKey),
+        webSafe64FromBytes(encryptedFolderData),
+        createOptions.subFolderUid)
+}
+
+@ExperimentalSerializationApi
+private fun prepareUpdateFolderPayload(
+    storage: KeyValueStorage,
+    folderUid: String,
+    folderName: String,
+    folderKey: ByteArray
+): UpdateFolderPayload {
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    val folderDataBytes = stringToBytes(Json.encodeToString(KeeperFolderName(folderName)))
+    val encryptedFolderData = encrypt(folderDataBytes, folderKey, true)
+    return UpdateFolderPayload(KEEPER_CLIENT_VERSION, clientId,
+        folderUid,
+        webSafe64FromBytes(encryptedFolderData))
 }
 
 @ExperimentalSerializationApi
