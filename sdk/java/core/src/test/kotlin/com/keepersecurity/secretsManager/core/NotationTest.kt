@@ -43,7 +43,7 @@ internal class NotationTest {
 
     private val secrets = KeeperSecrets(
         AppData("", ""),
-        listOf(KeeperRecord(ByteArray(0), recordUID, data = recordData, files = recordFiles))
+        listOf(KeeperRecord(ByteArray(0), recordUID, data = recordData, revision = 0, files = recordFiles))
     )
 
     @Test
