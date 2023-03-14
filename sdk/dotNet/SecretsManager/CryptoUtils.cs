@@ -8,6 +8,7 @@ using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Math;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
+using Org.BouncyCastle.Crypto.Paddings;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -122,15 +123,26 @@ namespace SecretsManager
         private static GcmBlockCipher GetCipher(bool forEncryption, byte[] iv, byte[] key)
         {
             var cipher = new GcmBlockCipher(new AesEngine());
-            var gcmParameterSpec = new AeadParameters(new KeyParameter(key), 16 * 8, iv);
-            cipher.Init(forEncryption, gcmParameterSpec);
+            cipher.Init(forEncryption, new AeadParameters(new KeyParameter(key), 16 * 8, iv));
+            return cipher;
+        }
+
+        private static PaddedBufferedBlockCipher GetCBCCipher(bool forEncryption, byte[] iv, byte[] key)
+        {
+            var cipher = new PaddedBufferedBlockCipher(new CbcBlockCipher(new AesEngine()), new Pkcs7Padding());
+            cipher.Init(forEncryption, new ParametersWithIV(new KeyParameter(key), iv));
             return cipher;
         }
 
         private const int IvSize = 12;
+        private const int IvSizeCBC = 16;
 
-        public static byte[] Encrypt(byte[] data, byte[] key)
+        public static byte[] Encrypt(byte[] data, byte[] key, bool useCBC = false)
         {
+            if (useCBC)
+            {
+                return EncryptCBC(data, key);
+            }
             var iv = GetRandomBytes(IvSize);
             var cipher = GetCipher(true, iv, key);
             var cipherText = new byte[cipher.GetOutputSize(data.Length)];
@@ -138,9 +150,23 @@ namespace SecretsManager
             len += cipher.DoFinal(cipherText, len);
             return iv.Concat(cipherText.Take(len)).ToArray();
         }
-
-        public static byte[] Decrypt(byte[] data, byte[] key)
+        
+        private static byte[] EncryptCBC(byte[] data, byte[] key)
         {
+            var iv = GetRandomBytes(IvSizeCBC);
+            var cipher = GetCBCCipher(true, iv, key);
+            var cipherText = new byte[cipher.GetOutputSize(data.Length)];
+            var len = cipher.ProcessBytes(data, 0, data.Length, cipherText, 0);
+            len += cipher.DoFinal(cipherText, len);
+            return iv.Concat(cipherText.Take(len)).ToArray();
+        }
+
+        public static byte[] Decrypt(byte[] data, byte[] key, bool useCBC = false)
+        {
+            if (useCBC)
+            {
+                return DecryptCBC(data, key);
+            }
             var iv = data.Take(IvSize).ToArray();
             var cipher = GetCipher(false, iv, key);
             var decryptedData = new byte[cipher.GetOutputSize(data.Length - IvSize)];
@@ -148,10 +174,20 @@ namespace SecretsManager
             cipher.DoFinal(decryptedData, len);
             return decryptedData;
         }
-
-        public static byte[] Decrypt(string data, byte[] key)
+        
+        public static byte[] DecryptCBC(byte[] data, byte[] key, bool useCBC = false)
         {
-            return Decrypt(Base64ToBytes(data), key);
+            var iv = data.Take(IvSizeCBC).ToArray();
+            var cipher = GetCBCCipher(false, iv, key);
+            var decryptedData = new byte[cipher.GetOutputSize(data.Length - IvSizeCBC)];
+            var len = cipher.ProcessBytes(data, IvSizeCBC, data.Length - IvSizeCBC, decryptedData, 0);
+            len += cipher.DoFinal(decryptedData, len);
+            return decryptedData.Take(len).ToArray();
+        }
+
+        public static byte[] Decrypt(string data, byte[] key, bool useCBC = false)
+        {
+            return Decrypt(Base64ToBytes(data), key, useCBC);
         }
 
         public static byte[] PublicEncrypt(byte[] data, byte[] key)
