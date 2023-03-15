@@ -683,3 +683,60 @@ class LicenseNumber(FieldType):
 class SecureNote(FieldType):
     name = "note"
     schema = {"value_type": str, "desc": "Secret Note"}
+
+
+class RecordRef(FieldType):
+    name = "recordRef"
+    # The validation checks to see if value is a Record UID.
+    schema = {"value_type": str, "validate": UID_REGEX, "desc": "Record UID of the referenced record."}
+
+
+class Schedule(FieldType):
+    name = "schedule"
+    schema = {
+        "value_type": dict,
+        "schema": {
+            "type": {"value_type": str, "desc": "Type"},
+            "utcTime": {"value_type": str, "desc": "UTC Timestamp"},
+            "weekday": {"value_type": str, "desc": "Day of the Week"},
+            "intervalCount": {"value_type": int, "desc": "Interval Count"}
+        }
+    }
+
+
+class DirectoryType(FieldType):
+    name = "directoryType"
+    schema = {"value_type": str, "desc": "Directory Type"}
+
+
+class DatabaseType(FieldType):
+    name = "databaseType"
+    schema = {"value_type": str, "desc": "Database Type"}
+
+
+class PamHostname(FieldType):
+    name = "pamHostname"
+    schema = {
+        "value_type": dict,
+        "schema": {
+            "hostName": {"value_type": str, "desc": "Hostname or IP"},
+            "port": {"value_type": str, "desc": "Port"},
+        }
+    }
+
+
+class PamResources(FieldType):
+    name = "pamResources"
+    schema = {
+        "value_type": dict,
+        "schema": {
+            "controllerUid": {"value_type": str, "desc": "Record UID of the Controller Record"},
+            "folderUid": {"value_type": str, "desc": "Folder UID"},
+            "resourceRef": {"value_type": list[str], "desc": "List with UIDs of resource records"}
+        }
+    }
+
+
+class Checkbox(FieldType):
+    name = "checkbox"
+    schema = {"value_type": bool, "desc": "Checkbox"}
