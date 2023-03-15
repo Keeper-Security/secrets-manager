@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 
-from keeper_secrets_manager_helper.v3.enum import BaseEnum, PhoneTypeEnum, CountryEnum, AccountTypeEnum
-import keeper_secrets_manager_helper.format
 import re
 import json
-from importlib import import_module
 import inspect
 import sys
 import random
+from importlib import import_module
+import keeper_secrets_manager_helper.format
+from keeper_secrets_manager_helper.v3.enum import BaseEnum, PhoneTypeEnum, CountryEnum, AccountTypeEnum
 
 
 UID_REGEX = r'^[a-zA-Z0-9\-_]{22}$'
@@ -732,7 +732,7 @@ class PamResources(FieldType):
         "schema": {
             "controllerUid": {"value_type": str, "desc": "Record UID of the Controller Record"},
             "folderUid": {"value_type": str, "desc": "Folder UID"},
-            "resourceRef": {"value_type": list[str], "desc": "List with UIDs of resource records"}
+            "resourceRef": {"value_type": list, "desc": "List with UIDs of resource records"}
         }
     }
 
