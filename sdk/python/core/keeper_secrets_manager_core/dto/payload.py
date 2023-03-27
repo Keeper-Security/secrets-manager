@@ -75,6 +75,15 @@ class UpdatePayload:
         self.recordUid = None
         self.data = None
         self.revision = None
+        self.transactionType = None  # 'general' or 'rotation'
+
+
+class CompleteTransactionPayload:
+
+    def __init__(self):
+        self.clientVersion = None
+        self.clientId = None
+        self.recordUid = None
 
 
 class EncryptedPayload:
