@@ -866,7 +866,6 @@ class SecretsManager:
 
         return True
 
-    # deprecated - use get_notation_results instead
     def get_notation(self, url):
 
         """Simple string notation to get a value
