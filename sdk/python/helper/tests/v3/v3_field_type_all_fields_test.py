@@ -307,3 +307,43 @@ class FieldTypeTest(unittest.TestCase):
         ft = SecureNote("Secret Note")
         self._check_dict(ft, value="Secret Note")
 
+    def test_record_ref(self):
+        ft = RecordRef()
+        ft.value = "OlLZ6JLjnyMOS3CiIPHBjw"
+        self._check_dict(ft, value="OlLZ6JLjnyMOS3CiIPHBjw")
+
+    def test_schedule(self):
+        ft = Schedule()
+        ft.type = "WEEKLY"
+        ft.utcTime = "00:00"
+        ft.weekday = "WEDNESDAY"
+        ft.intervalCount = 1
+        self._check_dict(ft, value={"type": "WEEKLY", "utcTime": "00:00", "weekday": "WEDNESDAY", "intervalCount": 1})
+
+    def test_directory_type(self):
+        ft = DirectoryType()
+        ft.value = "openldap"
+        self._check_dict(ft, value="openldap")
+
+    def test_database_type(self):
+            ft = DatabaseType()
+            ft.value = "mariadb-flexible"
+            self._check_dict(ft, value="mariadb-flexible")
+
+    def test_pam_hostname(self):
+        ft = PamHostname()
+        ft.hostName = "localhost"
+        ft.port = "22"
+        self._check_dict(ft, value={"hostName": "localhost", "port": "22"})
+
+    def test_pam_resources(self):
+        ft = PamResources()
+        ft.controllerUid = "OlLZ6JLjnyMOS3CiIPHBjw"
+        ft.folderUid = "so5ja6A46Zmr9J1QyCc06g"
+        ft.resourceRef = ["hUrGHrcM0PI3Y6Ch5wCrAQ"]
+        self._check_dict(ft, value={"controllerUid": "OlLZ6JLjnyMOS3CiIPHBjw", "folderUid": "so5ja6A46Zmr9J1QyCc06g", "resourceRef": ["hUrGHrcM0PI3Y6Ch5wCrAQ"]})
+
+    def test_checkbox(self):
+        ft = Checkbox()
+        ft.value = True
+        self._check_dict(ft, value=True)
