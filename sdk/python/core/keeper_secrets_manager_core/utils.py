@@ -210,7 +210,7 @@ def get_windows_user_sid_and_name(logger=None):
         logger.info(f'Cannot get current Windows user via "whoami": {e}')
         return None, None
     else:
-        return reversed(user_sid.split('\\')[-1].split())
+        return reversed(user_sid.split('\\')[-1].rsplit(' ', 1))
 
 
 def set_config_mode(file, logger=None):
