@@ -604,7 +604,9 @@ class SecretsManager:
             ))
 
         # This is a unknown error, not one of ours, just throw a HTTPError
-        raise requests.HTTPError(rs.text)
+        reason = f", Reason: {str(rs.reason)}" if rs.reason else ""
+        message = f", Message: {str(rs.text)}" if rs.text else ""
+        raise requests.HTTPError(f"Status Code: {rs.status_code}{reason}{message}")
 
     def fetch_and_decrypt_secrets(self, record_filter=None):
 
