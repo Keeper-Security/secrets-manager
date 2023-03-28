@@ -8,7 +8,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.reflect.full.memberProperties
 
-@Deprecated(message = "Use getNotationResults instead.")
 @ExperimentalSerializationApi
 fun getValue(secrets: KeeperSecrets, notation: String): String {
     val parsedNotation = parseNotation(notation, true) // prefix, record, selector, footer
