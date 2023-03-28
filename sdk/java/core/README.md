@@ -4,6 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.5.2
+- KSM-379 - Remove deprecation from getValue function
+
 ## 16.5.1
 - KSM-374 - Add support for PAM record types
 
