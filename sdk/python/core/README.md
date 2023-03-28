@@ -4,6 +4,12 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.5.2
+* KSM-375 - Make HTTPError to be more informative
+* KSM-376 - Support for PAM record types
+* KSM-381 - Transactions
+* Fixed [Issue 441](https://github.com/Keeper-Security/secrets-manager/issues/441) - Bug caused by space in username
+
 ## 16.5.1
 * KSM-371 - Fix Windows Config file permissions issue
 * KSM-370 - Upgrade to latest cryptography>=39.0.1 library
