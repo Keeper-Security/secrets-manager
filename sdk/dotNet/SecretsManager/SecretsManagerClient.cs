@@ -105,6 +105,11 @@ namespace SecretsManager
         }
     }
 
+    public enum UpdateTransactionType {
+        General,
+        Rotation
+    }
+
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
@@ -115,14 +120,37 @@ namespace SecretsManager
         public string recordUid { get; }
         public string data { get; }
         public long revision { get; }
+        public string transactionType { get; }
 
-        public UpdatePayload(string clientVersion, string clientId, string recordUid, string data, long revision)
+        public UpdatePayload(string clientVersion, string clientId, string recordUid, string data, long revision, UpdateTransactionType? transactionType = null)
         {
             this.clientVersion = clientVersion;
             this.clientId = clientId;
             this.recordUid = recordUid;
             this.data = data;
             this.revision = revision;
+            if (transactionType.HasValue)
+            {
+                this.transactionType = transactionType.Value.ToString().ToLower();
+            }
+
+        }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    internal class CompleteTransactionPayload
+    {
+        public string clientVersion { get; }
+        public string clientId { get; }
+        public string recordUid { get; }
+
+        public CompleteTransactionPayload(string clientVersion, string clientId, string recordUid)
+        {
+            this.clientVersion = clientVersion;
+            this.clientId = clientId;
+            this.recordUid = recordUid;
         }
     }
 
@@ -694,10 +722,17 @@ namespace SecretsManager
             return FindSecretByTitle(keeperSecrets.Records, recordTitle);
         }
 
-        public static async Task UpdateSecret(SecretsManagerOptions options, KeeperRecord record)
+        public static async Task UpdateSecret(SecretsManagerOptions options, KeeperRecord record, UpdateTransactionType? transactionType = null)
         {
-            var payload = PrepareUpdatePayload(options.Storage, record);
+            var payload = PrepareUpdatePayload(options.Storage, record, transactionType);
             await PostQuery(options, "update_secret", payload);
+        }
+
+        public static async Task CompleteTransaction(SecretsManagerOptions options, string recordUid, bool rollback = false)
+        {
+            var payload = PrepareCompleteTransactionPayload(options.Storage, recordUid);
+            var route = (rollback ? "rollback_secret_update" : "finalize_secret_update");
+            await PostQuery(options, route, payload);
         }
 
         public static async Task DeleteSecret(SecretsManagerOptions options, string[] recordsUids)
@@ -910,7 +945,7 @@ namespace SecretsManager
             return new GetPayload(GetClientVersion(), clientId, publicKey, recordsFilter);
         }
 
-        private static UpdatePayload PrepareUpdatePayload(IKeyValueStorage storage, KeeperRecord record)
+        private static UpdatePayload PrepareUpdatePayload(IKeyValueStorage storage, KeeperRecord record, UpdateTransactionType? transactionType = null)
         {
             var clientId = storage.GetString(KeyClientId);
             if (clientId == null)
@@ -920,7 +955,29 @@ namespace SecretsManager
 
             var recordBytes = JsonUtils.SerializeJson(record.Data);
             var encryptedRecord = CryptoUtils.Encrypt(recordBytes, record.RecordKey);
-            return new UpdatePayload(GetClientVersion(), clientId, record.RecordUid, CryptoUtils.WebSafe64FromBytes(encryptedRecord), record.Revision);
+            var payload = new UpdatePayload(
+                GetClientVersion(),
+                clientId,
+                record.RecordUid,
+                CryptoUtils.WebSafe64FromBytes(encryptedRecord),
+                record.Revision,
+                transactionType);
+            return payload;
+        }
+
+        private static CompleteTransactionPayload PrepareCompleteTransactionPayload(IKeyValueStorage storage, string recordUid)
+        {
+            var clientId = storage.GetString(KeyClientId);
+            if (clientId == null)
+            {
+                throw new Exception("Client Id is missing from the configuration");
+            }
+
+            var payload = new CompleteTransactionPayload(
+                GetClientVersion(),
+                clientId,
+                recordUid);
+            return payload;
         }
 
         private static DeletePayload PrepareDeletePayload(IKeyValueStorage storage, string[] recordsUids)
