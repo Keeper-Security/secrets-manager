@@ -8,7 +8,7 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 install_requires = [
-    'keeper-secrets-manager-core>=16.5.1',
+    'keeper-secrets-manager-core==16.5.1',
     'keeper-secrets-manager-helper',
     'prompt-toolkit~=2.0',
     'click',
