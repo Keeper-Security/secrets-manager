@@ -6,6 +6,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.0.17
+* KSM-392 - Ability to update fields where the label is a blank string (`""`)
+* Pinned KSM Core version to 16.5.1
+
 ## 1.0.16
 
 * KSM-362 - Synchronize secrets to GCP
