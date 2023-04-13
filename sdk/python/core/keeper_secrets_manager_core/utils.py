@@ -263,10 +263,12 @@ def set_config_mode(file, logger=None):
                         else:
                             message += "."
 
-                        raise Exception(message)
+                        raise PermissionError(message)
             else:
                 # In Linux/MacOs get file permissions to 0600.
                 os.chmod(file, stat.S_IREAD | stat.S_IWRITE)
+    except (FileNotFoundError, PermissionError):
+        raise
     except Exception as e:
         if logger is not None:
             logger.debug("set_config_mode failed: " + str(e))
@@ -428,6 +430,8 @@ def check_config_mode(file, color_mod=None, logger=None) -> bool:
                             "access. To disable this warning, set the environment variable "
                             "'KSM_CONFIG_SKIP_MODE_WARNING' to 'TRUE'.".format(mode[-4:], file), file=sys.stderr)
                         retval = False
+    except (FileNotFoundError, PermissionError):
+        raise
     except Exception as e:
         if logger is not None:
             logger.debug("check_config_mode failed: " + str(e))
