@@ -4,6 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.5.3
+* KSM-393 - Fix file permissions on localized Windows OS
+
 ## 16.5.2
 * KSM-375 - Make HTTPError to be more informative
 * KSM-376 - Support for PAM record types
