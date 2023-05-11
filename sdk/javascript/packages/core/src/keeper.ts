@@ -1089,3 +1089,20 @@ export class LicenseNumberField extends KeeperRecordField {
         this.value = [value]
       }
 }
+
+export type Script = {
+    fileRef?: string
+    command?: string
+    recordRef?: string[]
+}
+
+export class ScriptField extends KeeperRecordField {
+    required?: boolean
+    privacyScreen?: boolean
+    value?: Script[]
+    constructor(value: Script) {
+        super()
+        this.type = 'script'
+        this.value = [value]
+      }
+}
