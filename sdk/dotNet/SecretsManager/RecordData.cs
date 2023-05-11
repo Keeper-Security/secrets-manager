@@ -56,7 +56,7 @@ namespace SecretsManager
                 AccountNumber or AddressRef or Addresses or BankAccounts or BirthDate or
                 CardRef or Date or Email or ExpirationDate or FileRef or Hosts or KeyPairs or
                 LicenseNumber or Login or Multiline or Names or OneTimeCode or Password or
-                PaymentCards or Phones or PinCode or Secret or SecureNote or
+                PaymentCards or Phones or PinCode or Scripts or Secret or SecureNote or
                 SecurityQuestions or Text or Url => true,
                 _ => false
             };
@@ -495,5 +495,28 @@ namespace SecretsManager
 
         // LicenseNumber field constructor with the single value to eliminate the complexity of the passing List as a value
         public LicenseNumber(string fieldValue) { type = "licenseNumber"; value = new List<string> { fieldValue }; }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    public class Script
+    {
+        public string fileRef { get; set; }
+        public string command { get; set; }
+        public List<string> recordRef { get; set; }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    public class Scripts : KeeperField
+    {
+        public bool? required { get; set; }
+        public bool? privacyScreen { get; set; }
+        public List<Script> value { get; set; }
+
+        // Scripts field constructor with the single value to eliminate the complexity of the passing List as a value
+        public Scripts(Script fieldValue) { type = "script"; value = new List<Script> { fieldValue }; }
     }
 }
