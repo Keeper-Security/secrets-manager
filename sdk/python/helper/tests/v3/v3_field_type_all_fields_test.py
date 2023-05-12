@@ -347,3 +347,10 @@ class FieldTypeTest(unittest.TestCase):
         ft = Checkbox()
         ft.value = True
         self._check_dict(ft, value=True)
+
+    def test_scrpt(self):
+        ft = Script()
+        ft.fileRef = "OlLZ6JLjnyMOS3CiIPHBjw"
+        ft.command = "/bin/zsh"
+        ft.recordRef = "hUrGHrcM0PI3Y6Ch5wCrAQ"
+        self._check_dict(ft, value={"fileRef": "OlLZ6JLjnyMOS3CiIPHBjw", "command": "/bin/zsh", "recordRef": "hUrGHrcM0PI3Y6Ch5wCrAQ"})

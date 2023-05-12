@@ -740,3 +740,15 @@ class PamResources(FieldType):
 class Checkbox(FieldType):
     name = "checkbox"
     schema = {"value_type": bool, "desc": "Checkbox"}
+
+
+class Script(FieldType):
+    name = "script"
+    schema = {
+        "value_type": dict,
+        "schema": {
+            "fileRef": {"value_type": str, "validate": UID_REGEX, "desc": "Record UID of File record."},
+            "command": {"value_type": str, "desc": "Command"},
+            "recordRef": {"value_type": str, "validate": UID_REGEX, "desc": "Record UID of the referenced record."}
+        }
+    }

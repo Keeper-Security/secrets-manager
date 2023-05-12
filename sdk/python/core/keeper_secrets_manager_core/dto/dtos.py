@@ -424,7 +424,7 @@ VALID_RECORD_FIELDS = ['login', 'password', 'url', 'fileRef', 'oneTimeCode', 'ot
                        'expirationDate', 'text', 'securityQuestion', 'multiline', 'email', 'cardRef', 'addressRef',
                        'pinCode', 'phone', 'secret', 'note', 'accountNumber', 'paymentCard', 'bankAccount', 'keyPair',
                        'host', 'address', 'licenseNumber', 'recordRef', 'schedule', 'directoryType', 'databaseType',
-                       'pamHostname', 'pamResources', 'checkbox']
+                       'pamHostname', 'pamResources', 'checkbox', 'script']
 
 
 class RecordField:
