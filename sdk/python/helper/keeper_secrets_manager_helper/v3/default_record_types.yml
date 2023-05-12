@@ -168,6 +168,7 @@ data:
       - type: text
         label: "Provider Region"
       - type: fileRef
+      - type: oneTimeCode
   - class: pamDirectory
     name: pamDirectory
     fields:
@@ -194,6 +195,7 @@ data:
       - type: text
         label: "Provider Region"
       - type: fileRef
+      - type: oneTimeCode
   - class: pamMachine
     name: pamMachine
     fields:
@@ -218,6 +220,7 @@ data:
       - type: text
         label: "Provider Region"
       - type: fileRef
+      - type: oneTimeCode
   - class: pamUser
     name: pamUser
     fields:
@@ -235,6 +238,7 @@ data:
       - type: checkbox
         label: "Managed"
       - type: fileRef
+      - type: oneTimeCode
   - class: pamAwsConfiguration
     name: pamAwsConfiguration
     fields:
