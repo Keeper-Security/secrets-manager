@@ -356,7 +356,7 @@ class FieldTypeTest(unittest.TestCase):
         ft.userId = "so5ja6A46Zmr9J1QyCc06g"
         ft.relyingParty = "hUrGHrcM0PI3Y6Ch5wCrAQ"
         ft.username = "user1"
-        ft.createdDate = Date(["1625140800000"])
+        ft.createdDate = 1625140800000
         self._check_dict(ft, value={
             "privateKey": "PRIVATE KEY",
             "credentialId": "OlLZ6JLjnyMOS3CiIPHBjw",
