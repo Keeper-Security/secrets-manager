@@ -958,7 +958,7 @@ class SecretTest(unittest.TestCase):
 
             self.assertIsInstance(data.get("fields"), list, "fields is not a list")
 
-            field = data.get("fields")[0]
+            field = data.get("fields")[1]
             self.assertEqual("login", field.get("type"), "field type is not login")
             self.assertIsNotNone(field.get("value"), "value was None")
 
@@ -1018,6 +1018,7 @@ class SecretTest(unittest.TestCase):
             output = results.output
             # stderr and stdout are merged
             output_line = output.split('\n')
+            self.assert(output_line, [])
             self.assertRegex(output_line[1], r'^[\w_-]{22}$', "did not get back a record uid")
 
 
