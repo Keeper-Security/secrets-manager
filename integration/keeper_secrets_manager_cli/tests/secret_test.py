@@ -1018,7 +1018,7 @@ class SecretTest(unittest.TestCase):
             output = results.output
             # stderr and stdout are merged
             output_line = output.split('\n')
-            self.assert(output_line, [])
+            self.assertEqual(output_line, [])
             self.assertRegex(output_line[1], r'^[\w_-]{22}$', "did not get back a record uid")
 
 
