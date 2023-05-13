@@ -347,3 +347,21 @@ class FieldTypeTest(unittest.TestCase):
         ft = Checkbox()
         ft.value = True
         self._check_dict(ft, value=True)
+
+    def test_passkey(self):
+        ft = Passkey()
+        ft.privateKey = "PRIVATE KEY"
+        ft.credentialId = "OlLZ6JLjnyMOS3CiIPHBjw"
+        ft.signCount = 1
+        ft.userId = "so5ja6A46Zmr9J1QyCc06g"
+        ft.relyingParty = "hUrGHrcM0PI3Y6Ch5wCrAQ"
+        ft.username = "user1"
+        ft.createdDate = Date(["1625140800000"])
+        self._check_dict(ft, value={
+            "privateKey": "PRIVATE KEY",
+            "credentialId": "OlLZ6JLjnyMOS3CiIPHBjw",
+            "signCount": 1,
+            "userId": "so5ja6A46Zmr9J1QyCc06g",
+            "relyingParty": "hUrGHrcM0PI3Y6Ch5wCrAQ",
+            "username": "user1",
+            "createdDate": 1625140800000})
