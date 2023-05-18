@@ -566,6 +566,23 @@ data class PamHostnames @JvmOverloads constructor(
 }
 
 @Serializable
+data class Script @JvmOverloads constructor(
+    val fileRef: String? = null,
+    val command: String? = null,
+    val recordRef: MutableList<String>? = null,
+)
+
+@Serializable
+@SerialName("script")
+data class Scripts @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<Script>) : KeeperRecordField() {
+    constructor(value: Script): this(null, null, null, mutableListOf(value))
+}
+
+@Serializable
 data class KeeperFileData(
     val title: String,
     val name: String,
