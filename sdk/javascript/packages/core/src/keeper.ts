@@ -1106,3 +1106,23 @@ export class ScriptField extends KeeperRecordField {
         this.value = [value]
       }
 }
+
+export type Passkey = {
+    privateKey?: string
+    credentialId?: string
+    signCount?: number
+    userId?: string
+    relyingParty?: string
+    username?: string
+    createdDate?: number
+}
+
+export class PasskeyField extends KeeperRecordField {
+    required?: boolean
+    value?: Passkey[]
+    constructor(value: Passkey) {
+        super()
+        this.type = 'passkey'
+        this.value = [value]
+      }
+}
