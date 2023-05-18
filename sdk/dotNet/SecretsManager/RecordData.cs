@@ -55,7 +55,7 @@ namespace SecretsManager
             {
                 AccountNumber or AddressRef or Addresses or BankAccounts or BirthDate or
                 CardRef or Date or Email or ExpirationDate or FileRef or Hosts or KeyPairs or
-                LicenseNumber or Login or Multiline or Names or OneTimeCode or Password or
+                LicenseNumber or Login or Multiline or Names or OneTimeCode or Passkeys or Password or
                 PaymentCards or Phones or PinCode or Secret or SecureNote or
                 SecurityQuestions or Text or Url => true,
                 _ => false
@@ -495,5 +495,32 @@ namespace SecretsManager
 
         // LicenseNumber field constructor with the single value to eliminate the complexity of the passing List as a value
         public LicenseNumber(string fieldValue) { type = "licenseNumber"; value = new List<string> { fieldValue }; }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    public class Passkey
+    {
+        public string privateKey { get; set; }
+        public string credentialId { get; set; }
+        public long? signCount { get; set; }
+        public string userId { get; set; }
+        public string relyingParty { get; set; }
+        public string username { get; set; }
+        public long? createdDate { get; set; }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    public class Passkeys : KeeperField
+    {
+        public bool? required { get; set; }
+        public bool? privacyScreen { get; set; }
+        public List<Passkey> value { get; set; }
+
+        // Passkeys field constructor with the single value to eliminate the complexity of the passing List as a value
+        public Passkeys(Passkey fieldValue) { type = "passkey"; value = new List<Passkey> { fieldValue }; }
     }
 }
