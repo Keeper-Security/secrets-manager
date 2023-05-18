@@ -1068,7 +1068,7 @@ export type Address = {
     zip?: string
 }
 
-export class AddresseField extends KeeperRecordField {
+export class AddressField extends KeeperRecordField {
     required? : boolean
     privacyScreen? : boolean
     value?: Address[]
@@ -1086,6 +1086,127 @@ export class LicenseNumberField extends KeeperRecordField {
     constructor(value: string) {
         super()
         this.type = 'licenseNumber'
+        this.value = [value]
+      }
+}
+
+export class RecordRefField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'recordRef'
+        this.value = [value]
+      }
+}
+
+export type Schedule = {
+    type?: string
+    utcTime?: string
+    weekday?: string
+    intervalCount?: number
+}
+
+export class ScheduleField extends KeeperRecordField {
+    required? : boolean
+    value?: Schedule[]
+    constructor(value: Schedule) {
+        super()
+        this.type = 'schedule'
+        this.value = [value]
+      }
+}
+
+export type Script = {
+    fileRef?: string
+    command?: string
+    recordRef?: string[]
+}
+
+export class ScriptField extends KeeperRecordField {
+    required?: boolean
+    privacyScreen?: boolean
+    value?: Script[]
+    constructor(value: Script) {
+        super()
+        this.type = 'script'
+        this.value = [value]
+      }
+}
+
+export class DirectoryTypeField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'directoryType'
+        this.value = [value]
+      }
+}
+
+export class DatabaseTypeField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'databaseType'
+        this.value = [value]
+      }
+}
+
+export class PamHostnameField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: Host[]
+    constructor(value: Host) {
+        super()
+        this.type = 'pamHostname'
+        this.value = [value]
+      }
+}
+
+export type PamResource = {
+    controllerUid?: string
+    folderUid?: string
+    resourceRef?: string[]
+}
+
+export class PamResourceField extends KeeperRecordField {
+    required? : boolean
+    value?: PamResource[]
+    constructor(value: PamResource) {
+        super()
+        this.type = 'pamResources'
+        this.value = [value]
+      }
+}
+
+export class CheckboxField extends KeeperRecordField {
+    required? : boolean
+    value?: boolean[]
+    constructor(value: boolean) {
+        super()
+        this.type = 'checkbox'
+        this.value = [value]
+      }
+}
+
+export type Passkey = {
+    privateKey?: string
+    credentialId?: string
+    signCount?: number
+    userId?: string
+    relyingParty?: string
+    username?: string
+    createdDate?: number
+}
+
+export class PasskeyField extends KeeperRecordField {
+    required?: boolean
+    value?: Passkey[]
+    constructor(value: Passkey) {
+        super()
+        this.type = 'passkey'
         this.value = [value]
       }
 }
