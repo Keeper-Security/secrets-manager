@@ -557,6 +557,7 @@ namespace SecretsManager
 
         // DatabaseType field constructor with the single value to eliminate the complexity of the passing List as a value
         public DatabaseType(string fieldValue) { type = "databaseType"; value = new List<string> { fieldValue }; }
+    }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
@@ -626,7 +627,7 @@ namespace SecretsManager
         public List<bool> value { get; set; }
 
         // Checkbox field constructor with the single value to eliminate the complexity of the passing List as a value
-        public Checkbox(bool fieldValue) { type = "checkbox"; value = new List<bool> { fieldValue }; }\
+        public Checkbox(bool fieldValue) { type = "checkbox"; value = new List<bool> { fieldValue }; }
     }
     
     [SuppressMessage("ReSharper", "InconsistentNaming")]
