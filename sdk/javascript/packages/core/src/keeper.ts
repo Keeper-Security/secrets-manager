@@ -1117,6 +1117,23 @@ export class ScheduleField extends KeeperRecordField {
       }
 }
 
+export type Script = {
+    fileRef?: string
+    command?: string
+    recordRef?: string[]
+}
+
+export class ScriptField extends KeeperRecordField {
+    required?: boolean
+    privacyScreen?: boolean
+    value?: Script[]
+    constructor(value: Script) {
+        super()
+        this.type = 'script'
+        this.value = [value]
+      }
+}
+
 export class DirectoryTypeField extends KeeperRecordField {
     required? : boolean
     value?: string[]
@@ -1170,6 +1187,26 @@ export class CheckboxField extends KeeperRecordField {
     constructor(value: boolean) {
         super()
         this.type = 'checkbox'
+        this.value = [value]
+      }
+}
+
+export type Passkey = {
+    privateKey?: string
+    credentialId?: string
+    signCount?: number
+    userId?: string
+    relyingParty?: string
+    username?: string
+    createdDate?: number
+}
+
+export class PasskeyField extends KeeperRecordField {
+    required?: boolean
+    value?: Passkey[]
+    constructor(value: Passkey) {
+        super()
+        this.type = 'passkey'
         this.value = [value]
       }
 }

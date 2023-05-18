@@ -26,7 +26,7 @@ from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.dto.dtos import Folder, Record, RecordCreate, SecretsManagerResponse, AppData, \
     KeeperFileUpload, KeeperFile
-from keeper_secrets_manager_core.dto.payload import GetPayload, UpdatePayload, TransmissionKey, \
+from keeper_secrets_manager_core.dto.payload import CompleteTransactionPayload, GetPayload, UpdatePayload, TransmissionKey, \
     EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, DeletePayload
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys, \
@@ -289,6 +289,7 @@ class SecretsManager:
                 isinstance(payload, UpdatePayload) or
                 isinstance(payload, CreatePayload) or
                 isinstance(payload, FileUploadPayload) or
+                isinstance(payload, CompleteTransactionPayload) or
                 isinstance(payload, DeletePayload)):
             raise Exception('Unknown payload type "%s"' % payload.__class__.__name__)
 
@@ -379,7 +380,7 @@ class SecretsManager:
         return payload
 
     @staticmethod
-    def prepare_update_payload(storage, record):
+    def prepare_update_payload(storage, record, transaction_type=None):
 
         payload = UpdatePayload()
 
@@ -394,6 +395,20 @@ class SecretsManager:
         encrypted_raw_json_bytes = CryptoUtils.encrypt_aes(raw_json_bytes, record.record_key_bytes)
 
         payload.data = bytes_to_base64(encrypted_raw_json_bytes)
+
+        if transaction_type:
+            payload.transactionType = transaction_type
+
+        return payload
+
+    @staticmethod
+    def prepare_complete_transaction_payload(storage, record_uid):
+
+        payload = CompleteTransactionPayload()
+
+        payload.clientVersion = keeper_secrets_manager_sdk_client_id
+        payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
+        payload.recordUid = record_uid
 
         return payload
 
@@ -589,7 +604,9 @@ class SecretsManager:
             ))
 
         # This is a unknown error, not one of ours, just throw a HTTPError
-        raise requests.HTTPError(rs.text)
+        reason = f", Reason: {str(rs.reason)}" if rs.reason else ""
+        message = f", Message: {str(rs.text)}" if rs.text else ""
+        raise requests.HTTPError(f"Status Code: {rs.status_code}{reason}{message}")
 
     def fetch_and_decrypt_secrets(self, record_filter=None):
 
@@ -816,14 +833,14 @@ class SecretsManager:
 
         return self.upload_file(owner_record, file_to_upload)
 
-    def save(self, record):
+    def save(self, record, transaction_type=None):
         """
         Save updated secret values
         """
 
         self.logger.info("Updating record uid: %s" % record.uid)
 
-        payload = SecretsManager.prepare_update_payload(self.config, record)
+        payload = SecretsManager.prepare_update_payload(self.config, record, transaction_type)
 
         self._post_query(
             'update_secret',
@@ -832,7 +849,23 @@ class SecretsManager:
 
         return True
 
-    # deprecated - use get_notation_results instead
+    def complete_transaction(self, record_uid: str, rollback: bool = False):
+        """
+        Complete transaction - commit or rollback
+        """
+
+        self.logger.info("Closing transaction for record uid: %s" % record_uid)
+
+        payload = SecretsManager.prepare_complete_transaction_payload(self.config, record_uid)
+        route = "rollback_secret_update" if rollback else "finalize_secret_update"
+
+        self._post_query(
+            route,
+            payload
+        )
+
+        return True
+
     def get_notation(self, url):
 
         """Simple string notation to get a value
