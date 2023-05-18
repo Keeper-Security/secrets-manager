@@ -20,7 +20,7 @@ import java.util.*
 import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj16.5.2"
+const val KEEPER_CLIENT_VERSION = "mj16.5.3"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -607,7 +607,9 @@ private fun fetchAndDecryptSecrets(
         response.records.forEach {
             val recordKey = decrypt(it.recordKey, appKey)
             val decryptedRecord = decryptRecord(it, recordKey)
-            records.add(decryptedRecord)
+            if (decryptedRecord != null) {
+                records.add(decryptedRecord)
+            }
         }
     }
     if (response.folders != null) {
@@ -616,9 +618,11 @@ private fun fetchAndDecryptSecrets(
             folder.records.forEach { record ->
                 val recordKey = decrypt(record.recordKey, folderKey)
                 val decryptedRecord = decryptRecord(record, recordKey)
-                decryptedRecord.folderUid = folder.folderUid
-                decryptedRecord.folderKey = folderKey
-                records.add(decryptedRecord)
+                if (decryptedRecord != null) {
+                    decryptedRecord.folderUid = folder.folderUid
+                    decryptedRecord.folderKey = folderKey
+                    records.add(decryptedRecord)
+                }
             }
         }
     }
@@ -635,7 +639,7 @@ private fun fetchAndDecryptSecrets(
 }
 
 @ExperimentalSerializationApi
-private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray): KeeperRecord {
+private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray): KeeperRecord? {
     val decryptedRecord = decrypt(record.data, recordKey)
 
     val files: MutableList<KeeperFile> = mutableListOf()
@@ -655,7 +659,24 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
             )
         }
     }
-    return KeeperRecord(recordKey, record.recordUid, null, null, Json.decodeFromString(bytesToString(decryptedRecord)), record.revision, files)
+
+    // When SDK is behind/ahead of record/field type definitions then
+    // strict mapping between JSON attributes and object properties
+    // will fail on any unknown field/key so just skip the record with proper error message
+    try {
+        val recordData = Json.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
+        return KeeperRecord(recordKey, record.recordUid, null, null, recordData, record.revision, files)
+    } catch (e: Exception) {
+        // New/missing field: Polymorphic serializer was not found for class discriminator 'UNKNOWN'...
+        // New/missing field property (field def updated): Encountered unknown key 'UNKNOWN'.
+        // Avoid 'ignoreUnknownKeys = true' to prevent erasing new properties on save/update
+        print("Skipped record ${record.recordUid}\n"+
+                " Error parsing record type - KSM SDK is behind/ahead of record/field type definitions." +
+                " Please upgrade to latest version. If you need assistance please email support@keepersecurity.com")
+        print(e.message)
+    }
+
+    return null
 }
 
 private fun prepareGetPayload(

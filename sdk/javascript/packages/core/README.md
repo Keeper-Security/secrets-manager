@@ -4,6 +4,11 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.5.2
+- KSM-407 - New field type: Passkey
+- KSM-402 - New filed type: script and modification to record types
+- KSM-377 - Added support for PAM record types
+
 ## 16.5.1
 - Adding back missing methods for the Notation improvements
 
