@@ -55,8 +55,8 @@ namespace SecretsManager
             {
                 AccountNumber or AddressRef or Addresses or BankAccounts or BirthDate or
                 CardRef or Checkbox or DatabaseType or Date or DirectoryType or Email or ExpirationDate or FileRef or Hosts or KeyPairs or
-                LicenseNumber or Login or Multiline or Names or OneTimeCode or PamHostname or PamResources or Password or
-                PaymentCards or Phones or PinCode or RecordRef or Schedules or Secret or SecureNote or
+                LicenseNumber or Login or Multiline or Names or OneTimeCode or PamHostname or Passkeys or PamResources or Password or
+                PaymentCards or Phones or PinCode or RecordRef or Scripts or Schedules or Secret or SecureNote or
                 SecurityQuestions or Text or Url => true,
                 _ => false
             };
@@ -557,6 +557,29 @@ namespace SecretsManager
 
         // DatabaseType field constructor with the single value to eliminate the complexity of the passing List as a value
         public DatabaseType(string fieldValue) { type = "databaseType"; value = new List<string> { fieldValue }; }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    public class Script
+    {
+        public string fileRef { get; set; }
+        public string command { get; set; }
+        public List<string> recordRef { get; set; }
+    }
+  
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    public class Passkey
+    {
+        public string privateKey { get; set; }
+        public string credentialId { get; set; }
+        public long? signCount { get; set; }
+        public string userId { get; set; }
+        public string relyingParty { get; set; }
+        public string username { get; set; }
+        public long? createdDate { get; set; }
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
@@ -603,6 +626,32 @@ namespace SecretsManager
         public List<bool> value { get; set; }
 
         // Checkbox field constructor with the single value to eliminate the complexity of the passing List as a value
-        public Checkbox(bool fieldValue) { type = "checkbox"; value = new List<bool> { fieldValue }; }
+        public Checkbox(bool fieldValue) { type = "checkbox"; value = new List<bool> { fieldValue }; }\
+    }
+    
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    public class Scripts : KeeperField
+    {
+        public bool? required { get; set; }
+        public bool? privacyScreen { get; set; }
+        public List<Script> value { get; set; }
+
+        // Scripts field constructor with the single value to eliminate the complexity of the passing List as a value
+        public Scripts(Script fieldValue) { type = "script"; value = new List<Script> { fieldValue }; }
+    }
+    
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    public class Passkeys : KeeperField
+    {
+        public bool? required { get; set; }
+        public bool? privacyScreen { get; set; }
+        public List<Passkey> value { get; set; }
+
+        // Passkeys field constructor with the single value to eliminate the complexity of the passing List as a value
+        public Passkeys(Passkey fieldValue) { type = "passkey"; value = new List<Passkey> { fieldValue }; }
     }
 }
