@@ -566,6 +566,25 @@ data class PamHostnames @JvmOverloads constructor(
 }
 
 @Serializable
+data class Passkey @JvmOverloads constructor(
+    val privateKey: String? = null,
+    val credentialId: String? = null,
+    val signCount: Long? = null,
+    val userId: String? = null,
+    val relyingParty: String? = null,
+    val username: String? = null,
+    val createdDate: Long? = null
+)
+
+@Serializable
+@SerialName("passkey")
+data class Passkeys @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    val value: MutableList<Passkey>) : KeeperRecordField() {
+    constructor(value: Passkey): this(null, null, mutableListOf(value))
+}
+    
 data class Script @JvmOverloads constructor(
     val fileRef: String? = null,
     val command: String? = null,
