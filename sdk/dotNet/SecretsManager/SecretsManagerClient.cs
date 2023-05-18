@@ -883,7 +883,8 @@ namespace SecretsManager
                 }
             }
 
-            return new KeeperRecord(recordKey, record.recordUid, folderUid, folderKey, JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord), record.revision, files.ToArray());
+            var recordData = JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord);
+            return new KeeperRecord(recordKey, record.recordUid, folderUid, folderKey, recordData, record.revision, files.ToArray());
         }
 
         private static GetPayload PrepareGetPayload(IKeyValueStorage storage, string[] recordsFilter)
