@@ -13,7 +13,7 @@ install_requires = [
 
 setup(
     name="keeper-secrets-manager-storage",
-    version="1.0.0",
+    version="1.0.1",
     description="Keeper Secrets Manager SDK helper for managing configurations key-value storage.",
     long_description=long_description,
     long_description_content_type="text/markdown",
