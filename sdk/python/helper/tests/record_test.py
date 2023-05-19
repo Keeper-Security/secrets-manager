@@ -83,9 +83,10 @@ class RecordTest(unittest.TestCase):
         self.assertIsInstance(record_create_obj, RecordCreate)
         self.assertEqual("Login Record", record_create_obj.title)
         self.assertIsNone(record_create_obj.notes)
-        self.assertListEqual(record_create_obj.fields[0].value, ["john.smith@localhost"])
-        self.assertIsNotNone(record_create_obj.fields[1].value[0])
-        self.assertListEqual(record_create_obj.fields[2].value, ["https://localhost"])
+        self.assertListEqual(record_create_obj.fields[0].value, [{}])  # no passkey set
+        self.assertListEqual(record_create_obj.fields[1].value, ["john.smith@localhost"])
+        self.assertIsNotNone(record_create_obj.fields[2].value[0])
+        self.assertListEqual(record_create_obj.fields[3].value, ["https://localhost"])
         self.assertListEqual(record_create_obj.custom[0].value, ["custom value"])
 
     def test_build_record_field_obj_no_password(self):
@@ -120,11 +121,9 @@ class RecordTest(unittest.TestCase):
         self.assertIsInstance(record_create_obj, RecordCreate)
         self.assertEqual("Login Record", record_create_obj.title)
         self.assertIsNone(record_create_obj.notes)
-        self.assertListEqual(record_create_obj.fields[0].value, ["john.smith@localhost"])
+        self.assertListEqual(record_create_obj.fields[0].value, [{}])  # no passkey set
+        self.assertListEqual(record_create_obj.fields[1].value, ["john.smith@localhost"])
         # Make sure no password is set
-        self.assertListEqual(record_create_obj.fields[1].value, [])
-        self.assertListEqual(record_create_obj.fields[2].value, ["https://localhost"])
+        self.assertListEqual(record_create_obj.fields[2].value, [])
+        self.assertListEqual(record_create_obj.fields[3].value, ["https://localhost"])
         self.assertListEqual(record_create_obj.custom[0].value, ["custom value"])
-
-
-

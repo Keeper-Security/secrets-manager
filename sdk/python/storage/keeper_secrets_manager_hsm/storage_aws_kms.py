@@ -7,7 +7,7 @@
 #
 # Keeper Secrets Manager
 # Copyright 2022 Keeper Security Inc.
-# Contact: ops@keepersecurity.com
+# Contact: sm@keepersecurity.com
 import errno
 import hashlib
 import json
@@ -23,6 +23,7 @@ from keeper_secrets_manager_core.keeper_globals import logger_name
 from keeper_secrets_manager_core.utils import ENCODING
 
 logger = logging.getLogger(logger_name)
+
 try:
     import boto3
     from botocore.exceptions import ClientError

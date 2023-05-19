@@ -69,6 +69,13 @@ def base64_to_string(b64s):
     return base64.b64decode(b64s).decode('UTF-8')
 
 
+def is_base64(s):
+    try:
+        return base64.b64encode(base64.b64decode(s)) == str.encode(s)
+    except (Exception,):
+        return False
+
+
 def string_to_bytes(s):
     return s.encode(ENCODING)
 
@@ -205,9 +212,12 @@ def random_sample(sample_length=0, sample_string=''):
 
 def get_windows_user_sid_and_name(logger=None):
     try:
-        user_sid = subprocess.check_output(['whoami', '/user']).splitlines()[-1]
+        # WSL2 systems may run linux whoami command instead and fail
+        # whoami: extra operand '/user'
+        # Use the full name of the executable - whoami.exe
+        user_sid = subprocess.check_output(['whoami.exe', '/user']).splitlines()[-1]
     except subprocess.CalledProcessError as e:
-        logger.info(f'Cannot get current Windows user via "whoami": {e}')
+        logger.debug(f'Cannot get current Windows user via "whoami.exe": {e}')
         return None, None
     else:
         return reversed(user_sid.split(b'\\')[-1].rsplit(b' ', 1))
