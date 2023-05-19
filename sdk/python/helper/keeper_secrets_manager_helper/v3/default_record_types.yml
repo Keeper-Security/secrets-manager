@@ -5,6 +5,7 @@ data:
   - class: Login
     name: login
     fields:
+      - type: passkey
       - type: login
       - type: password
       - type: url

@@ -742,6 +742,21 @@ class Checkbox(FieldType):
     schema = {"value_type": bool, "desc": "Checkbox"}
 
 
+class Passkey(FieldType):
+    name = "passkey"
+    schema = {
+        "value_type": dict,
+        "schema": {
+            "privateKey": {"value_type": str, "desc": "Private Key. Normally a PEM file."},
+            "credentialId": {"value_type": str, "desc": "Credential Id"},
+            "signCount": {"value_type": int, "desc": "Sign Count"},
+            "userId": {"value_type": str, "desc": "User Id"},
+            "relyingParty": {"value_type": str, "desc": "Relying Party"},
+            "username": {"value_type": str, "desc": "User Name"},
+            "createdDate": {"value_type": str, "format": "date_to_ms", "desc": "Creation Date in ISO8601 Format or Epoch Milliseconds"}
+        }
+    }
+
 class Script(FieldType):
     name = "script"
     schema = {
