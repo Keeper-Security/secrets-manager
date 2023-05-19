@@ -4,6 +4,11 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.5.3
+- KSM-401 ksm-java-sdk-update-pam-record-types-and-field-types
+- KSM-406 - New field type: Passkey
+- KSM-382 - Support for record Transactions
+
 ## 16.5.2
 - KSM-379 - Remove deprecation from getValue function
 

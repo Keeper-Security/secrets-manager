@@ -159,12 +159,14 @@ internal fun getFieldValuesCount(field: KeeperRecordField): Int {
         is OneTimePassword -> field.value.size
         is PamHostnames -> field.value.size
         is PamResources -> field.value.size
+        is Passkeys -> field.value.size
         is Password -> field.value.size
         is PaymentCards -> field.value.size
         is Phones -> field.value.size
         is PinCode -> field.value.size
         is RecordRef -> field.value.size
         is Schedules -> field.value.size
+        is Scripts -> field.value.size
         is SecureNote -> field.value.size
         is SecurityQuestions -> field.value.size
         is Text -> field.value.size
@@ -263,6 +265,14 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
                 if (property == null) listOf(Json.encodeToString(field.value[index]))
                 else listOf(getObjectProperty(field.value[index], property))
             }
+        is Passkeys -> if (index >= field.value.size) emptyRes
+            else if (index < 0) {
+                if (property == null) field.value.map { Json.encodeToString(it) }.toList()
+                else field.value.map { getObjectProperty(it, property) }.toList()
+            } else {
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
+            }
         is Password -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value else listOf(field.value[index])
         is PaymentCards -> if (index >= field.value.size) emptyRes
@@ -286,6 +296,14 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
         is RecordRef -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value else listOf(field.value[index])
         is Schedules -> if (index >= field.value.size) emptyRes
+            else if (index < 0) {
+                if (property == null) field.value.map { Json.encodeToString(it) }.toList()
+                else field.value.map { getObjectProperty(it, property) }.toList()
+            } else {
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
+            }
+        is Scripts -> if (index >= field.value.size) emptyRes
             else if (index < 0) {
                 if (property == null) field.value.map { Json.encodeToString(it) }.toList()
                 else field.value.map { getObjectProperty(it, property) }.toList()
@@ -337,12 +355,14 @@ private fun getFieldStringValue(field: KeeperRecordField, valueIdx: Int): String
         is OneTimePassword -> field.value[valueIdx]
         is PamHostnames -> Json.encodeToString(field.value[valueIdx])
         is PamResources -> Json.encodeToString(field.value[valueIdx])
+        is Passkeys -> Json.encodeToString(field.value[valueIdx])
         is Password -> field.value[valueIdx]
         is PaymentCards -> Json.encodeToString(field.value[valueIdx])
         is Phones -> Json.encodeToString(field.value[valueIdx])
         is PinCode -> field.value[valueIdx]
         is RecordRef -> field.value[valueIdx]
         is Schedules -> Json.encodeToString(field.value[valueIdx])
+        is Scripts -> Json.encodeToString(field.value[valueIdx])
         is SecureNote -> field.value[valueIdx]
         is SecurityQuestions -> Json.encodeToString(field.value[valueIdx])
         is Text -> field.value[valueIdx]
@@ -358,9 +378,11 @@ private fun getFieldValueProperty(field: KeeperRecordField, valueIdx: Int, prope
         is Names -> getObjectProperty(field.value[valueIdx], propertyName)
         is PamHostnames -> getObjectProperty(field.value[valueIdx], propertyName)
         is PamResources -> getObjectProperty(field.value[valueIdx], propertyName)
+        is Passkeys -> getObjectProperty(field.value[valueIdx], propertyName)
         is PaymentCards -> getObjectProperty(field.value[valueIdx], propertyName)
         is Phones -> getObjectProperty(field.value[valueIdx], propertyName)
         is Schedules -> getObjectProperty(field.value[valueIdx], propertyName)
+        is Scripts -> getObjectProperty(field.value[valueIdx], propertyName)
         is SecurityQuestions -> getObjectProperty(field.value[valueIdx], propertyName)
         else -> throw Exception("Property name notation is not supported for ${fieldType(field)}")
     }
@@ -397,12 +419,14 @@ private fun getFieldJsonValue(field: KeeperRecordField): String {
         is OneTimePassword -> Json.encodeToString(field.value)
         is PamHostnames -> Json.encodeToString(field.value)
         is PamResources -> Json.encodeToString(field.value)
+        is Passkeys -> Json.encodeToString(field.value)
         is Password -> Json.encodeToString(field.value)
         is PaymentCards -> Json.encodeToString(field.value)
         is Phones -> Json.encodeToString(field.value)
         is PinCode -> Json.encodeToString(field.value)
         is RecordRef -> Json.encodeToString(field.value)
         is Schedules -> Json.encodeToString(field.value)
+        is Scripts -> Json.encodeToString(field.value)
         is SecureNote -> Json.encodeToString(field.value)
         is SecurityQuestions -> Json.encodeToString(field.value)
         is Text -> Json.encodeToString(field.value)
