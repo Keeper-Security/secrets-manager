@@ -584,7 +584,8 @@ data class Passkeys @JvmOverloads constructor(
     val value: MutableList<Passkey>) : KeeperRecordField() {
     constructor(value: Passkey): this(null, null, mutableListOf(value))
 }
-    
+
+@Serializable
 data class Script @JvmOverloads constructor(
     val fileRef: String? = null,
     val command: String? = null,
