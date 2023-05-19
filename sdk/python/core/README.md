@@ -4,6 +4,13 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.5.4
+* KSM-405 - Added new script field type and oneTimeCode to PAM record types
+* KSM-410 - New field type: Passkey
+* KSM-394 - Ability to load configuration from AWS Secrets Manager using AWS AIM role in EC2 instance or AWS IAM user
+* KSM-416 - Fix OS detection bug
+* KSM-400 - Unpinned few dependencies
+
 ## 16.5.3
 * KSM-393 - Fix file permissions on localized Windows OS
 
