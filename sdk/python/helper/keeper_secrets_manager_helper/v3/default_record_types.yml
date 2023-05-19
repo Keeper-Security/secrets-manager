@@ -157,6 +157,8 @@ data:
         label: "Use SSL"
       - type: login
       - type: password
+      - type: script
+        label: "Rotation Scripts"
       - type: text
         label: "Connect Database"
       - type: text
@@ -167,7 +169,7 @@ data:
       - type: text
         label: "Provider Region"
       - type: fileRef
-        label: "Rotation Scripts"
+      - type: oneTimeCode
   - class: pamDirectory
     name: pamDirectory
     fields:
@@ -176,6 +178,8 @@ data:
         label: "Use SSL"
       - type: login
       - type: password
+      - type: script
+        label: "Rotation Scripts"
       - type: text
         label: "Distinguished Name"
       - type: text
@@ -192,7 +196,7 @@ data:
       - type: text
         label: "Provider Region"
       - type: fileRef
-        label: "Rotation Scripts"
+      - type: oneTimeCode
   - class: pamMachine
     name: pamMachine
     fields:
@@ -200,6 +204,8 @@ data:
         required: true
       - type: login
       - type: password
+      - type: script
+        label: "Rotation Scripts"
       - type: secret
         label: "Private PEM Key"
       - type: text
@@ -215,13 +221,15 @@ data:
       - type: text
         label: "Provider Region"
       - type: fileRef
-        label: "Rotation Scripts"
+      - type: oneTimeCode
   - class: pamUser
     name: pamUser
     fields:
       - type: login
         required: true
       - type: password
+      - type: script
+        label: "Rotation Scripts"
       - type: secret
         label: "Private PEM Key"
       - type: text
@@ -231,7 +239,7 @@ data:
       - type: checkbox
         label: "Managed"
       - type: fileRef
-        label: "Rotation Scripts"
+      - type: oneTimeCode
   - class: pamAwsConfiguration
     name: pamAwsConfiguration
     fields:
@@ -253,8 +261,9 @@ data:
         label: "Region Names"
       - type: multiline
         label: "Port Mapping"
-      - type: fileRef
+      - type: script
         label: "Rotation Scripts"
+      - type: fileRef
   - class: pamAzureConfiguration
     name: pamAzureConfiguration
     fields:
@@ -282,8 +291,9 @@ data:
         label: "Resource Groups"
       - type: multiline
         label: "Port Mapping"
-      - type: fileRef
+      - type: script
         label: "Rotation Scripts"
+      - type: fileRef
   - class: pamLocalConfiguration
     name: pamLocalConfiguration
     fields:
@@ -297,8 +307,9 @@ data:
         required: true
       - type: multiline
         label: "Port Mapping"
-      - type: fileRef
+      - type: script
         label: "Rotation Scripts"
+      - type: fileRef
   - class: pamNetworkConfiguration
     name: pamNetworkConfiguration
     fields:
@@ -313,5 +324,6 @@ data:
         label: "Network CIDR"
       - type: multiline
         label: "Port Mapping"
-      - type: fileRef
+      - type: script
         label: "Rotation Scripts"
+      - type: fileRef

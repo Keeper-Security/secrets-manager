@@ -365,3 +365,10 @@ class FieldTypeTest(unittest.TestCase):
             "relyingParty": "hUrGHrcM0PI3Y6Ch5wCrAQ",
             "username": "user1",
             "createdDate": 1625140800000})
+        
+    def test_scrpt(self):
+        ft = Script()
+        ft.fileRef = "OlLZ6JLjnyMOS3CiIPHBjw"
+        ft.command = "/bin/zsh"
+        ft.recordRef = "hUrGHrcM0PI3Y6Ch5wCrAQ"
+        self._check_dict(ft, value={"fileRef": "OlLZ6JLjnyMOS3CiIPHBjw", "command": "/bin/zsh", "recordRef": "hUrGHrcM0PI3Y6Ch5wCrAQ"})

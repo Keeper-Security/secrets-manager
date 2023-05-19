@@ -756,3 +756,14 @@ class Passkey(FieldType):
             "createdDate": {"value_type": str, "format": "date_to_ms", "desc": "Creation Date in ISO8601 Format or Epoch Milliseconds"}
         }
     }
+
+class Script(FieldType):
+    name = "script"
+    schema = {
+        "value_type": dict,
+        "schema": {
+            "fileRef": {"value_type": str, "validate": UID_REGEX, "desc": "Record UID of File record."},
+            "command": {"value_type": str, "desc": "Command"},
+            "recordRef": {"value_type": str, "validate": UID_REGEX, "desc": "Record UID of the referenced record."}
+        }
+    }

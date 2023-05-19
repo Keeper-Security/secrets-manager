@@ -9,7 +9,6 @@ namespace SecretsManager
 {
     public static class Notation
     {
-        [Obsolete("GetValue is deprecated, please use GetNotation instead.")]
         public static string GetValue(KeeperSecrets secrets, string notation)
         {
             var parsedNotation = ParseNotation(notation, true); // prefix, record, selector, footer
