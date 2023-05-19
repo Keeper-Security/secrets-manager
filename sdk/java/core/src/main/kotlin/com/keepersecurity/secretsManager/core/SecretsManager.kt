@@ -2,10 +2,7 @@
 
 package com.keepersecurity.secretsManager.core
 
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
+import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -87,12 +84,26 @@ private data class GetPayload(
 )
 
 @Serializable
+enum class UpdateTransactionType(printableName: String) {
+    @SerialName("general") GENERAL("general"),
+    @SerialName("rotation") ROTATION("rotation")
+}
+
+@Serializable
 private data class UpdatePayload(
     val clientVersion: String,
     val clientId: String,
     val recordUid: String,
     val data: String,
-    val revision: Long? = null
+    val revision: Long? = null,
+    val transactionType: UpdateTransactionType? = null
+)
+
+@Serializable
+private data class CompleteTransactionPayload(
+    val clientVersion: String,
+    val clientId: String,
+    val recordUid: String
 )
 
 @Serializable
@@ -485,9 +496,16 @@ fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>): Secr
 }
 
 @ExperimentalSerializationApi
-fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
-    val payload = prepareUpdatePayload(options.storage, record)
+fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord, transactionType: UpdateTransactionType? = null) {
+    val payload = prepareUpdatePayload(options.storage, record, transactionType)
     postQuery(options, "update_secret", payload)
+}
+
+@ExperimentalSerializationApi
+fun completeTransaction(options: SecretsManagerOptions, recordUid: String, rollback: Boolean = false) {
+    val payload = prepareCompleteTransactionPayload(options.storage, recordUid)
+    val path = if (rollback) "rollback_secret_update" else "finalize_secret_update"
+    postQuery(options, path, payload)
 }
 
 @ExperimentalSerializationApi
@@ -713,12 +731,22 @@ private fun prepareDeletePayload(
 @ExperimentalSerializationApi
 private fun prepareUpdatePayload(
     storage: KeyValueStorage,
-    record: KeeperRecord
+    record: KeeperRecord,
+    transactionType: UpdateTransactionType? = null
 ): UpdatePayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val recordBytes = stringToBytes(Json.encodeToString(record.data))
     val encryptedRecord = encrypt(recordBytes, record.recordKey)
-    return UpdatePayload(KEEPER_CLIENT_VERSION, clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision)
+    return UpdatePayload(KEEPER_CLIENT_VERSION, clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision, transactionType)
+}
+
+@ExperimentalSerializationApi
+private fun prepareCompleteTransactionPayload(
+    storage: KeyValueStorage,
+    recordUid: String
+): CompleteTransactionPayload {
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    return CompleteTransactionPayload(KEEPER_CLIENT_VERSION, clientId, recordUid)
 }
 
 @ExperimentalSerializationApi
