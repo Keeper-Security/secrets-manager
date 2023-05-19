@@ -7,7 +7,7 @@
 #
 # Keeper Secrets Manager
 # Copyright 2023 Keeper Security Inc.
-# Contact: ops@keepersecurity.com
+# Contact: sm@keepersecurity.com
 import errno
 import hashlib
 import json

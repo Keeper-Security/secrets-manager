@@ -7,7 +7,7 @@
 #
 # Keeper Secrets Manager
 # Copyright 2022 Keeper Security Inc.
-# Contact: ops@keepersecurity.com
+# Contact: sm@keepersecurity.com
 
 # Requires: Entrust nShield SDK (nCore API)
 # Prerequisites: x86_64 Windows or Linux, nShield Security World 12.80 or later, user permissions to access kmdata files

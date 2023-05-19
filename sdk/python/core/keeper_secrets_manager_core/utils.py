@@ -69,6 +69,13 @@ def base64_to_string(b64s):
     return base64.b64decode(b64s).decode('UTF-8')
 
 
+def is_base64(s):
+    try:
+        return base64.b64encode(base64.b64decode(s)) == str.encode(s)
+    except (Exception,):
+        return False
+
+
 def string_to_bytes(s):
     return s.encode(ENCODING)
 
