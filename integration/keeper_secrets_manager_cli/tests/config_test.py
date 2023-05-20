@@ -1,8 +1,10 @@
 import os
+import re
 import unittest
 from click.testing import CliRunner
 import keeper_secrets_manager_cli
 from keeper_secrets_manager_cli.__main__ import cli
+from keeper_secrets_manager_cli.config import ConfigProfile
 from keeper_secrets_manager_cli.export import Export
 from keeper_secrets_manager_core.mock import MockConfig
 import tempfile
@@ -17,7 +19,12 @@ class ConfigTest(unittest.TestCase):
         os.chdir(self.temp_dir.name)
 
         # Make a fake keeper.ini file.
-        export = Export(config=MockConfig().make_config(), file_format="ini", plain=True)
+        mock_cfg = MockConfig().make_config()
+        pattern = re.compile(r'(?<!^)(?=[A-Z])')
+        mock_cfg = {pattern.sub('_', x).lower(): mock_cfg[x] for x in mock_cfg.keys()}
+
+        # Export needs ConfigProfile - hence the conversion above
+        export = Export(config=ConfigProfile(**mock_cfg), file_format="ini", plain=True)
         with open("keeper.ini", "w") as fh:
             fh.write(export.run())
             fh.close()
