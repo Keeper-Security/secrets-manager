@@ -14,6 +14,8 @@ import click
 from click_help_colors import HelpColorsGroup, HelpColorsCommand
 from click_repl import repl, exit as repl_exit
 from colorama import Fore, Style, init
+from trogon import tui
+
 from . import KeeperCli
 from .exception import KsmCliException
 from .exec import Exec
@@ -260,6 +262,7 @@ class Mutex(click.Option):
 
 
 # MAIN GROUP
+@tui()
 @click.group(
     cls=AliasedGroup,
     help_headers_color='yellow',
