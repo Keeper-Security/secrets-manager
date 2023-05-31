@@ -12,7 +12,7 @@ install_requires = [
     'keeper-secrets-manager-core>=16.4.1',
     'keeper-secrets-manager-helper>=1.0.4',
     'importlib_metadata',
-    'ansible~=5.0'
+    'ansible~=5.0.0rc1'
 ]
 
 setup(
