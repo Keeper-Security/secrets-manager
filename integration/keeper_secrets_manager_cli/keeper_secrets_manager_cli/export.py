@@ -28,6 +28,13 @@ class Export:
     """
 
     def __init__(self, config, file_format=None, plain=False):
+        # To prevent exposing cloud based secrets
+        # only configurations stored internally can be exported
+        if config.storage not in (None, "", "internal"):
+            raise KsmCliException(
+                "Only configurations stored internally can be exported. "
+                f" Current profile has storage={config.storage}")
+
         # If the JSON dictionary is passed in convert it to a Config
         if isinstance(config, dict) is True:
             config = Config.create_from_json(config).get_profile(Config.default_profile)

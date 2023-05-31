@@ -162,6 +162,149 @@ class Profile:
 
         print("Added profile {} to INI config file located at {}".format(profile_name, ini_file), file=sys.stderr)
 
+    @staticmethod
+    def from_aws_ec2instance(secret: str, fallback=False, ini_file=None, profile_name=None, launched_from_app=False):
+        from keeper_secrets_manager_storage.storage_aws_secret import AwsConfigProvider
+
+        ini_file = ini_file or Config.get_default_ini_file(launched_from_app)
+
+        profile_name = profile_name or os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
+        if profile_name == Config.CONFIG_KEY:
+            raise KsmCliException(f"The profile '{profile_name}' is a reserved"
+                                  " profile name. Cannot not init profile.")
+
+        config = Config(ini_file=ini_file)
+        if os.path.exists(ini_file) is True:
+            config.load()
+
+        awsp = AwsConfigProvider(secret)
+        awsp.from_ec2instance_config(secret, fallback)
+        cfg = awsp.read_config()
+        if not cfg:
+            raise KsmCliException(f"Failed to load profile from AWS secret '{secret}'")
+        config_storage = InMemoryKeyValueStorage(cfg)
+
+        storage_cfg: dict = {"provider": "ec2instance"}
+        if secret:
+            storage_cfg["secret"] = secret
+        if fallback:
+            storage_cfg["fallback"] = fallback
+
+        config.set_profile(profile_name,
+                           storage="aws",
+                           storage_config=storage_cfg,
+                           client_id=config_storage.get(ConfigKeys.KEY_CLIENT_ID),
+                           private_key=config_storage.get(ConfigKeys.KEY_PRIVATE_KEY),
+                           app_key=config_storage.get(ConfigKeys.KEY_APP_KEY),
+                           hostname=config_storage.get(ConfigKeys.KEY_HOSTNAME),
+                           app_owner_public_key=config_storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
+                           server_public_key_id=config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID))
+
+        if config.config.active_profile is None:
+            config.config.active_profile = profile_name
+
+        config.save()
+        print(f"Added profile {profile_name} to INI config file located at {ini_file}", file=sys.stderr)
+
+    @staticmethod
+    def from_aws_profile(secret: str, fallback=False, aws_profile: str = "", ini_file=None, profile_name=None, launched_from_app=False):
+        from keeper_secrets_manager_storage.storage_aws_secret import AwsConfigProvider
+
+        ini_file = ini_file or Config.get_default_ini_file(launched_from_app)
+
+        profile_name = profile_name or os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
+        if profile_name == Config.CONFIG_KEY:
+            raise KsmCliException(f"The profile '{profile_name}' is a reserved"
+                                  " profile name. Cannot not init profile.")
+
+        config = Config(ini_file=ini_file)
+        if os.path.exists(ini_file) is True:
+            config.load()
+
+        awsp = AwsConfigProvider(secret)
+        if aws_profile:
+            awsp.from_profile_config(secret, aws_profile, fallback)
+        else:
+            awsp.from_default_config(secret, fallback)
+        cfg = awsp.read_config()
+        if not cfg:
+            raise KsmCliException(f"Failed to load profile from AWS secret '{secret}'")
+        config_storage = InMemoryKeyValueStorage(cfg)
+
+        storage_cfg: dict = {"provider": "profile"}
+        storage_cfg["profile"] = aws_profile or ""
+        if secret:
+            storage_cfg["secret"] = secret
+        if fallback:
+            storage_cfg["fallback"] = fallback
+
+        config.set_profile(profile_name,
+                           storage="aws",
+                           storage_config=storage_cfg,
+                           client_id=config_storage.get(ConfigKeys.KEY_CLIENT_ID),
+                           private_key=config_storage.get(ConfigKeys.KEY_PRIVATE_KEY),
+                           app_key=config_storage.get(ConfigKeys.KEY_APP_KEY),
+                           hostname=config_storage.get(ConfigKeys.KEY_HOSTNAME),
+                           app_owner_public_key=config_storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
+                           server_public_key_id=config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID))
+
+        if config.config.active_profile is None:
+            config.config.active_profile = profile_name
+
+        config.save()
+        print(f"Added profile {profile_name} to INI config file located at {ini_file}", file=sys.stderr)
+
+    @staticmethod
+    def from_aws_custom(secret: str, fallback=False,
+                        aws_access_key_id: str = "",
+                        aws_secret_access_key: str = "",
+                        region: str = "",
+                        ini_file=None, profile_name=None, launched_from_app=False):
+        from keeper_secrets_manager_storage.storage_aws_secret import AwsConfigProvider
+
+        ini_file = ini_file or Config.get_default_ini_file(launched_from_app)
+
+        profile_name = profile_name or os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
+        if profile_name == Config.CONFIG_KEY:
+            raise KsmCliException(f"The profile '{profile_name}' is a reserved"
+                                  " profile name. Cannot not init profile.")
+
+        config = Config(ini_file=ini_file)
+        if os.path.exists(ini_file) is True:
+            config.load()
+
+        awsp = AwsConfigProvider(secret)
+        awsp.from_custom_config(secret, aws_access_key_id, aws_secret_access_key, region, fallback)
+        cfg = awsp.read_config()
+        if not cfg:
+            raise KsmCliException(f"Failed to load profile from AWS secret '{secret}'")
+        config_storage = InMemoryKeyValueStorage(cfg)
+
+        storage_cfg: dict = {"provider": "custom"}
+        storage_cfg["aws_access_key_id"] = aws_access_key_id
+        storage_cfg["aws_secret_access_key"] = aws_secret_access_key
+        storage_cfg["region"] = region
+        if secret:
+            storage_cfg["secret"] = secret
+        if fallback:
+            storage_cfg["fallback"] = fallback
+
+        config.set_profile(profile_name,
+                           storage="aws",
+                           storage_config=storage_cfg,
+                           client_id=config_storage.get(ConfigKeys.KEY_CLIENT_ID),
+                           private_key=config_storage.get(ConfigKeys.KEY_PRIVATE_KEY),
+                           app_key=config_storage.get(ConfigKeys.KEY_APP_KEY),
+                           hostname=config_storage.get(ConfigKeys.KEY_HOSTNAME),
+                           app_owner_public_key=config_storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
+                           server_public_key_id=config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID))
+
+        if config.config.active_profile is None:
+            config.config.active_profile = profile_name
+
+        config.save()
+        print(f"Added profile {profile_name} to INI config file located at {ini_file}", file=sys.stderr)
+
     def list_profiles(self, output='text', use_color=None):
 
         if use_color is None:
@@ -216,9 +359,13 @@ class Profile:
             profile_name = self._config.config.active_profile
         profile_config = self._config.get_profile(profile_name)
 
-        config_str = Export(config=profile_config, file_format=file_format, plain=plain).run()
-
-        self.cli.output(config_str)
+        if profile_config.storage in (None, "", "internal"):
+            config_str = Export(config=profile_config, file_format=file_format, plain=plain).run()
+            self.cli.output(config_str)
+        else:
+            self.cli.output("Only configs stored internally can be exported. "
+                            f" Profile [{profile_name}] "
+                            f" has storage={profile_config.storage}")
 
     @staticmethod
     def import_config(config_base64, file=None, profile_name=None, launched_from_app=False):
