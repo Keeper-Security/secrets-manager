@@ -6,6 +6,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.1.0
+* KSM-395 - New feature to load configurations from AWS Secrets Manager
+
 ## 1.0.17
 * KSM-392 - Ability to update fields where the label is a blank string (`""`)
 * Pinned KSM Core version to 16.5.1
