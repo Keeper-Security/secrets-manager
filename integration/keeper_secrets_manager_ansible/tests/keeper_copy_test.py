@@ -72,7 +72,7 @@ class KeeperCopyTest(unittest.TestCase):
             r, out, err = a.run()
             result = r[0]["localhost"]
             self.assertEqual(result["ok"], 4, "4 things didn't happen")
-            self.assertEqual(result["failures"], 0, "failures was n ot 0")
+            self.assertEqual(result["failures"], 0, "failures was not 0")
             self.assertEqual(result["changed"], 3, "3 things didn't change")
             ls = os.listdir(temp_dir)
             self.assertTrue("password" in ls, "did not find file password")

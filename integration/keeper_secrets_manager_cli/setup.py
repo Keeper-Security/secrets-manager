@@ -20,13 +20,14 @@ install_requires = [
     'click-repl',
     'pyyaml',
     'update-checker',
-    'psutil'
+    'psutil',
+    'boto3'
 ]
 
 # Version set in the keeper_secrets_manager_cli.version file.
 setup(
     name="keeper-secrets-manager-cli",
-    version="1.0.17",
+    version="1.1.0",
     description="Command line tool for Keeper Secrets Manager",
     long_description=long_description,
     long_description_content_type="text/markdown",

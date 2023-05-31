@@ -11,3 +11,4 @@ click-repl
 pyyaml
 update-checker
 psutil
+boto3
