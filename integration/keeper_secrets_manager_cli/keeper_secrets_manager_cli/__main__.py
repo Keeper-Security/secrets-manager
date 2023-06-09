@@ -489,14 +489,16 @@ def profile_export_command(ctx, plain, file_format, profile_name):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
+@click.option('--profile-name', '-p', type=str, required=False, help='Config profile to import into.')
 @click.option('--output-file', '-f', type=str, required=False, help='Create the config in a specific file location.')
 @click.argument('config-base64', type=str, required=True, nargs=1)
 @click.pass_context
-def profile_import_command(ctx, output_file, config_base64):
+def profile_import_command(ctx, profile_name, output_file, config_base64):
     """Import an encrypted config file"""
     Profile(cli=ctx.obj["cli"], config=global_config).import_config(
-        file=output_file,
         config_base64=config_base64,
+        file=output_file,
+        profile_name=profile_name,
         launched_from_app=global_config.launched_from_app
     )
 
