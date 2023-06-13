@@ -4,6 +4,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.5.4
+- KSM-431 - Improved Passkey field type support
+- KSM-421 - Improved Logging
+
 ## 16.5.3
 - KSM-401 - Update PAM Record types and Field types to have latest updates
 - KSM-406 - New field type: Passkey
