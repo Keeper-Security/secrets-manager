@@ -84,7 +84,7 @@ fun getValue(secrets: KeeperSecrets, notation: String): String {
             val expectedSize = if (idx >= 0) 1 else valuesCount
             val res = getFieldStringValues(field, idx, objPropertyName)
             if (res.size != expectedSize)
-                print("Notation warning - extracted ${res.size} out of $valuesCount values for '$objPropertyName' property.")
+                println("Notation warning - extracted ${res.size} out of $valuesCount values for '$objPropertyName' property.")
             if (res.isNotEmpty()) {
                 // legacy compatibility mode - no indexes, ex. /url returns value[0]
                 if(parsedNotation[2].index1?.second.isNullOrEmpty() && parsedNotation[2].index2?.second.isNullOrEmpty())
