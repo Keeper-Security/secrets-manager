@@ -566,8 +566,20 @@ data class PamHostnames @JvmOverloads constructor(
 }
 
 @Serializable
+@SerialName("privateKey")
+data class PrivateKey @JvmOverloads constructor(
+    val crv: String? = null,
+    val d: String? = null,
+    val ext: Boolean? = null,
+    val key_ops: List<String>? = null,
+    val kty: String? = null,
+    val x: String? = null,
+    val y: String? = null
+)
+
+@Serializable
 data class Passkey @JvmOverloads constructor(
-    val privateKey: String? = null,
+    val privateKey: PrivateKey? = null,
     val credentialId: String? = null,
     val signCount: Long? = null,
     val userId: String? = null,
