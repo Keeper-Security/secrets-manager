@@ -479,7 +479,7 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
             val res = getFieldStringValues(field, idx, objPropertyName)
             val expectedSize = if (idx >= 0) 1 else valuesCount
             if (res.size != expectedSize)
-                print("Notation warning - extracted ${res.size} out of $valuesCount values for '$objPropertyName' property.")
+                println("Notation warning - extracted ${res.size} out of $valuesCount values for '$objPropertyName' property.")
             if (res.isNotEmpty())
                 result.addAll(res)
         }
@@ -688,10 +688,10 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
         // New/missing field: Polymorphic serializer was not found for class discriminator 'UNKNOWN'...
         // New/missing field property (field def updated): Encountered unknown key 'UNKNOWN'.
         // Avoid 'ignoreUnknownKeys = true' to prevent erasing new properties on save/update
-        print("Skipped record ${record.recordUid}\n"+
+        println("Skipped record ${record.recordUid}\n"+
                 " Error parsing record type - KSM SDK is behind/ahead of record/field type definitions." +
                 " Please upgrade to latest version. If you need assistance please email support@keepersecurity.com")
-        print(e.message)
+        println(e.message)
     }
 
     return null
