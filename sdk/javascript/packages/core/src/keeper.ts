@@ -1191,8 +1191,18 @@ export class CheckboxField extends KeeperRecordField {
       }
 }
 
+export type PrivateKey = {
+    crv?: string
+    d?: string
+    ext?: boolean
+    key_ops?: string[]
+    kty?: string
+    x?: string
+    y?: string
+}
+
 export type Passkey = {
-    privateKey?: string
+    privateKey?: PrivateKey
     credentialId?: string
     signCount?: number
     userId?: string
