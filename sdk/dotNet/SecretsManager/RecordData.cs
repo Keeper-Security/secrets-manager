@@ -568,13 +568,27 @@ namespace SecretsManager
         public string command { get; set; }
         public List<string> recordRef { get; set; }
     }
-  
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    public class PrivateKey
+    {
+        public string crv { get; set; }
+        public string d { get; set; }
+        public bool? ext { get; set; }
+        public List<string> key_ops { get; set; }
+        public string kty { get; set; }
+        public string x { get; set; }
+        public string y { get; set; }
+    }
+
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Passkey
     {
-        public string privateKey { get; set; }
+        public PrivateKey privateKey { get; set; }
         public string credentialId { get; set; }
         public long? signCount { get; set; }
         public string userId { get; set; }
