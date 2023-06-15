@@ -747,7 +747,16 @@ class Passkey(FieldType):
     schema = {
         "value_type": dict,
         "schema": {
-            "privateKey": {"value_type": str, "desc": "Private Key. Normally a PEM file."},
+            "privateKey": {"value_type": dict, "desc": "Private EC Key.",
+            "schema": {
+                "crv": {"value_type": str},
+                "d": {"value_type": str},
+                "ext": {"value_type": bool},
+                "key_ops": {"value_type": list},
+                "kty": {"value_type": str},
+                "x": {"value_type": str},
+                "y": {"value_type": str}
+            }},
             "credentialId": {"value_type": str, "desc": "Credential Id"},
             "signCount": {"value_type": int, "desc": "Sign Count"},
             "userId": {"value_type": str, "desc": "User Id"},
