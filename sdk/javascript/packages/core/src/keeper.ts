@@ -124,6 +124,7 @@ type SecretsManagerResponse = {
     records: SecretsManagerResponseRecord[]
     expiresOn: number
     warnings: string[]
+    extra?: {}
 }
 
 type SecretsManagerDeleteResponse = {
@@ -144,6 +145,7 @@ export type KeeperSecrets = {
     expiresOn?: Date
     records: KeeperRecord[]
     warnings?: string[]
+    extra?: {}
 }
 
 export type KeeperRecord = {
@@ -434,6 +436,9 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, recordsFilt
     }
     if (response.warnings && response.warnings.length > 0) {
         secrets.warnings = response.warnings
+    }
+    if (response.extra && Object.keys(response.extra).length > 0) {
+        secrets.extra = response.extra
     }
     return {secrets, justBound}
 }
