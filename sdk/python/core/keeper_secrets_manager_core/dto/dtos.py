@@ -266,6 +266,14 @@ class Record:
             print("{} ({}) : {}".format(item["label"], item["type"], ", ".join(item["value"])))
 
 
+class KeeperFolder:
+    def __init__(self, folder_key, folder_uid:str, parent_uid:str, name:str):
+        self.folder_key = folder_key
+        self.folder_uid = folder_uid
+        self.parent_uid = parent_uid
+        self.name = name
+
+
 class Folder:
 
     def __init__(self, folder, secret_key):
@@ -281,8 +289,10 @@ class Folder:
         folder_key = CryptoUtils.decrypt_aes(utils.base64_to_bytes(folder_key_enc), secret_key)
         folder_records = folder.get('records')
 
-        self.uid = folder_uid
         self.key = folder_key
+        self.uid = folder_uid
+        self.parent_uid = folder.get('parentUid', '')
+        self.name = folder.get('name', '')
 
         for r in folder_records:
 
