@@ -1,0 +1,49 @@
+plugins {
+    id 'java'
+}
+
+archivesBaseName = 'keeper-external-credentials'
+group 'com.keepersecurity'
+version '0.0.1-SNAPSHOT'
+
+sourceCompatibility = 1.8
+
+// TODO: replace with mid server path
+// This must point to the MID Server installation location (agent directory path).
+def midserver_agent_dir = '/opt/servicenow/mid/agent/lib'
+
+repositories {
+    mavenCentral()
+    flatDir {
+        dirs("$midserver_agent_dir")
+    }
+}
+
+dependencies {
+    implementation 'com.keepersecurity.secrets-manager:core:16.5.4+'
+
+    // MID server dependencies, not required to be uploaded
+    // MID jar dependency for config APIs
+    compileOnly 'com.snc:mid:19.0.0.0-SNAPSHOT'
+    compileOnly 'com.snc:commons-glide:19.0.0.0-SNAPSHOT'
+    compileOnly 'com.snc:commons-core-automation:19.0.0.0-SNAPSHOT'
+    compileOnly 'com.snc:snc-automation-api:19.0.0.0-SNAPSHOT'
+    compileOnly 'com.google.guava:guava:2.8.2'
+    compileOnly 'log4j:log4j-api:1.2.17'
+    compileOnly 'commons-logging:commons-logging'
+    compileOnly 'org.jetbrains.kotlin:kotlin-jdk-annotations:1.0.0'
+}
+
+jar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes('Main-Class': 'com.snc.discovery.CredentialResolver')
+    }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    } {
+        exclude "META-INF/*.SF"
+        exclude "META-INF/*.DSA"
+        exclude "META-INF/*.RSA"
+    }
+}
