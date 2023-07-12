@@ -4,6 +4,11 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.6.0
+- KSM-412 - Added support for Folders
+- KSM-432 - Improved support for Passkey field type
+- Dependencies upgrade
+
 ## 16.5.2
 - KSM-407 - New field type: Passkey
 - KSM-402 - New filed type: script and modification to record types

@@ -96,16 +96,15 @@ const importKey = async (keyId: string, key: Uint8Array, storage?: KeyValueStora
     }
 }
 
-const encrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage): Promise<Uint8Array> => {
+const encrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage, useCBC?: boolean): Promise<Uint8Array> => {
     const key = await loadKey(keyId, storage)
-    const iv = getRandomBytes(12)
-    const cipher = createCipheriv('aes-256-gcm', key, iv)
-    const encrypted = Buffer.concat([cipher.update(data), cipher.final()])
-    const tag = cipher.getAuthTag()
-    return Buffer.concat([iv, encrypted, tag])
+    return _encrypt(data, key, useCBC)
 }
 
-const _encrypt = (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
+const _encrypt = (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<Uint8Array> => {
+    if (useCBC) {
+        return _encryptCBC(data, key)
+    }
     const iv = randomBytes(12)
     const cipher = createCipheriv('aes-256-gcm', key, iv)
     const encrypted = Buffer.concat([cipher.update(data), cipher.final()])
@@ -114,7 +113,17 @@ const _encrypt = (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
     return Promise.resolve(result)
 }
 
-const _decrypt = (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
+const _encryptCBC = async (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
+    let iv = randomBytes(16);
+    let cipher = createCipheriv("aes-256-cbc", key, iv).setAutoPadding(true);
+    let encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
+    return Buffer.concat([iv, encrypted]);
+}
+
+const _decrypt = (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<Uint8Array> => {
+    if (useCBC) {
+        return _decryptCBC(data, key)
+    }
     const iv = data.subarray(0, 12)
     const encrypted = data.subarray(12, data.length - 16)
     const tag = data.subarray(data.length - 16)
@@ -123,9 +132,16 @@ const _decrypt = (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
     return Promise.resolve(Buffer.concat([cipher.update(encrypted), cipher.final()]))
 }
 
-const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean): Promise<void> => {
+const _decryptCBC = async (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
+    let iv = data.subarray(0, 16)
+    let encrypted = data.subarray(16)
+    let cipher = createDecipheriv("aes-256-cbc", key, iv).setAutoPadding(true)
+    return Buffer.concat([cipher.update(encrypted), cipher.final()])
+}
+
+const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean, useCBC?: boolean): Promise<void> => {
     const unwrappingKey = await loadKey(unwrappingKeyId, storage)
-    const unwrappedKey = await _decrypt(key, unwrappingKey)
+    const unwrappedKey = await _decrypt(key, unwrappingKey, useCBC)
     keyCache[keyId] = unwrappedKey
     if (memoryOnly) {
         return
@@ -135,9 +151,9 @@ const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, s
     }
 }
 
-const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage): Promise<Uint8Array> => {
+const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage, useCBC?: boolean): Promise<Uint8Array> => {
     const key = await loadKey(keyId, storage)
-    return _decrypt(data, key)
+    return _decrypt(data, key, useCBC)
 }
 
 function hash(data: Uint8Array): Promise<Uint8Array> {
