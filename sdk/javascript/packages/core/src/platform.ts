@@ -12,11 +12,11 @@ export type Platform = {
     sign(data: Uint8Array, keyId: string, storage: KeyValueStorage): Promise<Uint8Array>
     publicEncrypt(data: Uint8Array, key: Uint8Array, id?: Uint8Array): Promise<Uint8Array>
     importKey(keyId: string, key: Uint8Array, storage?: KeyValueStorage): Promise<void>
-    unwrap(key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean): Promise<void>
-    encrypt(data: Uint8Array, keyId: string, storage?: KeyValueStorage): Promise<Uint8Array>
-    encryptWithKey(data: Uint8Array, key: Uint8Array): Promise<Uint8Array>
-    decrypt(data: Uint8Array, keyId: string, storage?: KeyValueStorage): Promise<Uint8Array>
-    decryptWithKey(data: Uint8Array, key: Uint8Array): Promise<Uint8Array>
+    unwrap(key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean, useCBC?: boolean): Promise<void>
+    encrypt(data: Uint8Array, keyId: string, storage?: KeyValueStorage, useCBC?: boolean): Promise<Uint8Array>
+    encryptWithKey(data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<Uint8Array>
+    decrypt(data: Uint8Array, keyId: string, storage?: KeyValueStorage, useCBC?: boolean): Promise<Uint8Array>
+    decryptWithKey(data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<Uint8Array>
     hash(data: Uint8Array, tag: string): Promise<Uint8Array>
     cleanKeyCache(): void
     hasKeysCached(): boolean;
