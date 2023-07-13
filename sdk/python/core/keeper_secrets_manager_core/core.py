@@ -25,9 +25,10 @@ from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.dto.dtos import Folder, Record, RecordCreate, SecretsManagerResponse, AppData, \
-    KeeperFileUpload, KeeperFile
+    KeeperFileUpload, KeeperFile, KeeperFolder
 from keeper_secrets_manager_core.dto.payload import CompleteTransactionPayload, GetPayload, UpdatePayload, TransmissionKey, \
-    EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, DeletePayload
+    EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, DeletePayload, \
+    CreateFolderPayload, UpdateFolderPayload, DeleteFolderPayload, CreateOptions, QueryOptions
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys, \
     logger_name, keeper_servers
@@ -290,7 +291,10 @@ class SecretsManager:
                 isinstance(payload, CreatePayload) or
                 isinstance(payload, FileUploadPayload) or
                 isinstance(payload, CompleteTransactionPayload) or
-                isinstance(payload, DeletePayload)):
+                isinstance(payload, DeletePayload) or
+                isinstance(payload, CreateFolderPayload) or
+                isinstance(payload, UpdateFolderPayload) or
+                isinstance(payload, DeleteFolderPayload)):
             raise Exception('Unknown payload type "%s"' % payload.__class__.__name__)
 
         payload_json_str = dict_to_json(payload.__dict__)
@@ -321,8 +325,7 @@ class SecretsManager:
         return payload
 
     @staticmethod
-    def prepare_get_payload(storage, records_filter):
-
+    def prepare_get_payload(storage, query_options:QueryOptions):
         payload = GetPayload()
 
         payload.clientVersion = keeper_secrets_manager_sdk_client_id
@@ -337,26 +340,28 @@ class SecretsManager:
             # passed once when binding
             payload.publicKey = public_key_base64
 
-        if records_filter:
-            payload.requestedRecords = records_filter
+        if query_options:
+            if query_options.records_filter:
+                payload.requestedRecords = query_options.records_filter
+            if query_options.folders_filter:
+                payload.requestedFolders = query_options.folders_filter
 
         return payload
 
     @staticmethod
-    def prepare_create_payload(storage, folder_uid, record_data_json_str, folder_key):
-
+    def prepare_create_payload(storage, create_options: CreateOptions, record_data_json_str, folder_key):
         owner_public_key = storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY)
 
         if not owner_public_key:
-            raise KeeperError('Unable to create record - owner key is missing. Looks like application was created '
-                              'using out date client (Web Vault or Commander)')
+            raise KeeperError('Unable to create record - owner key is missing.'
+                              ' Looks like application was created using'
+                              ' out of date client (Web Vault or Commander)')
 
         owner_public_key_bytes = url_safe_str_to_bytes(owner_public_key)
 
         if not folder_key:
-            raise KeeperError('Unable to create record - folder key for ' + folder_uid + ' is missing')
+            raise KeeperError('Unable to create record - folder key for ' + create_options.folder_uid + ' is missing')
 
-        record_bytes = ""
         record_key = generate_random_bytes(32)
         record_uid = generate_random_bytes(16)
 
@@ -373,9 +378,10 @@ class SecretsManager:
         payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
         payload.recordUid = CryptoUtils.bytes_to_url_safe_str(record_uid)
         payload.recordKey = bytes_to_base64(record_key_encrypted)
-        payload.folderUid = folder_uid
+        payload.folderUid = create_options.folder_uid
         payload.folderKey = bytes_to_base64(folder_key_encrypted)
         payload.data = bytes_to_base64(record_data_encrypted)
+        payload.subFolderUid = create_options.subfolder_uid
 
         return payload
 
@@ -480,6 +486,58 @@ class SecretsManager:
             'payload': payload,
             'encryptedFileData': encrypted_file_data
         }
+
+    @staticmethod
+    def prepare_create_folder_payload(storage, create_options, folder_name, shared_folder_key):
+
+        payload = CreateFolderPayload()
+
+        payload.clientVersion = keeper_secrets_manager_sdk_client_id
+        payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
+        payload.sharedFolderUid = create_options.folder_uid
+        payload.parentUid = create_options.subfolder_uid
+
+        folder_uid = utils.generate_random_bytes(16)
+        payload.folderUid = CryptoUtils.bytes_to_url_safe_str(folder_uid)
+
+        folder_key = utils.generate_random_bytes(32)
+        encrypted_folder_key = CryptoUtils.encrypt_aes_cbc(folder_key, shared_folder_key)
+        payload.sharedFolderKey = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_key)
+
+        folder_json = dict_to_json({"name": folder_name})
+        folder_data_bytes = utils.string_to_bytes(folder_json)
+        encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
+        payload.data = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_data)
+
+        return payload
+
+    @staticmethod
+    def prepare_update_folder_payload(storage, folder_uid, folder_name, folder_key):
+
+        payload = UpdateFolderPayload()
+
+        payload.clientVersion = keeper_secrets_manager_sdk_client_id
+        payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
+        payload.folderUid = folder_uid
+
+        folder_json = dict_to_json({"name": folder_name})
+        folder_data_bytes = utils.string_to_bytes(folder_json)
+        encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
+        payload.data = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_data)
+
+        return payload
+
+    @staticmethod
+    def prepare_delete_folder_payload(storage, folder_uids, force_deletion):
+
+        payload = DeleteFolderPayload()
+
+        payload.clientVersion = keeper_secrets_manager_sdk_client_id
+        payload.clientId = storage.get(ConfigKeys.KEY_CLIENT_ID)
+        payload.folderUids = folder_uids
+        payload.forceDeletion = force_deletion
+
+        return payload
 
     def _post_query(self, path, payload):
 
@@ -608,9 +666,59 @@ class SecretsManager:
         message = f", Message: {str(rs.text)}" if rs.text else ""
         raise requests.HTTPError(f"Status Code: {rs.status_code}{reason}{message}")
 
-    def fetch_and_decrypt_secrets(self, record_filter=None):
+    @staticmethod
+    def get_shared_folder_key(folders: list, response_folders: list, parent: str):
+        folders = folders or []
+        response_folders = response_folders or []
+        while True:
+            parent_folder = next((x for x in response_folders if x.get('folderUid', None) == parent), None)
+            if parent_folder is None:
+                return None
+            if not parent_folder.get('parent', ''):
+                shared_folder = next((x for x in folders if x.folder_uid == parent_folder.get('folderUid', None)), None)
+                if shared_folder is None:
+                    return None
+                else:
+                    return shared_folder.folder_key
+            parent = parent_folder.get('parent', '')
 
-        payload = SecretsManager.prepare_get_payload(self.config, records_filter=record_filter)
+    def fetch_and_decrypt_folders(self):
+        payload = SecretsManager.prepare_get_payload(self.config, [])
+        decrypted_response_bytes = self._post_query('get_folders', payload)
+        decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
+        decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
+
+        app_key = base64_to_bytes(self.config.get(ConfigKeys.KEY_APP_KEY))
+        response_folders = decrypted_response_dict.get("folders", []) or []
+        if not response_folders:
+            return []
+
+        folders = []
+        for folder in response_folders:
+            folder_key = folder.get('folderKey')
+            folder_parent = folder.get('parent', '') or ''
+            if not folder_parent:
+                folder_key = CryptoUtils.decrypt_aes(utils.base64_to_bytes(folder_key), app_key)
+            else:
+                shared_folder_key = SecretsManager.get_shared_folder_key(folders, response_folders, folder_parent)
+                folder_key = CryptoUtils.decrypt_aes_cbc(utils.base64_to_bytes(folder_key), shared_folder_key)
+
+            folder_name = ''
+            folder_data = folder.get('data', '')
+            if folder_data:
+                folder_data_json = CryptoUtils.decrypt_aes_cbc(utils.base64_to_bytes(folder_data), folder_key)
+                folder_data_dict = json.loads(folder_data_json.decode())
+                folder_name = folder_data_dict.get('name', '') or ''
+            fldr = KeeperFolder(folder_key,
+                                folder.get('folderUid', '') or '',
+                                folder_parent,
+                                folder_name)
+            folders.append(fldr)
+        return folders
+
+
+    def fetch_and_decrypt_secrets(self, query_options: QueryOptions):
+        payload = SecretsManager.prepare_get_payload(self.config, query_options=query_options)
 
         decrypted_response_bytes = self._post_query(
             'get_secret',
@@ -690,15 +798,25 @@ class SecretsManager:
     def get_secrets(self, uids=None, full_response=False):
         """
         Retrieve all records associated with the given application
+        optionally filtered by record uids
         """
 
         if isinstance(uids, str):
             uids = [uids]
 
-        records_resp = self.fetch_and_decrypt_secrets(uids)
+        query_options = QueryOptions(records_filter=uids, folders_filter=None)
+        return self.get_secrets_with_options(query_options, full_response)
+
+    def get_secrets_with_options(self, query_options=None, full_response=False):
+        """
+        Retrieve records associated with the given application
+        optionally filtered by the query options
+        """
+
+        records_resp = self.fetch_and_decrypt_secrets(query_options)
 
         if records_resp.justBound:
-            records_resp = self.fetch_and_decrypt_secrets(uids)
+            records_resp = self.fetch_and_decrypt_secrets(query_options)
 
         # Log warnings we got from the server
         # Will only be displayed if logging is enabled:
@@ -712,6 +830,10 @@ class SecretsManager:
             records: list = records_resp.records or []
 
             return records
+
+    def get_folders(self):
+        # Retrieve all folders
+        return self.fetch_and_decrypt_folders()
 
     def get_secrets_by_title(self, record_title):
         """
@@ -786,11 +908,89 @@ class SecretsManager:
                               'folder folder that you know exists, make sure that at least one record is present in '
                               'the prior to adding a record to the folder.')
 
-        payload = SecretsManager.prepare_create_payload(self.config, folder_uid, record_data_json_str, found_folder.key)
-
+        create_options = CreateOptions(folder_uid, None)
+        payload = SecretsManager.prepare_create_payload(self.config, create_options, record_data_json_str, found_folder.key)
         self._post_query('create_secret', payload)
 
         return payload.recordUid
+
+    def create_secret_with_options(self, create_options: CreateOptions, record_data: RecordCreate, folders: list = []):
+        if not isinstance(record_data, RecordCreate):
+            raise KeeperError('New record data has to be a valid ' + RecordCreate.__name__ + ' object')
+        record_data_json_str = record_data.to_json()
+
+        if not folders:
+            folders = self.get_folders()
+
+        shared_folder = next((x for x in folders if x.folder_uid == create_options.folder_uid), None)
+        if shared_folder is None or not shared_folder.folder_key:
+            raise KeeperError(f'Unable to create record - folder key for {create_options.folder_uid} not found')
+
+        payload = SecretsManager.prepare_create_payload(self.config, create_options, record_data_json_str, shared_folder.folder_key)
+        self._post_query('create_secret', payload)
+
+        return payload.recordUid
+
+    def create_folder(self, create_options: CreateOptions, folder_name: str, folders=None):
+        """
+        Create new folder using the provided options.
+
+        If folders is None that will force downloading all folders metadata with every request.
+        Folders metadata could be retrieved from get_folders() cached and reused
+        as long as it is not modified externally or internally.
+
+        create_options.folder_uid is required and must be a parent shared folder
+
+        create_options.subfolder_uid could be many levels deep under its parent.
+        If subfolder_uid is empty - new folder is created under parent folder_uid
+        """
+
+        if not folders:
+            folders = self.get_folders()
+
+        shared_folder = next((x for x in folders if x.folder_uid == create_options.folder_uid), None)
+        if shared_folder is None or not shared_folder.folder_key:
+            raise KeeperError(f'Unable to create folder - folder key for {create_options.folder_uid} not found')
+
+        payload = SecretsManager.prepare_create_folder_payload(self.config, create_options, folder_name, shared_folder.folder_key)
+        _ = self._post_query('create_folder', payload)
+        return payload.folderUid
+
+    def update_folder(self, folder_uid: str, folder_name: str, folders=None):
+        """
+        Update folder changes the folder metadata - currently folder name only
+        """
+
+        if not folders:
+            folders = self.get_folders()
+
+        shared_folder = next((x for x in folders if x.folder_uid == folder_uid), None)
+        if shared_folder is None or not shared_folder.folder_key:
+            raise KeeperError(f'Unable to update folder - folder key for {folder_uid} not found')
+
+        payload = SecretsManager.prepare_update_folder_payload(self.config, folder_uid, folder_name, shared_folder.folder_key)
+        _ = self._post_query('update_folder', payload)
+
+    def delete_folder(self, folder_uids, force_deletion=False):
+        """
+        Delete folders with specified folder_uids
+        Use force_deletion flag to delete non-empty folders.
+        Note! When using force_deletion avoid sending parent with its children folder UIDs.
+        Depending on the delete order you may get an error ex. if parent force-deleted child first.
+        There's no guarantee that list will always be processed in FIFO order.
+        Note! Any folder_uids missing from the vault or not shared to the KSM application
+        will not result in error.
+        """
+
+        if isinstance(folder_uids, str):
+            folder_uids = [folder_uids]
+
+        payload = SecretsManager.prepare_delete_folder_payload(self.config, folder_uids, force_deletion)
+        response = self._post_query('delete_folder', payload)
+        response_str = bytes_to_string(response)
+        response_dict = json_to_dict(response_str)
+
+        return response_dict.get('folders', {}) if isinstance(response_dict, dict) else {}
 
     def upload_file(self, owner_record, file: KeeperFileUpload):
         """
