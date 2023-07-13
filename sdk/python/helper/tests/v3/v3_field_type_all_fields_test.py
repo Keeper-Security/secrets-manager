@@ -350,7 +350,15 @@ class FieldTypeTest(unittest.TestCase):
 
     def test_passkey(self):
         ft = Passkey()
-        ft.privateKey = "PRIVATE KEY"
+        ft.privateKey = {
+                "crv":"CRV",
+                "d": "DDDDD",
+                "ext": False,
+                "key_ops": [],
+                "kty": "KTY",
+                "x": "XXX",
+                "y": "YYY"
+        }
         ft.credentialId = "OlLZ6JLjnyMOS3CiIPHBjw"
         ft.signCount = 1
         ft.userId = "so5ja6A46Zmr9J1QyCc06g"
@@ -358,7 +366,15 @@ class FieldTypeTest(unittest.TestCase):
         ft.username = "user1"
         ft.createdDate = 1625140800000
         self._check_dict(ft, value={
-            "privateKey": "PRIVATE KEY",
+            "privateKey": {
+                "crv":"CRV",
+                "d": "DDDDD",
+                "ext": False,
+                "key_ops": [],
+                "kty": "KTY",
+                "x": "XXX",
+                "y": "YYY"
+            },
             "credentialId": "OlLZ6JLjnyMOS3CiIPHBjw",
             "signCount": 1,
             "userId": "so5ja6A46Zmr9J1QyCc06g",
