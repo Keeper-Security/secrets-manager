@@ -14,6 +14,7 @@ const secrets: KeeperSecrets = {
     records: [
         {
             recordUid: recordUID,
+            revision: 0,
             data: {
                 title: 'My Record 1',
                 type: 'login',
