@@ -1,3 +1,4 @@
+import os
 import unittest
 from keeper_secrets_manager_helper.record_type import RecordType
 from keeper_secrets_manager_helper.v3.record_type import get_class_by_type, make_class_name
@@ -44,11 +45,17 @@ class ParserTest(unittest.TestCase):
                 }
             ]
         }
-        with tempfile.NamedTemporaryFile("w", suffix=".json") as fh:
-            fh.write(json.dumps(data))
-            fh.seek(0)
-            RecordType.load_record_types(fh.name)
-            fh.close()
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+                fh.write(json.dumps(data))
+                fh.seek(0)
+                RecordType.load_record_types(fh.name)
+                fh.close()
+        finally:
+            try:
+                os.unlink(fh.name)
+            except IOError:
+                pass
 
         try:
             get_class_by_type("myCustom")
@@ -74,11 +81,17 @@ class ParserTest(unittest.TestCase):
             }
         ]
 
-        with tempfile.NamedTemporaryFile("w", suffix=".json") as fh:
-            fh.write(json.dumps(data))
-            fh.seek(0)
-            RecordType.load_record_types(fh.name)
-            fh.close()
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+                fh.write(json.dumps(data))
+                fh.seek(0)
+                RecordType.load_record_types(fh.name)
+                fh.close()
+        finally:
+            try:
+                os.unlink(fh.name)
+            except IOError:
+                pass
 
         try:
             get_class_by_type("Azure Login")
