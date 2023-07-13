@@ -15,22 +15,52 @@ import os
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.ciphers import Cipher
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.ciphers.algorithms import AES
+from cryptography.hazmat.primitives.ciphers.modes import CBC
+from cryptography.hazmat.primitives.padding import PKCS7
 from cryptography.hazmat.primitives.serialization import load_der_private_key
 
 from . import utils
 
+_CRYPTO_BACKEND = default_backend()
+
+
+def pad_data(data):    # type: (bytes) -> bytes
+    padder = PKCS7(16*8).padder()
+    return padder.update(data) + padder.finalize()
+
+
+def unpad_data(data):     # type: (bytes) -> bytes
+    unpadder = PKCS7(16*8).unpadder()
+    return unpadder.update(data) + unpadder.finalize()
 
 class CryptoUtils:
 
     BS = 16
 
-    pad_binary = lambda s: s + (
-                (CryptoUtils.BS - len(s) % CryptoUtils.BS) * chr(CryptoUtils.BS - len(s) % CryptoUtils.BS)).encode()
+    @staticmethod
+    def pad_binary(data: bytes, block_size: int = BS) -> bytes:
+        """ Apply standard pkcs7 padding """
+        pad_len = block_size - len(data) % block_size
+        padding = chr(pad_len).encode()*pad_len
+        return data + padding
 
-    unpad_binary = lambda s: s[0:-s[-1]]
+    @staticmethod
+    def unpad_binary(data: bytes, block_size: int = BS):
+        """ Remove standard pkcs7 padding """
+        data_len = len(data)
+        if data_len % block_size == 0:
+            pad_len = data[-1]
+            if pad_len > 0 and pad_len <= min(block_size, data_len):
+                # if data[-pad_len:] == chr(pad_len).encode()*pad_len:
+                return data[:-pad_len]
+        return data
 
-    unpad_char = lambda s: s[0:-ord(s[-1])]
+    @staticmethod
+    def unpad_char(data):
+        return data[0:-ord(data[-1])]
 
     @staticmethod
     def bytes_to_int(b):
@@ -115,6 +145,27 @@ class CryptoUtils:
         return iv + enc
 
     @staticmethod
+    def decrypt_aes(data, key):
+        aesgcm = AESGCM(key)
+        return aesgcm.decrypt(data[:12], data[12:], None)
+
+    @staticmethod
+    def encrypt_aes_cbc(data, key, iv=None):
+        iv = iv or os.urandom(16)
+        cipher = Cipher(AES(key), CBC(iv), backend=_CRYPTO_BACKEND)
+        encryptor = cipher.encryptor()
+        enc = encryptor.update(pad_data(data)) + encryptor.finalize()
+        return iv + enc
+
+    @staticmethod
+    def decrypt_aes_cbc(data, key):
+        iv = data[:16]
+        cipher = Cipher(AES(key), CBC(iv), backend=_CRYPTO_BACKEND)
+        decryptor = cipher.decryptor()
+        decrypted_data = decryptor.update(data[16:]) + decryptor.finalize()
+        return unpad_data(decrypted_data)
+
+    @staticmethod
     def public_encrypt(data: bytes, server_public_raw_key_bytes: bytes, idz: bytes = None):
 
         curve = ec.SECP256R1()
@@ -167,11 +218,6 @@ class CryptoUtils:
             raise e
 
         return result
-
-    @staticmethod
-    def decrypt_aes(data, key):
-        aesgcm = AESGCM(key)
-        return aesgcm.decrypt(data[:12], data[12:], None)
 
     @staticmethod
     def decrypt_record(data, secret_key):

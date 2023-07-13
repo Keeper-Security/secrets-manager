@@ -319,7 +319,7 @@ class FieldType:
             self.is_value_valid(item, schema, self.__class__.__name__)
         return True
 
-    def build_value(self, schema, value=None):
+    def build_value(self, schema, value=None, is_child:bool=False):
 
         value_type = schema.get("value_type")
 
@@ -339,12 +339,20 @@ class FieldType:
 
             new_schema = schema.get("schema")
             value_dict = {}
-            # Get the key and that's keys schema.
+            # Get the key and its schema.
             for key, info in new_schema.items():
-                # Get the value from the instance's attribute.
-                dict_value = self.build_value(info, getattr(self, key))
+                dict_value = None
+                if not is_child:
+                    # Get the value from the instance's attribute.
+                    dict_value = self.build_value(info, getattr(self, key), is_child=True)
+                else:
+                    # Get value from dict /current value/
+                    if value and key in value:
+                        dict_value = self.build_value(info, value.get(key), is_child=True)
+
                 if dict_value is not None:
                     value_dict[key] = dict_value
+
             return value_dict
 
         # At this point, we are a simple data type (99.999% we are str).
@@ -381,9 +389,9 @@ class FieldType:
         if values is None:
             values = []
 
-        # If the value is a dictionary, there is no value in self.value since the value comes from the
-        # attributes. We need to fake vales, so set it one item of None. It won't be used, but a for loop will need
-        # it.
+        # If the value is a dictionary, there is no value in self.value
+        # since the value comes from the attributes. We need to fake values,
+        # so set it one item of None. It won't be used, but a for loop will need it.
         if schema.get("value_type") is dict:
             values = [None]
 
@@ -747,7 +755,16 @@ class Passkey(FieldType):
     schema = {
         "value_type": dict,
         "schema": {
-            "privateKey": {"value_type": str, "desc": "Private Key. Normally a PEM file."},
+            "privateKey": {"value_type": dict, "desc": "Private EC Key.",
+            "schema": {
+                "crv": {"value_type": str},
+                "d": {"value_type": str},
+                "ext": {"value_type": bool},
+                "key_ops": {"value_type": list},
+                "kty": {"value_type": str},
+                "x": {"value_type": str},
+                "y": {"value_type": str}
+            }},
             "credentialId": {"value_type": str, "desc": "Credential Id"},
             "signCount": {"value_type": int, "desc": "Sign Count"},
             "userId": {"value_type": str, "desc": "User Id"},

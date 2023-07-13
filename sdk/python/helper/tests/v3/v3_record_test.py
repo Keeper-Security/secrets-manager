@@ -1,3 +1,4 @@
+import os
 import unittest
 from keeper_secrets_manager_helper.record_type import RecordType
 from keeper_secrets_manager_helper.v3.record import Record
@@ -210,25 +211,32 @@ class ParserTest(unittest.TestCase):
             'text=THREE',
         ]
 
-        with tempfile.NamedTemporaryFile("w", suffix=".json") as fh:
-            fh.write(json.dumps(data))
-            fh.seek(0)
-            RecordType.load_record_types(fh.name)
-            fh.close()
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+                fh.write(json.dumps(data))
+                fh.seek(0)
+                RecordType.load_record_types(fh.name)
+                fh.close()
 
-            p = Parser()
-            fields = p.parse_field(custom_fields)
+                p = Parser()
+                fields = p.parse_field(custom_fields)
 
-            r = Record(
-                record_type='myCustom2',
-                title="Custom Record",
-                fields=fields,
-                password_generate=True
-            )
-            self.assertEqual(3, len(r.fields), "did not find 3 text fields")
-            self.assertEqual("ONE", r.fields[0].get("value")[0], "first field is ONE")
-            self.assertEqual("TWO", r.fields[1].get("value")[0], "first field is TWO")
-            self.assertEqual("THREE", r.fields[2].get("value")[0], "first field is THREE")
+                r = Record(
+                    record_type='myCustom2',
+                    title="Custom Record",
+                    fields=fields,
+                    password_generate=True
+                )
+                self.assertEqual(3, len(r.fields), "did not find 3 text fields")
+                self.assertEqual("ONE", r.fields[0].get("value")[0], "first field is ONE")
+                self.assertEqual("TWO", r.fields[1].get("value")[0], "first field is TWO")
+                self.assertEqual("THREE", r.fields[2].get("value")[0], "first field is THREE")
+        finally:
+            try:
+                os.unlink(fh.name)
+            except IOError:
+                pass
+
 
     def test_invalid_field(self):
 

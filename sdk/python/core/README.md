@@ -4,6 +4,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.6.0
+* KSM-413 - Added support for Folders
+* KSM-434 - Improved Passkey field type support
+
 ## 16.5.4
 * KSM-405 - Added new script field type and oneTimeCode to PAM record types
 * KSM-410 - New field type: Passkey
