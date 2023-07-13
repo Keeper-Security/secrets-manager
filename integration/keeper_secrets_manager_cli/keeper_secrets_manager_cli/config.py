@@ -7,20 +7,23 @@
 #
 # Keeper Secrets Manager
 # Copyright 2021 Keeper Security Inc.
-# Contact: ops@keepersecurity.com
+# Contact: sm@keepersecurity.com
 #
 
-from keeper_secrets_manager_cli.common import find_ksm_path
-from keeper_secrets_manager_cli.exception import KsmCliException
-from keeper_secrets_manager_core.utils import set_config_mode, check_config_mode
-from keeper_secrets_manager_core.keeper_globals import logger_name
-import logging
+import base64
 import colorama
 import configparser
+import json
+import logging
 import platform
 import os
-import base64
-import json
+
+from keeper_secrets_manager_core.configkeys import ConfigKeys
+from keeper_secrets_manager_core.keeper_globals import logger_name
+from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
+from keeper_secrets_manager_core.utils import set_config_mode, check_config_mode
+from keeper_secrets_manager_cli.common import find_ksm_path
+from keeper_secrets_manager_cli.exception import KsmCliException
 
 
 class Config:
@@ -28,7 +31,8 @@ class Config:
     """
     Provide a structure representation of the keeper.ini.
 
-    Instead of using a bunch of dictionaries, use objects. Then use the attributes to hold data.
+    Instead of using a bunch of dictionaries, use objects.
+    Then use the attributes to hold data.
     """
 
     default_ini_file = os.environ.get("KSM_INI_FILE", "keeper.ini")
@@ -76,8 +80,8 @@ class Config:
     def get_default_ini_file(launched_from_app=False):
         working_directory = os.getcwd()
 
-        # If launched from an application, the current working directory might not be writeable. Use
-        # the user's "HOME" directory.
+        # If launched from an application, the current working directory
+        # might not be writeable. Use the user's "HOME" directory.
         if launched_from_app is True:
             if Config.is_windows() is True:
                 working_directory = os.environ["USERPROFILE"]
@@ -108,7 +112,7 @@ class Config:
 
     def set_profile_using_base64(self, profile_name, base64_config):
 
-        # If the base64_config has already been decoded, the no need to
+        # If the base64_config has already been decoded, then no need to
         # base64 decode.
         if base64_config.strip().startswith("{") is True:
             json_config = base64_config
@@ -147,17 +151,64 @@ class Config:
                     if profile_name == Config.CONFIG_KEY:
                         continue
 
-                    self._profiles[profile_name] = ConfigProfile(
-                        client_id=config[profile_name].get("clientid"),
-                        private_key=config[profile_name].get("privatekey"),
-                        app_key=config[profile_name].get("appkey"),
-                        hostname=config[profile_name].get("hostname"),
-                        app_owner_public_key=config[profile_name].get("appownerpublickey"),
-                        server_public_key_id=config[profile_name].get("serverpublickeyid"))
+                    self._profiles[profile_name] = self._load_config(config[profile_name])
         except PermissionError:
             raise PermissionError("Access denied to configuration file {}.".format(self.ini_file))
         except FileNotFoundError:
             raise PermissionError("Cannot find configuration file {}.".format(self.ini_file))
+
+    def _load_config(self, section: configparser.SectionProxy):
+        from keeper_secrets_manager_storage.storage_aws_secret import AwsConfigProvider
+
+        storage = section.get("storage", "")
+        if storage in ("", "internal"):
+            return ConfigProfile(
+                    client_id=section.get("clientid"),
+                    private_key=section.get("privatekey"),
+                    app_key=section.get("appkey"),
+                    hostname=section.get("hostname"),
+                    app_owner_public_key=section.get("appownerpublickey"),
+                    server_public_key_id=section.get("serverpublickeyid"))
+        elif storage == "aws":
+            cfg = ConfigProfile(storage=storage)
+            cfg.storage_config = {x: section.get(x) for x in section.keys() if x != "storage"}
+
+            provider = cfg.storage_config.get("provider", "") or "ec2instance"
+            secret = cfg.storage_config.get("secret", "") or "ksm-config"
+            fallback = cfg.storage_config.get("fallback", True) or True
+
+            awsp = AwsConfigProvider(secret)
+            if provider == "ec2instance":
+                awsp.from_ec2instance_config(secret, fallback)
+            elif provider == "profile":
+                profile = cfg.storage_config.get("profile", "") or ""
+                if profile:
+                    awsp.from_profile_config(secret, profile, fallback)
+                else:
+                    awsp.from_default_config(secret, fallback)
+            elif provider == "keys":
+                aws_access_key_id = cfg.storage_config.get("aws_access_key_id", "") or ""
+                aws_secret_access_key = cfg.storage_config.get("aws_secret_access_key", "") or ""
+                region = cfg.storage_config.get("region", "") or ""
+                awsp.from_custom_config(secret, aws_access_key_id, aws_secret_access_key, region, fallback)
+            else:
+                raise KsmCliException(f"Failed to load profile from AWS secret - unknown provider '{provider}'")
+
+            ksmcfg = awsp.read_config()
+            if not ksmcfg:
+                raise KsmCliException(f"Failed to load profile from AWS secret '{secret}'")
+
+            config_storage = InMemoryKeyValueStorage(ksmcfg)
+            cfg.client_id = config_storage.get(ConfigKeys.KEY_CLIENT_ID)
+            cfg.private_key = config_storage.get(ConfigKeys.KEY_PRIVATE_KEY)
+            cfg.app_key = config_storage.get(ConfigKeys.KEY_APP_KEY)
+            cfg.hostname = config_storage.get(ConfigKeys.KEY_HOSTNAME)
+            cfg.app_owner_public_key = config_storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY)
+            cfg.server_public_key_id = config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID)
+
+            return cfg
+        else:
+            raise KsmCliException("Unknown profile storage '{storage}' - please update KSM CLI")
 
     def save(self):
         if self.has_config_file is True:
@@ -212,6 +263,9 @@ class ConfigCommon:
 class ConfigProfile:
 
     def __init__(self, **kwargs):
+        # storage: internal|aws|azure|gcp - only internal is exportable
+        self.storage = kwargs.get("storage", "internal")
+        self.storage_config = kwargs.get("storage_config", {})
         self.client_id = kwargs.get("client_id")
         self.private_key = kwargs.get("private_key")
         self.app_key = kwargs.get("app_key")
@@ -220,7 +274,8 @@ class ConfigProfile:
         self.server_public_key_id = kwargs.get("server_public_key_id")
 
     def to_dict(self):
-        return {
+        result = {
+            # "storage": self.storage,  # removed for legacy compatibility
             "clientid": self.client_id,
             "privatekey": self.private_key,
             "appkey": self.app_key,
@@ -228,3 +283,10 @@ class ConfigProfile:
             "appownerpublickey": self.app_owner_public_key,
             "serverpublickeyid": self.server_public_key_id
         }
+
+        if self.storage and self.storage != "internal":
+            result = {"storage": self.storage}
+            if self.storage_config:
+                result.update(self.storage_config)
+
+        return result

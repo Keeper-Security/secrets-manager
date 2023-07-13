@@ -6,12 +6,12 @@ import java.util.*
 group = "com.keepersecurity.secrets-manager"
 
 // During publishing, If version ends with '-SNAPSHOT' then it will be published to Maven snapshot repository
-version = "16.5.0"
+version = "16.5.4"
 
 plugins {
     `java-library`
-    kotlin("jvm") version "1.6.10"
-    kotlin("plugin.serialization") version "1.6.10"
+    kotlin("jvm") version "1.6.21"
+    kotlin("plugin.serialization") version "1.6.21"
     `maven-publish`
     signing
     id("io.github.gradle-nexus.publish-plugin") version "1.1.0"

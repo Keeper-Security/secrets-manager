@@ -7,9 +7,6 @@ type KeeperField = {
     value: any[]
 }
 
-/**
- * @deprecated Use `getNotationResults()` instead.
- */
 export function getValue(secrets: KeeperSecrets, notation: string): any {
     const parsedNotation = parseNotation(notation, true) // prefix, record, selector, footer
     if (parsedNotation.length < 3)

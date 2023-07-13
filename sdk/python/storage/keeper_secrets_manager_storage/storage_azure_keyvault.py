@@ -6,7 +6,7 @@
 #              |_|
 #
 # Keeper Secrets Manager
-# Copyright 2022 Keeper Security Inc.
+# Copyright 2023 Keeper Security Inc.
 # Contact: sm@keepersecurity.com
 import errno
 import hashlib
@@ -25,72 +25,142 @@ from keeper_secrets_manager_core.utils import ENCODING
 logger = logging.getLogger(logger_name)
 
 try:
-    import boto3
-    from botocore.exceptions import ClientError
+    from azure.identity import ClientSecretCredential, DefaultAzureCredential
+    from azure.keyvault.keys.crypto import CryptographyClient, KeyWrapAlgorithm
 except ImportError as ie:
-    logger.error("Missing AWS SDK import dependencies."
+    logger.error("Missing Azure dependencies."
         " To install missing packages run: \r\n"
-        "pip3 install boto3\r\n")
-    raise Exception("Missing import dependencies: boto3")
+        "pip3 install azure-identity azure-keyvault-keys\r\n")
+    raise Exception("Missing import dependencies: azure-identity azure-keyvault-keys")
 
+try:
+    from Cryptodome.Cipher import AES
+    from Cryptodome.Random import get_random_bytes
+except ImportError as ie:
+    logger.error("Missing Cryptodome dependency."
+        " To install missing package run: \r\n"
+        "pip3 install pycryptodomex\r\n")
+    raise Exception("Missing import dependencies: pycryptodomex")
 
-class AwsSessionConfig():
-    def __init__(self, aws_access_key_id: str, aws_secret_access_key: str, region_name: str):
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
-        self.region_name = region_name
-        # HSMs cannot change regions
-
+BLOB_HEADER = b"\xff\xff" # Encrypted BLOB Header: U+FFFF is a noncharacter
 
 # Usage:
 # from keeper_secrets_manager_core import SecretsManager
-# from keeper_secrets_manager_hsm.storage_aws_kms import AwsKmsKeyValueStorage
-# key_id = 'c5ebe966-xxxx-yyyy-zzzz-9248e834c576'
-# config = AwsKmsKeyValueStorage(key_id, 'client-config.json') # auto encrypt
+# from keeper_secrets_manager_storage.storage_azure_keyvault import AzureKeyValueStorage
+# # key_id may include a version (in case the key is auto rotated)
+# # key_id = 'https://ksmvault.vault.azure.net/keys/ksm2/fe4fdcab688c479a9aa80f01ffeac26'
+# key_id = 'https://ksmvault.vault.azure.net/keys/ksm2'
+# config = AzureKeyValueStorage(key_id, 'client-config.json') # auto encrypt
 # secrets_manager = SecretsManager(config=config)
 # all_records = secrets_manager.get_secrets()
 
-class AwsKmsKeyValueStorage(KeyValueStorage):
-    """AWS KMS encrypted key-value storage"""
+class AzureSessionConfig():
+    def __init__(self, tenant_id: str, client_id: str, client_secret: str):
+        self.tenant_id = tenant_id
+        self.client_id = client_id
+        self.client_secret = client_secret
+
+
+class AzureKeyValueStorage(KeyValueStorage):
+    """Azure encrypted key-value storage"""
 
     default_config_file_location = "client-config.json"
 
-    def __init__(self, key_id: str, config_file_location: str = "", aws_session_config: AwsSessionConfig | None = None):
+    def __init__(self, key_id: str, config_file_location: str = "", az_session_config: AzureSessionConfig | None = None):
+        """Initilaizes AzureKeyValueStorage
+
+        key_id URI of the master key - if missing read from env KSM_AZ_KEY_ID
+        key_id URI may also include version in case key has auto rotate enabled
+        ex. key_id = "https://<your vault>.vault.azure.net/keys/<key name>/fe4fdcab688c479a9aa80f01ffeac26"
+        The master key needs WrapKey, UnwrapKey privileges
+
+        config_file_location provides custom config file location - if missing read from env KSM_CONFIG_FILE
+        az_session_config optional az session config - if missing use default env variables
+        https://learn.microsoft.com/en-us/dotnet/api/azure.identity.environmentcredential
+        """
+
         self.default_config_file_location = config_file_location if config_file_location else os.environ.get("KSM_CONFIG_FILE",
-            AwsKmsKeyValueStorage.default_config_file_location)
-        self.key_id = key_id if key_id else os.environ.get("KSM_KMS_KEY_ID", "") # Master Key ID
-        has_aws_session_config = (aws_session_config
-            and aws_session_config.aws_access_key_id
-            and aws_session_config.aws_secret_access_key
-            and aws_session_config.region_name)
-        if has_aws_session_config:
-            self.kms_client = boto3.client('kms',
-                aws_access_key_id=aws_session_config.aws_access_key_id,
-                aws_secret_access_key=aws_session_config.aws_secret_access_key,
-                region_name=aws_session_config.region_name)
+            AzureKeyValueStorage.default_config_file_location)
+        self.key_id = key_id if key_id else os.environ.get("KSM_AZ_KEY_ID", "") # Master Key ID
+
+        has_az_session_config = (az_session_config
+            and az_session_config.tenant_id
+            and az_session_config.client_id
+            and az_session_config.client_secret)
+
+        if has_az_session_config:
+            self.az_credential = ClientSecretCredential(
+                tenant_id=az_session_config.tenant_id,
+                client_id=az_session_config.client_id,
+                client_secret=az_session_config.client_secret)
         else:
-            self.kms_client = boto3.client('kms') # uses default session
+            self.az_credential = DefaultAzureCredential() # use default session/credentials
+
+        self.crypto_client = CryptographyClient(self.key_id, credential=self.az_credential)
+
         self.last_saved_config_hash = ""
         self.config = {}
         self.__load_config()
 
+    # Azure keyvault supports symmetric keys on Managed HSM only
+    # generate and wrap temp AES (GCM) 256-bit keys
     def __encrypt_buffer(self, message: str) -> bytes:
         try:
-            response = self.kms_client.encrypt(KeyId=self.key_id, Plaintext=message.encode())
-            ciphertext = response['CiphertextBlob']
-            return ciphertext
-        except ClientError as err:
-            logger.error("KMS client failed to encrypt plaintext. %s", err.response['Error']['Message'])
-        return b""
+            key = get_random_bytes(32)
+            cipher = AES.new(key, AES.MODE_GCM)
+            ciphertext, tag = cipher.encrypt_and_digest(message.encode())
+            # response = self.crypto_client.encrypt(EncryptionAlgorithm.a256_gcm, message.encode()) # HSM Only
+            try:
+                response = self.crypto_client.wrap_key(KeyWrapAlgorithm.rsa_oaep, key)
+            except Exception as err:
+                logger.error("Azure crypto client failed to wrap key. %s", str(err))
+                return b""
+
+            blob = bytearray(BLOB_HEADER)
+            for x in (response.encrypted_key, cipher.nonce, tag, ciphertext):
+                blob.extend(len(x).to_bytes(2, byteorder='big'))
+                blob.extend(x)
+            return blob
+        except Exception as err:
+            logger.error("Azure KeyVault Storage failed to encrypt. %s", str(err))
+            return b""
 
     def __decrypt_buffer(self, ciphertext: bytes) -> str:
         try:
-            response = self.kms_client.decrypt(KeyId=self.key_id, CiphertextBlob=ciphertext)
-            plaintext = response['Plaintext']
-            return plaintext.decode('utf8')
-        except ClientError as err:
-            logger.error("KMS client failed to decrypt ciphertext. %s", err.response['Error']['Message'])
-        return ""
+            # response = self.crypto_client.decrypt(EncryptionAlgorithm.rsa_oaep, ciphertext) # HSM Only
+            buf = ciphertext[:2]
+            if buf != BLOB_HEADER:
+                return ""
+
+            pos = 2
+            encrypted_key, nonce, tag, encrypted_text = (b'', b'', b'', b'')
+            for x in range (1,5):
+                buf = ciphertext[pos:pos+2] # chunks are size prefixed
+                pos += len(buf)
+                if len(buf) == 2:
+                    buflen = int.from_bytes(buf, byteorder='big')
+                    buf = ciphertext[pos:pos+buflen]
+                    pos += len(buf)
+                    if len(buf) == buflen:
+                        if x == 1: encrypted_key = buf
+                        elif x == 2: nonce = buf
+                        elif x == 3: tag = buf
+                        elif x == 4: encrypted_text = buf
+                        else: logger.error("Azure KeyVault decrypt buffer contains extra data.")
+
+            try:
+                response = self.crypto_client.unwrap_key(KeyWrapAlgorithm.rsa_oaep, encrypted_key)
+                key = response.key
+            except Exception as err:
+                logger.error("Azure crypto client failed to unwrap key. %s", str(err))
+                return b""
+            cipher = AES.new(key, AES.MODE_GCM, nonce)
+            data = cipher.decrypt_and_verify(encrypted_text, tag)
+            plaintext = data.decode('utf8')
+            return plaintext
+        except Exception as err:
+            logger.error("Azure KeyVault Storage failed to decrypt. %s", str(err))
+            return ""
 
     def __load_config(self, module=0):
         self.create_config_file_if_missing()
@@ -141,16 +211,13 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
             else:
                 # Try to decrypt binary blob
                 config_json = self.__decrypt_buffer(contents)
-                if len(config_json) == 0:
-                    logging.getLogger(logger_name).error("Failed to decrypt config file " + self.default_config_file_location)
-                else:
-                    try:
-                        config = json.loads(config_json)
-                        self.config = config
-                        self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
-                    except Exception as err:
-                        logger.error("Config JSON has problems: {}".format(err))
-                        raise err
+                try:
+                    config = json.loads(config_json)
+                    self.config = config
+                    self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
+                except Exception as err:
+                    logger.error("Config JSON has problems: {}".format(err))
+                    raise err
         except IOError:
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.default_config_file_location)
 
@@ -205,11 +272,14 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
 
     def change_key(self, new_key_id: str) -> bool:
         old_key_id = self.key_id
+        old_crypto_client = self.crypto_client
         try:
             self.key_id = new_key_id
+            self.crypto_client = CryptographyClient(self.key_id, credential=self.az_credential)
             self.__save_config(force=True)
         except Exception as e:
             self.key_id = old_key_id
+            self.crypto_client = old_crypto_client
             logging.getLogger(logger_name).error(f"Failed to change the key to '{new_key_id}' for config '{self.default_config_file_location}'")
             raise Exception("Failed to change the key for " + self.default_config_file_location)
         return True

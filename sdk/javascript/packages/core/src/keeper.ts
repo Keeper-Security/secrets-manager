@@ -1,12 +1,12 @@
-import {KeeperHttpResponse, KeyValueStorage, TransmissionKey, EncryptedPayload, platform} from './platform'
-import {tryParseInt, webSafe64FromBytes, webSafe64ToBytes} from './utils'
+import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey} from './platform'
+import {webSafe64FromBytes, webSafe64ToBytes, tryParseInt} from './utils'
 import {parseNotation} from './notation'
 
 export {KeyValueStorage} from './platform'
 
 let packageVersion = '[VI]{version}[/VI]'
 const KEY_HOSTNAME = 'hostname' // base url for the Secrets Manager service
-const KEY_SERVER_PUBIC_KEY_ID = 'serverPublicKeyId'
+const KEY_SERVER_PUBLIC_KEY_ID = 'serverPublicKeyId'
 const KEY_CLIENT_ID = 'clientId'
 const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the client before public key
 const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
@@ -45,40 +45,75 @@ export type SecretManagerOptions = {
     allowUnverifiedCertificate?: boolean
 }
 
-type GetPayload = {
-    clientVersion: string
-    clientId: string
-    publicKey?: string   // passed once when binding
-    requestedRecords?: string[] // only return these records
+export type QueryOptions = {
+    recordsFilter?: string[]
+    foldersFilter?: string[]
 }
 
-type DeletePayload = {
+export type CreateOptions = {
+    folderUid: string
+    subFolderUid?: string
+}
+
+type AnyPayload =
+    GetPayload
+    | DeletePayload
+    | DeleteFolderPayload
+    | UpdatePayload
+    | CreatePayload
+    | CreateFolderPayload
+    | UpdateFolderPayload
+    | FileUploadPayload
+
+type CommonPayload = {
     clientVersion: string
     clientId: string
+}
+
+type GetPayload = CommonPayload & {
+    publicKey?: string   // passed once when binding
+    requestedRecords?: string[] // only return these records
+    requestedFolders?: string[] // only return these folders
+}
+
+type DeletePayload = CommonPayload & {
     recordUids: string[]
 }
 
-type UpdatePayload = {
-    clientVersion: string
-    clientId: string
-    recordUid: string
-    data: string
-    revision?: number
+type DeleteFolderPayload = CommonPayload & {
+    folderUids: string[]
+    forceDeletion: boolean
 }
 
-type CreatePayload = {
-    clientVersion: string
-    clientId: string
+type UpdatePayload = CommonPayload & {
+    recordUid: string
+    data: string
+    revision: number
+}
+
+type CreatePayload = CommonPayload & {
     recordUid: string
     recordKey: string
     folderUid: string
     folderKey: string
+    data: string,
+    subFolderUid?: string
+}
+
+type CreateFolderPayload = CommonPayload & {
+    folderUid: string
+    sharedFolderUid: string
+    sharedFolderKey: string
+    data: string
+    parentUid?: string
+}
+
+type UpdateFolderPayload = CommonPayload & {
+    folderUid: string
     data: string
 }
 
-type FileUploadPayload = {
-    clientVersion: string
-    clientId: string
+type FileUploadPayload = CommonPayload & {
     fileRecordUid: string
     fileRecordKey: string
     fileRecordData: string
@@ -94,9 +129,18 @@ type SecretsManagerDeleteResponseRecord = {
     responseCode: string
 }
 
+type SecretsManagerDeleteResponseFolder =  {
+    errorMessage: string
+    folderUid: string
+    responseCode: string
+}
+
 type SecretsManagerResponseFolder = {
     folderUid: string
     folderKey: string
+    data: string
+    parent: string
+    revision: number
     records: SecretsManagerResponseRecord[]
 }
 
@@ -106,6 +150,7 @@ type SecretsManagerResponseRecord = {
     data: string
     revision: number
     files: SecretsManagerResponseFile[]
+    innerFolderUid: string
 }
 
 type SecretsManagerResponseFile = {
@@ -128,6 +173,7 @@ type SecretsManagerResponse = {
 
 type SecretsManagerDeleteResponse = {
     records: SecretsManagerDeleteResponseRecord[]
+    folders: SecretsManagerDeleteResponseFolder[]
 }
 
 type SecretsManagerAddFileResponse = {
@@ -149,9 +195,16 @@ export type KeeperSecrets = {
 export type KeeperRecord = {
     recordUid: string
     folderUid?: string
+    innerFolderUid?: string
     data: any
-    revision?: number
+    revision: number
     files?: KeeperFile[]
+}
+
+export type KeeperFolder = {
+    folderUid: string
+    parentUid?: string
+    name?: string
 }
 
 export type KeeperFile = {
@@ -173,7 +226,7 @@ type KeeperError = {
     key_id?: number
 }
 
-const prepareGetPayload = async (storage: KeyValueStorage, recordsFilter?: string[]): Promise<GetPayload> => {
+const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryOptions): Promise<GetPayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
@@ -187,8 +240,11 @@ const prepareGetPayload = async (storage: KeyValueStorage, recordsFilter?: strin
         const publicKey = await platform.exportPublicKey(KEY_PRIVATE_KEY, storage)
         payload.publicKey = platform.bytesToBase64(publicKey)
     }
-    if (recordsFilter) {
-        payload.requestedRecords = recordsFilter
+    if (queryOptions?.recordsFilter) {
+        payload.requestedRecords = queryOptions.recordsFilter
+    }
+    if (queryOptions?.foldersFilter) {
+        payload.requestedFolders = queryOptions.foldersFilter
     }
     return payload
 }
@@ -221,7 +277,20 @@ const prepareDeletePayload = async (storage: KeyValueStorage, recordUids: string
     }
 }
 
-const prepareCreatePayload = async (storage: KeyValueStorage, folderUid: string, recordData: any): Promise<CreatePayload> => {
+const prepareDeleteFolderPayload = async (storage: KeyValueStorage, folderUids: string[], forceDeletion: boolean = false): Promise<DeleteFolderPayload> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
+    return {
+        clientVersion: 'ms' + packageVersion,
+        clientId: clientId,
+        folderUids: folderUids,
+        forceDeletion: forceDeletion
+    }
+}
+
+const prepareCreatePayload = async (storage: KeyValueStorage, createOptions: CreateOptions, recordData: any): Promise<CreatePayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
@@ -235,15 +304,56 @@ const prepareCreatePayload = async (storage: KeyValueStorage, folderUid: string,
     const recordUid = platform.getRandomBytes(16)
     const encryptedRecord = await platform.encryptWithKey(recordBytes, recordKey)
     const encryptedRecordKey = await platform.publicEncrypt(recordKey, ownerPublicKey)
-    const encryptedFolderKey = await platform.encrypt(recordKey, folderUid)
+    const encryptedFolderKey = await platform.encrypt(recordKey, createOptions.folderUid)
     return {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
         recordUid: webSafe64FromBytes(recordUid),
         recordKey: platform.bytesToBase64(encryptedRecordKey),
-        folderUid: folderUid,
+        folderUid: createOptions.folderUid,
         folderKey: platform.bytesToBase64(encryptedFolderKey),
-        data: webSafe64FromBytes(encryptedRecord)
+        data: webSafe64FromBytes(encryptedRecord),
+        subFolderUid: createOptions.subFolderUid
+    }
+}
+
+const prepareCreateFolderPayload = async (storage: KeyValueStorage, createOptions: CreateOptions, folderName: string): Promise<CreateFolderPayload> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
+    const folderDataBytes = platform.stringToBytes(JSON.stringify({
+        name: folderName
+    }))
+    const folderKey = platform.getRandomBytes(32)
+    const folderUid = platform.getRandomBytes(16)
+    const encryptedFolderData = await platform.encryptWithKey(folderDataBytes, folderKey, true)
+    const encryptedFolderKey = await platform.encrypt(folderKey, createOptions.folderUid, undefined, true)
+    return {
+        clientVersion: 'ms' + packageVersion,
+        clientId: clientId,
+        folderUid: webSafe64FromBytes(folderUid),
+        sharedFolderUid: createOptions.folderUid,
+        sharedFolderKey: webSafe64FromBytes(encryptedFolderKey),
+        data: webSafe64FromBytes(encryptedFolderData),
+        parentUid: createOptions.subFolderUid
+    }
+}
+
+const prepareUpdateFolderPayload = async (storage: KeyValueStorage, folderUid: string, folderName: string): Promise<UpdateFolderPayload> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
+    const folderDataBytes = platform.stringToBytes(JSON.stringify({
+        name: folderName
+    }))
+    const encryptedFolderData = await platform.encrypt(folderDataBytes, folderUid, undefined, true)
+    return {
+        clientVersion: 'ms' + packageVersion,
+        clientId: clientId,
+        folderUid: folderUid,
+        data: webSafe64FromBytes(encryptedFolderData)
     }
 }
 
@@ -311,7 +421,7 @@ const postFunction = async (url: string, transmissionKey: TransmissionKey, paylo
 
 export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => {
     const transmissionKey = platform.getRandomBytes(32)
-    const keyNumberString = await storage.getString(KEY_SERVER_PUBIC_KEY_ID)
+    const keyNumberString = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
     const keyNumber = keyNumberString ? Number(keyNumberString) : 7
     const keeperPublicKey = keeperPublicKeys[keyNumber]
     if (!keeperPublicKey) {
@@ -333,7 +443,7 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     return {payload: encryptedPayload, signature}
 }
 
-const postQuery = async (options: SecretManagerOptions, path: string, payload: GetPayload | UpdatePayload | FileUploadPayload): Promise<Uint8Array> => {
+const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
         throw new Error('hostname is missing from the configuration')
@@ -350,7 +460,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: G
                 try {
                     const errorObj: KeeperError = JSON.parse(errorMessage)
                     if (errorObj.error === 'key') {
-                        await options.storage.saveString(KEY_SERVER_PUBIC_KEY_ID, errorObj.key_id!.toString())
+                        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, errorObj.key_id!.toString())
                         continue
                     }
                 } catch {
@@ -371,7 +481,10 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
     const keeperRecord: KeeperRecord = {
         recordUid: record.recordUid,
         data: JSON.parse(platform.bytesToString(decryptedRecord)),
-        revision: record.revision
+        revision: record.revision,
+    }
+    if (record.innerFolderUid) {
+        keeperRecord.innerFolderUid = record.innerFolderUid
     }
     if (record.files) {
         keeperRecord.files = []
@@ -389,9 +502,9 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
     return keeperRecord
 }
 
-const fetchAndDecryptSecrets = async (options: SecretManagerOptions, recordsFilter?: string[]): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
+const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
     const storage = options.storage
-    const payload = await prepareGetPayload(storage, recordsFilter)
+    const payload = await prepareGetPayload(storage, queryOptions)
     const responseData = await postQuery(options, 'get_secret', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
 
@@ -436,6 +549,51 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, recordsFilt
         secrets.warnings = response.warnings
     }
     return {secrets, justBound}
+}
+
+const getSharedFolderUid = (folders: SecretsManagerResponseFolder[], parent: string): string | undefined => {
+    while (true) {
+        const parentFolder = folders.find(x => x.folderUid === parent)
+        if (!parentFolder) {
+            return undefined
+        }
+        if (parentFolder.parent) {
+            parent = parentFolder.parent
+        } else {
+            return parent
+        }
+    }
+};
+
+const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<KeeperFolder[]> => {
+    const storage = options.storage
+    const payload = await prepareGetPayload(storage)
+    const responseData = await postQuery(options, 'get_folders', payload)
+    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
+    const folders: KeeperFolder[] = []
+    if (response.folders) {
+        for (const folder of response.folders) {
+            let decryptedData: Uint8Array
+            const decryptedFolder: KeeperFolder = {
+                folderUid: folder.folderUid
+            }
+            if (folder.parent) {
+                decryptedFolder.parentUid = folder.parent
+                const sharedFolderUid = getSharedFolderUid(response.folders, folder.parent)
+                if (!sharedFolderUid) {
+                    throw new Error('Folder data inconsistent - unable to locate shared folder')
+                }
+                await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, sharedFolderUid, storage, true, true)
+                decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
+            } else {
+                await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
+                decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
+            }
+            decryptedFolder.name = JSON.parse(platform.bytesToString(decryptedData))['name']
+            folders.push(decryptedFolder)
+        }
+    }
+    return folders
 }
 
 export const getClientId = async (clientKey: string): Promise<string> => {
@@ -484,16 +642,28 @@ export const initializeStorage = async (storage: KeyValueStorage, oneTimeToken: 
 }
 
 export const getSecrets = async (options: SecretManagerOptions, recordsFilter?: string[]): Promise<KeeperSecrets> => {
+    const queryOptions = recordsFilter
+        ? {recordsFilter: recordsFilter}
+        : undefined
+    return getSecrets2(options, queryOptions)
+}
+
+export const getSecrets2 = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<KeeperSecrets> => {
     platform.cleanKeyCache()
-    const {secrets, justBound} = await fetchAndDecryptSecrets(options, recordsFilter)
+    const {secrets, justBound} = await fetchAndDecryptSecrets(options, queryOptions)
     if (justBound) {
         try {
-            await fetchAndDecryptSecrets(options, recordsFilter)
+            await fetchAndDecryptSecrets(options, queryOptions)
         } catch (e) {
             console.error(e)
         }
     }
     return secrets
+}
+
+export const getFolders = async (options: SecretManagerOptions): Promise<KeeperFolder[]> => {
+    platform.cleanKeyCache()
+    return await fetchAndDecryptFolders(options)
 }
 
 // tryGetNotationResults returns a string list with all values specified by the notation or empty list on error.
@@ -700,17 +870,48 @@ export const updateSecret = async (options: SecretManagerOptions, record: Keeper
 export const deleteSecret = async (options: SecretManagerOptions, recordUids: string[]): Promise<SecretsManagerDeleteResponse> => {
     const payload = await prepareDeletePayload(options.storage, recordUids)
     const responseData = await postQuery(options, 'delete_secret', payload)
-    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
-    return response
+    return JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
+}
+
+export const deleteFolder = async (options: SecretManagerOptions, folderUids: string[], forceDeletion?: boolean): Promise<SecretsManagerDeleteResponse> => {
+    const payload = await prepareDeleteFolderPayload(options.storage, folderUids, forceDeletion)
+    const responseData = await postQuery(options, 'delete_folder', payload)
+    return JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
 }
 
 export const createSecret = async (options: SecretManagerOptions, folderUid: string, recordData: any): Promise<string> => {
     if (!platform.hasKeysCached()) {
         await getSecrets(options) // need to warm up keys cache before posting a record
     }
-    const payload = await prepareCreatePayload(options.storage, folderUid, recordData)
+    const payload = await prepareCreatePayload(options.storage, {folderUid: folderUid}, recordData)
     await postQuery(options, 'create_secret', payload)
     return payload.recordUid
+}
+
+export const createSecret2 = async (options: SecretManagerOptions, createOptions: CreateOptions, recordData: any): Promise<string> => {
+    if (!platform.hasKeysCached()) {
+        await getFolders(options) // need to warm up keys cache before posting a record
+    }
+    const payload = await prepareCreatePayload(options.storage, createOptions, recordData)
+    await postQuery(options, 'create_secret', payload)
+    return payload.recordUid
+}
+
+export const createFolder = async (options: SecretManagerOptions, createOptions: CreateOptions, folderName: string): Promise<string> => {
+    if (!platform.hasKeysCached()) {
+        await getSecrets(options) // need to warm up keys cache before posting a record
+    }
+    const payload = await prepareCreateFolderPayload(options.storage, createOptions, folderName)
+    await postQuery(options, 'create_folder', payload)
+    return payload.folderUid
+}
+
+export const updateFolder = async (options: SecretManagerOptions, folderUid: string, folderName: string): Promise<void> => {
+    if (!platform.hasKeysCached()) {
+        await getSecrets(options) // need to warm up keys cache before posting a record
+    }
+    const payload = await prepareUpdateFolderPayload(options.storage, folderUid, folderName)
+    await postQuery(options, 'update_folder', payload)
 }
 
 export const downloadFile = async (file: KeeperFile): Promise<Uint8Array> => {
@@ -1068,7 +1269,7 @@ export type Address = {
     zip?: string
 }
 
-export class AddresseField extends KeeperRecordField {
+export class AddressField extends KeeperRecordField {
     required? : boolean
     privacyScreen? : boolean
     value?: Address[]
@@ -1086,6 +1287,137 @@ export class LicenseNumberField extends KeeperRecordField {
     constructor(value: string) {
         super()
         this.type = 'licenseNumber'
+        this.value = [value]
+      }
+}
+
+export class RecordRefField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'recordRef'
+        this.value = [value]
+      }
+}
+
+export type Schedule = {
+    type?: string
+    utcTime?: string
+    weekday?: string
+    intervalCount?: number
+}
+
+export class ScheduleField extends KeeperRecordField {
+    required? : boolean
+    value?: Schedule[]
+    constructor(value: Schedule) {
+        super()
+        this.type = 'schedule'
+        this.value = [value]
+      }
+}
+
+export type Script = {
+    fileRef?: string
+    command?: string
+    recordRef?: string[]
+}
+
+export class ScriptField extends KeeperRecordField {
+    required?: boolean
+    privacyScreen?: boolean
+    value?: Script[]
+    constructor(value: Script) {
+        super()
+        this.type = 'script'
+        this.value = [value]
+      }
+}
+
+export class DirectoryTypeField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'directoryType'
+        this.value = [value]
+      }
+}
+
+export class DatabaseTypeField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'databaseType'
+        this.value = [value]
+      }
+}
+
+export class PamHostnameField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: Host[]
+    constructor(value: Host) {
+        super()
+        this.type = 'pamHostname'
+        this.value = [value]
+      }
+}
+
+export type PamResource = {
+    controllerUid?: string
+    folderUid?: string
+    resourceRef?: string[]
+}
+
+export class PamResourceField extends KeeperRecordField {
+    required? : boolean
+    value?: PamResource[]
+    constructor(value: PamResource) {
+        super()
+        this.type = 'pamResources'
+        this.value = [value]
+      }
+}
+
+export class CheckboxField extends KeeperRecordField {
+    required? : boolean
+    value?: boolean[]
+    constructor(value: boolean) {
+        super()
+        this.type = 'checkbox'
+        this.value = [value]
+      }
+}
+
+export type PrivateKey = {
+    crv?: string
+    d?: string
+    ext?: boolean
+    key_ops?: string[]
+    kty?: string
+    x?: string
+    y?: string
+}
+
+export type Passkey = {
+    privateKey?: PrivateKey
+    credentialId?: string
+    signCount?: number
+    userId?: string
+    relyingParty?: string
+    username?: string
+    createdDate?: number
+}
+
+export class PasskeyField extends KeeperRecordField {
+    required?: boolean
+    value?: Passkey[]
+    constructor(value: Passkey) {
+        super()
+        this.type = 'passkey'
         this.value = [value]
       }
 }

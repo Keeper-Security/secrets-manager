@@ -5,6 +5,7 @@ data:
   - class: Login
     name: login
     fields:
+      - type: passkey
       - type: login
       - type: password
       - type: url
@@ -147,4 +148,182 @@ data:
       - type: host
       - type: login
       - type: password
+      - type: fileRef
+  - class: pamDatabase
+    name: pamDatabase
+    fields:
+      - type: pamHostname
+      - type: checkbox
+        label: "Use SSL"
+      - type: login
+      - type: password
+      - type: script
+        label: "Rotation Scripts"
+      - type: text
+        label: "Connect Database"
+      - type: text
+        label: "Database Id"
+      - type: databaseType
+      - type: text
+        label: "Provider Group"
+      - type: text
+        label: "Provider Region"
+      - type: fileRef
+      - type: oneTimeCode
+  - class: pamDirectory
+    name: pamDirectory
+    fields:
+      - type: pamHostname
+      - type: checkbox
+        label: "Use SSL"
+      - type: login
+      - type: password
+      - type: script
+        label: "Rotation Scripts"
+      - type: text
+        label: "Distinguished Name"
+      - type: text
+        label: "Domain Name"
+      - type: multiline
+        label: "Alternative IPs"
+      - type: text
+        label: "Directory Id"
+      - type: directoryType
+      - type: text
+        label: "User Match"
+      - type: text
+        label: "Provider Group"
+      - type: text
+        label: "Provider Region"
+      - type: fileRef
+      - type: oneTimeCode
+  - class: pamMachine
+    name: pamMachine
+    fields:
+      - type: pamHostname
+        required: true
+      - type: login
+      - type: password
+      - type: script
+        label: "Rotation Scripts"
+      - type: secret
+        label: "Private PEM Key"
+      - type: text
+        label: "Operating System"
+      - type: checkbox
+        label: "SSL Verification"
+      - type: text
+        label: "Instance Name"
+      - type: text
+        label: "Instance Id"
+      - type: text
+        label: "Provider Group"
+      - type: text
+        label: "Provider Region"
+      - type: fileRef
+      - type: oneTimeCode
+  - class: pamUser
+    name: pamUser
+    fields:
+      - type: login
+        required: true
+      - type: password
+      - type: script
+        label: "Rotation Scripts"
+      - type: secret
+        label: "Private PEM Key"
+      - type: text
+        label: "Distinguished Name"
+      - type: text
+        label: "Connect Database"
+      - type: checkbox
+        label: "Managed"
+      - type: fileRef
+      - type: oneTimeCode
+  - class: pamAwsConfiguration
+    name: pamAwsConfiguration
+    fields:
+      - type: pamResources
+        required: true
+      - type: schedule
+        label: "Default Rotation Schedule"
+        required: true
+      - type: text
+        label: "AWS Id"
+        required: true
+      - type: secret
+        label: "Access Key Id"
+        required: true
+      - type: secret
+        label: "Access Secret Key"
+        required: true
+      - type: multiline
+        label: "Region Names"
+      - type: multiline
+        label: "Port Mapping"
+      - type: script
+        label: "Rotation Scripts"
+      - type: fileRef
+  - class: pamAzureConfiguration
+    name: pamAzureConfiguration
+    fields:
+      - type: pamResources
+        required: true
+      - type: schedule
+        label: "Default Rotation Schedule"
+        required: true
+      - type: text
+        label: "Azure Id"
+        required: true
+      - type: secret
+        label: "Client Id"
+        required: true
+      - type: secret
+        label: "Client Secret"
+        required: true
+      - type: secret
+        label: "Subscription Id"
+        required: true
+      - type: secret
+        label: "Tenant Id"
+        required: true
+      - type: multiline
+        label: "Resource Groups"
+      - type: multiline
+        label: "Port Mapping"
+      - type: script
+        label: "Rotation Scripts"
+      - type: fileRef
+  - class: pamLocalConfiguration
+    name: pamLocalConfiguration
+    fields:
+      - type: pamResources
+        required: true
+      - type: schedule
+        label: "Default Rotation Schedule"
+        required: true
+      - type: text
+        label: "Local Id"
+        required: true
+      - type: multiline
+        label: "Port Mapping"
+      - type: script
+        label: "Rotation Scripts"
+      - type: fileRef
+  - class: pamNetworkConfiguration
+    name: pamNetworkConfiguration
+    fields:
+      - type: pamResources
+        required: true
+      - type: schedule
+        label: "Default Rotation Schedule"
+        required: true
+      - type: text
+        label: "Network Id"
+      - type: text
+        label: "Network CIDR"
+      - type: multiline
+        label: "Port Mapping"
+      - type: script
+        label: "Rotation Scripts"
       - type: fileRef

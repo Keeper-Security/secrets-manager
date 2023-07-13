@@ -487,6 +487,134 @@ data class LicenseNumber @JvmOverloads constructor(
 }
 
 @Serializable
+data class PamResource @JvmOverloads constructor(
+    val controllerUid: String? = null,
+    val folderUid: String? = null,
+    val resourceRef: MutableList<String>
+)
+
+@Serializable
+@SerialName("pamResources")
+data class PamResources @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    val value: MutableList<PamResource>) : KeeperRecordField() {
+    constructor(value: PamResource): this(null, null, mutableListOf(value))
+}
+
+@Serializable
+data class Schedule @JvmOverloads constructor(
+    val type: String? = null,
+    val utcTime: String? = null,
+    val weekday: String? = null,
+    val intervalCount: Int? = null
+)
+
+@Serializable
+@SerialName("schedule")
+data class Schedules @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    val value: MutableList<Schedule>) : KeeperRecordField() {
+    constructor(value: Schedule): this(null, null, mutableListOf(value))
+}
+
+@Serializable
+@SerialName("checkbox")
+data class Checkbox @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    val value: MutableList<Boolean>) : KeeperRecordField(){
+    constructor(value: Boolean): this(null, null, mutableListOf(value))
+}
+
+@Serializable
+@SerialName("databaseType")
+data class DatabaseType @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var value: MutableList<String>) : KeeperRecordField(){
+    constructor(value: String): this(null, null, mutableListOf(value))
+}
+
+@Serializable
+@SerialName("directoryType")
+data class DirectoryType @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    var value: MutableList<String>) : KeeperRecordField(){
+    constructor(value: String): this(null, null, mutableListOf(value))
+}
+
+@Serializable
+@SerialName("recordRef")
+data class RecordRef @JvmOverloads constructor(
+    override var label: String? = null,
+    var required: Boolean? = null,
+    val value: MutableList<String>) : KeeperRecordField(){
+    constructor(value: String): this(null, null, mutableListOf(value))
+}
+
+@Serializable
+@SerialName("pamHostname")
+data class PamHostnames @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<Host>) : KeeperRecordField() {
+    constructor(value: Host): this(null, null, null, mutableListOf(value))
+}
+
+@Serializable
+@SerialName("privateKey")
+data class PrivateKey @JvmOverloads constructor(
+    val crv: String? = null,
+    val d: String? = null,
+    val ext: Boolean? = null,
+    val key_ops: List<String>? = null,
+    val kty: String? = null,
+    val x: String? = null,
+    val y: String? = null
+)
+
+@Serializable
+data class Passkey @JvmOverloads constructor(
+    val privateKey: PrivateKey? = null,
+    val credentialId: String? = null,
+    val signCount: Long? = null,
+    val userId: String? = null,
+    val relyingParty: String? = null,
+    val username: String? = null,
+    val createdDate: Long? = null
+)
+
+@Serializable
+@SerialName("passkey")
+data class Passkeys @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    val value: MutableList<Passkey>) : KeeperRecordField() {
+    constructor(value: Passkey): this(null, null, mutableListOf(value))
+}
+
+@Serializable
+data class Script @JvmOverloads constructor(
+    val fileRef: String? = null,
+    val command: String? = null,
+    val recordRef: MutableList<String>? = null,
+)
+
+@Serializable
+@SerialName("script")
+data class Scripts @JvmOverloads constructor(
+    override val label: String? = null,
+    var required: Boolean? = null,
+    var privacyScreen: Boolean? = null,
+    val value: MutableList<Script>) : KeeperRecordField() {
+    constructor(value: Script): this(null, null, null, mutableListOf(value))
+}
+
+@Serializable
 data class KeeperFileData(
     val title: String,
     val name: String,

@@ -34,10 +34,10 @@ class ParserTest(unittest.TestCase):
         self.assertEqual("This is my note", r.notes, "notes is not correct")
 
         fields = r.fields
-        # There is 5 fields per helper type. We only set 3 in the test, but there should be 5
-        self.assertEqual(5, len(fields), "got 5 fields")
+        # There is 6 fields per helper type. We only set 3 in the test, but there should be 5
+        self.assertEqual(6, len(fields), "got 6 fields")
         index = 0
-        for field_type in ["login", "password", "url", "fileRef", "oneTimeCode"]:
+        for field_type in ["passkey", "login", "password", "url", "fileRef", "oneTimeCode"]:
             self.assertEqual(field_type, fields[index].get("type"), "first helper is the wrong type")
             index += 1
 

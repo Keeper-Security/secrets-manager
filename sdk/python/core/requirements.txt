@@ -1,6 +1,6 @@
 keeper-secrets-manager-helper>=1.0.4
 ecdsa
 cryptography>=39.0.1
-requests==2.28.2
-pytest==7.2.1
-importlib_metadata==6.0.0
+requests>=2.28.2
+pytest>=7.2.1
+importlib_metadata>=6.0.0

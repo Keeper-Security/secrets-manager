@@ -4,6 +4,22 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.5.4
+* KSM-405 - Added new script field type and oneTimeCode to PAM record types
+* KSM-410 - New field type: Passkey
+* KSM-394 - Ability to load configuration from AWS Secrets Manager using AWS AIM role in EC2 instance or AWS IAM user
+* KSM-416 - Fix OS detection bug
+* KSM-400 - Unpinned few dependencies
+
+## 16.5.3
+* KSM-393 - Fix file permissions on localized Windows OS
+
+## 16.5.2
+* KSM-375 - Make HTTPError to be more informative
+* KSM-376 - Support for PAM record types
+* KSM-381 - Transactions
+* Fixed [Issue 441](https://github.com/Keeper-Security/secrets-manager/issues/441) - Bug caused by space in username
+
 ## 16.5.1
 * KSM-371 - Fix Windows Config file permissions issue
 * KSM-370 - Upgrade to latest cryptography>=39.0.1 library

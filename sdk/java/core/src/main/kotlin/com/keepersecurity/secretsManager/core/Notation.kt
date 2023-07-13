@@ -8,7 +8,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.reflect.full.memberProperties
 
-@Deprecated(message = "Use getNotationResults instead.")
 @ExperimentalSerializationApi
 fun getValue(secrets: KeeperSecrets, notation: String): String {
     val parsedNotation = parseNotation(notation, true) // prefix, record, selector, footer
@@ -85,7 +84,7 @@ fun getValue(secrets: KeeperSecrets, notation: String): String {
             val expectedSize = if (idx >= 0) 1 else valuesCount
             val res = getFieldStringValues(field, idx, objPropertyName)
             if (res.size != expectedSize)
-                print("Notation warning - extracted ${res.size} out of $valuesCount values for '$objPropertyName' property.")
+                println("Notation warning - extracted ${res.size} out of $valuesCount values for '$objPropertyName' property.")
             if (res.isNotEmpty()) {
                 // legacy compatibility mode - no indexes, ex. /url returns value[0]
                 if(parsedNotation[2].index1?.second.isNullOrEmpty() && parsedNotation[2].index2?.second.isNullOrEmpty())
@@ -142,7 +141,10 @@ internal fun getFieldValuesCount(field: KeeperRecordField): Int {
         is BankAccounts -> field.value.size
         is BirthDate -> field.value.size
         is CardRef -> field.value.size
+        is Checkbox -> field.value.size
+        is DatabaseType -> field.value.size
         is Date -> field.value.size
+        is DirectoryType -> field.value.size
         is Email -> field.value.size
         is ExpirationDate -> field.value.size
         is FileRef -> field.value.size
@@ -155,10 +157,16 @@ internal fun getFieldValuesCount(field: KeeperRecordField): Int {
         is Names -> field.value.size
         is OneTimeCode -> field.value.size
         is OneTimePassword -> field.value.size
+        is PamHostnames -> field.value.size
+        is PamResources -> field.value.size
+        is Passkeys -> field.value.size
         is Password -> field.value.size
         is PaymentCards -> field.value.size
         is Phones -> field.value.size
         is PinCode -> field.value.size
+        is RecordRef -> field.value.size
+        is Schedules -> field.value.size
+        is Scripts -> field.value.size
         is SecureNote -> field.value.size
         is SecurityQuestions -> field.value.size
         is Text -> field.value.size
@@ -197,8 +205,14 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
             else if (index < 0) field.value.map { it.toString() }.toList() else listOf(field.value[index].toString())
         is CardRef -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value else listOf(field.value[index])
+        is Checkbox -> if (index >= field.value.size || property != null) emptyRes
+            else if (index < 0) field.value.map { it.toString() }.toList() else listOf(field.value[index].toString())
+        is DatabaseType -> if (index >= field.value.size || property != null) emptyRes
+            else if (index < 0) field.value else listOf(field.value[index])
         is Date -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value.map { it.toString() }.toList() else listOf(field.value[index].toString())
+        is DirectoryType -> if (index >= field.value.size || property != null) emptyRes
+            else if (index < 0) field.value else listOf(field.value[index])
         is Email -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value else listOf(field.value[index])
         is ExpirationDate -> if (index >= field.value.size || property != null) emptyRes
@@ -235,6 +249,30 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
             else if (index < 0) field.value else listOf(field.value[index])
         is OneTimePassword -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value else listOf(field.value[index])
+        is PamHostnames -> if (index >= field.value.size) emptyRes
+            else if (index < 0) {
+                if (property == null) field.value.map { Json.encodeToString(it) }.toList()
+                else field.value.map { getObjectProperty(it, property) }.toList()
+            } else {
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
+            }
+        is PamResources -> if (index >= field.value.size) emptyRes
+            else if (index < 0) {
+                if (property == null) field.value.map { Json.encodeToString(it) }.toList()
+                else field.value.map { getObjectProperty(it, property) }.toList()
+            } else {
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
+            }
+        is Passkeys -> if (index >= field.value.size) emptyRes
+            else if (index < 0) {
+                if (property == null) field.value.map { Json.encodeToString(it) }.toList()
+                else field.value.map { getObjectProperty(it, property) }.toList()
+            } else {
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
+            }
         is Password -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value else listOf(field.value[index])
         is PaymentCards -> if (index >= field.value.size) emptyRes
@@ -255,6 +293,24 @@ internal fun getFieldStringValues(field: KeeperRecordField, index: Int = -1, pro
             }
         is PinCode -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value else listOf(field.value[index])
+        is RecordRef -> if (index >= field.value.size || property != null) emptyRes
+            else if (index < 0) field.value else listOf(field.value[index])
+        is Schedules -> if (index >= field.value.size) emptyRes
+            else if (index < 0) {
+                if (property == null) field.value.map { Json.encodeToString(it) }.toList()
+                else field.value.map { getObjectProperty(it, property) }.toList()
+            } else {
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
+            }
+        is Scripts -> if (index >= field.value.size) emptyRes
+            else if (index < 0) {
+                if (property == null) field.value.map { Json.encodeToString(it) }.toList()
+                else field.value.map { getObjectProperty(it, property) }.toList()
+            } else {
+                if (property == null) listOf(Json.encodeToString(field.value[index]))
+                else listOf(getObjectProperty(field.value[index], property))
+            }
         is SecureNote -> if (index >= field.value.size || property != null) emptyRes
             else if (index < 0) field.value else listOf(field.value[index])
         is SecurityQuestions -> if (index >= field.value.size) emptyRes
@@ -281,7 +337,10 @@ private fun getFieldStringValue(field: KeeperRecordField, valueIdx: Int): String
         is BankAccounts -> Json.encodeToString(field.value[valueIdx])
         is BirthDate -> field.value[valueIdx].toString()
         is CardRef -> field.value[valueIdx]
+        is Checkbox -> field.value[valueIdx].toString()
+        is DatabaseType -> field.value[valueIdx]
         is Date -> field.value[valueIdx].toString()
+        is DirectoryType -> field.value[valueIdx]
         is Email -> field.value[valueIdx]
         is ExpirationDate -> field.value[valueIdx].toString()
         is FileRef -> field.value[valueIdx]
@@ -294,10 +353,16 @@ private fun getFieldStringValue(field: KeeperRecordField, valueIdx: Int): String
         is Names -> Json.encodeToString(field.value[valueIdx])
         is OneTimeCode -> field.value[valueIdx]
         is OneTimePassword -> field.value[valueIdx]
+        is PamHostnames -> Json.encodeToString(field.value[valueIdx])
+        is PamResources -> Json.encodeToString(field.value[valueIdx])
+        is Passkeys -> Json.encodeToString(field.value[valueIdx])
         is Password -> field.value[valueIdx]
         is PaymentCards -> Json.encodeToString(field.value[valueIdx])
         is Phones -> Json.encodeToString(field.value[valueIdx])
         is PinCode -> field.value[valueIdx]
+        is RecordRef -> field.value[valueIdx]
+        is Schedules -> Json.encodeToString(field.value[valueIdx])
+        is Scripts -> Json.encodeToString(field.value[valueIdx])
         is SecureNote -> field.value[valueIdx]
         is SecurityQuestions -> Json.encodeToString(field.value[valueIdx])
         is Text -> field.value[valueIdx]
@@ -311,8 +376,13 @@ private fun getFieldValueProperty(field: KeeperRecordField, valueIdx: Int, prope
         is BankAccounts -> getObjectProperty(field.value[valueIdx], propertyName)
         is Hosts -> getObjectProperty(field.value[valueIdx], propertyName)
         is Names -> getObjectProperty(field.value[valueIdx], propertyName)
+        is PamHostnames -> getObjectProperty(field.value[valueIdx], propertyName)
+        is PamResources -> getObjectProperty(field.value[valueIdx], propertyName)
+        is Passkeys -> getObjectProperty(field.value[valueIdx], propertyName)
         is PaymentCards -> getObjectProperty(field.value[valueIdx], propertyName)
         is Phones -> getObjectProperty(field.value[valueIdx], propertyName)
+        is Schedules -> getObjectProperty(field.value[valueIdx], propertyName)
+        is Scripts -> getObjectProperty(field.value[valueIdx], propertyName)
         is SecurityQuestions -> getObjectProperty(field.value[valueIdx], propertyName)
         else -> throw Exception("Property name notation is not supported for ${fieldType(field)}")
     }
@@ -331,7 +401,10 @@ private fun getFieldJsonValue(field: KeeperRecordField): String {
         is BankAccounts -> Json.encodeToString(field.value)
         is BirthDate -> Json.encodeToString(field.value)
         is CardRef -> Json.encodeToString(field.value)
+        is Checkbox -> Json.encodeToString(field.value)
+        is DatabaseType -> Json.encodeToString(field.value)
         is Date -> Json.encodeToString(field.value)
+        is DirectoryType -> Json.encodeToString(field.value)
         is Email -> Json.encodeToString(field.value)
         is ExpirationDate -> Json.encodeToString(field.value)
         is FileRef -> Json.encodeToString(field.value)
@@ -344,10 +417,16 @@ private fun getFieldJsonValue(field: KeeperRecordField): String {
         is Names -> Json.encodeToString(field.value)
         is OneTimeCode -> Json.encodeToString(field.value)
         is OneTimePassword -> Json.encodeToString(field.value)
+        is PamHostnames -> Json.encodeToString(field.value)
+        is PamResources -> Json.encodeToString(field.value)
+        is Passkeys -> Json.encodeToString(field.value)
         is Password -> Json.encodeToString(field.value)
         is PaymentCards -> Json.encodeToString(field.value)
         is Phones -> Json.encodeToString(field.value)
         is PinCode -> Json.encodeToString(field.value)
+        is RecordRef -> Json.encodeToString(field.value)
+        is Schedules -> Json.encodeToString(field.value)
+        is Scripts -> Json.encodeToString(field.value)
         is SecureNote -> Json.encodeToString(field.value)
         is SecurityQuestions -> Json.encodeToString(field.value)
         is Text -> Json.encodeToString(field.value)

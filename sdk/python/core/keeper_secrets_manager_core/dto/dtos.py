@@ -423,7 +423,8 @@ class KeeperFileData:
 VALID_RECORD_FIELDS = ['login', 'password', 'url', 'fileRef', 'oneTimeCode', 'otp', 'name', 'birthDate', 'date',
                        'expirationDate', 'text', 'securityQuestion', 'multiline', 'email', 'cardRef', 'addressRef',
                        'pinCode', 'phone', 'secret', 'note', 'accountNumber', 'paymentCard', 'bankAccount', 'keyPair',
-                       'host', 'address', 'licenseNumber']
+                       'host', 'address', 'licenseNumber', 'recordRef', 'schedule', 'directoryType', 'databaseType',
+                       'pamHostname', 'pamResources', 'checkbox', 'passkey', 'script']
 
 
 class RecordField:

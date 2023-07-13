@@ -560,10 +560,16 @@ class Secret:
         if len(record) == 0:
             raise KsmCliException("Cannot find a record for UID {}.".format(uid))
 
+        def _get_label(x):
+            label = x.get("label")
+            if label is None or label == "":
+                label = x.get("type")
+            return label
+
         # Get a list of all labels/type allowed.
         labels = {
-            "field": [x.get("label", x.get("type")) for x in record[0].dict.get("fields", [])],
-            "custom_field": [x.get("label", x.get("type")) for x in record[0].dict.get("custom", [])]
+            "field": [_get_label(x) for x in record[0].dict.get("fields", [])],
+            "custom_field": [_get_label(x) for x in record[0].dict.get("custom", [])]
         }
 
         data = [

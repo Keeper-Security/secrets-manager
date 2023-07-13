@@ -30,7 +30,7 @@ from distutils.util import strtobool
 
 from keeper_secrets_manager_core.keeper_globals import logger_name
 
-ALLOWED_WINDOWS_CONFIG_ADMINS = ['Administrators', 'SYSTEM']
+ALLOWED_WINDOWS_CONFIG_ADMINS = [b'Administrators', b'SYSTEM']
 ENCODING = 'UTF-8'
 SPECIAL_CHARACTERS = '''"!@#$%()+;<>=?[]{}^.,'''
 DEFAULT_PASSWORD_LENGTH = 32
@@ -67,6 +67,13 @@ def base64_to_bytes(s):
 
 def base64_to_string(b64s):
     return base64.b64decode(b64s).decode('UTF-8')
+
+
+def is_base64(s):
+    try:
+        return base64.b64encode(base64.b64decode(s)) == str.encode(s)
+    except (Exception,):
+        return False
 
 
 def string_to_bytes(s):
@@ -205,56 +212,138 @@ def random_sample(sample_length=0, sample_string=''):
 
 def get_windows_user_sid_and_name(logger=None):
     try:
-        user_sid = subprocess.check_output(['whoami', '/user'], encoding='utf-8').splitlines()[-1]
+        # WSL2 systems may run linux whoami command instead and fail
+        # whoami: extra operand '/user'
+        # Use the full name of the executable - whoami.exe
+        user_sid = subprocess.check_output(['whoami.exe', '/user']).splitlines()[-1]
     except subprocess.CalledProcessError as e:
-        logger.info(f'Cannot get current Windows user via "whoami": {e}')
+        logger.debug(f'Cannot get current Windows user via "whoami.exe": {e}')
         return None, None
     else:
-        return reversed(user_sid.split('\\')[-1].split())
+        return reversed(user_sid.split(b'\\')[-1].rsplit(b' ', 1))
 
 
 def set_config_mode(file, logger=None):
 
-    # Allow the user skip locking down the configuration file's mode.
-    if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE", "FALSE"))) is False:
-        # For Windows, use icacls. cacls is obsolete.
+    try:
+        # Allow the user skip locking down the configuration file's mode.
+        if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE", "FALSE"))) is False:
+            # For Windows, use icacls. cacls is obsolete.
 
-        if _platform.lower().startswith("win") is True:
+            if _platform.lower().startswith("win") is True:
 
-            sid, user = get_windows_user_sid_and_name()
+                sid, user = get_windows_user_sid_and_name()
+                if isinstance(sid, bytes):
+                    sid = sid.decode()
 
-            # https://stackoverflow.com/questions/5264595/windows-chmod-600
-            # https://github.com/PowerShell/Win32-OpenSSH/issues/132
+                # https://stackoverflow.com/questions/5264595/windows-chmod-600
+                # https://github.com/PowerShell/Win32-OpenSSH/issues/132
 
-            # Remove mode inherited by the directory.
-            # Remove everyone's access
-            # Grant the current user full access
-            # Allow Administrators full access
-            commands = [
-                'icacls.exe "{}" /reset'.format(file),
-                'icacls.exe "{}" /inheritance:r'.format(file),
-                'icacls.exe "{}" /remove:g Everyone:F'.format(file),
-                'icacls.exe "{}" /grant:r Administrators:F'.format(file),
-                'icacls.exe "{}" /grant:r *{}:F'.format(file, sid),
-            ]
-            for command in commands:
-                if logger is not None:
-                    logger.debug("Set Mode Command " + command)
-                output = subprocess.run(command, capture_output=True)
-                if output.stderr is not None and "Access is denied" in output.stderr.decode():
-                    raise Exception("Access denied to configuration file {}.".format(file))
-                if output.stdout is not None and "Failed processing 0 files" not in output.stdout.decode():
-                    message = "Could not change the ACL for file '{}'. Set the environmental variable " \
-                              "'KSM_CONFIG_SKIP_MODE' to 'TRUE' to skip setting the ACL mode.".format(file)
-                    if output.stderr is not None:
-                        message += ": " + output.stderr.decode()
-                    else:
-                        message += "."
+                # Remove mode inherited by the directory.
+                # Remove everyone's access
+                # Grant the current user full access
+                # Allow Administrators full access
+                commands = [
+                    'icacls.exe "{}" /reset'.format(file),
+                    'icacls.exe "{}" /inheritance:r'.format(file),
+                    'icacls.exe "{}" /remove:g Everyone:F'.format(file),
+                    'icacls.exe "{}" /grant:r Administrators:F'.format(file),
+                    'icacls.exe "{}" /grant:r *{}:F'.format(file, sid),
+                ]
+                for command in commands:
+                    if logger is not None:
+                        logger.debug("Set Mode Command " + command)
+                    output = subprocess.run(command, capture_output=True)
+                    if output.returncode == 2:
+                        raise FileNotFoundError("Cannot find configuration file {}.".format(file))
+                    if output.returncode == 5:
+                        raise PermissionError("Access denied to configuration file {}.".format(file))
+                    if output.returncode == 1332:
+                        if logger is not None:
+                            logger.debug(f"Failed to set some ACL permissions: {command}")
+                        continue
+                        # Probably localized group/user names or non-existent/renamed group/user
+                        # Error 1332: No mapping between account names and security IDs was done.
+                        # Successfully processed 0 files; Failed processing 0 files
+                    if output.returncode != 0:
+                        message = "Could not change the ACL for file '{}'. Set the environmental variable " \
+                                "'KSM_CONFIG_SKIP_MODE' to 'TRUE' to skip setting the ACL mode.".format(file)
+                        if output.stderr:
+                            message += ": " + str(output.stderr).lstrip("b").strip("'")
+                        else:
+                            message += "."
 
-                    raise Exception(message)
-        else:
-            # In Linux/MacOs get file permissions to 0600.
-            os.chmod(file, stat.S_IREAD | stat.S_IWRITE)
+                        raise PermissionError(message)
+            else:
+                # In Linux/MacOs get file permissions to 0600.
+                os.chmod(file, stat.S_IREAD | stat.S_IWRITE)
+    except (FileNotFoundError, PermissionError):
+        raise
+    except Exception as e:
+        if logger is not None:
+            logger.debug("set_config_mode failed: " + str(e))
+
+
+localized_admins = []
+def populate_windows_localized_admin_names_win32api():
+    """ Uses Win32 API to get localized account names for known admin accounts """
+
+    import ctypes
+
+    ERROR_INVALID_PARAMETER = 87
+    ERROR_INSUFFICIENT_BUFFER = 122
+    WinLocalSystemSid = 22  # NT AUTHORITY\SYSTEM
+    # WinLocalServiceSid = 23  # NT AUTHORITY\LOCAL SERVICE
+    WinBuiltinAdministratorsSid = 26  # BUILTIN\Administrators
+
+    advapi32 = ctypes.windll.advapi32
+
+    def get_account_name(sid_type):
+        sid_size = ctypes.c_ulong(256)
+        sid = (ctypes.c_byte * sid_size.value)()
+
+        if not advapi32.CreateWellKnownSid(sid_type, None, sid, ctypes.byref(sid_size)):
+            error = ctypes.GetLastError()
+            if error == ERROR_INVALID_PARAMETER or error == ERROR_INSUFFICIENT_BUFFER:
+                sid = (ctypes.c_byte * sid_size.value)()
+                if not advapi32.CreateWellKnownSid(sid_type, None, sid, ctypes.byref(sid_size)):
+                    raise ctypes.WinError()
+
+        name_size = ctypes.c_ulong(0)
+        domain_size = ctypes.c_ulong(0)
+        sid_name_use = ctypes.c_ulong(0)
+        advapi32.LookupAccountSidW(None, sid, None, ctypes.byref(name_size), None, ctypes.byref(domain_size), ctypes.byref(sid_name_use))
+        error = ctypes.GetLastError()
+        if error and error != ERROR_INSUFFICIENT_BUFFER:
+            raise ctypes.WinError(error)
+
+        name = (ctypes.c_wchar * name_size.value)()
+        domain = (ctypes.c_wchar * domain_size.value)()
+        if not advapi32.LookupAccountSidW(None, sid, name, ctypes.byref(name_size), domain, ctypes.byref(domain_size), ctypes.byref(sid_name_use)):
+            raise ctypes.WinError()
+
+        return domain.value, name.value
+
+    # populate only once - lazy init
+    if not localized_admins:
+        admins = []
+        _, name = get_account_name(WinLocalSystemSid)
+        if name:
+            admins.append(name)  # SYSTEM: S-1-5-18
+        _, name = get_account_name(WinBuiltinAdministratorsSid)
+        if name:
+            admins.append(name)  # Administrators: S-1-5-32-544
+
+        # WMI names are unicode - convert to console's code page
+        if admins:
+            cmd = "echo."
+            for admin in admins:
+                cmd += f" & echo {admin}"
+            locout = subprocess.run(["cmd", "/c", cmd], capture_output=True)
+            if locout.returncode == 0 and locout.stdout:
+                for line in locout.stdout.split(b"\n"):
+                    if line.strip():
+                        localized_admins.append(line.strip())
 
 
 def check_config_mode(file, color_mod=None, logger=None) -> bool:
@@ -263,87 +352,99 @@ def check_config_mode(file, color_mod=None, logger=None) -> bool:
         Return result of check as boolean
     """
 
-    # If we are skipping setting the mode, skip checking.
-    if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE", "FALSE"))) is True:
-        retval = True
-    else:
-        # For Windows, use icacls. cacls is obsolete.
-        if _platform.lower().startswith("win") is True:
-
-            # If this doesn't error out, then we know the file exists
-            output = subprocess.run(["icacls.exe", file], capture_output=True)
-            if output.stderr is not None:
-                if "Access is denied" in output.stderr.decode():
-                    raise PermissionError("Access denied to configuration file {}.".format(file))
-                if "cannot find" in output.stderr.decode():
-                    raise FileNotFoundError("Cannot find configuration file {}.".format(file))
-
-            # Try to access the file. If it now can't be found, it's a permission problem.
-            try:
-                with open(file, "r") as fh:
-                    fh.close()
-            except (FileNotFoundError, PermissionError):
-                raise PermissionError("Access denied to configuration file {}.".format(file))
-
-            if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is True:
-                retval = True
-            else:
-                # We need to figure out who we are. subprocess run will use cmd
-                sid, user = get_windows_user_sid_and_name()
-                if sid is None:
-                    # Don't fail check when user SID is missing.
-                    retval = True
-                else:
-                    allowed_users = [u.lower() for u in ALLOWED_WINDOWS_CONFIG_ADMINS + [user]]
-                    for line in output.stdout.decode().split("\n"):
-                        parts = line[len(file):].split(":")
-                        if len(parts) == 2:
-                            found_user = parts[0].split("\\").pop()
-                            if found_user.lower() not in allowed_users:
-
-                                message = "The config file mode is too open for '{}'. Use `icacls` to remove access " \
-                                          "for other users and groups.\n\n".format(file)
-                                message += '> icacls.exe "{}" /reset\n'.format(file)
-                                message += '> icacls.exe "{}" /inheritance:r\n'.format(file)
-                                message += '> icacls.exe "{}" /remove:g Everyone:F\n'.format(file)
-                                message += '> icacls.exe "{}" /grant:r Administrators:F\n'.format(file)
-                                message += '> icacls.exe "{}" /grant:r *{}:F\n'.format(file, sid)
-                                message += "\nTo disable this check, set the environmental variable " \
-                                           "'KSM_CONFIG_SKIP_MODE_WARNING' to 'TRUE'."
-                                if color_mod is not None:
-                                    message = color_mod.Fore.RED + message + color_mod.Style.RESET_ALL
-
-                                print(message, file=sys.stderr)
-                                # Prevent multiple nagging per execution.
-                                os.environ["KSM_CONFIG_SKIP_MODE_WARNING"] = "TRUE"
-                                retval = False
-                                break
-                    else:
-                        retval = True
+    retval = False
+    try:
+        # If we are skipping setting the mode, skip checking.
+        if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE", "FALSE"))) is True:
+            retval = True
         else:
-            # Can the user read the file? First check if the file exists. If it does, os.access might throw
-            # and exception about it not existing. This mean we don't have access.
-            if os.path.exists(file) is True:
-                try:
-                    if os.access(file, os.R_OK) is False:
+            # For Windows, use icacls. cacls is obsolete.
+            if _platform.lower().startswith("win") is True:
+
+                # If this doesn't error out, then we know the file exists
+                output = subprocess.run(["icacls.exe", file], capture_output=True)
+
+                # check the returncode only - error messages could be in any language
+                if output.returncode > 0:
+                    if output.returncode == 2:
+                        raise FileNotFoundError("Cannot find configuration file {}.".format(file))
+                    if output.returncode == 5:
                         raise PermissionError("Access denied to configuration file {}.".format(file))
-                except FileNotFoundError:
+                    raise PermissionError("Error accessing configuration file {}.".format(file))
+
+                # Try to access the file. If it now can't be found, it's a permission problem.
+                try:
+                    with open(file, "r") as fh:
+                        fh.close()
+                except (FileNotFoundError, PermissionError):
                     raise PermissionError("Access denied to configuration file {}.".format(file))
 
-            # Allow user to skip being nagged by warning message.
-            if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is True:
-                retval = True
-            else:
-                mode = oct(os.stat(file).st_mode)
-                # Make sure group and user have no rights. Allow owner to have anything.
-                if mode[-2:] == "00":
+                if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is True:
                     retval = True
                 else:
-                    print("The config file mode, {}, is too open. "
-                          "It is recommended to execute 'chmod 0600 {}' to remove group and user "
-                          "access. To disable this warning, set the environment variable "
-                          "'KSM_CONFIG_SKIP_MODE_WARNING' to 'TRUE'.".format(mode[-4:], file), file=sys.stderr)
-                    retval = False
+                    # We need to figure out who we are. subprocess run will use cmd
+                    sid, user = get_windows_user_sid_and_name()
+                    if sid is None:
+                        # Don't fail check when user SID is missing.
+                        retval = True
+                    else:
+                        populate_windows_localized_admin_names_win32api()
+                        allowed_users = set([u.lower() for u in ALLOWED_WINDOWS_CONFIG_ADMINS + localized_admins + [user]])
+                        stdout = output.stdout or b""
+                        for line in stdout.split(b"\n"):
+                            parts = line[len(file):].split(b":")
+                            if len(parts) == 2:
+                                found_user = parts[0].split(b"\\").pop()
+                                if found_user.lower() not in allowed_users:
+
+                                    message = "The config file mode is too open for '{}'. Use `icacls` to remove access " \
+                                            "for other users and groups.\n\n".format(file)
+                                    message += '> icacls.exe "{}" /reset\n'.format(file)
+                                    message += '> icacls.exe "{}" /inheritance:r\n'.format(file)
+                                    message += '> icacls.exe "{}" /remove:g Everyone:F\n'.format(file)
+                                    message += '> icacls.exe "{}" /grant:r Administrators:F\n'.format(file)
+                                    message += '> icacls.exe "{}" /grant:r *{}:F\n'.format(file, sid)
+                                    message += "\nTo disable this check, set the environmental variable " \
+                                            "'KSM_CONFIG_SKIP_MODE_WARNING' to 'TRUE'."
+                                    if color_mod is not None:
+                                        message = color_mod.Fore.RED + message + color_mod.Style.RESET_ALL
+
+                                    print(message, file=sys.stderr)
+                                    # Prevent multiple nagging per execution.
+                                    os.environ["KSM_CONFIG_SKIP_MODE_WARNING"] = "TRUE"
+                                    retval = False
+                                    break
+                        else:
+                            retval = True
+            else:
+                # Can the user read the file? First check if the file exists. If it does, os.access might throw
+                # and exception about it not existing. This mean we don't have access.
+                if os.path.exists(file) is True:
+                    try:
+                        if os.access(file, os.R_OK) is False:
+                            raise PermissionError("Access denied to configuration file {}.".format(file))
+                    except FileNotFoundError:
+                        raise PermissionError("Access denied to configuration file {}.".format(file))
+
+                # Allow user to skip being nagged by warning message.
+                if bool(strtobool(os.environ.get("KSM_CONFIG_SKIP_MODE_WARNING", "FALSE"))) is True:
+                    retval = True
+                else:
+                    mode = oct(os.stat(file).st_mode)
+                    # Make sure group and user have no rights. Allow owner to have anything.
+                    if mode[-2:] == "00":
+                        retval = True
+                    else:
+                        print("The config file mode, {}, is too open. "
+                            "It is recommended to execute 'chmod 0600 {}' to remove group and user "
+                            "access. To disable this warning, set the environment variable "
+                            "'KSM_CONFIG_SKIP_MODE_WARNING' to 'TRUE'.".format(mode[-4:], file), file=sys.stderr)
+                        retval = False
+    except (FileNotFoundError, PermissionError):
+        raise
+    except Exception as e:
+        if logger is not None:
+            logger.debug("check_config_mode failed: " + str(e))
 
     return retval
 

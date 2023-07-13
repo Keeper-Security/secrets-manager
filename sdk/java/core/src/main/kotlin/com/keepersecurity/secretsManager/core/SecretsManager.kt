@@ -2,10 +2,7 @@
 
 package com.keepersecurity.secretsManager.core
 
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
+import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -20,7 +17,7 @@ import java.util.*
 import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj16.5.0"
+const val KEEPER_CLIENT_VERSION = "mj16.5.3"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -84,13 +81,27 @@ private data class GetPayload(
 ): CommonPayload()
 
 @Serializable
+enum class UpdateTransactionType(printableName: String) {
+    @SerialName("general") GENERAL("general"),
+    @SerialName("rotation") ROTATION("rotation")
+}
+
+@Serializable
 private data class UpdatePayload(
     override val clientVersion: String,
     override val clientId: String,
     val recordUid: String,
     val data: String,
-    val revision: Long
+    val revision: Long,
+    val transactionType: UpdateTransactionType? = null
 ): CommonPayload()
+
+@Serializable
+private data class CompleteTransactionPayload(
+    val clientVersion: String,
+    val clientId: String,
+    val recordUid: String
+)
 
 @Serializable
 private data class CreatePayload(
@@ -546,7 +557,7 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
             val res = getFieldStringValues(field, idx, objPropertyName)
             val expectedSize = if (idx >= 0) 1 else valuesCount
             if (res.size != expectedSize)
-                print("Notation warning - extracted ${res.size} out of $valuesCount values for '$objPropertyName' property.")
+                println("Notation warning - extracted ${res.size} out of $valuesCount values for '$objPropertyName' property.")
             if (res.isNotEmpty())
                 result.addAll(res)
         }
@@ -570,9 +581,16 @@ fun deleteFolder(options: SecretsManagerOptions, folderUids: List<String>, force
 }
 
 @ExperimentalSerializationApi
-fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord) {
-    val payload = prepareUpdatePayload(options.storage, record)
+fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord, transactionType: UpdateTransactionType? = null) {
+    val payload = prepareUpdatePayload(options.storage, record, transactionType)
     postQuery(options, "update_secret", payload)
+}
+
+@ExperimentalSerializationApi
+fun completeTransaction(options: SecretsManagerOptions, recordUid: String, rollback: Boolean = false) {
+    val payload = prepareCompleteTransactionPayload(options.storage, recordUid)
+    val path = if (rollback) "rollback_secret_update" else "finalize_secret_update"
+    postQuery(options, path, payload)
 }
 
 @ExperimentalSerializationApi
@@ -725,7 +743,9 @@ private fun fetchAndDecryptSecrets(
         response.records.forEach {
             val recordKey = decrypt(it.recordKey, appKey)
             val decryptedRecord = decryptRecord(it, recordKey)
-            records.add(decryptedRecord)
+            if (decryptedRecord != null) {
+                records.add(decryptedRecord)
+            }
         }
     }
     if (response.folders != null) {
@@ -734,9 +754,11 @@ private fun fetchAndDecryptSecrets(
             folder.records!!.forEach { record ->
                 val recordKey = decrypt(record.recordKey, folderKey)
                 val decryptedRecord = decryptRecord(record, recordKey)
-                decryptedRecord.folderUid = folder.folderUid
-                decryptedRecord.folderKey = folderKey
-                records.add(decryptedRecord)
+                if (decryptedRecord != null) {
+                    decryptedRecord.folderUid = folder.folderUid
+                    decryptedRecord.folderKey = folderKey
+                    records.add(decryptedRecord)
+                }
             }
         }
     }
@@ -753,7 +775,7 @@ private fun fetchAndDecryptSecrets(
 }
 
 @ExperimentalSerializationApi
-private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray): KeeperRecord {
+private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray): KeeperRecord? {
     val decryptedRecord = decrypt(record.data, recordKey)
 
     val files: MutableList<KeeperFile> = mutableListOf()
@@ -773,7 +795,24 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
             )
         }
     }
-    return KeeperRecord(recordKey, record.recordUid, null, null, Json.decodeFromString(bytesToString(decryptedRecord)), record.revision, files)
+
+    // When SDK is behind/ahead of record/field type definitions then
+    // strict mapping between JSON attributes and object properties
+    // will fail on any unknown field/key so just skip the record with proper error message
+    try {
+        val recordData = Json.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
+        return KeeperRecord(recordKey, record.recordUid, null, null, recordData, record.revision, files)
+    } catch (e: Exception) {
+        // New/missing field: Polymorphic serializer was not found for class discriminator 'UNKNOWN'...
+        // New/missing field property (field def updated): Encountered unknown key 'UNKNOWN'.
+        // Avoid 'ignoreUnknownKeys = true' to prevent erasing new properties on save/update
+        println("Skipped record ${record.recordUid}\n"+
+                " Error parsing record type - KSM SDK is behind/ahead of record/field type definitions." +
+                " Please upgrade to latest version. If you need assistance please email support@keepersecurity.com")
+        println(e.message)
+    }
+
+    return null
 }
 
 @ExperimentalSerializationApi
@@ -862,12 +901,22 @@ private fun prepareDeleteFolderPayload(
 @ExperimentalSerializationApi
 private fun prepareUpdatePayload(
     storage: KeyValueStorage,
-    record: KeeperRecord
+    record: KeeperRecord,
+    transactionType: UpdateTransactionType? = null
 ): UpdatePayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val recordBytes = stringToBytes(Json.encodeToString(record.data))
     val encryptedRecord = encrypt(recordBytes, record.recordKey)
-    return UpdatePayload(KEEPER_CLIENT_VERSION, clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision)
+    return UpdatePayload(KEEPER_CLIENT_VERSION, clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision, transactionType)
+}
+
+@ExperimentalSerializationApi
+private fun prepareCompleteTransactionPayload(
+    storage: KeyValueStorage,
+    recordUid: String
+): CompleteTransactionPayload {
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    return CompleteTransactionPayload(KEEPER_CLIENT_VERSION, clientId, recordUid)
 }
 
 @ExperimentalSerializationApi
