@@ -14,6 +14,7 @@ import javax.crypto.Cipher
 import javax.crypto.KeyAgreement
 import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.math.pow
 import kotlin.math.abs
@@ -92,31 +93,31 @@ internal fun hash(data: ByteArray, tag: String): ByteArray {
     return mac.doFinal(stringToBytes(tag))
 }
 
-internal fun getCipher(mode: Int, iv: ByteArray, key: ByteArray): Cipher {
+internal fun getCipher(mode: Int, iv: ByteArray, key: ByteArray, useCBC: Boolean = false): Cipher {
+    val transformation = if (useCBC) "AES/CBC/PKCS7Padding" else "AES/GCM/NoPadding"
     val cipher = if (KeeperCryptoParameters.provider == null)
-        Cipher.getInstance("AES/GCM/NoPadding") else
-        Cipher.getInstance("AES/GCM/NoPadding", KeeperCryptoParameters.provider)
+        Cipher.getInstance(transformation) else
+        Cipher.getInstance(transformation, KeeperCryptoParameters.provider)
     val keySpec = SecretKeySpec(key, "AES")
-    val gcmParameterSpec = GCMParameterSpec(16 * 8, iv)
-    cipher.init(mode, keySpec, gcmParameterSpec)
+    cipher.init(mode, keySpec, IvParameterSpec(iv))
     return cipher
 }
 
-internal fun encrypt(data: ByteArray, key: ByteArray): ByteArray {
-    val iv = getRandomBytes(12)
-    val cipher = getCipher(Cipher.ENCRYPT_MODE, iv, key)
+internal fun encrypt(data: ByteArray, key: ByteArray, useCBC: Boolean = false): ByteArray {
+    val iv = getRandomBytes(if (useCBC) 16 else 12)
+    val cipher = getCipher(Cipher.ENCRYPT_MODE, iv, key, useCBC)
     val encryptedData = cipher.doFinal(data)
     return iv + encryptedData
 }
 
-internal fun decrypt(data: ByteArray, key: ByteArray): ByteArray {
-    val iv = data.copyOfRange(0, 12)
-    val cipher = getCipher(Cipher.DECRYPT_MODE, iv, key)
+internal fun decrypt(data: ByteArray, key: ByteArray, useCBC: Boolean = false): ByteArray {
+    val iv = data.copyOfRange(0, if (useCBC) 16 else 12)
+    val cipher = getCipher(Cipher.DECRYPT_MODE, iv, key, useCBC)
     return cipher.doFinal(data, iv.size, data.size - iv.size)
 }
 
-internal fun decrypt(data: String, key: ByteArray): ByteArray {
-    return decrypt(base64ToBytes(data), key)
+internal fun decrypt(data: String, key: ByteArray, useCBC: Boolean = false): ByteArray {
+    return decrypt(base64ToBytes(data), key, useCBC)
 }
 
 internal fun importPrivateKey(privateKeyDer: ByteArray): ECPrivateKey {
