@@ -41,6 +41,30 @@ namespace SecretsManager
         }
     }
 
+    public class QueryOptions
+    {
+        public string[] RecordsFilter { get; }
+        public string[] FoldersFilter { get; }
+
+        public QueryOptions(string[] recordsFilter = null, string[] foldersFilter = null)
+        {
+            RecordsFilter = recordsFilter;
+            FoldersFilter = foldersFilter;
+        }
+    }
+
+    public class CreateOptions
+    {
+        public string FolderUid { get; }
+        public string SubFolderUid { get; }
+
+        public CreateOptions(string folderUid, string subFolderUid = null)
+        {
+            FolderUid = folderUid;
+            SubFolderUid = subFolderUid;
+        }
+    }
+
     public class TransmissionKey
     {
         public int PublicKeyId { get; }
@@ -95,14 +119,21 @@ namespace SecretsManager
         public string clientId { get; }
         public string publicKey { get; }
         public string[] requestedRecords { get; }
+        public string[] requestedFolders { get; }
 
-        public GetPayload(string clientVersion, string clientId, string publicKey, string[] requestedRecords)
+        public GetPayload(string clientVersion, string clientId, string publicKey, string[] requestedRecords, string[] requestedFolders)
         {
             this.clientVersion = clientVersion;
             this.clientId = clientId;
             this.publicKey = publicKey;
             this.requestedRecords = requestedRecords;
+            this.requestedFolders = requestedFolders;
         }
+    }
+
+    public enum UpdateTransactionType {
+        General,
+        Rotation
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
@@ -115,14 +146,37 @@ namespace SecretsManager
         public string recordUid { get; }
         public string data { get; }
         public long revision { get; }
+        public string transactionType { get; }
 
-        public UpdatePayload(string clientVersion, string clientId, string recordUid, string data, long revision)
+        public UpdatePayload(string clientVersion, string clientId, string recordUid, string data, long revision, UpdateTransactionType? transactionType = null)
         {
             this.clientVersion = clientVersion;
             this.clientId = clientId;
             this.recordUid = recordUid;
             this.data = data;
             this.revision = revision;
+            if (transactionType.HasValue)
+            {
+                this.transactionType = transactionType.Value.ToString().ToLower();
+            }
+
+        }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    internal class CompleteTransactionPayload
+    {
+        public string clientVersion { get; }
+        public string clientId { get; }
+        public string recordUid { get; }
+
+        public CompleteTransactionPayload(string clientVersion, string clientId, string recordUid)
+        {
+            this.clientVersion = clientVersion;
+            this.clientId = clientId;
+            this.recordUid = recordUid;
         }
     }
 
@@ -146,6 +200,25 @@ namespace SecretsManager
     [SuppressMessage("ReSharper", "InconsistentNaming")]
     [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    internal class DeleteFolderPayload
+    {
+        public string clientVersion { get; }
+        public string clientId { get; }
+        public string[] folderUids { get; }
+        public bool forceDeletion { get; }
+
+        public DeleteFolderPayload(string clientVersion, string clientId, string[] folderUids, bool forceDeletion)
+        {
+            this.clientVersion = clientVersion;
+            this.clientId = clientId;
+            this.folderUids = folderUids;
+            this.forceDeletion = forceDeletion;
+        }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     internal class CreatePayload
     {
         public string clientVersion { get; }
@@ -155,8 +228,9 @@ namespace SecretsManager
         public string folderUid { get; }
         public string folderKey { get; }
         public string data { get; }
+        public string subFolderUid { get; }
 
-        public CreatePayload(string clientVersion, string clientId, string recordUid, string recordKey, string folderUid, string folderKey, string data)
+        public CreatePayload(string clientVersion, string clientId, string recordUid, string recordKey, string folderUid, string folderKey, string data, string subFolderUid)
         {
             this.clientVersion = clientVersion;
             this.clientId = clientId;
@@ -164,6 +238,51 @@ namespace SecretsManager
             this.recordKey = recordKey;
             this.folderUid = folderUid;
             this.folderKey = folderKey;
+            this.data = data;
+            this.subFolderUid = subFolderUid;
+        }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    internal class CreateFolderPayload
+    {
+        public string clientVersion { get; }
+        public string clientId { get; }
+        public string folderUid { get; }
+        public string sharedFolderUid { get; }
+        public string sharedFolderKey { get; }
+        public string data { get; }
+        public string parentUid { get; }
+
+        public CreateFolderPayload(string clientVersion, string clientId, string folderUid, string sharedFolderUid, string sharedFolderKey, string data, string parentUid)
+        {
+            this.clientVersion = clientVersion;
+            this.clientId = clientId;
+            this.folderUid = folderUid;
+            this.sharedFolderUid = sharedFolderUid;
+            this.sharedFolderKey = sharedFolderKey;
+            this.data = data;
+            this.parentUid = parentUid;
+        }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    internal class UpdateFolderPayload
+    {
+        public string clientVersion { get; }
+        public string clientId { get; }
+        public string folderUid { get; }
+        public string data { get; }
+
+        public UpdateFolderPayload(string clientVersion, string clientId, string folderUid, string data)
+        {
+            this.clientVersion = clientVersion;
+            this.clientId = clientId;
+            this.folderUid = folderUid;
             this.data = data;
         }
     }
@@ -230,6 +349,8 @@ namespace SecretsManager
     {
         public string folderUid { get; set; }
         public string folderKey { get; set; }
+        public string data { get; set; }
+        public string parent { get; set; }
         public SecretsManagerResponseRecord[] records { get; set; }
     }
 
@@ -362,6 +483,32 @@ namespace SecretsManager
 
     [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
+    public class KeeperFolder
+    {
+        public KeeperFolder(byte[] folderKey, string folderUid, string parentUid, string name)
+        {
+            FolderKey = folderKey;
+            FolderUid = folderUid;
+            ParentUid = parentUid;
+            Name = name;
+        }
+
+        public byte[] FolderKey { get; }
+        public string FolderUid { get; }
+        public string ParentUid { get; }
+        public string Name { get; }
+    }
+
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    public class KeeperFolderName
+    {
+        public string name { get; set; }
+    }
+
+    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperFile
     {
         public KeeperFile(byte[] fileKey, string fileUid, KeeperFileData data, string url, string thumbnailUrl)
@@ -457,12 +604,17 @@ namespace SecretsManager
 
         public static async Task<KeeperSecrets> GetSecrets(SecretsManagerOptions options, string[] recordsFilter = null)
         {
-            var (keeperSecrets, justBound) = await FetchAndDecryptSecrets(options, recordsFilter);
+            return await GetSecrets2(options, new QueryOptions(recordsFilter));
+       }
+
+        public static async Task<KeeperSecrets> GetSecrets2(SecretsManagerOptions options, QueryOptions queryOptions = null)
+        {
+            var (keeperSecrets, justBound) = await FetchAndDecryptSecrets(options, queryOptions);
             if (justBound)
             {
                 try
                 {
-                    await FetchAndDecryptSecrets(options, recordsFilter);
+                    await FetchAndDecryptSecrets(options, queryOptions);
                 }
                 catch (Exception e)
                 {
@@ -472,6 +624,12 @@ namespace SecretsManager
 
             return keeperSecrets;
         }
+
+        public static async Task<KeeperFolder[]> GetFolders(SecretsManagerOptions options)
+        {
+            return await FetchAndDecryptFolders(options);
+        }
+
 
         /// <summary>
         /// TryGetNotationResults returns a string list with all values specified by the notation or empty list on error.
@@ -694,10 +852,17 @@ namespace SecretsManager
             return FindSecretByTitle(keeperSecrets.Records, recordTitle);
         }
 
-        public static async Task UpdateSecret(SecretsManagerOptions options, KeeperRecord record)
+        public static async Task UpdateSecret(SecretsManagerOptions options, KeeperRecord record, UpdateTransactionType? transactionType = null)
         {
-            var payload = PrepareUpdatePayload(options.Storage, record);
+            var payload = PrepareUpdatePayload(options.Storage, record, transactionType);
             await PostQuery(options, "update_secret", payload);
+        }
+
+        public static async Task CompleteTransaction(SecretsManagerOptions options, string recordUid, bool rollback = false)
+        {
+            var payload = PrepareCompleteTransactionPayload(options.Storage, recordUid);
+            var route = (rollback ? "rollback_secret_update" : "finalize_secret_update");
+            await PostQuery(options, route, payload);
         }
 
         public static async Task DeleteSecret(SecretsManagerOptions options, string[] recordsUids)
@@ -706,13 +871,69 @@ namespace SecretsManager
             await PostQuery(options, "delete_secret", payload);
         }
 
+        public static async Task DeleteFolder(SecretsManagerOptions options, string[] folderUids, bool forceDeletion = false)
+        {
+            var payload = PrepareDeleteFolderPayload(options.Storage, folderUids, forceDeletion);
+            await PostQuery(options, "delete_folder", payload);
+        }
+
         public static async Task<string> CreateSecret(SecretsManagerOptions options, string folderUid, KeeperRecordData recordData, KeeperSecrets secrets = null)
         {
             secrets ??= await GetSecrets(options);
+            
+            var recordFromFolder = secrets.Records.FirstOrDefault(x => x.FolderUid == folderUid);
+            if (recordFromFolder?.FolderKey == null)
+            {
+                throw new Exception($"Unable to create record - folder key for {folderUid} not found");
+            }
 
-            var payload = PrepareCreatePayload(options.Storage, folderUid, recordData, secrets);
+            var payload = PrepareCreatePayload(options.Storage, new CreateOptions(folderUid), recordData, recordFromFolder.FolderKey);
             await PostQuery(options, "create_secret", payload);
             return payload.recordUid;
+        }
+
+        public static async Task<string> CreateSecret2(SecretsManagerOptions options, CreateOptions createOptions, KeeperRecordData recordData, KeeperFolder[] folders = null)
+        {
+            folders ??= await GetFolders(options);
+
+            var sharedFolder = folders.FirstOrDefault(x => x.FolderUid == createOptions.FolderUid);
+            if (sharedFolder?.FolderKey == null)
+            {
+                throw new Exception($"Unable to create record - folder key for {createOptions.FolderUid} not found");
+            }
+
+            var payload = PrepareCreatePayload(options.Storage, createOptions, recordData, sharedFolder.FolderKey);
+            await PostQuery(options, "create_secret", payload);
+            return payload.recordUid;
+        }
+
+        public static async Task<string> CreateFolder(SecretsManagerOptions options, CreateOptions createOptions, string folderName, KeeperFolder[] folders = null)
+        {
+            folders ??= await GetFolders(options);
+
+            var sharedFolder = folders.FirstOrDefault(x => x.FolderUid == createOptions.FolderUid);
+            if (sharedFolder?.FolderKey == null)
+            {
+                throw new Exception($"Unable to create folder - folder key for {createOptions.FolderUid} not found");
+            }
+
+            var payload = PrepareCreateFolderPayload(options.Storage, createOptions, folderName, sharedFolder.FolderKey);
+            await PostQuery(options, "create_folder", payload);
+            return payload.folderUid;
+        }
+
+        public static async Task UpdateFolder(SecretsManagerOptions options, string folderUid, string folderName, KeeperFolder[] folders = null)
+        {
+            folders ??= await GetFolders(options);
+
+            var sharedFolder = folders.FirstOrDefault(x => x.FolderUid == folderUid);
+            if (sharedFolder?.FolderKey == null)
+            {
+                throw new Exception($"Unable to update folder - folder key for {folderUid} not found");
+            }
+
+            var payload = PrepareUpdateFolderPayload(options.Storage, folderUid, folderName, sharedFolder.FolderKey);
+            await PostQuery(options, "update_folder", payload);
         }
 
         public static async Task<string> UploadFile(SecretsManagerOptions options, KeeperRecord ownerRecord, KeeperFileUpload file)
@@ -798,11 +1019,11 @@ namespace SecretsManager
                 throw new Exception($"Upload failed ({CryptoUtils.BytesToString(StreamToBytes(errorResponseStream))})");
             }
         }
-
-        private static async Task<Tuple<KeeperSecrets, bool>> FetchAndDecryptSecrets(SecretsManagerOptions options, string[] recordsFilter)
+        
+        private static async Task<Tuple<KeeperSecrets, bool>> FetchAndDecryptSecrets(SecretsManagerOptions options, QueryOptions queryOptions)
         {
             var storage = options.Storage;
-            var payload = PrepareGetPayload(storage, recordsFilter);
+            var payload = PrepareGetPayload(storage, queryOptions);
             var responseData = await PostQuery(options, "get_secret", payload);
             var response = JsonUtils.ParseJson<SecretsManagerResponse>(responseData);
             var justBound = false;
@@ -887,7 +1108,64 @@ namespace SecretsManager
             return new KeeperRecord(recordKey, record.recordUid, folderUid, folderKey, recordData, record.revision, files.ToArray());
         }
 
-        private static GetPayload PrepareGetPayload(IKeyValueStorage storage, string[] recordsFilter)
+        private static async Task<KeeperFolder[]> FetchAndDecryptFolders(SecretsManagerOptions options)
+        {
+            var storage = options.Storage;
+            var payload = PrepareGetPayload(storage, null);
+            var responseData = await PostQuery(options, "get_folders", payload);
+            var response = JsonUtils.ParseJson<SecretsManagerResponse>(responseData);
+            var appKey = storage.GetBytes(KeyAppKey);
+            if (appKey == null)
+            {
+                throw new Exception("App key is missing from the storage");
+            }
+
+            if (response.folders == null)
+            {
+                return new KeeperFolder[] {};
+            }
+
+            var folders = new List<KeeperFolder>();
+
+            foreach (var folder in response.folders)
+            {
+                byte[] folderKey;
+                if (folder.parent == null)
+                {
+                    folderKey = CryptoUtils.Decrypt(folder.folderKey, appKey);
+                }
+                else
+                {
+                    var sharedFolderKey = GetSharedFolderKey(folders, response.folders, folder.parent);
+                    folderKey = CryptoUtils.Decrypt(folder.folderKey, sharedFolderKey, true);
+                }
+
+                var folderNameJson = CryptoUtils.Decrypt(folder.data, folderKey, true);
+                var folderName = JsonUtils.ParseJson<KeeperFolderName>(folderNameJson);
+                folders.Add(new KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name));
+            }
+            return folders.ToArray();
+        }
+
+        private static byte[] GetSharedFolderKey(List<KeeperFolder> folders, SecretsManagerResponseFolder[] responseFolders, string parent)
+        {
+            while (true)
+            {
+                var parentFolder = responseFolders.FirstOrDefault(x => x.folderUid == parent);
+                if (parentFolder == null)
+                {
+                    return null;
+                }
+                if (parentFolder.parent == null)
+                {
+                    var sharedFolder = folders.FirstOrDefault(x => x.FolderUid == parentFolder.folderUid);
+                    return sharedFolder?.FolderKey;
+                }
+                parent = parentFolder.parent;
+            }
+        }
+
+        private static GetPayload PrepareGetPayload(IKeyValueStorage storage, QueryOptions queryOptions)
         {
             var clientId = storage.GetString(KeyClientId);
             if (clientId == null)
@@ -908,10 +1186,10 @@ namespace SecretsManager
                 publicKey = CryptoUtils.BytesToBase64(CryptoUtils.ExportPublicKey(privateKeyBytes));
             }
 
-            return new GetPayload(GetClientVersion(), clientId, publicKey, recordsFilter);
+            return new GetPayload(GetClientVersion(), clientId, publicKey, queryOptions?.RecordsFilter, queryOptions?.FoldersFilter);
         }
 
-        private static UpdatePayload PrepareUpdatePayload(IKeyValueStorage storage, KeeperRecord record)
+        private static UpdatePayload PrepareUpdatePayload(IKeyValueStorage storage, KeeperRecord record, UpdateTransactionType? transactionType = null)
         {
             var clientId = storage.GetString(KeyClientId);
             if (clientId == null)
@@ -921,7 +1199,29 @@ namespace SecretsManager
 
             var recordBytes = JsonUtils.SerializeJson(record.Data);
             var encryptedRecord = CryptoUtils.Encrypt(recordBytes, record.RecordKey);
-            return new UpdatePayload(GetClientVersion(), clientId, record.RecordUid, CryptoUtils.WebSafe64FromBytes(encryptedRecord), record.Revision);
+            var payload = new UpdatePayload(
+                GetClientVersion(),
+                clientId,
+                record.RecordUid,
+                CryptoUtils.WebSafe64FromBytes(encryptedRecord),
+                record.Revision,
+                transactionType);
+            return payload;
+        }
+
+        private static CompleteTransactionPayload PrepareCompleteTransactionPayload(IKeyValueStorage storage, string recordUid)
+        {
+            var clientId = storage.GetString(KeyClientId);
+            if (clientId == null)
+            {
+                throw new Exception("Client Id is missing from the configuration");
+            }
+
+            var payload = new CompleteTransactionPayload(
+                GetClientVersion(),
+                clientId,
+                recordUid);
+            return payload;
         }
 
         private static DeletePayload PrepareDeletePayload(IKeyValueStorage storage, string[] recordsUids)
@@ -934,8 +1234,19 @@ namespace SecretsManager
 
             return new DeletePayload(GetClientVersion(), clientId, recordsUids);
         }
+        
+        private static DeleteFolderPayload PrepareDeleteFolderPayload(IKeyValueStorage storage, string[] folderUids, bool forceDeletion)
+        {
+            var clientId = storage.GetString(KeyClientId);
+            if (clientId == null)
+            {
+                throw new Exception("Client Id is missing from the configuration");
+            }
 
-        private static CreatePayload PrepareCreatePayload(IKeyValueStorage storage, string folderUid, KeeperRecordData recordData, KeeperSecrets secrets)
+            return new DeleteFolderPayload(GetClientVersion(), clientId, folderUids, forceDeletion);
+        }
+
+        private static CreatePayload PrepareCreatePayload(IKeyValueStorage storage, CreateOptions createOptions, KeeperRecordData recordData, byte[] folderKey)
         {
             var clientId = storage.GetString(KeyClientId);
             if (clientId == null)
@@ -949,23 +1260,51 @@ namespace SecretsManager
                 throw new Exception("Application owner public key is missing from the configuration");
             }
 
-            var recordFromFolder = secrets.Records.FirstOrDefault(x => x.FolderUid == folderUid);
-            if (recordFromFolder?.FolderKey == null)
-            {
-                throw new Exception($"Unable to create record - folder key for {folderUid} not found");
-            }
-
             var recordBytes = JsonUtils.SerializeJson(recordData);
             var recordKey = CryptoUtils.GetRandomBytes(32);
             var recordUid = CryptoUtils.GetRandomBytes(16);
             var encryptedRecord = CryptoUtils.Encrypt(recordBytes, recordKey);
             var encryptedRecordKey = CryptoUtils.PublicEncrypt(recordKey, ownerPublicKey);
-            var encryptedFolderKey = CryptoUtils.Encrypt(recordKey, recordFromFolder.FolderKey);
+            var encryptedFolderKey = CryptoUtils.Encrypt(recordKey, folderKey);
 
             return new CreatePayload(GetClientVersion(), clientId,
                 CryptoUtils.WebSafe64FromBytes(recordUid), CryptoUtils.BytesToBase64(encryptedRecordKey),
-                folderUid, CryptoUtils.BytesToBase64(encryptedFolderKey),
-                CryptoUtils.WebSafe64FromBytes(encryptedRecord));
+                createOptions.FolderUid, CryptoUtils.BytesToBase64(encryptedFolderKey),
+                CryptoUtils.WebSafe64FromBytes(encryptedRecord), createOptions.SubFolderUid);
+        }
+
+        private static CreateFolderPayload PrepareCreateFolderPayload(IKeyValueStorage storage, CreateOptions createOptions, string folderName, byte[] sharedFolderKey)
+        {
+            var clientId = storage.GetString(KeyClientId);
+            if (clientId == null)
+            {
+                throw new Exception("Client Id is missing from the configuration");
+            }
+
+            var folderDataBytes = JsonUtils.SerializeJson(new KeeperFolderName { name = folderName });
+            var folderKey = CryptoUtils.GetRandomBytes(32);
+            var folderUid = CryptoUtils.GetRandomBytes(16);
+            var encryptedFolderData = CryptoUtils.Encrypt(folderDataBytes, folderKey, true);
+            var encryptedFolderKey = CryptoUtils.Encrypt(folderKey, sharedFolderKey, true);
+
+            return new CreateFolderPayload(GetClientVersion(), clientId,
+                CryptoUtils.WebSafe64FromBytes(folderUid), createOptions.FolderUid,
+                CryptoUtils.WebSafe64FromBytes(encryptedFolderKey), CryptoUtils.WebSafe64FromBytes(encryptedFolderData),
+                createOptions.SubFolderUid);
+        }
+
+        private static UpdateFolderPayload PrepareUpdateFolderPayload(IKeyValueStorage storage, string folderUid, string folderName, byte[] folderKey)
+        {
+            var clientId = storage.GetString(KeyClientId);
+            if (clientId == null)
+            {
+                throw new Exception("Client Id is missing from the configuration");
+            }
+
+            var folderDataBytes = JsonUtils.SerializeJson(new KeeperFolderName { name = folderName });
+            var encryptedFolderData = CryptoUtils.Encrypt(folderDataBytes, folderKey, true);
+
+            return new UpdateFolderPayload(GetClientVersion(), clientId, folderUid, CryptoUtils.WebSafe64FromBytes(encryptedFolderData));
         }
 
         private static Tuple<FileUploadPayload, byte[]> PrepareFileUploadPayload(IKeyValueStorage storage, KeeperRecord ownerRecord, KeeperFileUpload file)
