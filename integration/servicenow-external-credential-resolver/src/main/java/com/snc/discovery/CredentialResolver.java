@@ -250,6 +250,7 @@ public class CredentialResolver implements IExternalCredential {
             fLogger.warn("### No value for username in credential: " + credId);
         if (!result.containsKey(VAL_PSWD))
             fLogger.warn("### No value for password in credential: " + credId);
+        fLogger.info("### Credential: " + credId + " Resolved keys: " + result.keySet());
 
         return result;
     }
