@@ -3,6 +3,7 @@ from unittest.mock import patch
 import os
 import tempfile
 import json
+import sys
 
 from keeper_secrets_manager_ansible import KeeperAnsible
 from keeper_secrets_manager_ansible.__main__ import main
@@ -24,7 +25,7 @@ class KeeperAnsibleTest(unittest.TestCase):
         # module for Keeper Ansible and the Keeper SDK.
         self.base_dir = os.path.dirname(os.path.realpath(__file__))
 
-        # Make sure the a config file does not already exists.
+        # Make sure the config file does not already exist.
         if os.path.exists("client-config.json") is True:
             os.unlink("client-config.json")
 
@@ -32,6 +33,14 @@ class KeeperAnsibleTest(unittest.TestCase):
         # Clean up
         if os.path.exists("client-config.json") is True:
             os.unlink("client-config.json")
+
+    @classmethod
+    def tearDownClass(cls):
+        # Our framework will clean up Ansbile, but this test doesn't use it. So we need to do it when the test ends.
+        for module in dict(sys.modules):
+            if module.startswith("ansible") is True:
+                print(f"unloading {module}")
+                sys.modules.pop(module, None)
 
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
     def test_config_read_file_json_file(self, mock_get_secrets):
@@ -55,6 +64,7 @@ class KeeperAnsibleTest(unittest.TestCase):
             )
             ka.client.get_secrets()
             mock_get_secrets.assert_called_once()
+            del ka
 
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
     def test_config_in_ansible_task_vars(self, mock_get_secrets):
@@ -85,6 +95,7 @@ class KeeperAnsibleTest(unittest.TestCase):
         self.assertIsNotNone(ka.client.config.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY), "owner public key is none")
         self.assertEqual(values.get("appOwnerPublicKey"), ka.client.config.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
                          "base64 owner public key are not the same")
+        del ka
 
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
     def test_config_base_64(self, mock_get_secrets):
@@ -111,6 +122,7 @@ class KeeperAnsibleTest(unittest.TestCase):
         self.assertIsNotNone(ka.client.config.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY), "owner public key is none")
         self.assertEqual(values.get("appOwnerPublicKey"), ka.client.config.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
                          "base64 owner public key are not the same")
+        del ka
 
     @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=get_secrets)
     def test_ansible_cli_init(self, _):

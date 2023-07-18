@@ -1,0 +1,52 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Cache Record
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: Generate a Keeper Record Cache secret
+      keeper_password:
+        length: 64
+      register: keeper_record_cache_secret
+      # no_log: True
+
+    - name: Store the Keeper Record Cache secret into variables.
+      set_fact:
+        keeper_record_cache_secret: "{{ keeper_record_cache_secret.password }}"
+      # no_log: True
+
+    - name: Cache records. Will use keeper_record_cache_secret from above.
+      keeper_cache_records:
+        uids:
+          - "{{ password_uid }}"
+      register: my_records
+      # no_log: True
+
+    - name: "Copy the password by UID"
+      keeper_copy:
+        cache: "{{ my_records.cache }}"
+        uid: "{{ password_uid }}"
+        field: "password"
+        dest: "{{ tmp_dir }}/password"
+        mode: '0600'
+
+    - name: "Copy the password by TITLE"
+      keeper_copy:
+        title: "{{ password_title }}"
+        field: "password"
+        dest: "{{ tmp_dir }}/password"
+        mode: '0600'
+
+    - name: "Copy the file"
+      keeper_copy:
+        uid: "{{ file_uid }}"
+        file: "{{ file_name }}"
+        dest: "{{ tmp_dir }}/video.mp4"
+        mode: '0777'
+
+    - name: "Copy the login"
+      keeper_copy:
+        notation: "{{ password_uid }}/field/login"
+        dest: "{{ tmp_dir }}/login"
+        mode: '0600'

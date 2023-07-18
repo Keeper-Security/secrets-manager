@@ -1,0 +1,44 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Set Cache
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: Generate a Keeper Record Cache secret
+      keeper_password:
+        length: 64
+      register: keeper_record_cache_secret
+      # no_log: True
+
+    - name: Store the Keeper Record Cache secret into variables.
+      set_fact:
+        keeper_record_cache_secret: "{{ keeper_record_cache_secret.password }}"
+      # no_log: True
+
+    - name: Cache records. Will use keeper_record_cache_secret from above.
+      keeper_cache_records:
+        titles:
+          - "{{ title }}"
+      register: my_records
+      # no_log: True
+
+    - name: "Get Current Password"
+      keeper_get:
+        cache: "{{ my_records.cache }}"
+        uid: "{{ uid }}"
+        field: "Password"
+      register: "my_password"
+
+    - name: "Print Password"
+      debug:
+        msg: "Current Password {{ my_password.value }}"
+        verbosity: 0
+
+    - name: "Set Password Value"
+      keeper_set:
+        uid: "{{ uid }}"
+        field: "password"
+        value: "{{ new_password }}"
+
+    # It's mocked, we don't update our test data :/

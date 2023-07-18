@@ -1,7 +1,8 @@
 # vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
 ---
-- name: Keeper Get
+- name: Keeper Clean Up
   hosts: "my_systems"
+  gather_facts: no
   vars:
     keeper_use_cache: True
 

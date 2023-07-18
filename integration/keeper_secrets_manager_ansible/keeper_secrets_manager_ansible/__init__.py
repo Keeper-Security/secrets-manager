@@ -23,6 +23,10 @@ import random
 from re import sub
 from enum import Enum
 import traceback
+import pickle
+import io
+import base64
+import socket
 
 # Check if the KSM SDK core has been installed
 KSM_SDK_ERR = None
@@ -35,6 +39,12 @@ else:
     from keeper_secrets_manager_core.core import KSMCache
     from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
     from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password
+
+    # If keeper_secrets_manager_core is installed, then these will be installed. They are deps.
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
 
 display = Display()
 
@@ -88,15 +98,31 @@ class KeeperAnsible:
         print('\n%s' % jsonify(kwargs))
         sys.exit(0)
 
-    def __init__(self, task_vars, force_in_memory=False):
+    def __init__(self, task_vars, action_module=None, task_attributes=None, force_in_memory=False):
 
         """ Build the config used by the Keeper Python SDK
 
         The configuration is mainly read from a JSON file.
+
         """
 
         if KSM_SDK_ERR is not None:
             self.fail_json(msg=missing_required_lib('keeper-secrets-manager-core'), exception=KSM_SDK_ERR)
+
+        # These are the variables set in playbook, host, group, ansible secret.
+        self.task_vars = task_vars
+
+        # This is an instance of ActionModule
+        self.action_module = action_module
+
+        # These are the attributes of the task or kwargs of a lookup action
+        if task_attributes is None:
+            if self.action_module is not None and hasattr(action_module, "_task"):
+                task = getattr(self.action_module, "_task")
+                task_attributes = task.args
+            else:
+                task_attributes = {}
+        self.task_attributes = task_attributes
 
         self.config_file = None
         self.config_created = False
@@ -131,7 +157,7 @@ class KeeperAnsible:
             keeper_config_file_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CONFIG_FILE_SUFFIX)
             keeper_ssl_verify_skip = KeeperAnsible.keeper_key(KeeperAnsible.KEY_SSL_VERIFY_SKIP)
 
-            # By default we don't want to skip verify the certs.
+            # By default, we don't want to skip verify the certs.
             ssl_certs_skip = task_vars.get(keeper_ssl_verify_skip, False)
 
             # If the config location is defined, or a file exists at the default location.
@@ -150,13 +176,13 @@ class KeeperAnsible:
                 if task_vars.get(cache_dir_key) is not None and os.environ.get(KeeperAnsible.ENV_CACHE_DIR) is None:
                     os.environ[KeeperAnsible.ENV_CACHE_DIR] = task_vars.get(cache_dir_key)
 
-                display.vvv("Keeper Secrets Manager is using cache. Cache directory is {}.".format(
+                display.vvv("Keeper Secrets Manager is using DR file cache. Cache directory is {}.".format(
                     os.environ.get(KeeperAnsible.ENV_CACHE_DIR)
                     if os.environ.get(KeeperAnsible.ENV_CACHE_DIR) is not None else "current working directory"))
 
                 self.using_cache = True
             else:
-                display.vvv("Keeper Secrets Manager is not using a cache.")
+                display.vvv("Keeper Secrets Manager is not using a DR file cache.")
 
             if os.path.isfile(self.config_file) is True and force_in_memory is False:
                 display.vvv("Loading keeper config file file {}.".format(self.config_file))
@@ -217,7 +243,7 @@ class KeeperAnsible:
                     elif len(config_option) == 1 and KeeperAnsible.CONFIG_CLIENT_KEY in config_option:
                         in_memory_storage = False
 
-                # Sometime we don't want a JSON file, ever. Force the config to be in memory.
+                # Sometimes we don't want a JSON file, ever. Force the config to be in memory.
                 if force_in_memory is True:
                     in_memory_storage = True
 
@@ -249,14 +275,193 @@ class KeeperAnsible:
         except Exception as err:
             raise AnsibleError("Keeper Ansible error: {}".format(err))
 
-    def get_record(self, uid):
+    def get_encryption_key(self):
+
+        cache_secret = self.task_vars.get("keeper_record_cache_secret")
+        if cache_secret is None:
+            raise ValueError("The keeper_record_cache_secret is blank. In order to encrypt the cache, "
+                             "keeper_record_cache_secret needs to be set in task, group, host or vault variables.")
+
+        # Needs something for the salt, it needs to be 32 bytes long.
+        salt = socket.gethostname().zfill(32)[0:32]
+
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt.encode(),
+            iterations=390000,
+        )
+
+        return base64.urlsafe_b64encode(kdf.derive(cache_secret.encode()))
+
+    def encrypt(self, data):
+
+        secret_key = self.get_encryption_key()
+        record_fh = io.BytesIO()
+        pickle.dump(data, record_fh)
+        return Fernet(secret_key).encrypt(record_fh.getvalue())
+
+    def decrypt(self, ciphertext):
+        secret_key = self.get_encryption_key()
+        return pickle.loads(Fernet(secret_key).decrypt(ciphertext))
+
+    @staticmethod
+    def convert_records_into_dict(records):
+
+        all_data = {
+            "uid": {},
+            "title": {}
+        }
+
+        if isinstance(records, list) is False:
+            records = [records]
+
+        for record in records:
+            key_counter = {}
+            record_data = {
+                "keeper_title": record.title,
+                "keeper_uid": record.uid
+            }
+            num = 0
+            for field_type in ["fields", "custom"]:
+                num += 1
+                for field in record.dict.get(field_type, []):
+
+                    # Use the label first for the key, else wall back to the field type. This is case-sensitive.
+                    key = field.get("label", field.get("type"))
+
+                    # Do not add plank types or labels
+                    if key is None or key == "":
+                        continue
+
+                    key = key.replace(" ", "_")
+
+                    if key in record_data:
+                        if key not in key_counter:
+                            key_counter[key] = 2
+                        else:
+                            key_counter[key] += 1
+                        key = f"{key}_{key_counter[key]}"
+
+                    value = field.get("value")
+                    if value is not None:
+                        if len(value) == 0:
+                            value = None
+                        elif len(value) == 1:
+                            value = value[0]
+
+                    record_data[key] = value
+            all_data['uid'][record.uid] = record_data
+
+            if record.title not in all_data['title']:
+                all_data['title'][record.title] = []
+            all_data['title'][record.title].append(record.uid)
+
+        return all_data
+
+    @staticmethod
+    def _find_records(records, uids=None, titles=None):
+        if titles is None:
+            titles = []
+        if isinstance(titles, list) is False:
+            titles = [titles]
+
+        if uids is None:
+            uids = []
+        if isinstance(uids, list) is False:
+            uids = [uids]
+
+        # These are used to make sure we got everything
+        uid_map = {uid: True for uid in uids}
+        title_map = {title: True for title in titles}
+
+        found_records = {}
+        for record in records:
+            display.vvvvvv(f"found record uid: {record.uid}")
+            for title in titles:
+                if record.title == title:
+                    found_records[record.uid] = record
+                    title_map.pop(title, None)
+            for uid in uids:
+                if record.uid == uid:
+                    found_records[record.uid] = record
+                    uid_map.pop(uid, None)
+
+        if len(uid_map) > 0:
+            raise ValueError(f"The following record uid(s) could not be found: {list(uid_map.keys())}")
+        if len(title_map) > 0:
+            raise ValueError(f"The following record title(s) could not be found: {list(title_map.keys())}")
+
+        return [found_records[x] for x in found_records]
+
+    def get_records_from_vault(self, uids=None, titles=None, encrypt=False):
+
+        display.vvvvvv("getting records from the Keeper Vault")
+
+        if uids is None:
+            uids = []
+        if isinstance(uids, list) is False:
+            uids = [uids]
 
         try:
-            records = self.client.get_secrets([uid])
-            if records is None or len(records) == 0:
-                raise ValueError("The uid {} was not found in the Keeper Secrets Manager app.".format(uid))
+            # If we are getting by titles, we need all the records. Even if getting UID, get all the records.
+            if titles is not None:
+                records = self.client.get_secrets()
+
+            # If we are getting uid we need only select amount.
+            else:
+                records = self.client.get_secrets(uids)
         except Exception as err:
             raise Exception("Cannot get record: {}".format(err))
+
+        display.vvvvvv(f"got {len(records)} records")
+
+        # Filter only the records we need. For UID only, it should be the same list.
+        records = self._find_records(records, uids=uids, titles=titles)
+
+        if encrypt is True:
+            records = self.encrypt(records)
+
+        return records
+
+    def get_records_from_cache(self, cache, uids=None, titles=None):
+
+        display.vvvvvv("getting records from cache")
+
+        if titles is None:
+            titles = []
+        if isinstance(titles, list) is False:
+            titles = [titles]
+
+        if uids is None:
+            uids = []
+        if isinstance(uids, list) is False:
+            uids = [uids]
+
+        records = self.decrypt(cache)
+
+        # Filter only the records we need. For UID only, it should be the same list.
+        records = self._find_records(records, uids=uids, titles=titles)
+
+        return records
+
+    def get_records(self, uids=None, titles=None, cache=None, encrypt=False):
+
+        if cache is not None:
+            records = self.get_records_from_cache(cache, uids=uids, titles=titles)
+        else:
+            records = self.get_records_from_vault(uids=uids, titles=titles, encrypt=encrypt)
+
+        if records is None or len(records) == 0:
+            raise ValueError("Could not find any records that meet the criteria.")
+        return records
+
+    def get_record(self, uids=None, titles=None, cache=None):
+
+        records = self.get_records(cache=cache, uids=uids, titles=titles)
+        if len(records) > 1 and titles is not None:
+            raise AnsibleError("Found multiple records for the Title. To fix, make sure records "
+                               "have a unique Title or use a UID.")
 
         return records[0]
 
@@ -299,9 +504,10 @@ class KeeperAnsible:
         self.stash_secret_value(value)
         return value
 
-    def get_value(self, uid, field_type, key, allow_array=False):
+    def get_value(self, field_type, key, uid=None, title=None, allow_array=False, array_index=None, value_key=None,
+                  cache=None):
 
-        record = self.get_record(uid)
+        record = self.get_record(uids=uid, titles=title, cache=cache)
 
         # Make sure the boolean is a boolean.
         allow_array = bool(strtobool(str(allow_array)))
@@ -315,6 +521,9 @@ class KeeperAnsible:
             file = record.find_file_by_title(key)
             if file is not None:
                 values = [file.get_file_data()]
+                display.vvvvvv(f"found the file: {key}")
+            else:
+                display.vvvvvv(f"cannot find the file: {key}")
         else:
             raise AnsibleError("Cannot get_value. The field type ENUM of {} is invalid.".format(field_type))
 
@@ -333,12 +542,27 @@ class KeeperAnsible:
         if allow_array is True:
             return values
 
-        # Else return the first item.
-        return values[0]
+        if array_index is None:
+            array_index = 0
 
-    def set_value(self, uid, field_type, key, value):
+        # If we got here, we know at least one item exists in the array.
+        try:
+            value = values[array_index]
+        except IndexError:
+            raise AnsibleError(f"An array index of {array_index} does not exists in the field value.")
+        if value_key is not None:
+            if value_key not in value:
+                if array_index > 0:
+                    display.warning("The value_key attribute was used with array_index. Make sure the value key exists "
+                                    "in that item's object")
+                raise AnsibleError(f"The value key {value_key} does not exists in the field value.")
+            value = value[value_key]
 
-        record = self.get_record(uid)
+        return value
+
+    def set_value(self, field_type, key, value, uid=None, title=None, cache=None):
+
+        record = self.get_record(uids=uid, titles=title, cache=cache)
 
         if field_type == KeeperFieldType.FIELD:
             record.field(key, value)
@@ -382,7 +606,7 @@ class KeeperAnsible:
         return KeeperFieldType.get_enum(field_type[0]), field_key
 
     def add_secret_values_to_results(self, results):
-        """ If the redact stdout callback is being used, add the secrets to the results dictionary. The redact
+        """ If the 'redact' stdout callback is being used, add the secrets to the results dictionary. The redact
         stdout callback will remove it from the results. It will use value to remove values from stdout.
         """
 
@@ -400,7 +624,7 @@ class KeeperAnsible:
         Password complexity differ from place to place :(
 
         This is in more tune with the Vault UI since most service just want a specific set of characters, but not
-        a quantity. And some character are illegal for specific services. Neither the SDK and Vault UI address this.
+        a quantity. And some characters are illegal for specific services. Neither the SDK and Vault UI address this.
         So this is the third standard.
 
         kwargs

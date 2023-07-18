@@ -1,223 +1,182 @@
-from ansible import context
-from ansible.cli import CLI
-from ansible.module_utils.common.collections import ImmutableDict
-from ansible.executor.playbook_executor import PlaybookExecutor
-from ansible.parsing.dataloader import DataLoader
-from ansible.inventory.manager import InventoryManager
-from ansible.vars.manager import VariableManager
-from ansible.plugins.loader import add_all_plugin_dirs
-from ansible.plugins.callback.default import CallbackModule
-from ansible.utils.display import Display
-from keeper_secrets_manager_core.dto.dtos import Record
-from keeper_secrets_manager_core.crypto import CryptoUtils
+from unittest.mock import patch
+from keeper_secrets_manager_core import SecretsManager
+from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
+from keeper_secrets_manager_core import mock
+import keeper_secrets_manager_ansible.plugins
+from importlib import import_module
 import os
 import sys
 from io import StringIO
-import base64
+import subprocess
+import re
 import json
-import time
-import uuid
-import traceback
 
 
 class AnsibleTestFramework:
 
-    def __init__(self, base_dir, playbook, inventory, **kwargs):
+    def __init__(self, playbook, **kwargs):
 
-        self.base_dir = base_dir
+        self.base_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "ansible_example")
+        self.plugin_base_dir = os.path.join(os.path.dirname(keeper_secrets_manager_ansible.plugins.__file__))
         self.playbook = playbook
-        self.inventory = inventory
         self.connection = kwargs.get("connection", "local")
-        self.extra_vars = kwargs.get("vars")
-        self.plugin_base_dir = kwargs.get("plugin_base_dir")
+        self.extra_vars = kwargs.get("vars", [])
+        if self.extra_vars is None:
+            self.extra_vars = []
+
+        self.mock_responses = kwargs.get("mock_responses", [])
+
+    def ansible_config(self):
+
+        return f"""[defaults]
+inventory=./inventory
+playbook_dir=./playbooks
+action_plugins={self.plugin_base_dir}/action_plugins
+lookup_plugins={self.plugin_base_dir}/lookup_plugins
+
+[inventory]
+enable_plugins=ini,host_list,script
+"""
+
+    def generate_ansible_config(self):
+
+        with open(os.path.join(self.base_dir, "ansible.cfg"), "w") as fh:
+            fh.write(self.ansible_config())
+            fh.close()
 
     def run(self):
 
         orig_wor_dir = os.getcwd()
-        os.chdir(self.base_dir)
-
         old_stdout = sys.stdout
         old_stderr = sys.stderr
 
+        results = {}
+        stdout_text = ""
+        stderr_text = ""
+
         try:
+            secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(config=mock.MockConfig.make_base64()))
+            queue = mock.ResponseQueue(client=secrets_manager)
+            for response in self.mock_responses:
+                queue.add_response(response)
 
-            redirected_output = sys.stdout = StringIO()
-            redirected_error = sys.stderr = StringIO()
+            with patch('keeper_secrets_manager_ansible.KeeperAnsible.get_client') as mock_client:
+                mock_client.return_value = secrets_manager
 
-            loader = DataLoader()
+                self.generate_ansible_config()
 
-            # The ansible base directory.
-            loader.set_basedir(self.base_dir)
+                sp = subprocess.run(["which", "ansible-playbook"], text=True, capture_output=True)
+                ansible_playbook = sp.stdout
 
-            # This will scan the directory for all possible plugin directories and add them if it finds them. For
-            # example if it finds a 'action_plugins' directory, it will added the directory to the action plugin
-            # loader.
-            add_all_plugin_dirs(self.plugin_base_dir)
+                args = [
+                    ansible_playbook.strip(),
+                    "-vvvvvv",
+                    "-c",
+                    "local",
+                    "-i",
+                    os.path.join(self.base_dir, "inventory", "all")
+                ]
 
-            context.CLIARGS = ImmutableDict(
-                tags={},
-                listtags=False,
-                listtasks=False,
-                listhosts=False,
-                syntax=False,
-                connection=self.connection,
-                module_path=None,
-                forks=100,
-                remote_user='xxx',
-                private_key_file=None,
-                ssh_common_args=None,
-                ssh_extra_args=None,
-                sftp_extra_args=None,
-                scp_extra_args=None,
-                become=False,
-                become_method='sudo',
-                become_user='root',
-                verbosity=4,
-                check=False,
-                start_at_task=None
-            )
+                if len(self.extra_vars) > 0:
+                    for key in self.extra_vars:
+                        args.append("--extra-vars")
+                        if isinstance(self.extra_vars[key], str) is True:
+                            args.append(f"{key}=\'{self.extra_vars[key]}\'")
+                        else:
+                            args.append(json.dumps({key: self.extra_vars[key]}))
 
-            inventory = InventoryManager(
-                loader=loader,
-                sources=self.inventory
-            )
+                args.append(os.path.join(self.base_dir, "playbooks", self.playbook))
 
-            variable_manager = VariableManager(
-                loader=loader,
-                inventory=inventory,
-                version_info=CLI.version_info(gitinfo=False)
-            )
+                print(f"Command - {' '.join(args)}")
 
-            # A hack to set the extra vars. Trying through the CLIARGS is a nightmare.
-            if self.extra_vars is not None:
-                state = variable_manager.__getstate__()
-                for key in self.extra_vars:
-                    state['extra_vars'][key] = self.extra_vars[key]
+                print(f"Ansible Directory - {self.base_dir}")
+                print(f"Python Path - {os.environ['PYTHONPATH']}")
+                print()
 
-            playbook_exec = PlaybookExecutor(
-                playbooks=[self.playbook],
-                inventory=inventory,
-                variable_manager=variable_manager,
-                loader=loader,
-                passwords={}
-            )
+                os.chdir(self.base_dir)
 
-            # callback = CallbackModule()
-            #
-            # # Still not there. Trying to get display to show debug or v{1,5} message
-            # callback.display_skipped_hosts = False
-            # callback.show_per_host_start = False
-            # callback.display_failed_stderr = True
-            # playbook_exec._tqm._stdout_callback = callback
+                redirected_output = None
+                redirected_error = None
 
-            playbook_exec.run()
-            stats = playbook_exec._tqm._stats
-            hosts = sorted(stats.processed.keys())
-            results = [{h: stats.summarize(h)} for h in hosts]
+                try:
+                    from ansible import constants as C
+                    C.ANSIBLE_HOME = self.base_dir
+                    C.CONFIG_FILE = os.path.join(self.base_dir, "ansible.cfg")
+                    C.DEFAULT_ACTION_PLUGIN_PATH = os.path.join(self.plugin_base_dir, "action_plugins")
+                    C.DEFAULT_LOOKUP_PLUGIN_PATH = os.path.join(self.plugin_base_dir, "lookup_plugins")
 
+                    # Are we running 3.8 or greater?
+                    if sys.version_info[:2] >= (3, 8):
+                        playbook = import_module("ansible.cli.playbook")
+                    else:
+                        print("USING Python 3.7/ANSIBLE 4.0 HACK")
+                        # Python 3.7 will use Ansible 4, which CLI does not have a main() method. So we need
+                        # to make a fake ansible-playbook which does.
+                        playbook = import_module("tests.playbook_python_3_7")
+
+                    redirected_output = StringIO()
+                    redirected_error = StringIO()
+
+                    sys.stdout = redirected_output
+                    sys.stderr = redirected_error
+
+                    # playbook_main(args)
+                    playbook.main(args)
+
+                except SystemExit as err:
+                    if int(str(err)) != 0:
+                        raise Exception(f"Ansible exited with a non-zero: {err}")
+                except ImportError as err:
+                    raise Exception(f"Could not load the playbook CLI module: {err}")
+                finally:
+                    if redirected_output is not None:
+                        stdout_text = redirected_output.getvalue()
+                    if redirected_error is not None:
+                        stderr_text = redirected_error.getvalue()
+                    sys.stdout = old_stdout
+                    sys.stderr = old_stderr
+
+                    print()
+                    print("STDOUT")
+                    print("-----------------------------------------------------------------------------------------")
+                    print(stdout_text)
+
+                    print()
+                    print("STDERR")
+                    print("-----------------------------------------------------------------------------------------")
+                    print(stderr_text)
+
+                    # Unload the ansible modules. They like to stuff things in classes and global places. If you
+                    # don't, tests might interfere with each other.
+                    for module in dict(sys.modules):
+                        if module.startswith("ansible") is True:
+                            print(f"unloading {module}")
+                            sys.modules.pop(module, None)
+
+                regex_str = "localhost\\s+:"
+                statuses = ["ok", "changed", "unreachable", "failed", "skipped", "rescued", "ignored"]
+                for status in statuses:
+                    regex_str += f"\\s+{status}=(\\d+)"
+                    results[status] = 0
+
+                match = re.search(regex_str, stdout_text, re.MULTILINE)
+                if match is not None:
+                    index = 1
+                    for status in statuses:
+                        results[status] = int(match.group(index))
+                        index += 1
+
+                print(results)
+
+        except Exception as err:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
+            print(err)
         finally:
             os.chdir(orig_wor_dir)
             sys.stdout = old_stdout
             sys.stderr = old_stderr
 
-        out = redirected_output.getvalue()
-        err = redirected_error.getvalue()
-
-        return results, out, err
+        return results, stdout_text, stderr_text
 
 
-class RecordMaker:
-
-    url_data = {}
-    secret = b"11111111111111111111111111111111"
-
-    @staticmethod
-    def make_record(uid, title, record_type=None, fields=None, custom_fields=None):
-
-        if record_type is None:
-            record_type = "login"
-
-        data = {
-            "title": title,
-            "type": record_type
-        }
-        if fields is not None:
-            data["fields"] = []
-            for field_type, value in fields.items():
-                if type(value) is not list:
-                    value = [value]
-                data["fields"].append({
-                    "type": field_type,
-                    "value": value
-                })
-        if custom_fields is not None:
-            data["custom"] = []
-            for field_type, value in custom_fields.items():
-                if type(value) is not list:
-                    value = [value]
-                data["fields"].append({
-                    "label": field_type,
-                    "type": field_type,
-                    "value": value
-                })
-
-        return Record({
-            "recordUid": uid,
-            "data": CryptoUtils.encrypt_aes(json.dumps(data).encode(), RecordMaker.secret)
-        }, RecordMaker.secret)
-
-    @staticmethod
-    def make_file(uid, title, files=None):
-
-        if files is None:
-            files = []
-
-        file_refs = []
-        file_parts = []
-        for file in files:
-            file_uid = str(uuid.uuid4())
-            d = {
-                "name": file.get("name"),
-                "title": file.get("title", file.get("name")),
-                "size": file.get("size", 123),
-                "lastModified": file.get("last_modified", int(time.time())),
-                "type": file.get("type", "plain/text"),
-            }
-            data = json.dumps(d)
-
-            file_refs.append(file_uid)
-            file_data = {
-                "fileUid": file_uid,
-                "fileKey": base64.b64encode(CryptoUtils.encrypt_aes(RecordMaker.secret, RecordMaker.secret)).decode(),
-                "data": base64.b64encode(CryptoUtils.encrypt_aes(data.encode(), RecordMaker.secret)).decode(),
-                "url": file.get("url", "http://localhost/{}".format(file_uid)),
-                "thumbnailUrl": None
-            }
-            file_parts.append(file_data)
-
-            file_content = file.get("data", "THIS IS FAKE DATA")
-            RecordMaker.url_data[file_data["url"]] = CryptoUtils.encrypt_aes(file_content.encode(), RecordMaker.secret)
-
-        r = None
-        try:
-            r = Record({
-                "recordUid": uid,
-                "data": CryptoUtils.encrypt_aes(json.dumps({
-                    "title": title,
-                    "type": "file",
-                    "fields": [
-                        {"type": "fileRef", "value": file_refs},
-                    ],
-                }).encode(), RecordMaker.secret),
-                "files": file_parts
-            }, RecordMaker.secret)
-        except Exception as err:
-            print(">>>>", err)
-            traceback.print_exc()
-
-        return r
-
-    @staticmethod
-    def get_url_data(url):
-        ret = RecordMaker.url_data.get(url)
-        return ret

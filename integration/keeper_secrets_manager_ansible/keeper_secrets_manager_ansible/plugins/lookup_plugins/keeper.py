@@ -13,6 +13,7 @@
 from keeper_secrets_manager_ansible import KeeperAnsible
 from ansible.errors import AnsibleError
 from ansible.plugins.lookup import LookupBase
+from ansible.utils.display import Display
 
 DOCUMENTATION = r'''
 ---
@@ -33,6 +34,18 @@ options:
     - The UID of the Keeper Vault record.
     type: str
     required: no
+  title:
+    description:
+    - The Title of the Keeper Vault record.
+    type: str
+    required: no
+    version_added: '1.2.0'
+  cache:
+    description:
+    - The cache registered by keeper_get_records_cache
+    type: str
+    required: no
+    version_added: '1.2.0'  
   field:
     description:
     - The label, or type, of the standard field in record that contains the value.
@@ -84,25 +97,38 @@ RETURN = '''
     elements: str
 '''
 
+display = Display()
+
 
 class LookupModule(LookupBase):
 
     def run(self, terms, variables=None, **kwargs):
 
-        keeper = KeeperAnsible(task_vars=variables)
+        keeper = KeeperAnsible(task_vars=variables, task_attributes=kwargs, action_module=self)
+
+        cache = kwargs.get("cache")
 
         if kwargs.get("notation") is not None:
+            if cache is not None:
+                display.warning("cache and notation both set. currently notation cannot be used with the cache.")
             value = keeper.get_value_via_notation(kwargs.get("notation"))
         else:
             uid = kwargs.get("uid")
-            if uid is None:
-                raise AnsibleError("The uid is blank. keeper_get requires this value to be set.")
+            title = kwargs.pop("title", None)
+            if uid is None and title is None:
+                raise AnsibleError("The uid and title are blank. keeper_copy requires one to be set.")
+            if uid is not None and title is not None:
+                raise AnsibleError("The uid and title are both set. keeper_copy requires one to be set, but not both.")
 
             # Try to get either the field, custom_field, or file name.
             field_type_enum, field_key = keeper.get_field_type_enum_and_key(args=kwargs)
 
             allow_array = kwargs.get("allow_array", False)
-            value = keeper.get_value(uid, field_type=field_type_enum, key=field_key, allow_array=allow_array)
+            array_index = kwargs.get("array_index", None)
+            value_key = kwargs.get("value_key", None)
+            value = keeper.get_value(uid=uid, title=title, field_type=field_type_enum, key=field_key,
+                                     allow_array=allow_array, array_index=array_index, value_key=value_key,
+                                     cache=cache)
 
         if type(value) is not list:
             value = [value]

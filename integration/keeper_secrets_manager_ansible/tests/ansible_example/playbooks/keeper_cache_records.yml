@@ -1,0 +1,47 @@
+---
+- name: Keeper Cache Records
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: Generate a Keeper Record Cache secret
+      keeper_password:
+        length: 64
+      register: keeper_record_cache_secret
+      # no_log: True
+
+    - name: Store the Keeper Record Cache secret into variables.
+      set_fact:
+        keeper_record_cache_secret: "{{ keeper_record_cache_secret.password }}"
+      # no_log: True
+
+    - name: Cache records. Will use keeper_record_cache_secret from above.
+      keeper_cache_records:
+        uids: "{{ uids }}"
+        titles: "{{ titles }}"
+      register: my_records
+      # no_log: True
+
+    - name: "Get Value By UID"
+      keeper_get:
+        cache: "{{ my_records.cache }}"
+        uid: "{{ record_10_uid }}"
+        field: "password"
+      register: "my_password_by_uid"
+
+    - name: "Get Value By Title"
+      keeper_get:
+        cache: "{{ my_records.cache }}"
+        title: "Record 75"
+        field: "password"
+      register: "my_password_by_title"
+
+    - name: "Print Password By UID"
+      debug:
+        var: my_password_by_uid.value
+        verbosity: 0
+
+    - name: "Print Password By Title"
+      debug:
+        var: my_password_by_title.value
+        verbosity: 0

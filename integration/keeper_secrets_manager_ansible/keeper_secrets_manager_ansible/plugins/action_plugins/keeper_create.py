@@ -226,7 +226,7 @@ class ActionModule(ActionBase):
         if task_vars is None:
             task_vars = {}
 
-        keeper = KeeperAnsible(task_vars=task_vars)
+        keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
 
         shared_folder_uid = self._task.args.get("shared_folder_uid")
         if shared_folder_uid is None:

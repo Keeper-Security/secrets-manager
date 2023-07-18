@@ -62,6 +62,7 @@ If you omit the `collections` , you will need to use the full plugin name.
 
 ## Action
 
+* `keepersecurity.keeper_secrets_manager.keeper_cache_records` - Generate a cache to use with other actions.
 * `keepersecurity.keeper_secrets_manager.keeper_copy` - Copy file, or value, from your vault to a remote server.
 * `keepersecurity.keeper_secrets_manager.keeper_get` - Get a value from your vault.
 * `keepersecurity.keeper_secrets_manager.keeper_set` - Set a value of an existing record in your vault.
@@ -115,6 +116,13 @@ The content of this YAML file can then be cut-n-pasted into a **group_vars**, **
 configuration file or even a playbook.
 
 # Changes
+
+## 1.2.0
+
+* Added action `keeper_cache_records` to cache Keeper Vault records to reduce API calls.
+* Added ability to get records by title for some actions.
+* Added `array_index` and `value_key` to access individual values in complex values. Alternative to `notation`.
+* Update pinned KSM SDK version.
 
 ## 1.1.5
 

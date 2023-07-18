@@ -11,9 +11,11 @@
 #
 
 from ansible.plugins.action import ActionBase
+from ansible.utils.display import Display
+from ansible.errors import AnsibleError
 from keeper_secrets_manager_ansible import KeeperAnsible
 from keeper_secrets_manager_core.configkeys import ConfigKeys
-from ansible.errors import AnsibleError
+
 from distutils.util import strtobool
 import json
 import yaml
@@ -98,6 +100,8 @@ keeper_hostname:
   sample: keepersecurity.com
 '''
 
+display = Display()
+
 
 class ActionModule(ActionBase):
 
@@ -125,11 +129,13 @@ class ActionModule(ActionBase):
                     if config.contains(e):
                         config_json_dict[e.value] = config.get(e)
                 with open(filename, "w") as fh:
+                    display.vvv(f"creating JSON config file {filename}")
                     fh.write(json.dumps(config_json_dict, indent=4))
                     fh.close()
             # Else write the YAML file.
             else:
                 with open(filename, "w") as fh:
+                    display.vvv(f"creating YAML config file {filename}")
                     fh.write(yaml.dump(config_dict))
                     fh.close()
 
@@ -164,7 +170,7 @@ class ActionModule(ActionBase):
             task_vars[KeeperAnsible.keeper_key(KeeperAnsible.TOKEN_KEY)] = token
 
         # We don't want a JSON, force the config to be in memory.
-        keeper = KeeperAnsible(task_vars=task_vars, force_in_memory=True)
+        keeper = KeeperAnsible(task_vars=task_vars, force_in_memory=True, action_module=self)
 
         # Don't load the entire vault, make a bad UID.
         try:

@@ -6,8 +6,3 @@ keeper_token: "ONE TIME TOKEN"
 keeper_private_key: "PRIVATE KEY"
 keeper_hostname: https://fake.keepersecurity.com
 keeper_verify_ssl_certs: False
-uid: EG6KdJaaLG7esRZbMnfbFA
-password_uid: EG6KdJaaLG7esRZbMnfbFA
-file_uid: GmMi9CdZ_HXhF3GiGHg3
-file_name: IMG_0021.jpg
-new_password: "NEW PASSWORD"

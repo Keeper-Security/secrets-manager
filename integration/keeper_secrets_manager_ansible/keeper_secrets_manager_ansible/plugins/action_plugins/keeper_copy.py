@@ -35,6 +35,18 @@ options:
     - The UID of the Keeper Vault record.
     type: str
     required: no
+  title:
+    description:
+    - The Title of the Keeper Vault record.
+    type: str
+    required: no
+    version_added: '1.2.0'
+  cache:
+    description:
+    - The cache registered by keeper_get_records_cache
+    type: str
+    required: no
+    version_added: '1.2.0'  
   field:
     description:
     - The label, or type, of the standard field in record that contains the value.
@@ -56,10 +68,28 @@ options:
     description:
     - The Keeper notation to access record that contains the value.
     - Use notation when you want a specific value.
+    - The 'cache' setting currently does not work with notation.
     - See https://docs.keeper.io/secrets-manager/secrets-manager/about/keeper-notation for more information/
     type: str
     required: no
-    version_added: '1.0.1'  
+    version_added: '1.0.1'
+  array_index:
+    description:
+    - Used to retrieve items from an array value.
+    - This is used for fields that have multiple values in an array.
+    - Can be used with value_key.
+    default: 0
+    type: int
+    required: no
+    version_added: '1.2.0'
+  value_key:
+    description:
+    - Used to retrieve items from an object value.
+    - This is used for fields that have complex values.
+    - The value is the name of the key in an object.
+    type: str
+    required: no
+    version_added: '1.2.0'
   dest:
     description:
     - Remote absolute path where the file should be copied to.
@@ -220,19 +250,30 @@ class ActionModule(ActionBase):
         if task_vars is None:
             task_vars = {}
 
-        keeper = KeeperAnsible(task_vars=task_vars)
+        keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
+
+        cache = self._task.args.pop("cache", None)
 
         if self._task.args.get("notation") is not None:
+            if cache is not None:
+                display.warning("cache and notation both set. currently notation cannot be used with the cache.")
             value = keeper.get_value_via_notation(self._task.args.get("notation"))
         else:
             uid = self._task.args.pop("uid", None)
-            if uid is None:
-                raise AnsibleError("The uid is blank. keeper_copy requires this value to be set.")
+            title = self._task.args.pop("title", None)
+            if uid is None and title is None:
+                raise AnsibleError("The uid and title are blank. keeper_copy requires one to be set.")
+            if uid is not None and title is not None:
+                raise AnsibleError("The uid and title are both set. keeper_copy requires one to be set, but not both.")
 
             # Try to get either the field, custom_field, or file name.
             field_type_enum, field_key = keeper.get_field_type_enum_and_key(args=self._task.args)
 
-            value = keeper.get_value(uid, field_type=field_type_enum, key=field_key)
+            array_index = self._task.args.pop("array_index", None)
+            value_key = self._task.args.pop("value_key", None)
+
+            value = keeper.get_value(uid=uid, title=title, field_type=field_type_enum, key=field_key, cache=cache,
+                                     array_index=array_index, value_key=value_key)
 
         # Make sure 'src' is not set. We are going to use 'content' instead.
         self._task.args.pop("src", None)
