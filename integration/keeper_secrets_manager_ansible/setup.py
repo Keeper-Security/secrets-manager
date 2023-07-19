@@ -9,7 +9,7 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
 install_requires = [
-    'keeper-secrets-manager-core>=16.4.1',
+    'keeper-secrets-manager-core>=16.6.0',
     'keeper-secrets-manager-helper>=1.0.4',
     'importlib_metadata',
     'ansible<8.0.0'

@@ -2,6 +2,7 @@
 
 This module contains plugins that allow your Ansible automations to use Keeper Secrets Manager. 
 
+* `keeper_cache_records` - Generate a cache to use with other actions.
 * `keeper_copy` - Similar to `ansible.builtin.copy`. Uses the KSM vault for the source/content.
 * `keeper_get` - Retrieve secrets from a record.
 * `keeper_set` - Update an existing record from Ansible information.
@@ -9,10 +10,19 @@ This module contains plugins that allow your Ansible automations to use Keeper S
 * `keeper_cleanup` - Remove the cache file, if being used.
 * `keeper_lookup` - Retrieve secrets from a record using Ansible's lookup.
 * `keeper_redact` - Stdout Callback plugin to redact secrets from logs.
+* `keeper_password` - Generate a random password.
+* `keeper_info` - Display information about plugin, record and field types.
 
 For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/integrations/ansible-plugin
 
 # Changes
+
+## 1.2.0
+
+* Added action `keeper_cache_records` to cache Keeper Vault records to reduce API calls.
+* Added ability to get records by title for some actions.
+* Added `array_index` and `value_key` to access individual values in complex values. Alternative to `notation`.
+* Update pinned KSM SDK version.
 
 ## 1.1.5
 
