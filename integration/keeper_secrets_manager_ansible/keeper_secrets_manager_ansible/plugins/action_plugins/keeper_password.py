@@ -11,7 +11,6 @@
 #
 
 from ansible.plugins.action import ActionBase
-from ansible.errors import AnsibleError
 from keeper_secrets_manager_ansible import KeeperAnsible
 
 DOCUMENTATION = r'''
@@ -101,7 +100,7 @@ class ActionModule(ActionBase):
         if task_vars is None:
             task_vars = {}
 
-        keeper = KeeperAnsible(task_vars=task_vars)
+        keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
 
         length = self._task.args.get("length", 64)
         allow_lowercase = self._task.args.get("allow_lowercase", True)

@@ -54,7 +54,6 @@ value:
 
 class ActionModule(ActionBase):
 
-
     @staticmethod
     def get_versions():
 
@@ -79,7 +78,7 @@ class ActionModule(ActionBase):
         if task_vars is None:
             task_vars = {}
 
-        KeeperAnsible(task_vars=task_vars)
+        KeeperAnsible(task_vars=task_vars, action_module=self)
 
         # If there are custom record type, load them
         keeper_record_types = task_vars.get("keeper_record_types")

@@ -12,6 +12,7 @@
 
 from ansible.plugins.action import ActionBase
 from ansible.errors import AnsibleError
+from ansible.utils.display import Display
 from keeper_secrets_manager_ansible import KeeperAnsible
 
 DOCUMENTATION = r'''
@@ -33,6 +34,18 @@ options:
     - The UID of the Keeper Vault record.
     type: str
     required: no
+  title:
+    description:
+    - The Title of the Keeper Vault record.
+    type: str
+    required: no
+    version_added: '1.2.0'
+  cache:
+    description:
+    - The cache registered by keeper_get_records_cache
+    type: str
+    required: no
+    version_added: '1.2.0'  
   field:
     description:
     - The label, or type, of the standard field in record that contains the value.
@@ -55,13 +68,32 @@ options:
     - Allow array of values instead of taking the first value.
     - If enabled, the value will be returned in array even if single value.
     - This does not work with notation since notation defines if an array is returned.
+    - Setting this value 'yes' will cause array_index and value_key to be ignored.
     type: bool
     default: no
     required: no 
+  array_index:
+    description:
+    - Used to retrieve items from an array value.
+    - This is used for fields that have multiple values in an array.
+    - Can be used with value_key.
+    default: 0
+    type: int
+    required: no
+    version_added: '1.2.0'
+  value_key:
+    description:
+    - Used to retrieve items from an object value.
+    - This is used for fields that have complex values.
+    - The value is the name of the key in an object.
+    type: str
+    required: no
+    version_added: '1.2.0'
   notation:
     description:
     - The Keeper notation to access record that contains the value.
     - Use notation when you want a specific value.
+    - The 'cache' setting currently does not work with notation.
     - 
     - See https://docs.keeper.io/secrets-manager/secrets-manager/about/keeper-notation for more information/
     type: str
@@ -106,6 +138,8 @@ value:
     ]      
 '''
 
+display = Display()
+
 
 class ActionModule(ActionBase):
 
@@ -115,20 +149,31 @@ class ActionModule(ActionBase):
         if task_vars is None:
             task_vars = {}
 
-        keeper = KeeperAnsible(task_vars=task_vars)
+        keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
+
+        cache = self._task.args.get("cache")
 
         if self._task.args.get("notation") is not None:
+            if cache is not None:
+                display.warning("cache and notation both set. currently notation cannot be used with the cache.")
             value = keeper.get_value_via_notation(self._task.args.get("notation"))
         else:
             uid = self._task.args.get("uid")
-            if uid is None:
-                raise AnsibleError("The uid is blank. keeper_get requires this value to be set.")
+            title = self._task.args.pop("title", None)
+            if uid is None and title is None:
+                raise AnsibleError("The uid and title are blank. keeper_get requires one to be set.")
+            if uid is not None and title is not None:
+                raise AnsibleError("The uid and title are both set. keeper_get requires one to be set, but not both.")
 
             # Try to get either the field, custom_field, or file name.
             field_type_enum, field_key = keeper.get_field_type_enum_and_key(args=self._task.args)
 
             allow_array = self._task.args.get("allow_array", False)
-            value = keeper.get_value(uid, field_type=field_type_enum, key=field_key, allow_array=allow_array)
+            array_index = self._task.args.get("array_index", None)
+            value_key = self._task.args.get("value_key", None)
+
+            value = keeper.get_value(uid=uid, title=title, field_type=field_type_enum, key=field_key,
+                                     allow_array=allow_array, array_index=array_index, value_key=value_key, cache=cache)
 
         keeper.stash_secret_value(value)
 

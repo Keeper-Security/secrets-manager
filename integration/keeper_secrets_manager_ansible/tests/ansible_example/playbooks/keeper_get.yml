@@ -2,15 +2,27 @@
 ---
 - name: Keeper Get
   hosts: "my_systems"
+  gather_facts: no
 
   tasks:
-  - name: "Get Value"
-    keeper_get:
-      uid: "{{ uid }}"
-      field: "password"
-    register: "my_password"
+    - name: "Get Value By UID"
+      keeper_get:
+        uid: "{{ uid }}"
+        field: "password"
+      register: "my_password"
 
-  - name: "Print Password"
-    debug:
-      var: my_password.value
-      verbosity: 0
+    - name: "Print Password BY UID"
+      debug:
+        msg: "BY UID {{ my_password.value }}"
+        verbosity: 0
+
+    - name: "Get Value By TITLE"
+      keeper_get:
+        title: "{{ title }}"
+        field: "password"
+      register: "my_password"
+
+    - name: "Print Password BY TITLE"
+      debug:
+        msg: "BY TITLE {{ my_password.value }}"
+        verbosity: 0

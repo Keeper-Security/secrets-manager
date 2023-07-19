@@ -1,0 +1,55 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Lookup Cache
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: Generate a Keeper Record Cache secret
+      keeper_password:
+        length: 64
+      register: keeper_record_cache_secret
+      # no_log: True
+
+    - name: Store the Keeper Record Cache secret into variables.
+      set_fact:
+        keeper_record_cache_secret: "{{ keeper_record_cache_secret.password }}"
+      # no_log: True
+
+    - name: Cache records. Will use keeper_record_cache_secret from above.
+      keeper_cache_records:
+        uids:
+          - "{{ uid }}"
+      register: my_records
+      # no_log: True
+
+    - name: "Print Password"
+      debug:
+        msg: "My password is {{ lookup('keeper', uid=uid, field='Password', cache=my_records.cache) }}"
+        verbosity: 0
+
+    # Will not use cache
+    - name: "Print Login via Notation"
+      debug:
+        msg: "My login is {{ lookup('keeper', notation=uid + '/field/login', cache=my_records.cache) }}"
+        verbosity: 0
+
+    - name: "Print Phone"
+      debug:
+        msg: "My phone_1 is {{ lookup('keeper', uid=uid, field='phone', cache=my_records.cache) }}"
+        verbosity: 0
+
+    - name: "Print Phone Full Array"
+      debug:
+        msg: "My phone_2 is {{ lookup('keeper', uid=uid, field='phone', allow_array='True', cache=my_records.cache) }}"
+        verbosity: 0
+
+    - name: "Print Phone Number 2 By UID"
+      debug:
+        msg: "My phone_2 number by UID is {{ lookup('keeper', uid=uid, field='phone', array_index=1, value_key='number', cache=my_records.cache) }}"
+        verbosity: 0
+
+    - name: "Print Phone Number 2 By TITLE"
+      debug:
+        msg: "My phone_2 number by TITLE is {{ lookup('keeper', title=title, field='phone', array_index=1, value_key='number', cache=my_records.cache) }}"
+        verbosity: 0

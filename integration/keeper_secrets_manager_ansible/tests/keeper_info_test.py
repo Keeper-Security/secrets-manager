@@ -1,62 +1,31 @@
 import unittest
-from unittest.mock import patch
-import os
-from .ansible_test_framework import AnsibleTestFramework, RecordMaker
-import keeper_secrets_manager_ansible.plugins
+from keeper_secrets_manager_core.mock import Record, Response
+from .ansible_test_framework import AnsibleTestFramework
 import tempfile
 
 
-records = {
-    "TRd_567FkHy-CeGsAzs8aA": RecordMaker.make_record(
-        uid="TRd_567FkHy-CeGsAzs8aA",
-        title="JW-F1-R1",
-        fields={
-          "password": "ddd"
-        }
-    )
-}
-
-
-def mocked_get_secrets(*args):
-
-    if len(args) > 0:
-        uid = args[0][0]
-        ret = [records[uid]]
-    else:
-        ret = [records[x] for x in records]
-    return ret
+mock_response = Response()
+mock_record = Record(title="Record 1", record_type="login")
+mock_record.field("password", "MYPASSWORD")
+mock_response.add_record(record=mock_record)
 
 
 class KeeperInfoTest(unittest.TestCase):
 
-    def setUp(self):
-
-        # Add in addition Python libs. This includes the base
-        # module for Keeper Ansible and the Keeper SDK.
-        self.base_dir = os.path.dirname(os.path.realpath(__file__))
-        self.ansible_base_dir = os.path.join(self.base_dir, "ansible_example")
-
-    def _common(self):
+    def test_keeper_info(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             a = AnsibleTestFramework(
-                base_dir=self.ansible_base_dir,
-                playbook=os.path.join("playbooks", "keeper_info.yml"),
-                inventory=os.path.join("inventory", "all"),
-                plugin_base_dir=os.path.join(os.path.dirname(keeper_secrets_manager_ansible.plugins.__file__))
+                playbook="keeper_info.yml",
+                vars={
+                    "tmp_dir": temp_dir,
+                    "uid": mock_record.uid
+                },
+                mock_responses=[mock_response]
             )
-            r, out, err = a.run()
-            result = r[0]["localhost"]
-            print("OUT", out)
-            print("ERR", err)
-            self.assertEqual(result["ok"], 2, "2 things didn't happen")
-            self.assertEqual(result["failures"], 0, "failures was not 0")
+            result, out, err = a.run()
+            self.assertEqual(result["ok"], 1, "1 things didn't happen")
+            self.assertEqual(result["failed"], 0, "failed was not 0")
             self.assertEqual(result["changed"], 0, "0 things didn't change")
-
-    # @unittest.skip
-    @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=mocked_get_secrets)
-    def test_keeper_info_mock(self, _):
-        self._common()
-
-    @unittest.skip
-    def test_keeper_info_live(self):
-        self._common()
+            assert "field_type_list" in out
+            assert "record_type_list" in out
+            assert "CUSTOM RECORD" in out

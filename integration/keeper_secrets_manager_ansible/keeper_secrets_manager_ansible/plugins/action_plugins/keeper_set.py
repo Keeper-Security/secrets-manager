@@ -33,6 +33,19 @@ options:
     - The UID of the Keeper Vault record.
     type: str
     required: no
+  title:
+    description:
+    - The Title of the Keeper Vault record.
+    type: str
+    required: no
+    version_added: '1.2.0'
+  cache:
+    description:
+    - The cache registered by keeper_get_records_cache
+    - Using keeper_set will not update the cache. Use the keeper_get_records_cache action again to get a new cache.
+    type: str
+    required: no
+    version_added: '1.2.0'  
   field:
     description:
     - The label, or type, of the standard field in record that contains the value.
@@ -79,11 +92,16 @@ class ActionModule(ActionBase):
         if task_vars is None:
             task_vars = {}
 
-        keeper = KeeperAnsible(task_vars=task_vars)
+        keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
+
+        cache = self._task.args.get("cache")
 
         uid = self._task.args.get("uid")
-        if uid is None:
-            raise AnsibleError("The uid is blank. keeper_set requires this value to be set.")
+        title = self._task.args.pop("title", None)
+        if uid is None and title is None:
+            raise AnsibleError("The uid and title are blank. keeper_set requires one to be set.")
+        if uid is not None and title is not None:
+            raise AnsibleError("The uid and title are both set. keeper_set requires one to be set, but not both.")
 
         # Try to get either the field, custom_field, or file name.
         field_type_enum, field_key = keeper.get_field_type_enum_and_key(args=self._task.args)
@@ -91,7 +109,7 @@ class ActionModule(ActionBase):
         value = self._task.args.get("value")
 
         try:
-            keeper.set_value(uid, field_type=field_type_enum, key=field_key, value=value)
+            keeper.set_value(uid=uid, title=title, field_type=field_type_enum, key=field_key, value=value, cache=cache)
         except Exception as err:
             raise AnsibleError("Cannot update record: {}".format(str(err)))
 

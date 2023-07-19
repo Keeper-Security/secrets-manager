@@ -1,30 +1,14 @@
 import unittest
 from unittest.mock import patch
-import os
-from .ansible_test_framework import AnsibleTestFramework, RecordMaker
-import keeper_secrets_manager_ansible.plugins
+from keeper_secrets_manager_core.mock import Record, Response
+from .ansible_test_framework import AnsibleTestFramework
 import tempfile
 
 
-records = {
-    "TRd_567FkHy-CeGsAzs8aA": RecordMaker.make_record(
-        uid="TRd_567FkHy-CeGsAzs8aA",
-        title="JW-F1-R1",
-        fields={
-          "password": "ddd"
-        }
-    )
-}
-
-
-def mocked_get_secrets(*args):
-
-    if len(args) > 0:
-        uid = args[0][0]
-        ret = [records[uid]]
-    else:
-        ret = [records[x] for x in records]
-    return ret
+mock_response = Response()
+mock_record = Record(title="Record 1", record_type="login")
+mock_record.field("password", "MYPASSWORD")
+mock_response.add_record(record=mock_record)
 
 
 # This is tied to the test. If additional tests are added, they will need their own create_secret mock method.
@@ -39,7 +23,17 @@ def mocked_create_secret(*args):
     if len(record_create.fields[1].value) != 1:
         raise AssertionError("Record create doesn't have one password.")
 
-    password = record_create.fields[1].value[0]
+    password_value = None
+    for field in record_create.fields:
+        if field.type == "password":
+            password_value = field.value
+            break
+    if password_value is None:
+        raise AssertionError("Could not find password field in record")
+    if len(password_value) == 0:
+        raise AssertionError("Found password field, but the value is blank.")
+
+    password = password_value[0]
     if len(password) != 128:
         raise AssertionError("Record create password is not 128 chars long, only {}.".format(len(password)))
 
@@ -54,38 +48,17 @@ def mocked_create_secret(*args):
 
 class KeeperCreateTest(unittest.TestCase):
 
-    def setUp(self):
-
-        # Add in addition Python libs. This includes the base
-        # module for Keeper Ansible and the Keeper SDK.
-        self.base_dir = os.path.dirname(os.path.realpath(__file__))
-        self.ansible_base_dir = os.path.join(self.base_dir, "ansible_example")
-
-    def _common(self):
+    @patch("keeper_secrets_manager_core.core.SecretsManager.create_secret", side_effect=mocked_create_secret)
+    def test_keeper_create(self, mock_create):
         with tempfile.TemporaryDirectory() as _:
             a = AnsibleTestFramework(
-                base_dir=self.ansible_base_dir,
-                playbook=os.path.join("playbooks", "keeper_create.yml"),
-                inventory=os.path.join("inventory", "all"),
-                plugin_base_dir=os.path.join(os.path.dirname(keeper_secrets_manager_ansible.plugins.__file__)),
+                playbook="keeper_create.yml",
                 vars={
                     "shared_folder_uid": "XXXXX"
-                }
+                },
+                mock_responses=[mock_response]
             )
-            r, out, err = a.run()
-            result = r[0]["localhost"]
-            print("OUT", out)
-            print("ERR", err)
-            self.assertEqual(result["ok"], 3, "3 things didn't happen")
-            self.assertEqual(result["failures"], 0, "failures was not 0")
+            result, out, err = a.run()
+            self.assertEqual(result["ok"], 2, "2 things didn't happen")
+            self.assertEqual(result["failed"], 0, "failed was not 0")
             self.assertEqual(result["changed"], 0, "0 things didn't change")
-
-    # @unittest.skip
-    @patch("keeper_secrets_manager_core.core.SecretsManager.get_secrets", side_effect=mocked_get_secrets)
-    @patch("keeper_secrets_manager_core.core.SecretsManager.create_secret", side_effect=mocked_create_secret)
-    def test_keeper_create_mock(self, mock_create, mock_get):
-        self._common()
-
-    @unittest.skip
-    def test_keeper_create_live(self):
-        self._common()

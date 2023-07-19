@@ -2,24 +2,35 @@
 ---
 - name: Keeper Lookup
   hosts: "my_systems"
+  gather_facts: no
 
   tasks:
   - name: "Print Password"
     debug:
-      msg: "My password is {{ lookup('keeper', uid='TRd_567FkHy-CeGsAzs8aA', field='Password') }}"
+      msg: "My password is {{ lookup('keeper', uid=uid, field='Password') }}"
       verbosity: 0
 
   - name: "Print Login via Notation"
     debug:
-      msg: "My login is {{ lookup('keeper', notation='TRd_567FkHy-CeGsAzs8aA/field/login') }}"
+      msg: "My login is {{ lookup('keeper', notation=uid + '/field/login') }}"
       verbosity: 0
 
   - name: "Print Phone"
     debug:
-      msg: "My phone_1 is {{ lookup('keeper', uid='TRd_567FkHy-CeGsAzs8aA', field='phone') }}"
+      msg: "My phone_1 is {{ lookup('keeper', uid=uid, field='phone') }}"
       verbosity: 0
 
   - name: "Print Phone Full Array"
     debug:
-      msg: "My phone_2 is {{ lookup('keeper', uid='TRd_567FkHy-CeGsAzs8aA', field='phone', allow_array='True') }}"
+      msg: "My phone_2 is {{ lookup('keeper', uid=uid, field='phone', allow_array='True') }}"
+      verbosity: 0
+
+  - name: "Print Phone Number 2 By UID"
+    debug:
+      msg: "My phone_2 number by UID is {{ lookup('keeper', uid=uid, field='phone', array_index=1, value_key='number') }}"
+      verbosity: 0
+
+  - name: "Print Phone Number 2 By TITLE"
+    debug:
+      msg: "My phone_2 number by TITLE is {{ lookup('keeper', title=title, field='phone', array_index=1, value_key='number') }}"
       verbosity: 0

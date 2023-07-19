@@ -2,11 +2,19 @@
 ---
 - name: Keeper Copy
   hosts: "my_systems"
+  gather_facts: no
 
   tasks:
-  - name: "Copy the password"
+  - name: "Copy the password by UID"
     keeper_copy:
       uid: "{{ password_uid }}"
+      field: "password"
+      dest: "{{ tmp_dir }}/password"
+      mode: '0600'
+
+  - name: "Copy the password by TITLE"
+    keeper_copy:
+      title: "{{ password_title }}"
       field: "password"
       dest: "{{ tmp_dir }}/password"
       mode: '0600'

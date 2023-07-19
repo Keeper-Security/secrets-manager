@@ -2,6 +2,7 @@
 requires_ansible: '>=2.10'
 action_groups:
   keeper_secrets_manager:
+    - keeper_cache_records
     - keeper_copy
     - keeper_get
     - keeper_set

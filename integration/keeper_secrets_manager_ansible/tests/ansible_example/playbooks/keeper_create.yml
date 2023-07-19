@@ -2,6 +2,7 @@
 ---
 - name: Keeper Create
   hosts: "my_systems"
+  gather_facts: no
 
   tasks:
   - name: "Create Record"
