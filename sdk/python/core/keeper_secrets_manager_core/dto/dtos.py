@@ -33,6 +33,8 @@ class Record:
         self.password = None
         self.revision = None
         self.is_editable = None
+        self.folder_uid = ''
+        self.inner_folder_uid = ''
 
         self.uid = record_dict.get('recordUid')
 
@@ -56,6 +58,8 @@ class Record:
         self.type = self.dict.get('type')
         self.revision = record_dict.get('revision')
         self.is_editable = record_dict.get("isEditable")
+        self.folder_uid = record_dict.get("folderUid")
+        self.inner_folder_uid = record_dict.get("innerFolderUid")
 
         # files
         if record_dict.get('files'):
