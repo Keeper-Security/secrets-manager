@@ -23,7 +23,7 @@ from keeper_secrets_manager_helper.v3.field_type import FieldType
 
 class Record:
 
-    def __init__(self, record_dict, secret_key):
+    def __init__(self, record_dict, secret_key, folder_uid = ''):
         self.uid = ''
         self.title = ''
         self.type = ''
@@ -58,7 +58,7 @@ class Record:
         self.type = self.dict.get('type')
         self.revision = record_dict.get('revision')
         self.is_editable = record_dict.get("isEditable")
-        self.folder_uid = record_dict.get("folderUid")
+        self.folder_uid = record_dict.get("folderUid", "") or folder_uid
         self.inner_folder_uid = record_dict.get("innerFolderUid")
 
         # files
@@ -300,7 +300,7 @@ class Folder:
 
         for r in folder_records:
 
-            record = Record(r, folder_key)
+            record = Record(r, folder_key, folder_uid)
             self.records.append(record)
 
 
