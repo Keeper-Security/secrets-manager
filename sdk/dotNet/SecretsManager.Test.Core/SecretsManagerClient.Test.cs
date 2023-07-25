@@ -35,7 +35,7 @@ namespace SecretsManager.Test
 
             var storage = new LocalConfigStorage();
 
-            var fakeOneTimeCode = "VB3sGkzVyRB9Lup6WE7Rx-ETFZxyWR2zqY2b9f2zwBo";
+            var fakeOneTimeCode = "YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c";
                 
             SecretsManagerClient.InitializeStorage(storage, fakeOneTimeCode, "fake.keepersecurity.com");
             
@@ -43,7 +43,7 @@ namespace SecretsManager.Test
             var secrets = await SecretsManagerClient.GetSecrets(options);
             var password = secrets.Records[1].FieldValue("password").ToString();
             // ReSharper disable once StringLiteralTypo
-            Assert.AreEqual("N$B!lkoOrVL1RUNDBvn2", password);
+            Assert.AreEqual("EwFpmg);7KsO9+ln8g7", password);
         }
 
         [Test]
