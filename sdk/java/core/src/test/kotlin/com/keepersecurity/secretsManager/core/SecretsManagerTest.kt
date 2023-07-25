@@ -46,17 +46,17 @@ internal class SecretsManagerTest {
         }
         val storage = LocalConfigStorage()
 
-        val fakeOneTimeCode = "VB3sGkzVyRB9Lup6WE7Rx-ETFZxyWR2zqY2b9f2zwBo"
+        val fakeOneTimeCode = "YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c"
 
         initializeStorage(storage, fakeOneTimeCode, "fake.keepersecurity.com")
         val options = SecretsManagerOptions(storage, testPostFunction)
         val secrets = getSecrets(options)
         assertTrue(secrets.records.size == 2)
-        val record = secrets.getRecordByUid("i3v4ehaoB-Bwsb7bbbek2g")
+        val record = secrets.getRecordByUid("Ue8h6JyWUs7Iu6eY_mha-w")
         assertNotNull(record)
         val password = record.getPassword()
         assertNotNull(password)
-        assertEquals("N\$B!lkoOrVL1RUNDBvn2", password)
+        assertEquals("EwFpmg);7KsO9+ln8g7", password)
 
         record.updatePassword("NewPassword1")
         val passwordNew1 = record.getPassword()
@@ -64,7 +64,7 @@ internal class SecretsManagerTest {
         assertEquals("NewPassword1", passwordNew1)
 
         // Removing password from the record
-        (record.data.fields[1] as Password).value.clear()
+        (record.data.fields[2] as Password).value.clear()
         val passwordNull = record.getPassword()
         assertNull(passwordNull)
 
