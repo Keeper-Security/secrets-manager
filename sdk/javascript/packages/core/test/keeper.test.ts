@@ -29,7 +29,7 @@ test('Get secrets e2e', async () => {
     platform.post = postStub
     const kvs = localConfigStorage()
 
-    const fakeOneTimeCode = 'VB3sGkzVyRB9Lup6WE7Rx-ETFZxyWR2zqY2b9f2zwBo'
+    const fakeOneTimeCode = 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'
 
     await initializeStorage(kvs, fakeOneTimeCode, 'fake.keepersecurity.com')
     const options: SecretManagerOptions = {
@@ -37,7 +37,7 @@ test('Get secrets e2e', async () => {
         queryFunction: postStub
     }
     const secrets = await getSecrets(options)
-    expect(secrets.records[1].data.fields[1].value[0]).toBe('N$B!lkoOrVL1RUNDBvn2')
+    expect(secrets.records[1].data.fields[1].value[0]).toBe('Lex1S++Wx6g^,LC.(Vp<')
     try {
         await getSecrets(options)
         fail('Did not throw')
