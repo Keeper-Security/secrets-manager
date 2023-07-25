@@ -3,6 +3,10 @@
 
 # Change Log
 
+## 16.6.1
+
+* KSM-445 - Improved folder support
+
 ## 16.6.0
 
 * KSM-412 - Added support for Folders
