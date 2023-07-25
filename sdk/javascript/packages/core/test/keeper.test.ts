@@ -37,7 +37,7 @@ test('Get secrets e2e', async () => {
         queryFunction: postStub
     }
     const secrets = await getSecrets(options)
-    expect(secrets.records[1].data.fields[1].value[0]).toBe('Lex1S++Wx6g^,LC.(Vp<')
+    expect(secrets.records[1].data.fields[2].value[0]).toBe('Lex1S++Wx6g^,LC.(Vp<')
     try {
         await getSecrets(options)
         fail('Did not throw')
