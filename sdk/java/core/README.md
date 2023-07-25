@@ -4,6 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.6.1
+- KSM-443 - Improved folder support and updated unit tests
+
 ## 16.6.0
 - KSM-415 - Added support for Folders
 

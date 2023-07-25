@@ -618,7 +618,7 @@ data class Scripts @JvmOverloads constructor(
 data class KeeperFileData(
     val title: String,
     val name: String,
-    val type: String?,
+    val type: String? = null,
     val size: Long,
     val lastModified: Long
 )

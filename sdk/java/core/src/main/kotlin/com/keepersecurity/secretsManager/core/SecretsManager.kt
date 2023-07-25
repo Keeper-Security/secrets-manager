@@ -17,7 +17,7 @@ import java.util.*
 import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj16.6.0"
+const val KEEPER_CLIENT_VERSION = "mj16.6.1"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -182,7 +182,8 @@ private data class SecretsManagerResponseRecord(
     val data: String,
     val revision: Long,
     val isEditable: Boolean,
-    val files: List<SecretsManagerResponseFile>?
+    val files: List<SecretsManagerResponseFile>?,
+    val innerFolderUid: String?
 )
 
 @Serializable
@@ -246,6 +247,7 @@ data class KeeperRecord(
     val recordUid: String,
     var folderUid: String? = null,
     var folderKey: ByteArray? = null,
+    var innerFolderUid: String? = null,
     val data: KeeperRecordData,
     val revision: Long,
     val files: List<KeeperFile>? = null
@@ -801,7 +803,7 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
     // will fail on any unknown field/key so just skip the record with proper error message
     try {
         val recordData = Json.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
-        return KeeperRecord(recordKey, record.recordUid, null, null, recordData, record.revision, files)
+        return KeeperRecord(recordKey, record.recordUid, null, null, record.innerFolderUid, recordData, record.revision, files)
     } catch (e: Exception) {
         // New/missing field: Polymorphic serializer was not found for class discriminator 'UNKNOWN'...
         // New/missing field property (field def updated): Encountered unknown key 'UNKNOWN'.
