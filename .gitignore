@@ -64,4 +64,4 @@ keeper.ini*
 .secrets
 ansible.cfg
 
-/.gradle
+.gradle/
