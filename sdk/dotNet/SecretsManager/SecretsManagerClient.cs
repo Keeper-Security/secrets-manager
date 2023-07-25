@@ -365,6 +365,7 @@ namespace SecretsManager
         public long revision { get; set; }
         public bool isEditable { get; set; }
         public SecretsManagerResponseFile[] files { get; set; }
+        public string innerFolderUid { get; set; }
     }
 
     [SuppressMessage("ReSharper", "InconsistentNaming")]
@@ -409,12 +410,13 @@ namespace SecretsManager
     [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperRecord
     {
-        public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, byte[] folderKey, KeeperRecordData data, long revision, KeeperFile[] files)
+        public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, byte[] folderKey, string innerFolderUid, KeeperRecordData data, long revision, KeeperFile[] files)
         {
             RecordKey = recordKey;
             RecordUid = recordUid;
             FolderUid = folderUid;
             FolderKey = folderKey;
+            InnerFolderUid = innerFolderUid;
             Data = data;
             Revision = revision;
             Files = files;
@@ -424,6 +426,7 @@ namespace SecretsManager
         public string RecordUid { get; }
         public string FolderUid { get; }
         public byte[] FolderKey { get; }
+        public string InnerFolderUid { get; }
         public KeeperRecordData Data { get; }
         public long Revision { get; }
         public KeeperFile[] Files { get; }
@@ -1105,7 +1108,7 @@ namespace SecretsManager
             }
 
             var recordData = JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord);
-            return new KeeperRecord(recordKey, record.recordUid, folderUid, folderKey, recordData, record.revision, files.ToArray());
+            return new KeeperRecord(recordKey, record.recordUid, folderUid, folderKey, record.innerFolderUid, recordData, record.revision, files.ToArray());
         }
 
         private static async Task<KeeperFolder[]> FetchAndDecryptFolders(SecretsManagerOptions options)
