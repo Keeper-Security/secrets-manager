@@ -4,6 +4,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.6.1
+- KSM-438 - include enterprise logo in KSM response, `extra` field. (related to KA-5546)
+- Bump dependencies
+
 ## 16.6.0
 - KSM-412 - Added support for Folders
 - KSM-432 - Improved support for Passkey field type
