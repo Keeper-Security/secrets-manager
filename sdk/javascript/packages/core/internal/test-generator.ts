@@ -18,21 +18,20 @@ const platformPost = platform.post;
 const platformRandomBytes = platform.getRandomBytes
 const responses: { transmissionKey: string; data: string, statusCode: number } [] = []
 
-const oneTimeToken = 'ONE_TIME_TOKEN'       // TODO: Add user prompt for this variable
-const ksmServer = 'fake.keepersecurity.com' // TODO: Add user prompt for this variable
-
+const oneTimeToken = 'dev.keepersecurity.com:YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'       // TODO: Add user prompt for this variable
+const configFileName = `client-config-${oneTimeToken.replace(":", "_")}.json`
 async function generateTests() {
     platform.post = postProxy
     platform.getRandomBytes = getRandomBytesProxy
     try {
-        const kvs = localConfigStorage()
-        await initializeStorage(kvs, oneTimeToken, ksmServer)
+        const kvs = localConfigStorage(configFileName)
+        await initializeStorage(kvs, oneTimeToken)
         const response = await getSecrets({
             storage: kvs
         })
         console.log(inspect(response, false, 6))
-        const kvs1 = localConfigStorage()
-        await initializeStorage(kvs1, oneTimeToken, ksmServer) // expect failure on invalid signature
+        const kvs1 = localConfigStorage("broken-"+configFileName)
+        await initializeStorage(kvs1, oneTimeToken) // expect failure on invalid signature
         await getSecrets({
             storage: kvs1
         })
