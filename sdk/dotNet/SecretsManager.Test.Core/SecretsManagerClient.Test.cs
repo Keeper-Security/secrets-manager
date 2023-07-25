@@ -43,7 +43,7 @@ namespace SecretsManager.Test
             var secrets = await SecretsManagerClient.GetSecrets(options);
             var password = secrets.Records[1].FieldValue("password").ToString();
             // ReSharper disable once StringLiteralTypo
-            Assert.AreEqual("EwFpmg);7KsO9+ln8g7", password);
+            Assert.AreEqual("Lex1S++Wx6g^,LC.(Vp<", password);
         }
 
         [Test]
