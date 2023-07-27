@@ -99,7 +99,8 @@ internal fun getCipher(mode: Int, iv: ByteArray, key: ByteArray, useCBC: Boolean
         Cipher.getInstance(transformation) else
         Cipher.getInstance(transformation, KeeperCryptoParameters.provider)
     val keySpec = SecretKeySpec(key, "AES")
-    cipher.init(mode, keySpec, IvParameterSpec(iv))
+    val gcmParameterSpec = GCMParameterSpec(16 * 8, iv)
+    cipher.init(mode, keySpec, gcmParameterSpec)
     return cipher
 }
 
