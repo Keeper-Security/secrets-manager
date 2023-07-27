@@ -4,6 +4,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.6.2
+- KSM-452 - Java SDK broken when using Java default crypto provider.
+- KSM-453 - Upgrade kotlin-stdlib-jdk8 dependency scope to api
+
 ## 16.6.1
 - KSM-443 - Improved folder support and updated unit tests
 

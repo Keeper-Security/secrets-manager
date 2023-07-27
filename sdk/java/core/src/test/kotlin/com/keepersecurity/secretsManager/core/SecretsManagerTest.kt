@@ -16,11 +16,6 @@ import kotlin.test.*
 @ExperimentalSerializationApi
 internal class SecretsManagerTest {
 
-    init {
-        Security.addProvider(BouncyCastleFipsProvider())
-//        Security.addProvider(BouncyCastleProvider())
-    }
-
     @Serializable
     data class TestResponse(val transmissionKey: String, val data: String, val statusCode: Int)
 
@@ -80,6 +75,23 @@ internal class SecretsManagerTest {
             val message = Json.decodeFromString<JsonObject>(e.message!!)["message"]!!.jsonPrimitive
             assertEquals("Signature is invalid", message.content)
         }
+    }
+
+    @Test
+    fun getSecretsE2EWithNoProvider() {
+        getSecretsE2E()
+    }
+
+//    @Test
+//    fun getSecretsE2EWithBC() {
+//        Security.addProvider(BouncyCastleProvider())
+//        getSecretsE2E()
+//    }
+
+    @Test
+    fun getSecretsE2EWithBCFips() {
+        Security.addProvider(BouncyCastleFipsProvider())
+        getSecretsE2E()
     }
 
     @Test
