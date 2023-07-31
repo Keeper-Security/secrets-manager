@@ -12,8 +12,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@keeper-security/secrets-manager-core": "^16.3.3",
-    "azure-pipelines-task-lib": "^4.0.0-preview"
+    "@keeper-security/secrets-manager-core": "^16.6.1",
+    "azure-pipelines-task-lib": "^4.4.0"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.1",
