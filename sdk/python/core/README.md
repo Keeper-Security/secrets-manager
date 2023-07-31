@@ -5,7 +5,8 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 16.6.1
-* KSM 444 - Python - Added folderUid and innerFolderUid to Record
+* KSM-450 - Added `folderUid` and `innerFolderUid` to Record
+* KSM-451 - Fix `subFolderUid` crash on empty string value
 
 ## 16.6.0
 * KSM-413 - Added support for Folders
