@@ -54,8 +54,8 @@ public class CredentialResolver implements IExternalCredential {
         ksmConfig = configMap.get(KSM_CONFIG);
         if(isNullOrEmpty(ksmConfig))
             fLogger.error("[Vault] INFO - CredentialResolver ksmConfig not set!");
-        String maskedConfig = new String(new char[ksmConfig.length()]).replace('\0', '*');
-        fLogger.info("ksmConfig: " + maskedConfig);
+        String configMask = new String(new char[ksmConfig.length()]).replace('\0', '*');
+        fLogger.info("ksmConfig: " + configMask);
 
         ksmLabelPrefix = configMap.get(KSM_LABEL_PREFIX);
         if(isNullOrEmpty(ksmLabelPrefix))
@@ -63,7 +63,7 @@ public class CredentialResolver implements IExternalCredential {
     }
 
     /*
-    All these are defined in snc-automation-api IExternalCredential:
+    // All these are defined in snc-automation-api IExternalCredential:
     // These are the only permissible names of arguments passed INTO the resolve() method.
     public static final String ARG_ID = "id"; // credential identifier as configured on the ServiceNow instance
     public static final String ARG_IP = "ip"; // IPv4 address of the target system (ex. "10.22.231.12")
@@ -131,7 +131,7 @@ public class CredentialResolver implements IExternalCredential {
 
         List<String> recordsFilter = Collections.<String>emptyList();
         if(!isNullOrEmpty(recType) || !isNullOrEmpty(recTitle)) {
-            fLogger.info(String.format("recType: '%s', recTitle: '%s'", recType, recTitle));
+            fLogger.info(String.format("Record Type: '%s', Record Title: '%s'", recType, recTitle));
         } else {
             fLogger.info(String.format("Record UID: '%s'", credId));
             recordsFilter = Collections.singletonList(credId);
@@ -150,7 +150,7 @@ public class CredentialResolver implements IExternalCredential {
         try {
             // Connect to vault and retrieve credential
             SecretsManagerOptions options = new SecretsManagerOptions(storage);
-            KeeperSecrets secrets = SecretsManager.getSecrets(options, recordsFilter);
+            KeeperSecrets secrets = getSecretsThrottled(options, recordsFilter);
             List<KeeperRecord> records = secrets.getRecords();
             if (records.isEmpty()) {
                 fLogger.error("### Unable to find any records matching Credential ID: " + credId);
@@ -257,6 +257,27 @@ public class CredentialResolver implements IExternalCredential {
 
     private static boolean isNullOrEmpty(String str) {
         return str == null || str.trim().isEmpty();
+    }
+
+    private KeeperSecrets getSecretsThrottled(SecretsManagerOptions options, List<String> recordsFilter) throws Exception {
+        KeeperSecrets secrets = null;
+        int numRetries = 10;
+        while (--numRetries >= 0) {
+            try {
+                long secs = System.currentTimeMillis() / 1000;
+                long delay = 10 - (secs % 10); // seconds to next throttle bucket
+                if (delay < 10) Thread.sleep(delay * 1000);
+                secrets = SecretsManager.getSecrets(options, recordsFilter);
+                numRetries = -1;
+            } catch (Exception e) {
+                fLogger.error("e.Message: " + e.getMessage());
+                if (numRetries <= 0 || !e.getMessage().contains("\"error\":\"throttled\""))
+                    throw e;
+                else
+                    fLogger.error("### KSM App throttled... retries left: " + numRetries);
+            }
+        }
+        return secrets;
     }
 
     //main method to test locally, provide KSM config and test it
