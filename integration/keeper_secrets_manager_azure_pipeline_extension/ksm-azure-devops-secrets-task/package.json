@@ -16,9 +16,9 @@
     "azure-pipelines-task-lib": "^4.0.0-preview"
   },
   "devDependencies": {
-    "@types/mocha": "^9.1.1",
+    "@types/mocha": "^10.0.1",
     "@types/node": "^18.7.18",
     "@types/q": "^1.5.5",
-    "nock": "^13.2.9"
+    "nock": "^13.3.2"
   }
 }
