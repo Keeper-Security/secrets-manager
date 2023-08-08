@@ -1,14 +1,26 @@
 package com.snc.discovery;
 
+import com.service_now.mid.services.FileSystem;
 import com.snc.automation_common.integration.creds.IExternalCredential;
 import com.snc.core_automation_common.logging.Logger;
 import com.snc.core_automation_common.logging.LoggerFactory;
 
 import com.keepersecurity.secretsManager.core.*;
 
+import java.io.*;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+import static java.net.HttpURLConnection.HTTP_NO_CONTENT;
+import static java.net.HttpURLConnection.HTTP_OK;
+import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
+import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
 /**
  * Basic implementation of a CredentialResolver that uses KSM SDK to connect to Keeper vault.
@@ -20,6 +32,9 @@ public class CredentialResolver implements IExternalCredential {
     public static final String KSM_CONFIG = "ext.cred.keeper.ksm_config";
     private static final String KSM_LABEL_PREFIX = "ext.cred.keeper.ksm_label_prefix";
     private static final String DEF_KSM_LABEL_PREFIX = "mid_";
+    private static final String KSM_CACHE = "ext.cred.keeper.use_ksm_cache";
+    private static final boolean DEF_KSM_CACHE = false;
+    private static final long KSM_CACHE_LIFESPAN = 5*60; // in seconds
 
     // credId is either record UID (without ':') or type:title
     private static final String DEF_CREDID_SPLIT = ":";
@@ -27,6 +42,7 @@ public class CredentialResolver implements IExternalCredential {
     //Load below parameters from MID config parameters.
     private String ksmConfig = ""; // The KSM config to use as specified in the MID config.xml file
     private String ksmLabelPrefix = ""; // The KSM label prefix to use as specified in the MID config.xml file
+    private boolean ksmCache = false; // The KSM cache flag to use as specified in the MID config.xml file
 
     // Logger object to log messages in agent.log
     private static final Logger fLogger = LoggerFactory.getLogger(CredentialResolver.class);
@@ -60,6 +76,11 @@ public class CredentialResolver implements IExternalCredential {
         ksmLabelPrefix = configMap.get(KSM_LABEL_PREFIX);
         if(isNullOrEmpty(ksmLabelPrefix))
             ksmLabelPrefix = DEF_KSM_LABEL_PREFIX;
+
+        ksmCache = DEF_KSM_CACHE;
+        String ksmCacheString = configMap.get(KSM_CACHE);
+        if(!isNullOrEmpty(ksmCacheString) && ksmCacheString.equalsIgnoreCase("true"))
+            ksmCache = true;
     }
 
     /*
@@ -103,9 +124,7 @@ public class CredentialResolver implements IExternalCredential {
         if(isNullOrEmpty(credId) || isNullOrEmpty(credType))
             throw new RuntimeException("Empty credential Id or type found.");
 
-        fLogger.info("midServer: " + midServer);
-        fLogger.info("credType: " + credType);
-        fLogger.info("credId: " + credId);
+        fLogger.info("Resolve - credType: " + credType + ", credId: " + credId + " on midServer: " + midServer);
 
         // credId is either record UID (without ':') or type:title or :title
         String recType = "";
@@ -149,9 +168,16 @@ public class CredentialResolver implements IExternalCredential {
 
         try {
             // Connect to vault and retrieve credential
-            SecretsManagerOptions options = new SecretsManagerOptions(storage);
-            KeeperSecrets secrets = getSecretsThrottled(options, recordsFilter);
-            List<KeeperRecord> records = secrets.getRecords();
+            List<KeeperRecord> records = Collections.<KeeperRecord> emptyList();
+            KeeperSecrets secrets;
+            if (ksmCache)
+                secrets = getSecretsCached(storage, recordsFilter);
+            else
+                secrets = getSecretsThrottled(storage, recordsFilter);
+
+            if (secrets != null)
+                records = secrets.getRecords();
+
             if (records.isEmpty()) {
                 fLogger.error("### Unable to find any records matching Credential ID: " + credId);
                 throw new RuntimeException("No records match Credential ID: " + credId);
@@ -250,7 +276,7 @@ public class CredentialResolver implements IExternalCredential {
             fLogger.warn("### No value for username in credential: " + credId);
         if (!result.containsKey(VAL_PSWD))
             fLogger.warn("### No value for password in credential: " + credId);
-        fLogger.info("### Credential: " + credId + " Resolved keys: " + result.keySet());
+        fLogger.info("### Credential: " + credId + " Resolved keys: " + result.keySet() + " UseCache: " + ksmCache);
 
         return result;
     }
@@ -259,9 +285,12 @@ public class CredentialResolver implements IExternalCredential {
         return str == null || str.trim().isEmpty();
     }
 
-    private KeeperSecrets getSecretsThrottled(SecretsManagerOptions options, List<String> recordsFilter) throws Exception {
+    private KeeperSecrets getSecretsThrottled(InMemoryStorage storage, List<String> recordsFilter) throws Exception {
         KeeperSecrets secrets = null;
-        int numRetries = 10;
+        SecretsManagerOptions options = new SecretsManagerOptions(storage);
+        // MID Server [Test credential] seems to timeout after 90 sec
+        // yet mid server resolves (as seen in logs - even 120s later)
+        int numRetries = 8; // keep it below 90 sec
         while (--numRetries >= 0) {
             try {
                 long secs = System.currentTimeMillis() / 1000;
@@ -280,6 +309,152 @@ public class CredentialResolver implements IExternalCredential {
         return secrets;
     }
 
+    private KeeperSecrets getSecretsCached(InMemoryStorage storage, List<String> recordsFilter) throws Exception {
+        KeeperSecrets secrets = getCachedData(storage); // always cache all records
+
+        // filter only requested records
+        if (!recordsFilter.isEmpty()) {
+            List<KeeperRecord> records = secrets.getRecords();
+            List<KeeperRecord> filtered = records.stream().filter(
+                    record -> recordsFilter.contains(record.getRecordUid())).collect(Collectors.toList());
+            records.clear();
+            records.addAll(filtered);
+        }
+
+        return secrets;
+    }
+
+    private KeeperSecrets getCachedData(InMemoryStorage storage) throws Exception {
+        String cacheFilename = getCacheFilename();
+        String tempFilename = getCacheTmpFilename();
+
+        // while there are pending reader locks (exclusive) writer can't get through
+        // but will try writer lock on the new temp file
+        boolean needsUpdate = !isFileRecent(KSM_CACHE_LIFESPAN, cacheFilename);
+        if (needsUpdate) {
+            // see getSecretsThrottled for timeouts info
+            int maxReties = 8; // 8*10=80 sec delay - keep < 90 sec
+            for (int i = 0; i < 8; i++) {
+                try {
+                    try (FileOutputStream writer = new FileOutputStream(tempFilename);
+                         FileChannel channel = writer.getChannel();
+                         FileLock fileLock = channel.tryLock(0L, Long.MAX_VALUE, false)){
+                        if (fileLock != null) {
+                            // recheck if cache updated while waiting for the lock
+                            if (isFileRecent(KSM_CACHE_LIFESPAN, cacheFilename))
+                                break;
+                            SecretsManagerOptions options = new SecretsManagerOptions(storage, (url, key, payload)-> {
+                                try {
+                                    return cachingPostFunction(url, key, payload);
+                                } catch (Exception e) {
+                                    throw new RuntimeException(e);
+                                }
+                            });
+                            return SecretsManager.getSecrets(options);
+                        }
+                    }
+                } catch (Exception e) {
+                    fLogger.error("### KSM Exception: ", e);
+                }
+                if (i < 7) // keep total delay < 90 sec
+                    Thread.sleep(10_000);
+            }
+        }
+        // read from cache - note: if update was needed but failed cached data may be stale
+        SecretsManagerOptions options = new SecretsManagerOptions(storage, (url, key, payload)-> {
+            try {
+                return cachedPostFunction(url, key, payload);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        return SecretsManager.getSecrets(options);
+    }
+
+    private boolean isFileRecent(long lifespanSeconds, String filename) throws Exception {
+        boolean isRecent = false;
+        File file = new File(filename);
+        if (file.exists()) {
+            BasicFileAttributes attr = Files.readAttributes(Paths.get(filename), BasicFileAttributes.class);
+            long curTimestamp = System.currentTimeMillis() / 1000;
+            long diffC = Math.abs(curTimestamp - (attr.creationTime().toMillis() / 1000));
+            long diffLM = Math.abs(curTimestamp - (attr.lastModifiedTime().toMillis() / 1000));
+            isRecent = attr.size() >= 32 && (diffC <= lifespanSeconds || diffLM <= lifespanSeconds);
+        }
+        return isRecent;
+    }
+
+    private KeeperHttpResponse cachingPostFunction(String url, TransmissionKey transmissionKey, EncryptedPayload payload) throws Exception {
+        KeeperHttpResponse response = SecretsManager.postFunction(url, transmissionKey, payload, false);
+        if (response.getStatusCode() == HTTP_OK) {
+            saveCachedValue(transmissionKey.getKey(), response.getData());
+        }
+        return response;
+    }
+
+    private KeeperHttpResponse cachedPostFunction(String url, TransmissionKey transmissionKey, EncryptedPayload payload) throws Exception {
+        String cacheFilename = getCacheFilename();
+        for (int i = 0; i < 5; i++) {
+            try (FileInputStream reader = new FileInputStream(cacheFilename);
+                 FileChannel channel = reader.getChannel();
+                 FileLock fileLock = channel.tryLock(0L, Long.MAX_VALUE, true)) {
+                if (fileLock != null) {
+                    byte[] cachedData = getCachedValue();
+                    transmissionKey.setKey(Arrays.copyOfRange(cachedData, 0, 32));
+                    byte [] data = Arrays.copyOfRange(cachedData, 32, cachedData.length);
+                    return new KeeperHttpResponse(HTTP_OK, data);
+                }
+            }
+            Thread.sleep(100);
+        }
+        return new KeeperHttpResponse(HTTP_NO_CONTENT, new byte[]{});
+    }
+
+    private static void saveCachedValue(byte[] key, byte[] data) throws Exception {
+        Path tmpPath = Paths.get(getCacheTmpFilename());
+        try (OutputStream out = Files.newOutputStream(tmpPath)) {
+            out.write(key);
+            out.write(data);
+            // not all OS update lastModified on create
+            Files.setLastModifiedTime(tmpPath, FileTime.fromMillis(System.currentTimeMillis()));
+        }
+        // Moving a file will copy the last-modified-time to the target file
+        try {
+            // not all platforms support atomic move
+            Files.move(tmpPath, Paths.get(getCacheFilename()), REPLACE_EXISTING, ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ame) {
+            Files.move(tmpPath, Paths.get(getCacheFilename()), REPLACE_EXISTING);
+        }
+    }
+
+    private static byte[] getCachedValue() throws Exception {
+        try (InputStream ins = Files.newInputStream(Paths.get(getCacheFilename()));
+             DataInputStream dis = new DataInputStream(ins);
+        ) {
+            //ins.reset();
+            byte[] bytes = new byte[ins.available()];
+            dis.readFully(bytes);
+            return bytes;
+        }
+    }
+
+
+    public static String getCacheDir() {
+        //return FileSystem.get().getHomePath(); // home vs work path
+        return FileSystem.get().getWorkDir().getAbsolutePath();
+    }
+
+    public static String getCacheFilename() {
+        String workPath = getCacheDir();
+        return FileSystem.get().combinePath(workPath, "ksm_cache.dat");
+    }
+
+    public static String getCacheTmpFilename() {
+        String workPath = getCacheDir();
+        return FileSystem.get().combinePath(workPath, "ksm_cache.tmp");
+    }
+
     //main method to test locally, provide KSM config and test it
     // TODO: Remove this before moving to production
     /*
@@ -287,6 +462,7 @@ public class CredentialResolver implements IExternalCredential {
         CredentialResolver credResolver = new CredentialResolver();
         credResolver.ksmConfig = "[Base64_KSM_Config]";
         credResolver.ksmLabelPrefix = "mid_";
+        credResolver.ksmCache = false;
 
         Map<String, String> map = new HashMap<>();
         map.put(ARG_ID, "[RecordUid]");
