@@ -15,18 +15,19 @@ Latest versions of JRE have strong cryptography enabled [by default](https://bug
 * Update the code in CredentialResolver.java to customize anything.
 * Use the following gradle command or IDE (IntelliJ or Eclipse) gradle build option to build the jar:
   > gradle jar  
-* keeper-external-credentials-0.0.1-SNAPSHOT.jar will be generated under target folder.
+* keeper-external-credentials-0.1.0.jar will be generated under target folder.
 
 # Steps to install and use Keeper Secrets Manager as external credential resolver
 
 * Make sure that "External Credential Storage" plugin (com.snc.discovery.external_credentials) is installed in your ServiceNow instance.
-* Import the keeper-external-credentials-0.0.1-SNAPSHOT.jar file from target folder in ServiceNow instance.
+* Import the keeper-external-credentials-0.1.0.jar file from target folder in ServiceNow instance.
     - Navigate to MID Server – JAR Files
     - Create a New Record by clicking New
-    - Name it "KeeperCredentialResolver", version 0.0.1 and attach keeper-external-credentials-0.0.1-SNAPSHOT.jar from target folder.
+    - Name it "KeeperCredentialResolver", version 0.1.0 and attach keeper-external-credentials-0.1.0.jar from target folder.
     - Click Submit
-* Update the _config.xml_ in MID Server with below parameters and restart the MID Server.
-  `<parameter name="ext.cred.keeper.ksm_config" secure="true" value="<ksm-config-base64-string>"/>`
+* Update the _config.xml_ in MID Server with following parameters and restart the MID Server.  
+  `<parameter name="ext.cred.keeper.ksm_config" secure="true" value="<ksm-config-base64-string>"/>`  
+  _To create new KSM configuration follow [this tutorial](https://docs.keeper.io/secrets-manager/secrets-manager/about/secrets-manager-configuration#creating-a-secrets-manager-configuration)_
 * Create Credential in the instance with "External credential store" flag activated.
 * Ensure that the "Credential ID" matches a record UID in your Keeper vault.
 * Ensure that the record in the vault contains fields matching the ServiceNow credential record fields - ex. record _type=login_ or any record type with custom fields of _type=hidden_ or _type=text_ with labels matching with the column names in discovery_credential table, where each label is prefixed with  "mid_" (ex. GCP Credential requires a record with two custom fields labelled: mid_email and mid_secret_key)
@@ -66,3 +67,17 @@ Currently supported values - should be prefixed with `mid_` in Keeper records to
 
 When used as Custom External Credential Resolver any field could be mapped **if properly prefixed** in Keeper vault and present in corresponding credential type. 
 The credential map returned from the resolve method is expected to have keys matching with the column names in discovery_credential table _ex. sn_cfg_ansible, sn_disco_certmgmt_certificate_ca, cfg_chef_credentials, etc._
+
+# Throttles and cache
+The plugin will try to resolve _"throttled"_ errors by default by adding a random delays and retrying later, which works well for up to 1000-3000 requests per 10 sec interval (throttles start after 300-600 requests/10 sec) If you expect 5000+ requests in less than 10 seconds we recommend to enable caching by setting `ext.cred.keeper.use_ksm_cache` parameter to `"true"` in _config.xml_ and restarting the MID Server. Cached data is stored in an encrypted file `ksm_cache.dat` in MID Server's work folder. Cache is updated at most once every 5 minutes or with the next request.
+
+# Troubleshooting
+### Check the logs
+Check the log files inside `logs/` in the agent installation folder for logs and errors. The resolver logs a line for each credential ID that it successfully queries, and also logs the fields that the credentials were extracted from.
+
+If a particular credential ID is failing, search for that ID in the logs, and check that it is successfully queried and that the credentials were extracted from the fields you expected.
+
+You will also find any exceptions that the resolver throws in the logs, including errors locating a record or finding fields, or if it couldn't communicate with Keeper vault.
+
+### Use the Test credential feature
+When creating or configuring a credential in the ServiceNow UI, you should be able to click "Test credential" to perform a quick targeted test. Select the MID server that should query Keeper vault, and select a target that the credential should work for to check that everything works as expected. If it doesn't, check the logs for errors and debug information as detailed above.
