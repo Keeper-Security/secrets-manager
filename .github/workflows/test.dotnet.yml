@@ -6,7 +6,7 @@ on:
 
 jobs:
   test-dotnet:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         dotnet-version: [ '6.0.x' ]
