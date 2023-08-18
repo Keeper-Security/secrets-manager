@@ -9,7 +9,7 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        dotnet-version: [ '4.7.x', '6.0.x' ]
+        dotnet-version: [ '6.0.x' ]
 
     defaults:
       run:
