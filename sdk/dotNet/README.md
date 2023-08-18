@@ -3,6 +3,10 @@
 
 # Change Log
 
+## 16.6.2
+
+* KSM-456 - Added .NET 4.7 as an additional build target
+
 ## 16.6.1
 
 * KSM-445 - Improved folder support
