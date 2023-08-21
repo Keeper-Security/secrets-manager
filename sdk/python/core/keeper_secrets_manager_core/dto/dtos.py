@@ -97,8 +97,7 @@ class Record:
         found_file.save_file(path)
 
     def __str__(self):
-        return '[Record: uid=%s, type: %s, title: %s, files count: %s]' % (self.uid, self.type, self.title,
-                                                                           str(len(self.files)))
+        return f'[Record: uid={self.uid}, type: {self.type}, title: {self.title}, files count: {str(len(self.files))}, folder_uid: {self.folder_uid}, inner_folder_uid: {self.inner_folder_uid}]'
 
     def _update(self):
 
@@ -276,6 +275,9 @@ class KeeperFolder:
         self.folder_uid = folder_uid
         self.parent_uid = parent_uid
         self.name = name
+
+    def __str__(self):
+        return f"[KeeperFolder: folder_key={self.folder_key}, folder_uid={self.folder_uid}, parent_uid={self.parent_uid}, name={self.name}]"
 
 
 class Folder:
