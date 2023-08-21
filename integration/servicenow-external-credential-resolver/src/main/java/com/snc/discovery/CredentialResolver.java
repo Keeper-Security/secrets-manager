@@ -1,26 +1,23 @@
 package com.snc.discovery;
 
+import com.keepersecurity.secretsManager.core.*;
 import com.service_now.mid.services.FileSystem;
 import com.snc.automation_common.integration.creds.IExternalCredential;
 import com.snc.core_automation_common.logging.Logger;
 import com.snc.core_automation_common.logging.LoggerFactory;
 
-import com.keepersecurity.secretsManager.core.*;
-
 import java.io.*;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.attribute.FileTime;
+import java.nio.file.attribute.*;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static java.net.HttpURLConnection.HTTP_NO_CONTENT;
 import static java.net.HttpURLConnection.HTTP_OK;
-import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
-import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
+import static java.nio.file.StandardCopyOption.*;
 
 /**
  * Basic implementation of a CredentialResolver that uses KSM SDK to connect to Keeper vault.
@@ -333,12 +330,15 @@ public class CredentialResolver implements IExternalCredential {
         boolean needsUpdate = !isFileRecent(KSM_CACHE_LIFESPAN, cacheFilename);
         if (needsUpdate) {
             // see getSecretsThrottled for timeouts info
-            int maxReties = 8; // 8*10=80 sec delay - keep < 90 sec
-            for (int i = 0; i < 8; i++) {
+            int numRetries = 8; // 8*10=80 sec delay - keep < 90 sec
+            for (int i = 0; i < numRetries; i++) {
                 try {
-                    try (FileOutputStream writer = new FileOutputStream(tempFilename);
+                    // getCachedData - saveCachedValue write lock conflict (not an issue on Linux though):
+                    // reacquiring write lock fails on some platforms (Win) - make sure locked regions don't overlap
+                    try (RandomAccessFile writer = new RandomAccessFile(tempFilename, "rw");
                          FileChannel channel = writer.getChannel();
-                         FileLock fileLock = channel.tryLock(0L, Long.MAX_VALUE, false)){
+                         FileLock fileLock = channel.tryLock(Long.MAX_VALUE-1, 1, false)){
+                        // lock a region way beyond cached data size to allow saveCachedValue to fit in front
                         if (fileLock != null) {
                             // recheck if cache updated while waiting for the lock
                             if (isFileRecent(KSM_CACHE_LIFESPAN, cacheFilename))
@@ -352,6 +352,9 @@ public class CredentialResolver implements IExternalCredential {
                             });
                             return SecretsManager.getSecrets(options);
                         }
+                    } finally {
+                        // due to the write lock contention saveCachedValue can't move/delete tmp file on its own
+                        try { Files.delete(Paths.get(tempFilename)); } catch(Exception e) { fLogger.error("### Failed to delete temp cache file."); }
                     }
                 } catch (Exception e) {
                     fLogger.error("### KSM Exception: ", e);
@@ -412,20 +415,31 @@ public class CredentialResolver implements IExternalCredential {
     }
 
     private static void saveCachedValue(byte[] key, byte[] data) throws Exception {
-        Path tmpPath = Paths.get(getCacheTmpFilename());
-        try (OutputStream out = Files.newOutputStream(tmpPath)) {
+        Path tmpPath = Paths.get(getCacheTmpFilename()); // ksm_cache.tmp
+        Path tmpPath_ = Paths.get(getCacheTmpFilename()+"_");  // ksm_cache.tmp_
+        Path dstPath = Paths.get(getCacheFilename()); // ksm_cache.dat
+        // note: reacquiring write lock fails on some platforms (Win) - make sure locked regions don't overlap
+        try (RandomAccessFile out = new RandomAccessFile(tmpPath.toString(), "rw");
+             FileLock lock = out.getChannel().lock(0, key.length + data.length, false)){
+            out.seek(0);
             out.write(key);
             out.write(data);
             // not all OS update lastModified on create
             Files.setLastModifiedTime(tmpPath, FileTime.fromMillis(System.currentTimeMillis()));
         }
+
+        // On some platforms (Windows) file move fails if caller locked tmpPath (which works on Linux)
+        // hence the need to copy from locked file to a new one to use ATOMIC_MOVE
+        Files.copy(tmpPath, tmpPath_, REPLACE_EXISTING, COPY_ATTRIBUTES); // replace and copy last-modified-time
+
         // Moving a file will copy the last-modified-time to the target file
         try {
             // not all platforms support atomic move
-            Files.move(tmpPath, Paths.get(getCacheFilename()), REPLACE_EXISTING, ATOMIC_MOVE);
+            Files.move(tmpPath_, dstPath, REPLACE_EXISTING, ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException ame) {
-            Files.move(tmpPath, Paths.get(getCacheFilename()), REPLACE_EXISTING);
+            Files.move(tmpPath_, dstPath, REPLACE_EXISTING);
         }
+        // tmpPath is still locked and will be deleted by the caller after getSecrets completes
     }
 
     private static byte[] getCachedValue() throws Exception {
