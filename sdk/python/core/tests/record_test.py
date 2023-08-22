@@ -100,3 +100,90 @@ class RecordTest(unittest.TestCase):
         assert "privacyScreen" not in value, "privacyScreen exists in dictionary"
         self.assertIsNone(value.get("privacyScreen"), "privacyScreen is not correct")
         self.assertIsNone(value.get("complexity"), "complexity is not correct")
+
+    def test_add_custom_field_by_param(self):
+
+        try:
+            with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+                fh.write(MockConfig.make_json())
+                fh.seek(0)
+                secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
+
+                res = mock.Response()
+                mock_record = res.add_record(title="Good Record", record_type='login')
+                mock_record.field("login", "My Login")
+                mock_record.field("password", "My Password")
+
+                res_queue = mock.ResponseQueue(client=secrets_manager)
+                res_queue.add_response(res)
+
+                records = secrets_manager.get_secrets()
+                record = records[0]
+
+                record.add_custom_field(
+                    field_type='text',
+                    label="My Label",
+                    value="My Value"
+                )
+                new_value = record.get_custom_field("My Label")
+                self.assertEqual("text", new_value.get("type"))
+                self.assertEqual("My Label", new_value.get("label"))
+                self.assertEqual(['My Value'], new_value.get("value"))
+        finally:
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass
+
+    def test_add_custom_field_by_field_type(self):
+
+        class FieldType:
+
+            def __init__(self, field_type, label, value):
+                self.field_type = field_type
+                self.label = label
+                self.value = value
+
+            def to_dict(self):
+                return {
+                    "type": self.field_type,
+                    "label": self.label,
+                    "value": self.value
+                }
+
+        try:
+            with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+                fh.write(MockConfig.make_json())
+                fh.seek(0)
+                secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
+
+                res = mock.Response()
+                mock_record = res.add_record(title="Good Record", record_type='login')
+                mock_record.field("login", "My Login")
+                mock_record.field("password", "My Password")
+
+                res_queue = mock.ResponseQueue(client=secrets_manager)
+                res_queue.add_response(res)
+
+                records = secrets_manager.get_secrets()
+                record = records[0]
+
+                field = FieldType(
+                    field_type="text",
+                    label="My Label",
+                    value=["My Value"]
+                )
+
+                record.add_custom_field(field=field)
+
+                new_value = record.get_custom_field("My Label")
+                self.assertEqual("text", new_value.get("type"))
+                self.assertEqual("My Label", new_value.get("label"))
+                self.assertEqual(['My Value'], new_value.get("value"))
+        finally:
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass
+
+

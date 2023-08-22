@@ -11,7 +11,6 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
 install_requires = [
-    'keeper-secrets-manager-helper>=1.0.4',
     'ecdsa',
     'requests',
     'cryptography>=39.0.1',
