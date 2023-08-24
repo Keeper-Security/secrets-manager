@@ -72,7 +72,7 @@ class AwsConfigProvider(IConfigProvider):
     more restrictive access policy may be applied - ex. allow read only access
     """
 
-    def __init__(self, aws_secret: str):
+    def __init__(self, aws_key: str):
         """ AwsConfigProvider by default uses Ec2Instance config with
         fallback to default session set to True
         To switch to a different configuration method use one of the
@@ -90,18 +90,18 @@ class AwsConfigProvider(IConfigProvider):
         with option to fallback to the default session
 
         Parameters:
-        aws_secret (str): secret name/id or a full ARN
+        aws_key (str): secret name/id or a full ARN
         """
 
-        self._reset(aws_secret)
+        self._reset(aws_key)
 
-    def _reset(self, aws_secret: str):
+    def _reset(self, aws_key: str):
         """ Resets to default configration: EC2Instance with
         fallback to default session set to True
         """
 
         # secret name/id or a full ARN
-        self.secret_name: str = aws_secret
+        self.key_name: str = aws_key
 
         # fallback to default session if initial credentials fail
         self.fallback: bool = True
@@ -126,7 +126,7 @@ class AwsConfigProvider(IConfigProvider):
     # Helper methods for creating and initializing different types of
     # AWS config providers ensuring only correct options are used for the
     # specified config type.
-    def from_ec2instance_config(self, aws_secret: str,
+    def from_ec2instance_config(self, aws_key: str,
                                 fallback_to_default_profile: bool = True):
         """Create config provider using ec2 instance role permissions
 
@@ -138,7 +138,7 @@ class AwsConfigProvider(IConfigProvider):
         arn:aws:iam::aws:policy/SecretsManagerReadWrite
         """
 
-        self._reset(aws_secret)
+        self._reset(aws_key)
         self.fallback = fallback_to_default_profile
         self.config_type = AwsConfigType.EC2INSTANCE
 
@@ -146,32 +146,32 @@ class AwsConfigProvider(IConfigProvider):
         self._setup_credential_provider()
         self.region = self._get_instance_region()
 
-    def from_default_config(self, aws_secret: str,
+    def from_default_config(self, aws_key: str,
                             fallback_to_default_profile: bool = True):
         """Create config provider using default session"""
 
-        self._reset(aws_secret)
+        self._reset(aws_key)
         self.fallback = fallback_to_default_profile
         self.config_type = AwsConfigType.SESSION
 
-    def from_profile_config(self, aws_secret: str,
+    def from_profile_config(self, aws_key: str,
                             profile: str,
                             fallback_to_default_profile: bool = True):
         """Create config provider using named profile"""
 
-        self._reset(aws_secret)
+        self._reset(aws_key)
         self.fallback = fallback_to_default_profile
         self.config_type = AwsConfigType.PROFILE
         self.aws_profile = profile
 
-    def from_custom_config(self, aws_secret: str,
+    def from_custom_config(self, aws_key: str,
                            aws_access_key_id: str,
                            aws_secret_access_key: str,
                            region: str,
                            fallback_to_default_profile: bool = True):
         """Create config provider using custom access keys"""
 
-        self._reset(aws_secret)
+        self._reset(aws_key)
         self.fallback = fallback_to_default_profile
         self.config_type = AwsConfigType.CREDENTIALS
         self.aws_access_key_id = aws_access_key_id
@@ -183,7 +183,7 @@ class AwsConfigProvider(IConfigProvider):
         # 1. Use ARN: if key contains full ARN - get region from the key
         # arn:partition:service:region:account-id:resource-type:resource-id
         region: str = ""
-        match = re.search(r'arn:aws:secretsmanager:(?P<region>[^:]*):', self.secret_name, re.IGNORECASE)
+        match = re.search(r'arn:aws:secretsmanager:(?P<region>[^:]*):', self.key_name, re.IGNORECASE)
         if match:
             arn_region = match.group('region')
             region = arn_region if arn_region else ""
@@ -285,14 +285,14 @@ class AwsConfigProvider(IConfigProvider):
         secretsmanager = self._get_client()
 
         try:
-            res = self._get_secret_aws(secretsmanager, self.secret_name)
+            res = self._get_secret_aws(secretsmanager, self.key_name)
         except Exception:
             pass
 
         # if provided credentials failed try using default session/creds
         if (not res or res.get("not_found", False) or res.get("error", "")) and self.fallback is True:
             secretsmanager = boto3.client('secretsmanager')  # default session
-            res = self._get_secret_aws(secretsmanager, self.secret_name)
+            res = self._get_secret_aws(secretsmanager, self.key_name)
 
         result = res.get("value", "") or "" if res else ""
         return result
@@ -302,7 +302,7 @@ class AwsConfigProvider(IConfigProvider):
         secretsmanager = self._get_client()
 
         try:
-            res = self._set_secret_aws(secretsmanager, self.secret_name, config)
+            res = self._set_secret_aws(secretsmanager, self.key_name, config)
         except Exception as ex:
             res = {"error": str(ex)}
 
@@ -378,7 +378,7 @@ class AwsConfigProvider(IConfigProvider):
         return result
 
 
-DEFAULT_AWS_SECRET_NAME = "ksm-config"
+DEFAULT_AWS_KEY_NAME = "ksm-config"
 class AwsSecretStorage(KeyValueStorage):
     """AWS Secrets Manager secret as a config storage"""
 
@@ -391,7 +391,7 @@ class AwsSecretStorage(KeyValueStorage):
         """
 
         if not secret:
-            secret = os.getenv("KSM_AWS_SECRET", DEFAULT_AWS_SECRET_NAME)
+            secret = os.getenv("KSM_AWS_SECRET", DEFAULT_AWS_KEY_NAME)
 
         self.provider = AwsConfigProvider(secret)
         self.provider.from_ec2instance_config(secret, fallback_to_default_profile)
@@ -442,7 +442,7 @@ class AwsSecretStorage(KeyValueStorage):
         try:
             contents = self.provider.read_config()
             if len(contents) == 0:
-                logger.warning(f"Empty config from AWS secret '{self.provider.secret_name}'")
+                logger.warning(f"Empty config from AWS secret '{self.provider.key_name}'")
 
             config = None
             if is_base64(contents):
@@ -456,9 +456,9 @@ class AwsSecretStorage(KeyValueStorage):
                 self.config = config
                 self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
             else:
-                err = f"Failed to load/parse config JSON from AWS secret '{self.provider.secret_name}' - the value must be a valid JSON, value='{contents}'"
+                err = f"Failed to load/parse config JSON from AWS secret '{self.provider.key_name}' - the value must be a valid JSON, value='{contents}'"
         except Exception as e:
-            logger.error(f"Failed to load config JSON from AWS secret '{self.provider.secret_name}', Error: {str(e)}")
+            logger.error(f"Failed to load config JSON from AWS secret '{self.provider.key_name}', Error: {str(e)}")
 
         if err:
             raise ValueError(err)
