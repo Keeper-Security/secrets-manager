@@ -400,16 +400,16 @@ class AwsSecretStorage(KeyValueStorage):
         self.last_saved_config_hash = ""
         # self.__load_config()  # don't initialize here - use helpers
 
-    def from_default_config(self, secret: str, fallback_to_default_profile: bool = True):
-        self.provider = AwsConfigProvider(secret)
-        self.provider.from_default_config(secret, fallback_to_default_profile)
+    def from_default_config(self, aws_key: str, fallback_to_default_profile: bool = True):
+        self.provider = AwsConfigProvider(aws_key)
+        self.provider.from_default_config(aws_key, fallback_to_default_profile)
         self.config = {}
         self.last_saved_config_hash = ""
         self.__load_config()
 
-    def from_profile_config(self, secret: str, profile: str, fallback_to_default_profile: bool = True):
-        self.provider = AwsConfigProvider(secret)
-        self.provider.from_profile_config(secret, profile, fallback_to_default_profile)
+    def from_profile_config(self, aws_key: str, profile: str, fallback_to_default_profile: bool = True):
+        self.provider = AwsConfigProvider(aws_key)
+        self.provider.from_profile_config(aws_key, profile, fallback_to_default_profile)
         self.config = {}
         self.last_saved_config_hash = ""
         self.__load_config()
