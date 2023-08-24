@@ -30,13 +30,12 @@ logger = logging.getLogger(logger_name)
 
 try:
     import boto3
-    from boto3 import client
     from boto3.session import Session
     from botocore.credentials import InstanceMetadataProvider
     from botocore.exceptions import ClientError
     from botocore.session import get_session
     from botocore.utils import (InstanceMetadataFetcher, IMDSFetcher, IMDSRegionProvider)
-except ImportError as ie:
+except ImportError:
     logger.error("Missing AWS SDK import dependencies."
                  " To install missing packages run: \r\n"
                  "pip3 install boto3\r\n")
@@ -102,7 +101,7 @@ class AwsConfigProvider(IConfigProvider):
         """
 
         # secret name/id or a full ARN
-        self.secret: str = aws_secret
+        self.secret_name: str = aws_secret
 
         # fallback to default session if initial credentials fail
         self.fallback: bool = True
@@ -184,7 +183,7 @@ class AwsConfigProvider(IConfigProvider):
         # 1. Use ARN: if key contains full ARN - get region from the key
         # arn:partition:service:region:account-id:resource-type:resource-id
         region: str = ""
-        match = re.search(r'arn:aws:secretsmanager:(?P<region>[^:]*):', self.secret, re.IGNORECASE)
+        match = re.search(r'arn:aws:secretsmanager:(?P<region>[^:]*):', self.secret_name, re.IGNORECASE)
         if match:
             arn_region = match.group('region')
             region = arn_region if arn_region else ""
@@ -258,7 +257,7 @@ class AwsConfigProvider(IConfigProvider):
 
         try:
             if self.config_type == AwsConfigType.CREDENTIALS:
-                secretsmanager = client('secretsmanager',
+                secretsmanager = boto3.client('secretsmanager',
                                         aws_access_key_id=self.aws_access_key_id,
                                         aws_secret_access_key=self.aws_secret_access_key,
                                         region_name=self.region)
@@ -269,12 +268,12 @@ class AwsConfigProvider(IConfigProvider):
                 session = Session(botocore_session=self.bc_session, profile_name=self.aws_profile)
                 secretsmanager = session.client('secretsmanager')
             else:
-                secretsmanager = client('secretsmanager')  # default profile
+                secretsmanager = boto3.client('secretsmanager')  # default profile
             # When run outside of EC2 VM on an unconfigured machine it fails
             # with "Invalid endpoint: https://secretsmanager..amazonaws.com"
         except Exception as ex:
             if self.fallback:
-                secretsmanager = client('secretsmanager')  # default session
+                secretsmanager = boto3.client('secretsmanager')  # default session
             else:
                 raise ex  # rethrow
 
@@ -286,14 +285,14 @@ class AwsConfigProvider(IConfigProvider):
         secretsmanager = self._get_client()
 
         try:
-            res = self._get_secret_aws(secretsmanager, self.secret)
+            res = self._get_secret_aws(secretsmanager, self.secret_name)
         except Exception:
             pass
 
         # if provided credentials failed try using default session/creds
         if (not res or res.get("not_found", False) or res.get("error", "")) and self.fallback is True:
-            secretsmanager = client('secretsmanager')  # default session
-            res = self._get_secret_aws(secretsmanager, self.secret)
+            secretsmanager = boto3.client('secretsmanager')  # default session
+            res = self._get_secret_aws(secretsmanager, self.secret_name)
 
         result = res.get("value", "") or "" if res else ""
         return result
@@ -303,7 +302,7 @@ class AwsConfigProvider(IConfigProvider):
         secretsmanager = self._get_client()
 
         try:
-            res = self._set_secret_aws(secretsmanager, self.secret, config)
+            res = self._set_secret_aws(secretsmanager, self.secret_name, config)
         except Exception as ex:
             res = {"error": str(ex)}
 
@@ -443,7 +442,7 @@ class AwsSecretStorage(KeyValueStorage):
         try:
             contents = self.provider.read_config()
             if len(contents) == 0:
-                logger.warning(f"Empty config from AWS secret '{self.provider.secret}'")
+                logger.warning(f"Empty config from AWS secret '{self.provider.secret_name}'")
 
             config = None
             if is_base64(contents):
@@ -457,9 +456,9 @@ class AwsSecretStorage(KeyValueStorage):
                 self.config = config
                 self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
             else:
-                err = f"Failed to load/parse config JSON from AWS secret '{self.provider.secret}' - the value must be a valid JSON, value='{contents}'"
+                err = f"Failed to load/parse config JSON from AWS secret '{self.provider.secret_name}' - the value must be a valid JSON, value='{contents}'"
         except Exception as e:
-            logger.error(f"Failed to load config JSON from AWS secret '{self.provider.secret}', Error: {str(e)}")
+            logger.error(f"Failed to load config JSON from AWS secret '{self.provider.secret_name}', Error: {str(e)}")
 
         if err:
             raise ValueError(err)
