@@ -379,10 +379,12 @@ class AwsConfigProvider(IConfigProvider):
 
 
 DEFAULT_AWS_KEY_NAME = "ksm-config"
+
+
 class AwsSecretStorage(KeyValueStorage):
     """AWS Secrets Manager secret as a config storage"""
 
-    def __init__(self, secret: str = "", fallback_to_default_profile: bool = True):
+    def __init__(self, aws_key: str = "", fallback_to_default_profile: bool = True):
         """Initilaizes AwsSecretStorage with provider using ec2instance config.
 
         AwsSecretStorage by default uses Ec2Instance config with
@@ -390,11 +392,11 @@ class AwsSecretStorage(KeyValueStorage):
         configuration method use one of its helper methods.
         """
 
-        if not secret:
-            secret = os.getenv("KSM_AWS_SECRET", DEFAULT_AWS_KEY_NAME)
+        if not aws_key:
+            aws_key = os.getenv("KSM_AWS_SECRET", DEFAULT_AWS_KEY_NAME)
 
-        self.provider = AwsConfigProvider(secret)
-        self.provider.from_ec2instance_config(secret, fallback_to_default_profile)
+        self.provider = AwsConfigProvider(aws_key)
+        self.provider.from_ec2instance_config(aws_key, fallback_to_default_profile)
 
         self.config = {}
         self.last_saved_config_hash = ""
@@ -414,20 +416,20 @@ class AwsSecretStorage(KeyValueStorage):
         self.last_saved_config_hash = ""
         self.__load_config()
 
-    def from_ec2instance_config(self, secret: str, fallback_to_default_profile: bool = True):
-        self.provider = AwsConfigProvider(secret)
-        self.provider.from_ec2instance_config(secret, fallback_to_default_profile)
+    def from_ec2instance_config(self, aws_key: str, fallback_to_default_profile: bool = True):
+        self.provider = AwsConfigProvider(aws_key)
+        self.provider.from_ec2instance_config(aws_key, fallback_to_default_profile)
         self.config = {}
         self.last_saved_config_hash = ""
         self.__load_config()
 
-    def from_custom_config(self, secret: str,
+    def from_custom_config(self, aws_key: str,
                            aws_access_key_id: str,
                            aws_secret_access_key: str,
                            region: str,
                            fallback_to_default_profile: bool = True):
         self.provider.from_custom_config(
-            secret,
+            aws_key,
             aws_access_key_id,
             aws_secret_access_key,
             region,
