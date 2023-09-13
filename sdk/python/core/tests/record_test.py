@@ -100,3 +100,28 @@ class RecordTest(unittest.TestCase):
         assert "privacyScreen" not in value, "privacyScreen exists in dictionary"
         self.assertIsNone(value.get("privacyScreen"), "privacyScreen is not correct")
         self.assertIsNone(value.get("complexity"), "complexity is not correct")
+
+    def test_missing_fields_section(self):
+
+        """ Test for clients that may set "fields": null in JSON data """
+
+        try:
+            with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+                fh.write(MockConfig.make_json())
+                fh.seek(0)
+                secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
+
+                res = mock.Response()
+                rec = res.add_record(title="MyLogin", record_type='login')
+                res.records[rec.uid]._fields = None
+                res_queue = mock.ResponseQueue(client=secrets_manager)
+                res_queue.add_response(res)
+
+                records = secrets_manager.get_secrets()
+                self.assertEqual(1, len(records), "didn't get 1 record for MyLogin")
+                self.assertEqual([], records[0].dict.get('fields'))
+        finally:
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass
