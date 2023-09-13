@@ -1,6 +1,6 @@
-import unittest
-import tempfile
 import os
+import tempfile
+import unittest
 
 from keeper_secrets_manager_core.storage import FileKeyValueStorage
 from keeper_secrets_manager_core import SecretsManager
@@ -20,34 +20,40 @@ class RecordTest(unittest.TestCase):
         os.chdir(self.orig_working_dir)
 
     def test_the_login_record_password(self):
-
-        """ If the record type is login, the password will be placed in the instance attribute.
+        """ If the record type is login, the password will be placed
+            in the instance attribute.
         """
 
         try:
             with tempfile.NamedTemporaryFile("w", delete=False) as fh:
                 fh.write(MockConfig.make_json())
                 fh.seek(0)
-                secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
+                secrets_manager = SecretsManager(
+                    config=FileKeyValueStorage(config_file_location=fh.name))
 
                 # A good record.
-                # 'fields': [...{'type': 'password', 'value': ['My Password']}...]
+                # 'fields':[{'type': 'password', 'value': ['My Password']}...]
                 good_res = mock.Response()
-                good = good_res.add_record(title="Good Record", record_type='login')
+                good = good_res.add_record(
+                    title="Good Record", record_type='login')
                 good.field("login", "My Login")
                 good.field("password", "My Password")
 
-                # A bad record. This would be like if someone removed a password text from an existing field.
+                # A bad record. This would be like if someone removed
+                # a password text from an existing field.
                 # 'fields': [...{'type': 'password', 'value': []}...]
                 bad_res = mock.Response()
-                bad = bad_res.add_record(title="Bad Record", record_type='login')
+                bad = bad_res.add_record(
+                    title="Bad Record", record_type='login')
                 bad.field("login", "My Login")
                 bad.field("password", [])
 
-                # An ugly record. The application didn't even add the field. We need to set flags to prune empty fields.
+                # An ugly record. The application didn't even add the field.
+                # We need to set flags to prune empty fields.
                 # 'fields': [...]
                 ugly_res = mock.Response(flags={"prune_empty_fields": True})
-                ugly = ugly_res.add_record(title="Ugly Record", record_type='login')
+                ugly = ugly_res.add_record(
+                    title="Ugly Record", record_type='login')
                 ugly.field("login", "My Login")
 
                 # this will be removed from the fields array.
@@ -59,16 +65,23 @@ class RecordTest(unittest.TestCase):
                 res_queue.add_response(ugly_res)
 
                 records = secrets_manager.get_secrets()
-                self.assertEqual(1, len(records), "didn't get 1 record for the good")
-                self.assertEqual("My Password", records[0].password, "did not get correct password for the good")
+                self.assertEqual(
+                    1, len(records), "didn't get 1 record for the good")
+                self.assertEqual(
+                    "My Password", records[0].password,
+                    "did not get correct password for the good")
 
                 records = secrets_manager.get_secrets()
-                self.assertEqual(1, len(records), "didn't get 1 record for the bad")
-                self.assertIsNone(records[0].password, "password is defined for the bad")
+                self.assertEqual(
+                    1, len(records), "didn't get 1 record for the bad")
+                self.assertIsNone(records[0].password,
+                                  "password is defined for the bad")
 
                 records = secrets_manager.get_secrets()
-                self.assertEqual(1, len(records), "didn't get 1 record for the ugly")
-                self.assertIsNone(records[0].password, "password is defined for the ugly")
+                self.assertEqual(
+                    1, len(records), "didn't get 1 record for the ugly")
+                self.assertIsNone(records[0].password,
+                                  "password is defined for the ugly")
         finally:
             try:
                 os.unlink(fh.name)
@@ -77,7 +90,8 @@ class RecordTest(unittest.TestCase):
 
     def test_record_field(self):
 
-        rf = RecordField(field_type="login", value="test", label="Test", required=True, enforceGeneration=False,
+        rf = RecordField(field_type="login", value="test", label="Test",
+                         required=True, enforceGeneration=False,
                          privacyScreen=True, complexity={"foo": "bar"})
 
         value = helpers.obj_to_dict(rf)
@@ -85,9 +99,12 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(["test"], value.get("value"), "value is not correct")
         self.assertEqual("Test", value.get("label"), "label is not correct")
         self.assertTrue(value.get("required"), "required is not correct")
-        self.assertFalse(value.get("enforceGeneration"), "enforceGeneration is not correct")
-        self.assertTrue(value.get("privacyScreen"), "privacyScreen is not correct")
-        self.assertIsNotNone(value.get("complexity"), "complexity is not correct")
+        self.assertFalse(value.get("enforceGeneration"),
+                         "enforceGeneration is not correct")
+        self.assertTrue(value.get("privacyScreen"),
+                        "privacyScreen is not correct")
+        self.assertIsNotNone(value.get("complexity"),
+                             "complexity is not correct")
 
         rf = RecordField(field_type="login", value="test", privacyScreen=None)
 
@@ -96,20 +113,22 @@ class RecordTest(unittest.TestCase):
         self.assertEqual(["test"], value.get("value"), "value is not correct")
         self.assertIsNone(value.get("label"), "label is not correct")
         self.assertIsNone(value.get("required"), "required is not correct")
-        self.assertIsNone(value.get("enforceGeneration"), "enforceGeneration is not correct")
+        self.assertIsNone(value.get("enforceGeneration"),
+                          "enforceGeneration is not correct")
         assert "privacyScreen" not in value, "privacyScreen exists in dictionary"
-        self.assertIsNone(value.get("privacyScreen"), "privacyScreen is not correct")
+        self.assertIsNone(value.get("privacyScreen"),
+                          "privacyScreen is not correct")
         self.assertIsNone(value.get("complexity"), "complexity is not correct")
 
     def test_missing_fields_section(self):
-
         """ Test for clients that may set "fields": null in JSON data """
 
         try:
             with tempfile.NamedTemporaryFile("w", delete=False) as fh:
                 fh.write(MockConfig.make_json())
                 fh.seek(0)
-                secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
+                secrets_manager = SecretsManager(
+                    config=FileKeyValueStorage(config_file_location=fh.name))
 
                 res = mock.Response()
                 rec = res.add_record(title="MyLogin", record_type='login')
@@ -118,7 +137,8 @@ class RecordTest(unittest.TestCase):
                 res_queue.add_response(res)
 
                 records = secrets_manager.get_secrets()
-                self.assertEqual(1, len(records), "didn't get 1 record for MyLogin")
+                self.assertEqual(
+                    1, len(records), "didn't get 1 record for MyLogin")
                 self.assertEqual([], records[0].dict.get('fields'))
         finally:
             try:
