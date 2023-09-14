@@ -160,7 +160,7 @@ class SecretTest(unittest.TestCase):
 
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
             fields = json.loads(result.output)
-            self.assertEqual(6, len(fields), "didn't find 4 objects in array")
+            self.assertEqual(6, len(fields), "didn't find 6 objects in array")
 
             # Text Output to file
             tf_name = self._make_temp_file()
