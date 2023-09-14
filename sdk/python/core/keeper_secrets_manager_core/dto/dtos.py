@@ -53,6 +53,8 @@ class Record:
 
         self.raw_json = record_data_json
         self.dict = utils.json_to_dict(self.raw_json)
+        if self.dict and self.dict.get('fields') is None:
+            self.dict['fields'] = []
         self.title = self.dict.get('title')
         self.type = self.dict.get('type')
         self.revision = record_dict.get('revision')

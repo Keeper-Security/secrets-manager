@@ -66,7 +66,7 @@ public class CredentialResolver implements IExternalCredential {
 
         ksmConfig = configMap.get(KSM_CONFIG);
         if(isNullOrEmpty(ksmConfig))
-            fLogger.error("[Vault] INFO - CredentialResolver ksmConfig not set!");
+            fLogger.error("[Vault] ERROR - CredentialResolver ksmConfig not set!");
         String configMask = new String(new char[ksmConfig.length()]).replace('\0', '*');
         fLogger.info("ksmConfig: " + configMask);
 
@@ -460,18 +460,18 @@ public class CredentialResolver implements IExternalCredential {
     }
 
     public static String getCacheFilename() {
-        String workPath = getCacheDir();
-        return FileSystem.get().combinePath(workPath, "ksm_cache.dat");
+        return Paths.get(getCacheDir(), "ksm_cache.dat").toString();
     }
 
     public static String getCacheTmpFilename() {
-        String workPath = getCacheDir();
-        return FileSystem.get().combinePath(workPath, "ksm_cache.tmp");
+        return Paths.get(getCacheDir(), "ksm_cache.tmp").toString();
     }
 
     //main method to test locally, provide KSM config and test it
     // TODO: Remove this before moving to production
     /*
+    // Note Java16+ needs following setup (Vancouver+ switched from Java11 to Java17)
+    // export _JAVA_OPTIONS="--add-opens=java.base/sun.security.util=ALL-UNNAMED"
     public static void main(String[] args) {
         CredentialResolver credResolver = new CredentialResolver();
         credResolver.ksmConfig = "[Base64_KSM_Config]";

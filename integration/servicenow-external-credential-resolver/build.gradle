@@ -34,6 +34,12 @@ dependencies {
     compileOnly 'com.snc:commons-glide'
     compileOnly 'com.snc:commons-core-automation'
     compileOnly 'com.snc:snc-automation-api'
+
+    // NB! JDK16+/Vancouver+ may require: export _JAVA_OPTIONS="--add-opens=java.base/sun.security.util=ALL-UNNAMED"
+    // Vancouver and newer: IFileSystem is in the new mid-api.jar
+    if( !fileTree("$midserver_agent_dir").filter{File f -> (f.name == "mid-api.jar")}.isEmpty() ) {
+        compileOnly 'com.snc:mid-api'
+    }
 }
 
 jar {

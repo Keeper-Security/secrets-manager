@@ -390,7 +390,7 @@ class Record:
 
     def dump(self, secret, flags=None):
 
-        fields = list(self._fields)
+        fields = self._fields
 
         # If no files, the JSON has null
         files = None
