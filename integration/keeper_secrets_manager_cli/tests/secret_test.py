@@ -183,8 +183,9 @@ class SecretTest(unittest.TestCase):
             result = runner.invoke(cli, [
                 'secret', 'get', '-u', one.uid,
                 '--query', '[*].fields[*].type',
-                '--force-array'
+                '--force-array', '--inflate',
             ], catch_exceptions=True)
+            print(f'result.output: {result.output}')  # TODO: remove after test
             data = json.loads(result.output)
             self.assertEqual(4, len(data), "found 4 rows")
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
