@@ -154,13 +154,13 @@ class SecretTest(unittest.TestCase):
             # JSON Output w/ JQ to stdout
             runner = CliRunner()
             result = runner.invoke(cli, [
-                'secret', 'get', '-u', one.uid, '--json', '--deflate',
+                'secret', 'get', '-u', one.uid, '--json', '--inflate',
                 '--query', 'fields[*]'
             ], catch_exceptions=False)
 
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
             fields = json.loads(result.output)
-            self.assertEqual(4, len(fields), "didn't find 4 objects in array")
+            self.assertEqual(6, len(fields), "didn't find 4 objects in array")
 
             # Text Output to file
             tf_name = self._make_temp_file()
@@ -958,7 +958,7 @@ class SecretTest(unittest.TestCase):
 
             self.assertIsInstance(data.get("fields"), list, "fields is not a list")
 
-            field = data.get("fields")[0]
+            field = data.get("fields")[1]
             self.assertEqual("login", field.get("type"), "field type is not login")
             self.assertIsNotNone(field.get("value"), "value was None")
 
