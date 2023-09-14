@@ -154,12 +154,11 @@ class SecretTest(unittest.TestCase):
             # JSON Output w/ JQ to stdout
             runner = CliRunner()
             result = runner.invoke(cli, [
-                'secret', 'get', '-u', one.uid, '--json',
+                'secret', 'get', '-u', one.uid, '--json', '--deflate',
                 '--query', 'fields[*]'
             ], catch_exceptions=False)
 
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
-            print(f'result.output: {result.output}')  # TODO: remove
             fields = json.loads(result.output)
             self.assertEqual(4, len(fields), "didn't find 4 objects in array")
 
