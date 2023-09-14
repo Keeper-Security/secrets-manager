@@ -18,7 +18,6 @@ import requests
 from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.exceptions import KeeperError
-from keeper_secrets_manager_helper.v3.field_type import FieldType
 
 
 class Record:
@@ -186,16 +185,32 @@ class Record:
         field["value"] = value
         self._update()
 
-    def add_custom_field(self, field: FieldType) -> bool:
-        if issubclass(type(field), FieldType):
-            if self.dict.get('custom', None) is None:
-                self.dict['custom'] = []
-            custom = self.dict['custom']
+    def add_custom_field(self, field=None, field_type=None, label=None, value=None) -> bool:
+        if self.dict.get('custom', None) is None:
+            self.dict['custom'] = []
+        custom = self.dict['custom']
+
+        # Make backward compatible. Assumes keeper_secrets_manager_helper.v#.field_type.FieldType is passed in.
+        if field is not None:
+            if field.__class__.__name__ != "FieldType":
+                raise ValueError("The field is not an instance of FieldType")
             fdict = field.to_dict()
             custom.append(fdict)
-            self._update()
-            return True
-        return False
+        else:
+            if field_type is None:
+                return False
+            if isinstance(value, list) is False:
+                value = [value]
+            field_dict = {
+                "type": field_type,
+                "value": value
+            }
+            if label is not None:
+                field_dict["label"] = label
+            custom.append(field_dict)
+
+        self._update()
+        return True
 
     # TODO: Deprecate this for better getter and setters
     def field(self, field_type, value=None, single=False):

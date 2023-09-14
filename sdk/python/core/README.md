@@ -4,6 +4,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.6.2
+* KSM-463 - Python SDK - Fix a bug when fields is null
+* KSM-458 - Python SDK - Remove core's dependency on the helper module. Fixes [issue 488](https://github.com/Keeper-Security/secrets-manager/issues/488)
+
 ## 16.6.1
 * KSM 444 - Python - Added folderUid and innerFolderUid to Record
 

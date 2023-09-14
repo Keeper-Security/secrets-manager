@@ -27,10 +27,10 @@ logger = logging.getLogger(logger_name)
 try:
     import boto3
     from botocore.exceptions import ClientError
-except ImportError as ie:
+except ImportError:
     logger.error("Missing AWS SDK import dependencies."
-        " To install missing packages run: \r\n"
-        "pip3 install boto3\r\n")
+                 " To install missing packages run: \r\n"
+                 "pip3 install boto3\r\n")
     raise Exception("Missing import dependencies: boto3")
 
 
@@ -58,7 +58,7 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
     def __init__(self, key_id: str, config_file_location: str = "", aws_session_config: AwsSessionConfig | None = None):
         self.default_config_file_location = config_file_location if config_file_location else os.environ.get("KSM_CONFIG_FILE",
             AwsKmsKeyValueStorage.default_config_file_location)
-        self.key_id = key_id if key_id else os.environ.get("KSM_KMS_KEY_ID", "") # Master Key ID
+        self.key_id = key_id if key_id else os.environ.get("KSM_KMS_KEY_ID", "")  # Master Key ID
         has_aws_session_config = (aws_session_config
             and aws_session_config.aws_access_key_id
             and aws_session_config.aws_secret_access_key
@@ -69,7 +69,7 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
                 aws_secret_access_key=aws_session_config.aws_secret_access_key,
                 region_name=aws_session_config.region_name)
         else:
-            self.kms_client = boto3.client('kms') # uses default session
+            self.kms_client = boto3.client('kms')  # uses default session
         self.last_saved_config_hash = ""
         self.config = {}
         self.__load_config()
@@ -136,7 +136,7 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
             if config:
                 # detected plaintext JSON config -> encrypt
                 self.config = config
-                self.__save_config() # save encrypted
+                self.__save_config()  # save encrypted
                 self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
             else:
                 # Try to decrypt binary blob
@@ -154,19 +154,20 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
         except IOError:
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.default_config_file_location)
 
-    def __save_config(self, updated_config:dict = {}, module=0, force=False):
+    def __save_config(self, updated_config: dict = {}, module=0, force=False):
         config = self.config if self.config else {}
-        config_json:str = json.dumps(config, indent=4, sort_keys=True)
+        config_json: str = json.dumps(config, indent=4, sort_keys=True)
         config_hash = hashlib.md5(config_json.encode()).hexdigest()
 
         if updated_config:
-            ucfg_json:str = json.dumps(updated_config, indent=4, sort_keys=True)
+            ucfg_json: str = json.dumps(updated_config, indent=4, sort_keys=True)
             ucfg_hash = hashlib.md5(ucfg_json.encode()).hexdigest()
             if ucfg_hash != config_hash:
                 config_hash = ucfg_hash
                 config_json = ucfg_json
                 self.config = dict(updated_config)
-                # self.last_saved_config_hash = config_hash # update after save - to allow for retries
+                # update after save - to allow for retries
+                # self.last_saved_config_hash = config_hash
 
         if not force and config_hash == self.last_saved_config_hash:
             logger.warning("Skipped config JSON save. No changes detected.")
@@ -187,7 +188,7 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
             if len(ciphertext) == 0:
                 logging.getLogger(logger_name).warning("Empty config file " + self.default_config_file_location)
                 return ""
-        except Exception as e:
+        except Exception:
             logging.getLogger(logger_name).error("Failed to load config file " + self.default_config_file_location)
             raise Exception("Failed to load config file " + self.default_config_file_location)
 
@@ -198,7 +199,7 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
             elif autosave:
                 with open(self.default_config_file_location, "w") as fh:
                     fh.write(plaintext)
-        except Exception as err:
+        except Exception:
             logging.getLogger(logger_name).error("Failed to write decrypted config file " + self.default_config_file_location)
             raise Exception("Failed to write decrypted config file " + self.default_config_file_location)
         return plaintext
@@ -208,7 +209,7 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
         try:
             self.key_id = new_key_id
             self.__save_config(force=True)
-        except Exception as e:
+        except Exception:
             self.key_id = old_key_id
             logging.getLogger(logger_name).error(f"Failed to change the key to '{new_key_id}' for config '{self.default_config_file_location}'")
             raise Exception("Failed to change the key for " + self.default_config_file_location)
@@ -238,9 +239,9 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
         kv = key.value
         if kv in config:
             del config[kv]
-            logger.debug("Removed key %s" % kv)
+            logger.debug(f"Removed key {kv}")
         else:
-           logger.debug("No key %s was found in config" % kv)
+            logger.debug(f"No key {kv} was found in config")
 
         self.save_storage(config)
         return config
