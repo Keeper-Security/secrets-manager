@@ -159,6 +159,7 @@ class SecretTest(unittest.TestCase):
             ], catch_exceptions=False)
 
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
+            print(f'result.output: {result.output}')  # TODO: remove
             fields = json.loads(result.output)
             self.assertEqual(4, len(fields), "didn't find 4 objects in array")
 
@@ -958,7 +959,7 @@ class SecretTest(unittest.TestCase):
 
             self.assertIsInstance(data.get("fields"), list, "fields is not a list")
 
-            field = data.get("fields")[1]
+            field = data.get("fields")[0]
             self.assertEqual("login", field.get("type"), "field type is not login")
             self.assertIsNotNone(field.get("value"), "value was None")
 
