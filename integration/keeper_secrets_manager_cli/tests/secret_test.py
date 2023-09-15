@@ -154,7 +154,7 @@ class SecretTest(unittest.TestCase):
             # JSON Output w/ JQ to stdout
             runner = CliRunner()
             result = runner.invoke(cli, [
-                'secret', 'get', '-u', one.uid, '--json', '--inflate',
+                'secret', 'get', '-u', one.uid, '--json',
                 '--query', 'fields[*]'
             ], catch_exceptions=False)
 
@@ -183,7 +183,7 @@ class SecretTest(unittest.TestCase):
             result = runner.invoke(cli, [
                 'secret', 'get', '-u', one.uid,
                 '--query', '[*].fields[*].type',
-                '--force-array', '--deflate',
+                '--force-array'
             ], catch_exceptions=True)
             data = json.loads(result.output)
             self.assertEqual(4, len(data), "found 4 rows")
