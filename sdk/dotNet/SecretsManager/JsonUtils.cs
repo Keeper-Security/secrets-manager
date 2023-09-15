@@ -8,13 +8,13 @@ namespace SecretsManager
     {
         private static readonly JsonSerializerOptions Options = new()
         {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            //Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, // bad for strings with diacritics
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault
         };
 
         public static T ParseJson<T>(byte[] json)
         {
-            return JsonSerializer.Deserialize<T>(json);
+            return JsonSerializer.Deserialize<T>(json, Options);
         }
 
         public static byte[] SerializeJson<T>(T obj)
