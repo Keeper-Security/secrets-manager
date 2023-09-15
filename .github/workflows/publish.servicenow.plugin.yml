@@ -91,7 +91,12 @@ jobs:
               sed -i "s/def midserver_agent_dir =.*/def midserver_agent_dir = \'${elibpath}\'/" ${gradlecfg}
               
               cd ${buildroot}
-              ./gradlew jar || echo "Build Failed!"; exit 1
+              gradlew_return_code=0
+              ./gradlew jar || gradlew_return_code=$?
+              if (( gradlew_return_code != 0 )); then
+                echo "Grade build failed with exit status $gradlew_return_code"
+                exit $gradlew_return_code
+              fi
               
               dstjarpath=${releasedir}/${buildname}-${version}-${buildversion}.jar
               mv ${srcjarpath} ${dstjarpath} || echo "File Copy Failed!"; exit 1
