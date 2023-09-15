@@ -101,7 +101,7 @@ jobs:
               dstjarpath=${releasedir}/${buildname}-${version}-${buildversion}.jar
               echo "JAR src path: ${srcjarpath} JAR destination: ${dstjarpath}"
               ls -la ${srcjarpath}
-              ls -la ${dstjarpath}
+              ls -la ${releasedir}
               mv ${srcjarpath} ${dstjarpath} || echo "File Copy Failed!"; exit 2
             fi
           done
