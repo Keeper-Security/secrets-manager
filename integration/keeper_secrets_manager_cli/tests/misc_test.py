@@ -66,7 +66,7 @@ class MiscTest(unittest.TestCase):
                 sp = subprocess.run(["icacls.exe", Config.default_ini_file], capture_output=True)
                 if sp.stderr is not None and sp.stderr.decode() != "":
                     self.fail("Could not icacls.exe {}: {}".format(Config.default_ini_file,sp.stderr.decode()))
-                allowed_users = [user.lower(), "Administrators".lower()]
+                allowed_users = [user.decode().lower(), "Administrators".lower()]
                 for line in sp.stdout.decode().split("\n"):
                     parts = line[len(Config.default_ini_file):].split(":")
                     if len(parts) == 2:
