@@ -3,6 +3,10 @@
 
 # Change Log
 
+## 16.6.3
+
+* KSM-462 - Fixed JSON serializer that replaces characters with accents. Closes [Issue #523](https://github.com/Keeper-Security/secrets-manager/issues/523)
+
 ## 16.6.2
 
 * KSM-456 - Added .NET 4.7 as an additional build target
