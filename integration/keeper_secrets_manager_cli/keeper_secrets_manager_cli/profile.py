@@ -372,9 +372,7 @@ class Profile:
 
         """
         Take base64 config file and write it back to disk.
-
         This file could be a JSON or a Keeper ini file.
-
         """
 
         config_data = base64.urlsafe_b64decode(config_base64.encode())
@@ -392,15 +390,26 @@ class Profile:
 
         # If a JSON file was import, convert the JSON to a INI.
         if is_json is True:
+            if profile_name is None:
+                profile_name = os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
             config = Config(ini_file=file)
+
+            try:
+                # If the file exists attempt to load as INI to merge new config
+                config.load()
+            except:
+                pass  # doesn't exists, inaccessible, or not INI: create new
+
             config.set_profile_using_base64(
-                profile_name=Profile.default_profile,
+                profile_name=profile_name,
                 base64_config=config_base64
             )
             config.save()
 
         # Else just save the INI. It's in the right format, just save it. No processing needed.
         else:
+            if profile_name:
+                print("Ignored option --profile-name as incompaible with INI file format that can handle multiple profiles.")
             with open(file, "w") as fh:
                 fh.write(config_data.decode())
                 fh.close()
