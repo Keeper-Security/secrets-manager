@@ -6,6 +6,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.1.1
+
+* KSM-429 - Add `--profile-name` to `ksm profile import` command
+
 ## 1.1.0
 * KSM-395 - New feature to load configurations from AWS Secrets Manager
 
