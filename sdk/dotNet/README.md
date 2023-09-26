@@ -3,6 +3,10 @@
 
 # Change Log
 
+## 16.6.4
+
+* KSM-466 - Fixed ExpiresOn conversion from UnixTimeMilliseconds. Closes [Issue #533]
+
 ## 16.6.3
 
 * KSM-462 - Fixed JSON serializer that replaces characters with accents. Closes [Issue #523](https://github.com/Keeper-Security/secrets-manager/issues/523)
