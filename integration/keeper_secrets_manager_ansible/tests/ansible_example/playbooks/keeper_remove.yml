@@ -1,0 +1,14 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Remove
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: "Remove By UID"
+      keeper_remove:
+        uid: "{{ uid }}"
+
+    - name: "Remove By Title"
+      keeper_remove:
+        title: "{{ title }}"

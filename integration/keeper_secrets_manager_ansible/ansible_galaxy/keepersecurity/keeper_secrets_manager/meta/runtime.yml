@@ -8,5 +8,6 @@ action_groups:
     - keeper_set
     - keeper_cleanup
     - keeper_create
+    - keeper_remove
     - keeper_password
     - keeper_info

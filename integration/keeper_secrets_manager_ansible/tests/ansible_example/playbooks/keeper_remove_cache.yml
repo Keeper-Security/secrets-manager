@@ -1,0 +1,36 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Remove Cache
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: Generate a Keeper Record Cache secret
+      keeper_password:
+        length: 64
+      register: keeper_record_cache_secret
+      # no_log: True
+
+    - name: Store the Keeper Record Cache secret into variables.
+      set_fact:
+        keeper_record_cache_secret: "{{ keeper_record_cache_secret.password }}"
+      # no_log: True
+
+    - name: Cache records. Will use keeper_record_cache_secret from above.
+      keeper_cache_records:
+        uids:
+          - "{{ uid }}"
+        titles:
+          - "{{ title }}"
+      register: my_records
+      # no_log: True
+
+    - name: "Remove By UID"
+      keeper_remove:
+        cache: "{{ my_records.cache }}"
+        uid: "{{ uid }}"
+
+    - name: "Remove By Title"
+      keeper_remove:
+        cache: "{{ my_records.cache }}"
+        title: "{{ title }}"
