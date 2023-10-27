@@ -17,6 +17,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Changes
 
+## 1.2.1
+* Add action `keeper_remove` to remove secrets from the Keeper Vault
+* Update pinned KSM SDK version to 16.6.2.
+
 ## 1.2.0
 
 * Added action `keeper_cache_records` to cache Keeper Vault records to reduce API calls.

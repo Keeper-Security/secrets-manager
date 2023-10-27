@@ -32,7 +32,7 @@ def _config():
     if os.fstat(0) == os.fstat(1):
         print("\n# Below are the directory paths to action and lookup plugins.", file=sys.stderr)
 
-    # Ansible doesn't really work on Windows, however include this anyways for the cleaver DevOp.
+    # Ansible doesn't really work on Windows, however include this any ways for the cleaver DevOp.
     if platform.system() == 'Windows':
         is_power_shell = len(os.getenv('PSModulePath', '').split(os.pathsep)) >= 3
         if is_power_shell is True:
