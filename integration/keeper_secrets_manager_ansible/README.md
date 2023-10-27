@@ -12,6 +12,7 @@ This module contains plugins that allow your Ansible automations to use Keeper S
 * `keeper_redact` - Stdout Callback plugin to redact secrets from logs.
 * `keeper_password` - Generate a random password.
 * `keeper_info` - Display information about plugin, record and field types.
+* `keeper_remove` - Remove secrets from the Keeper Vault.
 
 For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/integrations/ansible-plugin
 
