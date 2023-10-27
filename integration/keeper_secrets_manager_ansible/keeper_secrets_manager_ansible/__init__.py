@@ -197,10 +197,10 @@ class KeeperAnsible:
                 display.vvv("Loading keeper config from Ansible vars.")
 
                 # Since we are getting our variables from Ansible, we want to default using the in memory storage so
-                # not to leave config files laying around.
+                # not to leave config files lying around.
                 in_memory_storage = True
 
-                # If be have parameter with a Base64 config, use it for the config_option and force
+                # If we have parameter with a Base64 config, use it for the config_option and force
                 # the config to be in memory.
                 base64_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CONFIG_BASE64)
                 if base64_key in task_vars:
@@ -388,9 +388,9 @@ class KeeperAnsible:
                     uid_map.pop(uid, None)
 
         if len(uid_map) > 0:
-            raise ValueError(f"The following record uid(s) could not be found: {list(uid_map.keys())}")
+            raise AnsibleError(f"The following record uid(s) could not be found: {list(uid_map.keys())}")
         if len(title_map) > 0:
-            raise ValueError(f"The following record title(s) could not be found: {list(title_map.keys())}")
+            raise AnsibleError(f"The following record title(s) could not be found: {list(title_map.keys())}")
 
         return [found_records[x] for x in found_records]
 
@@ -472,6 +472,17 @@ class KeeperAnsible:
             raise Exception("Cannot get create record: {}".format(err))
 
         return record_uid
+
+    def remove_record(self, uids=None, titles=None, cache=None):
+
+        records = self.get_records(cache=cache, uids=uids, titles=titles)
+        if len(records) > 1 and titles is not None:
+            raise AnsibleError("Found multiple records for the Title. To fix, make sure records "
+                               "have a unique Title or use a UID.")
+
+        display.vvvvvv(f"removing record UID {records[0].uid}")
+
+        self.client.delete_secret([records[0].uid])
 
     @staticmethod
     def _gather_secrets(obj):
@@ -636,13 +647,13 @@ class KeeperAnsible:
         * allow_symbols - Allow symbols. Default is True
         * filter_characters - An array of characters not to use. Some servies don't like some characters.
 
-        The length is divided by the allowed characters. So with a length of 64, each would get 16 of each characters.
+        The length is divided by the allowed characters. So with a length of 64, each would get 16 of each character.
         If the length cannot be unevenly divided, additional will be added to the first allowed character in the above
         list.
 
         """
 
-        # This maps nicer human readable keys to the ones used the records' complexity.
+        # This maps nicer human-readable keys to the ones used the records' complexity.
         kwargs_map = [
             {"param": "allow_lowercase", "key": "lowercase"},
             {"param": "allow_uppercase", "key": "caps"},
@@ -725,7 +736,7 @@ class KeeperAnsible:
             if new_char not in kwargs.get("filter_characters"):
                 break
 
-            # Ok, some user might go crazy and filter out every letter, digit, and symbol and cause an invite loop.
+            # Ok, some user might go crazy and filter out every letter, digit, and symbol and cause an infinite loop.
             # If we can't find a good character after 25 attempts, error out.
             attempt += 1
             if attempt > 25:
