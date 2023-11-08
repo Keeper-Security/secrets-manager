@@ -26,7 +26,7 @@ jobs:
     - name: Setup, Build and Test
       uses: gradle/gradle-build-action@v2
       with:
-        gradle-version: 7.5
+        gradle-version: 8.4
         arguments: build test
         build-root-directory: ./sdk/java/core
 
