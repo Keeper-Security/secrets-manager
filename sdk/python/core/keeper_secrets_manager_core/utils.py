@@ -22,11 +22,10 @@ import string
 import time
 from json import JSONDecodeError
 from sys import platform as _platform
-from typing import Optional, Tuple
+from typing import Optional
 from urllib import parse
 import subprocess
 import stat
-from distutils.util import strtobool
 
 from keeper_secrets_manager_core.keeper_globals import logger_name
 
@@ -34,6 +33,22 @@ ALLOWED_WINDOWS_CONFIG_ADMINS = [b'Administrators', b'SYSTEM']
 ENCODING = 'UTF-8'
 SPECIAL_CHARACTERS = '''"!@#$%()+;<>=?[]{}^.,'''
 DEFAULT_PASSWORD_LENGTH = 32
+
+
+def strtobool(val):
+    """Convert a string representation of truth to true (1) or false (0).
+
+    True values are 'y', 'yes', 't', 'true', 'on', and '1'; false values
+    are 'n', 'no', 'f', 'false', 'off', and '0'.  Raises ValueError if
+    'val' is anything else.
+    """
+    val = val.lower()
+    if val in ('y', 'yes', 't', 'true', 'on', '1'):
+        return 1
+    elif val in ('n', 'no', 'f', 'false', 'off', '0'):
+        return 0
+    else:
+        raise ValueError("invalid truth value {!r}".format(val))
 
 
 def get_os():
