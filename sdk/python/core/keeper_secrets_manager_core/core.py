@@ -17,7 +17,6 @@ import re
 import requests
 import sys
 from base64 import urlsafe_b64decode
-from distutils.util import strtobool
 from http import HTTPStatus
 from typing import List, Tuple, Optional
 
@@ -35,7 +34,7 @@ from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sd
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage, InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
     url_safe_str_to_bytes, bytes_to_base64, generate_random_bytes, now_milliseconds, string_to_bytes, json_to_dict, \
-    bytes_to_string
+    bytes_to_string, strtobool
 
 
 def find_secrets_by_title(record_title, records):
