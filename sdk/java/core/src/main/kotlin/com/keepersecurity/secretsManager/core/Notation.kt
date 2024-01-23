@@ -435,7 +435,7 @@ private fun getFieldJsonValue(field: KeeperRecordField): String {
 }
 
 // data class to represent parsed notation section
-internal data class NotationSection(
+data class NotationSection(
     var section: String? = null,     // section name - ex. prefix
     var isPresent: Boolean = false,  // presence flag
     var startPos: Int = -1,          // section start position in URI
@@ -586,7 +586,7 @@ private fun parseSection(notation: String, section: String, pos: Int): NotationS
     return result
 }
 
-internal fun parseNotation(notationUri: String, legacyMode: Boolean = false): List<NotationSection> {
+fun parseNotation(notationUri: String, legacyMode: Boolean = false): List<NotationSection> {
     var notation = notationUri
     if (notation.isEmpty())
         throw Exception("Keeper notation is missing or invalid.")
@@ -642,4 +642,57 @@ internal fun parseNotation(notationUri: String, legacyMode: Boolean = false): Li
     }
 
     return listOf(prefix, record, selector, footer)
+}
+
+fun tryParseNotation(notationUri: String, legacyMode: Boolean = false): Pair<List<NotationSection>, String> {
+    var error = ""
+    val notations = try {
+        parseNotation(notationUri, legacyMode)
+    } catch (e: Exception) {
+        error = e.message.toString()
+        emptyList<NotationSection>()
+    }
+    return Pair(notations, error)
+}
+
+fun validateNotation(notationUri: String, legacyMode: Boolean = false): Boolean {
+    val (parsedNotation, error) = tryParseNotation(notationUri, legacyMode)
+    // validate syntax
+    if (error.isNotBlank()) return false
+
+    // check for logical errors
+    // prefix, record, selector, footer
+    if (parsedNotation.size < 3) return false
+
+    // prefix: parsedNotation[0] == "keeper://" is optional
+    // record: parsedNotation[1] == UID or Title
+    if (!parsedNotation[1].isPresent || parsedNotation[1].text == null) return false
+    // selector: parsedNotation[2] == type|title|notes or file|field|custom_field
+    if (!parsedNotation[2].isPresent || parsedNotation[2].text == null) return false
+    // footer: parsedNotation[3] == anything else after a valid notation (should not be present)
+    if (parsedNotation[3].isPresent) return false
+    // valid notation section names
+    if (parsedNotation.firstOrNull { it.section.isNullOrBlank() ||
+            !listOf("prefix", "record", "selector", "footer").contains(it.section!!.lowercase()) } != null)
+        return false
+
+    val selector = parsedNotation[2].text!!.first.lowercase() // type|title|notes or file|field|custom_field
+    val parameter = parsedNotation[2].parameter?.first
+    // short selectors don't have parameters
+    if (listOf("type", "title", "notes").contains(selector) && parameter != null) return false
+    // these selectors require a parameter
+    if (listOf("file", "field", "custom_field").contains(selector) && parameter == null) return false
+    // file selectors have a single parameter(filename) and don't use indexes
+    if (selector == "file" && (parsedNotation[2].index1 != null || parsedNotation[2].index2 != null))
+        return false
+
+    // cannot have second index without first
+    if (parsedNotation[2].index1 == null && parsedNotation[2].index2 != null) return false
+    // .../<type|label>[index1][index2], ex. /url == /url[] == /url[][] == full value
+    val idx = parsedNotation[2].index1?.first?.toIntOrNull() ?: -1 // -1 full value
+    // valid only if [] or missing - ex. /field/phone or /field/phone[]
+    if (idx == -1 && !(parsedNotation[2].index1?.second.isNullOrEmpty() || parsedNotation[2].index1?.second == "[]"))
+        return false
+
+    return true
 }
