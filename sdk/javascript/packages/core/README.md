@@ -3,6 +3,8 @@
 For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/javascript-sdk
 
 # Change Log
+## 16.6.2
+- KSM-487 - Dependencies upgrade
 
 ## 16.6.1
 - KSM-438 - include enterprise logo in KSM response, `extra` field. (related to KA-5546)
