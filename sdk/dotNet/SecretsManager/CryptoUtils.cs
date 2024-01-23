@@ -15,6 +15,8 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using Org.BouncyCastle.Asn1.Pkcs;
+using Org.BouncyCastle.Asn1.Sec;
 
 namespace SecretsManager
 {
@@ -106,7 +108,10 @@ namespace SecretsManager
 
         private static ECPrivateKeyParameters ImportPrivateKey(byte[] privateKeyDer)
         {
-            return new ECPrivateKeyParameters(new BigInteger(1, privateKeyDer.Skip(36).Take(32).ToArray()), ECParameters);
+            var privateKeyInfo = PrivateKeyInfo.GetInstance(privateKeyDer);
+            var privateKeyStructure = ECPrivateKeyStructure.GetInstance(privateKeyInfo.ParsePrivateKey());
+            var privateKeyValue = privateKeyStructure.GetKey();
+            return new ECPrivateKeyParameters(privateKeyValue, ECParameters);
         }
 
         private static byte[] GetECIESSymmetricKey(ICipherParameters privateKey, ICipherParameters recipientPublicKey)

@@ -3,6 +3,11 @@
 
 # Change Log
 
+## 16.6.5
+
+* KSM-476 - fix public key parsing
+* KSM-484 - Update to latest Bouncy Castle version
+
 ## 16.6.4
 
 * KSM-466 - Fixed ExpiresOn conversion from UnixTimeMilliseconds. Closes [Issue #533]

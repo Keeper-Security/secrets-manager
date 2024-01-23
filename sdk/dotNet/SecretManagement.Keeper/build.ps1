@@ -30,7 +30,7 @@ if ($Package) {
     @(
         './bin/Release/netstandard2.1/SecretManagement.Keeper.dll'
         './bin/Release/netstandard2.1/SecretsManager.dll'
-        './bin/Release/netstandard2.1/BouncyCastle.Crypto.dll'
+        './bin/Release/netstandard2.1/BouncyCastle.Cryptography.dll'
     ) | ForEach-Object {
         Copy-Item -Path $_ -Destination $outDir -Force
     }
