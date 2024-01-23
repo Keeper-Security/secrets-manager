@@ -94,13 +94,17 @@ internal fun hash(data: ByteArray, tag: String): ByteArray {
 }
 
 internal fun getCipher(mode: Int, iv: ByteArray, key: ByteArray, useCBC: Boolean = false): Cipher {
-    val transformation = if (useCBC) "AES/CBC/PKCS7Padding" else "AES/GCM/NoPadding"
+    // Some cryptographic libraries such as the SUN provider in Java indicate PKCS#5 where PKCS#7 should be used
+    val paddingProvider = if (KeeperCryptoParameters.provider == null) "AES/CBC/PKCS5Padding" else "AES/CBC/PKCS7Padding"
+    val transformation = if (useCBC) paddingProvider else "AES/GCM/NoPadding"
     val cipher = if (KeeperCryptoParameters.provider == null)
         Cipher.getInstance(transformation) else
         Cipher.getInstance(transformation, KeeperCryptoParameters.provider)
+
     val keySpec = SecretKeySpec(key, "AES")
-    val gcmParameterSpec = GCMParameterSpec(16 * 8, iv)
-    cipher.init(mode, keySpec, gcmParameterSpec)
+    val parameterSpec = if (useCBC) IvParameterSpec(iv) else GCMParameterSpec(16 * 8, iv)
+    cipher.init(mode, keySpec, parameterSpec)
+
     return cipher
 }
 
