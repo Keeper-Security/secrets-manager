@@ -10,21 +10,28 @@ version = "16.6.2"
 
 plugins {
     `java-library`
-    kotlin("jvm") version "1.6.21"
-    kotlin("plugin.serialization") version "1.6.21"
+    kotlin("jvm") version "1.9.20"
+    kotlin("plugin.serialization") version "1.9.20"
     `maven-publish`
     signing
-    id("io.github.gradle-nexus.publish-plugin") version "1.1.0"
+    id("io.github.gradle-nexus.publish-plugin") version "1.3.0"
 }
 
 java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
     targetCompatibility = JavaVersion.VERSION_1_8
 }
 
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-    sourceCompatibility = JavaVersion.VERSION_1_8.toString()
-    targetCompatibility = JavaVersion.VERSION_1_8.toString()
-    kotlinOptions.jvmTarget = JavaVersion.VERSION_1_8.toString()
+tasks.withType<JavaCompile>().configureEach {
+    javaCompiler.set(javaToolchains.compilerFor {
+        languageVersion.set(JavaLanguageVersion.of(8))
+    })
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
 }
 
 repositories {
@@ -35,24 +42,20 @@ repositories {
 
 dependencies {
     // Align versions of all Kotlin components
-    implementation(platform("org.jetbrains.kotlin:kotlin-bom"))
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.9.20"))
 
     // Use the Kotlin JDK 8 standard library.
-    api("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
-
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.3.3")
-
-    implementation("org.jetbrains.kotlin:kotlin-reflect:1.6.10")
-
+    api("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.20")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+    implementation("org.jetbrains.kotlin:kotlin-reflect:1.9.20")
 
     // Use the Kotlin test library.
-    testImplementation("org.jetbrains.kotlin:kotlin-test")
+    testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.20")
 
     // Use the Kotlin JUnit integration.
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:1.9.20")
 
-    testImplementation("org.bouncycastle:bc-fips:1.0.2.3")
-
+    testImplementation("org.bouncycastle:bc-fips:1.0.2.4")
 //    testImplementation("org.bouncycastle:bcprov-jdk15on:1.70")
 }
 
@@ -73,19 +76,12 @@ ext["ossrhPassword"] = null
 
 // Grabbing secrets from local.properties file or from environment variables, which could be used on CI
 val secretPropsFile = project.rootProject.file("local.properties")
-
 if (secretPropsFile.exists()) {
-
     // Retrieving variables from the properties file
-    secretPropsFile.reader().use {
-        Properties().apply {
-            load(it)
-        }
-    }.onEach { (name, value) ->
-        ext[name.toString()] = value
-    }
+    val localProperties = Properties()
+    localProperties.load(secretPropsFile.inputStream())
+    localProperties.forEach { prop -> ext[prop.key.toString()] = prop.value }
 } else {
-
     // Retrieving variables from the properties file
     ext["signing.keyId"] = System.getenv("SIGNING_KEY_ID")
     ext["signing.password"] = System.getenv("SIGNING_PASSWORD")
@@ -139,7 +135,6 @@ publishing {
                         name.set("Maksim Ustinov")
                         email.set("mustinov@keepersecurity.com")
                     }
-
                 }
                 contributors {
                     contributor {
@@ -154,7 +149,6 @@ publishing {
                         name.set("Maksim Ustinov")
                         url.set("https://github.com/maksimu")
                     }
-
                 }
                 scm {
                     connection.set("scm:git:git://github.com/Keeper-Security/secrets-manager.git")
@@ -183,7 +177,6 @@ publishing {
         }
     }
 }
-
 
 signing {
     sign(publishing.publications["mavenJava"])
