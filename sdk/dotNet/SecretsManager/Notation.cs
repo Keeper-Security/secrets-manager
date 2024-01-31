@@ -108,7 +108,7 @@ namespace SecretsManager
         }
 
         // data class to represent parsed notation section
-        internal class NotationSection
+        public class NotationSection
         {
             public string Section = null;   // section name - ex. prefix
             public bool IsPresent = false;  // presence flag
@@ -281,7 +281,7 @@ namespace SecretsManager
             return result;
         }
 
-        internal static List<NotationSection> ParseNotation(string notation, bool legacyMode = false)
+        public static List<NotationSection> ParseNotation(string notation, bool legacyMode = false)
         {
             if (string.IsNullOrEmpty(notation))
                 throw new Exception("Keeper notation is missing or invalid.");
