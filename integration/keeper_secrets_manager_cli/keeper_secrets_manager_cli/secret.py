@@ -359,9 +359,9 @@ class Secret:
         except Exception as err:
             raise KsmCliException("JSONPath failed: {}".format(err))
 
-    def query(self, uids=None, titles=None, field=None, output_format='json', jsonpath_query=None,
-              force_array=False, load_references=False, unmask=False, use_color=None, inflate=True,
-              raw=False):
+    def query(self, uids=None, folder=None, recursive=False, titles=None, field=None,
+              output_format='json', jsonpath_query=None, force_array=False,
+              load_references=False, unmask=False, use_color=None, inflate=True, raw=False):
 
         if use_color is None:
             use_color = self.cli.use_color
@@ -390,16 +390,29 @@ class Secret:
         if len(secrets) == 0 and fetch_uids is not None:
             raise KsmCliException("Cannot find requested record(s).")
 
+        folders = self.cli.client.get_folders() if folder and recursive else []
+
         for record in secrets:
             add_record = False
 
-            # If we are searching by title, the fetch_uids was None, we have all the records. We need to filter
-            # them by the title or uids.
-            if len(titles) > 0:
-                if record.title in titles or record.uid in uids:
+            if folder:
+                if record.inner_folder_uid == folder or (not record.inner_folder_uid and record.folder_uid == folder):
                     add_record = True
+                elif recursive and (record.inner_folder_uid or record.folder_uid):
+                    fldr = record.inner_folder_uid or record.folder_uid
+                    fldr = str(fldr) if fldr else ''
+                    while fldr and fldr != folder:
+                        fldr = next((x.parent_uid for x in folders if x.folder_uid == fldr), '')
+                    if fldr == folder:
+                        add_record = True
             else:
-                add_record = True
+                # If we are searching by title, the fetch_uids was None, we have all the records. We need to filter
+                # them by the title or uids.
+                if len(titles) > 0:
+                    if record.title in titles or record.uid in uids:
+                        add_record = True
+                else:
+                    add_record = True
 
             if add_record is True:
                 records.append(self._record_to_dict(record,
@@ -435,12 +448,12 @@ class Secret:
             table.add_row([record["uid"], record["type"], record["title"]])
         return "\n" + table.get_string() + "\n"
 
-    def secret_list(self, uids=None, output_format='json', use_color=None):
+    def secret_list(self, uids=None, folder=None, recursive=False, output_format='json', use_color=None):
 
         if use_color is None:
             use_color = self.cli.user_color
 
-        record_dict = self.query(uids=uids, output_format='dict', unmask=True, use_color=use_color)
+        record_dict = self.query(uids=uids, folder=folder, recursive=recursive, output_format='dict', unmask=True, use_color=use_color)
         if output_format == 'text':
             self.cli.output(self._format_list(record_dict, use_color=use_color))
         elif output_format == 'json':
