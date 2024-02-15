@@ -86,7 +86,7 @@ const sign = async (data: Uint8Array, keyId: string, storage: KeyValueStorage): 
     const sign = createSign('SHA256')
     sign.update(data)
     const sig = sign.sign(key)
-    return Promise.resolve(sig)
+    return sig
 }
 
 const importKey = async (keyId: string, key: Uint8Array, storage?: KeyValueStorage): Promise<void> => {
@@ -98,10 +98,10 @@ const importKey = async (keyId: string, key: Uint8Array, storage?: KeyValueStora
 
 const encrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage, useCBC?: boolean): Promise<Uint8Array> => {
     const key = await loadKey(keyId, storage)
-    return _encrypt(data, key, useCBC)
+    return await _encrypt(data, key, useCBC)
 }
 
-const _encrypt = (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<Uint8Array> => {
+const _encrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<Uint8Array> => {
     if (useCBC) {
         return _encryptCBC(data, key)
     }
@@ -109,18 +109,17 @@ const _encrypt = (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<
     const cipher = createCipheriv('aes-256-gcm', key, iv)
     const encrypted = Buffer.concat([cipher.update(data), cipher.final()])
     const tag = cipher.getAuthTag()
-    const result = Buffer.concat([iv, encrypted, tag])
-    return Promise.resolve(result)
+    return Buffer.concat([iv, encrypted, tag])
 }
 
-const _encryptCBC = async (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
+const _encryptCBC = (data: Uint8Array, key: Uint8Array): Uint8Array => {
     let iv = randomBytes(16);
     let cipher = createCipheriv("aes-256-cbc", key, iv).setAutoPadding(true);
     let encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
     return Buffer.concat([iv, encrypted]);
 }
 
-const _decrypt = (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<Uint8Array> => {
+const _decrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<Uint8Array> => {
     if (useCBC) {
         return _decryptCBC(data, key)
     }
@@ -129,10 +128,10 @@ const _decrypt = (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<
     const tag = data.subarray(data.length - 16)
     const cipher = createDecipheriv('aes-256-gcm', key, iv)
     cipher.setAuthTag(tag)
-    return Promise.resolve(Buffer.concat([cipher.update(encrypted), cipher.final()]))
+    return Buffer.concat([cipher.update(encrypted), cipher.final()])
 }
 
-const _decryptCBC = async (data: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
+const _decryptCBC = (data: Uint8Array, key: Uint8Array): Uint8Array => {
     let iv = data.subarray(0, 16)
     let encrypted = data.subarray(16)
     let cipher = createDecipheriv("aes-256-cbc", key, iv).setAutoPadding(true)
@@ -153,7 +152,7 @@ const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, s
 
 const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage, useCBC?: boolean): Promise<Uint8Array> => {
     const key = await loadKey(keyId, storage)
-    return _decrypt(data, key, useCBC)
+    return await _decrypt(data, key, useCBC)
 }
 
 function hash(data: Uint8Array): Promise<Uint8Array> {
