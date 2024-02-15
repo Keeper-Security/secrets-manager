@@ -1,0 +1,58 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Get Record
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: "Get Record By UID"
+      keeper_get_record:
+        uid: "{{ uid }}"
+        allow:
+          - login
+          - password
+          - phone
+          - D1
+          - D1_1
+      register: "my_record"
+
+    - name: "The Record"
+      debug:
+        msg: "{{ my_record.record }}"
+        verbosity: 0
+
+    - name: Check for login
+      assert:
+        that:
+          - my_record.record.login[0] == "MYLOGIN"
+        fail_msg: "did not contain MYLOGIN"
+
+    - name: Check for password
+      assert:
+        that:
+          - my_record.record.password[0] == "MYPASSWORD"
+        fail_msg: "did not contain MYPASSWORD"
+
+    - name: Check for D1
+      assert:
+        that:
+          - my_record.record.D1[0] == "DUP 1"
+        fail_msg: "did not contain DUP 1"
+
+    - name: Check for D1_1
+      assert:
+        that:
+          - my_record.record.D1_1[0] == "DUP 2"
+        fail_msg: "did not contain DUP 2"
+
+    - name: Check for phone, first number
+      assert:
+        that:
+          - my_record.record.phone[0].number == "15551234"
+        fail_msg: "did not contain 15551234"
+
+    - name: Check for phone, second number
+      assert:
+        that:
+          - my_record.record.phone[1].number == "15557890"
+        fail_msg: "did not contain 15557890"
