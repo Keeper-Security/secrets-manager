@@ -19,9 +19,10 @@ import sys
 from colorama import Fore, Style
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_cli.common import launch_editor
-from keeper_secrets_manager_core.core import SecretsManager
+from keeper_secrets_manager_core.core import SecretsManager, CreateOptions
 from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
 from keeper_secrets_manager_helper.record import Record
+from keeper_secrets_manager_helper.v3.record import Record as RecordV3
 from keeper_secrets_manager_helper.field_type import FieldType
 from keeper_secrets_manager_helper.exception import FileSyntaxException
 from .table import Table, ColumnAlign
@@ -739,6 +740,43 @@ class Secret:
             raise KsmCliException(f"{err}")
 
         print("The following is the new record UID ...", file=sys.stderr)
+        return self.cli.output(record_uid)
+
+    def add_record_from_clone(self, uid: str, title: str):
+
+        record_uid = ''  # new record UID
+        self._check_if_can_add_records()
+
+        try:
+            recs = self.cli.client.get_secrets([uid]) or []
+            if recs:
+                rec = recs[0]
+                if rec.folder_uid:
+                    folder_options = CreateOptions(rec.folder_uid, rec.inner_folder_uid)
+                    record_data = {
+                        "version": "v3",
+                        "kind": "KeeperRecord",
+                        "data": [{
+                            "recordType": rec.type,
+                            "title": title if title else rec.title,
+                            "notes": rec.dict.get("notes", ""),
+                            "fields": rec.dict.get("fields", []),
+                            "customFields": rec.dict.get("custom", [])
+                        }]
+                    }
+                    records = RecordV3.create_from_data(record_data)
+                    record = records[0]
+                    record_create_obj = record.get_record_create_obj()
+                    record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj)
+                else:
+                    print(f"Unable to find the parent shared folder for record {uid} - individually shared records cannot be cloned.", file=sys.stderr)
+            else:
+                print(f"Record UID not found {uid}", file=sys.stderr)
+        except Exception as err:
+            raise KsmCliException(f"{err}")
+
+        if record_uid:
+            print("The following is the new record UID ...", file=sys.stderr)
         return self.cli.output(record_uid)
 
     def generate_password(self, length, lowercase, uppercase, digits, special_characters):
