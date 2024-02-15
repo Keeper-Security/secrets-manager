@@ -56,6 +56,7 @@ class AliasedGroup(HelpColorsGroup):
         "secret",
         "totp",
         "download",
+        "upload",
         "get",
         "list",
         "notation",
@@ -636,6 +637,20 @@ def secret_update_command(ctx, uid, field, custom_field, field_json, custom_fiel
 
 
 @click.command(
+    name='upload',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--uid', '-u', required=True, type=str, help='UID of the secret.')
+@click.option('--file', '-f', required=True, type=str, help='Path to the file to upload.')
+@click.option('--title', '-t', type=str, help='File title (defaults to the filename if none provided).')
+@click.pass_context
+def secret_upload_command(ctx, uid, file, title):
+    """Upload a file to a secret record"""
+    ctx.obj["secret"].upload(uid=uid, file=file, title=title)
+
+
+@click.command(
     name='download',
     cls=HelpColorsCommand,
     help_options_color='blue'
@@ -897,6 +912,7 @@ secret_command.add_command(secret_get_command)
 secret_command.add_command(secret_notation_command)
 secret_command.add_command(secret_update_command)
 secret_command.add_command(secret_add_command)
+secret_command.add_command(secret_upload_command)
 secret_command.add_command(secret_download_command)
 secret_command.add_command(secret_totp_command)
 secret_command.add_command(secret_password_command)
