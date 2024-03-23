@@ -4,6 +4,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.6.4
+- KSM-501 - Switched to non-strict JSON parser
+- Upgraded some dependencies to latest versions and gradle to gradle-8.6
+
 ## 16.6.3
 - KSM-486 - Fix security provider not supporting AES/CBC/PKCS7Padding
 - KSM-473 - Make Notation function public
