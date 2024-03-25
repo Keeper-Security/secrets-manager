@@ -6,12 +6,12 @@ import java.util.*
 group = "com.keepersecurity.secrets-manager"
 
 // During publishing, If version ends with '-SNAPSHOT' then it will be published to Maven snapshot repository
-version = "16.6.3"
+version = "16.6.4"
 
 plugins {
     `java-library`
-    kotlin("jvm") version "1.9.20"
-    kotlin("plugin.serialization") version "1.9.20"
+    kotlin("jvm") version "1.9.23"
+    kotlin("plugin.serialization") version "1.9.23"
     `maven-publish`
     signing
     id("io.github.gradle-nexus.publish-plugin") version "1.3.0"
@@ -42,18 +42,18 @@ repositories {
 
 dependencies {
     // Align versions of all Kotlin components
-    implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.9.20"))
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.9.23"))
 
     // Use the Kotlin JDK 8 standard library.
-    api("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.20")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
-    implementation("org.jetbrains.kotlin:kotlin-reflect:1.9.20")
+    api("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.23")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation("org.jetbrains.kotlin:kotlin-reflect:1.9.23")
 
     // Use the Kotlin test library.
-    testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.20")
+    testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.23")
 
     // Use the Kotlin JUnit integration.
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:1.9.20")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:1.9.23")
 
     testImplementation("org.bouncycastle:bc-fips:1.0.2.4")
 //    testImplementation("org.bouncycastle:bcprov-jdk15on:1.70")
