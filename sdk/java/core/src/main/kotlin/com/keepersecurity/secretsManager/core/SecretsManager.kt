@@ -813,7 +813,11 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
                 " Error parsing record type - KSM SDK is behind/ahead of record/field type definitions." +
                 " Please upgrade to latest version. If you need assistance please email support@keepersecurity.com")
         //println(e.message)
-        recordData = nonStrictJson.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
+        try {
+            recordData = nonStrictJson.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
+        } catch (x: Exception) {
+            println(x.message)
+        }
     }
 
     return if (recordData != null) KeeperRecord(recordKey, record.recordUid, null, null, record.innerFolderUid, recordData, record.revision, files) else null
