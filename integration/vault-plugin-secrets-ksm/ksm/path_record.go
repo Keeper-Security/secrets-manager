@@ -14,6 +14,9 @@ import (
 // pathPatternRecord is the string used to define the base path of the record endpoint.
 const pathPatternRecord = "record/?$"
 
+// pathPatternRecordAsPathParam is the string used to define the base path of the record endpoint.
+const pathPatternRecordAsPathParam = "^record/(?P<uid>[A-Za-z0-9_-]{22})$"
+
 // pathPatternRecordCreate is the string used to define the base path of the record create endpoint.
 const pathPatternRecordCreate = "record/create/?$"
 
@@ -59,6 +62,30 @@ func (b *backend) pathRecordsList() *framework.Path {
 
 		HelpSynopsis:    pathRecordListHelpSyn,
 		HelpDescription: pathRecordListHelpDesc,
+	}
+}
+
+func (b *backend) pathRecord() *framework.Path {
+	return &framework.Path{
+		Pattern: pathPatternRecordAsPathParam,
+		Fields: map[string]*framework.FieldSchema{
+			keyRecordUid: {
+				Type:        framework.TypeString,
+				Description: descRecordUid,
+				Required:    true,
+			},
+		},
+		Operations: map[logical.Operation]framework.OperationHandler{
+			logical.ReadOperation: &framework.PathOperation{
+				Callback: withFieldValidator(b.pathRecordRead),
+			},
+			logical.DeleteOperation: &framework.PathOperation{
+				Callback: withFieldValidator(b.pathRecordDelete),
+			},
+		},
+		ExistenceCheck:  b.recordExistenceCheck,
+		HelpSynopsis:    pathRecordHelpSyn,
+		HelpDescription: pathRecordHelpDesc,
 	}
 }
 
@@ -408,6 +435,10 @@ func (b *backend) pathRecordCreate(ctx context.Context, req *logical.Request, d 
 }
 
 func folderExists(sm *core.SecretsManager, uid string) (bool, error) {
+	if uid == "" {
+		return false, nil
+	}
+
 	records, err := sm.GetSecrets([]string{})
 	if err != nil {
 		return false, err
