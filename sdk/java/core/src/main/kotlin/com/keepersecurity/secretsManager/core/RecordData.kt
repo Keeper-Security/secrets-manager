@@ -595,7 +595,7 @@ data class Passkeys @JvmOverloads constructor(
     var required: Boolean? = null,
     var privacyScreen: Boolean? = null,
     val value: MutableList<Passkey>) : KeeperRecordField() {
-    constructor(value: Passkey): this(null, null, mutableListOf(value))
+    constructor(value: Passkey): this(null, null, null, mutableListOf(value))
 }
 
 @Serializable
