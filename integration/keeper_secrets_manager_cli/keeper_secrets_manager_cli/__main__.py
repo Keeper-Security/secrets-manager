@@ -67,6 +67,7 @@ class AliasedGroup(HelpColorsGroup):
         "add",
         "editor",
         "field",
+        "clone",
         "record",
         "file",
         "cache",
@@ -249,7 +250,8 @@ class Mutex(click.Option):
         for mutex_opt in self.not_required_if:
             if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
                 if current_opt:
-                    raise click.UsageError("Illegal usage: '" + str(self.name) + "' is mutually exclusive with " + str(mutex_opt) + ".")
+                    opt = str(mutex_opt) if len(mutex_opt) > 1 else f"'{str(mutex_opt[0])}'"
+                    raise click.UsageError("Illegal usage: '" + str(self.name) + "' is mutually exclusive with " + opt + ".")
                 else:
                     self.prompt = None
         for mutex_opt in self.required_if:
@@ -530,10 +532,14 @@ def secret_command(ctx):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-@click.option('--uid', "-u", type=str, multiple=True)
+@click.option('--uid', '-u', type=str, multiple=True, help='List specific records by Record UID', cls=Mutex, not_required_if=[('folder',)])
+@click.option('--folder', '-f', type=str, help='List only records in specified folder UID')
+@click.option('--recursive', '-r', is_flag=True, help='List recursively all records including subfolders of the folder UID')
+@click.option('--query', '-q', type=str, help='List records matching the JSONPath query')
+@click.option('--show-value', '-v', is_flag=True, help='Print matching value instead of record title')
 @click.option('--json', is_flag=True, help='Return secret as JSON')
 @click.pass_context
-def secret_list_command(ctx, uid, json):
+def secret_list_command(ctx, uid, folder, recursive, query, show_value, json):
     """List all secrets"""
 
     output = "text"
@@ -542,6 +548,10 @@ def secret_list_command(ctx, uid, json):
 
     ctx.obj["secret"].secret_list(
         uids=uid,
+        folder=folder,
+        recursive=recursive,
+        query=query,
+        show_value=show_value,
         output_format=output,
         use_color=ctx.obj["cli"].use_color
     )
@@ -624,15 +634,19 @@ def secret_notation_command(ctx, text):
 @click.option('--field-json', type=str, multiple=True, help="Update value in field section of vault using JSON")
 @click.option('--custom-field-json', type=str, multiple=True,
               help="Update value in custom field section of vault using JSON")
+@click.option('--title', '-t', type=str, help="Update record title.")
+@click.option('--notes', '-n', type=str, help="Update record notes.")
 @click.pass_context
-def secret_update_command(ctx, uid, field, custom_field, field_json, custom_field_json):
+def secret_update_command(ctx, uid, field, custom_field, field_json, custom_field_json, title, notes):
     """Update an existing record"""
     ctx.obj["secret"].update(
         uid=uid,
         fields=field,
         custom_fields=custom_field,
         fields_json=field_json,
-        custom_fields_json=custom_field_json
+        custom_fields_json=custom_field_json,
+        title=title,
+        notes=notes
     )
 
 
@@ -827,7 +841,7 @@ def secret_add_command():
     help_options_color='blue'
 )
 @click.pass_context
-@click.option('--shared-folder-uid', '--sf', required=True, type=str, help="Place record in folder with UID.")
+@click.option('--storage-folder-uid', '--sf', required=True, type=str, help="Place record in folder with UID.")
 @click.option('--record-type', '--rt', required=True, type=str, help="Record type")
 @click.option('--password-generate', '-p', is_flag=True, help='Generate passwords for empty password fields.')
 @click.option('--title', '-t', type=str, help="Record title")
@@ -836,13 +850,13 @@ def secret_add_command():
               help='File format to display in editor.')
 @click.option('--editor', '-e', type=str, help='Application to use to edit record data.')
 @click.option('--version', type=click.Choice(['v3'], case_sensitive=False), default='v3', help='Record version.')
-def secret_add_editor_command(ctx, shared_folder_uid, record_type, password_generate, title, notes,
+def secret_add_editor_command(ctx, storage_folder_uid, record_type, password_generate, title, notes,
                               output_format, editor, version):
     """Add a secret record via a text editor"""
 
     ctx.obj["secret"].add_record_interactive(
         version=version,
-        folder_uid=shared_folder_uid,
+        folder_uid=storage_folder_uid,
         record_type=record_type,
         output_format=output_format,
         password_generate_flag=password_generate,
@@ -859,14 +873,14 @@ def secret_add_editor_command(ctx, shared_folder_uid, record_type, password_gene
     help_options_color='blue'
 )
 @click.pass_context
-@click.option('--shared-folder-uid', '--sf', required=True, type=str, help="Place record in folder with UID.")
+@click.option('--storage-folder-uid', '--sf', required=True, type=str, help="Place record in folder with UID.")
 @click.option('--file', '-f', required=True, type=str, help='Add records from record script file.')
 @click.option('--password-generate', '-p', is_flag=True, help='Generate passwords for empty password fields.')
-def secret_add_file_command(ctx, shared_folder_uid, file, password_generate):
+def secret_add_file_command(ctx, storage_folder_uid, file, password_generate):
     """Add a secret record(s) from a file"""
 
     ctx.obj["secret"].add_record_from_file(
-        folder_uid=shared_folder_uid,
+        folder_uid=storage_folder_uid,
         file=file,
         password_generate_flag=password_generate,
     )
@@ -879,20 +893,20 @@ def secret_add_file_command(ctx, shared_folder_uid, file, password_generate):
     help_options_color='blue'
 )
 @click.pass_context
-@click.option('--shared-folder-uid', '--sf', required=True, type=str, help="Place record in folder with UID.")
+@click.option('--storage-folder-uid', '--sf', required=True, type=str, help="Place record in folder with UID.")
 @click.option('--record-type', '--rt', required=True, type=str, help="Record type")
 @click.option('--title', '-t', required=True, type=str, help="Record title")
 @click.option('--password-generate', '-p', is_flag=True, help='Generate passwords for empty password fields.')
 @click.option('--notes', '-n', type=str, help="Record simple note")
 @click.option('--version', type=click.Choice(['v3'], case_sensitive=False), default='v3', help='Record version.')
 @click.argument('field_args', type=str, nargs=-1)
-def secret_add_field_command(ctx, shared_folder_uid, record_type, title, password_generate, notes, version,
+def secret_add_field_command(ctx, storage_folder_uid, record_type, title, password_generate, notes, version,
                              field_args):
     """Add a secret record from a command line field arguments"""
 
     ctx.obj["secret"].add_record_from_field_args(
         version=version,
-        folder_uid=shared_folder_uid,
+        folder_uid=storage_folder_uid,
         password_generate_flag=password_generate,
         record_type=record_type,
         title=title,
@@ -902,6 +916,32 @@ def secret_add_field_command(ctx, shared_folder_uid, record_type, title, passwor
     print("", file=sys.stderr)
 
 
+def validate_non_empty(ctx, param, value):
+    """Validate that parameter's value is not an empty string"""
+    if isinstance(value, str) and value != "":
+        return value
+    raise click.BadParameter("Empty strings are not allowed")
+
+
+@click.command(
+    name='clone',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.pass_context
+@click.option('--uid', '-u', required=True, type=str, callback=validate_non_empty, help="Record UID to clone")
+@click.option('--title', '-t', type=str, help="New record title")
+def secret_add_clone_command(ctx, uid, title):
+    """Add new record by duplicating existing record"""
+
+    ctx.obj["secret"].add_record_from_clone(
+        uid=uid,
+        title=title
+    )
+    print("", file=sys.stderr)
+
+
+secret_add_command.add_command(secret_add_clone_command)
 secret_add_command.add_command(secret_add_field_command)
 secret_add_command.add_command(secret_add_file_command)
 secret_add_command.add_command(secret_add_editor_command)
@@ -1186,7 +1226,7 @@ def quit_command():
 @click.option('--credentials', '-c', type=str, metavar="UID", help="Keeper record with credentials to access destination key/value store.",
     cls=Mutex,
     # not_required_if=[('type','json')],
-    required_if=[('type','azure'), ('type','aws'), ('type','gcp')]
+    required_if=[('type', 'azure'), ('type', 'aws'), ('type', 'gcp')]
 )
 @click.option('--type', '-t', type=click.Choice(['aws', 'azure', 'gcp', 'json']), default='json', help="Type of the target key/value storage (aws, azure, gcp, json).", show_default=True)
 @click.option('--dry-run', '-n', is_flag=True, help='Perform a trial run with no changes made.')
