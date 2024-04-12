@@ -17,7 +17,7 @@ import java.util.*
 import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj16.6.3"
+const val KEEPER_CLIENT_VERSION = "mj16.6.4"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -800,21 +800,23 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
 
     // When SDK is behind/ahead of record/field type definitions then
     // strict mapping between JSON attributes and object properties
-    // will fail on any unknown field/key so just skip the record with proper error message
+    // will fail on any unknown field/key - currently just log the error
+    // and continue without the field - nb! field will be lost on save
+    var recordData: KeeperRecordData? = null
     try {
-        val recordData = Json.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
-        return KeeperRecord(recordKey, record.recordUid, null, null, record.innerFolderUid, recordData, record.revision, files)
+        recordData = Json.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
     } catch (e: Exception) {
         // New/missing field: Polymorphic serializer was not found for class discriminator 'UNKNOWN'...
         // New/missing field property (field def updated): Encountered unknown key 'UNKNOWN'.
         // Avoid 'ignoreUnknownKeys = true' to prevent erasing new properties on save/update
-        println("Skipped record ${record.recordUid}\n"+
+        println("Record ${record.recordUid} has unexpected data properties (ignored).\n"+
                 " Error parsing record type - KSM SDK is behind/ahead of record/field type definitions." +
                 " Please upgrade to latest version. If you need assistance please email support@keepersecurity.com")
-        println(e.message)
+        //println(e.message)
+        recordData = nonStrictJson.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
     }
 
-    return null
+    return if (recordData != null) KeeperRecord(recordKey, record.recordUid, null, null, record.innerFolderUid, recordData, record.revision, files) else null
 }
 
 @ExperimentalSerializationApi
