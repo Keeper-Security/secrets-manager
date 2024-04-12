@@ -14,18 +14,19 @@ import json
 import yaml
 import os
 import re
-from jsonpath_rw_ext import parse
 import sys
 from colorama import Fore, Style
+from jsonpath_rw_ext import parse
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_cli.common import launch_editor
-from keeper_secrets_manager_core.core import SecretsManager, CreateOptions
+from keeper_secrets_manager_core.core import SecretsManager, CreateOptions, KeeperFolder
 from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
 from keeper_secrets_manager_helper.record import Record
 from keeper_secrets_manager_helper.v3.record import Record as RecordV3
 from keeper_secrets_manager_helper.field_type import FieldType
 from keeper_secrets_manager_helper.exception import FileSyntaxException
 from .table import Table, ColumnAlign
+from typing import List, Tuple
 import uuid
 import tempfile
 
@@ -706,11 +707,13 @@ class Secret:
         self._check_if_can_add_records()
 
         try:
+            folders = self.cli.client.get_folders()
             records = Record.create_from_file(file, password_generate=password_generate_flag)
             record_uids = []
             for record in records:
                 record_create_obj = record.get_record_create_obj()
-                record_uid = self.cli.client.create_secret(folder_uid, record_create_obj)
+                folder_options, folders = self.build_folder_options(folder_uid, folders)
+                record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj, folders)
                 record_uids.append(record_uid)
         except FileSyntaxException as err:
             raise KsmCliException(str(err))
@@ -735,7 +738,9 @@ class Secret:
             )
             record = records[0]
             record_create_obj = record.get_record_create_obj()
-            record_uid = self.cli.client.create_secret(folder_uid, record_create_obj)
+
+            folder_options, folders = self.build_folder_options(folder_uid)
+            record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj, folders)
         except Exception as err:
             raise KsmCliException(f"{err}")
 
@@ -778,6 +783,26 @@ class Secret:
         if record_uid:
             print("The following is the new record UID ...", file=sys.stderr)
         return self.cli.output(record_uid)
+
+    def build_folder_options(self, folder_uid: str, folders: List[KeeperFolder] = []) -> Tuple[CreateOptions, List[KeeperFolder]]:
+        """ Build and return folder create options and folders list """
+
+        # find closest shared folder parent
+        if not folders:
+            folders = self.cli.client.get_folders() or []
+
+        shared_folder = next((x for x in folders if x.folder_uid == folder_uid), None)
+        while shared_folder and shared_folder.parent_uid:
+            shared_folder = next((x for x in folders if x.folder_uid == shared_folder.parent_uid), shared_folder)
+
+        if shared_folder is None:
+            raise KsmCliException(f'Unable to find the shared folder for {folder_uid}')
+        if not shared_folder.folder_key:
+            raise KsmCliException(f'Unable to find folder key for folder {shared_folder.folder_uid}')
+
+        # create folder options
+        create_options = CreateOptions(shared_folder.folder_uid, folder_uid)
+        return create_options, folders
 
     def generate_password(self, length, lowercase, uppercase, digits, special_characters):
 

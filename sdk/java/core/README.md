@@ -4,6 +4,11 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.6.4
+- KSM-501 - Switched to non-strict JSON parser
+- KSM-506 - Adding support for Privacy screen in the passkey field type
+- Upgraded some dependencies to latest versions and gradle to gradle-8.6
+
 ## 16.6.3
 - KSM-486 - Fix security provider not supporting AES/CBC/PKCS7Padding
 - KSM-473 - Make Notation function public

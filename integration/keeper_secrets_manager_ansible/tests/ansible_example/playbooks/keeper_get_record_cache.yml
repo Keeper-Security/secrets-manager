@@ -1,0 +1,46 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Get Record Cache
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: Generate a Keeper Record Cache secret
+      keeper_password:
+        length: 64
+      register: keeper_record_cache_secret
+      # no_log: True
+
+    - name: Store the Keeper Record Cache secret into variables.
+      set_fact:
+        keeper_record_cache_secret: "{{ keeper_record_cache_secret.password }}"
+      # no_log: True
+
+    - name: Cache records. Will use keeper_record_cache_secret from above.
+      keeper_cache_records:
+        titles:
+          - "{{ title }}"
+      register: my_records
+      # no_log: True
+
+    - name: "Get Record By Title"
+      keeper_get_record:
+        title: "{{ title }}"
+      register: "my_record"
+
+    - name: "The Record"
+      debug:
+        msg: "{{ my_record.record }}"
+        verbosity: 0
+
+    - name: Check for bad label 1
+      assert:
+        that:
+          - my_record.record.This_I_A_Bad_Label[0] == "BAD"
+        fail_msg: "did not contain BAD"
+
+    - name: Check for bad label 2
+      assert:
+        that:
+          - my_record.record.This_I_A_Bad_Label_1[0] == "BAD 2"
+        fail_msg: "did not contain BAD 2"

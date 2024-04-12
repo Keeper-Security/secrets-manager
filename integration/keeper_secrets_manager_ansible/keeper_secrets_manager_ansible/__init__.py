@@ -20,7 +20,6 @@ import sys
 import re
 import json
 import random
-from re import sub
 from enum import Enum
 import traceback
 import pickle
@@ -63,7 +62,7 @@ class KeeperFieldType(Enum):
 
 
 class KeeperAnsible:
-    """ A class containing common method used by the Ansible plugin and also talked to Keeper Python SDK
+    """ A class containing a common method used by the Ansible plugin and also talked to Keeper Python SDK
     """
 
     KEY_PREFIX = "keeper"
@@ -100,7 +99,8 @@ class KeeperAnsible:
 
     def __init__(self, task_vars, action_module=None, task_attributes=None, force_in_memory=False):
 
-        """ Build the config used by the Keeper Python SDK
+        """
+        Build the config used by the Keeper Python SDK
 
         The configuration is mainly read from a JSON file.
 
@@ -138,7 +138,7 @@ class KeeperAnsible:
         self.secret_values = []
 
         def camel_case(text):
-            text = sub(r"([_\-])+", " ", text).title().replace(" ", "")
+            text = re.sub(r"([_\-])+", " ", text).title().replace(" ", "")
             return text[0].lower() + text[1:]
 
         try:
@@ -200,8 +200,9 @@ class KeeperAnsible:
                 # not to leave config files lying around.
                 in_memory_storage = True
 
-                # If we have parameter with a Base64 config, use it for the config_option and force
+                # If we have a parameter with a Base64 config, use it for the config_option and force
                 # the config to be in memory.
+
                 base64_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CONFIG_BASE64)
                 if base64_key in task_vars:
                     config_option = task_vars.get(base64_key)
@@ -219,8 +220,9 @@ class KeeperAnsible:
                         if keeper_key in task_vars:
                             config_option[camel_key] = task_vars[keeper_key]
 
-                    # Token is the odd ball. we need it to be client key in the SDK config. SDK will remove it
-                    # when it is done.
+                    # The token is the odd ball.
+                    # We need it to be client key in the SDK config.
+                    # SDK will remove it when it is done.
                     token_key = KeeperAnsible.keeper_key(KeeperAnsible.TOKEN_KEY)
                     if token_key in task_vars:
                         config_option[KeeperAnsible.CONFIG_CLIENT_KEY] = task_vars[token_key]
@@ -231,7 +233,7 @@ class KeeperAnsible:
                     elif token_key in task_vars:
                         config_option[KeeperAnsible.CONFIG_CLIENT_KEY] = task_vars[token_key]
 
-                    # If no variables were passed in throw an error.
+                    # If no variables were passed in, throw an error.
                     if len(config_option) == 0:
                         raise AnsibleError("There is no config file and the Ansible variable contain no config keys."
                                            " Will not be able to connect to the Keeper server.")
@@ -256,7 +258,8 @@ class KeeperAnsible:
                     elif os.path.isfile(self.config_file) is False:
                         self.config_created = True
 
-                    # Write the variables we have to a JSON file. If we are in here config_option is a dictionary,
+                    # Write the variables we have to a JSON file.
+                    # If we are in here, config_option is a dictionary,
                     # not a Base64 string.
                     with open(self.config_file, "w") as fh:
                         json.dump(config_option, fh, indent=4)
@@ -408,7 +411,7 @@ class KeeperAnsible:
             if titles is not None:
                 records = self.client.get_secrets()
 
-            # If we are getting uid we need only select amount.
+            # If we are getting uid, we need only select amount.
             else:
                 records = self.client.get_secrets(uids)
         except Exception as err:
@@ -486,8 +489,10 @@ class KeeperAnsible:
 
     @staticmethod
     def _gather_secrets(obj):
-        """ Walk the secret structure and get values. These should just be str, list, and dict. Warn if the SDK
-        return something different.
+        """
+        Walk the secret structure and get values.
+        These should just be str, list, and dict.
+        Warn if the SDK returns something different.
         """
         result = []
         if type(obj) is str:
@@ -504,7 +509,8 @@ class KeeperAnsible:
         return result
 
     def stash_secret_value(self, value):
-        """ Parse the result of the secret retrieval and add values to list of secret values.
+        """
+        Parse the result of the secret retrieval and add values to a list of secret values.
         """
         for secret_value in self._gather_secrets(value):
             if secret_value not in self.secret_values:
@@ -549,7 +555,7 @@ class KeeperAnsible:
 
         self.stash_secret_value(values)
 
-        # If we want the entire array, then just return what we got from the field.
+        # If we want the entire array, then return what we got from the field.
         if allow_array is True:
             return values
 
@@ -571,6 +577,45 @@ class KeeperAnsible:
 
         return value
 
+    def get_dict(self, uid=None, title=None, cache=None, allow=None):
+
+        record = self.get_record(uids=uid, titles=title, cache=cache)
+
+        record_dict = {}
+        for field_section in ["fields", "custom"]:
+            for field in record.dict.get(field_section, []):
+                label = field.get("label")
+                type = field.get("type")
+                value = field.get("value", [])
+                key = label if label is not None else type
+
+                if key is None or key == "":
+                    display.vvvvv("record contains a field without a label or type.")
+                    continue
+
+                # Scrub the label to make it a clean key.
+                # Only allow alphanumerics, remove runs of _, remove _ at the start and end of the key.
+                key = re.sub('[^0-9a-zA-Z]+', '_', key)
+                key = re.sub('_+', '_', key)
+                key = re.sub('^_+', '', key)
+                key = re.sub('_+$', '', key)
+
+                if key == "":
+                    display.vvvvv("record contains a field that has no alphanumeric characters. cannot use this field.")
+                    continue
+
+                if key in record_dict:
+                    count = len([x for x in record_dict if x.startswith(key)])
+                    key = key + "_" + str(count)
+
+                if allow is not None and key not in allow:
+                    continue
+
+                record_dict[key] = value
+                self.stash_secret_value(value)
+
+        return record_dict
+
     def set_value(self, field_type, key, value, uid=None, title=None, cache=None):
 
         record = self.get_record(uids=uid, titles=title, cache=cache)
@@ -589,13 +634,14 @@ class KeeperAnsible:
     @staticmethod
     def get_field_type_enum_and_key(args):
 
-        """ Get the field type enum and field key in the Ansible args for a task.
+        """
+        Get the field type enum and field key in the Ansible args for a task.
 
-        For a task that, only allowed one of the allowed field, this method will find the type of field and
+        For a task that only allowed one of the allowed fields, this method will find the type of field and
         the key/label for that field.
 
-        If multiple fields types are specified, an error will be thrown. If no fields are found, an error will be
-        thrown.
+        If multiple fields types are specified, an error will be thrown.
+        If no fields are found, an error will be thrown.
 
         The method will return the KeeperFieldType enum for the field type and the name of the field in Keeper that
         the task requires.
@@ -617,12 +663,14 @@ class KeeperAnsible:
         return KeeperFieldType.get_enum(field_type[0]), field_key
 
     def add_secret_values_to_results(self, results):
-        """ If the 'redact' stdout callback is being used, add the secrets to the results dictionary. The redact
-        stdout callback will remove it from the results. It will use value to remove values from stdout.
+        """
+        If the 'redact' stdout callback is being used, add the secrets to the result dictionary.
+        The redacted stdout callback will remove it from the results.
+        It will use value to remove values from stdout.
         """
 
-        # If we are using the redact stdout callback, add the secrets we retrieve to the special key. The redact
-        # stdout callback will make sure the value is not in the stdout.
+        # If we are using the redacted stdout callback, add the secrets we retrieve to the special key.
+        # The redacted stdout callback will make sure the value is not in the stdout.
         if self.has_redact is True:
             results["_secrets"] = self.secret_values
         return results
@@ -630,24 +678,27 @@ class KeeperAnsible:
     @staticmethod
     def password_complexity_translation(**kwargs):
         """
-        Generate a password complexity dictionary
+        Generate a password complexity dictionary.
 
-        Password complexity differ from place to place :(
+        Password complexity differs from place to place.
 
-        This is in more tune with the Vault UI since most service just want a specific set of characters, but not
-        a quantity. And some characters are illegal for specific services. Neither the SDK and Vault UI address this.
+        This is in more tune with the Vault UI since most services just want a specific set of characters, but not
+        a quantity.
+        And some characters are illegal for specific services.
+        Neither the SDK and Vault UI address this.
         So this is the third standard.
 
-        kwargs
+        Kwargs
 
         * length - Length of the password
         * allow_lowercase - Allow lowercase letters. Default is True.
         * allow_uppercase - Allow uppercase letters. Default is True.
         * allow_digits - Allow digits. Default is True.
         * allow_symbols - Allow symbols. Default is True
-        * filter_characters - An array of characters not to use. Some servies don't like some characters.
+        * filter_characters - An array of characters not to use. Some services don't like some characters.
 
-        The length is divided by the allowed characters. So with a length of 64, each would get 16 of each character.
+        The length is divided by the allowed characters.
+        So with a length of 64, each would get 16 of all characters.
         If the length cannot be unevenly divided, additional will be added to the first allowed character in the above
         list.
 
@@ -679,7 +730,7 @@ class KeeperAnsible:
         complexity = {
             "length": length,
 
-            # This is not part of the standard, however it's important because some service will not accept certain
+            # This is not part of the standard, however, it's important because some service will not accept certain
             # characters.
             "filter_characters": filter_characters
         }
@@ -713,7 +764,7 @@ class KeeperAnsible:
 
         attempt = 0
         while True:
-            # If allow everything, then just get a lowercase letter
+            # If allow everything, then get a lowercase letter
             if all_true is True:
                 new_char = "abcdefghijklmnopqrstuvwxyz"[random.randint(0, 25)]
 
@@ -736,7 +787,8 @@ class KeeperAnsible:
             if new_char not in kwargs.get("filter_characters"):
                 break
 
-            # Ok, some user might go crazy and filter out every letter, digit, and symbol and cause an infinite loop.
+            # Ok, some user might go overboard and filter out every letter, digit, and symbol
+            # and cause an infinite loop.
             # If we can't find a good character after 25 attempts, error out.
             attempt += 1
             if attempt > 25:
@@ -759,7 +811,8 @@ class KeeperAnsible:
         # The SDK generate_password doesn't know what the filter_characters is, remove it for now.
         filter_characters = kwargs.pop("filter_characters", None)
 
-        # The SDK uses these a params, record complexity use the ones on the right. Translate them.
+        # The SDK uses these a params, record complexity uses the ones on the right.
+        # Translate them.
         kwargs["uppercase"] = kwargs.pop("caps", None)
         kwargs["special_characters"] = kwargs.pop("special", None)
 
