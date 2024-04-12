@@ -66,6 +66,7 @@ class AliasedGroup(HelpColorsGroup):
         "add",
         "editor",
         "field",
+        "clone",
         "record",
         "file",
         "cache",
@@ -887,6 +888,32 @@ def secret_add_field_command(ctx, storage_folder_uid, record_type, title, passwo
     print("", file=sys.stderr)
 
 
+def validate_non_empty(ctx, param, value):
+    """Validate that parameter's value is not an empty string"""
+    if isinstance(value, str) and value != "":
+        return value
+    raise click.BadParameter("Empty strings are not allowed")
+
+
+@click.command(
+    name='clone',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.pass_context
+@click.option('--uid', '-u', required=True, type=str, callback=validate_non_empty, help="Record UID to clone")
+@click.option('--title', '-t', type=str, help="New record title")
+def secret_add_clone_command(ctx, uid, title):
+    """Add new record by duplicating existing record"""
+
+    ctx.obj["secret"].add_record_from_clone(
+        uid=uid,
+        title=title
+    )
+    print("", file=sys.stderr)
+
+
+secret_add_command.add_command(secret_add_clone_command)
 secret_add_command.add_command(secret_add_field_command)
 secret_add_command.add_command(secret_add_file_command)
 secret_add_command.add_command(secret_add_editor_command)
