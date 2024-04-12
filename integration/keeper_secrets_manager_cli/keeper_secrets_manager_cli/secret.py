@@ -556,7 +556,7 @@ class Secret:
 
         return key, value
 
-    def update(self, uid, fields=None, custom_fields=None, fields_json=None, custom_fields_json=None):
+    def update(self, uid, fields=None, custom_fields=None, fields_json=None, custom_fields_json=None, title=None, notes=None):
 
         record = self.cli.client.get_secrets(uids=[uid])
         if len(record) == 0:
@@ -567,6 +567,15 @@ class Secret:
             if label is None or label == "":
                 label = x.get("type")
             return label
+
+        if title is not None:
+            record[0].title = str(title)
+
+        if notes is not None:
+            record[0].dict["notes"] = str(notes)
+
+        if title is not None or notes is not None:
+            record[0]._update()
 
         # Get a list of all labels/type allowed.
         labels = {

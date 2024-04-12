@@ -624,15 +624,19 @@ def secret_notation_command(ctx, text):
 @click.option('--field-json', type=str, multiple=True, help="Update value in field section of vault using JSON")
 @click.option('--custom-field-json', type=str, multiple=True,
               help="Update value in custom field section of vault using JSON")
+@click.option('--title', '-t', type=str, help="Update record title.")
+@click.option('--notes', '-n', type=str, help="Update record notes.")
 @click.pass_context
-def secret_update_command(ctx, uid, field, custom_field, field_json, custom_field_json):
+def secret_update_command(ctx, uid, field, custom_field, field_json, custom_field_json, title, notes):
     """Update an existing record"""
     ctx.obj["secret"].update(
         uid=uid,
         fields=field,
         custom_fields=custom_field,
         fields_json=field_json,
-        custom_fields_json=custom_field_json
+        custom_fields_json=custom_field_json,
+        title=title,
+        notes=notes
     )
 
 
