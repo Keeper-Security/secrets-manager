@@ -17,9 +17,10 @@ import re
 from jsonpath_rw_ext import parse
 import sys
 from colorama import Fore, Style
+from pathlib import Path
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_cli.common import launch_editor
-from keeper_secrets_manager_core.core import SecretsManager
+from keeper_secrets_manager_core.core import SecretsManager, KeeperFileUpload
 from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
 from keeper_secrets_manager_helper.record import Record
 from keeper_secrets_manager_helper.field_type import FieldType
@@ -448,6 +449,25 @@ class Secret:
                        for x in record_dict]
             self.cli.output(json.dumps(records, indent=4))
 
+    def upload(self, uid, file, title):
+
+        # check if file exists and is readable by current user
+        if not (os.path.isfile(file) and os.access(file, os.R_OK)):
+            raise KsmCliException(f"File {file} doesn't exist or isn't readable.")
+
+        records = self.cli.client.get_secrets(uids=[uid])
+        if len(records) == 0:
+            raise KsmCliException(f"Cannot find a record for UID {uid}. Cannot upload {file}")
+
+        record = records[0]
+        fname = Path(file).name
+        title = title if title else fname
+        ksm_file = KeeperFileUpload.from_file(file, fname, title)
+        file_uid = self.cli.client.upload_file(record, file=ksm_file)
+
+        print("The following is the new file UID ...", file=sys.stderr)
+        return self.cli.output(file_uid)
+
     def download(self, uid, name, file_uid, file_output, create_folders=False):
 
         record = self.cli.client.get_secrets(uids=[uid])
@@ -466,7 +486,7 @@ class Secret:
             raise KsmCliException("Cannot find a file named {} for UID {}. Cannot download file".format(name, uid))
 
         if file_output == 'stdout':
-            sys.stderr.buffer.write(file.get_file_data())
+            sys.stdout.buffer.write(file.get_file_data())
         elif file_output == 'stderr':
             sys.stderr.buffer.write(file.get_file_data())
         elif type(file_output) is str:
