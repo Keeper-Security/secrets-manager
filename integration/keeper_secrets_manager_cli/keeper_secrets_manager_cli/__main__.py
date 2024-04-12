@@ -249,7 +249,8 @@ class Mutex(click.Option):
         for mutex_opt in self.not_required_if:
             if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
                 if current_opt:
-                    raise click.UsageError("Illegal usage: '" + str(self.name) + "' is mutually exclusive with " + str(mutex_opt) + ".")
+                    opt = str(mutex_opt) if len(mutex_opt) > 1 else f"'{str(mutex_opt[0])}'"
+                    raise click.UsageError("Illegal usage: '" + str(self.name) + "' is mutually exclusive with " + opt + ".")
                 else:
                     self.prompt = None
         for mutex_opt in self.required_if:
@@ -530,10 +531,14 @@ def secret_command(ctx):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-@click.option('--uid', "-u", type=str, multiple=True)
+@click.option('--uid', '-u', type=str, multiple=True, help='List specific records by Record UID', cls=Mutex, not_required_if=[('folder',)])
+@click.option('--folder', '-f', type=str, help='List only records in specified folder UID')
+@click.option('--recursive', '-r', is_flag=True, help='List recursively all records including subfolders of the folder UID')
+@click.option('--query', '-q', type=str, help='List records matching the JSONPath query')
+@click.option('--show-value', '-v', is_flag=True, help='Print matching value instead of record title')
 @click.option('--json', is_flag=True, help='Return secret as JSON')
 @click.pass_context
-def secret_list_command(ctx, uid, json):
+def secret_list_command(ctx, uid, folder, recursive, query, show_value, json):
     """List all secrets"""
 
     output = "text"
@@ -542,6 +547,10 @@ def secret_list_command(ctx, uid, json):
 
     ctx.obj["secret"].secret_list(
         uids=uid,
+        folder=folder,
+        recursive=recursive,
+        query=query,
+        show_value=show_value,
         output_format=output,
         use_color=ctx.obj["cli"].use_color
     )

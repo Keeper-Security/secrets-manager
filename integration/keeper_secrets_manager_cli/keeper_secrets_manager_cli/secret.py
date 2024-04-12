@@ -152,6 +152,7 @@ class Secret:
             "uid": record.uid,
             "title": record.title,
             "type": record.type,
+            "notes": record.dict.get("notes", ""),
             "fields": standard_fields,
             "custom_fields": custom_fields,
             "files": [{
@@ -361,9 +362,23 @@ class Secret:
         except Exception as err:
             raise KsmCliException("JSONPath failed: {}".format(err))
 
-    def query(self, uids=None, titles=None, field=None, output_format='json', jsonpath_query=None,
-              force_array=False, load_references=False, unmask=False, use_color=None, inflate=True,
-              raw=False):
+    def _query_jsonpath_list(self, jsonpath_query, records):
+        record_list = Secret._adjust_records(records, True)
+        try:
+            results = []
+            jpe = parse(jsonpath_query)
+            for rec in record_list:
+                val = jpe.find(rec)
+                if val and val[0].value:
+                    rec["query_result"] = val[0].value[0] if isinstance(val[0].value, list) else val[0].value
+                    results.append(rec)
+            return results
+        except Exception as err:
+            raise KsmCliException(f"JSONPath failed: {err}") from err
+
+    def query(self, uids=None, folder=None, recursive=False, titles=None, field=None,
+              output_format='json', jsonpath_query=None, force_array=False,
+              load_references=False, unmask=False, use_color=None, inflate=True, raw=False):
 
         if use_color is None:
             use_color = self.cli.use_color
@@ -392,16 +407,29 @@ class Secret:
         if len(secrets) == 0 and fetch_uids is not None:
             raise KsmCliException("Cannot find requested record(s).")
 
+        folders = self.cli.client.get_folders() if folder and recursive else []
+
         for record in secrets:
             add_record = False
 
-            # If we are searching by title, the fetch_uids was None, we have all the records. We need to filter
-            # them by the title or uids.
-            if len(titles) > 0:
-                if record.title in titles or record.uid in uids:
+            if folder:
+                if record.inner_folder_uid == folder or (not record.inner_folder_uid and record.folder_uid == folder):
                     add_record = True
+                elif recursive and (record.inner_folder_uid or record.folder_uid):
+                    fldr = record.inner_folder_uid or record.folder_uid
+                    fldr = str(fldr) if fldr else ''
+                    while fldr and fldr != folder:
+                        fldr = next((x.parent_uid for x in folders if x.folder_uid == fldr), '')
+                    if fldr == folder:
+                        add_record = True
             else:
-                add_record = True
+                # If we are searching by title, the fetch_uids was None, we have all the records. We need to filter
+                # them by the title or uids.
+                if len(titles) > 0:
+                    if record.title in titles or record.uid in uids:
+                        add_record = True
+                else:
+                    add_record = True
 
             if add_record is True:
                 records.append(self._record_to_dict(record,
@@ -428,27 +456,50 @@ class Secret:
                                        use_color=use_color)
 
     @staticmethod
-    def _format_list(record_dict, use_color=True):
+    def _format_list(record_dict, use_color=True, columns=None):
         table = Table(use_color=use_color)
-        table.add_column("UID", data_color=Fore.GREEN)
-        table.add_column("Record Type")
-        table.add_column("Title", data_color=Fore.YELLOW)
-        for record in record_dict:
-            table.add_row([record["uid"], record["type"], record["title"]])
+        if columns:
+            for col in columns:
+                table.add_column(col[1], data_color=col[2])
+            for record in record_dict:
+                table.add_row([record.get(x[0], "") for x in columns])
+        else:
+            table.add_column("UID", data_color=Fore.GREEN)
+            table.add_column("Record Type")
+            table.add_column("Title", data_color=Fore.YELLOW)
+            for record in record_dict:
+                table.add_row([record["uid"], record["type"], record["title"]])
         return "\n" + table.get_string() + "\n"
 
-    def secret_list(self, uids=None, output_format='json', use_color=None):
+    def secret_list(self, uids=None, folder=None, recursive=False, query=None, show_value=False, output_format='json', use_color=None):
 
         if use_color is None:
             use_color = self.cli.user_color
 
-        record_dict = self.query(uids=uids, output_format='dict', unmask=True, use_color=use_color)
-        if output_format == 'text':
-            self.cli.output(self._format_list(record_dict, use_color=use_color))
-        elif output_format == 'json':
-            records = [{"uid": x.get("uid"), "title": x.get("title"), "record_type": x.get("type")}
-                       for x in record_dict]
-            self.cli.output(json.dumps(records, indent=4))
+        loadrefs = True if query else False  # to load fields[] and custom[]
+        record_dict = self.query(uids=uids, folder=folder, recursive=recursive, output_format='dict', load_references=loadrefs, unmask=True, use_color=use_color)
+        if query:
+            items = self._query_jsonpath_list(query, record_dict)
+            if output_format == 'text':
+                columns = [("uid", "UID", Fore.GREEN), ("type", "Record Type", Style.RESET_ALL), ("query_result", "Value", Fore.YELLOW)] if show_value else []
+                self.cli.output(self._format_list(items, use_color=use_color, columns=columns))
+            elif output_format == 'json':
+                records = [{
+                    "uid": x.get("uid", ""),
+                    "record_type": x.get("type", ""),
+                    "title": x.get("title", ""),
+                    "value": x.get("query_result", "")}
+                           for x in items]
+                if not show_value:
+                    records = [{k: v for k, v in x.items() if k != "value"} for x in records]
+                self.cli.output(json.dumps(records, indent=4))
+        else:
+            if output_format == 'text':
+                self.cli.output(self._format_list(record_dict, use_color=use_color))
+            elif output_format == 'json':
+                records = [{"uid": x.get("uid"), "title": x.get("title"), "record_type": x.get("type")}
+                        for x in record_dict]
+                self.cli.output(json.dumps(records, indent=4))
 
     def download(self, uid, name, file_uid, file_output, create_folders=False):
 
