@@ -61,6 +61,7 @@ class AliasedGroup(HelpColorsGroup):
         "list",
         "notation",
         "update",
+        "delete",
         "version",
         "password",
         "template",
@@ -555,7 +556,28 @@ def secret_list_command(ctx, uid, folder, recursive, query, show_value, json):
         output_format=output,
         use_color=ctx.obj["cli"].use_color
     )
+    
+@click.command(
+        name='delete',
+        cls=HelpColorsCommand,
+        help_options_color='blue'
+)
+@click.option('--uid', '-u', type=str, multiple=True, required=True)
+@click.pass_context
+def secret_delete_command(ctx, uid):
+    """Delete secret record"""
 
+    uid_list = []
+    if uid is not None:
+        for u in uid:
+            uid_list.append(u)
+    total_query = len(uid_list)
+
+    if total_query == 0:
+        raise KsmCliException(
+            "No uid or title specified for secret get command.")
+    
+    ctx.obj["secret"].delete(uids=uid_list)
 
 @click.command(
     name='get',
@@ -957,6 +979,7 @@ secret_command.add_command(secret_download_command)
 secret_command.add_command(secret_totp_command)
 secret_command.add_command(secret_password_command)
 secret_command.add_command(secret_template_command)
+secret_command.add_command(secret_delete_command)
 
 
 # EXEC COMMAND

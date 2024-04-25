@@ -627,6 +627,11 @@ class Secret:
 
         return key, value
 
+    def delete(self, uids=None):
+        if uids is None:
+            uids=[]
+        self.cli.client.delete_secret(record_uids=uids)
+ 
     def update(self, uid, fields=None, custom_fields=None, fields_json=None, custom_fields_json=None, title=None, notes=None):
 
         record = self.cli.client.get_secrets(uids=[uid])
