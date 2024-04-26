@@ -8,7 +8,8 @@ For more information see our official documentation page https://docs.keeper.io/
 
 ## 1.1.4
 
-- KSM-507: Added `ksm secret delete` functionality
+- KSM-507: Added `ksm secret delete` command
+- KSM-508: Added search by title to `ksm secret list` command
 
 ## 1.1.3
 

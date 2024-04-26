@@ -472,13 +472,19 @@ class Secret:
                 table.add_row([record["uid"], record["type"], record["title"]])
         return "\n" + table.get_string() + "\n"
 
-    def secret_list(self, uids=None, folder=None, recursive=False, query=None, show_value=False, output_format='json', use_color=None):
+    def secret_list(self, uids=None, folder=None, recursive=False, query=None, show_value=False, title="", output_format='json', use_color=None):
 
         if use_color is None:
             use_color = self.cli.use_color
 
         loadrefs = True if query else False  # to load fields[] and custom[]
         record_dict = self.query(uids=uids, folder=folder, recursive=recursive, output_format='dict', load_references=loadrefs, unmask=True, use_color=use_color)
+        if title:
+            try:
+                filtered = [x for x in record_dict if re.search(title, x.get("title", ""), re.IGNORECASE)]
+                record_dict = filtered
+            except Exception as err:
+                raise KsmCliException(f"Check your regex '{title}' - error: {str(err)}")
         if query:
             items = self._query_jsonpath_list(query, record_dict)
             if output_format == 'text':

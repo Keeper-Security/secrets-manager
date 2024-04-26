@@ -552,21 +552,20 @@ def secret_command(ctx):
 @click.option('--recursive', '-r', is_flag=True, help='List recursively all records including subfolders of the folder UID')
 @click.option('--query', '-q', type=str, help='List records matching the JSONPath query')
 @click.option('--show-value', '-v', is_flag=True, help='Print matching value instead of record title')
+@click.option('--title', '-t', type=str, help='List only records with title matching the regex')
 @click.option('--json', is_flag=True, help='Return secret as JSON')
 @click.pass_context
-def secret_list_command(ctx, uid, folder, recursive, query, show_value, json):
+def secret_list_command(ctx, uid, folder, recursive, query, show_value, title, json):
     """List all secrets"""
 
-    output = "text"
-    if json is True:
-        output = "json"
-
+    output = "json" if json is True else "text"
     ctx.obj["secret"].secret_list(
         uids=uid,
         folder=folder,
         recursive=recursive,
         query=query,
         show_value=show_value,
+        title=title,
         output_format=output,
         use_color=ctx.obj["cli"].use_color
     )
