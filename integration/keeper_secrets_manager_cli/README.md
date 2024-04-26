@@ -6,6 +6,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.1.4
+
+- KSM-507: Added `ksm secret delete` functionality
+
 ## 1.1.3
 
 - KSM-496: Added upload file option

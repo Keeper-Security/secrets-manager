@@ -61,6 +61,7 @@ class AliasedGroup(HelpColorsGroup):
         "list",
         "notation",
         "update",
+        "delete",
         "version",
         "password",
         "template",
@@ -221,6 +222,20 @@ def base_command_help(f):
     f.__doc__ = doc
 
     return f
+
+
+def validate_non_empty(ctx, param, value):
+    """Validate that parameter's value is not an empty string"""
+    if isinstance(value, str) and value != "":
+        return value
+    raise click.BadParameter("Empty strings are not allowed")
+
+
+def validate_non_empty_or_blank_list(ctx, param, value):
+    """Validate parameter's value - list doesn't contain empty strings"""
+    if isinstance(value, tuple) and next((x for x in value if str(x).strip() == ""), None) is None:
+        return value
+    raise click.BadParameter("Empty strings are not allowed")
 
 
 class Mutex(click.Option):
@@ -651,6 +666,20 @@ def secret_update_command(ctx, uid, field, custom_field, field_json, custom_fiel
 
 
 @click.command(
+    name='delete',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--uid', '-u', required=True, type=str, callback=validate_non_empty_or_blank_list, multiple=True, help='UIDs of secrets to delete.')
+@click.option('--json', is_flag=True, help='Return results as JSON')
+@click.pass_context
+def secret_delete_command(ctx, uid, json):
+    """Delete secret records"""
+    output = "json" if json else "text"
+    ctx.obj["secret"].delete(uids=uid, output_format=output, use_color=ctx.obj["cli"].use_color)
+
+
+@click.command(
     name='upload',
     cls=HelpColorsCommand,
     help_options_color='blue'
@@ -916,13 +945,6 @@ def secret_add_field_command(ctx, storage_folder_uid, record_type, title, passwo
     print("", file=sys.stderr)
 
 
-def validate_non_empty(ctx, param, value):
-    """Validate that parameter's value is not an empty string"""
-    if isinstance(value, str) and value != "":
-        return value
-    raise click.BadParameter("Empty strings are not allowed")
-
-
 @click.command(
     name='clone',
     cls=HelpColorsCommand,
@@ -951,6 +973,7 @@ secret_command.add_command(secret_list_command)
 secret_command.add_command(secret_get_command)
 secret_command.add_command(secret_notation_command)
 secret_command.add_command(secret_update_command)
+secret_command.add_command(secret_delete_command)
 secret_command.add_command(secret_add_command)
 secret_command.add_command(secret_upload_command)
 secret_command.add_command(secret_download_command)
