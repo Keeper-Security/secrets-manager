@@ -17,6 +17,7 @@ from colorama import Fore, Style, init
 from . import KeeperCli
 from .exception import KsmCliException
 from .exec import Exec
+from .folder import Folder
 from .secret import Secret
 from .sync import Sync
 from .profile import Profile
@@ -53,6 +54,7 @@ class AliasedGroup(HelpColorsGroup):
         "init",
         "setup",
         "sync",
+        "folder",
         "secret",
         "totp",
         "download",
@@ -529,6 +531,103 @@ profile_command.add_command(profile_export_command)
 profile_command.add_command(profile_import_command)
 
 
+# FOLDER GROUP
+@click.group(
+    name='folder',
+    cls=AliasedGroup,
+    help_headers_color='yellow',
+    help_options_color='green'
+)
+@click.pass_context
+def folder_command(ctx):
+    """Commands for folders"""
+    ctx.obj["folder"] = Folder(cli=ctx.obj["cli"])
+
+
+@click.command(
+    name='list',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--folder', '-f', type=str, help='List only records in specified folder UID')
+@click.option('--recursive', '-r', is_flag=True, help='List recursively including subfolders of the folder UID')
+@click.option('--list-records', '-l', is_flag=True, help='List folder records too')
+@click.option('--json', is_flag=True, help='Format result as JSON')
+@click.pass_context
+def folder_list_command(ctx, folder, recursive, list_records, json):
+    """List folders"""
+
+    output = "json" if json is True else "text"
+    ctx.obj["folder"].list_folders(
+        folder=folder,
+        recursive=recursive,
+        list_records=list_records,
+        output_format=output,
+        use_color=ctx.obj["cli"].use_color
+    )
+
+
+@click.command(
+    name='add',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--parent-folder', '-f', type=str, required=True, callback=validate_non_empty, help='Parent folder UID')
+@click.option('--title', '-t', type=str, required=True, callback=validate_non_empty, help='New folder title')
+@click.pass_context
+def folder_add_command(ctx, parent_folder, title):
+    """Create new subfolder in specified parent folder"""
+
+    ctx.obj["folder"].add_folder(
+        parent_folder=parent_folder,
+        title=title
+    )
+
+
+@click.command(
+    name='update',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--folder', '-f', type=str, required=True, callback=validate_non_empty, help='Folder UID')
+@click.option('--title', '-t', type=str, required=True, help='New folder title')
+@click.pass_context
+def folder_update_command(ctx, folder, title):
+    """Rename folder"""
+
+    ctx.obj["folder"].update_folder(
+        folder_uid=folder,
+        folder_name=title
+    )
+
+
+@click.command(
+    name='delete',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--force', '-f', is_flag=True, help='Force deletion of non-empty folders')
+@click.option('--json', is_flag=True, help='Format result as JSON')
+@click.argument('folder_uid', type=str, required=True, nargs=-1, callback=validate_non_empty_or_blank_list)
+@click.pass_context
+def folder_delete_command(ctx, force, json, folder_uid):
+    """Delete folders"""
+
+    output = "json" if json is True else "text"
+    ctx.obj["folder"].delete_folders(
+        uids=folder_uid,
+        force=force,
+        output_format=output,
+        use_color=ctx.obj["cli"].use_color
+    )
+
+
+folder_command.add_command(folder_list_command)
+folder_command.add_command(folder_add_command)
+folder_command.add_command(folder_update_command)
+folder_command.add_command(folder_delete_command)
+
+
 # SECRET GROUP
 @click.group(
     name='secret',
@@ -770,8 +869,6 @@ def secret_password_command(ctx, length, lc, uc, d, sc):
 
 
 # SECRET TEMPLATE COMMAND
-
-
 @click.group(
     name='template',
     cls=AliasedGroup,
@@ -851,8 +948,6 @@ secret_template_command.add_command(secret_template_field_command)
 
 
 # SECRET ADD COMMAND
-
-
 @click.group(
     name='add',
     cls=AliasedGroup,
@@ -1264,6 +1359,7 @@ def sync_command(ctx, credentials, type, dry_run, preserve_missing, map):
 # TOP LEVEL COMMANDS
 cli.add_command(profile_command)
 cli.add_command(sync_command)
+cli.add_command(folder_command)
 cli.add_command(secret_command)
 cli.add_command(exec_command)
 cli.add_command(config_command)
