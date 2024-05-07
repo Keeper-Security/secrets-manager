@@ -10,6 +10,7 @@ For more information see our official documentation page https://docs.keeper.io/
 
 - KSM-507: Added `ksm secret delete` command
 - KSM-508: Added search by title to `ksm secret list` command
+- KSM-509: Added `ksm folder ...` commands
 
 ## 1.1.3
 
