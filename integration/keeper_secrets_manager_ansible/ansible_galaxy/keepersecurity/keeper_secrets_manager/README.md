@@ -119,25 +119,28 @@ configuration file or even a playbook.
 
 # Changes
 
+## 1.2.3
+* Updated pinned KSM SDK version to 16.6.4.
+
 ## 1.2.2
 * Add action `keeper_get_record` to return entire record as dictionary.
 * Clean up comments in code.
-* Update pinned KSM SDK version to 16.6.3.
+* Updated pinned KSM SDK version to 16.6.3.
 
 ## 1.2.1
 * Add action `keeper_remove` to remove secrets from the Keeper Vault.
-* Update pinned KSM SDK version to 16.6.2.
+* Updated pinned KSM SDK version to 16.6.2.
 
 ## 1.2.0
 
 * Added action `keeper_cache_records` to cache Keeper Vault records to reduce API calls.
 * Added ability to get records by title for some actions.
 * Added `array_index` and `value_key` to access individual values in complex values. Alternative to `notation`.
-* Update pinned KSM SDK version.
+* Updated pinned KSM SDK version.
 
 ## 1.1.5
 
-* Update pinned KSM SDK version. The KSM SDK has been updated to use OpenSSL 3.0.7 which resolves CVE-2022-3602, CVE-2022-3786.
+* Updated pinned KSM SDK version. The KSM SDK has been updated to use OpenSSL 3.0.7 which resolves CVE-2022-3602, CVE-2022-3786.
 
 ## 1.1.4
 
