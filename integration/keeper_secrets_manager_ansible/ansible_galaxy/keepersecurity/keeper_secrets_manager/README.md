@@ -123,12 +123,12 @@ configuration file or even a playbook.
 * Updated pinned KSM SDK version to 16.6.4.
 
 ## 1.2.2
-* Add action `keeper_get_record` to return entire record as dictionary.
+* Added action `keeper_get_record` to return entire record as dictionary.
 * Clean up comments in code.
 * Updated pinned KSM SDK version to 16.6.3.
 
 ## 1.2.1
-* Add action `keeper_remove` to remove secrets from the Keeper Vault.
+* Added action `keeper_remove` to remove secrets from the Keeper Vault.
 * Updated pinned KSM SDK version to 16.6.2.
 
 ## 1.2.0
