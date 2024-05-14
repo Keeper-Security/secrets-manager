@@ -24,7 +24,7 @@ jobs:
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install -r requirements.txt
-          python3 -m pip install pytest pytest-cov
+          python3 -m pip install pytest pytest-cov setuptools
           python3 -m pip install -e .
       - name: Run tests
         run: |
