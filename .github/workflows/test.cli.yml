@@ -24,6 +24,7 @@ jobs:
         working-directory: ./sdk/python/core
         run: |
           python3 -m pip install --upgrade pip
+          python3 -m pip install setuptools
           python3 -m pip install -r requirements.txt
           python3 -m pip install -e .
 
@@ -52,7 +53,7 @@ jobs:
         working-directory: ./integration/keeper_secrets_manager_cli
         run: |
           python3 -m pip install -r requirements.txt
-          python3 -m pip install pytest pytest-cov setuptools
+          python3 -m pip install pytest pytest-cov
 
       - name: Run CLI tests
         working-directory: ./integration/keeper_secrets_manager_cli
