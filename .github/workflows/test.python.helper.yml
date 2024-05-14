@@ -38,7 +38,7 @@ jobs:
         working-directory: ./sdk/python/helper
         run: |
           python3 -m pip install -r requirements.txt
-          python3 -m pip install pytest pytest-cov
+          python3 -m pip install pytest pytest-cov setuptools
 
       - name: Run CLI tests
         working-directory: ./sdk/python/helper
