@@ -52,7 +52,7 @@ jobs:
         working-directory: ./integration/keeper_secrets_manager_cli
         run: |
           python3 -m pip install -r requirements.txt
-          python3 -m pip install pytest pytest-cov
+          python3 -m pip install pytest pytest-cov setuptools
 
       - name: Run CLI tests
         working-directory: ./integration/keeper_secrets_manager_cli
