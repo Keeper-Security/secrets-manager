@@ -3,6 +3,10 @@
 
 # Change Log
 
+## 16.6.6
+
+* KSM-515 - Update to Bouncy Castle 2.4.0
+
 ## 16.6.5
 
 * KSM-476 - fix public key parsing
