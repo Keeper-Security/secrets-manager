@@ -958,7 +958,7 @@ class SecretTest(unittest.TestCase):
 
             self.assertIsInstance(data.get("fields"), list, "fields is not a list")
 
-            field = data.get("fields")[1]
+            field = data.get("fields")[0]
             self.assertEqual("login", field.get("type"), "field type is not login")
             self.assertIsNotNone(field.get("value"), "value was None")
 
