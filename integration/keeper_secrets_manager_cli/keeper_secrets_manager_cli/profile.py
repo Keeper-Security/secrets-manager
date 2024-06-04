@@ -134,7 +134,7 @@ class Profile:
 
         # Get the secret records to get the app key. The SDK will add the app key to the config.
         try:
-            client.get_secrets()
+            client.get_secrets(["AAAAAAAAAAAAAAAAAAAAAA"])
         except (KeeperError, KeeperAccessDenied) as err:
             # If we just create the INI file and there was an error. Remove it.
             if created_ini is True:

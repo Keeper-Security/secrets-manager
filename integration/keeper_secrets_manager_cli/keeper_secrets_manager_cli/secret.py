@@ -472,13 +472,19 @@ class Secret:
                 table.add_row([record["uid"], record["type"], record["title"]])
         return "\n" + table.get_string() + "\n"
 
-    def secret_list(self, uids=None, folder=None, recursive=False, query=None, show_value=False, output_format='json', use_color=None):
+    def secret_list(self, uids=None, folder=None, recursive=False, query=None, show_value=False, title="", output_format='json', use_color=None):
 
         if use_color is None:
-            use_color = self.cli.user_color
+            use_color = self.cli.use_color
 
         loadrefs = True if query else False  # to load fields[] and custom[]
         record_dict = self.query(uids=uids, folder=folder, recursive=recursive, output_format='dict', load_references=loadrefs, unmask=True, use_color=use_color)
+        if title:
+            try:
+                filtered = [x for x in record_dict if re.search(title, x.get("title", ""), re.IGNORECASE)]
+                record_dict = filtered
+            except Exception as err:
+                raise KsmCliException(f"Check your regex '{title}' - error: {str(err)}")
         if query:
             items = self._query_jsonpath_list(query, record_dict)
             if output_format == 'text':
@@ -679,6 +685,31 @@ class Secret:
             self.cli.client.save(record[0])
         except Exception as err:
             raise KsmCliException("Could not save record: {}".format(err))
+
+    def delete(self, uids: List[str] = [], output_format: str = "text", use_color=None):
+        try:
+            resp = self.cli.client.delete_secret(record_uids=uids)
+            output = [{"uid": x.get("recordUid", ""),
+                       "responseCode": x.get("responseCode", ""),
+                       "error": x.get("errorMessage", "")}
+                       for x in resp if x.get("recordUid", "") in uids]
+            output.extend([{"uid": u, "responseCode": "n/a", "error": "Not found"}
+                           for u in uids
+                           if next((r for r in resp if r.get("recordUid") == u), None) is None])
+            if output_format == 'json':
+                self.cli.output(json.dumps(output, indent=4))
+            else:  # output_format == 'text'
+                if use_color is None:
+                    use_color = self.cli.use_color
+                table = Table(use_color=use_color)
+                table.add_column("UID", data_color=Fore.GREEN)
+                table.add_column("Response Code", data_color=Fore.YELLOW)
+                table.add_column("Error", data_color=Fore.RED, allow_wrap=True)
+                for x in output:
+                    table.add_row([x["uid"], x["responseCode"], x["error"]])
+                self.cli.output(f"\n{table.get_string()}\n")
+        except Exception as err:
+            raise KsmCliException(f"Could not delete records: {err}")
 
     def _check_if_can_add_records(self):
         # Check to see if appOwnerPublicKey is in the keeper.ini. It's a newly added key and if the
