@@ -52,6 +52,7 @@ class AliasedGroup(HelpColorsGroup):
         "export",
         "import",
         "init",
+        "default",
         "setup",
         "sync",
         "folder",
