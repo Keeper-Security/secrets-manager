@@ -3,6 +3,12 @@
 
 # Change Log
 
+## 16.6.6
+
+* KSM-360 - GHA to build and release strong named assemblies
+* KSM-490 - Switch some internal classes to public - for use in plugins
+* KSM-515 - Update to Bouncy Castle 2.4.0
+
 ## 16.6.5
 
 * KSM-476 - fix public key parsing
