@@ -103,16 +103,16 @@ options:
 
 EXAMPLES = r'''
 - name: Get login name
-  keeper_copy:
+  keeper_get:
     uid: XXX
     field: login
   register: my_login_value
 - name: Get login name via notation
-  keeper_copy:
+  keeper_get:
     notation: XXX/field/login
   register: my_login_value
 - name: Get custom field
-  keeper_copy:
+  keeper_get:
     uid: XXX
     custom_field: Custom Label
   register: my_custom_value
