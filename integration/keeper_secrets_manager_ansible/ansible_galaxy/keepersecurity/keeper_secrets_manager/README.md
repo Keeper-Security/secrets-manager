@@ -64,9 +64,10 @@ If you omit the `collections` , you will need to use the full plugin name.
 
 * `keepersecurity.keeper_secrets_manager.keeper_cache_records` - Generate a cache to use with other actions.
 * `keepersecurity.keeper_secrets_manager.keeper_copy` - Copy file, or value, from your vault to a remote server.
-* `keepersecurity.keeper_secrets_manager.keeper_get` - Get a value from your vault.
+* `keepersecurity.keeper_secrets_manager.keeper_get` - Get a value from a record.
+* `keepersecurity.keeper_secrets_manager.keeper_get_record` - Get record as a dictionary.
 * `keepersecurity.keeper_secrets_manager.keeper_set` - Set a value of an existing record in your vault.
-* `keepersecurity.keeper_secrets_manager.keeper_create` - Create a new record in your vault.
+* `keepersecurity.keeper_secrets_manager.keeper_create` - Create a new record.
 * `keepersecurity.keeper_secrets_manager.keeper_remove` - Remove a record from your vault.
 * `keepersecurity.keeper_secrets_manager.keeper_password` - Generate a random password.
 * `keepersecurity.keeper_secrets_manager.keeper_cleanup` - Clean up Keeper related files.
@@ -118,8 +119,13 @@ configuration file or even a playbook.
 
 # Changes
 
+## 1.2.2
+* Add action `keeper_get_record` to return entire record as dictionary.
+* Clean up comments in code.
+* Update pinned KSM SDK version to 16.6.3.
+
 ## 1.2.1
-* Add action `keeper_remove` to remove secrets from the Keeper Vault
+* Add action `keeper_remove` to remove secrets from the Keeper Vault.
 * Update pinned KSM SDK version to 16.6.2.
 
 ## 1.2.0
