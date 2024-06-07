@@ -5,13 +5,10 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-
-[assembly: InternalsVisibleTo("SecretsManager.Test.Core")]
 
 namespace SecretsManager
 {
@@ -1412,7 +1409,7 @@ namespace SecretsManager
 
         [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
         [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-        internal static GetRandomBytesFunction TransmissionKeyStub { get; set; }
+        public static GetRandomBytesFunction TransmissionKeyStub { get; set; }
 
         private static EncryptedPayload EncryptAndSignPayload<T>(IKeyValueStorage storage,
             TransmissionKey transmissionKey, T payload)
