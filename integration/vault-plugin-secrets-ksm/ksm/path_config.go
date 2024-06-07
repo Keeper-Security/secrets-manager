@@ -60,6 +60,7 @@ func (b *backend) pathConfig() *framework.Path {
 				Callback: withFieldValidator(b.pathConfigDelete),
 			},
 		},
+		ExistenceCheck:  withExistenceCheckValidator(b.pathConfigExistenceCheck),
 		HelpSynopsis:    pathConfigHelpSyn,
 		HelpDescription: pathConfigHelpDesc,
 	}
@@ -122,4 +123,13 @@ func (b *backend) pathConfigDelete(ctx context.Context, req *logical.Request, _ 
 	b.Invalidate(ctx, pathPatternConfig)
 
 	return nil, nil
+}
+
+func (b *backend) pathConfigExistenceCheck(ctx context.Context, req *logical.Request, _ *framework.FieldData) (bool, error) {
+	out, err := req.Storage.Get(ctx, req.Path)
+	if err != nil {
+		return false, fmt.Errorf("existence check failed: %w", err)
+	}
+
+	return out != nil, nil
 }

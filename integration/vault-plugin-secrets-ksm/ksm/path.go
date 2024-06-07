@@ -16,6 +16,18 @@ var (
 	errUnknownFields = errors.New("unknown fields")
 )
 
+// withExistenceCheckValidator wraps an ExistenceFunc and
+// validates the user-supplied fields match the schema.
+func withExistenceCheckValidator(f framework.ExistenceFunc) framework.ExistenceFunc {
+	return func(ctx context.Context, req *logical.Request, d *framework.FieldData) (bool, error) {
+		if err := validateFields(req, d); err != nil {
+			return false, logical.CodedError(400, err.Error())
+		}
+
+		return f(ctx, req, d)
+	}
+}
+
 // withFieldValidator wraps an OperationFunc and
 // validates the user-supplied fields match the schema.
 func withFieldValidator(f framework.OperationFunc) framework.OperationFunc {
