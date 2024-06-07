@@ -84,6 +84,9 @@ func (b *backend) pathRecords() *framework.Path {
 			logical.UpdateOperation: &framework.PathOperation{
 				Callback: withFieldValidator(b.pathRecordWrite),
 			},
+			logical.DeleteOperation: &framework.PathOperation{
+				Callback: withFieldValidator(b.pathRecordDelete),
+			},
 		},
 		ExistenceCheck:  b.recordExistenceCheck,
 		HelpSynopsis:    pathRecordHelpSyn,
@@ -319,6 +322,47 @@ func (b *backend) pathRecordWrite(ctx context.Context, req *logical.Request, d *
 
 	// return the updated record/JSON
 	recordRes := &logical.Response{Data: record.RecordDict}
+	return recordRes, nil
+}
+
+// pathRecordDelete deletes record from Keeper Vault on /ksm/record.
+func (b *backend) pathRecordDelete(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
+	client, done, err := b.Client(req.Storage)
+	if err != nil {
+		return nil, err
+	}
+
+	defer done()
+
+	if req.ClientToken == "" {
+		return nil, fmt.Errorf("client token empty")
+	}
+
+	// Safely parse any options from interface types.
+	opts := new(recordOptions)
+	if uid, ok := d.GetOk(keyRecordUid); ok {
+		opts.Uid = uid.(string)
+	}
+	if opts.Uid == "" || len(core.Base64ToBytes(opts.Uid)) != 16 {
+		return nil, fmt.Errorf("invalid record UID: '%s' - expected 16 bytes UID in URL safe base 64 encoding", opts.Uid)
+	}
+
+	records, err := client.SecretsManager.GetSecrets([]string{opts.Uid})
+	if err != nil {
+		return nil, err
+	}
+
+	recordRes := &logical.Response{}
+	if len(records) > 0 {
+		recs, err := client.SecretsManager.DeleteSecrets([]string{opts.Uid})
+		if err != nil {
+			recordRes = logical.ErrorResponse("Error deleting '%s' - %s", opts.Uid, err)
+		} else if status, found := recs[opts.Uid]; found && strings.ToLower(status) != "ok" {
+			recordRes = logical.ErrorResponse("Error deleting '%s' - %s", opts.Uid, status)
+		}
+	} else {
+		recordRes.AddWarning(fmt.Sprintf("Record '%s' not found (already deleted or not shared to the KSM app)", opts.Uid))
+	}
 	return recordRes, nil
 }
 

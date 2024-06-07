@@ -46,6 +46,9 @@ vault write -format=json ksm/record uid=<UID> data=@updated_record.json
 
 # Create new secret
 vault write -format=json ksm/record/create folder_uid=<FolderUID> data=@record_data.json
+
+# Delete existing secret
+vault delete ksm/record uid=<UID>
 ```
 
 ## License
