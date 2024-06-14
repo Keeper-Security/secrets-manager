@@ -1,4 +1,4 @@
-import tl = require('azure-pipelines-task-lib/task');
+import * as tl from "azure-pipelines-task-lib/task";
 import {IssueType} from "azure-pipelines-task-lib";
 import {downloadFile, getSecrets, getValue, KeeperFile, loadJsonConfig} from "@keeper-security/secrets-manager-core";
 import * as fs from "fs";
