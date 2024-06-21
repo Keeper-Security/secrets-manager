@@ -41,8 +41,9 @@ test('Get secrets e2e', async () => {
     try {
         await getSecrets(options)
         fail('Did not throw')
-    } catch ({message}) {
-        expect(JSON.parse(message as string).message).toBe('Signature is invalid')
+    } catch (e) {
+        const message = (e as Error).message
+        expect(JSON.parse(message).message).toBe('Signature is invalid')
     }
 })
 

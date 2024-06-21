@@ -75,7 +75,8 @@ test('Notations', async () => {
     try {
         value = getValue(secrets, `keeper://${recordUID}/field/login[1]`)
         fail('Getting wrong index did not throw')
-    } catch ({message}) {
+    } catch (e) {
+        const message = (e as Error).message
         expect(message).toContain(`Notation error - Field index out of bounds`)
     }
 
