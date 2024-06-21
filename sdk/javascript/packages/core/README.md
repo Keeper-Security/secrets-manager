@@ -4,7 +4,7 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 ## 16.6.3
-- KSM-489 - JavaScript SDK - Add transaction support for updateSecret
+- KSM-489 - Added transaction support for updateSecret
 - KSM-521 - Dependencies upgrade
 
 ## 16.6.2
