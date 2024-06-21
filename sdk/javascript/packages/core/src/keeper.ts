@@ -55,11 +55,17 @@ export type CreateOptions = {
     subFolderUid?: string
 }
 
+export enum UpdateTransactionType {
+    General = "general",
+    Rotation = "rotation"
+}
+
 type AnyPayload =
     GetPayload
     | DeletePayload
     | DeleteFolderPayload
     | UpdatePayload
+    | CompleteTransactionPayload
     | CreatePayload
     | CreateFolderPayload
     | UpdateFolderPayload
@@ -89,6 +95,11 @@ type UpdatePayload = CommonPayload & {
     recordUid: string
     data: string
     revision: number
+    transactionType?: UpdateTransactionType
+}
+
+type CompleteTransactionPayload = CommonPayload & {
+    recordUid: string
 }
 
 type CreatePayload = CommonPayload & {
@@ -251,20 +262,37 @@ const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryO
     return payload
 }
 
-const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord): Promise<UpdatePayload> => {
+const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord, transactionType?: UpdateTransactionType): Promise<UpdatePayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
     }
     const recordBytes = platform.stringToBytes(JSON.stringify(record.data))
     const encryptedRecord = await platform.encrypt(recordBytes, record.recordUid)
-    return {
+    const payload: UpdatePayload =  {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
         recordUid: record.recordUid,
         data: webSafe64FromBytes(encryptedRecord),
         revision: record.revision
     }
+    if (transactionType) {
+        payload.transactionType = transactionType
+    }
+    return payload
+}
+
+const prepareCompleteTransactionPayload = async (storage: KeyValueStorage, recordUid: string): Promise<CompleteTransactionPayload> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
+    const payload: CompleteTransactionPayload =  {
+        clientVersion: 'ms' + packageVersion,
+        clientId: clientId,
+        recordUid: recordUid,
+    }
+    return payload
 }
 
 const prepareDeletePayload = async (storage: KeyValueStorage, recordUids: string[]): Promise<DeletePayload> => {
@@ -867,9 +895,15 @@ export const getSecretByTitle = async (options: SecretManagerOptions, recordTitl
     return secrets.records.find(record => record.data.title === recordTitle)
 }
 
-export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord): Promise<void> => {
-    const payload = await prepareUpdatePayload(options.storage, record)
+export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord, transactionType?: UpdateTransactionType): Promise<void> => {
+    const payload = await prepareUpdatePayload(options.storage, record, transactionType)
     await postQuery(options, 'update_secret', payload)
+}
+
+export const completeTransaction = async (options: SecretManagerOptions, recordUid: string, rollback: boolean = false): Promise<void> => {
+    const payload = await prepareCompleteTransactionPayload(options.storage, recordUid)
+    const route = (rollback ? "rollback_secret_update" : "finalize_secret_update")
+    await postQuery(options, route, payload)
 }
 
 export const deleteSecret = async (options: SecretManagerOptions, recordUids: string[]): Promise<SecretsManagerDeleteResponse> => {
