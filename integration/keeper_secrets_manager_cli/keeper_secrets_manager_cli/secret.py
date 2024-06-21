@@ -14,17 +14,20 @@ import json
 import yaml
 import os
 import re
-from jsonpath_rw_ext import parse
 import sys
 from colorama import Fore, Style
+from pathlib import Path
+from jsonpath_rw_ext import parse
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_cli.common import launch_editor
-from keeper_secrets_manager_core.core import SecretsManager
+from keeper_secrets_manager_core.core import SecretsManager, CreateOptions, KeeperFolder, KeeperFileUpload
 from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
 from keeper_secrets_manager_helper.record import Record
+from keeper_secrets_manager_helper.v3.record import Record as RecordV3
 from keeper_secrets_manager_helper.field_type import FieldType
 from keeper_secrets_manager_helper.exception import FileSyntaxException
 from .table import Table, ColumnAlign
+from typing import List, Tuple
 import uuid
 import tempfile
 
@@ -150,6 +153,7 @@ class Secret:
             "uid": record.uid,
             "title": record.title,
             "type": record.type,
+            "notes": record.dict.get("notes", ""),
             "fields": standard_fields,
             "custom_fields": custom_fields,
             "files": [{
@@ -359,9 +363,23 @@ class Secret:
         except Exception as err:
             raise KsmCliException("JSONPath failed: {}".format(err))
 
-    def query(self, uids=None, titles=None, field=None, output_format='json', jsonpath_query=None,
-              force_array=False, load_references=False, unmask=False, use_color=None, inflate=True,
-              raw=False):
+    def _query_jsonpath_list(self, jsonpath_query, records):
+        record_list = Secret._adjust_records(records, True)
+        try:
+            results = []
+            jpe = parse(jsonpath_query)
+            for rec in record_list:
+                val = jpe.find(rec)
+                if val and val[0].value:
+                    rec["query_result"] = val[0].value[0] if isinstance(val[0].value, list) else val[0].value
+                    results.append(rec)
+            return results
+        except Exception as err:
+            raise KsmCliException(f"JSONPath failed: {err}") from err
+
+    def query(self, uids=None, folder=None, recursive=False, titles=None, field=None,
+              output_format='json', jsonpath_query=None, force_array=False,
+              load_references=False, unmask=False, use_color=None, inflate=True, raw=False):
 
         if use_color is None:
             use_color = self.cli.use_color
@@ -390,16 +408,29 @@ class Secret:
         if len(secrets) == 0 and fetch_uids is not None:
             raise KsmCliException("Cannot find requested record(s).")
 
+        folders = self.cli.client.get_folders() if folder and recursive else []
+
         for record in secrets:
             add_record = False
 
-            # If we are searching by title, the fetch_uids was None, we have all the records. We need to filter
-            # them by the title or uids.
-            if len(titles) > 0:
-                if record.title in titles or record.uid in uids:
+            if folder:
+                if record.inner_folder_uid == folder or (not record.inner_folder_uid and record.folder_uid == folder):
                     add_record = True
+                elif recursive and (record.inner_folder_uid or record.folder_uid):
+                    fldr = record.inner_folder_uid or record.folder_uid
+                    fldr = str(fldr) if fldr else ''
+                    while fldr and fldr != folder:
+                        fldr = next((x.parent_uid for x in folders if x.folder_uid == fldr), '')
+                    if fldr == folder:
+                        add_record = True
             else:
-                add_record = True
+                # If we are searching by title, the fetch_uids was None, we have all the records. We need to filter
+                # them by the title or uids.
+                if len(titles) > 0:
+                    if record.title in titles or record.uid in uids:
+                        add_record = True
+                else:
+                    add_record = True
 
             if add_record is True:
                 records.append(self._record_to_dict(record,
@@ -426,27 +457,75 @@ class Secret:
                                        use_color=use_color)
 
     @staticmethod
-    def _format_list(record_dict, use_color=True):
+    def _format_list(record_dict, use_color=True, columns=None):
         table = Table(use_color=use_color)
-        table.add_column("UID", data_color=Fore.GREEN)
-        table.add_column("Record Type")
-        table.add_column("Title", data_color=Fore.YELLOW)
-        for record in record_dict:
-            table.add_row([record["uid"], record["type"], record["title"]])
+        if columns:
+            for col in columns:
+                table.add_column(col[1], data_color=col[2])
+            for record in record_dict:
+                table.add_row([record.get(x[0], "") for x in columns])
+        else:
+            table.add_column("UID", data_color=Fore.GREEN)
+            table.add_column("Record Type")
+            table.add_column("Title", data_color=Fore.YELLOW)
+            for record in record_dict:
+                table.add_row([record["uid"], record["type"], record["title"]])
         return "\n" + table.get_string() + "\n"
 
-    def secret_list(self, uids=None, output_format='json', use_color=None):
+    def secret_list(self, uids=None, folder=None, recursive=False, query=None, show_value=False, title="", output_format='json', use_color=None):
 
         if use_color is None:
-            use_color = self.cli.user_color
+            use_color = self.cli.use_color
 
-        record_dict = self.query(uids=uids, output_format='dict', unmask=True, use_color=use_color)
-        if output_format == 'text':
-            self.cli.output(self._format_list(record_dict, use_color=use_color))
-        elif output_format == 'json':
-            records = [{"uid": x.get("uid"), "title": x.get("title"), "record_type": x.get("type")}
-                       for x in record_dict]
-            self.cli.output(json.dumps(records, indent=4))
+        loadrefs = True if query else False  # to load fields[] and custom[]
+        record_dict = self.query(uids=uids, folder=folder, recursive=recursive, output_format='dict', load_references=loadrefs, unmask=True, use_color=use_color)
+        if title:
+            try:
+                filtered = [x for x in record_dict if re.search(title, x.get("title", ""), re.IGNORECASE)]
+                record_dict = filtered
+            except Exception as err:
+                raise KsmCliException(f"Check your regex '{title}' - error: {str(err)}")
+        if query:
+            items = self._query_jsonpath_list(query, record_dict)
+            if output_format == 'text':
+                columns = [("uid", "UID", Fore.GREEN), ("type", "Record Type", Style.RESET_ALL), ("query_result", "Value", Fore.YELLOW)] if show_value else []
+                self.cli.output(self._format_list(items, use_color=use_color, columns=columns))
+            elif output_format == 'json':
+                records = [{
+                    "uid": x.get("uid", ""),
+                    "record_type": x.get("type", ""),
+                    "title": x.get("title", ""),
+                    "value": x.get("query_result", "")}
+                           for x in items]
+                if not show_value:
+                    records = [{k: v for k, v in x.items() if k != "value"} for x in records]
+                self.cli.output(json.dumps(records, indent=4))
+        else:
+            if output_format == 'text':
+                self.cli.output(self._format_list(record_dict, use_color=use_color))
+            elif output_format == 'json':
+                records = [{"uid": x.get("uid"), "title": x.get("title"), "record_type": x.get("type")}
+                        for x in record_dict]
+                self.cli.output(json.dumps(records, indent=4))
+
+    def upload(self, uid, file, title):
+
+        # check if file exists and is readable by current user
+        if not (os.path.isfile(file) and os.access(file, os.R_OK)):
+            raise KsmCliException(f"File {file} doesn't exist or isn't readable.")
+
+        records = self.cli.client.get_secrets(uids=[uid])
+        if len(records) == 0:
+            raise KsmCliException(f"Cannot find a record for UID {uid}. Cannot upload {file}")
+
+        record = records[0]
+        fname = Path(file).name
+        title = title if title else fname
+        ksm_file = KeeperFileUpload.from_file(file, fname, title)
+        file_uid = self.cli.client.upload_file(record, file=ksm_file)
+
+        print("The following is the new file UID ...", file=sys.stderr)
+        return self.cli.output(file_uid)
 
     def download(self, uid, name, file_uid, file_output, create_folders=False):
 
@@ -466,7 +545,7 @@ class Secret:
             raise KsmCliException("Cannot find a file named {} for UID {}. Cannot download file".format(name, uid))
 
         if file_output == 'stdout':
-            sys.stderr.buffer.write(file.get_file_data())
+            sys.stdout.buffer.write(file.get_file_data())
         elif file_output == 'stderr':
             sys.stderr.buffer.write(file.get_file_data())
         elif type(file_output) is str:
@@ -554,7 +633,7 @@ class Secret:
 
         return key, value
 
-    def update(self, uid, fields=None, custom_fields=None, fields_json=None, custom_fields_json=None):
+    def update(self, uid, fields=None, custom_fields=None, fields_json=None, custom_fields_json=None, title=None, notes=None):
 
         record = self.cli.client.get_secrets(uids=[uid])
         if len(record) == 0:
@@ -565,6 +644,15 @@ class Secret:
             if label is None or label == "":
                 label = x.get("type")
             return label
+
+        if title is not None:
+            record[0].title = str(title)
+
+        if notes is not None:
+            record[0].dict["notes"] = str(notes)
+
+        if title is not None or notes is not None:
+            record[0]._update()
 
         # Get a list of all labels/type allowed.
         labels = {
@@ -597,6 +685,31 @@ class Secret:
             self.cli.client.save(record[0])
         except Exception as err:
             raise KsmCliException("Could not save record: {}".format(err))
+
+    def delete(self, uids: List[str] = [], output_format: str = "text", use_color=None):
+        try:
+            resp = self.cli.client.delete_secret(record_uids=uids)
+            output = [{"uid": x.get("recordUid", ""),
+                       "responseCode": x.get("responseCode", ""),
+                       "error": x.get("errorMessage", "")}
+                       for x in resp if x.get("recordUid", "") in uids]
+            output.extend([{"uid": u, "responseCode": "n/a", "error": "Not found"}
+                           for u in uids
+                           if next((r for r in resp if r.get("recordUid") == u), None) is None])
+            if output_format == 'json':
+                self.cli.output(json.dumps(output, indent=4))
+            else:  # output_format == 'text'
+                if use_color is None:
+                    use_color = self.cli.use_color
+                table = Table(use_color=use_color)
+                table.add_column("UID", data_color=Fore.GREEN)
+                table.add_column("Response Code", data_color=Fore.YELLOW)
+                table.add_column("Error", data_color=Fore.RED, allow_wrap=True)
+                for x in output:
+                    table.add_row([x["uid"], x["responseCode"], x["error"]])
+                self.cli.output(f"\n{table.get_string()}\n")
+        except Exception as err:
+            raise KsmCliException(f"Could not delete records: {err}")
 
     def _check_if_can_add_records(self):
         # Check to see if appOwnerPublicKey is in the keeper.ini. It's a newly added key and if the
@@ -705,11 +818,13 @@ class Secret:
         self._check_if_can_add_records()
 
         try:
+            folders = self.cli.client.get_folders()
             records = Record.create_from_file(file, password_generate=password_generate_flag)
             record_uids = []
             for record in records:
                 record_create_obj = record.get_record_create_obj()
-                record_uid = self.cli.client.create_secret(folder_uid, record_create_obj)
+                folder_options, folders = self.build_folder_options(folder_uid, folders)
+                record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj, folders)
                 record_uids.append(record_uid)
         except FileSyntaxException as err:
             raise KsmCliException(str(err))
@@ -734,12 +849,71 @@ class Secret:
             )
             record = records[0]
             record_create_obj = record.get_record_create_obj()
-            record_uid = self.cli.client.create_secret(folder_uid, record_create_obj)
+
+            folder_options, folders = self.build_folder_options(folder_uid)
+            record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj, folders)
         except Exception as err:
             raise KsmCliException(f"{err}")
 
         print("The following is the new record UID ...", file=sys.stderr)
         return self.cli.output(record_uid)
+
+    def add_record_from_clone(self, uid: str, title: str):
+
+        record_uid = ''  # new record UID
+        self._check_if_can_add_records()
+
+        try:
+            recs = self.cli.client.get_secrets([uid]) or []
+            if recs:
+                rec = recs[0]
+                if rec.folder_uid:
+                    folder_options = CreateOptions(rec.folder_uid, rec.inner_folder_uid)
+                    record_data = {
+                        "version": "v3",
+                        "kind": "KeeperRecord",
+                        "data": [{
+                            "recordType": rec.type,
+                            "title": title if title else rec.title,
+                            "notes": rec.dict.get("notes", ""),
+                            "fields": rec.dict.get("fields", []),
+                            "customFields": rec.dict.get("custom", [])
+                        }]
+                    }
+                    records = RecordV3.create_from_data(record_data)
+                    record = records[0]
+                    record_create_obj = record.get_record_create_obj()
+                    record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj)
+                else:
+                    print(f"Unable to find the parent shared folder for record {uid} - individually shared records cannot be cloned.", file=sys.stderr)
+            else:
+                print(f"Record UID not found {uid}", file=sys.stderr)
+        except Exception as err:
+            raise KsmCliException(f"{err}")
+
+        if record_uid:
+            print("The following is the new record UID ...", file=sys.stderr)
+        return self.cli.output(record_uid)
+
+    def build_folder_options(self, folder_uid: str, folders: List[KeeperFolder] = []) -> Tuple[CreateOptions, List[KeeperFolder]]:
+        """ Build and return folder create options and folders list """
+
+        # find closest shared folder parent
+        if not folders:
+            folders = self.cli.client.get_folders() or []
+
+        shared_folder = next((x for x in folders if x.folder_uid == folder_uid), None)
+        while shared_folder and shared_folder.parent_uid:
+            shared_folder = next((x for x in folders if x.folder_uid == shared_folder.parent_uid), shared_folder)
+
+        if shared_folder is None:
+            raise KsmCliException(f'Unable to find the shared folder for {folder_uid}')
+        if not shared_folder.folder_key:
+            raise KsmCliException(f'Unable to find folder key for folder {shared_folder.folder_uid}')
+
+        # create folder options
+        create_options = CreateOptions(shared_folder.folder_uid, folder_uid)
+        return create_options, folders
 
     def generate_password(self, length, lowercase, uppercase, digits, special_characters):
 

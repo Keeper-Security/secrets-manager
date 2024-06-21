@@ -6,6 +6,21 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.1.4
+
+- KSM-507: Added `ksm secret delete` command
+- KSM-508: Added search by title to `ksm secret list` command
+- KSM-509: Added `ksm folder ...` commands
+
+## 1.1.3
+
+- KSM-496: Added upload file option
+- KSM-495: Added query option to ksm secret list command
+- KSM-494: Added folder support to secret list command
+- KSM-493: Added CLI options to update title and notes
+- KSM-492: Added clone option
+- KSM-485: Added sub-folder support to ksm secret add command
+
 ## 1.1.1
 
 * KSM-429 - Add `--profile-name` to `ksm profile import` command

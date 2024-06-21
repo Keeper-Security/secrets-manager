@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.7", "3.8", "3.9", "3.10"]
+        python-version: ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v3
@@ -24,6 +24,7 @@ jobs:
         working-directory: ./sdk/python/core
         run: |
           python3 -m pip install --upgrade pip
+          python3 -m pip install setuptools
           python3 -m pip install -r requirements.txt
           python3 -m pip install -e .
 
