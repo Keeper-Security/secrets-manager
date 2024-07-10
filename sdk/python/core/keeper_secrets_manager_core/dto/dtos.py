@@ -66,9 +66,12 @@ class Record:
         if record_dict.get('files'):
             for f in record_dict.get('files'):
 
-                file = KeeperFile(f, self.record_key_bytes)
-
-                self.files.append(file)
+                try:
+                    file = KeeperFile(f, self.record_key_bytes)
+                    self.files.append(file)
+                except Exception as err:
+                    msg = f"{err.__class__.__name__}, {str(err)}"
+                    raise Exception(f"attached file caused exception: {msg}")
 
         # password (if `login` type)
         if self.type == 'login':
@@ -573,12 +576,22 @@ class SecretsManagerResponse:
         self.expiresOn = None
         self.warnings = None
         self.justBound = False
+        self.bad_records = []
+        self.bad_folders = []
 
     def expires_on_str(self, date_format='%Y-%m-%d %H:%M:%S'):
         """
         Retrieve string formatted expiration date
         """
         return datetime.fromtimestamp(self.expiresOn/1000).strftime(date_format)
+
+    @property
+    def had_bad_records(self):
+        return len(self.bad_records) > 0
+
+    @property
+    def had_bad_folders(self):
+        return len(self.bad_folders) > 0
 
 
 class SecretsManagerAddFileResponse:

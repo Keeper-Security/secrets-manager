@@ -18,10 +18,10 @@ from requests import Response as RequestResponse
 from .keeper_globals import keeper_public_keys
 import string
 import random
-
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.dto.payload import KSMHttpResponse
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 class ResponseQueue:
@@ -182,12 +182,12 @@ class Response:
 
         return KSMHttpResponse(res.status_code, res.content, res)
 
-    def add_record(self, title=None, record_type=None, uid=None, record=None, keeper_record=None):
+    def add_record(self, title=None, record_type=None, uid=None, record=None, keeper_record=None, **kwargs):
 
         if keeper_record is not None:
             record = Record.convert_keeper_record(keeper_record)
         elif record is None:
-            record = Record(title=title, record_type=record_type, uid=uid)
+            record = Record(title=title, record_type=record_type, uid=uid, **kwargs)
 
         if isinstance(object, Record.__class__) is False:
             raise ValueError("Record being added to the response is not a "
@@ -196,10 +196,10 @@ class Response:
         self.records[record.uid] = record
         return record
 
-    def add_folder(self, uid=None, folder=None):
+    def add_folder(self, uid=None, folder=None, **kwargs):
 
         if folder is None:
-            folder = Folder(uid=uid)
+            folder = Folder(uid=uid, **kwargs)
 
         if isinstance(object, Folder.__class__) is False:
             raise ValueError("Folder being added to the response is not a "
@@ -211,16 +211,18 @@ class Response:
 
 class Folder:
 
-    def __init__(self, uid=None):
+    def __init__(self, uid=None, **kwargs):
         if uid is None:
             uid = uuid.uuid4().hex[:22]
         self.uid = uid
         self.records = {}
 
-    def add_record(self, title=None, record_type=None, uid=None, record=None):
+        self.has_bad_encryption = kwargs.get("has_bad_encryption")
+
+    def add_record(self, title=None, record_type=None, uid=None, record=None, is_bad_record=False, **kwargs):
 
         if record is None:
-            record = Record(record_type=record_type, uid=uid, title=title)
+            record = Record(record_type=record_type, uid=uid, title=title, is_bad_record=is_bad_record, **kwargs)
 
         if isinstance(object, Record.__class__) is False:
             raise ValueError("Record being added to the response is not a "
@@ -231,16 +233,20 @@ class Folder:
 
     def dump(self, secret, flags=None):
 
+        folder_key = secret
+        if self.has_bad_encryption is True:
+            secret = AESGCM.generate_key(128)
+
         return {
             "folderUid": self.uid,
-            "folderKey": base64.b64encode(CryptoUtils.encrypt_aes(secret, secret)).decode(),
+            "folderKey": base64.b64encode(CryptoUtils.encrypt_aes(folder_key, secret)).decode(),
             "records": [self.records[uid].dump(secret=secret, flags=flags) for uid in self.records]
         }
 
 
 class File:
 
-    def __init__(self, name, title=None, content_type=None, url=None, content=None, last_modified=None):
+    def __init__(self, name, title=None, content_type=None, url=None, content=None, last_modified=None, **kwargs):
         self.uid = uuid.uuid4().hex[:22]
         self.secret_used = None
 
@@ -262,6 +268,8 @@ class File:
             last_modified = int(time.time())
         self.last_modified = last_modified
 
+        self.has_bad_encryption = kwargs.get("has_bad_encryption")
+
     def downloadable_content(self):
 
         # The dump method will generate the content that the secrets manager would return. The
@@ -279,6 +287,10 @@ class File:
 
     def dump(self, secret, flags=None):
 
+        file_key = secret
+        if self.has_bad_encryption is True:
+            secret = AESGCM.generate_key(128)
+
         # No special flags for download. Do this to make PEP8 happy for unused vars.
         if flags is not None:
             pass
@@ -294,7 +306,7 @@ class File:
         data = json.dumps(d)
         file_data = {
             "fileUid": self.uid,
-            "fileKey": base64.b64encode(CryptoUtils.encrypt_aes(secret, secret)).decode(),
+            "fileKey": base64.b64encode(CryptoUtils.encrypt_aes(file_key, secret)).decode(),
             "data": base64.b64encode(CryptoUtils.encrypt_aes(data.encode(), secret)).decode(),
             "url": self.url,
             "thumbnailUrl": None
@@ -306,7 +318,7 @@ class Record:
 
     no_label = "__NONE__"
 
-    def __init__(self, record_type=None, uid=None, title=None):
+    def __init__(self, record_type=None, uid=None, title=None, **kwargs):
 
         if uid is None:
             uid = uuid.uuid4().hex[:22]
@@ -322,6 +334,8 @@ class Record:
 
         self._fields = []
         self._custom_fields = []
+
+        self.has_bad_encryption = kwargs.get("has_bad_encryption")
 
     @staticmethod
     def convert_keeper_record(keeper_record):
@@ -375,7 +389,7 @@ class Record:
             self._field(field_type, value, label, required, privacy_screen)
         )
 
-    def add_file(self, name, title=None, content_type=None, url=None, content=None, last_modified=None):
+    def add_file(self, name, title=None, content_type=None, url=None, content=None, last_modified=None, **kwargs):
 
         file = File(
             name=name,
@@ -383,12 +397,17 @@ class Record:
             content_type=content_type,
             url=url,
             content=content,
-            last_modified=last_modified
+            last_modified=last_modified,
+            **kwargs
         )
         self.files[file.uid] = file
         return file
 
     def dump(self, secret, flags=None):
+
+        record_key = secret
+        if self.has_bad_encryption is True:
+            secret = AESGCM.generate_key(128)
 
         fields = list(self._fields) if isinstance(self._fields, list) else self._fields
 
@@ -420,7 +439,7 @@ class Record:
 
         data = {
             "recordUid": self.uid,
-            "recordKey": base64.b64encode(CryptoUtils.encrypt_aes(secret, secret)).decode(),
+            "recordKey": base64.b64encode(CryptoUtils.encrypt_aes(record_key, secret)).decode(),
             "data": base64.b64encode(CryptoUtils.encrypt_aes(json.dumps(record_data).encode(), secret)).decode(),
             "isEditable": self.is_editable,
             "files": files

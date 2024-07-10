@@ -755,20 +755,34 @@ class SecretsManager:
         self.logger.debug("Individual record count: {}".format(len(records_resp or [])))
         self.logger.debug("Folder count: {}".format(len(folders_resp or [])))
 
+        sm_response = SecretsManagerResponse()
+
         if records_resp:
             for r in records_resp:
-                record = Record(r, secret_key)
-                records.append(record)
+                try:
+                    record = Record(r, secret_key)
+                    records.append(record)
+                except Exception as err:
+                    msg = f"{err.__class__.__name__}, {str(err)}"
+                    sm_response.bad_records.append({
+                        "r": r,
+                        "err": msg
+                    })
 
         if folders_resp:
             for f in folders_resp:
-                folder = Folder(f, secret_key)
-                records.extend(folder.records)
-                shared_folders.append(folder)
+                try:
+                    folder = Folder(f, secret_key)
+                    records.extend(folder.records)
+                    shared_folders.append(folder)
+                except Exception as err:
+                    msg = f"{err.__class__.__name__}, {str(err)}"
+                    sm_response.bad_folders.append({
+                        "f": f,
+                        "err": msg
+                    })
 
         self.logger.debug("Total record count: {}".format(len(records)))
-
-        sm_response = SecretsManagerResponse()
 
         if 'appData' in decrypted_response_dict:
             app_data_json = CryptoUtils.decrypt_aes(
@@ -823,6 +837,17 @@ class SecretsManager:
             for warning in records_resp.warnings:
                 self.logger.warning(warning)
 
+        if records_resp.had_bad_records:
+            for error in records_resp.bad_records:
+                uid = error.get('r').get("recordUid")
+                err = error.get('err')
+                self.logger.error(f"Record {uid} skipped due to error: {err}")
+
+        if records_resp.had_bad_folders:
+            for error in records_resp.bad_folders:
+                uid = error.get('f').get("folderUid")
+                err = error.get('err')
+                self.logger.error(f"Folder {uid} skipped due to error: {err}")
         if full_response:
             return records_resp
         else:
