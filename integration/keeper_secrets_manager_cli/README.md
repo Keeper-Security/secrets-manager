@@ -6,6 +6,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.1.5
+- Bumping KSM SDK to 16.6.5
+
 ## 1.1.4
 
 - KSM-507: Added `ksm secret delete` command
