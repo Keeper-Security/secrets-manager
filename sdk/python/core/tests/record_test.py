@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+import logging
 
 from keeper_secrets_manager_core.storage import FileKeyValueStorage
 from keeper_secrets_manager_core import SecretsManager
@@ -14,6 +15,19 @@ class RecordTest(unittest.TestCase):
     def setUp(self):
 
         self.orig_working_dir = os.getcwd()
+
+        logger = logging.getLogger("ksm")
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+        while logger.hasHandlers():
+            logger.removeHandler(logger.handlers[0])
+        handler = logging.StreamHandler()
+        logger.addHandler(handler)
+        formatter = logging.Formatter(f'%(asctime)s %(name)s  %(levelname)s: %(message)s')
+        handler.setFormatter(formatter)
+
+        logger.debug("Start test logging")
+
 
     def tearDown(self):
 
@@ -225,6 +239,105 @@ class RecordTest(unittest.TestCase):
                 self.assertEqual(
                     1, len(records), "didn't get 1 record for MyLogin")
                 self.assertEqual([], records[0].dict.get('fields'))
+        finally:
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass
+
+    def test_record_bad_encryption(self):
+        """ Test for clients that may set "fields": null in JSON data """
+
+        try:
+            with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+                fh.write(MockConfig.make_json())
+                fh.seek(0)
+                secrets_manager = SecretsManager(
+                    config=FileKeyValueStorage(config_file_location=fh.name),
+                    log_level=logging.INFO
+                )
+
+                res = mock.Response()
+
+                good_record = res.add_record(title="Good Record", record_type='login')
+                good_record.field("login", "My Login")
+                good_record.field("password", "My Password")
+
+                res.add_record(title="MyLogin", record_type='login', has_bad_encryption=True)
+
+                res_queue = mock.ResponseQueue(client=secrets_manager)
+                res_queue.add_response(res)
+
+                records = secrets_manager.get_secrets()
+                self.assertEqual(1, len(records), "did not get 1 record")
+
+        finally:
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass
+
+    def test_folder_bad_encryption(self):
+        """ Test for clients that may set "fields": null in JSON data """
+
+        try:
+            with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+                fh.write(MockConfig.make_json())
+                fh.seek(0)
+                secrets_manager = SecretsManager(
+                    config=FileKeyValueStorage(config_file_location=fh.name),
+                    log_level=logging.DEBUG
+                )
+
+                res = mock.Response()
+
+                good_folder = res.add_folder()
+
+                good_record = good_folder.add_record(title="Good Record", record_type='login')
+                good_record.field("login", "My Login")
+                good_record.field("password", "My Password")
+
+                bad_folder = res.add_folder(has_bad_encryption=True)
+                bad_folder.add_record(title="MyLogin", record_type='login')
+
+                res_queue = mock.ResponseQueue(client=secrets_manager)
+                res_queue.add_response(res)
+
+                records = secrets_manager.get_secrets()
+                self.assertEqual(1, len(records), "didn't get any records")
+
+        finally:
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass
+
+    def test_file_bad_encryption(self):
+        """ Test for clients that may set "fields": null in JSON data """
+
+        try:
+            with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+                fh.write(MockConfig.make_json())
+                fh.seek(0)
+                secrets_manager = SecretsManager(
+                    config=FileKeyValueStorage(config_file_location=fh.name),
+                    log_level=logging.INFO
+                )
+
+                res = mock.Response()
+
+                good_record = res.add_record(title="Good Record", record_type='login')
+                good_record.field("login", "My Login")
+                good_record.field("password", "My Password")
+
+                ok_record = res.add_record(title="MyLogin", record_type='login')
+                ok_record.add_file(name="BAD FILE", has_bad_encryption=True)
+
+                res_queue = mock.ResponseQueue(client=secrets_manager)
+                res_queue.add_response(res)
+
+                records = secrets_manager.get_secrets()
+                self.assertEqual(1, len(records), "did not get 1 record")
         finally:
             try:
                 os.unlink(fh.name)
