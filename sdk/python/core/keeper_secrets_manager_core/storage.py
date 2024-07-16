@@ -17,11 +17,19 @@ import json
 # An Interface for different storage types
 import errno
 from json import JSONDecodeError
+import platform
+import subprocess
 
 from keeper_secrets_manager_core import exceptions, utils
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.keeper_globals import logger_name
-from keeper_secrets_manager_core.utils import ENCODING, json_to_dict, set_config_mode, check_config_mode
+from keeper_secrets_manager_core.utils import (
+    ENCODING, 
+    base64_to_string, 
+    json_to_dict, 
+    set_config_mode, 
+    check_config_mode
+)
 
 
 class KeyValueStorage:
@@ -170,7 +178,7 @@ class FileKeyValueStorage(KeyValueStorage):
 
 
 class InMemoryKeyValueStorage(KeyValueStorage):
-    """ File based implementation of the key value storage"""
+    """ In Memory based implementation of the key value storage"""
 
     def __init__(self, config=None):
 
@@ -225,3 +233,88 @@ class InMemoryKeyValueStorage(KeyValueStorage):
             return base64.b64encode(base64.b64decode(s)) == str.encode(s)
         except (Exception,):
             return False
+
+
+class SecureOSStorage(KeyValueStorage):
+    """Secure OS based implementation of the key value storage
+    
+    Uses either the Windows Credential Manager, Linux Keyring or macOS Keychain to store 
+    the config. The config is stored as a base64 encoded string.
+    """
+    def __init__(self, app_name, exec_path):
+        if not app_name:
+            logging.getLogger(logger_name).error("An application name is required for SecureOSStorage")
+            raise exceptions.KeeperError("An application name is required for SecureOSStorage")
+
+        self.app_name = app_name
+        self._machine_os = platform.system()
+        
+        if not exec_path:
+            self._exec_path = self._find_exe_path()
+            if not self._exec_path:
+                logging.getLogger(logger_name).error("Could not find secure config executable")
+                raise exceptions.KeeperError("Could not find secure config executable")
+        else:
+            self._exec_path = exec_path
+
+        self.config = {}
+
+    def _find_exe_path(self) -> str | None:
+        if path := os.getenv("KSM_CONFIG_EXE_PATH"):
+            return path
+        
+        if self._machine_os == "Windows":
+            return self._run_command(["powershell", "-command", "(Get-Command wcm).Source"])                
+        elif self._machine_os == "Linux":
+            return self._run_command(["which", "lku"])
+            
+    def _run_command(self, args: list[str]) -> str | None:
+        """Run a command and return the output of stdout. 
+        If stdout is empty and has zero exit code, return None.
+        """
+        try:
+            completed_process = subprocess.run(args, capture_output=True, check=True)
+            if completed_process.stdout:
+                return completed_process.stdout.decode().strip()
+            else:
+                logging.getLogger(logger_name).error(f"Command: {args} returned empty stdout")
+                return None
+        except subprocess.CalledProcessError:
+            logging.getLogger(logger_name).error(f"Failed to run command: {args}, which returned {completed_process.stderr}")
+            raise exceptions.KeeperError(f"Failed to run command: {args}")
+
+    def read_storage(self) -> dict:
+        result = self._run_command([self._exec_path, "get", self.app_name])
+        if not result:
+            logging.getLogger(logger_name).error("Failed to read config or config does not exist")
+            return self.config
+        
+        config = json_to_dict(base64_to_string(result))
+        for key in config:
+            self.config[ConfigKeys.get_enum(key)] = config[key]
+        
+        return self.config
+
+    def save_storage(self, updated_config) -> None:
+        # Convert updated config to base64 and save it
+        converted_b64 = base64.b64encode(json.dumps(updated_config).encode())
+
+        result = self._run_command([self._exec_path, "set", self.app_name, converted_b64])
+        if not result:
+            logging.getLogger(logger_name).error("Failed to save config with error")
+            raise exceptions.KeeperError("Failed to save config")
+
+    def get(self, key: ConfigKeys):
+        return self.config.get(key)
+
+    def set(self, key: ConfigKeys, value):
+        self.config[key] = value
+
+    def delete(self, key: ConfigKeys):
+        self.config.pop(key, None)
+
+    def delete_all(self):
+        self.config = {}
+
+    def contains(self, key: ConfigKeys):
+        return key in self.config

@@ -31,7 +31,7 @@ from keeper_secrets_manager_core.dto.payload import CompleteTransactionPayload, 
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys, \
     logger_name, keeper_servers
-from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage, InMemoryKeyValueStorage
+from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage, InMemoryKeyValueStorage, SecureOSStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
     url_safe_str_to_bytes, bytes_to_base64, generate_random_bytes, now_milliseconds, string_to_bytes, json_to_dict, \
     bytes_to_string, strtobool
@@ -73,7 +73,7 @@ class SecretsManager:
 
     def __init__(self,
                  token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None,
-                 custom_post_function=None):
+                 custom_post_function=None, app_name=None, secure_exec_path=None):
 
         # Make sure the Python is 3.6 or higher. We'll handle Python 4 in the future :)
         python_version = sys.version_info
@@ -83,9 +83,14 @@ class SecretsManager:
         self.token = None
         self.hostname = None
 
+        # If the config is not defined and the KSM_CONFIG_SECURE env var is set to true, use the SecureOSStorage.
+        if config is None and strtobool(os.environ.get("KSM_CONFIG_SECURE")) == 1:
+            config = SecureOSStorage(app_name=app_name, exec_path=secure_exec_path)
+
         # If the config is not defined and the KSM_CONFIG env var exists, get the config from the env var.
-        if config is None and os.environ.get("KSM_CONFIG") is not None:
+        elif config is None and os.environ.get("KSM_CONFIG") is not None:
             config = InMemoryKeyValueStorage(os.environ.get("KSM_CONFIG"))
+
         elif token:
 
             token = token.strip()

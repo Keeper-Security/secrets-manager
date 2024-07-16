@@ -4,7 +4,7 @@ import tempfile
 import json
 import codecs
 
-from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
+from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage, SecureOSStorage
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.mock import MockConfig
@@ -400,3 +400,26 @@ class ConfigTest(unittest.TestCase):
                 subprocess.run('icacls.exe "{}" /grant Everyone:F'.format(file))
             os.unlink(file)
             os.chdir(self.orig_working_dir)
+
+    def test_secure_os_storage(self):
+        mock_config = MockConfig.make_config()
+        storage = SecureOSStorage(app_name="TEST", exec_path="test.exe")
+
+        # test set() and get()
+        storage.set(ConfigKeys.KEY_CLIENT_ID, mock_config.get("clientId"))
+        storage.set(ConfigKeys.KEY_APP_KEY, mock_config.get("appKey"))
+        storage.set(ConfigKeys.KEY_PRIVATE_KEY, mock_config.get("privateKey"))
+        self.assertEqual(mock_config.get("clientId"), storage.get(ConfigKeys.KEY_CLIENT_ID))
+        self.assertEqual(mock_config.get("appKey"), storage.get(ConfigKeys.KEY_APP_KEY))
+        self.assertEqual(mock_config.get("privateKey"), storage.get(ConfigKeys.KEY_PRIVATE_KEY))
+
+        # test contains()
+        self.assertTrue(storage.contains(ConfigKeys.KEY_CLIENT_ID))
+
+        # test delete()
+        storage.delete(ConfigKeys.KEY_CLIENT_ID)
+        self.assertIsNone(storage.get(ConfigKeys.KEY_CLIENT_ID))
+
+        # test delete_all()
+        storage.delete_all()
+        self.assertIsNone(storage.get(ConfigKeys.KEY_APP_KEY))
