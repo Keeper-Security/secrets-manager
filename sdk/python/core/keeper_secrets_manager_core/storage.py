@@ -279,7 +279,7 @@ class SecureOSStorage(KeyValueStorage):
             if completed_process.stdout:
                 return completed_process.stdout.decode().strip()
             else:
-                # Some command do not return anything on success, such as the 'set' command
+                # Some commands do not return anything to stdout on success, such as the 'set' command.
                 if completed_process.returncode == 0:
                     return ""
                 else:
@@ -305,7 +305,7 @@ class SecureOSStorage(KeyValueStorage):
         return self.config
 
     def save_storage(self) -> None:
-        # Convert updated config to base64 and save it
+        # Convert current self.config to base64 and save it
         b64_config = base64.b64encode(json.dumps(self.config).encode())
         result = self._run_command([self._exec_path, "set", self.app_name, b64_config])
         if result == "":

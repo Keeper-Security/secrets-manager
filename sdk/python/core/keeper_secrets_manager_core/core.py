@@ -84,7 +84,7 @@ class SecretsManager:
         self.hostname = None
 
         # If the config is not defined and the KSM_CONFIG_SECURE env var is set to true, use the SecureOSStorage.
-        if config is None and strtobool(os.environ.get("KSM_CONFIG_SECURE")) == 1:
+        if config is None and os.environ.get("KSM_CONFIG_SECURE") in ("true", "True", "TRUE"):
             config = SecureOSStorage(app_name=app_name, exec_path=secure_exec_path)
 
         # If the config is not defined and the KSM_CONFIG env var exists, get the config from the env var.

@@ -24,6 +24,13 @@ class ConfigTest(unittest.TestCase):
         # Make the the config is not set in the env var. Will screw up certain tests.
         os.environ.pop("KSM_CONFIG", None)
 
+        # Create mock secure storage executable
+        self.mock_exec_path = os.path.join(self.orig_working_dir, "keeper_secrets_manager_core", "mock_secure_exec.py")
+        
+        # sys.executable returns the path of the current python interpreter 
+        # which is used to run the mock_secure_exec.py file
+        self.python_interpreter = sys.executable
+
     def tearDown(self):
 
         os.chdir(self.orig_working_dir)
@@ -426,21 +433,19 @@ class ConfigTest(unittest.TestCase):
         self.assertIsNone(storage.get(ConfigKeys.KEY_APP_KEY))
 
     def test_secure_os_storage_read_storage(self):
-        mock_exec_path = os.path.join(os.getcwd(), "keeper_secrets_manager_core", "mock_secure_exec.py")
-
-        # sys.executable returns the path to the current Python interpreter, 
-        # so it can be used to run the mock_secure_exec.py file
-        storage = SecureOSStorage(app_name="TEST", exec_path=[sys.executable, mock_exec_path])
+        storage = SecureOSStorage(
+            app_name="TEST", 
+            exec_path=[self.python_interpreter, self.mock_exec_path]
+        )
 
         storage.read_storage()
         self.assertIsNotNone(storage.get(ConfigKeys.KEY_CLIENT_ID))
 
     def test_secure_os_storage_save_storage(self):
-        mock_exec_path = os.path.join(os.getcwd(), "keeper_secrets_manager_core", "mock_secure_exec.py")
-
-        # sys.executable returns the path to the current Python interpreter, 
-        # so it can be used to run the mock_secure_exec.py file
-        storage = SecureOSStorage(app_name="TEST", exec_path=[sys.executable, mock_exec_path])
+        storage = SecureOSStorage(
+            app_name="TEST", 
+            exec_path=[self.python_interpreter, self.mock_exec_path]
+        )
         storage.config = MockConfig.make_config()
         
         # Test save_storage() doesn't raise an exception
