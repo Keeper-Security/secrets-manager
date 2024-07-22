@@ -268,20 +268,29 @@ class SecureOSStorage(KeyValueStorage):
         elif self._machine_os == "Linux":
             return self._run_command(["which", "lku"])
             
-    def _run_command(self, args: list[str]) -> str | None:
-        """Run a command and return the output of stdout. 
-        If stdout is empty and has zero exit code, return None.
-        """
+    def _run_command(self, args: list[str | list]) -> str:
+        """Run a command and return the output of stdout."""
+
+        # Flatten args list in instance that it has nested lists
+        args_list = [item for arg in args for item in (arg if isinstance(arg, list) else [arg])]
+
         try:
-            completed_process = subprocess.run(args, capture_output=True, check=True)
+            completed_process = subprocess.run(args_list, capture_output=True, check=True)
             if completed_process.stdout:
                 return completed_process.stdout.decode().strip()
             else:
-                logging.getLogger(logger_name).error(f"Command: {args} returned empty stdout")
-                return None
+                # Some command do not return anything on success, such as the 'set' command
+                if completed_process.returncode == 0:
+                    return ""
+                else:
+                    logging.getLogger(logger_name).error(
+                        f"Failed to run command: {args_list}, which returned {completed_process.stderr}"
+                    )
+                    raise exceptions.KeeperError(f"Command: {args_list} returned empty stdout")
+
         except subprocess.CalledProcessError:
-            logging.getLogger(logger_name).error(f"Failed to run command: {args}, which returned {completed_process.stderr}")
-            raise exceptions.KeeperError(f"Failed to run command: {args}")
+            logging.getLogger(logger_name).error(f"Failed to run command: {args_list}")
+            raise exceptions.KeeperError(f"Failed to run command: {args_list}")
 
     def read_storage(self) -> dict:
         result = self._run_command([self._exec_path, "get", self.app_name])
@@ -295,14 +304,12 @@ class SecureOSStorage(KeyValueStorage):
         
         return self.config
 
-    def save_storage(self, updated_config) -> None:
+    def save_storage(self) -> None:
         # Convert updated config to base64 and save it
-        converted_b64 = base64.b64encode(json.dumps(updated_config).encode())
-
-        result = self._run_command([self._exec_path, "set", self.app_name, converted_b64])
-        if not result:
-            logging.getLogger(logger_name).error("Failed to save config with error")
-            raise exceptions.KeeperError("Failed to save config")
+        b64_config = base64.b64encode(json.dumps(self.config).encode())
+        result = self._run_command([self._exec_path, "set", self.app_name, b64_config])
+        if result == "":
+            logging.getLogger(logger_name).info("Config saved successfully")
 
     def get(self, key: ConfigKeys):
         return self.config.get(key)

@@ -1,3 +1,4 @@
+import sys
 import unittest
 import os
 import tempfile
@@ -423,3 +424,25 @@ class ConfigTest(unittest.TestCase):
         # test delete_all()
         storage.delete_all()
         self.assertIsNone(storage.get(ConfigKeys.KEY_APP_KEY))
+
+    def test_secure_os_storage_read_storage(self):
+        mock_exec_path = os.path.join(os.getcwd(), "keeper_secrets_manager_core", "mock_secure_exec.py")
+
+        # sys.executable returns the path to the current Python interpreter, 
+        # so it can be used to run the mock_secure_exec.py file
+        storage = SecureOSStorage(app_name="TEST", exec_path=[sys.executable, mock_exec_path])
+
+        storage.read_storage()
+        self.assertIsNotNone(storage.get(ConfigKeys.KEY_CLIENT_ID))
+
+    def test_secure_os_storage_save_storage(self):
+        mock_exec_path = os.path.join(os.getcwd(), "keeper_secrets_manager_core", "mock_secure_exec.py")
+
+        # sys.executable returns the path to the current Python interpreter, 
+        # so it can be used to run the mock_secure_exec.py file
+        storage = SecureOSStorage(app_name="TEST", exec_path=[sys.executable, mock_exec_path])
+        storage.config = MockConfig.make_config()
+        
+        # Test save_storage() doesn't raise an exception
+        storage.save_storage()
+                
