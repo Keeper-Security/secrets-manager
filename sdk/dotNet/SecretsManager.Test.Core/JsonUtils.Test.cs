@@ -7,7 +7,8 @@ namespace SecretsManager.Test
         [Test]
         public void ParseAndSerializeShouldNotChangeTheData()
         {
-            var rec = new KeeperRecordData {
+            var rec = new KeeperRecordData
+            {
                 type = "Login2",
                 title = "MyHomeLogin",
                 notes = "MyNotes",
