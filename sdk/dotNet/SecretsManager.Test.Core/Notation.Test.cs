@@ -19,13 +19,13 @@ namespace SecretsManager.Test
             });
 
             var value = Notation.GetValue(secrets, $"keeper://{RecordUid}/field/login");
-            Assert.AreEqual("My Login 1", value);
+            Assert.That("My Login 1", Is.EqualTo(value));
 
             value = Notation.GetValue(secrets, $"{RecordUid}/field/login");
-            Assert.AreEqual("My Login 1", value);
+            Assert.That("My Login 1", Is.EqualTo(value));
 
             value = Notation.GetValue(secrets, $"keeper://{RecordUid}/field/login[0]");
-            Assert.AreEqual("My Login 1", value);
+            Assert.That("My Login 1", Is.EqualTo(value));
 
             try
             {
@@ -38,34 +38,34 @@ namespace SecretsManager.Test
             }
 
             value = Notation.GetValue(secrets, $"keeper://{RecordUid}/field/login[]");
-            Assert.AreEqual("[\"My Login 1\"]", value);
+            Assert.That("[\"My Login 1\"]", Is.EqualTo(value));
 
             value = Notation.GetValue(secrets, $"keeper://{RecordUid}/custom_field/My Custom 1");
-            Assert.AreEqual("custom1", value);
+            Assert.That("custom1", Is.EqualTo(value));
 
             value = Notation.GetValue(secrets, $"keeper://{RecordUid}/custom_field/My Custom 2");
-            Assert.AreEqual("one", value);
+            Assert.That("one", Is.EqualTo(value));
 
             value = Notation.GetValue(secrets, $"keeper://{RecordUid}/custom_field/My Custom 2[1]");
-            Assert.AreEqual("two", value);
+            Assert.That("two", Is.EqualTo(value));
 
             value = Notation.GetValue(secrets, $"keeper://{RecordUid}/custom_field/My Custom 2[]");
-            Assert.AreEqual("[\"one\",\"two\",\"three\"]", value);
+            Assert.That("[\"one\",\"two\",\"three\"]", Is.EqualTo(value));
 
             value = Notation.GetValue(secrets, $"keeper://{RecordUid}/custom_field/phone[0][number]");
-            Assert.AreEqual("555-5555555", value);
+            Assert.That("555-5555555", Is.EqualTo(value));
 
             value = Notation.GetValue(secrets, $"keeper://{RecordUid}/custom_field/phone[1][number]");
-            Assert.AreEqual("777-7777777", value);
+            Assert.That("777-7777777", Is.EqualTo(value));
 
             value = Notation.GetValue(secrets, $"keeper://{RecordUid}/custom_field/phone[2]");
-            Assert.AreEqual("{\"number\":\"888-8888888\",\"ext\":\"\",\"type\":\"Home\"}", value);
+            Assert.That("{\"number\":\"888-8888888\",\"ext\":\"\",\"type\":\"Home\"}", Is.EqualTo(value));
 
             value = Notation.GetValue(secrets, $"keeper://{RecordUid}/custom_field/name[first]");
-            Assert.AreEqual("Jenny", value);
+            Assert.That("Jenny", Is.EqualTo(value));
 
             value = Notation.GetValue(secrets, $"keeper://{RecordUid}/custom_field/name[last]");
-            Assert.AreEqual("Smith", value);
+            Assert.That("Smith", Is.EqualTo(value));
         }
 
         [Test]
@@ -86,35 +86,35 @@ namespace SecretsManager.Test
             catch (Exception) { }
 
             var res = Notation.ParseNotation("/type");
-            Assert.AreEqual("type", res[2].Text.Item1);
+            Assert.That("type", Is.EqualTo(res[2].Text.Item1));
 
             res = Notation.ParseNotation("/title");
-            Assert.AreEqual("title", res[2].Text.Item1);
+            Assert.That("title", Is.EqualTo(res[2].Text.Item1));
 
             res = Notation.ParseNotation("/notes");
-            Assert.AreEqual("notes", res[2].Text.Item1);
+            Assert.That("notes", Is.EqualTo(res[2].Text.Item1));
 
             res = Notation.ParseNotation("/file/filename.ext");
-            Assert.AreEqual("file", res[2].Text.Item1);
-            Assert.AreEqual("filename.ext", res[2].Parameter.Item1);
+            Assert.That("file", Is.EqualTo(res[2].Text.Item1));
+            Assert.That("filename.ext", Is.EqualTo(res[2].Parameter.Item1));
 
             res = Notation.ParseNotation("/field/text");
-            Assert.AreEqual("field", res[2].Text.Item1);
-            Assert.AreEqual("text", res[2].Parameter.Item1);
+            Assert.That("field", Is.EqualTo(res[2].Text.Item1));
+            Assert.That("text", Is.EqualTo(res[2].Parameter.Item1));
 
             res = Notation.ParseNotation(@"/custom_field/label with \[[0][middle]");
-            Assert.AreEqual("", res[1].Text.Item1); // empty title
-            Assert.AreEqual("custom_field", res[2].Text.Item1);
-            Assert.AreEqual(@"label with [", res[2].Parameter.Item1);
-            Assert.AreEqual("0", res[2].Index1.Item1);
-            Assert.AreEqual("middle", res[2].Index2.Item1);
+            Assert.That("", Is.EqualTo(res[1].Text.Item1)); // empty title
+            Assert.That("custom_field", Is.EqualTo(res[2].Text.Item1));
+            Assert.That(@"label with [", Is.EqualTo(res[2].Parameter.Item1));
+            Assert.That("0", Is.EqualTo(res[2].Index1.Item1));
+            Assert.That("middle", Is.EqualTo(res[2].Index2.Item1));
 
             res = Notation.ParseNotation(@"title with \[\]\//custom_field/label with \[[0][middle]");
-            Assert.AreEqual(@"title with []/", res[1].Text.Item1);
-            Assert.AreEqual("custom_field", res[2].Text.Item1);
-            Assert.AreEqual(@"label with [", res[2].Parameter.Item1);
-            Assert.AreEqual("0", res[2].Index1.Item1);
-            Assert.AreEqual("middle", res[2].Index2.Item1);
+            Assert.That(@"title with []/", Is.EqualTo(res[1].Text.Item1));
+            Assert.That("custom_field", Is.EqualTo(res[2].Text.Item1));
+            Assert.That(@"label with [", Is.EqualTo(res[2].Parameter.Item1));
+            Assert.That("0", Is.EqualTo(res[2].Index1.Item1));
+            Assert.That("middle", Is.EqualTo(res[2].Index2.Item1));
         }
     }
 }

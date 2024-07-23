@@ -36,14 +36,14 @@ namespace SecretsManager.Test
             var storage = new LocalConfigStorage();
 
             var fakeOneTimeCode = "YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c";
-                
+
             SecretsManagerClient.InitializeStorage(storage, fakeOneTimeCode, "fake.keepersecurity.com");
-            
+
             var options = new SecretsManagerOptions(storage, TestPostFunction);
             var secrets = await SecretsManagerClient.GetSecrets(options);
             var password = secrets.Records[1].FieldValue("password").ToString();
             // ReSharper disable once StringLiteralTypo
-            Assert.AreEqual("Lex1S++Wx6g^,LC.(Vp<", password);
+            Assert.That("Lex1S++Wx6g^,LC.(Vp<", Is.EqualTo(password));
         }
 
         [Test]
@@ -51,35 +51,35 @@ namespace SecretsManager.Test
         {
             var storage = new InMemoryStorage();
             SecretsManagerClient.InitializeStorage(storage, "US:ONE_TIME_TOKEN");
-            Assert.AreEqual("keepersecurity.com", storage.GetString("hostname"));
+            Assert.That("keepersecurity.com", Is.EqualTo(storage.GetString("hostname")));
 
             storage = new InMemoryStorage();
             SecretsManagerClient.InitializeStorage(storage, "EU:ONE_TIME_TOKEN");
-            Assert.AreEqual("keepersecurity.eu", storage.GetString("hostname"));
+            Assert.That("keepersecurity.eu", Is.EqualTo(storage.GetString("hostname")));
 
             storage = new InMemoryStorage();
             SecretsManagerClient.InitializeStorage(storage, "AU:ONE_TIME_TOKEN");
-            Assert.AreEqual("keepersecurity.com.au", storage.GetString("hostname"));
+            Assert.That("keepersecurity.com.au", Is.EqualTo(storage.GetString("hostname")));
 
             storage = new InMemoryStorage();
             SecretsManagerClient.InitializeStorage(storage, "GOV:ONE_TIME_TOKEN");
-            Assert.AreEqual("govcloud.keepersecurity.us", storage.GetString("hostname"));
+            Assert.That("govcloud.keepersecurity.us", Is.EqualTo(storage.GetString("hostname")));
 
             storage = new InMemoryStorage();
             SecretsManagerClient.InitializeStorage(storage, "JP:ONE_TIME_TOKEN");
-            Assert.AreEqual("keepersecurity.jp", storage.GetString("hostname"));
+            Assert.That("keepersecurity.jp", Is.EqualTo(storage.GetString("hostname")));
 
             storage = new InMemoryStorage();
             SecretsManagerClient.InitializeStorage(storage, "CA:ONE_TIME_TOKEN");
-            Assert.AreEqual("keepersecurity.ca", storage.GetString("hostname"));
+            Assert.That("keepersecurity.ca", Is.EqualTo(storage.GetString("hostname")));
 
             storage = new InMemoryStorage();
             SecretsManagerClient.InitializeStorage(storage, "eu:ONE_TIME_TOKEN");
-            Assert.AreEqual("keepersecurity.eu", storage.GetString("hostname"));
+            Assert.That("keepersecurity.eu", Is.EqualTo(storage.GetString("hostname")));
 
             storage = new InMemoryStorage();
             SecretsManagerClient.InitializeStorage(storage, "fake.keepersecurity.com:ONE_TIME_TOKEN");
-            Assert.AreEqual("fake.keepersecurity.com", storage.GetString("hostname"));
+            Assert.That("fake.keepersecurity.com", Is.EqualTo(storage.GetString("hostname")));
         }
 
         [Test]
@@ -88,9 +88,9 @@ namespace SecretsManager.Test
             string fakeBase64Config = "eyJhcHBLZXkiOiAiRkFLRV9BUFBfS0VZIiwgICAgICJjbGllbnRJZCI6ICJGQUtFX0NMSUVOVF9LRV" +
                                       "kiLCAgICAgImhvc3RuYW1lIjogImZha2Uua2VlcGVyc2VjdXJpdHkuY29tIiwgICAgICJwcml2YXRl" +
                                       "S2V5IjogIkZBS0VfUFJJVkFURV9LRVkiLCAgICAKInNlcnZlclB1YmxpY0tleUlkIjogIjEwIiB9";
-            
+
             var storage = new InMemoryStorage(fakeBase64Config);
-            Assert.AreEqual("fake.keepersecurity.com", storage.GetString("hostname"));
+            Assert.That("fake.keepersecurity.com", Is.EqualTo(storage.GetString("hostname")));
         }
     }
 }
