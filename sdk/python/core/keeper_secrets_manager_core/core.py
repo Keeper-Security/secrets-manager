@@ -73,7 +73,7 @@ class SecretsManager:
 
     def __init__(self,
                  token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None,
-                 custom_post_function=None, app_name=None, secure_exec_path=None):
+                 custom_post_function=None):
 
         # Make sure the Python is 3.6 or higher. We'll handle Python 4 in the future :)
         python_version = sys.version_info
@@ -83,12 +83,8 @@ class SecretsManager:
         self.token = None
         self.hostname = None
 
-        # If the config is not defined and the KSM_CONFIG_SECURE env var is set to true, use the SecureOSStorage.
-        if config is None and os.environ.get("KSM_CONFIG_SECURE") in ("true", "True", "TRUE"):
-            config = SecureOSStorage(app_name=app_name, exec_path=secure_exec_path)
-
         # If the config is not defined and the KSM_CONFIG env var exists, get the config from the env var.
-        elif config is None and os.environ.get("KSM_CONFIG") is not None:
+        if config is None and os.environ.get("KSM_CONFIG") is not None:
             config = InMemoryKeyValueStorage(os.environ.get("KSM_CONFIG"))
 
         elif token:

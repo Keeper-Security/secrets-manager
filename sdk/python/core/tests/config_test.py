@@ -408,46 +408,4 @@ class ConfigTest(unittest.TestCase):
                 subprocess.run('icacls.exe "{}" /grant Everyone:F'.format(file))
             os.unlink(file)
             os.chdir(self.orig_working_dir)
-
-    def test_secure_os_storage(self):
-        mock_config = MockConfig.make_config()
-        storage = SecureOSStorage(app_name="TEST", exec_path="test.exe")
-
-        # test set() and get()
-        storage.set(ConfigKeys.KEY_CLIENT_ID, mock_config.get("clientId"))
-        storage.set(ConfigKeys.KEY_APP_KEY, mock_config.get("appKey"))
-        storage.set(ConfigKeys.KEY_PRIVATE_KEY, mock_config.get("privateKey"))
-        self.assertEqual(mock_config.get("clientId"), storage.get(ConfigKeys.KEY_CLIENT_ID))
-        self.assertEqual(mock_config.get("appKey"), storage.get(ConfigKeys.KEY_APP_KEY))
-        self.assertEqual(mock_config.get("privateKey"), storage.get(ConfigKeys.KEY_PRIVATE_KEY))
-
-        # test contains()
-        self.assertTrue(storage.contains(ConfigKeys.KEY_CLIENT_ID))
-
-        # test delete()
-        storage.delete(ConfigKeys.KEY_CLIENT_ID)
-        self.assertIsNone(storage.get(ConfigKeys.KEY_CLIENT_ID))
-
-        # test delete_all()
-        storage.delete_all()
-        self.assertIsNone(storage.get(ConfigKeys.KEY_APP_KEY))
-
-    def test_secure_os_storage_read_storage(self):
-        storage = SecureOSStorage(
-            app_name="TEST", 
-            exec_path=[self.python_interpreter, self.mock_exec_path]
-        )
-
-        storage.read_storage()
-        self.assertIsNotNone(storage.get(ConfigKeys.KEY_CLIENT_ID))
-
-    def test_secure_os_storage_save_storage(self):
-        storage = SecureOSStorage(
-            app_name="TEST", 
-            exec_path=[self.python_interpreter, self.mock_exec_path]
-        )
-        storage.config = MockConfig.make_config()
-        
-        # Test save_storage() doesn't raise an exception
-        storage.save_storage()
-                
+            
