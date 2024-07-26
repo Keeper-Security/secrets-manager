@@ -6,7 +6,7 @@
 #              |_|
 #
 # Keeper Secrets Manager
-# Copyright 2023 Keeper Security Inc.
+# Copyright 2024 Keeper Security Inc.
 # Contact: sm@keepersecurity.com
 
 import sys

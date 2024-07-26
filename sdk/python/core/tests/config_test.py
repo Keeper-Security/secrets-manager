@@ -1,11 +1,10 @@
-import sys
 import unittest
 import os
 import tempfile
 import json
 import codecs
 
-from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage, SecureOSStorage
+from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.mock import MockConfig
@@ -23,13 +22,6 @@ class ConfigTest(unittest.TestCase):
 
         # Make the the config is not set in the env var. Will screw up certain tests.
         os.environ.pop("KSM_CONFIG", None)
-
-        # Create mock secure storage executable
-        self.mock_exec_path = os.path.join(self.orig_working_dir, "keeper_secrets_manager_core", "mock_secure_exec.py")
-        
-        # sys.executable returns the path of the current python interpreter 
-        # which is used to run the mock_secure_exec.py file
-        self.python_interpreter = sys.executable
 
     def tearDown(self):
 
@@ -408,4 +400,3 @@ class ConfigTest(unittest.TestCase):
                 subprocess.run('icacls.exe "{}" /grant Everyone:F'.format(file))
             os.unlink(file)
             os.chdir(self.orig_working_dir)
-            

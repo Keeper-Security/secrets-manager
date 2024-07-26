@@ -31,7 +31,7 @@ from keeper_secrets_manager_core.dto.payload import CompleteTransactionPayload, 
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys, \
     logger_name, keeper_servers
-from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage, InMemoryKeyValueStorage, SecureOSStorage
+from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage, InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
     url_safe_str_to_bytes, bytes_to_base64, generate_random_bytes, now_milliseconds, string_to_bytes, json_to_dict, \
     bytes_to_string, strtobool
@@ -86,7 +86,6 @@ class SecretsManager:
         # If the config is not defined and the KSM_CONFIG env var exists, get the config from the env var.
         if config is None and os.environ.get("KSM_CONFIG") is not None:
             config = InMemoryKeyValueStorage(os.environ.get("KSM_CONFIG"))
-
         elif token:
 
             token = token.strip()

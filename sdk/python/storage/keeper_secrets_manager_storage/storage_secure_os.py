@@ -5,11 +5,11 @@ import os
 import platform
 import subprocess
 
-from core.keeper_secrets_manager_core import exceptions
-from core.keeper_secrets_manager_core.configkeys import ConfigKeys
-from core.keeper_secrets_manager_core.storage import KeyValueStorage
-from core.keeper_secrets_manager_core.keeper_globals import logger_name
-from core.keeper_secrets_manager_core.utils import base64_to_string, json_to_dict
+from keeper_secrets_manager_core import exceptions
+from keeper_secrets_manager_core.configkeys import ConfigKeys
+from keeper_secrets_manager_core.storage import KeyValueStorage
+from keeper_secrets_manager_core.keeper_globals import logger_name
+from keeper_secrets_manager_core.utils import base64_to_string, json_to_dict
 
 
 class SecureOSStorage(KeyValueStorage):
@@ -78,7 +78,6 @@ class SecureOSStorage(KeyValueStorage):
         config = json_to_dict(base64_to_string(result))
         for key in config:
             self.config[ConfigKeys.get_enum(key)] = config[key]
-        
         return self.config
 
     def save_storage(self) -> None:
