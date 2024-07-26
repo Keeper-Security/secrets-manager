@@ -170,7 +170,7 @@ class FileKeyValueStorage(KeyValueStorage):
 
 
 class InMemoryKeyValueStorage(KeyValueStorage):
-    """ In Memory based implementation of the key value storage"""
+    """ File based implementation of the key value storage"""
 
     def __init__(self, config=None):
 
