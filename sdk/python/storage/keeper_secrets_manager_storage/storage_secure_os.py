@@ -1,15 +1,36 @@
 import base64
+import hashlib
 import json
 import logging
 import os
 import platform
 import subprocess
+from enum import Enum
 
 from keeper_secrets_manager_core import exceptions
 from keeper_secrets_manager_core.configkeys import ConfigKeys
-from keeper_secrets_manager_core.storage import KeyValueStorage
 from keeper_secrets_manager_core.keeper_globals import logger_name
+from keeper_secrets_manager_core.storage import KeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_string, json_to_dict
+
+
+class LKUChecksums(Enum):
+    """Checksums for the Linux Keyring Utility (lku)"""
+    V0_1_0 = "3B8AB72D5BE95B4FDD3D56A5ECD6C75EF121CCC36520341B61B8E6DEDBFB5128"
+    V0_1_1 = "5C9848AAB7ABCC1842C941D6EB42A55E0C2AD140E5D8F94CA798DF1B336ECFDF"
+    
+
+class WCMChecksums(Enum):
+    """Checksums for the Windows Credential Manager Utility (wcm)"""
+    V0_1_0 = "50A431188DDBFA7D963304D6ED3B0C6D0B68A0B0703DE0D96C2BB4D0FB2F77F4"
+    V0_2_0 = "A166E71F02FE51B5AA132E8664EF4A8922F42AA889E0962DCE5F7ABAD5DCDA0A"
+    V0_2_1 = "8EAEB30AE5DEC8F1C3D957C3BC0433D8F18FCC03E5C761A5C1A6C7AE41264105"
+
+
+def is_valid_checksum(file: str, checksums: Enum) -> bool:
+    with open(file, "rb") as f:
+        file_hash = hashlib.file_digest(f, "sha256")
+    return file_hash.hexdigest().upper() in [checksum.value for checksum in checksums]
 
 
 class SecureOSStorage(KeyValueStorage):
@@ -18,12 +39,13 @@ class SecureOSStorage(KeyValueStorage):
     Uses either the Windows Credential Manager, Linux Keyring or macOS Keychain to store 
     the config. The config is stored as a base64 encoded string.
     """
-    def __init__(self, app_name, exec_path):
+    def __init__(self, app_name: str, exec_path: str, run_as: str = None):
         if not app_name:
             logging.getLogger(logger_name).error("An application name is required for SecureOSStorage")
             raise exceptions.KeeperError("An application name is required for SecureOSStorage")
 
         self.app_name = app_name
+        self._run_as = run_as
         self._machine_os = platform.system()
         
         if not exec_path:
@@ -48,8 +70,16 @@ class SecureOSStorage(KeyValueStorage):
     def _run_command(self, args: list[str | list]) -> str:
         """Run a command and return the output of stdout."""
 
+        # Check if the checksum of the executable is valid every time it is called, as 
+        # self._exec_path could be changed during the lifetime of the object.
+        if is_valid_checksum(self._exec_path, LKUChecksums if self._machine_os == "Linux" else WCMChecksums):
+            logging.getLogger(logger_name).error(f"Checksum for {self._exec_path} is invalid")
+            raise exceptions.KeeperError(f"Checksum for {self._exec_path} is invalid")
+
         # Flatten args list in instance that it has nested lists
         args_list = [item for arg in args for item in (arg if isinstance(arg, list) else [arg])]
+        if self._run_as:
+            args_list.insert(0, self._run_as)
 
         try:
             completed_process = subprocess.run(args_list, capture_output=True, check=True)
