@@ -78,7 +78,7 @@ class SecureOSStorage(KeyValueStorage):
         elif self._machine_os == "Linux":
             return self._run_command(["which", "lku"])
 
-    def _run_command(self, args: list[str | list]) -> str:
+    def _run_command(self, args: list[str]) -> str:
         """Run a command and return the output of stdout."""
 
         # Check if the checksum of the executable is valid every time it is called, as
@@ -92,16 +92,12 @@ class SecureOSStorage(KeyValueStorage):
             )
             raise exceptions.KeeperError(f"Checksum for {self._exec_path} is invalid")
 
-        # Flatten args list in instance that it has nested lists
-        args_list = [
-            item for arg in args for item in (arg if isinstance(arg, list) else [arg])
-        ]
         if self._run_as:
-            args_list.insert(0, self._run_as)
+            args.insert(0, self._run_as)
 
         try:
             completed_process = subprocess.run(
-                args_list, capture_output=True, check=True
+                args, capture_output=True, check=True
             )
             if completed_process.stdout:
                 return completed_process.stdout.decode().strip()
@@ -111,15 +107,15 @@ class SecureOSStorage(KeyValueStorage):
                     return ""
                 else:
                     logging.getLogger(logger_name).error(
-                        f"Failed to run command: {args_list}, which returned {completed_process.stderr}"
+                        f"Failed to run command: {args}, which returned {completed_process.stderr}"
                     )
                     raise exceptions.KeeperError(
-                        f"Command: {args_list} returned empty stdout"
+                        f"Command: {args} returned empty stdout"
                     )
 
         except subprocess.CalledProcessError:
-            logging.getLogger(logger_name).error(f"Failed to run command: {args_list}")
-            raise exceptions.KeeperError(f"Failed to run command: {args_list}")
+            logging.getLogger(logger_name).error(f"Failed to run command: {args}")
+            raise exceptions.KeeperError(f"Failed to run command: {args}")
 
     def read_storage(self) -> dict:
         result = self._run_command([self._exec_path, "get", self.app_name])
