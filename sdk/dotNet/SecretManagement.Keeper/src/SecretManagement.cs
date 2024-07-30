@@ -4,8 +4,10 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Management.Automation;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -19,7 +21,7 @@ namespace SecretManagement.Keeper
             SecretsManagerClient.InitializeStorage(storage, oneTimeToken);
             try
             {
-                await SecretsManagerClient.GetSecrets(new SecretsManagerOptions(storage));
+                await SecretsManagerClient.GetSecrets(new SecretsManagerOptions(storage), new string[] { new string('A', 22) });
             }
             catch (Exception e)
             {
@@ -34,7 +36,7 @@ namespace SecretManagement.Keeper
             var storage = new InMemoryStorage(config);
             try
             {
-                await SecretsManagerClient.GetSecrets(new SecretsManagerOptions(storage));
+                await SecretsManagerClient.GetSecrets(new SecretsManagerOptions(storage), new string[] { new string('A', 22) });
             }
             catch (Exception e)
             {
@@ -75,9 +77,52 @@ namespace SecretManagement.Keeper
             }
         }
 
+        private const char EscapeChar = '\\';
+        private static readonly char[] EscapedChars = { '\\', '.' };
+        private static string[] ParseQuery(string query)
+        {
+            // escape char to be used only in title and only when title has dot(s)
+            if (string.IsNullOrEmpty(query)) return new string[] { "" };
+            if (!query.Contains('.') || !query.Contains(EscapeChar)) return query.Split(new[] { '.' }, 2);
+
+            int pos = 0;
+            bool inEscSequence = query[pos].Equals(EscapeChar);
+            StringBuilder title = inEscSequence ? new StringBuilder() : new StringBuilder(query[pos].ToString());
+            while (++pos <= query.Length)
+            {
+                if (pos >= query.Length)
+                {
+                    // unfinished escape sequence - treat last EscapeChar as regular character
+                    if (inEscSequence) title.Append(EscapeChar);
+                    break;
+                }
+                if (inEscSequence)
+                {
+                    // \N (where N not in EscapedChars) is bad esc sequence but treat \ as single non esc char
+                    if (!EscapedChars.Contains(query[pos]))
+                        title.Append(EscapeChar);
+                    title.Append(query[pos]);
+                    inEscSequence = false;
+                }
+                else
+                {
+                    inEscSequence = query[pos].Equals(EscapeChar);
+                    if (!inEscSequence)
+                    {
+                        if ('.'.Equals(query[pos])) break;
+                        title.Append(query[pos]);
+                    }
+                }
+            }
+
+            // return cleaned up title with escape chars removed
+            if (pos >= query.Length) return new string[] { title.ToString() };
+            return new string[] { title.ToString(), query.Substring(pos + 1) };
+        }
+
         public static async Task<object> GetSecret(string name, Hashtable config)
         {
-            var parts = name.Split(new[] { '.' }, 2);
+            var parts = ParseQuery(name);
             var (records, _) = await GetKeeperSecrets(config);
             var found = records.FirstOrDefault(x => x.RecordUid == parts[0] || x.Data.title == parts[0]);
             if (found == null)
@@ -159,7 +204,7 @@ namespace SecretManagement.Keeper
 
         public static async Task<KeeperResult> SetSecret(string name, object secret, Hashtable config)
         {
-            var parts = name.Split('.');
+            var parts = ParseQuery(name);
             if (parts.Length == 1)
             {
                 return KeeperResult.Error("Set-Secret can be used only on a single field");

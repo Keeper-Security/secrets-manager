@@ -7,7 +7,8 @@ namespace SecretsManager.Test
         [Test]
         public void ParseAndSerializeShouldNotChangeTheData()
         {
-            var rec = new KeeperRecordData {
+            var rec = new KeeperRecordData
+            {
                 type = "Login2",
                 title = "MyHomeLogin",
                 notes = "MyNotes",
@@ -25,8 +26,8 @@ namespace SecretsManager.Test
             //const string jsonIn = "{\"title\":\"MyHomeLogin\",\"type\":\"Login2\",\"fields\":[{\"type\":\"login\",\"label\":\"Login\",\"value\":[\"Login 1\"],\"required\":true,\"privacyScreen\":true},{\"type\":\"password\",\"label\":\"Password\",\"value\":[\"3[OJ%sc7n].wX6+k5GY)6\"],\"required\":true,\"privacyScreen\":true,\"enforceGeneration\":true,\"complexity\":{\"length\":21,\"caps\":5,\"lowercase\":5,\"digits\":5,\"special\":5}},{\"type\":\"url\",\"label\":\"URL\",\"value\":[\"https://asdfjkasdfkdsa.com\"],\"required\":true,\"privacyScreen\":true},{\"type\":\"securityQuestion\",\"label\":\"Security Question & Answer\",\"value\":[{\"question\":\"asdf\",\"answer\":\"asdf\"}],\"required\":true,\"privacyScreen\":true},{\"type\":\"fileRef\",\"label\":\"File or Photo\",\"value\":[]},{\"type\":\"oneTimeCode\",\"label\":\"Two-Factor Code\",\"value\":[]}],\"custom\":[],\"notes\":\"MyNotes\"}";
             var recordData = JsonUtils.ParseJson<KeeperRecordData>(CryptoUtils.StringToBytes(jsonIn));
             var jsonOut = CryptoUtils.BytesToString(JsonUtils.SerializeJson(recordData));
-            Assert.AreEqual(jsonIn, jsonOut);
-            Assert.AreEqual(recordData.fields[1].value[0].ToString(), rec.fields[1].value[0]);
+            Assert.That(jsonIn, Is.EqualTo(jsonOut));
+            Assert.That(recordData.fields[1].value[0].ToString(), Is.EqualTo(rec.fields[1].value[0]));
         }
         [Test]
         public void ParseAndSerializeShouldPreserveDiacritics()
@@ -34,7 +35,7 @@ namespace SecretsManager.Test
             string recordTitle = "MySpéciàlHomèL°gin";
             var krdin = new KeeperRecordData { title = recordTitle, type = "login" };
             var krdout = JsonUtils.ParseJson<KeeperRecordData>(JsonUtils.SerializeJson(krdin));
-            Assert.AreEqual(krdin.title, krdout.title);
+            Assert.That(krdin.title, Is.EqualTo(krdout.title));
         }
     }
 }

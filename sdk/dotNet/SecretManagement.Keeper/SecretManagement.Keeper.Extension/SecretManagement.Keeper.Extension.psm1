@@ -3,14 +3,15 @@ function Get-Config {
         [string] $LocalVaultName
     )
     $vaults = Microsoft.Powershell.SecretManagement\Get-SecretVault
-    $localVault = $vaults.Where( { $_.Name -eq $LocalVaultName } )
+    $localVault = $vaults.Where( { $_.Name -eq $LocalVaultName } ) # SecretStore/LocalStore
     if (!$localVault) {
         return $null
     }
+
     $moduleInstance = Import-Module -Name $localVault.ModuleName -PassThru
-    $configSecretName = 'KeeperVault.' + $VaultName
+    $configSecretName = 'KeeperVault.' + $VaultName # passed by SecretStore while enumerating registered vaults
     $config = & $moduleInstance Get-Secret -Name $configSecretName -VaultName $localVault.Name
-    if ($config -isnot [Hashtable]) { 
+    if ($config -isnot [Hashtable]) {
         $config = $config[0] # SecretStore returns a List
     }
     return $config

@@ -1,6 +1,13 @@
 name: Publish to NuGet
+
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to NuGet (uncheck to build only)'
+        required: false
+        default: 'true'
+        type: boolean
 
 jobs:
   publish-nuget:
@@ -9,22 +16,17 @@ jobs:
 
     defaults:
       run:
+
         working-directory: ./sdk/dotNet
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup .NET 6
-        uses: actions/setup-dotnet@v1
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 6.0.x
-
-      - name: Install dependencies
-        run: dotnet restore
-
-      - name: Build
-        run: dotnet build --configuration Release --no-restore
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
@@ -34,5 +36,111 @@ jobs:
           secrets: |
             Sq4nnb5HXXNp1l6KryXynw/field/password > NUGET_AUTH_TOKEN
 
+      - name: Install dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
       - name: Publish package
+        if: ${{ github.event.inputs.publish == 'true' }}
         run: dotnet nuget push ./SecretsManager/bin/Release/*.nupkg --api-key ${{steps.ksmsecrets.outputs.NUGET_AUTH_TOKEN}} --source https://api.nuget.org/v3/index.json
+
+      - name: Upload non-strong-named binaries
+        if: ${{ github.event.inputs.publish == 'false' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: non-strong-named-binaries-${{ github.run_number }}
+          path: |
+            ${{ github.workspace }}/sdk/dotNet/SecretsManager/bin/Release/*.nupkg
+
+  publish-nuget-strongname:
+    environment: prod
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: powershell
+        working-directory: .\sdk\dotNet
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 6
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 6.0.x
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
+          secrets: |
+            Sq4nnb5HXXNp1l6KryXynw/field/password > NUGET_AUTH_TOKEN
+            Sq4nnb5HXXNp1l6KryXynw/file/sgKSM.snk > file:${{ github.workspace }}\sdk\dotNet\SecretsManager\sgKSM.snk
+
+      - name: Extract and Update Public Key in SecretsManagerClient.cs
+        run: |
+          $snPath = "C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8 Tools\sn.exe"
+          $snkPath = "${{ github.workspace }}\sdk\dotNet\SecretsManager\sgKSM.snk"
+          $publicKeyPath = "${{ github.workspace }}\sdk\dotNet\SecretsManager\sgKSM.pub"
+          & $snPath -p $snkPath $publicKeyPath
+          $publicKeyInfo = & $snPath -tp $publicKeyPath
+          # Filter and join the lines of the public key
+          $publicKeyLines = $publicKeyInfo -split "`n" | Where-Object { $_ -match "^[a-f0-9\s]+$" }
+          $publicKey = $publicKeyLines -join "" -replace "\s", ""
+          
+          if (-not $publicKey) {
+            Write-Error "Failed to extract the full public key."
+            exit 1
+          }
+          
+          Write-Output "Extracted Public Key: $publicKey"
+          $filePath = "${{ github.workspace }}\sdk\dotNet\SecretsManager\SecretsManagerClient.cs"
+          (Get-Content $filePath) -replace '\[assembly: InternalsVisibleTo\("SecretsManager.Test.Core"\)\]', "[assembly: InternalsVisibleTo(`"SecretsManager.Test.Core, PublicKey=$publicKey`")]" | Set-Content $filePath
+          Write-Output "First 20 lines of the modified SecretsManagerClient.cs:"
+          Get-Content $filePath -Head 20
+
+      - name: Install dependencies
+        run: dotnet restore
+
+      - name: "Preparing package for strong naming"
+        working-directory: ${{ github.workspace }}\sdk\dotNet\SecretsManager\
+        run: |
+          pwd
+          Get-ChildItem
+          Copy-Item -Path "SecretsManager.csproj" -Destination "SecretsManager.StrongName.csproj"
+          (Get-Content -Path "SecretsManager.StrongName.csproj") -replace '<PackageId>Keeper.SecretsManager</PackageId>', '<PackageId>Keeper.SecretsManager.StrongName</PackageId>' | Set-Content -Path "SecretsManager.StrongName.csproj"
+          Get-Content "SecretsManager.StrongName.csproj"
+          Copy-Item -Path "${{ github.workspace }}\sdk\dotNet\SecretsManager\sgKSM.snk" -Destination "${{ github.workspace }}\sdk\dotNet\SecretsManager.Test.Core\sgKSM.snk"
+          Get-ChildItem "${{ github.workspace }}\sdk\dotNet\SecretsManager.Test.Core\"
+
+      - name: Build
+        working-directory: ${{ github.workspace }}\sdk\dotNet\SecretsManager\
+        run: |
+          pwd
+          Get-ChildItem
+          dotnet build "SecretsManager.StrongName.csproj" --configuration Release --no-restore -p:SignKSM=True
+
+      - name: Cleanup secret files
+        working-directory: ${{ github.workspace }}\sdk\dotNet\SecretsManager\
+        run: |
+          Remove-Item -Path "${{ github.workspace }}\sdk\dotNet\SecretsManager\sgKSM.snk"
+          Remove-Item -Path "${{ github.workspace }}\sdk\dotNet\SecretsManager.Test.Core\sgKSM.snk"
+
+      - name: Publish package
+        if: ${{ github.event.inputs.publish == 'true' }}
+        working-directory: ${{ github.workspace }}\sdk\dotNet\SecretsManager\
+        run: |
+          Get-ChildItem ".\bin\Release\"
+          dotnet nuget push ".\bin\Release\*.nupkg" --api-key ${{steps.ksmsecrets.outputs.NUGET_AUTH_TOKEN}} --source https://api.nuget.org/v3/index.json
+
+      - name: Upload strong-named binaries
+        if: ${{ github.event.inputs.publish == 'false' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: strong-named-binaries-${{ github.run_number }}
+          path: |
+            ${{ github.workspace }}\sdk\dotNet\SecretsManager\bin\Release\*.nupkg
