@@ -10,8 +10,8 @@
 # Contact: sm@keepersecurity.com
 
 import sys
-from keeper_secrets_manager_core.mock import MockConfig
 
+from keeper_secrets_manager_core.mock import MockConfig
 
 if __name__ == "__main__":
     args = sys.argv[1:]
