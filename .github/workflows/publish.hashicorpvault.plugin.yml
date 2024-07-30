@@ -16,7 +16,6 @@ jobs:
         working-directory: integration/vault-plugin-secrets-ksm
 
     steps:
-
       - name: "Checkout"
         uses: actions/checkout@v4
         with:
@@ -53,6 +52,8 @@ jobs:
       - name: "Fetch Go Dependencies"
         run: |
           export GOPATH=$HOME/go
+          export GOPROXY=https://proxy.golang.org,direct
+          export GO111MODULE=on
           go mod tidy
 
       - name: "Create binaries"
