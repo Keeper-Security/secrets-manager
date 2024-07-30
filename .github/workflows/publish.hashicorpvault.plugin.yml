@@ -50,6 +50,11 @@ jobs:
             9QY3bC2MXN-HaMMfpUHbGQ/file/keepersecurity.pfx > file:/tmp/keepersecurity.pfx
             9QY3bC2MXN-HaMMfpUHbGQ/custom_field/PFX Password > PASSPHRASE
 
+      - name: "Fetch Go Dependencies"
+        run: |
+          export GOPATH=$HOME/go
+          go mod tidy
+
       - name: "Create binaries"
         run: | # initially `github.ref` == "ref/tags/vault-plugin-secrets-ksm/vX.Y.Z"
           PLUGIN_NAME="$(cut -d'/' -f3 <<<${{ github.ref }})"
