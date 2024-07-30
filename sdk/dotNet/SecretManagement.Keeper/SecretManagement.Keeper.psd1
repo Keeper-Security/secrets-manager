@@ -4,7 +4,7 @@
     GUID = '20ab89cb-f0dd-4e8e-b276-f3a7708c1eb2'
     Author = 'Sergey Aldoukhov'
     CompanyName = 'Keeper Security'
-    Copyright = '(c) 2023 Keeper Security, Inc.'
+    Copyright = '(c) 2024 Keeper Security, Inc.'
     Description = 'SecretManagement extension vault for Keeper'
     RootModule = './SecretManagement.Keeper.psm1'
     NestedModules = @('./SecretManagement.Keeper.Extension')
