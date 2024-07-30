@@ -8,11 +8,15 @@ from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.mock import MockConfig
 
 from keeper_secrets_manager_storage.storage_secure_os import (
-    LKUChecksums,
     SecureOSStorage,
-    WCMChecksums,
     is_valid_checksum,
 )
+
+
+class MockChecksums(Enum):
+    MOCK_EXEC_PATH_CHECKSUM = (
+        "712B227DDF2C13F218D217428A10B892B0D66201696C17331A808D18A52AD70F"
+    )
 
 
 class SecureOSTest(unittest.TestCase):
@@ -31,14 +35,9 @@ class SecureOSTest(unittest.TestCase):
         # Create a temporary directory to store temp files
         self.test_dir = tempfile.TemporaryDirectory()
 
-        # Append the mock_secure_exec.py file's checksum to the Enums for testing
-        self.mock_checksum = (
-            "712B227DDF2C13F218D217428A10B892B0D66201696C17331A808D18A52AD70F"
-        )
-        LKUChecksums.TEST = self.mock_checksum
-        WCMChecksums.TEST = self.mock_checksum
-
     def tearDown(self):
+        # WCMChecksums = self.original_wcm_checksums
+        # LKUChecksums = self.original_lku_checksums
         self.test_dir.cleanup()
 
     def test_secure_os_storage(self):
@@ -73,6 +72,8 @@ class SecureOSTest(unittest.TestCase):
             app_name="TEST",
             exec_path=self.mock_exec_path,
             run_as=self.python_interpreter,
+            _lku_checksums=MockChecksums,
+            _wcm_checksums=MockChecksums,
         )
 
         storage.read_storage()
@@ -83,6 +84,8 @@ class SecureOSTest(unittest.TestCase):
             app_name="TEST",
             exec_path=self.mock_exec_path,
             run_as=self.python_interpreter,
+            _lku_checksums=MockChecksums,
+            _wcm_checksums=MockChecksums,
         )
         storage.config = MockConfig.make_config()
 
@@ -90,16 +93,12 @@ class SecureOSTest(unittest.TestCase):
         storage.save_storage()
 
     def test_is_valid_checksum(self):
-        class MockChecksum(Enum):
-            # The actual checksum of the mock_secure_exec.py file
-            VALID = self.mock_checksum
-
         # Test valid checksum
-        self.assertTrue(is_valid_checksum(self.mock_exec_path, MockChecksum))
+        self.assertTrue(is_valid_checksum(self.mock_exec_path, MockChecksums))
 
         # Test invalid checksum
         file_path = os.path.join(self.test_dir.name, "invalid.txt")
         with open(file_path, "w") as f:
             f.write("Invalid checksum")
 
-        self.assertFalse(is_valid_checksum(file_path, MockChecksum))
+        self.assertFalse(is_valid_checksum(file_path, MockChecksums))

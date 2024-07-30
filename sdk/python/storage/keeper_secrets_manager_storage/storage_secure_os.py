@@ -29,10 +29,14 @@ class WCMChecksums(Enum):
     V0_2_1 = "8EAEB30AE5DEC8F1C3D957C3BC0433D8F18FCC03E5C761A5C1A6C7AE41264105"
 
 
-def is_valid_checksum(file: str, checksums: Enum) -> bool:
+def is_valid_checksum(file: str, checksums) -> bool:
     with open(file, "rb") as f:
         file_hash = hashlib.file_digest(f, "sha256")
-    return file_hash.hexdigest().upper() in [checksum.value for checksum in checksums]
+
+    for checksum in checksums:
+        if file_hash.hexdigest().upper() == checksum.value:
+            return True
+    return False
 
 
 class SecureOSStorage(KeyValueStorage):
@@ -42,7 +46,14 @@ class SecureOSStorage(KeyValueStorage):
     the config. The config is stored as a base64 encoded string.
     """
 
-    def __init__(self, app_name: str, exec_path: str, run_as: str = None):
+    def __init__(
+        self,
+        app_name: str,
+        exec_path: str,
+        run_as: str = None,
+        _lku_checksums=LKUChecksums,
+        _wcm_checksums=WCMChecksums,
+    ):
         if not app_name:
             logging.getLogger(logger_name).error(
                 "An application name is required for SecureOSStorage"
@@ -52,6 +63,8 @@ class SecureOSStorage(KeyValueStorage):
             )
 
         self.app_name = app_name
+        self.lku_checksums = _lku_checksums
+        self.wcm_checksums = _wcm_checksums
         self._run_as = run_as
         self._machine_os = platform.system()
 
@@ -83,22 +96,25 @@ class SecureOSStorage(KeyValueStorage):
 
         # Check if the checksum of the executable is valid every time it is called, as
         # self._exec_path could be changed during the lifetime of the object.
-        if is_valid_checksum(
-            self._exec_path,
-            LKUChecksums if self._machine_os == "Linux" else WCMChecksums,
-        ):
+        if self._machine_os == "Windows":
+            valid = is_valid_checksum(self._exec_path, self.wcm_checksums)
+        elif self._machine_os == "Linux":
+            valid = is_valid_checksum(self._exec_path, self.lku_checksums)
+        else:
+            valid = False
+
+        if not valid:
             logging.getLogger(logger_name).error(
                 f"Checksum for {self._exec_path} is invalid"
             )
             raise exceptions.KeeperError(f"Checksum for {self._exec_path} is invalid")
 
+        # Insert the run_as command at the beginning of the args list if it exists
         if self._run_as:
             args.insert(0, self._run_as)
 
         try:
-            completed_process = subprocess.run(
-                args, capture_output=True, check=True
-            )
+            completed_process = subprocess.run(args, capture_output=True, check=True)
             if completed_process.stdout:
                 return completed_process.stdout.decode().strip()
             else:
