@@ -16,7 +16,6 @@ jobs:
         working-directory: integration/vault-plugin-secrets-ksm
 
     steps:
-
       - name: "Checkout"
         uses: actions/checkout@v4
         with:
