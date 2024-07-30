@@ -9,6 +9,8 @@
 * KSM-490 - Switch some internal classes to public - for use in plugins
 * KSM-515 - Update to Bouncy Castle 2.4.0
 * KSM-536 - Update to System.Text.Json 8.0.4
+* KSM-517 - Add support for netstandard2.0 target
+* KSM-542 - Fix PowerShell module to allow dot in title
 
 ## 16.6.5
 
