@@ -5,20 +5,20 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc index.ts",
-    "run": "tsc && node index.js",
+    "run": "tsc index.ts && node index.js",
     "test": "tsc tests/_suite.ts && mocha tests/_suite.js",
-    "quicktest": "tsc && ts-node index.ts"
+    "quicktest": "ts-node index.ts"
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
     "@keeper-security/secrets-manager-core": "^16.6.2",
-    "azure-pipelines-task-lib": "^4.13.0-preview"
+    "azure-pipelines-task-lib": "^4.15.0"
   },
   "devDependencies": {
-    "@types/mocha": "^10.0.6",
+    "@types/mocha": "^10.0.7",
     "@types/node": "^20.14.2",
     "@types/q": "^1.5.8",
-    "nock": "^13.5.4"
+    "ts-node": "^10.9.2"
   }
 }

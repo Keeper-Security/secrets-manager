@@ -1,7 +1,14 @@
-import * as tl from "azure-pipelines-task-lib/task";
-import {IssueType} from "azure-pipelines-task-lib";
-import {downloadFile, getSecrets, getValue, KeeperFile, loadJsonConfig} from "@keeper-security/secrets-manager-core";
-import * as fs from "fs";
+import * as tl from "azure-pipelines-task-lib/task"
+import {IssueType} from "azure-pipelines-task-lib"
+import {
+    downloadFile,
+    getSecrets,
+    getValue,
+    KeeperFile,
+    loadJsonConfig,
+    parseNotation
+} from "@keeper-security/secrets-manager-core"
+import * as fs from "fs"
 
 /*
     Azure Pipeline:
@@ -29,6 +36,7 @@ enum DestinationType {
 
 type SecretsInput = {
     notation: string
+    parsedNotation: any[]
     destination: string
     destinationType: DestinationType
 }
@@ -37,11 +45,18 @@ export const parseSecretsInputs = (inputs: string[]): SecretsInput[] => {
     const results: SecretsInput[] = []
 
     for (const input of inputs) {
-        const inputParts = input.split('>')
+        const pos = input.lastIndexOf('>')
+        if (pos < 0) {
+            tl.debug("Error parsing input '" + input + "' - Skipped (expected format: notation > destination)")
+            continue
+        }
+
+        const inputParts = [input.slice(0, pos), input.slice(pos + 1)]
+        const parsedNotation = parseNotation(inputParts[0])
         const notation = inputParts[0].trim()
+
         let destinationType: DestinationType = DestinationType.output
         let destination = inputParts[1].trim()
-
         if (destination.startsWith('out:')) {
             destinationType = DestinationType.output
             destination = destination.slice(4)
@@ -53,12 +68,13 @@ export const parseSecretsInputs = (inputs: string[]): SecretsInput[] => {
             destination = destination.slice(5)
         }
 
-        if (notation.split('/')[1] === 'file') {
+        if (parsedNotation[2]?.text && parsedNotation[2].text[0] === 'file') {
             destinationType = DestinationType.file
         }
 
         results.push({
             notation: notation,
+            parsedNotation: parsedNotation,
             destination,
             destinationType
         })
@@ -74,13 +90,21 @@ export const getRecordUids = (inputs: SecretsInput[]): string[] => {
     return Array.from(set)
 }
 
+export const getRecordFilter = (inputs: SecretsInput[]): string[] => {
+    const rids: Set<string> = new Set(inputs.map(item => item.parsedNotation[1].text[0]));
+    const records = Array.from(rids)
+    // if non UID detected (search by title) return empty list
+    const hasTitles: boolean = records.some(item => ! item.match(/^[A-Za-z0-9_-]{22}$/))
+    const uidFilter: string[] = hasTitles ? [] : records
+    return uidFilter
+}
+
 const downloadSecretFile = async (file: KeeperFile, destination: string): Promise<void> => {
     const fileData = await downloadFile(file)
     fs.writeFileSync(destination, fileData)
 }
 
 async function run() {
-
     try {
         const config: string | undefined = tl.getInput('keepersecretconfig', true)
         const secrets_input_arr = tl.getDelimitedInput('secrets', '\n', true)
@@ -92,20 +116,31 @@ async function run() {
 
         // @ts-ignore
         const inputs = parseSecretsInputs(secrets_input_arr)
-        const uids_to_retrieve = getRecordUids(inputs)
-        const secrets = await getSecrets({storage: loadJsonConfig(config)}, uids_to_retrieve).
+        let uids_to_retrieve = getRecordFilter(inputs)
+        let secrets = await getSecrets({storage: loadJsonConfig(config)}, uids_to_retrieve).
                                 catch(reason => {
                                     tl.logIssue(IssueType.Error, reason.stack)
                                     tl.setResult(tl.TaskResult.Failed, reason.message)
                                     return
                                 })
+        // there's a slight chance a valid title to match a recordUID (22 url-safe base64 chars)
+        // or a missing record or record not shared to the KSM App - we need to pull all records
+        if (uids_to_retrieve && (!secrets || secrets.records.length < uids_to_retrieve.length)) {
+            tl.debug("KSM didn't get expected number of records - requesting all (search by title or missing UID /not shared to the app/)")
+            uids_to_retrieve = []
+            secrets = await getSecrets({storage: loadJsonConfig(config)}, uids_to_retrieve).
+            catch(reason => {
+                tl.logIssue(IssueType.Error, reason.stack)
+                tl.setResult(tl.TaskResult.Failed, reason.message)
+                return
+            })
+        }
 
         tl.debug("secrets_input_arr: [" + JSON.stringify(secrets_input_arr) + "]")
         tl.debug("inputs: [" + JSON.stringify(inputs) + "]")
         tl.debug("uids_to_retrieve: [" + JSON.stringify(uids_to_retrieve) + "]")
 
         for (const input of inputs) {
-
             // @ts-ignore
             const secret = await getValue(secrets, input.notation)
 
@@ -131,7 +166,6 @@ async function run() {
                     //     name: echovar
                     //
                     // See: https://stackoverflow.com/a/56518088/51230
-
                     break
                 case DestinationType.output:
                     tl.setVariable(input.destination, secret, true, true)
@@ -148,27 +182,20 @@ async function run() {
                     //  See: https://www.nigelfrank.com/blog/azure-devops-output-variables/
                     break
                 case DestinationType.file:
-
                     await downloadSecretFile(secret as KeeperFile, input.destination)
                     tl.debug(`Finish downloading file to ${input.destination}`)
-
-                    // xtlguWgodbpFkKJn7_7mAQ/file/rose2.jpeg > file:/tmp/rose2.jpeg
-
                     break
             }
         }
-
     } catch (error) {
-        if (error != null)
-            { // @ts-ignore
-                tl.setResult(tl.TaskResult.Failed, error.message);
-            }
+        // @ts-ignore
+        tl.setResult(tl.TaskResult.Failed, error?.message ?? "unknown error")
     }
 }
 
 run().then((result) => {
-        tl.setResult(tl.TaskResult.Succeeded, "");
+        tl.setResult(tl.TaskResult.Succeeded, "")
     })
     .catch((error) => {
-    tl.setResult(tl.TaskResult.Failed, error);
-});
+    tl.setResult(tl.TaskResult.Failed, error)
+})
