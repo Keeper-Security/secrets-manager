@@ -16,6 +16,7 @@ import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import kotlin.experimental.and
 import kotlin.math.pow
 import kotlin.math.abs
 
@@ -78,6 +79,20 @@ internal fun getRandomBytes(length: Int): ByteArray {
     val secureRandom = SecureRandom.getInstanceStrong()
     val bytes = ByteArray(length)
     secureRandom.nextBytes(bytes)
+    return bytes
+}
+
+internal fun generateUid(): ByteArray {
+    val dash = 0b11111000.toByte()
+    var bytes = ByteArray(16)
+
+    for (i in 1..8) {
+        bytes = getRandomBytes(16)
+        if (dash.and(bytes[0]) != dash) break
+    }
+    if (dash.and(bytes[0]) == dash)
+        bytes[0] = bytes[0].and(0b01111111.toByte())
+
     return bytes
 }
 
