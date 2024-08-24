@@ -934,7 +934,7 @@ private fun prepareCreatePayload(
     val ownerPublicKey = storage.getBytes(KEY_OWNER_PUBLIC_KEY) ?: throw Exception("Application owner public key is missing from the configuration")
     val recordBytes = stringToBytes(Json.encodeToString(recordData))
     val recordKey = getRandomBytes(32)
-    val recordUid = getRandomBytes(16)
+    val recordUid = generateUid()
     val encryptedRecord = encrypt(recordBytes, recordKey)
     val encryptedRecordKey = publicEncrypt(recordKey, ownerPublicKey)
     val encryptedFolderKey = encrypt(recordKey, folderKey)
@@ -957,7 +957,7 @@ private fun prepareCreateFolderPayload(
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val folderDataBytes = stringToBytes(Json.encodeToString(KeeperFolderName(folderName)))
     val folderKey = getRandomBytes(32)
-    val folderUid = getRandomBytes(16)
+    val folderUid = generateUid()
     val encryptedFolderData = encrypt(folderDataBytes, folderKey, true)
     val encryptedFolderKey = encrypt(folderKey, sharedFolderKey, true)
     return CreateFolderPayload(KEEPER_CLIENT_VERSION, clientId,
