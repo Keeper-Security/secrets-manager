@@ -774,6 +774,7 @@ class Passkey(FieldType):
         }
     }
 
+
 class Script(FieldType):
     name = "script"
     schema = {
