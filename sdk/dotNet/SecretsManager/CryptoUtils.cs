@@ -80,6 +80,19 @@ namespace SecretsManager
             return bytes;
         }
 
+        public static byte[] GetUidBytes()
+        {
+            byte dash = 0b1111_1000;
+            var bytes = new byte[] { };
+            for (int i = 0; i < 8; i++) {
+                bytes = GetRandomBytes(16);
+                if ((dash & bytes[0]) != dash) break;
+            }
+            if ((dash & bytes[0]) == dash)
+                bytes[0] = (byte)(bytes[0] & (byte)0b0111_1111);
+            return bytes;
+        }
+
         public static byte[] GenerateKeyPair()
         {
             var keyGenerator = new ECKeyPairGenerator();
