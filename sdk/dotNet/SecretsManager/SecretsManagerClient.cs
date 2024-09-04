@@ -1262,7 +1262,7 @@ namespace SecretsManager
 
             var recordBytes = JsonUtils.SerializeJson(recordData);
             var recordKey = CryptoUtils.GetRandomBytes(32);
-            var recordUid = CryptoUtils.GetRandomBytes(16);
+            var recordUid = CryptoUtils.GetUidBytes();
             var encryptedRecord = CryptoUtils.Encrypt(recordBytes, recordKey);
             var encryptedRecordKey = CryptoUtils.PublicEncrypt(recordKey, ownerPublicKey);
             var encryptedFolderKey = CryptoUtils.Encrypt(recordKey, folderKey);
@@ -1283,7 +1283,7 @@ namespace SecretsManager
 
             var folderDataBytes = JsonUtils.SerializeJson(new KeeperFolderName { name = folderName });
             var folderKey = CryptoUtils.GetRandomBytes(32);
-            var folderUid = CryptoUtils.GetRandomBytes(16);
+            var folderUid = CryptoUtils.GetUidBytes();
             var encryptedFolderData = CryptoUtils.Encrypt(folderDataBytes, folderKey, true);
             var encryptedFolderKey = CryptoUtils.Encrypt(folderKey, sharedFolderKey, true);
 

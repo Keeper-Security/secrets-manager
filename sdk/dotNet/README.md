@@ -3,6 +3,10 @@
 
 # Change Log
 
+## 16.6.7
+
+* KSM-550 - Stop generating UIDs that start with "-"
+
 ## 16.6.6
 
 * KSM-360 - GHA to build and release strong named assemblies
