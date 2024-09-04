@@ -239,6 +239,19 @@ type KeeperError = {
     key_id?: number
 }
 
+const getUidBytes = (): Uint8Array => {
+    const dash = new Uint8Array([0b1111_1000, 0b0111_1111])
+    let bytes = new Uint8Array(16)
+    for (let i = 0; i < 8; i++) {
+        bytes = platform.getRandomBytes(16)
+        if ((dash[0] & bytes[0]) != dash[0]) break
+    }
+    if ((dash[0] & bytes[0]) == dash[0])
+        bytes[0] = bytes[0] & dash[1]
+
+    return bytes
+}
+
 const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryOptions): Promise<GetPayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
@@ -331,7 +344,7 @@ const prepareCreatePayload = async (storage: KeyValueStorage, createOptions: Cre
     }
     const recordBytes = platform.stringToBytes(JSON.stringify(recordData))
     const recordKey = platform.getRandomBytes(32)
-    const recordUid = platform.getRandomBytes(16)
+    const recordUid = getUidBytes()
     const encryptedRecord = await platform.encryptWithKey(recordBytes, recordKey)
     const encryptedRecordKey = await platform.publicEncrypt(recordKey, ownerPublicKey)
     const encryptedFolderKey = await platform.encrypt(recordKey, createOptions.folderUid)
@@ -356,7 +369,7 @@ const prepareCreateFolderPayload = async (storage: KeyValueStorage, createOption
         name: folderName
     }))
     const folderKey = platform.getRandomBytes(32)
-    const folderUid = platform.getRandomBytes(16)
+    const folderUid = getUidBytes()
     const encryptedFolderData = await platform.encryptWithKey(folderDataBytes, folderKey, true)
     const encryptedFolderKey = await platform.encrypt(folderKey, createOptions.folderUid, undefined, true)
     return {
