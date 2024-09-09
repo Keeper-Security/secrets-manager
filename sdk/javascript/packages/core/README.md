@@ -7,6 +7,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - KSM-489 - Added transaction support for updateSecret
 - KSM-521 - Dependencies upgrade
 - KSM-549 - Stop generating UIDs that start with "-"
+- KSM-556 - Added new field types and updated PAM field types
 
 ## 16.6.2
 - KSM-487 - Dependencies upgrade
