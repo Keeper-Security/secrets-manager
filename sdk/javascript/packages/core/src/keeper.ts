@@ -1041,6 +1041,7 @@ export class UrlField extends KeeperRecordField {
       }
 }
 
+// 'file' - obsolete and removed legacy field - "fldt_file": { key: 'file_or_photo', default: "File or Photo" },
 export class FileRefField extends KeeperRecordField {
     required? : boolean
     value?: string[]
@@ -1058,6 +1059,17 @@ export class OneTimeCodeField extends KeeperRecordField {
     constructor(value: string) {
         super()
         this.type = 'oneTimeCode'
+        this.value = [value]
+      }
+}
+
+export class OtpField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'otp'
         this.value = [value]
       }
 }
@@ -1355,7 +1367,10 @@ export class RecordRefField extends KeeperRecordField {
 
 export type Schedule = {
     type?: string
-    utcTime?: string
+    cron?: string
+    // utcTime - replaced by time and tz
+    time?: string
+    tz?: string
     weekday?: string
     intervalCount?: number
 }
@@ -1418,10 +1433,19 @@ export class PamHostnameField extends KeeperRecordField {
       }
 }
 
+export type AllowedSettings = {
+    connections? : boolean
+    portForwards? : boolean
+    rotation? : boolean
+    sessionRecording? : boolean
+    typescriptRecording? : boolean
+}
+
 export type PamResource = {
     controllerUid?: string
     folderUid?: string
     resourceRef?: string[]
+    allowedSettings?: AllowedSettings
 }
 
 export class PamResourceField extends KeeperRecordField {
@@ -1473,3 +1497,133 @@ export class PasskeyField extends KeeperRecordField {
         this.value = [value]
       }
 }
+
+export class IsSSIDHiddenField extends KeeperRecordField {
+    required? : boolean
+    value?: boolean[]
+    constructor(value: boolean) {
+        super()
+        this.type = 'isSSIDHidden'
+        this.value = [value]
+      }
+}
+
+export class WifiEncryptionField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'wifiEncryption'
+        this.value = [value]
+      }
+}
+
+export class DropdownField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'dropdown'
+        this.value = [value]
+      }
+}
+
+export class RbiUrlField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'rbiUrl'
+        this.value = [value]
+      }
+}
+
+export type AppFiller = {
+    applicationTitle?: string
+    contentFilter?: string
+    macroSequence?: string
+}
+
+export class AppFillerField extends KeeperRecordField {
+    required?: boolean
+    privacyScreen? : boolean
+    value?: AppFiller[]
+    constructor(value: AppFiller) {
+        super()
+        this.type = 'appFiller'
+        this.value = [value]
+      }
+}
+
+export type PamRbiConnection = {
+    protocol?: string
+    enabled?: boolean
+    user_records?: string[]
+    allow_url_manipulation?: boolean
+    allowed_url_patterns?: string
+    allowed_resource_url_patterns?: string
+    http_credentials_uid?: string
+    autofill_configuration?: string
+}
+
+export type PamRemoteBrowserSetting = {
+    connection?: PamRbiConnection
+}
+
+export class PamRemoteBrowserSettingsField extends KeeperRecordField {
+    required?: boolean
+    value?: PamRemoteBrowserSetting[]
+    constructor(value: PamRemoteBrowserSetting) {
+        super()
+        this.type = 'pamRemoteBrowserSettings'
+        this.value = [value]
+      }
+}
+
+export type PamSettingsConnection = {
+    protocol?: string
+    enabled?: boolean
+    user_records?: string[]
+    security?: string
+    ignore_cert?: boolean
+    resize_method?: string
+    color_scheme?: string
+}
+
+export type PamSettingsPortForward = {
+    enabled?: boolean
+    reusePort?: boolean
+    port?: string
+}
+
+export type PamSetting = {
+    configUid?: string
+    adminCredentialUid?: string
+    portForward?: PamSettingsPortForward[]
+    connection?: PamSettingsConnection[]
+}
+
+export class PamSettingsField extends KeeperRecordField {
+    required?: boolean
+    value?: PamSetting[]
+    constructor(value: PamSetting) {
+        super()
+        this.type = 'pamSettings'
+        this.value = [value]
+      }
+}
+
+export class TrafficEncryptionSeedField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'trafficEncryptionSeed'
+        this.value = [value]
+      }
+}
+
+// List of retired field types:
+// trafficEncryptionKey - replaced by trafficEncryptionSeed
+// pamProvider - deprecated for legacy/internal use only
+// controller - deprecated for legacy/internal use only
