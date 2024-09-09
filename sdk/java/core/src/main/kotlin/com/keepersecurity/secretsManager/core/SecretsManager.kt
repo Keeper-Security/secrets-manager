@@ -7,7 +7,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.net.HttpURLConnection.HTTP_OK
-import java.net.URL
+import java.net.URI
 import java.security.KeyManagementException
 import java.security.NoSuchAlgorithmException
 import java.security.SecureRandom
@@ -669,7 +669,7 @@ fun downloadThumbnail(file: KeeperFile): ByteArray {
 }
 
 private fun downloadFile(file: KeeperFile, url: String): ByteArray {
-    with(URL(url).openConnection() as HttpsURLConnection) {
+    with(URI.create(url).toURL().openConnection() as HttpsURLConnection) {
         requestMethod = "GET"
         val statusCode = responseCode
         val data = when {
@@ -689,7 +689,7 @@ private fun uploadFile(url: String, parameters: String, fileData: ByteArray): Ke
     val boundary = String.format("----------%x", Instant.now().epochSecond)
     val boundaryBytes: ByteArray = stringToBytes("\r\n--$boundary")
     val paramJson = Json.parseToJsonElement(parameters) as JsonObject
-    with(URL(url).openConnection() as HttpsURLConnection) {
+    with(URI.create(url).toURL().openConnection() as HttpsURLConnection) {
         requestMethod = "POST"
         useCaches = false
         doInput = true
@@ -1055,7 +1055,7 @@ fun postFunction(
 ): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
-    with(URL(url).openConnection() as HttpsURLConnection) {
+    with(URI.create(url).toURL().openConnection() as HttpsURLConnection) {
         if (allowUnverifiedCertificate) {
             sslSocketFactory = trustAllSocketFactory()
         }

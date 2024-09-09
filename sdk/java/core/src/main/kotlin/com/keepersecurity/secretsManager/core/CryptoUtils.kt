@@ -3,7 +3,7 @@
 package com.keepersecurity.secretsManager.core
 
 import java.math.BigInteger
-import java.net.URL
+import java.net.URI
 import java.net.URLDecoder
 import java.nio.ByteBuffer
 import java.security.*
@@ -250,7 +250,7 @@ data class TotpCode(val code: String, val timeLeft: Int, val period: Int) {
             if (protocol != "otpauth")
                 return null
 
-            val totpUrl = URL("http://" + url.substring(10))
+            val totpUrl = URI.create("http://" + url.substring(10)).toURL()
             val queryPairs = mutableMapOf<String, String>()
             val pairs: List<String> = totpUrl.query.split("&")
             for (pair in pairs) {

@@ -11,8 +11,8 @@ version = "16.6.5"
 
 plugins {
     `java-library`
-    kotlin("jvm") version "2.0.10"
-    kotlin("plugin.serialization") version "2.0.10"
+    kotlin("jvm") version "2.0.20"
+    kotlin("plugin.serialization") version "2.0.20"
     `maven-publish`
     signing
     id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
@@ -43,18 +43,18 @@ repositories {
 
 dependencies {
     // Align versions of all Kotlin components
-    implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.0.10"))
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.0.20"))
 
     // Use the Kotlin JDK 8 standard library.
-    api("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.0.10")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
-    implementation("org.jetbrains.kotlin:kotlin-reflect:2.0.10")
+    api("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.0.20")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.2")
+    implementation("org.jetbrains.kotlin:kotlin-reflect:2.0.20")
 
     // Use the Kotlin test library.
-    testImplementation("org.jetbrains.kotlin:kotlin-test:2.0.10")
+    testImplementation("org.jetbrains.kotlin:kotlin-test:2.0.20")
 
     // Use the Kotlin JUnit integration.
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.0.10")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.0.20")
 
     testImplementation("org.bouncycastle:bc-fips:2.0.0")
 //    testImplementation("org.bouncycastle:bcprov-jdk15on:1.70")
