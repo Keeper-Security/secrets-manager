@@ -597,7 +597,7 @@ data class PamRbiConnection @JvmOverloads constructor(
 )
 @Serializable
 data class PamRemoteBrowserSetting @JvmOverloads constructor(
-    val connection: MutableList<PamRbiConnection>? = null,
+    val connection: PamRbiConnection? = null,
 )
 
 @Serializable
