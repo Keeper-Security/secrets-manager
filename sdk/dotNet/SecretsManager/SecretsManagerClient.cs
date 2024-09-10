@@ -100,16 +100,12 @@ namespace SecretsManager
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
     internal class KeeperError
     {
         public int key_id { get; set; }
         public string error { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     internal class GetPayload
     {
         public string clientVersion { get; }
@@ -133,9 +129,6 @@ namespace SecretsManager
         Rotation
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     internal class UpdatePayload
     {
         public string clientVersion { get; }
@@ -160,9 +153,6 @@ namespace SecretsManager
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     internal class CompleteTransactionPayload
     {
         public string clientVersion { get; }
@@ -177,9 +167,6 @@ namespace SecretsManager
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     internal class DeletePayload
     {
         public string clientVersion { get; }
@@ -194,9 +181,6 @@ namespace SecretsManager
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     internal class DeleteFolderPayload
     {
         public string clientVersion { get; }
@@ -213,9 +197,6 @@ namespace SecretsManager
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     internal class CreatePayload
     {
         public string clientVersion { get; }
@@ -240,9 +221,6 @@ namespace SecretsManager
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     internal class CreateFolderPayload
     {
         public string clientVersion { get; }
@@ -265,9 +243,6 @@ namespace SecretsManager
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     internal class UpdateFolderPayload
     {
         public string clientVersion { get; }
@@ -284,9 +259,6 @@ namespace SecretsManager
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     internal class FileUploadPayload
     {
         public string clientVersion { get; }
@@ -315,9 +287,6 @@ namespace SecretsManager
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class SecretsManagerResponse
     {
         public string appData { get; set; }
@@ -329,9 +298,6 @@ namespace SecretsManager
         public string[] warnings { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class SecretsManagerAddFileResponse
     {
         public string url { get; set; }
@@ -339,9 +305,6 @@ namespace SecretsManager
         public int successStatusCode { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class SecretsManagerResponseFolder
     {
         public string folderUid { get; set; }
@@ -351,9 +314,6 @@ namespace SecretsManager
         public SecretsManagerResponseRecord[] records { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class SecretsManagerResponseRecord
     {
         public string recordUid { get; set; }
@@ -365,9 +325,6 @@ namespace SecretsManager
         public string innerFolderUid { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
     public class SecretsManagerResponseFile
     {
         public string fileUid { get; set; }
@@ -377,8 +334,6 @@ namespace SecretsManager
         public string thumbnailUrl { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperSecrets
     {
         public AppData AppData { get; }
@@ -394,17 +349,12 @@ namespace SecretsManager
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class AppData
     {
         public string title { get; set; }
         public string type { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperRecord
     {
         public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, byte[] folderKey, string innerFolderUid, KeeperRecordData data, long revision, KeeperFile[] files)
@@ -481,8 +431,6 @@ namespace SecretsManager
         }
     }
 
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperFolder
     {
         public KeeperFolder(byte[] folderKey, string folderUid, string parentUid, string name)
@@ -499,16 +447,11 @@ namespace SecretsManager
         public string Name { get; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class KeeperFolderName
     {
         public string name { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperFile
     {
         public KeeperFile(byte[] fileKey, string fileUid, KeeperFileData data, string url, string thumbnailUrl)
@@ -527,8 +470,6 @@ namespace SecretsManager
         public string ThumbnailUrl { get; }
     }
 
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-    [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
     public class KeeperFileUpload
     {
         public string Name { get; }
@@ -1368,7 +1309,6 @@ namespace SecretsManager
             return $"mn{version.Major}.{version.Minor}.{version.Build}";
         }
 
-        [SuppressMessage("ReSharper", "StringLiteralTypo")]
         private static Dictionary<int, byte[]> InitKeeperKeys()
         {
             var keyId = 7;
@@ -1407,8 +1347,6 @@ namespace SecretsManager
             return new TransmissionKey(keyNumber, transmissionKey, encryptedKey);
         }
 
-        [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
-        [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
         public static GetRandomBytesFunction TransmissionKeyStub { get; set; }
 
         private static EncryptedPayload EncryptAndSignPayload<T>(IKeyValueStorage storage,
@@ -1456,7 +1394,6 @@ namespace SecretsManager
             return memoryStream.ToArray();
         }
 
-        [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
         public static async Task<KeeperHttpResponse> PostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload, bool allowUnverifiedCertificate)
         {
             var request = (HttpWebRequest)WebRequest.Create(url);

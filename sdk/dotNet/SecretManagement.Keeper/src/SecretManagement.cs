@@ -46,8 +46,6 @@ namespace SecretManagement.Keeper
             return KeeperResult.Ok(storage.AsHashTable());
         }
 
-        [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
-        [SuppressMessage("ReSharper", "MemberCanBePrivate.Global")]
         public class KeeperResult
         {
             private object result;
