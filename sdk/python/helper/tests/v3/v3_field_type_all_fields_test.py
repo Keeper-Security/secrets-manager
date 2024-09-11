@@ -315,10 +315,11 @@ class FieldTypeTest(unittest.TestCase):
     def test_schedule(self):
         ft = Schedule()
         ft.type = "WEEKLY"
-        ft.utcTime = "00:00"
+        ft.time = "00:00:00"
+        ft.tz = "America/Chicago"
         ft.weekday = "WEDNESDAY"
         ft.intervalCount = 1
-        self._check_dict(ft, value={"type": "WEEKLY", "utcTime": "00:00", "weekday": "WEDNESDAY", "intervalCount": 1})
+        self._check_dict(ft, value={"type": "WEEKLY", "time": "00:00:00", "tz": "America/Chicago", "weekday": "WEDNESDAY", "intervalCount": 1})
 
     def test_directory_type(self):
         ft = DirectoryType()
