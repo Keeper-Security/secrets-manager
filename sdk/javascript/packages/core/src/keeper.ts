@@ -1559,11 +1559,11 @@ export type PamRbiConnection = {
     protocol?: string
     enabled?: boolean
     user_records?: string[]
-    allow_url_manipulation?: boolean
-    allowed_url_patterns?: string
-    allowed_resource_url_patterns?: string
-    http_credentials_uid?: string
-    autofill_configuration?: string
+    "allow-url-manipulation"?: boolean
+    "allowed-url-patterns"?: string
+    "allowed-resource-url-patterns"?: string
+    "http-credentials-uid"?: string
+    "autofill-configuration"?: string
 }
 
 export type PamRemoteBrowserSetting = {
@@ -1585,9 +1585,9 @@ export type PamSettingsConnection = {
     enabled?: boolean
     user_records?: string[]
     security?: string
-    ignore_cert?: boolean
-    resize_method?: string
-    color_scheme?: string
+    "ignore-cert"?: boolean
+    "resize-method"?: string
+    "color-scheme"?: string
 }
 
 export type PamSettingsPortForward = {
