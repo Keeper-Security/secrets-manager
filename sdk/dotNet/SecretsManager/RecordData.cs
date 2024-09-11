@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Serialization;
 
 namespace SecretsManager
 {
@@ -41,11 +41,14 @@ namespace SecretsManager
         {
             bool result = field switch
             {
-                AccountNumber or AddressRef or Addresses or BankAccounts or BirthDate or
-                CardRef or Checkbox or DatabaseType or Date or DirectoryType or Email or ExpirationDate or FileRef or Hosts or KeyPairs or
-                LicenseNumber or Login or Multiline or Names or OneTimeCode or Otp or PamHostname or Passkeys or PamResources or Password or
-                PaymentCards or Phones or PinCode or RecordRef or Scripts or Schedules or Secret or SecureNote or
-                SecurityQuestions or Text or Url => true,
+                AccountNumber or AddressRef or Addresses or AppFillers or BankAccounts or BirthDate or
+                CardRef or Checkbox or DatabaseType or Date or DirectoryType or Dropdown or
+                Email or ExpirationDate or FileRef or Hosts or IsSsidHidden or KeyPairs or
+                LicenseNumber or Login or Multiline or Names or OneTimeCode or Otp or PamHostname or
+                Passkeys or PamRemoteBrowserSettings or PamResources or PamSettings or Password or
+                PaymentCards or Phones or PinCode or RbiUrl or RecordRef or Scripts or Schedules or
+                Secret or SecureNote or SecurityQuestions or Text or TrafficEncryptionSeed or Url or
+                WifiEncryption => true,
                 _ => false
             };
             return result;
@@ -466,6 +469,106 @@ namespace SecretsManager
         public bool? required { get; set; }
         public List<bool> value { get; set; }
         public IsSsidHidden(bool fieldValue) { type = "isSSIDHidden"; value = new List<bool> { fieldValue }; }
+    }
+
+    public class WifiEncryption : KeeperField
+    {
+        public bool? required { get; set; }
+        public List<string> value { get; set; }
+        public WifiEncryption(string fieldValue) { type = "wifiEncryption"; value = new List<string> { fieldValue }; }
+    }
+
+    public class Dropdown : KeeperField
+    {
+        public bool? required { get; set; }
+        public List<string> value { get; set; }
+        public Dropdown(string fieldValue) { type = "dropdown"; value = new List<string> { fieldValue }; }
+    }
+
+    public class RbiUrl : KeeperField
+    {
+        public bool? required { get; set; }
+        public List<string> value { get; set; }
+        public RbiUrl(string fieldValue) { type = "rbiUrl"; value = new List<string> { fieldValue }; }
+    }
+
+    public class AppFiller
+    {
+        public string applicationTitle { get; set; }
+        public string contentFilter { get; set; }
+        public string macroSequence { get; set; }
+    }
+
+    public class AppFillers : KeeperField
+    {
+        public bool? required { get; set; }
+        public bool? privacyScreen { get; set; }
+        public List<AppFiller> value { get; set; }
+        public AppFillers(AppFiller fieldValue) { type = "appFiller"; value = new List<AppFiller> { fieldValue }; }
+    }
+
+    public class PamRbiConnection
+    {
+        public string protocol { get; set; }
+        public bool? enabled { get; set; }
+        public List<string> user_records { get; set; }
+        [JsonPropertyName("allow-url-manipulation")] public bool? allowUrlManipulation { get; set; }
+        [JsonPropertyName("allowed-url-patterns")] public string allowedUrlPatterns { get; set; }
+        [JsonPropertyName("allowed-resource-url-patterns")] public string allowedResourceUrlPatterns { get; set; }
+        [JsonPropertyName("http-credentials-uid")] public string httpCredentialsUid { get; set; }
+        [JsonPropertyName("autofill-configuration")] public string autofillConfiguration { get; set; }
+    }
+
+    public class PamRemoteBrowserSetting
+    {
+        public PamRbiConnection connection { get; set; }
+    }
+
+    public class PamRemoteBrowserSettings : KeeperField
+    {
+        public bool? required { get; set; }
+        public List<PamRemoteBrowserSetting> value { get; set; }
+        public PamRemoteBrowserSettings(PamRemoteBrowserSetting fieldValue) { type = "pamRemoteBrowserSettings"; value = new List<PamRemoteBrowserSetting> { fieldValue }; }
+    }
+
+    public class PamSettingsConnection
+    {
+        public string protocol { get; set; }
+        public bool? enabled { get; set; }
+        public List<string> user_records { get; set; }
+        public string security { get; set; }
+        [JsonPropertyName("ignore-cert")] public bool? ignoreCert { get; set; }
+        [JsonPropertyName("resize-method")] public string resizeMethod { get; set; }
+        [JsonPropertyName("color-scheme")] public string colorScheme { get; set; }
+    }
+
+    public class PamSettingsPortForward
+    {
+        public bool? enabled { get; set; }
+        public bool? reusePort { get; set; }
+        public string port { get; set; }
+    }
+
+    public class PamSetting
+    {
+        public string configUid { get; set; }
+        public string adminCredentialUid { get; set; }
+        public List<PamSettingsPortForward> portForward { get; set; }
+        public List<PamSettingsConnection> connection { get; set; }
+    }
+
+    public class PamSettings : KeeperField
+    {
+        public bool? required { get; set; }
+        public List<PamSetting> value { get; set; }
+        public PamSettings(PamSetting fieldValue) { type = "pamSettings"; value = new List<PamSetting> { fieldValue }; }
+    }
+
+    public class TrafficEncryptionSeed : KeeperField
+    {
+        public bool? required { get; set; }
+        public List<string> value { get; set; }
+        public TrafficEncryptionSeed(string fieldValue) { type = "trafficEncryptionSeed"; value = new List<string> { fieldValue }; }
     }
 
     // List of retired field types:
