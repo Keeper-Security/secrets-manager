@@ -124,7 +124,7 @@ class FieldTypeTest(unittest.TestCase):
         a.street2 = "Apt B"
         a.city = "Gotham"
         a.zip = "11111-2222"
-        a.country = "CA"
+        a.country = CountryEnum.CA
         self._check_dict(a, value={
             "street1": "North Main Street",
             "street2": "Apt B",
@@ -386,7 +386,7 @@ class FieldTypeTest(unittest.TestCase):
         ft.createdDate = 1625140800000
         self._check_dict(ft, value={
             "privateKey": {
-                "crv":"CRV",
+                "crv": "CRV",
                 "d": "DDDDD",
                 "ext": False,
                 "key_ops": [],
