@@ -8,8 +8,6 @@ namespace SecretsManager.Test
 {
     using QueryFunction = Func<string, TransmissionKey, EncryptedPayload, Task<KeeperHttpResponse>>;
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class TestResponse
     {
         public string transmissionKey { get; set; }

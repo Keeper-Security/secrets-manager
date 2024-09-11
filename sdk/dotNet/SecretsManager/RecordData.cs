@@ -1,12 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Serialization;
 
 namespace SecretsManager
 {
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class KeeperRecordData
     {
         public string title { get; set; }
@@ -16,9 +13,6 @@ namespace SecretsManager
         public string notes { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class KeeperRecordField
     {
         public string type { get; set; }
@@ -30,9 +24,6 @@ namespace SecretsManager
         public object complexity { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class KeeperFileData
     {
         public string title { get; set; }
@@ -42,9 +33,6 @@ namespace SecretsManager
         public long lastModified { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class KeeperField
     {
         public string type { get; set; }
@@ -53,33 +41,28 @@ namespace SecretsManager
         {
             bool result = field switch
             {
-                AccountNumber or AddressRef or Addresses or BankAccounts or BirthDate or
-                CardRef or Checkbox or DatabaseType or Date or DirectoryType or Email or ExpirationDate or FileRef or Hosts or KeyPairs or
-                LicenseNumber or Login or Multiline or Names or OneTimeCode or PamHostname or Passkeys or PamResources or Password or
-                PaymentCards or Phones or PinCode or RecordRef or Scripts or Schedules or Secret or SecureNote or
-                SecurityQuestions or Text or Url => true,
+                AccountNumber or AddressRef or Addresses or AppFillers or BankAccounts or BirthDate or
+                CardRef or Checkbox or DatabaseType or Date or DirectoryType or Dropdown or
+                Email or ExpirationDate or FileRef or Hosts or IsSsidHidden or KeyPairs or
+                LicenseNumber or Login or Multiline or Names or OneTimeCode or Otp or PamHostname or
+                Passkeys or PamRemoteBrowserSettings or PamResources or PamSettings or Password or
+                PaymentCards or Phones or PinCode or RbiUrl or RecordRef or Scripts or Schedules or
+                Secret or SecureNote or SecurityQuestions or Text or TrafficEncryptionSeed or Url or
+                WifiEncryption => true,
                 _ => false
             };
             return result;
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Login : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<string> value { get; set; }
-
-        // Login field constructor with the single value to eliminate the complexity of the passing List as a value
         public Login(string fieldValue) { type = "login"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class PasswordComplexity
     {
         public int? length { get; set; }
@@ -89,9 +72,6 @@ namespace SecretsManager
         public int? special { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Password : KeeperField
     {
         public bool? required { get; set; }
@@ -99,52 +79,42 @@ namespace SecretsManager
         public bool? enforceGeneration { get; set; }
         public PasswordComplexity complexity { get; set; }
         public List<string> value { get; set; }
-
-        // Password field constructor with the single value to eliminate the complexity of the passing List as a value
         public Password(string fieldValue) { type = "password"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Url : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<string> value { get; set; }
-
-        // Url field constructor with the single value to eliminate the complexity of the passing List as a value
         public Url(string fieldValue) { type = "url"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    // "file" - obsolete and removed legacy field - "fldt_file": { key: 'file_or_photo', default: "File or Photo" },
     public class FileRef : KeeperField
     {
         public bool? required { get; set; }
         public List<string> value { get; set; }
-
-        // FileRef field constructor with the single value to eliminate the complexity of the passing List as a value
         public FileRef(string fieldValue) { type = "fileRef"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class OneTimeCode : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<string> value { get; set; }
-
-        // OneTimeCode field constructor with the single value to eliminate the complexity of the passing List as a value
         public OneTimeCode(string fieldValue) { type = "oneTimeCode"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    public class Otp : KeeperField
+    {
+        public bool? required { get; set; }
+        public bool? privacyScreen { get; set; }
+        public List<string> value { get; set; }
+
+        public Otp(string fieldValue) { type = "otp"; value = new List<string> { fieldValue }; }
+    }
+
     public class Name
     {
         public string first { get; set; }
@@ -152,161 +122,100 @@ namespace SecretsManager
         public string last { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Names : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<Name> value { get; set; }
-
-        // Names field constructor with the single value to eliminate the complexity of the passing List as a value
         public Names(Name fieldValue) { type = "name"; value = new List<Name> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class BirthDate : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<Int64> value { get; set; }
-
-        // BirthDate field constructor with the single value to eliminate the complexity of the passing List as a value
         public BirthDate(Int64 fieldValue) { type = "birthDate"; value = new List<Int64> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Date : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<Int64> value { get; set; }
-
-        // Date field constructor with the single value to eliminate the complexity of the passing List as a value
         public Date(Int64 fieldValue) { type = "date"; value = new List<Int64> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class ExpirationDate : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<Int64> value { get; set; }
-
-        // ExpirationDate field constructor with the single value to eliminate the complexity of the passing List as a value
         public ExpirationDate(Int64 fieldValue) { type = "expirationDate"; value = new List<Int64> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Text : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<string> value { get; set; }
-
-        // Text field constructor with the single value to eliminate the complexity of the passing List as a value
         public Text(string fieldValue) { type = "text"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class SecurityQuestion
     {
         public string question { get; set; }
         public string answer { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class SecurityQuestions : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<SecurityQuestion> value { get; set; }
-
-        // SecurityQuestions field constructor with the single value to eliminate the complexity of the passing List as a value
         public SecurityQuestions(SecurityQuestion fieldValue) { type = "securityQuestion"; value = new List<SecurityQuestion> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Multiline : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<string> value { get; set; }
-
-        // Multiline field constructor with the single value to eliminate the complexity of the passing List as a value
         public Multiline(string fieldValue) { type = "multiline"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Email : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<string> value { get; set; }
-
-        // Email field constructor with the single value to eliminate the complexity of the passing List as a value
         public Email(string fieldValue) { type = "email"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class CardRef : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<string> value { get; set; }
-
-        // CardRef field constructor with the single value to eliminate the complexity of the passing List as a value
         public CardRef(string fieldValue) { type = "cardRef"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class AddressRef : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<string> value { get; set; }
-
-        // AddressRef field constructor with the single value to eliminate the complexity of the passing List as a value
         public AddressRef(string fieldValue) { type = "addressRef"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class PinCode : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<string> value { get; set; }
-
-        // PinCode field constructor with the single value to eliminate the complexity of the passing List as a value
         public PinCode(string fieldValue) { type = "pinCode"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Phone
     {
         public string region { get; set; }  // Region code. Ex. US
@@ -315,61 +224,38 @@ namespace SecretsManager
         public string type { get; set; }    // Phone number type. Ex. Mobile
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Phones : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<Phone> value { get; set; }
-
-        // Phones field constructor with the single value to eliminate the complexity of the passing List as a value
         public Phones(Phone fieldValue) { type = "phone"; value = new List<Phone> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Secret : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<string> value { get; set; }
-
-        // Secret field constructor with the single value to eliminate the complexity of the passing List as a value
         public Secret(string fieldValue) { type = "secret"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class SecureNote : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<string> value { get; set; }
-
-        // SecureNote field constructor with the single value to eliminate the complexity of the passing List as a value
         public SecureNote(string fieldValue) { type = "note"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class AccountNumber : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<string> value { get; set; }
-
-        // AccountNumber field constructor with the single value to eliminate the complexity of the passing List as a value
         public AccountNumber(string fieldValue) { type = "accountNumber"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class PaymentCard
     {
         public string cardNumber { get; set; }
@@ -377,22 +263,14 @@ namespace SecretsManager
         public string cardSecurityCode { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class PaymentCards : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<PaymentCard> value { get; set; }
-
-        // PaymentCards field constructor with the single value to eliminate the complexity of the passing List as a value
         public PaymentCards(PaymentCard fieldValue) { type = "paymentCard"; value = new List<PaymentCard> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class BankAccount
     {
         public string accountType { get; set; }
@@ -401,66 +279,42 @@ namespace SecretsManager
         public string otherType { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class BankAccounts : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<BankAccount> value { get; set; }
-
-        // BankAccounts field constructor with the single value to eliminate the complexity of the passing List as a value
         public BankAccounts(BankAccount fieldValue) { type = "bankAccount"; value = new List<BankAccount> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class KeyPair
     {
         public string publicKey { get; set; }
         public string privateKey { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class KeyPairs : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<KeyPair> value { get; set; }
-
-        // KeyPairs field constructor with the single value to eliminate the complexity of the passing List as a value
         public KeyPairs(KeyPair fieldValue) { type = "keyPair"; value = new List<KeyPair> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Host
     {
         public string hostName { get; set; }
         public string port { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Hosts : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<Host> value { get; set; }
-
-        // Hosts field constructor with the single value to eliminate the complexity of the passing List as a value
         public Hosts(Host fieldValue) { type = "host"; value = new List<Host> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Address
     {
         public string street1 { get; set; }
@@ -471,97 +325,61 @@ namespace SecretsManager
         public string zip { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Addresses : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<Address> value { get; set; }
-
-        // Addresses field constructor with the single value to eliminate the complexity of the passing List as a value
         public Addresses(Address fieldValue) { type = "address"; value = new List<Address> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class LicenseNumber : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<string> value { get; set; }
-
-        // LicenseNumber field constructor with the single value to eliminate the complexity of the passing List as a value
         public LicenseNumber(string fieldValue) { type = "licenseNumber"; value = new List<string> { fieldValue }; }
     }
 
-    //isSSIDHidden
-    //wifiEncryption
-
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class RecordRef : KeeperField
     {
         public bool? required { get; set; }
         public List<string> value { get; set; }
-
-        // RecordRef field constructor with the single value to eliminate the complexity of the passing List as a value
         public RecordRef(string fieldValue) { type = "recordRef"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Schedule
     {
         public string type { get; set; }
-        public string utcTime { get; set; }
+        public string cron { get; set; }
+        // utcTime - replaced by time and tz
+        public string time { get; set; }
+        public string tz { get; set; }
         public string weekday { get; set; }
         public int intervalCount { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Schedules : KeeperField
     {
         public bool? required { get; set; }
         public List<Schedule> value { get; set; }
-
-        // Schedules field constructor with the single value to eliminate the complexity of the passing List as a value
         public Schedules(Schedule fieldValue) { type = "schedule"; value = new List<Schedule> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class DirectoryType : KeeperField
     {
         public bool? required { get; set; }
         public List<string> value { get; set; }
-
-        // DirectoryType field constructor with the single value to eliminate the complexity of the passing List as a value
         public DirectoryType(string fieldValue) { type = "directoryType"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class DatabaseType : KeeperField
     {
         public bool? required { get; set; }
         public List<string> value { get; set; }
-
-        // DatabaseType field constructor with the single value to eliminate the complexity of the passing List as a value
         public DatabaseType(string fieldValue) { type = "databaseType"; value = new List<string> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Script
     {
         public string fileRef { get; set; }
@@ -569,9 +387,6 @@ namespace SecretsManager
         public List<string> recordRef { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class PrivateKey
     {
         public string crv { get; set; }
@@ -583,9 +398,6 @@ namespace SecretsManager
         public string y { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Passkey
     {
         public PrivateKey privateKey { get; set; }
@@ -597,76 +409,170 @@ namespace SecretsManager
         public long? createdDate { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class PamHostname : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<Host> value { get; set; }
-
-        // PamHostname field constructor with the single value to eliminate the complexity of the passing List as a value
         public PamHostname(Host fieldValue) { type = "pamHostname"; value = new List<Host> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+    public class AllowedSettings
+    {
+        public bool? connections { get; set; }
+        public bool? portForwards { get; set; }
+        public bool? rotation { get; set; }
+        public bool? sessionRecording { get; set; }
+        public bool? typescriptRecording { get; set; }
+    }
+
     public class PamResource
     {
         public string controllerUid { get; set; }
         public string folderUid { get; set; }
         public List<string> resourceRef { get; set; }
+        public AllowedSettings allowedSettings { get; set; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class PamResources : KeeperField
     {
         public bool? required { get; set; }
         public List<PamResource> value { get; set; }
-
-        // PamResources field constructor with the single value to eliminate the complexity of the passing List as a value
         public PamResources(PamResource fieldValue) { type = "pamResources"; value = new List<PamResource> { fieldValue }; }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
     public class Checkbox : KeeperField
     {
         public bool? required { get; set; }
         public List<bool> value { get; set; }
-
-        // Checkbox field constructor with the single value to eliminate the complexity of the passing List as a value
         public Checkbox(bool fieldValue) { type = "checkbox"; value = new List<bool> { fieldValue }; }
     }
-    
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+
     public class Scripts : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<Script> value { get; set; }
-
-        // Scripts field constructor with the single value to eliminate the complexity of the passing List as a value
         public Scripts(Script fieldValue) { type = "script"; value = new List<Script> { fieldValue }; }
     }
-    
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ClassNeverInstantiated.Global")]
-    [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+
     public class Passkeys : KeeperField
     {
         public bool? required { get; set; }
         public bool? privacyScreen { get; set; }
         public List<Passkey> value { get; set; }
-
-        // Passkeys field constructor with the single value to eliminate the complexity of the passing List as a value
         public Passkeys(Passkey fieldValue) { type = "passkey"; value = new List<Passkey> { fieldValue }; }
     }
+
+    public class IsSsidHidden : KeeperField
+    {
+        public bool? required { get; set; }
+        public List<bool> value { get; set; }
+        public IsSsidHidden(bool fieldValue) { type = "isSSIDHidden"; value = new List<bool> { fieldValue }; }
+    }
+
+    public class WifiEncryption : KeeperField
+    {
+        public bool? required { get; set; }
+        public List<string> value { get; set; }
+        public WifiEncryption(string fieldValue) { type = "wifiEncryption"; value = new List<string> { fieldValue }; }
+    }
+
+    public class Dropdown : KeeperField
+    {
+        public bool? required { get; set; }
+        public List<string> value { get; set; }
+        public Dropdown(string fieldValue) { type = "dropdown"; value = new List<string> { fieldValue }; }
+    }
+
+    public class RbiUrl : KeeperField
+    {
+        public bool? required { get; set; }
+        public List<string> value { get; set; }
+        public RbiUrl(string fieldValue) { type = "rbiUrl"; value = new List<string> { fieldValue }; }
+    }
+
+    public class AppFiller
+    {
+        public string applicationTitle { get; set; }
+        public string contentFilter { get; set; }
+        public string macroSequence { get; set; }
+    }
+
+    public class AppFillers : KeeperField
+    {
+        public bool? required { get; set; }
+        public bool? privacyScreen { get; set; }
+        public List<AppFiller> value { get; set; }
+        public AppFillers(AppFiller fieldValue) { type = "appFiller"; value = new List<AppFiller> { fieldValue }; }
+    }
+
+    public class PamRbiConnection
+    {
+        public string protocol { get; set; }
+        public bool? enabled { get; set; }
+        public List<string> user_records { get; set; }
+        [JsonPropertyName("allow-url-manipulation")] public bool? allowUrlManipulation { get; set; }
+        [JsonPropertyName("allowed-url-patterns")] public string allowedUrlPatterns { get; set; }
+        [JsonPropertyName("allowed-resource-url-patterns")] public string allowedResourceUrlPatterns { get; set; }
+        [JsonPropertyName("http-credentials-uid")] public string httpCredentialsUid { get; set; }
+        [JsonPropertyName("autofill-configuration")] public string autofillConfiguration { get; set; }
+    }
+
+    public class PamRemoteBrowserSetting
+    {
+        public PamRbiConnection connection { get; set; }
+    }
+
+    public class PamRemoteBrowserSettings : KeeperField
+    {
+        public bool? required { get; set; }
+        public List<PamRemoteBrowserSetting> value { get; set; }
+        public PamRemoteBrowserSettings(PamRemoteBrowserSetting fieldValue) { type = "pamRemoteBrowserSettings"; value = new List<PamRemoteBrowserSetting> { fieldValue }; }
+    }
+
+    public class PamSettingsConnection
+    {
+        public string protocol { get; set; }
+        public bool? enabled { get; set; }
+        public List<string> user_records { get; set; }
+        public string security { get; set; }
+        [JsonPropertyName("ignore-cert")] public bool? ignoreCert { get; set; }
+        [JsonPropertyName("resize-method")] public string resizeMethod { get; set; }
+        [JsonPropertyName("color-scheme")] public string colorScheme { get; set; }
+    }
+
+    public class PamSettingsPortForward
+    {
+        public bool? enabled { get; set; }
+        public bool? reusePort { get; set; }
+        public string port { get; set; }
+    }
+
+    public class PamSetting
+    {
+        public string configUid { get; set; }
+        public string adminCredentialUid { get; set; }
+        public List<PamSettingsPortForward> portForward { get; set; }
+        public List<PamSettingsConnection> connection { get; set; }
+    }
+
+    public class PamSettings : KeeperField
+    {
+        public bool? required { get; set; }
+        public List<PamSetting> value { get; set; }
+        public PamSettings(PamSetting fieldValue) { type = "pamSettings"; value = new List<PamSetting> { fieldValue }; }
+    }
+
+    public class TrafficEncryptionSeed : KeeperField
+    {
+        public bool? required { get; set; }
+        public List<string> value { get; set; }
+        public TrafficEncryptionSeed(string fieldValue) { type = "trafficEncryptionSeed"; value = new List<string> { fieldValue }; }
+    }
+
+    // List of retired field types:
+    // trafficEncryptionKey - replaced by trafficEncryptionSeed
+    // pamProvider - deprecated for legacy/internal use only
+    // controller - deprecated for legacy/internal use only
 }

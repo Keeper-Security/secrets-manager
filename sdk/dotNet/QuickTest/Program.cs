@@ -21,7 +21,6 @@ namespace QuickTest
         private static async Task GetSecrets()
         {
             var storage = new LocalConfigStorage("test_config_storage.json");
-            // ReSharper disable once StringLiteralTypo
             SecretsManagerClient.InitializeStorage(storage, "US:ONE_TIME_TOKEN");
             var options = new SecretsManagerOptions(storage);
             // var options = new SecretsManagerOptions(storage, SecretsManagerClient.CachingPostFunction);
