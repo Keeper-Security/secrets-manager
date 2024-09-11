@@ -342,7 +342,25 @@ class FieldTypeTest(unittest.TestCase):
         ft.controllerUid = "OlLZ6JLjnyMOS3CiIPHBjw"
         ft.folderUid = "so5ja6A46Zmr9J1QyCc06g"
         ft.resourceRef = ["hUrGHrcM0PI3Y6Ch5wCrAQ"]
-        self._check_dict(ft, value={"controllerUid": "OlLZ6JLjnyMOS3CiIPHBjw", "folderUid": "so5ja6A46Zmr9J1QyCc06g", "resourceRef": ["hUrGHrcM0PI3Y6Ch5wCrAQ"]})
+        ft.allowedSettings = {
+                "connections": True,
+                "portForwards": True,
+                "rotation": True,
+                "sessionRecording": True,
+                "typescriptRecording": True
+            }
+        self._check_dict(ft, value={
+            "controllerUid": "OlLZ6JLjnyMOS3CiIPHBjw",
+            "folderUid": "so5ja6A46Zmr9J1QyCc06g",
+            "resourceRef": ["hUrGHrcM0PI3Y6Ch5wCrAQ"],
+            "allowedSettings": {
+                "connections": True,
+                "portForwards": True,
+                "rotation": True,
+                "sessionRecording": True,
+                "typescriptRecording": True
+            }
+            })
 
     def test_checkbox(self):
         ft = Checkbox()
@@ -383,7 +401,7 @@ class FieldTypeTest(unittest.TestCase):
             "username": "user1",
             "createdDate": 1625140800000})
         
-    def test_scrpt(self):
+    def test_script(self):
         ft = Script()
         ft.fileRef = "OlLZ6JLjnyMOS3CiIPHBjw"
         ft.command = "/bin/zsh"
