@@ -10,10 +10,18 @@
 # Contact: ops@keepersecurity.com
 #
 
+import difflib
+import os
+import sys
+import traceback
+import typing as t
+import importlib_metadata
 import click
+import keeper_secrets_manager_core
 from click_help_colors import HelpColorsGroup, HelpColorsCommand
 from click_repl import repl, exit as repl_exit
 from colorama import Fore, Style, init
+from update_checker import UpdateChecker
 from . import KeeperCli
 from .exception import KsmCliException
 from .exec import Exec
@@ -23,14 +31,6 @@ from .sync import Sync
 from .profile import Profile
 from .init import Init
 from .config import Config
-import sys
-import os
-import keeper_secrets_manager_core
-import traceback
-import importlib_metadata
-import difflib
-import typing as t
-from update_checker import UpdateChecker
 
 
 global_config = Config()
@@ -261,23 +261,28 @@ class Mutex(click.Option):
 
         super(Mutex, self).__init__(*args, **kwargs)
 
+
     def handle_parse_result(self, ctx, opts, args):
         # ('option','value') - option present with the specified value assigned
         # ('option',) - option present with or without any value
-        current_opt:bool = self.name in opts
-        for mutex_opt in self.not_required_if:
-            if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
-                if current_opt:
-                    opt = str(mutex_opt) if len(mutex_opt) > 1 else f"'{str(mutex_opt[0])}'"
-                    raise click.UsageError("Illegal usage: '" + str(self.name) + "' is mutually exclusive with " + opt + ".")
-                else:
-                    self.prompt = None
-        for mutex_opt in self.required_if:
-            if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
-                if not current_opt:
-                    raise click.UsageError("Illegal usage: '" + str(self.name) + "' is required with " + str(mutex_opt) + ".")
-                else:
-                    self.prompt = None
+        if not KsmCliException.in_a_shell:
+            # NB! shell completion hints cause premature eval/validation
+            # and crashes with mutually required options on unfinished command
+            # ex. Error: option1 is required with option2
+            current_opt: bool = self.name in opts
+            for mutex_opt in self.not_required_if:
+                if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
+                    if current_opt:
+                        opt = str(mutex_opt) if len(mutex_opt) > 1 else f"'{str(mutex_opt[0])}'"
+                        raise click.UsageError("Illegal usage: '" + str(self.name) + "' is mutually exclusive with " + opt + ".")
+                    else:
+                        self.prompt = None
+            for mutex_opt in self.required_if:
+                if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
+                    if not current_opt:
+                        raise click.UsageError("Illegal usage: '" + str(self.name) + "' is required with " + str(mutex_opt) + ".")
+                    else:
+                        self.prompt = None
         return super(Mutex, self).handle_parse_result(ctx, opts, args)
 
 
@@ -1342,10 +1347,10 @@ def quit_command():
     help_options_color='blue'
 )
 @click.option('--credentials', '-c', type=str, metavar="UID", help="Keeper record with credentials to access destination key/value store.",
-    cls=Mutex,
-    # not_required_if=[('type','json')],
-    required_if=[('type', 'azure'), ('type', 'aws'), ('type', 'gcp')]
-)
+              cls=Mutex,
+              # not_required_if=[('type','json')],
+              required_if=[('type', 'azure'), ('type', 'aws'), ('type', 'gcp')]
+              )
 @click.option('--type', '-t', type=click.Choice(['aws', 'azure', 'gcp', 'json']), default='json', help="Type of the target key/value storage (aws, azure, gcp, json).", show_default=True)
 @click.option('--dry-run', '-n', is_flag=True, help='Perform a trial run with no changes made.')
 @click.option('--preserve-missing', '-p', is_flag=True, help='Preserve destination value when source value is deleted.')
