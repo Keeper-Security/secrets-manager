@@ -21,7 +21,8 @@ namespace QuickTest
         private static async Task GetSecrets()
         {
             var storage = new LocalConfigStorage("test_config_storage.json");
-            SecretsManagerClient.InitializeStorage(storage, "US:ONE_TIME_TOKEN");
+            // Initialize Storage only once - generates config.json from one-time token
+            // SecretsManagerClient.InitializeStorage(storage, "US:ONE_TIME_TOKEN");
             var options = new SecretsManagerOptions(storage);
             // var options = new SecretsManagerOptions(storage, SecretsManagerClient.CachingPostFunction);
             var secrets = await SecretsManagerClient.GetSecrets(options);
