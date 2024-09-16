@@ -587,13 +587,12 @@ data class AppFillers @JvmOverloads constructor(
 @SerialName("connection")
 data class PamRbiConnection @JvmOverloads constructor(
     val protocol: String? = null,
-    val enabled: Boolean? = null,
-    @SerialName("user_records") val userRecords: MutableList<String>? = null,
-    @SerialName("allow-url-manipulation") val allowUrlManipulation: Boolean? = null,
-    @SerialName("allowed-url-patterns") val allowedUrlPatterns: String? = null,
-    @SerialName("allowed-resource-url-patterns") val allowedResourceUrlPatterns: String? = null,
-    @SerialName("http-credentials-uid") val httpCredentialsUid: String? = null,
-    @SerialName("autofill-configuration") val autofillConfiguration: String? = null
+    val userRecords: MutableList<String>? = null,
+    val allowUrlManipulation: Boolean? = null,
+    val allowedUrlPatterns: String? = null,
+    val allowedResourceUrlPatterns: String? = null,
+    val httpCredentialsUid: String? = null,
+    val autofillConfiguration: String? = null
 )
 @Serializable
 data class PamRemoteBrowserSetting @JvmOverloads constructor(
@@ -613,24 +612,20 @@ data class PamRemoteBrowserSettings @JvmOverloads constructor(
 @SerialName("connection")
 data class PamSettingsConnection @JvmOverloads constructor(
     val protocol: String? = null,
-    val enabled: Boolean? = null,
-    @SerialName("user_records") val userRecords: MutableList<String>? = null,
+    val userRecords: MutableList<String>? = null,
     val security: String? = null,
-    @SerialName("ignore-cert") val ignoreCert: Boolean? = null,
-    @SerialName("resize-method") val resizeMethod: String? = null,
-    @SerialName("color-scheme") val colorScheme: String? = null
+    val ignoreCert: Boolean? = null,
+    val resizeMethod: String? = null,
+    val colorScheme: String? = null
 )
 @Serializable
 @SerialName("portForward")
 data class PamSettingsPortForward @JvmOverloads constructor(
-    val enabled: Boolean? = null,
     val reusePort: Boolean? = null,
     val port: String? = null
 )
 @Serializable
 data class PamSetting @JvmOverloads constructor(
-    val configUid: String? = null,
-    val adminCredentialUid: String? = null,
     val portForward: MutableList<PamSettingsPortForward>? = null,
     val connection: MutableList<PamSettingsConnection>? = null,
 )
