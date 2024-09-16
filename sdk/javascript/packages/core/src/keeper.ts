@@ -1557,13 +1557,12 @@ export class AppFillerField extends KeeperRecordField {
 
 export type PamRbiConnection = {
     protocol?: string
-    enabled?: boolean
-    user_records?: string[]
-    "allow-url-manipulation"?: boolean
-    "allowed-url-patterns"?: string
-    "allowed-resource-url-patterns"?: string
-    "http-credentials-uid"?: string
-    "autofill-configuration"?: string
+    userRecords?: string[]
+    allowUrlManipulation?: boolean
+    allowedUrlPatterns?: string
+    allowedResourceUrlPatterns?: string
+    httpCredentialsUid?: string
+    autofillConfiguration?: string
 }
 
 export type PamRemoteBrowserSetting = {
@@ -1582,23 +1581,19 @@ export class PamRemoteBrowserSettingsField extends KeeperRecordField {
 
 export type PamSettingsConnection = {
     protocol?: string
-    enabled?: boolean
-    user_records?: string[]
+    userRecords?: string[]
     security?: string
-    "ignore-cert"?: boolean
-    "resize-method"?: string
-    "color-scheme"?: string
+    ignoreCert?: boolean
+    resizeMethod?: string
+    colorScheme?: string
 }
 
 export type PamSettingsPortForward = {
-    enabled?: boolean
     reusePort?: boolean
     port?: string
 }
 
 export type PamSetting = {
-    configUid?: string
-    adminCredentialUid?: string
     portForward?: PamSettingsPortForward[]
     connection?: PamSettingsConnection[]
 }
