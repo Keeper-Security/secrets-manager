@@ -510,13 +510,12 @@ namespace SecretsManager
     public class PamRbiConnection
     {
         public string protocol { get; set; }
-        public bool? enabled { get; set; }
-        public List<string> user_records { get; set; }
-        [JsonPropertyName("allow-url-manipulation")] public bool? allowUrlManipulation { get; set; }
-        [JsonPropertyName("allowed-url-patterns")] public string allowedUrlPatterns { get; set; }
-        [JsonPropertyName("allowed-resource-url-patterns")] public string allowedResourceUrlPatterns { get; set; }
-        [JsonPropertyName("http-credentials-uid")] public string httpCredentialsUid { get; set; }
-        [JsonPropertyName("autofill-configuration")] public string autofillConfiguration { get; set; }
+        public List<string> userRecords { get; set; }
+        public bool? allowUrlManipulation { get; set; }
+        public string allowedUrlPatterns { get; set; }
+        public string allowedResourceUrlPatterns { get; set; }
+        public string httpCredentialsUid { get; set; }
+        public string autofillConfiguration { get; set; }
     }
 
     public class PamRemoteBrowserSetting
@@ -534,25 +533,21 @@ namespace SecretsManager
     public class PamSettingsConnection
     {
         public string protocol { get; set; }
-        public bool? enabled { get; set; }
-        public List<string> user_records { get; set; }
+        public List<string> userRecords { get; set; }
         public string security { get; set; }
-        [JsonPropertyName("ignore-cert")] public bool? ignoreCert { get; set; }
-        [JsonPropertyName("resize-method")] public string resizeMethod { get; set; }
-        [JsonPropertyName("color-scheme")] public string colorScheme { get; set; }
+        public bool? ignoreCert { get; set; }
+        public string resizeMethod { get; set; }
+        public string colorScheme { get; set; }
     }
 
     public class PamSettingsPortForward
     {
-        public bool? enabled { get; set; }
         public bool? reusePort { get; set; }
         public string port { get; set; }
     }
 
     public class PamSetting
     {
-        public string configUid { get; set; }
-        public string adminCredentialUid { get; set; }
         public List<PamSettingsPortForward> portForward { get; set; }
         public List<PamSettingsConnection> connection { get; set; }
     }
