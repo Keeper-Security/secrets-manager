@@ -835,13 +835,12 @@ class PamRemoteBrowserSettings(FieldType):
                 "desc": "Connection details",
                 "schema": {
                     "protocol": {"value_type": str},
-                    "enabled": {"value_type": bool},
-                    "user_records": {"value_type": list},
-                    "allow-url-manipulation": {"value_type": bool},
-                    "allowed-url-patterns": {"value_type": str},
-                    "allowed-resource-url-patterns": {"value_type": str},
-                    "http-credentials-uid": {"value_type": str},
-                    "autofill-configuration": {"value_type": str}
+                    "userRecords": {"value_type": list},
+                    "allowUrlManipulation": {"value_type": bool},
+                    "allowedUrlPatterns": {"value_type": str},
+                    "allowedResourceUrlPatterns": {"value_type": str},
+                    "httpCredentialsUid": {"value_type": str},
+                    "autofillConfiguration": {"value_type": str}
                 }
             },
         }
@@ -857,13 +856,10 @@ class PamSettings(FieldType):
                 "value_type": dict,
                 "desc": "PAM Settings",
                 "schema": {
-                    "configUid": {"value_type": str},
-                    "adminCredentialUid": {"value_type": str},
                     "portForward": {
                         "value_type": list,
                         "desc": "Port Settings",
                         "schema": {
-                            "enabled": {"value_type": bool},
                             "reusePort": {"value_type": bool},
                             "port": {"value_type": str},
                         }
@@ -873,12 +869,11 @@ class PamSettings(FieldType):
                         "desc": "Connection Settings",
                         "schema": {
                             "protocol": {"value_type": str},
-                            "enabled": {"value_type": bool},
-                            "user_records": {"value_type": list},
+                            "userRecords": {"value_type": list},
                             "security": {"value_type": str},
-                            "ignore-cert": {"value_type": bool},
-                            "resize-method": {"value_type": str},
-                            "color-scheme": {"value_type": str}
+                            "ignoreCert": {"value_type": bool},
+                            "resizeMethod": {"value_type": str},
+                            "colorScheme": {"value_type": str}
                         }
                     },
                 }
