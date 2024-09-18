@@ -1,24 +1,24 @@
 {
   "name": "keeper-secrets-manager",
-  "version": "0.0.2",
+  "version": "1.0.6",
   "description": "",
   "main": "index.js",
   "scripts": {
     "build": "tsc index.ts",
-    "run": "tsc && node index.js",
-    "test": "tsc && mocha tests/_suite.js",
-    "quicktest": "tsc && ts-node index.ts"
+    "run": "tsc index.ts && node index.js",
+    "test": "tsc tests/_suite.ts && mocha tests/_suite.js",
+    "quicktest": "ts-node index.ts"
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@keeper-security/secrets-manager-core": "^16.3.3",
-    "azure-pipelines-task-lib": "^4.0.0-preview"
+    "@keeper-security/secrets-manager-core": "^16.6.2",
+    "azure-pipelines-task-lib": "^4.15.0"
   },
   "devDependencies": {
-    "@types/mocha": "^9.1.1",
-    "@types/node": "^18.7.18",
-    "@types/q": "^1.5.5",
-    "nock": "^13.2.9"
+    "@types/mocha": "^10.0.7",
+    "@types/node": "^20.14.2",
+    "@types/q": "^1.5.8",
+    "ts-node": "^10.9.2"
   }
 }
