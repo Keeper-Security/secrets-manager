@@ -90,7 +90,7 @@ jobs:
               
               libpath=${midsdir}/${version}/agent/lib
               elibpath=${libpath//\//\\/}
-              sed -i 's/val midServerAgentDir =.*/val midServerAgentDir = "${elibpath}"/' ${gradlecfg}
+              sed -i "s/val midServerAgentDir =.*/val midServerAgentDir = \"${elibpath}\"/" ${gradlecfg}
               
               cd ${buildroot}
               gradlew_return_code=0
