@@ -55,11 +55,17 @@ export type CreateOptions = {
     subFolderUid?: string
 }
 
+export enum UpdateTransactionType {
+    General = "general",
+    Rotation = "rotation"
+}
+
 type AnyPayload =
     GetPayload
     | DeletePayload
     | DeleteFolderPayload
     | UpdatePayload
+    | CompleteTransactionPayload
     | CreatePayload
     | CreateFolderPayload
     | UpdateFolderPayload
@@ -89,6 +95,11 @@ type UpdatePayload = CommonPayload & {
     recordUid: string
     data: string
     revision: number
+    transactionType?: UpdateTransactionType
+}
+
+type CompleteTransactionPayload = CommonPayload & {
+    recordUid: string
 }
 
 type CreatePayload = CommonPayload & {
@@ -228,6 +239,19 @@ type KeeperError = {
     key_id?: number
 }
 
+const getUidBytes = (): Uint8Array => {
+    const dash = new Uint8Array([0b1111_1000, 0b0111_1111])
+    let bytes = new Uint8Array(16)
+    for (let i = 0; i < 8; i++) {
+        bytes = platform.getRandomBytes(16)
+        if ((dash[0] & bytes[0]) != dash[0]) break
+    }
+    if ((dash[0] & bytes[0]) == dash[0])
+        bytes[0] = bytes[0] & dash[1]
+
+    return bytes
+}
+
 const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryOptions): Promise<GetPayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
@@ -251,20 +275,37 @@ const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryO
     return payload
 }
 
-const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord): Promise<UpdatePayload> => {
+const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord, transactionType?: UpdateTransactionType): Promise<UpdatePayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
     }
     const recordBytes = platform.stringToBytes(JSON.stringify(record.data))
     const encryptedRecord = await platform.encrypt(recordBytes, record.recordUid)
-    return {
+    const payload: UpdatePayload =  {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
         recordUid: record.recordUid,
         data: webSafe64FromBytes(encryptedRecord),
         revision: record.revision
     }
+    if (transactionType) {
+        payload.transactionType = transactionType
+    }
+    return payload
+}
+
+const prepareCompleteTransactionPayload = async (storage: KeyValueStorage, recordUid: string): Promise<CompleteTransactionPayload> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
+    const payload: CompleteTransactionPayload =  {
+        clientVersion: 'ms' + packageVersion,
+        clientId: clientId,
+        recordUid: recordUid,
+    }
+    return payload
 }
 
 const prepareDeletePayload = async (storage: KeyValueStorage, recordUids: string[]): Promise<DeletePayload> => {
@@ -303,7 +344,7 @@ const prepareCreatePayload = async (storage: KeyValueStorage, createOptions: Cre
     }
     const recordBytes = platform.stringToBytes(JSON.stringify(recordData))
     const recordKey = platform.getRandomBytes(32)
-    const recordUid = platform.getRandomBytes(16)
+    const recordUid = getUidBytes()
     const encryptedRecord = await platform.encryptWithKey(recordBytes, recordKey)
     const encryptedRecordKey = await platform.publicEncrypt(recordKey, ownerPublicKey)
     const encryptedFolderKey = await platform.encrypt(recordKey, createOptions.folderUid)
@@ -328,7 +369,7 @@ const prepareCreateFolderPayload = async (storage: KeyValueStorage, createOption
         name: folderName
     }))
     const folderKey = platform.getRandomBytes(32)
-    const folderUid = platform.getRandomBytes(16)
+    const folderUid = getUidBytes()
     const encryptedFolderData = await platform.encryptWithKey(folderDataBytes, folderKey, true)
     const encryptedFolderKey = await platform.encrypt(folderKey, createOptions.folderUid, undefined, true)
     return {
@@ -867,9 +908,15 @@ export const getSecretByTitle = async (options: SecretManagerOptions, recordTitl
     return secrets.records.find(record => record.data.title === recordTitle)
 }
 
-export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord): Promise<void> => {
-    const payload = await prepareUpdatePayload(options.storage, record)
+export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord, transactionType?: UpdateTransactionType): Promise<void> => {
+    const payload = await prepareUpdatePayload(options.storage, record, transactionType)
     await postQuery(options, 'update_secret', payload)
+}
+
+export const completeTransaction = async (options: SecretManagerOptions, recordUid: string, rollback: boolean = false): Promise<void> => {
+    const payload = await prepareCompleteTransactionPayload(options.storage, recordUid)
+    const route = (rollback ? "rollback_secret_update" : "finalize_secret_update")
+    await postQuery(options, route, payload)
 }
 
 export const deleteSecret = async (options: SecretManagerOptions, recordUids: string[]): Promise<SecretsManagerDeleteResponse> => {
@@ -994,6 +1041,7 @@ export class UrlField extends KeeperRecordField {
       }
 }
 
+// 'file' - obsolete and removed legacy field - "fldt_file": { key: 'file_or_photo', default: "File or Photo" },
 export class FileRefField extends KeeperRecordField {
     required? : boolean
     value?: string[]
@@ -1011,6 +1059,17 @@ export class OneTimeCodeField extends KeeperRecordField {
     constructor(value: string) {
         super()
         this.type = 'oneTimeCode'
+        this.value = [value]
+      }
+}
+
+export class OtpField extends KeeperRecordField {
+    required? : boolean
+    privacyScreen? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'otp'
         this.value = [value]
       }
 }
@@ -1308,7 +1367,10 @@ export class RecordRefField extends KeeperRecordField {
 
 export type Schedule = {
     type?: string
-    utcTime?: string
+    cron?: string
+    // utcTime - replaced by time and tz
+    time?: string
+    tz?: string
     weekday?: string
     intervalCount?: number
 }
@@ -1371,10 +1433,19 @@ export class PamHostnameField extends KeeperRecordField {
       }
 }
 
+export type AllowedSettings = {
+    connections? : boolean
+    portForwards? : boolean
+    rotation? : boolean
+    sessionRecording? : boolean
+    typescriptRecording? : boolean
+}
+
 export type PamResource = {
     controllerUid?: string
     folderUid?: string
     resourceRef?: string[]
+    allowedSettings?: AllowedSettings
 }
 
 export class PamResourceField extends KeeperRecordField {
@@ -1426,3 +1497,128 @@ export class PasskeyField extends KeeperRecordField {
         this.value = [value]
       }
 }
+
+export class IsSSIDHiddenField extends KeeperRecordField {
+    required? : boolean
+    value?: boolean[]
+    constructor(value: boolean) {
+        super()
+        this.type = 'isSSIDHidden'
+        this.value = [value]
+      }
+}
+
+export class WifiEncryptionField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'wifiEncryption'
+        this.value = [value]
+      }
+}
+
+export class DropdownField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'dropdown'
+        this.value = [value]
+      }
+}
+
+export class RbiUrlField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'rbiUrl'
+        this.value = [value]
+      }
+}
+
+export type AppFiller = {
+    applicationTitle?: string
+    contentFilter?: string
+    macroSequence?: string
+}
+
+export class AppFillerField extends KeeperRecordField {
+    required?: boolean
+    privacyScreen? : boolean
+    value?: AppFiller[]
+    constructor(value: AppFiller) {
+        super()
+        this.type = 'appFiller'
+        this.value = [value]
+      }
+}
+
+export type PamRbiConnection = {
+    protocol?: string
+    userRecords?: string[]
+    allowUrlManipulation?: boolean
+    allowedUrlPatterns?: string
+    allowedResourceUrlPatterns?: string
+    httpCredentialsUid?: string
+    autofillConfiguration?: string
+}
+
+export type PamRemoteBrowserSetting = {
+    connection?: PamRbiConnection
+}
+
+export class PamRemoteBrowserSettingsField extends KeeperRecordField {
+    required?: boolean
+    value?: PamRemoteBrowserSetting[]
+    constructor(value: PamRemoteBrowserSetting) {
+        super()
+        this.type = 'pamRemoteBrowserSettings'
+        this.value = [value]
+      }
+}
+
+export type PamSettingsConnection = {
+    protocol?: string
+    userRecords?: string[]
+    security?: string
+    ignoreCert?: boolean
+    resizeMethod?: string
+    colorScheme?: string
+}
+
+export type PamSettingsPortForward = {
+    reusePort?: boolean
+    port?: string
+}
+
+export type PamSetting = {
+    portForward?: PamSettingsPortForward[]
+    connection?: PamSettingsConnection[]
+}
+
+export class PamSettingsField extends KeeperRecordField {
+    required?: boolean
+    value?: PamSetting[]
+    constructor(value: PamSetting) {
+        super()
+        this.type = 'pamSettings'
+        this.value = [value]
+      }
+}
+
+export class TrafficEncryptionSeedField extends KeeperRecordField {
+    required? : boolean
+    value?: string[]
+    constructor(value: string) {
+        super()
+        this.type = 'trafficEncryptionSeed'
+        this.value = [value]
+      }
+}
+
+// List of retired field types:
+// trafficEncryptionKey - replaced by trafficEncryptionSeed
+// pamProvider - deprecated for legacy/internal use only
+// controller - deprecated for legacy/internal use only
