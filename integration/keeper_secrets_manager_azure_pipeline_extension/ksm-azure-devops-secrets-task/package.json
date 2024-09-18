@@ -1,6 +1,6 @@
 {
   "name": "keeper-secrets-manager",
-  "version": "0.0.4",
+  "version": "1.0.6",
   "description": "",
   "main": "index.js",
   "scripts": {
