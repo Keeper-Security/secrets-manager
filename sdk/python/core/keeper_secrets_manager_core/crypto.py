@@ -36,6 +36,7 @@ def unpad_data(data):     # type: (bytes) -> bytes
     unpadder = PKCS7(16*8).unpadder()
     return unpadder.update(data) + unpadder.finalize()
 
+
 class CryptoUtils:
 
     BS = 16

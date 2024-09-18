@@ -4,8 +4,11 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 16.6.6
+* KSM-552 - Stop generating UIDs that start with "-"
+
 ## 16.6.5
-* KSM-529 - Hande broken encryption in records and files
+* KSM-529 - Handle broken encryption in records and files
 
 ## 16.6.4
 * KSM-488 - Remove unused package dependencies

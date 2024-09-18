@@ -23,17 +23,22 @@ from typing import List, Tuple, Optional
 from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.crypto import CryptoUtils
-from keeper_secrets_manager_core.dto.dtos import Folder, Record, RecordCreate, SecretsManagerResponse, AppData, \
+from keeper_secrets_manager_core.dto.dtos import Folder, Record, \
+    RecordCreate, SecretsManagerResponse, AppData, \
     KeeperFileUpload, KeeperFile, KeeperFolder
-from keeper_secrets_manager_core.dto.payload import CompleteTransactionPayload, GetPayload, UpdatePayload, TransmissionKey, \
-    EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, DeletePayload, \
-    CreateFolderPayload, UpdateFolderPayload, DeleteFolderPayload, CreateOptions, QueryOptions
+from keeper_secrets_manager_core.dto.payload import GetPayload, \
+    CompleteTransactionPayload, UpdatePayload, TransmissionKey, \
+    EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, \
+    DeletePayload, CreateFolderPayload, UpdateFolderPayload, \
+    DeleteFolderPayload, CreateOptions, QueryOptions
 from keeper_secrets_manager_core.exceptions import KeeperError
-from keeper_secrets_manager_core.keeper_globals import keeper_secrets_manager_sdk_client_id, keeper_public_keys, \
-    logger_name, keeper_servers
-from keeper_secrets_manager_core.storage import FileKeyValueStorage, KeyValueStorage, InMemoryKeyValueStorage
+from keeper_secrets_manager_core.keeper_globals import keeper_public_keys, \
+    keeper_secrets_manager_sdk_client_id, logger_name, keeper_servers
+from keeper_secrets_manager_core.storage import FileKeyValueStorage, \
+    KeyValueStorage, InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
-    url_safe_str_to_bytes, bytes_to_base64, generate_random_bytes, now_milliseconds, string_to_bytes, json_to_dict, \
+    url_safe_str_to_bytes, bytes_to_base64, generate_random_bytes, \
+    generate_uid_bytes, now_milliseconds, string_to_bytes, json_to_dict, \
     bytes_to_string, strtobool
 
 
@@ -41,6 +46,7 @@ def find_secrets_by_title(record_title, records):
     # Find all records with specified title
     records = records or []
     return [x for x in records if x.title == record_title]
+
 
 def find_secret_by_title(record_title, records):
     # Find first record with specified title
@@ -59,6 +65,7 @@ class NotationSection:
         self.parameter: Optional[Tuple[str, str]] = None  # <field type>|<field label>|<file name>
         self.index1: Optional[Tuple[str, str]] = None     # numeric index [N] or []
         self.index2: Optional[Tuple[str, str]] = None     # property index - ex. field/name[0][middle]
+
 
 class SecretsManager:
 
@@ -362,7 +369,7 @@ class SecretsManager:
             raise KeeperError('Unable to create record - folder key for ' + create_options.folder_uid + ' is missing')
 
         record_key = generate_random_bytes(32)
-        record_uid = generate_random_bytes(16)
+        record_uid = generate_uid_bytes()
 
         record_data_bytes = utils.string_to_bytes(record_data_json_str)
         record_data_encrypted = CryptoUtils.encrypt_aes(record_data_bytes, record_key)
@@ -496,15 +503,15 @@ class SecretsManager:
         payload.sharedFolderUid = create_options.folder_uid
         payload.parentUid = create_options.subfolder_uid
 
-        folder_uid = utils.generate_random_bytes(16)
+        folder_uid = generate_uid_bytes()
         payload.folderUid = CryptoUtils.bytes_to_url_safe_str(folder_uid)
 
-        folder_key = utils.generate_random_bytes(32)
+        folder_key = generate_random_bytes(32)
         encrypted_folder_key = CryptoUtils.encrypt_aes_cbc(folder_key, shared_folder_key)
         payload.sharedFolderKey = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_key)
 
         folder_json = dict_to_json({"name": folder_name})
-        folder_data_bytes = utils.string_to_bytes(folder_json)
+        folder_data_bytes = string_to_bytes(folder_json)
         encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
         payload.data = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_data)
 

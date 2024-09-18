@@ -437,6 +437,7 @@ class Multiline(FieldType):
     name = "multiline"
 
 
+# "file" - obsolete and removed legacy field - "fldt_file": { key: 'file_or_photo', default: "File or Photo" },
 class FileRef(FieldType):
     name = "fileRef"
     # The validation checks to see if value is a Record UID.
@@ -678,15 +679,11 @@ class Host(FieldType):
         }
     }
 
-# AppFiller?
-
 
 class LicenseNumber(FieldType):
     name = "licenseNumber"
     schema = {"value_type": str, "desc": "License Number"}
 
-
-# privateKey?
 
 class SecureNote(FieldType):
     name = "note"
@@ -705,7 +702,10 @@ class Schedule(FieldType):
         "value_type": dict,
         "schema": {
             "type": {"value_type": str, "desc": "Type"},
-            "utcTime": {"value_type": str, "desc": "UTC Timestamp"},
+            "cron": {"value_type": str, "desc": "Crontab format string"},
+            # "utcTime" - replaced by time and tz
+            "time": {"value_type": str, "desc": "Time"},
+            "tz": {"value_type": str, "desc": "Time zone"},
             "weekday": {"value_type": str, "desc": "Day of the Week"},
             "intervalCount": {"value_type": int, "desc": "Interval Count"}
         }
@@ -740,7 +740,16 @@ class PamResources(FieldType):
         "schema": {
             "controllerUid": {"value_type": str, "desc": "Record UID of the Controller Record"},
             "folderUid": {"value_type": str, "desc": "Folder UID"},
-            "resourceRef": {"value_type": list, "desc": "List with UIDs of resource records"}
+            "resourceRef": {"value_type": list, "desc": "List with UIDs of resource records"},
+            "allowedSettings": {
+                "value_type": dict, "desc": "List with allowed settings flags",
+                "schema": {
+                    "connections": {"value_type": bool},
+                    "portForwards": {"value_type": bool},
+                    "rotation": {"value_type": bool},
+                    "sessionRecording": {"value_type": bool},
+                    "typescriptRecording": {"value_type": bool}
+                }},
         }
     }
 
@@ -774,6 +783,7 @@ class Passkey(FieldType):
         }
     }
 
+
 class Script(FieldType):
     name = "script"
     schema = {
@@ -784,3 +794,99 @@ class Script(FieldType):
             "recordRef": {"value_type": str, "validate": UID_REGEX, "desc": "Record UID of the referenced record."}
         }
     }
+
+
+class IsSSIDHidden(FieldType):
+    name = "isSSIDHidden"
+    schema = {"value_type": bool, "desc": "Is SSID Hidden"}
+
+
+class WifiEncryption(FieldType):
+    name = "wifiEncryption"
+
+
+class Dropdown(FieldType):
+    name = "dropdown"
+
+
+class RbiUrl(FieldType):
+    name = "rbiUrl"
+
+
+class AppFiller(FieldType):
+    name = "appFiller"
+    schema = {
+        "value_type": dict,
+        "schema": {
+            "applicationTitle": {"value_type": str, "desc": "Application Title"},
+            "contentFilter": {"value_type": str, "desc": "Content Filter"},
+            "macroSequence": {"value_type": str, "desc": "Macro Sequence"},
+        }
+    }
+
+
+class PamRemoteBrowserSettings(FieldType):
+    name = "pamRemoteBrowserSettings"
+    schema = {
+        "value_type": dict,
+        "schema": {
+            "connection": {
+                "value_type": dict,
+                "desc": "Connection details",
+                "schema": {
+                    "protocol": {"value_type": str},
+                    "userRecords": {"value_type": list},
+                    "allowUrlManipulation": {"value_type": bool},
+                    "allowedUrlPatterns": {"value_type": str},
+                    "allowedResourceUrlPatterns": {"value_type": str},
+                    "httpCredentialsUid": {"value_type": str},
+                    "autofillConfiguration": {"value_type": str}
+                }
+            },
+        }
+    }
+
+
+class PamSettings(FieldType):
+    name = "pamSettings"
+    schema = {
+        "value_type": dict,
+        "schema": {
+            "connection": {
+                "value_type": dict,
+                "desc": "PAM Settings",
+                "schema": {
+                    "portForward": {
+                        "value_type": list,
+                        "desc": "Port Settings",
+                        "schema": {
+                            "reusePort": {"value_type": bool},
+                            "port": {"value_type": str},
+                        }
+                    },
+                    "connection": {
+                        "value_type": list,
+                        "desc": "Connection Settings",
+                        "schema": {
+                            "protocol": {"value_type": str},
+                            "userRecords": {"value_type": list},
+                            "security": {"value_type": str},
+                            "ignoreCert": {"value_type": bool},
+                            "resizeMethod": {"value_type": str},
+                            "colorScheme": {"value_type": str}
+                        }
+                    },
+                }
+            },
+        }
+    }
+
+
+class TrafficEncryptionSeed(FieldType):
+    name = "trafficEncryptionSeed"
+
+
+# List of retired field types:
+# trafficEncryptionKey - replaced by trafficEncryptionSeed
+# pamProvider - deprecated for legacy/internal use only
+# controller - deprecated for legacy/internal use only

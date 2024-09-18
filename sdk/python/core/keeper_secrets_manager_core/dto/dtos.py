@@ -454,11 +454,17 @@ class KeeperFileData:
         self.type = None
 
 
-VALID_RECORD_FIELDS = ['login', 'password', 'url', 'fileRef', 'oneTimeCode', 'otp', 'name', 'birthDate', 'date',
-                       'expirationDate', 'text', 'securityQuestion', 'multiline', 'email', 'cardRef', 'addressRef',
-                       'pinCode', 'phone', 'secret', 'note', 'accountNumber', 'paymentCard', 'bankAccount', 'keyPair',
-                       'host', 'address', 'licenseNumber', 'recordRef', 'schedule', 'directoryType', 'databaseType',
-                       'pamHostname', 'pamResources', 'checkbox', 'passkey', 'script']
+VALID_RECORD_FIELDS = [
+    'accountNumber', 'address', 'addressRef', 'appFiller', 'bankAccount',
+    'birthDate', 'cardRef', 'checkbox', 'databaseType', 'date',
+    'directoryType', 'dropdown', 'email', 'expirationDate', 'fileRef', 'host',
+    'isSSIDHidden', 'keyPair', 'licenseNumber', 'login', 'multiline', 'name',
+    'note', 'oneTimeCode', 'otp', 'pamHostname', 'pamRemoteBrowserSettings',
+    'pamResources', 'pamSettings', 'passkey', 'password', 'paymentCard',
+    'phone', 'pinCode', 'rbiUrl', 'recordRef', 'schedule', 'script', 'secret',
+    'securityQuestion', 'text', 'trafficEncryptionSeed', 'url',
+    'wifiEncryption'
+]
 
 
 class RecordField:
