@@ -42,7 +42,7 @@ jobs:
         if: ${{ false }} # disable for now
         run: |
           TAG="${{ github.event.inputs.tagname }}"
-          GRADLE_CFG=./build.gradle
+          GRADLE_CFG=./build.gradle.kts
           BUILD_VERSION=`fgrep version $GRADLE_CFG | sed -r 's/^version\s+//g' | sed 's/"//g'`
           if [[ "$TAG" == *"-$BUILD_VERSION"* ]]; then
             echo "Build version $BUILD_VERSION is included in the tag $TAG"
@@ -71,7 +71,7 @@ jobs:
           buildroot=`pwd`
           
           chmod u+x ${buildroot}/gradlew
-          gradlecfg=${buildroot}/build.gradle
+          gradlecfg=${buildroot}/build.gradle.kts
           
           buildname=`fgrep archivesName ${gradlecfg} | sed -r 's/^\s*archivesName\s*=\s*//g' | sed 's/"//g'`
           buildversion=`fgrep version ${gradlecfg} | sed -r 's/^version\s+//g' | sed 's/"//g'`
@@ -119,7 +119,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.inputs.tagname }}"
-          GRADLE_CFG=./build.gradle
+          GRADLE_CFG=./build.gradle.kts
           BUILD_NAME=`fgrep archivesName $GRADLE_CFG | sed -r 's/^\s*archivesName\s*=\s*//g' | sed 's/"//g'`
           BUILD_VERSION=`fgrep version $GRADLE_CFG | sed -r 's/^version\s+//g' | sed 's/"//g'`
           RELEASE_NAME=${BUILD_NAME}-${BUILD_VERSION}.jar
