@@ -75,7 +75,7 @@ jobs:
           
           buildname=`fgrep archivesName ${gradlecfg} | sed -r 's/^\s*archivesName\s*=\s*//g' | sed 's/"//g'`
           buildversion=`fgrep version ${gradlecfg} | sed -r 's/^version\s+//g' | sed 's/"//g'`
-          srcjarpath=${buildroot}/build/libs/${buildname}-${buildversion}.jar
+          srcjarpath=${buildroot}/build/libs/${buildname}.jar
           
           IFS="," read -a urls <<< ${MID_SERVER_URLS}
           for url in "${urls[@]}"; do
