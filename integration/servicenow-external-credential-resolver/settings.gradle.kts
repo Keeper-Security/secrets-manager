@@ -1,4 +1,4 @@
-rootProject.name = "core"
+rootProject.name = "keeper-external-credentials"
 
 plugins {
     id("org.gradle.toolchains.foojay-resolver") version "0.8.0"
