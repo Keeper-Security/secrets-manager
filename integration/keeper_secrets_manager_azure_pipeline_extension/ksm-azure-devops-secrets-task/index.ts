@@ -38,7 +38,7 @@ declare global {
 
 // Only add the polyfill if the method doesn't already exist
 if (!Array.prototype.at) {
-    console.log("Array.prototype.at() is not supported in this environment. Adding polyfill.");
+    tl.debug("Array.prototype.at() is not supported in this environment. Adding polyfill.");
     Array.prototype.at = function<T>(this: T[], index: number): T | undefined {
         // Convert the index to an integer
         const n = Math.trunc(index) || 0;
@@ -50,7 +50,7 @@ if (!Array.prototype.at) {
         return this[n];
     };
 } else {
-    console.log("Array.prototype.at() is natively supported in this environment.");
+    tl.debug("Array.prototype.at() is natively supported in this environment.");
 }
 
 /*
