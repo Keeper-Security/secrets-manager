@@ -1,6 +1,12 @@
 name: Publish to Azure Pipeline Extension
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run without publishing'
+        required: true
+        default: 'false'
+        type: boolean
 
 jobs:
   publish-az-pipeline-ext:
@@ -15,6 +21,15 @@ jobs:
       - name: Get the source code
         uses: actions/checkout@v3
 
+#      - name: Set up Docker
+#        uses: docker/setup-buildx-action@v3
+#
+#      - name: Run tests in Docker
+#        run: |
+#          cd ksm-azure-devops-secrets-task
+#          docker build -t keeper-secrets-test .
+#          docker run --rm keeper-secrets-test ./tests/run-tests.sh
+
       - name: Retrieve secrets from KSM
         id: ksmsecrets
         uses: Keeper-Security/ksm-action@master
@@ -24,23 +39,24 @@ jobs:
             DJz3ilHBHIbIZqkTClDV5Q/field/password > PAT
 
       - name: Build
+        if: success()
         run: |
           cd ksm-azure-devops-secrets-task
           npm install
           npm run build
 
-
       - name: Publish
+        if: success() && github.event.inputs.dry_run == 'false'
         run: |
           npm install -g tfx-cli
           tfx extension publish --token ${{ steps.ksmsecrets.outputs.PAT }}
           ls -lh *.vsix
 
-      - name: Step To run on failure
-        if: ${{ failure() }}
-        run: |
-          curl --request POST \
-          --url https://api.github.com/repos/${{ github.repository }}/issues \
-          --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
-          --header 'content-type: application/json' \
-          --data '{"title": "Issue created due to fialure in workflow ${{ github.workflow }}, run #: ${{ github.run_id }}","body": "This issue was automatically created by the GitHub Action workflow **${{ github.workflow }}**.\n\nDue to failure in run: [${{ github.run_id }}](https://github.com/Keeper-Security/secrets-manager/actions/runs/${{ github.run_id }}).\n\nIf error is related to access denied (expiration of Personal Access Token, aka PAT), here are the steps to generate a new one:\n\n-Steps to generate one documented [HERE](https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page)\n- Update \"Password\" field in record UID `DJz3ilHBHIbIZqkTClDV5Q` (located in shared folder named \"Secrets Manager\")"}'
+#      - name: Step To run on failure
+#        if: ${{ failure() }}
+#        run: |
+#          curl --request POST \
+#          --url https://api.github.com/repos/${{ github.repository }}/issues \
+#          --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+#          --header 'content-type: application/json' \
+#          --data '{"title": "Issue created due to failure in workflow ${{ github.workflow }}, run #: ${{ github.run_id }}","body": "This issue was automatically created by the GitHub Action workflow **${{ github.workflow }}**.\n\nDue to failure in run: [${{ github.run_id }}](https://github.com/Keeper-Security/secrets-manager/actions/runs/${{ github.run_id }}).\n\nIf error is related to access denied (expiration of Personal Access Token, aka PAT), here are the steps to generate a new one:\n\n-Steps to generate one documented [HERE](https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page)\n- Update \"Password\" field in record UID `DJz3ilHBHIbIZqkTClDV5Q` (located in shared folder named \"Secrets Manager\")"}'
