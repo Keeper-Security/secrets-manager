@@ -46,7 +46,7 @@ jobs:
           npm run build
 
       - name: Publish
-        if: success() && inputs.dry_run == 'false'
+        if: success() && github.event.inputs.dry_run == 'false'
         run: |
           npm install -g tfx-cli
           tfx extension publish --token ${{ steps.ksmsecrets.outputs.PAT }}
