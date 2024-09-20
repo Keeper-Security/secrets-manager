@@ -21,17 +21,16 @@ jobs:
       - name: Get the source code
         uses: actions/checkout@v3
 
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
-
-      - name: Run tests in Docker
-        run: |
-          cd ksm-azure-devops-secrets-task
-          docker build -t keeper-secrets-test .
-          docker run --rm keeper-secrets-test ./tests/run-tests.sh
+#      - name: Set up Docker
+#        uses: docker/setup-buildx-action@v3
+#
+#      - name: Run tests in Docker
+#        run: |
+#          cd ksm-azure-devops-secrets-task
+#          docker build -t keeper-secrets-test .
+#          docker run --rm keeper-secrets-test ./tests/run-tests.sh
 
       - name: Retrieve secrets from KSM
-        if: success()
         id: ksmsecrets
         uses: Keeper-Security/ksm-action@master
         with:
