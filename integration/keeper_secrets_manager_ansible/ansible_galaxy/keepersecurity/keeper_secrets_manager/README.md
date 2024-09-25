@@ -119,6 +119,9 @@ configuration file or even a playbook.
 
 # Changes
 
+## 1.2.4
+* Updated pinned KSM SDK version to 16.6.6.
+
 ## 1.2.3
 * Updated pinned KSM SDK version to 16.6.4.
 
