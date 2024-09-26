@@ -813,7 +813,12 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
                 " Error parsing record type - KSM SDK is behind/ahead of record/field type definitions." +
                 " Please upgrade to latest version. If you need assistance please email support@keepersecurity.com")
         //println(e.message)
-        recordData = nonStrictJson.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
+        try {
+            // Attempt to parse the record data with unknown fields
+            recordData = nonStrictJson.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
+        } catch (e: Exception) {
+            println("Error parsing record data with using non-strict JSON parser. Record ${record.recordUid} will be skipped.")
+        }
     }
 
     return if (recordData != null) KeeperRecord(recordKey, record.recordUid, null, null, record.innerFolderUid, recordData, record.revision, files) else null
@@ -1075,7 +1080,13 @@ fun postFunction(
     return KeeperHttpResponse(statusCode, data)
 }
 
-private val nonStrictJson = Json { ignoreUnknownKeys = true }
+@ExperimentalSerializationApi
+private val nonStrictJson = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+    coerceInputValues = true
+    allowTrailingComma = true
+}
 
 var keyId = 7
 
