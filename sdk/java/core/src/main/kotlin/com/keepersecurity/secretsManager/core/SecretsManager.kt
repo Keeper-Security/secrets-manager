@@ -1075,7 +1075,13 @@ fun postFunction(
     return KeeperHttpResponse(statusCode, data)
 }
 
-private val nonStrictJson = Json { ignoreUnknownKeys = true }
+@ExperimentalSerializationApi
+private val nonStrictJson = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+    coerceInputValues = true
+    allowTrailingComma = true
+}
 
 var keyId = 7
 
