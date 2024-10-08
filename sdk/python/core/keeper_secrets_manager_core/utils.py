@@ -109,6 +109,18 @@ def generate_random_bytes(length):
     return os.urandom(length)
 
 
+def generate_uid_bytes():
+    dash = bytes(b'\xf8\x7f')  # 11111000, 0b01111111
+    uid_bytes = bytes()
+    for _ in range(8):
+        uid_bytes = generate_random_bytes(16)
+        if dash[0] & uid_bytes[0] != dash[0]:
+            break
+    if dash[0] & uid_bytes[0] == dash[0]:
+        uid_bytes = bytes([uid_bytes[0] & dash[1]]) + uid_bytes[1:]
+    return uid_bytes
+
+
 def dict_to_json(dictionary):
     return json.dumps(dictionary, indent=4)
 

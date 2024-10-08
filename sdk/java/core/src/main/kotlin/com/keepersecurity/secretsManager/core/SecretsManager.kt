@@ -7,7 +7,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.net.HttpURLConnection.HTTP_OK
-import java.net.URL
+import java.net.URI
 import java.security.KeyManagementException
 import java.security.NoSuchAlgorithmException
 import java.security.SecureRandom
@@ -17,7 +17,7 @@ import java.util.*
 import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj16.6.4"
+const val KEEPER_CLIENT_VERSION = "mj16.6.6"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -693,7 +693,7 @@ fun downloadThumbnail(file: KeeperFile): ByteArray {
 }
 
 private fun downloadFile(file: KeeperFile, url: String): ByteArray {
-    with(URL(url).openConnection() as HttpsURLConnection) {
+    with(URI.create(url).toURL().openConnection() as HttpsURLConnection) {
         requestMethod = "GET"
         val statusCode = responseCode
         val data = when {
@@ -713,7 +713,7 @@ private fun uploadFile(url: String, parameters: String, fileData: ByteArray): Ke
     val boundary = String.format("----------%x", Instant.now().epochSecond)
     val boundaryBytes: ByteArray = stringToBytes("\r\n--$boundary")
     val paramJson = Json.parseToJsonElement(parameters) as JsonObject
-    with(URL(url).openConnection() as HttpsURLConnection) {
+    with(URI.create(url).toURL().openConnection() as HttpsURLConnection) {
         requestMethod = "POST"
         useCaches = false
         doInput = true
@@ -814,7 +814,7 @@ private fun decryptRecord(encryptedRecord: SecretsManagerResponseRecord, recordK
     } ?: emptyList()
 
     val recordData: KeeperRecordData = try {
-        Json.decodeFromString(bytesToString(decryptedRecord))
+        nonStrictJson.decodeFromString(bytesToString(decryptedRecord))
     } catch (e: SerializationException) {
         System.err.println(
             """
@@ -953,7 +953,7 @@ private fun prepareCreatePayload(
     val ownerPublicKey = storage.getBytes(KEY_OWNER_PUBLIC_KEY) ?: throw Exception("Application owner public key is missing from the configuration")
     val recordBytes = stringToBytes(Json.encodeToString(recordData))
     val recordKey = getRandomBytes(32)
-    val recordUid = getRandomBytes(16)
+    val recordUid = generateUid()
     val encryptedRecord = encrypt(recordBytes, recordKey)
     val encryptedRecordKey = publicEncrypt(recordKey, ownerPublicKey)
     val encryptedFolderKey = encrypt(recordKey, folderKey)
@@ -976,7 +976,7 @@ private fun prepareCreateFolderPayload(
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
     val folderDataBytes = stringToBytes(Json.encodeToString(KeeperFolderName(folderName)))
     val folderKey = getRandomBytes(32)
-    val folderUid = getRandomBytes(16)
+    val folderUid = generateUid()
     val encryptedFolderData = encrypt(folderDataBytes, folderKey, true)
     val encryptedFolderKey = encrypt(folderKey, sharedFolderKey, true)
     return CreateFolderPayload(KEEPER_CLIENT_VERSION, clientId,
@@ -1074,7 +1074,7 @@ fun postFunction(
 ): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
-    with(URL(url).openConnection() as HttpsURLConnection) {
+    with(URI.create(url).toURL().openConnection() as HttpsURLConnection) {
         if (allowUnverifiedCertificate) {
             sslSocketFactory = trustAllSocketFactory()
         }
@@ -1094,7 +1094,13 @@ fun postFunction(
     return KeeperHttpResponse(statusCode, data)
 }
 
-private val nonStrictJson = Json { ignoreUnknownKeys = true }
+@ExperimentalSerializationApi
+private val nonStrictJson = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+    coerceInputValues = true
+    allowTrailingComma = true
+}
 
 var keyId = 7
 

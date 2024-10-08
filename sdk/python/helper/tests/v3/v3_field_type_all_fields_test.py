@@ -124,7 +124,7 @@ class FieldTypeTest(unittest.TestCase):
         a.street2 = "Apt B"
         a.city = "Gotham"
         a.zip = "11111-2222"
-        a.country = "CA"
+        a.country = CountryEnum.CA
         self._check_dict(a, value={
             "street1": "North Main Street",
             "street2": "Apt B",
@@ -315,10 +315,11 @@ class FieldTypeTest(unittest.TestCase):
     def test_schedule(self):
         ft = Schedule()
         ft.type = "WEEKLY"
-        ft.utcTime = "00:00"
+        ft.time = "00:00:00"
+        ft.tz = "America/Chicago"
         ft.weekday = "WEDNESDAY"
         ft.intervalCount = 1
-        self._check_dict(ft, value={"type": "WEEKLY", "utcTime": "00:00", "weekday": "WEDNESDAY", "intervalCount": 1})
+        self._check_dict(ft, value={"type": "WEEKLY", "time": "00:00:00", "tz": "America/Chicago", "weekday": "WEDNESDAY", "intervalCount": 1})
 
     def test_directory_type(self):
         ft = DirectoryType()
@@ -341,7 +342,25 @@ class FieldTypeTest(unittest.TestCase):
         ft.controllerUid = "OlLZ6JLjnyMOS3CiIPHBjw"
         ft.folderUid = "so5ja6A46Zmr9J1QyCc06g"
         ft.resourceRef = ["hUrGHrcM0PI3Y6Ch5wCrAQ"]
-        self._check_dict(ft, value={"controllerUid": "OlLZ6JLjnyMOS3CiIPHBjw", "folderUid": "so5ja6A46Zmr9J1QyCc06g", "resourceRef": ["hUrGHrcM0PI3Y6Ch5wCrAQ"]})
+        ft.allowedSettings = {
+                "connections": True,
+                "portForwards": True,
+                "rotation": True,
+                "sessionRecording": True,
+                "typescriptRecording": True
+            }
+        self._check_dict(ft, value={
+            "controllerUid": "OlLZ6JLjnyMOS3CiIPHBjw",
+            "folderUid": "so5ja6A46Zmr9J1QyCc06g",
+            "resourceRef": ["hUrGHrcM0PI3Y6Ch5wCrAQ"],
+            "allowedSettings": {
+                "connections": True,
+                "portForwards": True,
+                "rotation": True,
+                "sessionRecording": True,
+                "typescriptRecording": True
+            }
+            })
 
     def test_checkbox(self):
         ft = Checkbox()
@@ -367,7 +386,7 @@ class FieldTypeTest(unittest.TestCase):
         ft.createdDate = 1625140800000
         self._check_dict(ft, value={
             "privateKey": {
-                "crv":"CRV",
+                "crv": "CRV",
                 "d": "DDDDD",
                 "ext": False,
                 "key_ops": [],
@@ -382,7 +401,7 @@ class FieldTypeTest(unittest.TestCase):
             "username": "user1",
             "createdDate": 1625140800000})
         
-    def test_scrpt(self):
+    def test_script(self):
         ft = Script()
         ft.fileRef = "OlLZ6JLjnyMOS3CiIPHBjw"
         ft.command = "/bin/zsh"

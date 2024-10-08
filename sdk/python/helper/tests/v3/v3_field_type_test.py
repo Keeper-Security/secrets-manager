@@ -53,8 +53,11 @@ class FieldTypeTest(unittest.TestCase):
     def test_load_map(self):
         get_field_type_map()
 
-        # Nice test to make sure we loaded all the fields, if we add more fields this will fail ... but in a good way.
-        self.assertEqual(39, len(field_map.keys()))
+        # Nice test to make sure we loaded all the fields,
+        # if we add more fields this will fail ... but in a good way.
+        # All the fields include: VALID_RECORD_FIELDS and some subtypes:
+        #  bankAccountItem, paymentCardItem, phoneItem
+        self.assertEqual(47, len(field_map.keys()))
 
         # Check if we get a Login class
         self.assertEqual(get_class_by_type("login"), Login)

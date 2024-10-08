@@ -3,6 +3,11 @@
 
 # Change Log
 
+## 16.6.7
+
+* KSM-550 - Stop generating UIDs that start with "-"
+* KSM-557 - Added new and updated PAM field types
+
 ## 16.6.6
 
 * KSM-360 - GHA to build and release strong named assemblies
