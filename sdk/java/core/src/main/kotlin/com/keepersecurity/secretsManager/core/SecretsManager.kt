@@ -301,7 +301,31 @@ data class KeeperFile(
     val data: KeeperFileData,
     val url: String,
     val thumbnailUrl: String?
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as KeeperFile
+
+        if (!fileKey.contentEquals(other.fileKey)) return false
+        if (fileUid != other.fileUid) return false
+        if (data != other.data) return false
+        if (url != other.url) return false
+        if (thumbnailUrl != other.thumbnailUrl) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = fileKey.contentHashCode()
+        result = 31 * result + fileUid.hashCode()
+        result = 31 * result + data.hashCode()
+        result = 31 * result + url.hashCode()
+        result = 31 * result + (thumbnailUrl?.hashCode() ?: 0)
+        return result
+    }
+}
 
 data class KeeperFileUpload(
     val name: String,
@@ -744,10 +768,7 @@ private fun fetchAndDecryptSecrets(
     if (response.records != null) {
         response.records.forEach {
             val recordKey = decrypt(it.recordKey, appKey)
-            val decryptedRecord = decryptRecord(it, recordKey)
-            if (decryptedRecord != null) {
-                records.add(decryptedRecord)
-            }
+            decryptRecord(it, recordKey).onSuccess { keeperRecord -> records.add(keeperRecord) }
         }
     }
     if (response.folders != null) {
@@ -755,11 +776,10 @@ private fun fetchAndDecryptSecrets(
             val folderKey = decrypt(folder.folderKey, appKey)
             folder.records!!.forEach { record ->
                 val recordKey = decrypt(record.recordKey, folderKey)
-                val decryptedRecord = decryptRecord(record, recordKey)
-                if (decryptedRecord != null) {
-                    decryptedRecord.folderUid = folder.folderUid
-                    decryptedRecord.folderKey = folderKey
-                    records.add(decryptedRecord)
+                decryptRecord(record, recordKey).onSuccess { keeperRecord ->
+                    keeperRecord.folderUid = folder.folderUid
+                    keeperRecord.folderKey = folderKey
+                    records.add(keeperRecord)
                 }
             }
         }
@@ -777,51 +797,45 @@ private fun fetchAndDecryptSecrets(
 }
 
 @ExperimentalSerializationApi
-private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray): KeeperRecord? {
-    val decryptedRecord = decrypt(record.data, recordKey)
+private fun decryptRecord(encryptedRecord: SecretsManagerResponseRecord, recordKey: ByteArray): Result<KeeperRecord> {
 
-    val files: MutableList<KeeperFile> = mutableListOf()
+    val decryptedRecord = decrypt(encryptedRecord.data, recordKey)
 
-    if (record.files != null) {
-        record.files.forEach {
-            val fileKey = decrypt(it.fileKey, recordKey)
-            val decryptedFile = decrypt(it.data, fileKey)
-            files.add(
-                KeeperFile(
-                    fileKey,
-                    it.fileUid,
-                    Json.decodeFromString(bytesToString(decryptedFile)),
-                    it.url,
-                    it.thumbnailUrl
-                )
-            )
-        }
+    val decryptedRecordFiles = encryptedRecord.files?.map { recordFile ->
+        val fileKey = decrypt(recordFile.fileKey, recordKey)
+        val decryptedFile = decrypt(recordFile.data, fileKey)
+        KeeperFile(
+            fileKey,
+            recordFile.fileUid,
+            Json.decodeFromString(bytesToString(decryptedFile)),
+            recordFile.url,
+            recordFile.thumbnailUrl
+        )
+    } ?: emptyList()
+
+    val recordData: KeeperRecordData = try {
+        nonStrictJson.decodeFromString(bytesToString(decryptedRecord))
+    } catch (e: SerializationException) {
+        System.err.println(
+            """
+            Record ${encryptedRecord.recordUid} has unexpected data properties (ignored).
+            Error parsing record type - KSM SDK is behind/ahead of record/field type definitions.
+            Please upgrade to latest version. If you need assistance please email
+        """.trimIndent()
+        )
+        return Result.failure(e)
     }
-
-    // When SDK is behind/ahead of record/field type definitions then
-    // strict mapping between JSON attributes and object properties
-    // will fail on any unknown field/key - currently just log the error
-    // and continue without the field - nb! field will be lost on save
-    var recordData: KeeperRecordData? = null
-    try {
-        recordData = Json.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
-    } catch (e: Exception) {
-        // New/missing field: Polymorphic serializer was not found for class discriminator 'UNKNOWN'...
-        // New/missing field property (field def updated): Encountered unknown key 'UNKNOWN'.
-        // Avoid 'ignoreUnknownKeys = true' to prevent erasing new properties on save/update
-        println("Record ${record.recordUid} has unexpected data properties (ignored).\n"+
-                " Error parsing record type - KSM SDK is behind/ahead of record/field type definitions." +
-                " Please upgrade to latest version. If you need assistance please email support@keepersecurity.com")
-        //println(e.message)
-        try {
-            // Attempt to parse the record data with unknown fields
-            recordData = nonStrictJson.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
-        } catch (e: Exception) {
-            println("Error parsing record data with using non-strict JSON parser. Record ${record.recordUid} will be skipped.")
-        }
-    }
-
-    return if (recordData != null) KeeperRecord(recordKey, record.recordUid, null, null, record.innerFolderUid, recordData, record.revision, files) else null
+    val keeperRecord = KeeperRecord(
+        recordKey = recordKey,
+        recordUid = encryptedRecord.recordUid,
+        folderUid = null,
+        folderKey = null,
+        innerFolderUid = encryptedRecord.innerFolderUid,
+        data = recordData,
+        revision = encryptedRecord.revision,
+        files = decryptedRecordFiles
+    )
+    return Result.success(keeperRecord)
 }
 
 @ExperimentalSerializationApi
