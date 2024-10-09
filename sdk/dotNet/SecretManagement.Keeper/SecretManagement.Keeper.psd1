@@ -1,5 +1,5 @@
 @{
-    ModuleVersion = '16.6.7'
+    ModuleVersion = '16.6.8'
     CompatiblePSEditions = @('Core')
     GUID = '20ab89cb-f0dd-4e8e-b276-f3a7708c1eb2'
     Author = 'Sergey Aldoukhov'
