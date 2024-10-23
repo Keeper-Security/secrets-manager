@@ -10,7 +10,7 @@
   "version": {
     "Major": 1,
     "Minor": 0,
-    "Patch": 8
+    "Patch": 9
   },
   "instanceNameFormat": "KeeperSecretsManager",
   "inputs": [
@@ -36,8 +36,15 @@
 
     }
   ],
+  "minimumAgentVersion": "2.144.0",
   "execution": {
     "Node10": {
+      "target": "index.js"
+    },
+    "Node16": {
+      "target": "index.js"
+    },
+    "Node20_1": {
       "target": "index.js"
     }
   }
