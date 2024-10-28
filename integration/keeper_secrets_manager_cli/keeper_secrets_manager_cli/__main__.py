@@ -349,8 +349,11 @@ def profile_command():
 def profile_init_command(ctx, token, hostname, ini_file, profile_name, token_arg):
     """Initialize a profile"""
 
+    # Command line --token option overrides all other options
     if token is None and len(token_arg) > 0:
         token = token_arg[0]
+    if token is None:
+        token = os.environ.get("KSM_CLI_TOKEN", None)
     if token is None:
         raise KsmCliException("A one time access token is required either as a command parameter or an argument.")
 
