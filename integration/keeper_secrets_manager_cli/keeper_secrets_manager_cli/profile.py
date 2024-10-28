@@ -55,6 +55,7 @@ class Profile:
                 Profile.init(
                     token=os.environ.get("KSM_TOKEN"),
                     server=os.environ.get("KSM_HOSTNAME", "US"),
+                    ini_file=ini_file,
                     launched_from_app=self._config.launched_from_app
                 )
             else:
