@@ -480,7 +480,7 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
     val selector = parsedNotation[2].text?.first ?: // type|title|notes or file|field|custom_field
         throw Exception("Invalid notation '$notation'")
     val recordToken = parsedNotation[1].text?.first ?: // UID or Title
-        throw Exception("Invalid notation $'notation'")
+        throw Exception("Invalid notation '$notation'")
 
     // to minimize traffic - if it looks like a Record UID try to pull a single record
     var records = listOf<KeeperRecord>()
