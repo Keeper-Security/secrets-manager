@@ -8,6 +8,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 ## 1.1.6
 - KSM-558 Fixed crashes with mutually required options in shell mode
+- KSM-567 Added KSM_CLI_TOKEN environment variable
+- KSM-568 Removed dependency on legacy distutils
+- Bumping KSM SDK to 16.6.7
 
 ## 1.1.5
 - Bumping KSM SDK to 16.6.5
