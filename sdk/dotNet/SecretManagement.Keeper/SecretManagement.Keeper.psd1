@@ -8,7 +8,7 @@
     Description = 'SecretManagement extension vault for Keeper'
     RootModule = './SecretManagement.Keeper.psm1'
     NestedModules = @('./SecretManagement.Keeper.Extension')
-    PowerShellVersion = '5.1'
+    PowerShellVersion = '6.0'
     FunctionsToExport = @('Register-KeeperVault')
     CmdletsToExport = @()
     VariablesToExport = @()
