@@ -1697,9 +1697,23 @@ class KSMCache:
             os.unlink(KSMCache.kms_cache_file_name)
 
     @staticmethod
-    def caching_post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True):
-
+    def caching_post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True, prefer_cache=False):
         try:
+            # `prefer_cache` controls network access
+            # When `True` and KSMCache cache is not empty we return cached data
+            # Note: Only `/get_secret` responses are cached
+            # Note: Cache updates are manual so after record update/delete
+            # call get_secrets with prefer_cache=False to update the cache
+            if prefer_cache and url.endswith("/get_secret"):
+                try:
+                    cached_data = KSMCache.get_cached_data()
+                except Exception:
+                    cached_data = None
+                if isinstance(cached_data, bytes) and len(cached_data) > 32:
+                    transmission_key.key = cached_data[:32]
+                    data = cached_data[32:len(cached_data)]
+                    return KSMHttpResponse(HTTPStatus.OK, data, None)
+                # else cache was empty or invalid - fallthrough to populate
 
             ksm_rs = SecretsManager.post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs)
 
