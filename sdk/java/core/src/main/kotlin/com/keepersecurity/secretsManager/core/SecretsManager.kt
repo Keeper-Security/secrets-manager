@@ -809,9 +809,9 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
         // New/missing field: Polymorphic serializer was not found for class discriminator 'UNKNOWN'...
         // New/missing field property (field def updated): Encountered unknown key 'UNKNOWN'.
         // Avoid 'ignoreUnknownKeys = true' to prevent erasing new properties on save/update
-        println("Record ${record.recordUid} has unexpected data properties (ignored).\n"+
-                " Error parsing record type - KSM SDK is behind/ahead of record/field type definitions." +
-                " Please upgrade to latest version. If you need assistance please email support@keepersecurity.com")
+        println("Record ${record.recordUid} contains unrecognized data properties and could not be fully parsed.\n" + 
+                "This may occur if the Keeper Secrets Manager (KSM) SDK version you're using is not compatible with the record's data schema.\n" + 
+                "Please ensure that you are using the latest version of the KSM SDK. If the issue persists, contact support@keepersecurity.com for assistance.")        
         //println(e.message)
         try {
             // Attempt to parse the record data with unknown fields
