@@ -17,7 +17,7 @@ import java.util.*
 import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj16.6.5"
+const val KEEPER_CLIENT_VERSION = "mj16.6.6"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -480,7 +480,7 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
     val selector = parsedNotation[2].text?.first ?: // type|title|notes or file|field|custom_field
         throw Exception("Invalid notation '$notation'")
     val recordToken = parsedNotation[1].text?.first ?: // UID or Title
-        throw Exception("Invalid notation $'notation'")
+        throw Exception("Invalid notation '$notation'")
 
     // to minimize traffic - if it looks like a Record UID try to pull a single record
     var records = listOf<KeeperRecord>()
@@ -809,11 +809,16 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
         // New/missing field: Polymorphic serializer was not found for class discriminator 'UNKNOWN'...
         // New/missing field property (field def updated): Encountered unknown key 'UNKNOWN'.
         // Avoid 'ignoreUnknownKeys = true' to prevent erasing new properties on save/update
-        println("Record ${record.recordUid} has unexpected data properties (ignored).\n"+
-                " Error parsing record type - KSM SDK is behind/ahead of record/field type definitions." +
-                " Please upgrade to latest version. If you need assistance please email support@keepersecurity.com")
+        println("Record ${record.recordUid} contains unrecognized data properties and could not be fully parsed.\n" + 
+                "This may occur if the Keeper Secrets Manager (KSM) SDK version you're using is not compatible with the record's data schema.\n" + 
+                "Please ensure that you are using the latest version of the KSM SDK. If the issue persists, contact support@keepersecurity.com for assistance.")        
         //println(e.message)
-        recordData = nonStrictJson.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
+        try {
+            // Attempt to parse the record data with unknown fields
+            recordData = nonStrictJson.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
+        } catch (e: Exception) {
+            println("Error parsing record data with using non-strict JSON parser. Record ${record.recordUid} will be skipped.")
+        }
     }
 
     return if (recordData != null) KeeperRecord(recordKey, record.recordUid, null, null, record.innerFolderUid, recordData, record.revision, files) else null
@@ -1075,7 +1080,13 @@ fun postFunction(
     return KeeperHttpResponse(statusCode, data)
 }
 
-private val nonStrictJson = Json { ignoreUnknownKeys = true }
+@ExperimentalSerializationApi
+private val nonStrictJson = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+    coerceInputValues = true
+    allowTrailingComma = true
+}
 
 var keyId = 7
 
