@@ -114,9 +114,9 @@ const exportPublicKey = async (keyId: string, storage: KeyValueStorage): Promise
 }
 
 // derived from https://github.com/litert/signatures.js
-const p1363ToDER = (p1363: Buffer): Buffer => {
+const p1363ToDER = (p1363: Uint8Array): Uint8Array => {
 
-    const ecdsaRecoverRS = (input: Buffer): Buffer => {
+    const ecdsaRecoverRS = (input: Uint8Array): Uint8Array => {
         let start: number = 0
         while (input[start] === 0) {
             start++
@@ -127,15 +127,15 @@ const p1363ToDER = (p1363: Buffer): Buffer => {
         if (start > 0) {
             return input.slice(start - 1)
         }
-        const output = Buffer.alloc(input.length + 1)
-        input.copy(output, 1)
+        const output = new Uint8Array(input.length + 1)
         output[0] = 0
+        output.set(input, 1)
         return output
     }
 
     let base = 0
-    let r: Buffer
-    let s: Buffer
+    let r: Uint8Array
+    let s: Uint8Array
     const hL = p1363.length / 2
     /**
      * Prepend a 0x00 byte to R or S if it starts with a byte larger than 0x79.
@@ -154,7 +154,7 @@ const p1363ToDER = (p1363: Buffer): Buffer => {
     if (4 + s.length + r.length > 0x7f) {
         base++
     }
-    const der = Buffer.alloc(base + 6 + s.length + r.length)
+    const der = new Uint8Array(base + 6 + s.length + r.length)
     if (base) {
         der[1] = 0x81
     }
@@ -163,8 +163,9 @@ const p1363ToDER = (p1363: Buffer): Buffer => {
     der[base + r.length + 4] = der[base + 2] = 0x02
     der[base + r.length + 5] = s.length
     der[base + 3] = r.length
-    r.copy(der, base + 4)
-    s.copy(der, base + 6 + r.length)
+
+    der.set(r, base + 4)
+    der.set(s, base + 6 + r.length)
     return der
 }
 
@@ -174,7 +175,7 @@ const sign = async (data: Uint8Array, keyId: string, storage: KeyValueStorage): 
         name: 'ECDSA',
         hash: 'SHA-256'
     }, privateKey, data)
-    return new Uint8Array(p1363ToDER(Buffer.from(signature)))
+    return new Uint8Array(p1363ToDER(new Uint8Array(signature)))
 }
 
 const importKey = async (keyId: string, key: Uint8Array, storage?: KeyValueStorage): Promise<void> => {
