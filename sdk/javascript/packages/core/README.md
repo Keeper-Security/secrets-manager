@@ -3,6 +3,10 @@
 For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/javascript-sdk
 
 # Change Log
+
+## 17.0.0
+- KSM-574 - Replace Node.js Buffer with Browser-Compatible Alternative
+
 ## 16.6.3
 - KSM-489 - Added transaction support for updateSecret
 - KSM-521 - Dependencies upgrade
