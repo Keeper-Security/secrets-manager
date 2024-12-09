@@ -4,6 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.0.1
+- Bump dependencies
+
 ## 17.0.0
 - KSM-574 - Replace Node.js Buffer with Browser-Compatible Alternative
 
