@@ -1,3 +1,6 @@
+## 1.0.5
+
+- KSM-577: Upgrade golang.org/x/crypto to 0.31.0 (security fix)
 
 ## 1.0.4
 
