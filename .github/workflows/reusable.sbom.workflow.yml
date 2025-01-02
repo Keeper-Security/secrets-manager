@@ -351,6 +351,9 @@ jobs:
       - name: Generate and publish SBOM
         env:
           PROJECT_VERSION: ${{ inputs.project-version != '' && inputs.project-version || steps.detect-version.outputs.version }}
+          SYFT_PACKAGE_SEARCH_UNINDEXED_ARCHIVES: "true"
+          SYFT_PACKAGE_SEARCH_INDEXED_ARCHIVES: "true"
+          SYFT_SCOPE: "all-layers"
         run: |
           echo "Installing Syft"
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
@@ -460,8 +463,7 @@ jobs:
             --output=${{ inputs.sbom-format }} \
             --api-key=${{ secrets.MANIFEST_TOKEN }} \
             --publish=true \
-            --label=${FINAL_LABELS} \
-            --syft-config=syft-config.yaml
+            --label=${FINAL_LABELS}
           
           # Copy generated SBOM back to original directory for artifact upload
           cp *.json "${{ github.workspace }}/"
