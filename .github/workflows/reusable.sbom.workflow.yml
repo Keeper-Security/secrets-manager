@@ -304,21 +304,33 @@ jobs:
         if: inputs.project-type == 'java'
         working-directory: ${{ inputs.working-directory }}
         run: |
-          
           echo "Installing Syft"
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
-
+          
+          echo "Creating Syft config"
+          cat > syft-config.yaml << 'EOF'
+          package:
+            search:
+              scope: all-layers
+            cataloger:
+              enabled: true
+              java:
+                search-unindexed-archives: true
+                search-indexed-archives: true
+                resolve-dependencies: true
+            EOF
+      
           echo "Syft version:"
           syft version
           
           echo "Scanning Gradle cache:"
           find ~/.gradle/caches/modules-2 -type f -name "*.jar" | while read -r jar; do
             echo "Found JAR: $jar"
-            syft packages "$jar" 2>/dev/null || true
+            syft packages "$jar" -c syft-config.yaml -o json
           done
           
           echo "Full project scan with verbose output:"
-          SYFT_LOG_LEVEL=debug syft packages . -o json | tee syft-scan.json
+          SYFT_LOG_LEVEL=debug syft packages . -c syft-config.yaml -o json | tee syft-scan.json
 
       - name: Verify Syft Java scanning
         if: inputs.project-type == 'java'
