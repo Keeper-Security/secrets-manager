@@ -354,6 +354,9 @@ jobs:
           SYFT_PACKAGE_SEARCH_UNINDEXED_ARCHIVES: "true"
           SYFT_PACKAGE_SEARCH_INDEXED_ARCHIVES: "true"
           SYFT_SCOPE: "all-layers"
+          SYFT_JAVA_USE_MAVEN_LOCAL_REPOSITORY: "true"
+          SYFT_JAVA_RESOLVE_TRANSITIVE_DEPENDENCIES: "true"
+
         run: |
           echo "Installing Syft"
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
