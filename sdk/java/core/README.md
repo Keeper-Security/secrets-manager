@@ -4,6 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.0.0
+- KSM-580 - Added new PAM fields
+
 ## 16.6.6
 - KSM-560 - Improved error handling when parsing JSON
 
