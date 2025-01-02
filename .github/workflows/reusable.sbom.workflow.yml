@@ -318,7 +318,7 @@ jobs:
                 search-unindexed-archives: true
                 search-indexed-archives: true
                 resolve-dependencies: true
-            EOF
+          EOF
           
           echo "Building project to download dependencies"
           ./gradlew build --no-daemon --refresh-dependencies
@@ -451,7 +451,7 @@ jobs:
                 search-unindexed-archives: true
                 search-indexed-archives: true
                 resolve-dependencies: true
-            EOF
+          EOF
           # Generate SBOM using Manifest CLI
           "$MANIFEST_PATH" sbom . \
             --generator=syft \
