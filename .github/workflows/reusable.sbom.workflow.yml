@@ -300,6 +300,22 @@ jobs:
             ls -la $GRADLE_USER_HOME/caches || true
           fi
 
+      - name: Debug Syft scanning
+        if: inputs.project-type == 'java'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "Syft version:"
+          syft version
+          
+          echo "Scanning Gradle cache:"
+          find ~/.gradle/caches/modules-2 -type f -name "*.jar" | while read -r jar; do
+            echo "Found JAR: $jar"
+            syft packages "$jar" 2>/dev/null || true
+          done
+          
+          echo "Full project scan with verbose output:"
+          SYFT_LOG_LEVEL=debug syft packages . -o json | tee syft-scan.json
+
       - name: Verify Syft Java scanning
         if: inputs.project-type == 'java'
         working-directory: ${{ inputs.working-directory }}
