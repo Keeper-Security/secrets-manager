@@ -62,6 +62,20 @@ jobs:
         with:
           node-version: '18'
 
+      - name: Setup Java
+        if: inputs.project-type == 'java'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'adopt'
+
+      - name: Setup Gradle
+        if: inputs.project-type == 'java'
+        uses: gradle/gradle-build-action@v2
+        with:
+          gradle-version: wrapper
+
+
       - name: Detect project version
         id: detect-version
         if: inputs.project-version == ''
@@ -236,6 +250,13 @@ jobs:
             "nodejs")
               VERSION=$(detect_nodejs_version)
               ;;
+            "java")
+              if [ -f "build.gradle.kts" ]; then
+                VERSION=$(grep -Po 'version\s*=\s*"\K[^"]*' build.gradle.kts 2>/dev/null || echo "")
+              elif [ -f "build.gradle" ]; then
+                VERSION=$(grep -Po "version\s*=\s*'\K[^']*" build.gradle 2>/dev/null || echo "")
+              fi
+              ;;
             *)
               echo "::error::Unknown project type: ${{ inputs.project-type }}"
               exit 1
@@ -277,6 +298,20 @@ jobs:
           echo "Copying project files to scan directory..."
           cp -r "${{ github.workspace }}/${{ inputs.working-directory }}"/* "$SCAN_DIR/"
           
+          # For Java projects, ensure Gradle wrapper is properly set up
+          if [ "${{ inputs.project-type }}" = "java" ]; then
+            echo "Setting up Gradle wrapper..."
+            if [ -f "$SCAN_DIR/gradlew" ]; then
+              chmod +x "$SCAN_DIR/gradlew"
+              # Ensure gradle wrapper jar is present
+              if [ ! -f "$SCAN_DIR/gradle/wrapper/gradle-wrapper.jar" ]; then
+                mkdir -p "$SCAN_DIR/gradle/wrapper"
+                cp "${{ github.workspace }}/${{ inputs.working-directory }}/gradle/wrapper/gradle-wrapper.jar" "$SCAN_DIR/gradle/wrapper/"
+                cp "${{ github.workspace }}/${{ inputs.working-directory }}/gradle/wrapper/gradle-wrapper.properties" "$SCAN_DIR/gradle/wrapper/"
+              fi
+            fi
+          fi
+          
           # Navigate to scan directory
           cd "$SCAN_DIR"
           
@@ -291,6 +326,11 @@ jobs:
             FINAL_LABELS="${BASE_LABELS}"
           fi
           
+          if [ "${{ inputs.project-type }}" = "java" ]; then
+            echo "Running Gradle dependencies resolution..."
+            ./gradlew dependencies --configuration runtimeClasspath || true
+          fi
+
           # Generate SBOM using Manifest CLI
           "$MANIFEST_PATH" sbom . \
             --generator=syft \
