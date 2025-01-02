@@ -1,12 +1,314 @@
-name: Reusable Security Scanning (temp)
+name: Reusable SBOM Generation
 
 on:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory containing the project files'
+        required: true
+        type: string
+      project-name:
+        description: 'Name of the project for SBOM identification'
+        required: true
+        type: string
+      project-type:
+        description: 'Type of project (python, dotnet, nodejs)'
+        required: true
+        type: string
+      project-version:
+        description: 'Version of the project (optional, will try to detect if not provided)'
+        required: false
+        type: string
+        default: ''
+      sbom-format:
+        description: 'Format for SBOM output (spdx-json, cyclonedx-json)'
+        required: false
+        type: string
+        default: 'spdx-json'
+      additional-labels:
+        description: 'Additional labels for SBOM categorization'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      MANIFEST_TOKEN:
+        description: 'Token for Manifest.io authentication'
+        required: true
 
 jobs:
-  say-hello:
+  generate-sbom:
+    name: Generate SBOM
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Print Hello World
-      run: echo "Hello World!"
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        if: inputs.project-type == 'python'
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Setup .NET
+        if: inputs.project-type == 'dotnet'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Setup Node.js
+        if: inputs.project-type == 'nodejs'
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Detect project version
+        id: detect-version
+        if: inputs.project-version == ''
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          # Function to extract git ref version
+          get_git_ref_version() {
+            local ref_version="${GITHUB_REF##*/}"
+            echo "::group::Git Ref Detection"
+            echo "Git ref version: $ref_version"
+            echo "::endgroup::"
+            echo "$ref_version"
+          }
+          echo "::group::Version Detection Setup"
+          echo "Project Type: ${{ inputs.project-type }}"
+          echo "Working Directory Contents:"
+          ls -la
+          echo "::endgroup::"
+          
+          VERSION=""
+          
+          detect_python_version() {
+            echo "::group::Python Version Detection"
+          
+            # Try setup.py
+            if [ -f "setup.py" ]; then
+              echo "Found setup.py, attempting to extract version..."
+              setup_version=$(python3 setup.py --version 2>&1 || echo "")
+              if [ ! -z "$setup_version" ]; then
+                echo "✓ Successfully extracted version from setup.py: $setup_version"
+                echo "::endgroup::"
+                echo "$setup_version"
+                return 0
+              else
+                echo "⚠ Failed to extract version from setup.py"
+              fi
+            else
+              echo "setup.py not found"
+            fi
+
+            # Try pyproject.toml
+            if [ -f "pyproject.toml" ]; then
+              echo "Found pyproject.toml, attempting to extract version..."
+              if command -v poetry &> /dev/null && [ -f "poetry.lock" ]; then
+                poetry_version=$(poetry version -s 2>&1 || echo "")
+                if [ ! -z "$poetry_version" ]; then
+                  echo "✓ Successfully extracted version using poetry: $poetry_version"
+                  echo "::endgroup::"
+                  echo "$poetry_version"
+                  return 0
+                else
+                  echo "⚠ Failed to extract version using poetry"
+                fi
+              fi
+          
+              # Try grep for version string
+              toml_version=$(grep -Po '^version\s*=\s*["\x27]\K[^\x27"]*' pyproject.toml 2>/dev/null || echo "")
+              if [ ! -z "$toml_version" ]; then
+                echo "✓ Successfully extracted version from pyproject.toml: $toml_version"
+                echo "::endgroup::"
+                echo "$toml_version"
+                return 0
+              else
+                echo "⚠ Failed to extract version from pyproject.toml"
+              fi
+            else
+              echo "pyproject.toml not found"
+            fi
+          
+            # Try __init__.py
+            find . -name "__init__.py" -type f -print0 | while IFS= read -r -d '' file; do
+              echo "Checking $file for version..."
+              init_version=$(grep -Po '__version__\s*=\s*["\x27]\K[^\x27"]*' "$file" 2>/dev/null || echo "")
+              if [ ! -z "$init_version" ]; then
+                echo "✓ Successfully extracted version from $file: $init_version"
+                echo "::endgroup::"
+                echo "$init_version"
+                return 0
+              fi
+            done
+            echo "⚠ No version found in __init__.py files"
+          
+            echo "::endgroup::"
+            return 1
+          }
+
+          detect_dotnet_version() {
+            echo "::group::.NET Version Detection"
+          
+            # Try Directory.Build.props first (global version)
+            if [ -f "Directory.Build.props" ]; then
+              echo "Found Directory.Build.props, attempting to extract version..."
+              dir_version=$(grep -Po '<Version>\K[^<]*' Directory.Build.props 2>/dev/null || echo "")
+              if [ ! -z "$dir_version" ]; then
+                echo "✓ Successfully extracted version from Directory.Build.props: $dir_version"
+                echo "::endgroup::"
+                echo "$dir_version"
+                return 0
+              else
+                echo "⚠ No version found in Directory.Build.props"
+              fi
+            fi
+
+            # Try .csproj files
+            echo "Searching for .csproj files..."
+            find . -name "*.csproj" -type f -print0 | while IFS= read -r -d '' file; do
+              echo "Checking $file for version..."
+              # Check Version tag
+              csproj_version=$(grep -Po '<Version>\K[^<]*' "$file" 2>/dev/null || echo "")
+              if [ ! -z "$csproj_version" ]; then
+                echo "✓ Successfully extracted Version from $file: $csproj_version"
+                echo "::endgroup::"
+                echo "$csproj_version"
+                return 0
+              fi
+              # Check PackageVersion tag
+              pkg_version=$(grep -Po '<PackageVersion>\K[^<]*' "$file" 2>/dev/null || echo "")
+              if [ ! -z "$pkg_version" ]; then
+                echo "✓ Successfully extracted PackageVersion from $file: $pkg_version"
+                echo "::endgroup::"
+                echo "$pkg_version"
+                return 0
+              fi
+            done
+            echo "⚠ No version found in any .csproj files"
+          
+            echo "::endgroup::"
+            return 1
+          }
+
+          detect_nodejs_version() {
+            echo "::group::Node.js Version Detection"
+          
+            if [ -f "package.json" ]; then
+              echo "Found package.json, attempting to extract version..."
+              pkg_version=$(node -p "require('./package.json').version" 2>/dev/null || echo "")
+              if [ ! -z "$pkg_version" ]; then
+                echo "✓ Successfully extracted version from package.json: $pkg_version"
+                echo "::endgroup::"
+                echo "$pkg_version"
+                return 0
+              else
+                echo "⚠ Failed to extract version from package.json using Node"
+          
+                # Fallback to grep
+                echo "Attempting fallback with grep..."
+                grep_version=$(grep -Po '"version":\s*"\K[^"]*' package.json 2>/dev/null || echo "")
+                if [ ! -z "$grep_version" ]; then
+                  echo "✓ Successfully extracted version using grep: $grep_version"
+                  echo "::endgroup::"
+                  echo "$grep_version"
+                  return 0
+                else
+                  echo "⚠ Failed to extract version using grep"
+                fi
+              fi
+            else
+              echo "package.json not found"
+            fi
+          
+            echo "::endgroup::"
+            return 1
+          }
+          
+          case "${{ inputs.project-type }}" in
+            "python")
+              VERSION=$(detect_python_version)
+              ;;
+            "dotnet")
+              VERSION=$(detect_dotnet_version)
+              ;;
+            "nodejs")
+              VERSION=$(detect_nodejs_version)
+              ;;
+            *)
+              echo "::error::Unknown project type: ${{ inputs.project-type }}"
+              exit 1
+              ;;
+          esac
+          
+          echo "::group::Version Detection Results"
+          if [ -z "$VERSION" ]; then
+            VERSION="0.0.0-unknown"
+            echo "::warning::Could not detect version, using fallback version: $VERSION"
+          else
+            echo "Successfully detected version: $VERSION"
+          fi
+          echo "::endgroup::"
+          
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate and publish SBOM
+        env:
+          PROJECT_VERSION: ${{ inputs.project-version != '' && inputs.project-version || steps.detect-version.outputs.version }}
+        run: |
+          echo "Installing Syft"
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          
+          # Install Manifest CLI
+          echo "Installing Manifest CLI..."
+          curl -L https://github.com/manifest-cyber/cli/releases/download/v0.11.0/manifest_linux_x86_64.tar.gz > manifest.tar.gz
+          tar -xzf manifest.tar.gz
+          chmod +x manifest
+          
+          # Create a clean working directory for scanning
+          SCAN_DIR="${{ runner.temp }}/scan-workspace"
+          mkdir -p "$SCAN_DIR"
+          
+          # Store the manifest binary path
+          MANIFEST_PATH="${{ github.workspace }}/manifest"
+          
+          # Copy only the project files to scan directory
+          echo "Copying project files to scan directory..."
+          cp -r "${{ github.workspace }}/${{ inputs.working-directory }}"/* "$SCAN_DIR/"
+          
+          # Navigate to scan directory
+          cd "$SCAN_DIR"
+          
+          echo "Current directory contents (should only contain project files):"
+          ls -la
+          
+          # Prepare labels
+          BASE_LABELS="application,sbom-generated,${{ inputs.project-type }}"
+          if [ ! -z "${{ inputs.additional-labels }}" ]; then
+            FINAL_LABELS="${BASE_LABELS},${{ inputs.additional-labels }}"
+          else
+            FINAL_LABELS="${BASE_LABELS}"
+          fi
+          
+          # Generate SBOM using Manifest CLI
+          "$MANIFEST_PATH" sbom . \
+            --generator=syft \
+            --name=${{ inputs.project-name }} \
+            --version=${PROJECT_VERSION} \
+            --output=${{ inputs.sbom-format }} \
+            --api-key=${{ secrets.MANIFEST_TOKEN }} \
+            --publish=true \
+            --label=${FINAL_LABELS}
+          
+          # Copy generated SBOM back to original directory for artifact upload
+          cp *.json "${{ github.workspace }}/"
+
+      - name: Archive SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ inputs.project-name }}-${{ env.PROJECT_VERSION }}
+          path: |
+            ./*.json
+            ./*.xml
+          retention-days: 90
