@@ -319,10 +319,18 @@ jobs:
                 search-indexed-archives: true
                 resolve-dependencies: true
             EOF
-      
+          
+          echo "Building project to download dependencies"
+          ./gradlew build --no-daemon --refresh-dependencies
+
+    
+          cat syft-config.yaml
           echo "Syft version:"
           syft version
           
+          echo "Full project scan with verbose output:"
+          SYFT_LOG_LEVEL=debug syft packages . -c syft-config.yaml -o json | tee syft-scan.json
+    
           echo "Scanning Gradle cache:"
           find ~/.gradle/caches/modules-2 -type f -name "*.jar" | while read -r jar; do
             echo "Found JAR: $jar"
@@ -432,6 +440,18 @@ jobs:
             syft packages . -o json || echo "Direct syft scan failed"
           fi
 
+          echo "Creating Syft config for Manifest"
+          cat > syft-config.yaml << 'EOF'
+          package:
+            search:
+              scope: all-layers
+            cataloger:
+              enabled: true
+              java:
+                search-unindexed-archives: true
+                search-indexed-archives: true
+                resolve-dependencies: true
+            EOF
           # Generate SBOM using Manifest CLI
           "$MANIFEST_PATH" sbom . \
             --generator=syft \
@@ -440,7 +460,8 @@ jobs:
             --output=${{ inputs.sbom-format }} \
             --api-key=${{ secrets.MANIFEST_TOKEN }} \
             --publish=true \
-            --label=${FINAL_LABELS}
+            --label=${FINAL_LABELS} \
+            --syft-config=syft-config.yaml
           
           # Copy generated SBOM back to original directory for artifact upload
           cp *.json "${{ github.workspace }}/"
