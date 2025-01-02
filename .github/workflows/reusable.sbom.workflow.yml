@@ -274,6 +274,26 @@ jobs:
           
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: Debug Java dependencies
+        if: inputs.project-type == 'java'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "Gradle Home: $GRADLE_USER_HOME"
+          echo "Project structure:"
+          find . -type f -name "*.jar" || true
+          echo "Gradle cache structure:"
+          find "${GRADLE_USER_HOME}/caches" -type f -name "*.jar" || true
+          echo "Runtime classpath:"
+          ./gradlew -q printRuntimeClasspath
+
+      - name: Verify Syft Java scanning
+        if: inputs.project-type == 'java'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          syft --version
+          echo "Testing direct Syft scan:"
+          syft packages . -vv || true
+
       - name: Generate and publish SBOM
         env:
           PROJECT_VERSION: ${{ inputs.project-version != '' && inputs.project-version || steps.detect-version.outputs.version }}
