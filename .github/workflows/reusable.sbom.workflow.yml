@@ -278,13 +278,27 @@ jobs:
         if: inputs.project-type == 'java'
         working-directory: ${{ inputs.working-directory }}
         run: |
-          echo "Gradle Home: $GRADLE_USER_HOME"
+          echo "Environment:"
+          echo "JAVA_HOME=$JAVA_HOME"
+          echo "GRADLE_USER_HOME=$GRADLE_USER_HOME"
+          
+          echo "Gradle version and info:"
+          ./gradlew --version
+          
+          echo "Project dependencies:"
+          ./gradlew dependencies --configuration runtimeClasspath
+          
           echo "Project structure:"
-          find . -type f -name "*.jar" || true
-          echo "Gradle cache structure:"
-          find "${GRADLE_USER_HOME}/caches" -type f -name "*.jar" || true
-          echo "Runtime classpath:"
-          ./gradlew -q printRuntimeClasspath
+          find . -type f -name "*.jar"
+          
+          echo "Gradle cache location:"
+          if [ -z "$GRADLE_USER_HOME" ]; then
+            echo "Looking in default ~/.gradle location"
+            ls -la ~/.gradle/caches || true
+          else
+            echo "Looking in $GRADLE_USER_HOME/caches"
+            ls -la $GRADLE_USER_HOME/caches || true
+          fi
 
       - name: Verify Syft Java scanning
         if: inputs.project-type == 'java'
