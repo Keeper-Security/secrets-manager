@@ -3,7 +3,37 @@ on:
   workflow_dispatch:
 
 jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./sdk/java/core
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Extract version from build.gradle.kts
+        id: extract-version
+        run: |
+          VERSION=$(grep -Po 'version\s*=\s*"\K[^"]*' build.gradle.kts || echo "0.0.0-unknown")
+          echo "Version retrieved: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+  generate-and-upload-sbom:
+    needs: get-version
+    uses: ./.github/workflows/reusable.sbom.workflow.yml
+    with:
+      working-directory: ./sdk/java/core
+      project-name: keeper-secrets-manager-java
+      project-type: java
+      project-version: ${{ needs.get-version.outputs.version }}
+      sbom-format: spdx-json
+      additional-labels: ksm,sdk,java,security
+    secrets:
+      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+
   publish-java:
+    needs: generate-and-upload-sbom
     environment: prod
     runs-on: ubuntu-latest
 
