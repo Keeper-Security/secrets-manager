@@ -328,7 +328,42 @@ jobs:
           
           if [ "${{ inputs.project-type }}" = "java" ]; then
             echo "Running Gradle dependencies resolution..."
-            ./gradlew dependencies --configuration runtimeClasspath || true
+          
+            # Debug: Show Gradle home and cache locations
+            echo "Debug: Gradle locations"
+            ./gradlew --version
+            echo "GRADLE_USER_HOME=${GRADLE_USER_HOME:-~/.gradle}"
+          
+            # Run dependencies task
+            ./gradlew dependencies --configuration runtimeClasspath
+          
+            # Debug: Show locations and structure
+            echo "Debug: Directory structure before dependency collection:"
+            pwd
+            find . -type d
+          
+            echo "Debug: Gradle cache contents:"
+            ls -R "${GRADLE_USER_HOME:-~/.gradle}/caches/modules-2" || true
+          
+            # Create a directory for gathered dependencies
+            mkdir -p deps
+          
+            # Try to gather dependencies from Gradle cache
+            echo "Debug: Attempting to gather dependencies from Gradle cache"
+            find "${GRADLE_USER_HOME:-~/.gradle}/caches/modules-2" -name "*.jar" -exec cp {} deps/ \; || true
+          
+            echo "Debug: Contents of deps directory:"
+            ls -la deps/
+          
+            # Debug: Show what syft would scan
+            echo "Debug: All JAR files in scope:"
+            find . -type f -name "*.jar"
+          
+            echo "Debug: Syft config if exists:"
+            cat /tmp/syft-*.yaml || echo "No Syft config file found"
+          
+            echo "Debug: Running syft directly to see output:"
+            syft packages . -o json || echo "Direct syft scan failed"
           fi
 
           # Generate SBOM using Manifest CLI
