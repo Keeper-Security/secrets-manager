@@ -592,7 +592,8 @@ data class PamRbiConnection @JvmOverloads constructor(
     val allowedUrlPatterns: String? = null,
     val allowedResourceUrlPatterns: String? = null,
     val httpCredentialsUid: String? = null,
-    val autofillConfiguration: String? = null
+    val autofillConfiguration: String? = null,
+    val ignoreInitialSslCert: Boolean? = null
 )
 @Serializable
 data class PamRemoteBrowserSetting @JvmOverloads constructor(
