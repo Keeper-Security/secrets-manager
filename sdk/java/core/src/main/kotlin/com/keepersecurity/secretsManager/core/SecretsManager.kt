@@ -5,6 +5,7 @@ package com.keepersecurity.secretsManager.core
 import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.net.HttpURLConnection.HTTP_OK
 import java.net.URI
@@ -17,7 +18,7 @@ import java.util.*
 import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj16.6.6"
+const val KEEPER_CLIENT_VERSION = "mj17.0.0"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -806,18 +807,54 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
     try {
         recordData = Json.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
     } catch (e: Exception) {
-        // New/missing field: Polymorphic serializer was not found for class discriminator 'UNKNOWN'...
-        // New/missing field property (field def updated): Encountered unknown key 'UNKNOWN'.
-        // Avoid 'ignoreUnknownKeys = true' to prevent erasing new properties on save/update
-        println("Record ${record.recordUid} contains unrecognized data properties and could not be fully parsed.\n" + 
-                "This may occur if the Keeper Secrets Manager (KSM) SDK version you're using is not compatible with the record's data schema.\n" + 
-                "Please ensure that you are using the latest version of the KSM SDK. If the issue persists, contact support@keepersecurity.com for assistance.")        
-        //println(e.message)
+        // Get record type safely without parsing the entire record
+        val recordType = try {
+            val jsonElement = Json.parseToJsonElement(bytesToString(decryptedRecord))
+            jsonElement.jsonObject["type"]?.jsonPrimitive?.content ?: "unknown"
+        } catch (_: Exception) {
+            "unknown"
+        }
+
+        // Get detailed error information
+        val errorDetails = when (e) {
+            is SerializationException -> {
+                when {
+                    e.message?.contains("Polymorphic serializer was not found") == true -> {
+                        val unknownType = e.message?.substringAfter("class discriminator '")?.substringBefore("'")
+                        "Unknown field type: '$unknownType'"
+                    }
+                    e.message?.contains("Encountered unknown key") == true -> {
+                        val unknownKey = e.message?.substringAfter("unknown key '")?.substringBefore("'")
+                        "Unknown field property: '$unknownKey'"
+                    }
+                    else -> "Serialization error: ${e.message}"
+                }
+            }
+            else -> "Unexpected error: ${e.message}"
+        }
+
+        println("""
+        Record ${record.recordUid} (type: $recordType) parsing error:
+        Error: $errorDetails
+        This may occur if the Keeper Secrets Manager (KSM) SDK version you're using is not compatible with the record's data schema.
+        Please ensure that you are using the latest version of the KSM SDK. If the issue persists, contact support@keepersecurity.com for assistance.
+        """.trimIndent())
+
         try {
-            // Attempt to parse the record data with unknown fields
+            // Attempt to parse with non-strict JSON parser for recovery
             recordData = nonStrictJson.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
-        } catch (e: Exception) {
-            println("Error parsing record data with using non-strict JSON parser. Record ${record.recordUid} will be skipped.")
+        } catch (e2: Exception) {
+            val secondaryError = when (e2) {
+                is SerializationException -> {
+                    "Serialization error during non-strict parsing: ${e2.message}"
+                }
+                else -> "Unexpected error during non-strict parsing: ${e2.message}"
+            }
+            println("""
+            Failed to parse record ${record.recordUid} (type: $recordType) even with non-strict parser.
+            Error: $secondaryError
+            Record will be skipped.
+            """.trimIndent())
         }
     }
 
