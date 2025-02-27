@@ -1,6 +1,8 @@
 ## 1.0.5
 
 - KSM-577: Upgrade golang.org/x/crypto to 0.31.0 (security fix)
+- KSM-578: Upgrade golang.org/x/net to 0.33.0 (security fix)
+- KSM-585: Upgrade go-jose/v4 to 4.0.5 (security fix)
 
 ## 1.0.4
 
