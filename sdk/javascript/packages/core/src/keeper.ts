@@ -281,9 +281,9 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperReco
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
     }
-    if (links2Remove) {
-        let fields = record.data.fields;
-        let fileRef = fields.find(x => x.type == 'fileRef');
+    if (links2Remove && links2Remove.length > 0) {
+        const fields = record.data.fields;
+        const fileRef = fields.find(x => x.type == 'fileRef');
         if (fileRef) {
             fileRef.value = fileRef.value.filter(uid => !links2Remove.includes(uid));
             if (fileRef.value.length === 0) {
@@ -298,13 +298,12 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperReco
         clientId: clientId,
         recordUid: record.recordUid,
         data: webSafe64FromBytes(encryptedRecord),
-        revision: record.revision,
-        ...(links2Remove && { links2Remove })
+        revision: record.revision
     }
     if (transactionType) {
         payload.transactionType = transactionType
     }
-    if (links2Remove) {
+    if (links2Remove && links2Remove.length > 0) {
         payload.links2Remove = links2Remove
     }
     return payload
