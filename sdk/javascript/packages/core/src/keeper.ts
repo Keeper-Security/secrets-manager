@@ -133,6 +133,7 @@ type FileUploadPayload = CommonPayload & {
     ownerRecordData: string
     linkKey: string
     fileSize: number
+    ownerRecordRevision: number
 }
 
 type SecretsManagerDeleteResponseRecord = {
@@ -461,7 +462,8 @@ const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: K
             ownerRecordUid: ownerRecord.recordUid,
             ownerRecordData: webSafe64FromBytes(encryptedOwnerRecord),
             linkKey: platform.bytesToBase64(encryptedLinkKey),
-            fileSize: encryptedFileData.length
+            fileSize: encryptedFileData.length,
+            ownerRecordRevision: ownerRecord.revision
         },
         encryptedFileData
     }
