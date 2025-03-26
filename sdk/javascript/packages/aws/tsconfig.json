@@ -5,11 +5,12 @@
     "strict": true,
     "target": "ES6",
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "sourceMap": true,
+    "baseUrl": "./",
+    "declaration": true,          
+    "declarationMap": true,       
+    "emitDeclarationOnly": false, 
   },
-//  "include": [
-//    "src/**/*",
-//    "test/**/*"
-//  ],
   "exclude": ["node_modules"]
 }
