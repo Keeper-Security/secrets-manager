@@ -529,7 +529,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
             }
             throw new Error(errorMessage)
         }
-        return response.data
+        return response.data && response.data.length > 0
             ? platform.decryptWithKey(response.data, transmissionKey.key)
             : new Uint8Array()
     }
