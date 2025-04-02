@@ -11,6 +11,8 @@
     "declarationMap": true,
     "emitDeclarationOnly": false,
     "baseUrl": "./",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
   },
   "exclude": [
     "node_modules"
