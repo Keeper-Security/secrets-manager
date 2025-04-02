@@ -43,7 +43,7 @@ class OracleKeyValueStorage(KeyValueStorage):
     config_file_location: str | None,
     oci_session_config: OCISessionConfig,
     logger: Logger | None):
-        self.config_file_location = config_file_location or os.getenv('KSM_CONFIG_FILE') or self.default_config_file_location
+        self.config_file_location = os.path.abspath(config_file_location) or os.getenv('KSM_CONFIG_FILE') or os.path.abspath(self.default_config_file_location)
         
         self.key_id = key_id
         self.key_version_id = key_version
@@ -73,7 +73,7 @@ class OracleKeyValueStorage(KeyValueStorage):
 
                 # Encrypt an empty configuration and write to the file
                 empty_config = "{}"
-                blob = self.crypto_client.encrypt_buffer(
+                blob = encrypt_buffer(
                     key_id=self.key_id,
                     message=empty_config,
                     crypto_client=self.crypto_client,

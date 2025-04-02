@@ -17,7 +17,7 @@ Keeper Secrets Manager integrates with Oracle KMS in order to provide protection
 
 The Secrets Manager OCI KSM module can be installed using pip
 
-> `pip install oci`
+> `pip3 install keeper-secrets-manager-storage`
 
 2. Configure OCI Connection
 
@@ -37,8 +37,8 @@ To do this, use `OracleKeyValueStorage` as your Secrets Manager storage in the S
 
 The storage will require a OCI Key ID, key version Id, as well as the name of the Secrets Manager configuration file which will be encrypted by Oracle KMS and OCI session configuration defined above.
 ```
- from storage.keeper_secrets_manager_storage.storage_oci_key_management import  OracleKeyValueStorage,OCISessionConfig
-from core.keeper_secrets_manager_core import SecretsManager
+from keeper_secrets_manager_storage.storage_oci_key_management import  OracleKeyValueStorage,OCISessionConfig
+from keeper_secrets_manager_core import SecretsManager
 config_file_location = "/home/<user>/.oci/config"
 profile = "DEFAULT"
 kms_crypto_endpoint = "https://<kmsendpoint>.oraclecloud.com"
@@ -53,11 +53,10 @@ oci_session_config = OCISessionConfig(config_file_location, profile, kms_crypto_
 storage = OracleKeyValueStorage(key_id=key_id, key_version=key_version_id, config_file_location=config_path, oci_session_config=oci_session_config,logger=None)
 storage.change_key(key_id, key_version_id) # this is optional and only if you want to change the key from previous configuration
 print(storage.config)
-secrets_manager = SecretsManager(config=storage)
+secrets_manager = SecretsManager(one_time_token,config=storage)
 all_records = secrets_manager.get_secrets()
 first_record = all_records[0]
-first_record_password = next(field.value[0] for field in first_record.data.fields if field.type == 'bankAccount')
-print(first_record_password)
+print(first_record)
 ```
 
 ## Change Key
