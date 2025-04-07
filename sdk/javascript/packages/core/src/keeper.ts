@@ -55,6 +55,11 @@ export type CreateOptions = {
     subFolderUid?: string
 }
 
+export type UpdateOptions = {
+    transactionType?: UpdateTransactionType
+    links2Remove?: string[]
+}
+
 export enum UpdateTransactionType {
     General = "general",
     Rotation = "rotation"
@@ -277,11 +282,12 @@ const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryO
     return payload
 }
 
-const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord, transactionType?: UpdateTransactionType, links2Remove?: string[]): Promise<UpdatePayload> => {
+const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord, updateOptions?: UpdateOptions): Promise<UpdatePayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
     }
+    const {transactionType, links2Remove} = updateOptions ?? {}
     if (links2Remove && links2Remove.length > 0) {
         const fields = record.data.fields;
         const fileRef = fields.find(x => x.type == 'fileRef');
@@ -294,7 +300,7 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperReco
     }
     const recordBytes = platform.stringToBytes(JSON.stringify(record.data))
     const encryptedRecord = await platform.encrypt(recordBytes, record.recordUid || KEY_APP_KEY)
-    const payload: UpdatePayload =  {
+    const payload: UpdatePayload = {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
         recordUid: record.recordUid,
@@ -925,7 +931,11 @@ export const getSecretByTitle = async (options: SecretManagerOptions, recordTitl
 }
 
 export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord, transactionType?: UpdateTransactionType, links2Remove?: string[]): Promise<void> => {
-    const payload = await prepareUpdatePayload(options.storage, record, transactionType, links2Remove)
+    return updateSecret2(options, record, {transactionType,links2Remove})
+}
+
+export const updateSecret2 = async (options: SecretManagerOptions, record: KeeperRecord, updateOptions?: UpdateOptions): Promise<void> => {
+    const payload = await prepareUpdatePayload(options.storage, record, updateOptions)
     await postQuery(options, 'update_secret', payload)
 }
 
