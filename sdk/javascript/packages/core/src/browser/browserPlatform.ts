@@ -334,37 +334,35 @@ const post = async (
     }
 }
 
-const fileUpload = (
+const fileUpload = async (
     url: string,
     uploadParameters: { [key: string]: string },
-    data: Blob
-): Promise<any> => new Promise<any>((resolve, reject) => {
+    data: Uint8Array
+): Promise<any> => {
     const form = new FormData();
 
     for (const key in uploadParameters) {
         form.append(key, uploadParameters[key]);
     }
-    form.append('file', data)
+    form.append('file', new Blob([data], {type: 'application/octet-stream'}));
 
     const fetchCfg = {
-        method: 'PUT',
+        method: 'POST',
         body: form,
-    }
+    };
 
-    fetch(url, fetchCfg)
-        .then(response => response.json())
-        .then(res => {
-            resolve({
-                headers: res.headers,
-                statusCode: res.statusCode,
-                statusMessage: res.statusMessage
-            })
-        })
-        .catch(error => {
-            console.error('Error uploading file:', error);
-            reject(error)
-        });
-})
+    try {
+        const res = await fetch(url, fetchCfg);
+        return {
+            headers: res.headers,
+            statusCode: res.status,
+            statusMessage: res.statusText
+        };
+    } catch (error) {
+        console.error('Error uploading file:', error);
+        throw error;
+    }
+};
 
 const cleanKeyCache = () => {
     for (const key in keyCache) {
