@@ -1,16 +1,16 @@
 package com.keepersecurity.secretmanager.aws.kms;
 
 /**
-#  _  __
-# | |/ /___ ___ _ __  ___ _ _ (R)
-# | ' </ -_) -_) '_ \/ -_) '_|
-# |_|\_\___\___| .__/\___|_|
-#              |_|
-#
-# Keeper Secrets Manager
-# Copyright 2025 Keeper Security Inc.
-# Contact: sm@keepersecurity.com
-**/
+*  _  __
+* | |/ /___ ___ _ __  ___ _ _ (R)
+* | ' </ -_) -_) '_ \/ -_) '_|
+* |_|\_\___\___| .__/\___|_|
+*              |_|
+*
+* Keeper Secrets Manager
+* Copyright 2025 Keeper Security Inc.
+* Contact: sm@keepersecurity.com
+*/
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -29,7 +29,6 @@ import java.util.Map;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.keepersecurity.secretsManager.core.KeyValueStorage;
 
-
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.regions.Region;
 
@@ -46,9 +45,16 @@ import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * The {@code AwsKeyValueStorage} class is an implementation of the
+ * {@code KeyValueStorage} interface that provides methods for storing and
+ * retrieving key-value pairs using the AWS Key Management Service (KMS).
+ * 
+ */
+
 public class AwsKeyValueStorage implements KeyValueStorage {
 
-	   final static Logger logger = LoggerFactory.getLogger(AwsKeyValueStorage.class);
+	final static Logger logger = LoggerFactory.getLogger(AwsKeyValueStorage.class);
 
 	private String defaultConfigFileLocation = "client-config.json";
 	private String lastSavedConfigHash, updateConfigHash;
@@ -58,55 +64,77 @@ public class AwsKeyValueStorage implements KeyValueStorage {
 
 	private AWSKMSClient kmsClient;
 
-	public AwsKeyValueStorage(String keyId, String configFileLocation, String profile, AwsSessionConfig sessionConfig, Region region)
+	/**
+	 * Initializes a new instance of the {@code AwsKeyValueStorage}
+	 * 
+	 * @param keyId              The AWS KMS Key ID used for encryption and
+	 *                           decryption.
+	 * @param configFileLocation The file path to the KSM configuration file.
+	 * @param profile            The AWS profile to use for authentication.
+	 * @param sessionConfig      The AWS session configuration for authentication.
+	 * @param region             The AWS region where the KMS key is located.
+	 * @throws Exception If an error occurs during initialization or configuration
+	 *                   loading.
+	 */
+
+	public AwsKeyValueStorage(String keyId, String configFileLocation, String profile, AwsSessionConfig sessionConfig,
+			Region region)
 			throws Exception {
 		this.configFileLocation = configFileLocation != null ? configFileLocation
 				: System.getenv("KSM_CONFIG_FILE") != null ? System.getenv("KSM_CONFIG_FILE")
 						: this.defaultConfigFileLocation;
 		this.keyId = keyId != null ? keyId : System.getenv("AWS_KMS_KEY_ID");
 		this.configMap = new HashMap<String, Object>();
-		
-		if(profile!=null || sessionConfig == null) kmsClient = new AWSKMSClient(profile, region);
-		else kmsClient = new AWSKMSClient(sessionConfig, region);
-		
+
+		if (profile != null || sessionConfig == null)
+			kmsClient = new AWSKMSClient(profile, region);
+		else
+			kmsClient = new AWSKMSClient(sessionConfig, region);
+
 		logger.info("AWS KMS Client initiated.");
 		loadConfig();
 	}
 
 	/**
+	 * Creates and returns an instance of {@code AwsKeyValueStorage}.
 	 * 
-	 * @param keyId
-	 * @param configFileLocation
-	 * @param sessionConfig
-	 * @return
-	 * @throws Exception
+	 * @param keyId              The AWS KMS Key ID used for encryption and
+	 *                           decryption.
+	 * @param configFileLocation The file path to the KSM configuration file.
+	 * @param profile            The AWS profile to use for authentication.
+	 * @param region             The AWS region where the KMS key is located.
+	 * @param sessionConfig      The AWS session configuration for authentication.
+	 * @return An instance of {@code AwsKeyValueStorage}.
+	 * @throws Exception If an error occurs during initialization or configuration
+	 *                   loading.
 	 */
 	public static AwsKeyValueStorage getInternalStorage(String keyId, String configFileLocation, String profile,
 			AwsSessionConfig sessionConfig, Region region) throws Exception {
 		AwsKeyValueStorage storage = new AwsKeyValueStorage(keyId, configFileLocation, profile, sessionConfig, region);
 		return storage;
 	}
-	
-	
+
 	/**
 	 * Change key method used to encrypt config with new key
-	 * @param newKeyId
+	 * 
+	 * @param newKeyId The new AWS KMS Key ID used for encryption and decryption.
+	 * @return true if key change is successful, false otherwise.
 	 */
 	public boolean changeKey(String newKeyId) {
 		logger.info("Change Key initiated");
-		String configJson="";
+		String configJson = "";
 		String oldKey = this.keyId;
 		AWSKMSClient oldkmsClient = this.kmsClient;
-		
+
 		try {
 			this.keyId = newKeyId;
 			save(configJson, configMap);
 			logger.info("Encrypted using new KeyId");
 			return true;
-		}catch(Exception e) {
+		} catch (Exception e) {
 			this.keyId = oldKey;
 			this.kmsClient = oldkmsClient;
-			logger.error("Exception: "+e.getMessage());
+			logger.error("Exception: " + e.getMessage());
 		}
 		return false;
 	}
@@ -117,13 +145,13 @@ public class AwsKeyValueStorage implements KeyValueStorage {
 	 */
 	private void loadConfig() throws Exception {
 		File file = new File(configFileLocation);
-        if (file.exists()) {
-        	if (file.length() == 0) {
-        		logger.info("File is empty");
-        		return; 
-        	}
-        	
-    		if (!JsonUtil.isValidJsonFile(configFileLocation)) {
+		if (file.exists()) {
+			if (file.length() == 0) {
+				logger.info("File is empty");
+				return;
+			}
+
+			if (!JsonUtil.isValidJsonFile(configFileLocation)) {
 				logger.debug("KSM config file is already encrypted.");
 				String decryptedContent = decryptBuffer(readEncryptedJsonFile());
 				lastSavedConfigHash = calculateMd5(decryptedContent);
@@ -135,10 +163,9 @@ public class AwsKeyValueStorage implements KeyValueStorage {
 				configMap = JsonUtil.convertToMap(configJson);
 				saveConfig(configMap);
 			}
-        }
-        
+		}
+
 	}
-	
 
 	private void saveConfig(Map<String, Object> updatedConfig) {
 		try {
@@ -150,7 +177,7 @@ public class AwsKeyValueStorage implements KeyValueStorage {
 				save(decryptedContent, updatedConfig);
 			}
 		} catch (Exception e) {
-			logger.error("Exception:"+e.getMessage());
+			logger.error("Exception:" + e.getMessage());
 		}
 	}
 
@@ -169,7 +196,7 @@ public class AwsKeyValueStorage implements KeyValueStorage {
 				Files.write(Paths.get(configFileLocation), encryptedData);
 				logger.info("KSM config saved fo file success.");
 			} catch (Exception e) {
-				logger.error("Exception:"+e.getMessage());
+				logger.error("Exception:" + e.getMessage());
 			}
 		}
 	}
@@ -276,25 +303,28 @@ public class AwsKeyValueStorage implements KeyValueStorage {
 			return new String(decryptedMessage, StandardCharsets.UTF_8);
 		}
 	}
-	
+
 	/**
-	 * Decrypt the encrypted config, autosave=true/false
-	 * @param autosave
-	 * @return
-	 * @throws Exception
+	 * Decrypts the encrypted configuration and optionally saves the result.
+	 *
+	 * @param autosave Set to {@code true} to save the ksm configuration json file
+	 *                 as plaintext, and {@code false} to retrieve only the
+	 *                 plaintext of the KSM configuration.
+	 * @return The decrypted configuration as a String.
+	 * @throws Exception If an error occurs during the decryption process.
 	 */
 	public String decryptConfig(boolean autosave) throws Exception {
-		String decryptedContent=null;
+		String decryptedContent = null;
 		if (!JsonUtil.isValidJsonFile(configFileLocation)) {
-			 decryptedContent = decryptBuffer(readEncryptedJsonFile());
-			 if(autosave) {
-				 Path path = Paths.get(configFileLocation);
-					if (Files.exists(path)) {
-						Files.write(path, decryptedContent.getBytes(StandardCharsets.UTF_8));
-						logger.info("Decrypted KSM config saved into file success.");
-					}
-			 }
-			 return decryptedContent;
+			decryptedContent = decryptBuffer(readEncryptedJsonFile());
+			if (autosave) {
+				Path path = Paths.get(configFileLocation);
+				if (Files.exists(path)) {
+					Files.write(path, decryptedContent.getBytes(StandardCharsets.UTF_8));
+					logger.info("Decrypted KSM config saved into file success.");
+				}
+			}
+			return decryptedContent;
 		} else {
 			logger.info("KSM config is plain json only.");
 			return null;
@@ -324,86 +354,99 @@ public class AwsKeyValueStorage implements KeyValueStorage {
 		byte[] digest = md.digest(input.getBytes(StandardCharsets.UTF_8));
 		return Base64.getEncoder().encodeToString(digest);
 	}
-	
+
+	/**
+	 * Convert base64 string to byte array
+	 * 
+	 * @param base64String Base64 string
+	 * @return byte array
+	 */
 	public byte[] base64ToBytes(String base64String) {
-	    if (base64String == null || base64String.isEmpty()) {
-	        return null; // Or you can throw an IllegalArgumentException based on your preference
-	    }
-	    return Base64.getDecoder().decode(base64String);
+		if (base64String == null || base64String.isEmpty()) {
+			return null; // Or you can throw an IllegalArgumentException based on your preference
+		}
+		return Base64.getDecoder().decode(base64String);
 	}
-	
+
 	private String bytesToBase64(byte[] data) {
 		return Base64.getEncoder().encodeToString(data);
 	}
-	
+
 	@Override
-    public void delete(String key) {
-        if (configMap.isEmpty()) {
-            try {
-                loadConfig();
-            } catch (Exception e) {
-                logger.error("Failed to load config file.", e);
-            }
-        }
-        configMap.remove(key);
-        saveConfig(configMap);
-    }
-	
-    @Override
-    public byte[] getBytes(String key) {
-    	 if (configMap.get(key) == null) return null;
-        return base64ToBytes(configMap.get(key).toString());
-    }
-    
-    @Override
-    public String getString(String key) {
-        if (configMap.isEmpty()) {
-            try {
-                loadConfig();
-            } catch (Exception e) {
-                logger.error("Failed to load config file.", e);
-            }
-        }
-        if (configMap.get(key) == null) return null;
-        return configMap.get(key).toString();
-    }
-    
-    @Override
-    public void saveBytes(String key, byte[] value) {
-        if (configMap.isEmpty()) {
-            try {
-                loadConfig();
-            } catch (Exception e) {
-                logger.error("Failed to load config file.", e);
-            }
-        }
-        configMap.put(key, bytesToBase64(value));
-        saveConfig(configMap); 
-    }
-    
-    @Override
-    public void saveString(String key, String value) {
-        if (configMap.isEmpty()) {
-            try {
-                loadConfig();
-            } catch (Exception e) {
-                logger.error("Failed to load config file.", e);
-            }
-        }
-        configMap.put(key, value);
-        saveConfig(configMap);
-    }
-    @Override
-    public String toString() {
-        if (configMap.isEmpty()) {
-            try{loadConfig();}catch(Exception e){logger.error("Failed to load config file.", e);}
-        }
-        try {
-            return JsonUtil.convertToString(configMap);
-        } catch (JsonProcessingException e) {
-            logger.error("Exception: " + e.getMessage());
-        }
-        return null;
-    }
+	public void delete(String key) {
+		if (configMap.isEmpty()) {
+			try {
+				loadConfig();
+			} catch (Exception e) {
+				logger.error("Failed to load config file.", e);
+			}
+		}
+		configMap.remove(key);
+		saveConfig(configMap);
+	}
+
+	@Override
+	public byte[] getBytes(String key) {
+		if (configMap.get(key) == null)
+			return null;
+		return base64ToBytes(configMap.get(key).toString());
+	}
+
+	@Override
+	public String getString(String key) {
+		if (configMap.isEmpty()) {
+			try {
+				loadConfig();
+			} catch (Exception e) {
+				logger.error("Failed to load config file.", e);
+			}
+		}
+		if (configMap.get(key) == null)
+			return null;
+		return configMap.get(key).toString();
+	}
+
+	@Override
+	public void saveBytes(String key, byte[] value) {
+		if (configMap.isEmpty()) {
+			try {
+				loadConfig();
+			} catch (Exception e) {
+				logger.error("Failed to load config file.", e);
+			}
+		}
+		configMap.put(key, bytesToBase64(value));
+		saveConfig(configMap);
+	}
+
+	@Override
+	public void saveString(String key, String value) {
+		if (configMap.isEmpty()) {
+			try {
+				loadConfig();
+			} catch (Exception e) {
+				logger.error("Failed to load config file.", e);
+			}
+		}
+		configMap.put(key, value);
+		saveConfig(configMap);
+	}
+
+	@Override
+	public String toString() {
+		if (configMap.isEmpty()) {
+			try {
+				loadConfig();
+			} catch (Exception e) {
+				logger.error("Failed to load config file.", e);
+			}
+		}
+		try {
+			return JsonUtil.convertToString(configMap);
+		} catch (JsonProcessingException e) {
+			logger.error("Exception: " + e.getMessage());
+		}
+		return null;
+	}
 
 }
