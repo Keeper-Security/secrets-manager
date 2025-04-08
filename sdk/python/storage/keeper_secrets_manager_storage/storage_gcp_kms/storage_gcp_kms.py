@@ -14,6 +14,8 @@ import os
 import hashlib
 import json
 
+from typing import Optional,Dict
+
 from keeper_secrets_manager_core.storage import KeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 
@@ -29,7 +31,7 @@ class GCPKeyValueStorage(KeyValueStorage):
     
     default_config_file_location: str = "client-config.json"
     crypto_client: KMSClient
-    config: dict[str, str] = {}
+    config: Dict[str, str] = {}
     last_saved_config_hash: str
     logger: Logger
     gcp_key_config: GCPKeyConfig
@@ -52,7 +54,7 @@ class GCPKeyValueStorage(KeyValueStorage):
         
         self.logger.info(f"GCPKeyValueStorage initialized and loaded config from file {self.config_file_location}")
         
-    def set_logger(self, logger: Logger|None):
+    def set_logger(self, logger: Optional[Logger]):
         if logger is not None:
             self.logger = logger
         else:
@@ -142,7 +144,7 @@ class GCPKeyValueStorage(KeyValueStorage):
 
         return plaintext
     
-    def __save_config(self, updated_config: dict[str, str] = {}, force: bool = False) -> None:
+    def __save_config(self, updated_config: Dict[str, str] = {}, force: bool = False) -> None:
         try:
             # Retrieve current config
             config = self.config or {}
@@ -269,12 +271,12 @@ class GCPKeyValueStorage(KeyValueStorage):
 
         return True
     
-    def read_storage(self) -> dict[str, str]:
+    def read_storage(self) -> Dict[str, str]:
         if not self.config:
             self.load_config()
         return self.config
     
-    def save_storage(self, updated_config: dict[str, str]) -> None:
+    def save_storage(self, updated_config: Dict[str, str]) -> None:
         self.__save_config(updated_config)
         
     def get(self, key: ConfigKeys) -> str:
