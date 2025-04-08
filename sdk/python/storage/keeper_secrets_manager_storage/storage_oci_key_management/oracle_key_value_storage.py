@@ -156,7 +156,7 @@ class OracleKeyValueStorage(KeyValueStorage):
                     config_hash = updated_config_hash
                     config_json = updated_config_json
                     # Update the current config
-                    self.config = Dict(updated_config)
+                    self.config = dict(updated_config)
 
             # Check if saving is necessary
             if not force and config_hash == self.last_saved_config_hash:
@@ -338,7 +338,7 @@ class OracleKeyValueStorage(KeyValueStorage):
         self.read_storage()
         self.config.clear()
         self.save_storage(self.config)
-        return Dict(self.config)
+        return dict(self.config)
 
     def contains(self, key: ConfigKeys):
         config = self.read_storage()
