@@ -17,51 +17,57 @@ import uuid
 
 from keeper_secrets_manager_core.storage import KeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
+from typing import Optional, Dict
 
 from .utils import decrypt_buffer, encrypt_buffer
 from .oci_kms_client import OciKmsClient
 from .oci_session_config import OCISessionConfig
-from oci.key_management import KmsCryptoClient,KmsManagementClient
+from oci.key_management import KmsCryptoClient, KmsManagementClient
 from oci.key_management.models import KeyShape
 
 default_logger_name = "ksm"
+
+
 class OracleKeyValueStorage(KeyValueStorage):
-    
+
     default_config_file_location: str = "client-config.json"
     crypto_client: KmsCryptoClient
-    management_client : KmsManagementClient
+    management_client: KmsManagementClient
     key_id: str
-    key_version_id: str | None
-    config: dict[str, str] = {}
+    key_version_id: Optional[str]
+    config: Dict[str, str] = {}
     last_saved_config_hash: str
     logger: Logger
     config_file_location: str
-    
-    
+
     def __init__(self, key_id: str,
-    key_version: str | None,
-    config_file_location: str | None,
-    oci_session_config: OCISessionConfig,
-    logger: Logger | None):
-        self.config_file_location = os.path.abspath(config_file_location) or os.getenv('KSM_CONFIG_FILE') or os.path.abspath(self.default_config_file_location)
-        
+                 key_version: Optional[str],
+                 config_file_location: Optional[str],
+                 oci_session_config: OCISessionConfig,
+                 logger: Optional[Logger]):
+        self.config_file_location = os.path.abspath(config_file_location) or os.getenv(
+            'KSM_CONFIG_FILE') or os.path.abspath(self.default_config_file_location)
+
         self.key_id = key_id
         self.key_version_id = key_version
         self.set_logger(logger)
-        
-        self.crypto_client =  OciKmsClient(oci_session_config).get_crypto_client()
-        self.management_client = OciKmsClient(oci_session_config).get_management_client()
-        
+
+        self.crypto_client = OciKmsClient(
+            oci_session_config).get_crypto_client()
+        self.management_client = OciKmsClient(
+            oci_session_config).get_management_client()
+
         self.last_saved_config_hash = ""
         self.get_key_details()
         self.load_config()
-        
-        self.logger.info(f"OracleKeyValueStorage initialized and loaded config from file {self.config_file_location}")
-        
-    def set_logger(self, logger: Logger|None):
-        self.logger = logger if logger is not None else logging.getLogger(default_logger_name)
-            
-  
+
+        self.logger.info(
+            f"OracleKeyValueStorage initialized and loaded config from file {self.config_file_location}")
+
+    def set_logger(self, logger: Optional[Logger]):
+        self.logger = logger if logger is not None else logging.getLogger(
+            default_logger_name)
+
     def create_config_file_if_missing(self):
         try:
             # Check if the config file already exists
@@ -82,26 +88,31 @@ class OracleKeyValueStorage(KeyValueStorage):
                 )
                 with open(self.config_file_location, 'wb') as config_file:
                     config_file.write(blob)
-                self.logger.info(f"Config file created at: {self.config_file_location}")
+                self.logger.info(
+                    f"Config file created at: {self.config_file_location}")
             else:
-                self.logger.info(f"Config file already exists at: {self.config_file_location}")
+                self.logger.info(
+                    f"Config file already exists at: {self.config_file_location}")
         except Exception as err:
             self.logger.error(f"Error creating config file: {err}")
-            
+
     def decrypt_config(self, autosave: bool = True) -> str:
-        ciphertext : bytes = bytes()
-        plaintext : str= ""
+        ciphertext: bytes = bytes()
+        plaintext: str = ""
 
         try:
             # Read the config file
             with open(self.config_file_location, 'rb') as config_file:
                 ciphertext = config_file.read()
             if len(ciphertext) == 0:
-                self.logger.warning(f"Empty config file {self.config_file_location}")
+                self.logger.warning(
+                    f"Empty config file {self.config_file_location}")
                 return ""
         except Exception as err:
-            self.logger.error(f"Failed to load config file {self.config_file_location}: {err}")
-            raise Exception(f"Failed to load config file {self.config_file_location}")
+            self.logger.error(
+                f"Failed to load config file {self.config_file_location}: {err}")
+            raise Exception(
+                f"Failed to load config file {self.config_file_location}")
 
         try:
             # Decrypt the file contents
@@ -113,18 +124,21 @@ class OracleKeyValueStorage(KeyValueStorage):
                 is_asymmetric=self.is_asymmetric
             )
             if len(plaintext) == 0:
-                self.logger.error(f"Failed to decrypt config file {self.config_file_location}")
+                self.logger.error(
+                    f"Failed to decrypt config file {self.config_file_location}")
             elif autosave:
                 # Optionally autosave the decrypted content
                 with open(self.config_file_location, 'w') as config_file:
                     config_file.write(plaintext)
         except Exception as err:
-            self.logger.error(f"Failed to write decrypted config file {self.config_file_location}: {err}")
-            raise Exception(f"Failed to write decrypted config file {self.config_file_location}")
+            self.logger.error(
+                f"Failed to write decrypted config file {self.config_file_location}: {err}")
+            raise Exception(
+                f"Failed to write decrypted config file {self.config_file_location}")
 
         return plaintext
-    
-    def __save_config(self, updated_config: dict[str, str] = {}, force: bool = False) -> None:
+
+    def __save_config(self, updated_config: Dict[str, str] = {}, force: bool = False) -> None:
         try:
             # Retrieve current config
             config = self.config or {}
@@ -133,24 +147,29 @@ class OracleKeyValueStorage(KeyValueStorage):
 
             # Compare updated_config hash with current config hash
             if updated_config:
-                updated_config_json = json.dumps(updated_config, sort_keys=True, indent=4)
-                updated_config_hash = hashlib.md5(updated_config_json.encode()).hexdigest()
+                updated_config_json = json.dumps(
+                    updated_config, sort_keys=True, indent=4)
+                updated_config_hash = hashlib.md5(
+                    updated_config_json.encode()).hexdigest()
 
                 if updated_config_hash != config_hash:
                     config_hash = updated_config_hash
                     config_json = updated_config_json
-                    self.config = dict(updated_config)  # Update the current config
+                    # Update the current config
+                    self.config = Dict(updated_config)
 
             # Check if saving is necessary
             if not force and config_hash == self.last_saved_config_hash:
-                self.logger.warning("Skipped config JSON save. No changes detected.")
+                self.logger.warning(
+                    "Skipped config JSON save. No changes detected.")
                 return
 
             # Ensure the config file exists
             self.create_config_file_if_missing()
 
             # Encrypt the config JSON and write to the file
-            stringified_value = json.dumps(self.config, sort_keys=True, indent=4)
+            stringified_value = json.dumps(
+                self.config, sort_keys=True, indent=4)
             blob = encrypt_buffer(
                 key_id=self.key_id,
                 message=stringified_value,
@@ -166,7 +185,7 @@ class OracleKeyValueStorage(KeyValueStorage):
 
         except Exception as err:
             self.logger.error(f"Error saving config: {err}")
-            
+
     def load_config(self) -> None:
         self.create_config_file_if_missing()
 
@@ -176,13 +195,17 @@ class OracleKeyValueStorage(KeyValueStorage):
             try:
                 with open(self.config_file_location, 'rb') as config_file:
                     contents = config_file.read()
-                self.logger.info(f"Loaded config file {self.config_file_location}")
+                self.logger.info(
+                    f"Loaded config file {self.config_file_location}")
             except Exception as err:
-                self.logger.error(f"Failed to load config file {self.config_file_location}: {err}")
-                raise Exception(f"Failed to load config file {self.config_file_location}")
+                self.logger.error(
+                    f"Failed to load config file {self.config_file_location}: {err}")
+                raise Exception(
+                    f"Failed to load config file {self.config_file_location}")
 
             if len(contents) == 0:
-                self.logger.warning(f"Empty config file {self.config_file_location}")
+                self.logger.warning(
+                    f"Empty config file {self.config_file_location}")
                 contents = b"{}"
 
             # Check if the content is plain JSON
@@ -218,18 +241,22 @@ class OracleKeyValueStorage(KeyValueStorage):
                     ).hexdigest()
                 except Exception as err:
                     decryption_error = True
-                    self.logger.error(f"Failed to parse decrypted config file: {err}")
-                    raise Exception(f"Failed to parse decrypted config file {self.config_file_location}")
+                    self.logger.error(
+                        f"Failed to parse decrypted config file: {err}")
+                    raise Exception(
+                        f"Failed to parse decrypted config file {self.config_file_location}")
 
             if json_error and decryption_error:
-                self.logger.info(f"Config file is not a valid JSON file: {json_error}")
-                raise Exception(f"{self.config_file_location} may contain JSON format problems")
+                self.logger.info(
+                    f"Config file is not a valid JSON file: {json_error}")
+                raise Exception(
+                    f"{self.config_file_location} may contain JSON format problems")
 
         except Exception as err:
             self.logger.error(f"Error loading config: {err}")
             raise err
-        
-    def change_key(self, new_key_id: str, new_key_version_id: str=None) -> bool:
+
+    def change_key(self, new_key_id: str, new_key_version_id: str = None) -> bool:
         old_key_id = self.key_id
         old_key_version_id = self.key_version_id
         old_crypto_client = self.crypto_client
@@ -254,39 +281,40 @@ class OracleKeyValueStorage(KeyValueStorage):
             self.logger.error(
                 f"Failed to change the key to '{new_key_id}' for config '{self.config_file_location}': {error}"
             )
-            raise Exception(f"Failed to change the key for {self.config_file_location}")
+            raise Exception(
+                f"Failed to change the key for {self.config_file_location}")
 
         return True
-    
+
     def get_key_details(self):
-        
+
         opc_request_id = uuid.uuid4().hex.upper()
-        
-        key_details = self.management_client.get_key(key_id=self.key_id, opc_request_id=opc_request_id)
-        
+
+        key_details = self.management_client.get_key(
+            key_id=self.key_id, opc_request_id=opc_request_id)
+
         algorithm = key_details.data.key_shape.algorithm
-        
+
         if algorithm == KeyShape.ALGORITHM_RSA:
             self.is_asymmetric = True
         elif algorithm == KeyShape.ALGORITHM_AES:
             self.is_asymmetric = False
         else:
-            raise Exception(f"Unsupported key algorithm for the given key: {algorithm}")
-        
-        
-    
-    def read_storage(self) -> dict[str, str]:
+            raise Exception(
+                f"Unsupported key algorithm for the given key: {algorithm}")
+
+    def read_storage(self) -> Dict[str, str]:
         if not self.config:
             self.load_config()
         return self.config
-    
-    def save_storage(self, updated_config: dict[str, str]) -> None:
+
+    def save_storage(self, updated_config: Dict[str, str]) -> None:
         self.__save_config(updated_config)
-        
+
     def get(self, key: ConfigKeys) -> str:
         config = self.read_storage()
         return config.get(key.value)
-    
+
     def set(self, key: ConfigKeys, value):
         config = self.read_storage()
         config[key.value] = value
@@ -301,7 +329,7 @@ class OracleKeyValueStorage(KeyValueStorage):
             del config[kv]
             self.logger.debug("Removed key %s" % kv)
         else:
-           self.logger.debug("No key %s was found in config" % kv)
+            self.logger.debug("No key %s was found in config" % kv)
 
         self.save_storage(config)
         return config
@@ -310,7 +338,7 @@ class OracleKeyValueStorage(KeyValueStorage):
         self.read_storage()
         self.config.clear()
         self.save_storage(self.config)
-        return dict(self.config)
+        return Dict(self.config)
 
     def contains(self, key: ConfigKeys):
         config = self.read_storage()

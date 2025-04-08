@@ -7,18 +7,20 @@
 # Keeper Secrets Manager
 # Copyright 2025 Keeper Security Inc.
 # Contact: sm@keepersecurity.com
+
 import logging
-import traceback
 import os
+import traceback
 from typing import Optional
 
 try:
     from oci.config import from_file
 except ImportError:
-    logging.getLogger().error("Missing Oracle import dependencies."
+    logging.getLogger().error("Missing OCI import dependencies."
                  " To install missing packages run: \r\n"
-                 "pip install --upgrade \"oci\"\r\n")
-    raise Exception(f"Missing import dependencies: oci. Additional details: {traceback.format_exc()}")
+                 "pip install --upgrade \"oci\"\r\n"
+                 "pip install --upgrade \"pycryptodome\"\r\n")
+    logging.getLogger().debug(f"Missing import dependencies: oci. Additional data related to error is as follows: {traceback.format_exc()}")
 
 class OCISessionConfig:
     def __init__(self, oci_config_file_location: str, profile: Optional[str] = None, kms_crypto_endpoint: str = "",kms_management_endpoint: str = ""):

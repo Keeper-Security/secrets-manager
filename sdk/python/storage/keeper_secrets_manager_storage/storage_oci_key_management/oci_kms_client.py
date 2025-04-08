@@ -17,8 +17,9 @@ try:
 except ImportError:
     logging.getLogger().error("Missing OCI import dependencies."
                  " To install missing packages run: \r\n"
-                 "pip install --upgrade \"oci\"\r\n")
-    raise Exception(f"Missing import dependencies: oci. Additional data related to error is as follows: {traceback.format_exc()}")
+                 "pip install --upgrade \"oci\"\r\n"
+                 "pip install --upgrade \"pycryptodome\"\r\n")
+    logging.getLogger().debug(f"Missing import dependencies: oci. Additional data related to error is as follows: {traceback.format_exc()}")
 
 class OciKmsClient:
     def __init__(self, session_config: OCISessionConfig):
