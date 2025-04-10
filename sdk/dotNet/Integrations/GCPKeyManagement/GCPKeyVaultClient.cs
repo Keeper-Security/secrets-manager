@@ -5,10 +5,12 @@ using Grpc.Auth;
 using Google.Apis.Auth.OAuth2;
 using System;
 using System.IO;
+using System.Threading.Tasks;
 
 public class GCPKMSClient
 {
     private KeyManagementServiceClient? _kmsClient;
+    private GoogleCredential? credential;
 
     /// <summary>
     /// Initializes a GCP KMS client using the default configuration.
@@ -17,6 +19,7 @@ public class GCPKMSClient
     public GCPKMSClient()
     {
         _kmsClient = null;
+        credential = null;
     }
 
     /// <summary>
@@ -31,7 +34,7 @@ public class GCPKMSClient
             throw new ArgumentException("Invalid credentials file path.");
         }
 
-        GoogleCredential credential = GoogleCredential.FromFile(credentialsKeyFilePath)
+        credential = GoogleCredential.FromFile(credentialsKeyFilePath)
             .CreateScoped(KeyManagementServiceClient.DefaultScopes);
 
         _kmsClient = new KeyManagementServiceClientBuilder
@@ -50,7 +53,7 @@ public class GCPKMSClient
     /// <returns>The GCPKMSClient instance.</returns>
     public GCPKMSClient CreateClientUsingCredentials(string clientEmail, string privateKey)
     {
-        var credential = GoogleCredential.FromJson($@"
+        credential = GoogleCredential.FromJson($@"
         {{
             ""type"": ""service_account"",
             ""client_email"": ""{clientEmail}"",
@@ -76,5 +79,14 @@ public class GCPKMSClient
             throw new InvalidOperationException("KMS client not initialized. Please call CreateClientFromCredentialsFile or CreateClientUsingCredentials first.");
         }
         return _kmsClient;
+    }
+
+    public async Task<string> getToken()
+    {
+        if (credential == null)
+        {
+            throw new InvalidOperationException("KMS client not initialized. Please call CreateClientFromCredentialsFile or CreateClientUsingCredentials first.");
+        }
+        return await credential.UnderlyingCredential.GetAccessTokenForRequestAsync();
     }
 }

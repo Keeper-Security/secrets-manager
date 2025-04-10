@@ -7,14 +7,18 @@ using System.Runtime.Serialization;
 public static class IntegrationConstants
 {
     // Supported Key Specs
-    public static readonly string[] SupportedKeySpecs = 
+    public static readonly string[] SupportedKeySpecs =
     {
         KeyPurposeHelper.GetEnumMemberValue(KeyPurpose.RAW_ENCRYPT_DECRYPT),
-        KeyPurposeHelper.GetEnumMemberValue(KeyPurpose.ASYMMETRIC_DECRYPT)
+        KeyPurposeHelper.GetEnumMemberValue(KeyPurpose.ASYMMETRIC_DECRYPT),
+        KeyPurposeHelper.GetEnumMemberValue(KeyPurpose.ENCRYPT_DECRYPT)
     };
 
     public static readonly byte[] BLOB_HEADER = { 0xFF, 0xFF }; // Encrypted BLOB Header: U+FFFF is a non-utf-8-character
-
+    public static readonly string ADDITIONAL_AUTHENTICATION_DATA = "keeper_auth";
+    public static readonly string TOKEN_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
+    public static readonly string RAW_ENCRYPT_GCP_API_URL = "https://cloudkms.googleapis.com/v1/{0}:rawEncrypt";
+    public static readonly string RAW_DECRYPT_GCP_API_URL = "https://cloudkms.googleapis.com/v1/{0}:rawDecrypt";
     public const int HEADER_SIZE = 2;
 
     public const int AES_KEY_SIZE = 32;
@@ -57,6 +61,8 @@ public class Options
     public KeyManagementServiceClient CryptoClient { get; set; }
     public GCPKeyConfig KeyProperties { get; set; }
     public string EncryptionAlgorithm { get; set; }
+    public string token { get; set;}
+    
 }
 
 public class BufferOptions : Options
@@ -82,6 +88,7 @@ public class EncryptOptions : Options
 public class DecryptOptions : Options
 {
     public byte[] CipherText { get; set; }
+    public string KeyPurpose { get; set; }
 }
 
 public static class KeyPurposeHelper

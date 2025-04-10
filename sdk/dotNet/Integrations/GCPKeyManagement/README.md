@@ -27,13 +27,13 @@ The Secrets Manager GCP KSM module can be installed using the NuGet package mana
 
 By default the Google.Cloud.Kms.V1 library will utilize the default connection session setup with the GCP CLI with the gcloud auth command.  If you would like to specify the connection details, the two configuration files located at `~/.config/gcloud/configurations/config_default` and `~/.config/gcloud/legacy_credentials/<user>/adc.json` can be manually edited.
 
-See the GCP documentation for more information on setting up an GCP session (https://cloud.google.com/sdk/gcloud/reference/auth)[here]
+See the GCP documentation for more information on setting up an GCP session [here](https://cloud.google.com/sdk/gcloud/reference/auth)
 
 Alternatively, configuration variables can be provided explicitly as a service account file using the GcpSessionConfig data class and providing  a path to the service account json file.
 
 You will need a GCP service account to use the GCP KMS integration.
 
-For more information on GCP service accounts see the (https://cloud.google.com/iam/docs/service-accounts)[GCP documentation]
+For more information on GCP service accounts see the [GCP documentation](https://cloud.google.com/iam/docs/service-accounts)
 
 3. Add GCP KMS Storage to Your Code
 
