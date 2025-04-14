@@ -7,6 +7,8 @@
 # Keeper Secrets Manager
 # Copyright 2025 Keeper Security Inc.
 # Contact: sm@keepersecurity.com
+import base64
+import json
 import traceback
 import logging
 from Crypto.Cipher import AES
@@ -15,7 +17,8 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Hash import SHA256, SHA1, SHA512
 from cryptography.hazmat.primitives import hashes
-from .constants import BLOB_HEADER, KeyAlgorithm, KeyPurpose
+import requests
+from .constants import ADDITIONAL_AUTHENTICATION_DATA, BLOB_HEADER, RAW_DECRYPT_GCP_API_URL, RAW_ENCRYPT_GCP_API_URL, KeyAlgorithm, KeyPurpose
 
 
 try:
@@ -28,7 +31,7 @@ except ImportError:
     raise Exception(f"Missing import dependencies: google-crc32c. Additional details: {traceback.format_exc()}")
 
 
-def encrypt_buffer(is_asymmetric, message, crypto_client, key_properties,encryption_algorithm):
+def encrypt_buffer(is_asymmetric, message, crypto_client, key_properties,encryption_algorithm,logger,token=None):
     try:
         # Generate a random 32-byte key
         key = get_random_bytes(32)
@@ -45,14 +48,18 @@ def encrypt_buffer(is_asymmetric, message, crypto_client, key_properties,encrypt
             'crypto_client': crypto_client,
             'key_properties': key_properties,
             'is_asymmetric': is_asymmetric,
-            'encryption_algorithm': encryption_algorithm
+            'encryption_algorithm': encryption_algorithm,
+            'token' :token
         }
 
         if is_asymmetric:
             encrypted_key = encrypt_data_and_validate_crc_asymmetric(
                 encrypt_options)
         else:
-            encrypted_key = encrypt_data_and_validate_crc(encrypt_options)
+            if token:
+                encrypted_key = encrypt_data_symmetric_raw(encrypt_options,logger)
+            else:
+                encrypted_key = encrypt_data_and_validate_crc(encrypt_options)
 
         parts = [encrypted_key, cipher.nonce, tag, ciphertext]
 
@@ -65,7 +72,7 @@ def encrypt_buffer(is_asymmetric, message, crypto_client, key_properties,encrypt
 
         return buffers
     except Exception as err:
-        print(f"KCP KMS Storage failed to encrypt: {err}")
+        logger.warning(f"KCP KMS Storage failed to encrypt: {err}")
         return b''  # Return empty buffer in case of an error
 
 
@@ -113,8 +120,56 @@ def encrypt_data_and_validate_crc(options):
 
     return ciphertext
 
+def encrypt_data_symmetric_raw(options, logger: logging.Logger) -> bytes:
+    logger.debug("Trying to extract resource name")
+    key_name = options.get("key_properties").to_resource_name()
 
-def decrypt_buffer(is_asymmetric, ciphertext, crypto_client, key_properties):
+    logger.debug("Trying to encrypt data with given resource name %s", key_name)
+    additional_data = ADDITIONAL_AUTHENTICATION_DATA.encode('utf-8')
+    encoded_message = options.get("message")
+
+    payload = {
+        "plaintext": base64.b64encode(encoded_message).decode('utf-8'),
+        "additionalAuthenticatedData": base64.b64encode(additional_data).decode('utf-8')
+    }
+
+    token = options.get("token")
+    api_url = RAW_ENCRYPT_GCP_API_URL.format(key_name)
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(api_url, headers=headers, data=json.dumps(payload))
+    response_body = response.text
+
+    if not response.ok:
+        logger.error("rawEncrypt API call failed with status: %s, response: %s", response.status_code, response_body)
+        raise Exception(f"rawEncrypt API call failed with status: {response.status_code}, response: {response_body}")
+
+    logger.debug("rawEncrypt API call completed successfully")
+
+    result = response.json()
+
+    if "ciphertext" not in result or "initializationVector" not in result:
+        logger.error("Failed to parse response from rawEncrypt API call")
+        raise Exception("Failed to parse response from rawEncrypt API call")
+
+    ciphertext = base64.b64decode(result["ciphertext"])
+    initialization_vector = base64.b64decode(result["initializationVector"])
+    encrypted_data = initialization_vector + ciphertext
+
+    # Create 2-byte length prefix (big endian)
+    length = len(encrypted_data)
+    length_prefix = length.to_bytes(2, byteorder='big')
+
+    logger.debug("Raw encryption completed, concatenating data with length prefix")
+    final_payload = length_prefix + encrypted_data
+
+    return final_payload
+
+def decrypt_buffer(is_asymmetric, ciphertext, crypto_client, key_properties,logger: logging.Logger,token=None):
     try:
         # Validate BLOB_HEADER
         header = ciphertext[:2]
@@ -145,6 +200,8 @@ def decrypt_buffer(is_asymmetric, ciphertext, crypto_client, key_properties):
             'crypto_client': crypto_client,
             'key_properties': key_properties,
             'is_asymmetric': is_asymmetric,
+            'token': token,
+            'logger': logger
         }
 
         key = decrypt_data_and_validate_crc(decrypt_options)
@@ -156,7 +213,7 @@ def decrypt_buffer(is_asymmetric, ciphertext, crypto_client, key_properties):
         # Convert decrypted data to a UTF-8 string
         return decrypted.decode()
     except Exception as err:
-        print(f"Google KMS KeyVault Storage failed to decrypt: {err}")
+        logger.warning(f"Google KMS KeyVault Storage failed to decrypt: {err}")
         return ""  # Return empty string in case of an error
 
 
@@ -175,6 +232,10 @@ def decrypt_data_and_validate_crc(options):
         )
         decrypt_response = client.asymmetric_decrypt(request=request)
     else:
+        if options.get("token"):
+            plaintext = decrypt_data_symmetric_raw(options, options['logger'])
+            return plaintext
+            
         key_name = options['key_properties'].to_key_name()
         input = DecryptRequest(name=key_name, ciphertext=cipher_data,
                                ciphertext_crc32c=cipher_data_crc)
@@ -188,6 +249,53 @@ def decrypt_data_and_validate_crc(options):
 
     return plaintext
 
+def decrypt_data_symmetric_raw(options, logger: logging.Logger) -> bytes:
+    
+    logger.debug("Trying to extract resource name")
+    key_name = options["key_properties"].to_resource_name()
+
+    logger.debug(f"Trying to decrypt data with given resource name {key_name}")
+    additional_data = ADDITIONAL_AUTHENTICATION_DATA.encode("utf-8")
+
+    encrypted_data = options["ciphertext"]
+    if len(encrypted_data) < 14:
+        logger.error("Invalid ciphertext structure: size buffer length mismatch.")
+        raise ValueError("Invalid ciphertext structure: size buffer length mismatch.")
+
+    _length = (encrypted_data[0] << 8) | encrypted_data[1]
+    initialization_vector = encrypted_data[2:14]
+    ciphertext = encrypted_data[14:]
+
+    payload = {
+        "ciphertext": base64.b64encode(ciphertext).decode("utf-8"),
+        "additionalAuthenticatedData": base64.b64encode(additional_data).decode("utf-8"),
+        "initializationVector": base64.b64encode(initialization_vector).decode("utf-8")
+    }
+
+    token = options["token"]
+    api_url = RAW_DECRYPT_GCP_API_URL.format(key_name)
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(api_url, data=json.dumps(payload), headers=headers)
+    response_body = response.text
+
+    if not response.ok:
+        logger.error(f"rawDecrypt API call failed with status: {response.status_code}, response: {response_body}")
+        raise Exception(f"rawDecrypt API call failed with status: {response.status_code}, response: {response_body}")
+
+    logger.debug("rawDecrypt API call completed successfully")
+
+    result = json.loads(response_body)
+    if result is None or "plaintext" not in result:
+        logger.error("Failed to parse response from rawDecrypt API call")
+        raise Exception("Failed to parse response from rawDecrypt API call")
+
+    logger.debug("Raw decryption completed")
+    return base64.b64decode(result["plaintext"])
 
 def get_key_type(key_purpose: CryptoKey.CryptoKeyPurpose):
     if key_purpose == KeyPurpose.RAW_ENCRYPT_DECRYPT:

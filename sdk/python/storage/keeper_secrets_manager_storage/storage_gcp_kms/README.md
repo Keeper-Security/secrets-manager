@@ -46,14 +46,15 @@ The storage will require a GCP Key ID, as well as the name of the Secrets Manage
 
     from keeper_secrets_manager_core import SecretsManager
 
+    # example key : projects/<project>/locations/<location>/keyRings/<key>/cryptoKeys/<key_name>/cryptoKeyVersions/<key_version>
     gcp_key_config_1 = GCPKeyConfig("<key_resource_uri_1>")
     gcp_key_config_2 = GCPKeyConfig("<key_resource_uri_1>")
 
-    gcp_session_config = GCPKMSClientConfig().create_client_from_credentials_file('gcp_config.json')
-    config_path = "ksm_config.json"
+    gcp_session_config = GCPKMSClientConfig().create_client_from_credentials_file('<gcp_credentials_config_file_location.json>')
+    config_path = "<ksm_config.json>"
     one_time_token = "<token>"
 
-    storage = GCPKeyValueStorage(config_path, gcp_key_config_2, gcp_session_config)
+    storage = GCPKeyValueStorage(config_path, gcp_key_config_1, gcp_session_config)
     storage.change_key(gcp_key_config_2) # if we want to change the key
     secrets_manager = SecretsManager(token=one_time_token,config=storage)
     all_records = secrets_manager.get_secrets()

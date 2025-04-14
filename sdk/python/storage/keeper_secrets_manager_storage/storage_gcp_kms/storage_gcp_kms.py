@@ -38,7 +38,7 @@ class GCPKeyValueStorage(KeyValueStorage):
     config_file_location: str
     gcp_session_config: GCPKMSClientConfig
     is_asymmetric: bool = False
-    
+    key_purpose_details: str
     
     def __init__(self, key_vault_config_file_location: str , gcp_key_config: GCPKeyConfig, gcp_session_config: GCPKMSClientConfig, logger: Logger = None):
         self.config_file_location = os.path.abspath(key_vault_config_file_location) or os.getenv('KSM_CONFIG_FILE') or os.path.abspath(self.default_config_file_location)
@@ -67,13 +67,13 @@ class GCPKeyValueStorage(KeyValueStorage):
                 "name": self.gcp_key_config.to_key_name(),
             }
             key = self.crypto_client.get_crypto_key(input)
-            key_purpose_details = key.purpose
+            self.key_purpose_details = key.purpose
             self.encryption_algorithm = key.version_template.algorithm
-            if key_purpose_details not in SUPPORTED_KEY_PURPOSE:
+            if self.key_purpose_details not in SUPPORTED_KEY_PURPOSE:
                 self.logger.error("Unsupported Key Spec for GCP KMS Storage")
                 raise Exception("Unsupported Key Spec for GCP KMS Storage")
 
-            if key_purpose_details == KeyPurpose.ASYMMETRIC_DECRYPT:
+            if self.key_purpose_details == KeyPurpose.ASYMMETRIC_DECRYPT:
                 self.is_asymmetric = True
             else:
                 self.is_asymmetric = False
@@ -91,7 +91,12 @@ class GCPKeyValueStorage(KeyValueStorage):
                 dir_path = os.path.dirname(self.config_file_location)
                 if not os.path.exists(dir_path):
                     os.makedirs(dir_path, exist_ok=True)
-
+                with open(self.config_file_location, 'wb') as config_file:
+                    config_file.write(b"{}")
+                    self.logger.info(f"Config file created at: {self.config_file_location}")
+                token=None
+                if self.key_purpose_details == KeyPurpose.RAW_ENCRYPT_DECRYPT:
+                    token = self.gcp_session_config.getToken()
                 # Encrypt an empty configuration and write to the file
                 empty_config = "{}"
                 blob = encrypt_buffer(
@@ -99,11 +104,13 @@ class GCPKeyValueStorage(KeyValueStorage):
                     message=empty_config,
                     crypto_client=self.crypto_client,
                     key_properties=self.gcp_key_config,
-                    encryption_algorithm=self.encryption_algorithm
+                    encryption_algorithm=self.encryption_algorithm,
+                    token=token,
+                    logger = self.logger
                 )
-                with open(self.config_file_location, 'wb') as config_file:
-                    config_file.write(blob)
-                self.logger.info(f"Config file created at: {self.config_file_location}")
+                if len(blob) != 0:
+                    with open(self.config_file_location, 'wb') as config_file:
+                        config_file.write(blob)
             else:
                 self.logger.info(f"Config file already exists at: {self.config_file_location}")
         except Exception as err:
@@ -125,12 +132,17 @@ class GCPKeyValueStorage(KeyValueStorage):
             raise Exception(f"Failed to load config file {self.config_file_location}")
 
         try:
+            token=None
+            if self.key_purpose_details == KeyPurpose.RAW_ENCRYPT_DECRYPT:
+                token = self.gcp_session_config.getToken()
             # Decrypt the file contents
             plaintext = decrypt_buffer(
                 is_asymmetric=self.is_asymmetric,
                 ciphertext=ciphertext,
                 crypto_client=self.crypto_client,
-                key_properties=self.gcp_key_config
+                key_properties=self.gcp_key_config,
+                token=token,
+                logger = self.logger
             )
             if len(plaintext) == 0:
                 self.logger.error(f"Failed to decrypt config file {self.config_file_location}")
@@ -171,15 +183,21 @@ class GCPKeyValueStorage(KeyValueStorage):
 
             # Encrypt the config JSON and write to the file
             stringified_value = json.dumps(self.config, sort_keys=True, indent=4)
+            token=None
+            if self.key_purpose_details == KeyPurpose.RAW_ENCRYPT_DECRYPT:
+                token = self.gcp_session_config.getToken()
             blob = encrypt_buffer(
                 is_asymmetric=self.is_asymmetric,
                 message=stringified_value,
                 crypto_client=self.crypto_client,
                 key_properties=self.gcp_key_config,
-                encryption_algorithm=self.encryption_algorithm
+                encryption_algorithm=self.encryption_algorithm,
+                token=token,
+                logger = self.logger
             )
-            with open(self.config_file_location, 'wb') as config_file:
-                config_file.write(blob)
+            if len(blob)!=0:
+                with open(self.config_file_location, 'wb') as config_file:
+                    config_file.write(blob)
 
             # Update the last saved config hash
             self.last_saved_config_hash = config_hash
@@ -223,11 +241,16 @@ class GCPKeyValueStorage(KeyValueStorage):
                 json_error = err
 
             if json_error:
+                token=None
+                if self.key_purpose_details == KeyPurpose.RAW_ENCRYPT_DECRYPT:
+                    token = self.gcp_session_config.getToken()
                 config_json = decrypt_buffer(
                     is_asymmetric=self.is_asymmetric,
                     ciphertext=contents,
                     crypto_client=self.crypto_client,
-                    key_properties=self.gcp_key_config
+                    key_properties=self.gcp_key_config,
+                    token=token,
+                    logger= self.logger
                 )
                 try:
                     config = json.loads(config_json)

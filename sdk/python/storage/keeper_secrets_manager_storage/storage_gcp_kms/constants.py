@@ -46,3 +46,9 @@ OAEP_PADDING = padding.OAEP(
     algorithm=hashes.SHA256(),
     label=None
 )
+
+ADDITIONAL_AUTHENTICATION_DATA = "keeper_auth"
+TOKEN_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+RAW_ENCRYPT_GCP_API_URL = "https://cloudkms.googleapis.com/v1/{0}:rawEncrypt"
+RAW_DECRYPT_GCP_API_URL = "https://cloudkms.googleapis.com/v1/{0}:rawDecrypt"
+SCOPES = [TOKEN_SCOPE]
