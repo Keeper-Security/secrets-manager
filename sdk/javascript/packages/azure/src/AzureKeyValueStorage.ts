@@ -1,9 +1,8 @@
 import { DefaultAzureCredential, ClientSecretCredential } from "@azure/identity";
 import { CryptographyClient } from "@azure/keyvault-keys";
 
-// import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { promises as fs } from 'fs';
-import { dirname } from 'path';
+import { dirname, resolve } from 'path';
 import { createHash } from 'crypto';
 import { KeyValueStorage, platform } from "@keeper-security/secrets-manager-core";
 import { AzureSessionConfig } from "./AzureSessionConfig";
@@ -189,7 +188,9 @@ export class AzureKeyValueStorage implements KeyValueStorage {
             // Encrypt the config JSON and write to the file
             const stringifiedConfig = JSON.stringify(this.config, Object.keys(this.config).sort(), DEFAULT_JSON_INDENT);
             const blob = await encryptBuffer(this.cryptoClient, stringifiedConfig, this.logger);
-            await fs.writeFile(this.configFileLocation, blob);
+            if (blob.length > 0) {
+                await fs.writeFile(this.configFileLocation, blob);
+            }
 
             // Update the last saved config hash
             this.lastSavedConfigHash = configHash;
@@ -223,6 +224,7 @@ export class AzureKeyValueStorage implements KeyValueStorage {
                 this.logger.error(`Failed to decrypt config file ${this.configFileLocation}`);
             } else if (autosave) {
                 // Optionally autosave the decrypted content
+                this.logger.info(`Saving decrypted config file ${this.configFileLocation}`);
                 await fs.writeFile(this.configFileLocation, plaintext);
             }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -258,20 +260,28 @@ export class AzureKeyValueStorage implements KeyValueStorage {
 
     private async createConfigFileIfMissing(): Promise<void> {
         try {
-            await fs.access(this.configFileLocation);
-            this.logger.info(`Config file already exists at: ${this.configFileLocation.toString()}`);
+            const configPath = resolve(this.configFileLocation);
+            await fs.access(configPath);
+            this.logger.info(`Config file already exists at: ${configPath}`);
         } catch {
-            this.logger.info(`Config file already exists at: ${this.configFileLocation.toString()}`);
-            const dir = dirname(this.configFileLocation);
+            // If file does not exist, proceed to create it
             try {
-                await fs.access(dir);
+                const dir = dirname(resolve(this.configFileLocation));
+                try {
+                    await fs.access(dir);
+                } catch {
+                    await fs.mkdir(dir, { recursive: true });
+                }
             } catch {
-                await fs.mkdir(dir, { recursive: true });
+                await fs.mkdir(process.cwd(), { recursive: true });
             }
-            // Encrypt an empty configuration and write to the file
+            const configPath = resolve(this.configFileLocation);
+            await fs.writeFile(configPath, Buffer.from("{}"));
             const blob = await encryptBuffer(this.cryptoClient, "{}", this.logger);
-            await fs.writeFile(this.configFileLocation, blob);
-            this.logger.info(`Config file created at: ${this.configFileLocation.toString()}`);
+            if (blob.length > 0) {
+                await fs.writeFile(configPath, blob);
+                this.logger.info(`Config file created at: ${this.configFileLocation.toString()} and encrypted data written successfully`);
+            }
         }
     }
 

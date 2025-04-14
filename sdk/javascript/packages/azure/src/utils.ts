@@ -46,7 +46,7 @@ export async function encryptBuffer(azureKvStorageCryptoClient: CryptographyClie
         return Buffer.concat(buffers);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
-        logger.error("Azure KeyVault Storage failed to encrypt:", err.message);
+        logger.warn("Azure KeyVault Storage failed to encrypt:", err.message);
         return Buffer.alloc(0); // Return empty buffer in case of an error
     }
 }
@@ -118,7 +118,7 @@ export async function decryptBuffer(azureKeyValueStorageCryptoClient: Cryptograp
         return decrypted.toString(UTF_8_ENCODING);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
-        logger.error("Azure KeyVault Storage failed to decrypt:", err.message);
+        logger.warn("Azure KeyVault Storage failed to decrypt:", err.message);
         return ""; // Return empty string in case of an error
     }
 }
