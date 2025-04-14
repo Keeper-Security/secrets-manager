@@ -14,13 +14,19 @@ package com.keepersecurity.secretsmanager.gcp;
 
 import java.io.BufferedReader;
 import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.io.StringReader;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.MGF1ParameterSpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -32,6 +38,7 @@ import javax.crypto.spec.PSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.kms.v1.AsymmetricDecryptResponse;
 import com.google.cloud.kms.v1.CryptoKeyVersion;
@@ -43,6 +50,8 @@ import com.google.cloud.kms.v1.CryptoKeyVersion.CryptoKeyVersionAlgorithm;
 import com.google.cloud.kms.v1.CryptoKeyVersionName;
 import com.google.cloud.kms.v1.DecryptRequest;
 import com.google.cloud.kms.v1.EncryptRequest;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 /**
  * The {@code KMSUtils} class provides utility methods for encrypting and
@@ -55,7 +64,6 @@ public class KMSUtils {
 
 	private KeyManagementServiceClient kmsClient;
 	private GcpSessionConfig sessionConfig;
-
 	private static final Map<String, String> rsaAlgorithmToSHA = new HashMap<>();
 
 	static {
@@ -243,12 +251,26 @@ public class KMSUtils {
 	public boolean isSymmetricKey() {
 		// Fetch the key version (use the primary version of the key)
 		CryptoKeyVersionAlgorithm algorithms = getCryptoKeyVersionAlgorithm();
-		logger.debug("Encryption Algorith :::" + algorithms.name());
+		logger.debug("Encryption Algorithm :::" + algorithms.name());
 		if (algorithms.name().contains("SYMMETRIC"))
 			return true;
 
 		return false;
 
+	}
+
+	/**
+	 * Checks if the key is a raw symmetric key.
+	 * 
+	 * @return true if the key is a raw symmetric key, false otherwise.
+	 */
+	public boolean isKeyRAWSymmteric() {
+		CryptoKeyVersionAlgorithm algorithms = getCryptoKeyVersionAlgorithm();
+		logger.debug("Encryption Algorithm :::" + algorithms.name());
+		if (algorithms.name().contains("AES_")) {
+			return true;
+		}
+		return false;
 	}
 
 	private String getSHA(String rsaAlgorithm) throws IllegalArgumentException {
@@ -271,5 +293,146 @@ public class KMSUtils {
 				sessionConfig.getLocation(), sessionConfig.getKeyRing(), sessionConfig.getKeyId(),
 				sessionConfig.getKeyVersion());
 		return keyVersionName;
+	}
+
+	/**
+	 * Encrypts data using a raw symmetric key.
+	 * 
+	 * @param sessionConfig GCPSession Config
+	 * @param message       The message to encrypt.
+	 * @param token         The authentication token
+	 * @return The encrypted response containing ciphertext and initialization
+	 *         vector.
+	 * @throws Exception Throws Exception, If an error occurs during encryption.
+	 */
+	public EncryptResponse encryptRawSymmetric(GcpSessionConfig sessionConfig, byte[] message, String token)
+			throws Exception {
+		logger.debug("Encrypt Using Raw Symmetric Key");
+		String encodeAAD = Base64.getEncoder().encodeToString(Constants.additionalAuthenticatedData);
+		String encodedMessage = Base64.getEncoder().encodeToString(message);
+		String apiUrl = String.format(
+				"https://cloudkms.googleapis.com/v1/projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s/cryptoKeyVersions/%s:rawEncrypt",
+				sessionConfig.getProjectId(), sessionConfig.getLocation(), sessionConfig.getKeyRing(),
+				sessionConfig.getKeyId(), sessionConfig.getKeyVersion());
+
+		String payload = String.format(
+				"{\"plaintext\": \"%s\", \"additionalAuthenticatedData\": \"%s\"}",
+				encodedMessage, encodeAAD);
+
+		URL url = URI.create(apiUrl).toURL();
+		HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+		connection.setRequestMethod("POST");
+		connection.setRequestProperty("Authorization", "Bearer " + token);
+		connection.setRequestProperty("Content-Type", "application/json");
+		connection.setDoOutput(true);
+
+		try (OutputStream os = connection.getOutputStream()) {
+			byte[] input = payload.getBytes(StandardCharsets.UTF_8);
+			os.write(input, 0, input.length);
+		}
+
+		int responseCode = connection.getResponseCode();
+		if (responseCode == HttpURLConnection.HTTP_OK) {
+			logger.debug("Raw encryption successful");
+			try (var reader = new java.io.BufferedReader(
+					new java.io.InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+				StringBuilder response = new StringBuilder();
+				String line;
+				while ((line = reader.readLine()) != null) {
+					response.append(line.trim());
+				}
+				String responseJson = response.toString();
+				logger.debug("Response JSON: " + responseJson);
+				JsonObject jsonObject = JsonParser.parseString(responseJson).getAsJsonObject();
+				String ciphertext = jsonObject.get("ciphertext").getAsString();
+				String initializeVector = jsonObject.get("initializationVector").getAsString();
+				return new EncryptResponse(ciphertext, initializeVector);
+			}
+		} else {
+			logger.error("Raw encryption failed with HTTP code: " + responseCode);
+			try (var reader = new java.io.BufferedReader(
+					new java.io.InputStreamReader(connection.getErrorStream(), StandardCharsets.UTF_8))) {
+				StringBuilder errorResponse = new StringBuilder();
+				String line;
+				while ((line = reader.readLine()) != null) {
+					errorResponse.append(line.trim());
+				}
+				logger.error("Error Response: " + errorResponse);
+			}
+		}
+
+		throw new IOException("Failed to perform raw encryption. HTTP code: " + responseCode);
+	}
+
+	/**
+	 * Decrypts data using a raw symmetric key.
+	 * 
+	 * @param sessionConfig        GCP Session Config
+	 * @param ciphertext           The ciphertext to decrypt.
+	 * @param initializationVector The initialization vector used during encryption.
+	 * @param token                The authentication token.
+	 * @return The decrypted plaintext as a byte array.
+	 * @throws Exception Throws Exception, If an error occurs during decryption.
+	 */
+	public byte[] decryptRawSymmetric(GcpSessionConfig sessionConfig, byte[] ciphertext, byte[] initializationVector,
+			String token) throws Exception {
+		logger.debug("Decrypt Using Raw Symmetric Key");
+		byte[] decodedCiphertext = Base64.getDecoder().decode(ciphertext);
+		byte[] decodedInitializationVector = Base64.getDecoder().decode(initializationVector);
+		String encodeAAD = Base64.getEncoder().encodeToString(Constants.additionalAuthenticatedData);
+		String encodedCiphertext = Base64.getEncoder().encodeToString(decodedCiphertext);
+		String initializationVectorBase64 = Base64.getEncoder().encodeToString(decodedInitializationVector);
+		String apiUrl = String.format(
+				"https://cloudkms.googleapis.com/v1/projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s/cryptoKeyVersions/%s:rawDecrypt",
+				sessionConfig.getProjectId(), sessionConfig.getLocation(), sessionConfig.getKeyRing(),
+				sessionConfig.getKeyId(), sessionConfig.getKeyVersion());
+
+		String payload = String.format(
+				"{\"ciphertext\": \"%s\", \"additionalAuthenticatedData\": \"%s\", \"initializationVector\": \"%s\"}",
+				encodedCiphertext, encodeAAD, initializationVectorBase64);
+
+		URL url = URI.create(apiUrl).toURL();
+		HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+		connection.setRequestMethod("POST");
+		connection.setRequestProperty("Authorization", "Bearer " + token);
+		connection.setRequestProperty("Content-Type", "application/json");
+		connection.setDoOutput(true);
+
+		try (OutputStream os = connection.getOutputStream()) {
+			byte[] input = payload.getBytes(StandardCharsets.UTF_8);
+			os.write(input, 0, input.length);
+		}
+
+		int responseCode = connection.getResponseCode();
+		if (responseCode == HttpURLConnection.HTTP_OK) {
+			logger.debug("Raw decryption successful");
+			try (var reader = new java.io.BufferedReader(
+					new java.io.InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+				StringBuilder response = new StringBuilder();
+				String line;
+				while ((line = reader.readLine()) != null) {
+					response.append(line.trim());
+				}
+
+				String responseJson = response.toString();
+				logger.debug("Response JSON: " + responseJson);
+				JsonObject jsonObject = JsonParser.parseString(responseJson).getAsJsonObject();
+				String plaintext = jsonObject.get("plaintext").getAsString();
+				return Base64.getDecoder().decode(plaintext);
+			}
+		} else {
+			logger.error("Raw decryption failed with HTTP code: " + responseCode);
+			try (var reader = new java.io.BufferedReader(
+					new java.io.InputStreamReader(connection.getErrorStream(), StandardCharsets.UTF_8))) {
+				StringBuilder errorResponse = new StringBuilder();
+				String line;
+				while ((line = reader.readLine()) != null) {
+					errorResponse.append(line.trim());
+				}
+				logger.error("Error Response: " + errorResponse);
+			}
+		}
+
+		throw new IOException("Failed to perform raw decryption. HTTP code: " + responseCode);
 	}
 }

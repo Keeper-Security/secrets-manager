@@ -50,4 +50,10 @@ public class Constants {
 
 	/** Tag length for GCM mode, in bits. */
 	public static final int GCM_TAG_LENGTH = 96;
+
+	/** Add Additional Authenticate Data in bytes. */
+	public static final byte[] additionalAuthenticatedData = "KeeperSecurity".getBytes();
+
+	/** Cloud API URL */
+	public static final String CLOUD_API_URL = "https://www.googleapis.com/auth/cloud-platform";
 }

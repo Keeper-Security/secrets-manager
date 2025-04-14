@@ -15,6 +15,7 @@ package com.keepersecurity.secretsmanager.gcp;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -23,9 +24,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Map;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.google.auth.oauth2.AccessToken;
+import com.google.auth.oauth2.GoogleCredentials;
 import com.google.protobuf.ByteString;
 import com.keepersecurity.secretsManager.core.KeyValueStorage;
 
@@ -39,6 +43,7 @@ import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.SecretKeySpec;
 
+import org.checkerframework.checker.units.qual.t;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,7 +59,7 @@ public class GcpKeyValueStorage implements KeyValueStorage {
 	private String lastSavedConfigHash, updateConfigHash;
 	private String configFileLocation;
 	private Map<String, Object> configMap;
-
+	private GcpSessionConfig sessionConfig;
 	private KMSUtils kmsClient;
 
 	/**
@@ -71,6 +76,7 @@ public class GcpKeyValueStorage implements KeyValueStorage {
 				: System.getenv("KSM_CONFIG_FILE") != null ? System.getenv("KSM_CONFIG_FILE")
 						: this.defaultConfigFileLocation;
 		kmsClient = new KMSUtils(sessionConfig);
+		this.sessionConfig = sessionConfig;
 		logger.info("GCP Key Management Service Client initiated.");
 		loadConfig();
 	}
@@ -89,6 +95,28 @@ public class GcpKeyValueStorage implements KeyValueStorage {
 			throws Exception {
 		GcpKeyValueStorage storage = new GcpKeyValueStorage(configFileLocation, sessionConfig);
 		return storage;
+	}
+
+	/**
+	 * Retrieves an OAuth token using the provided credentials file.
+	 *
+	 * @param credentialFileWithPath The path to the credentials file.
+	 * @param cloudApiUrl            The scope for which the token is requested.
+	 * @return The OAuth access token as a string.
+	 * @throws IOException If an error occurs while reading the credentials file or
+	 *                     fetching the token.
+	 */
+	public static String getOAuthToken(String credentialFileWithPath, String cloudApiUrl) throws IOException {
+		// Load the credentials from the file
+		GoogleCredentials credentials = GoogleCredentials.fromStream(new FileInputStream(credentialFileWithPath))
+				.createScoped(Collections.singleton(cloudApiUrl));
+
+		// Refresh the token to get a new access token
+		credentials.refreshIfExpired();
+		AccessToken token = credentials.getAccessToken();
+
+		// Return the access token as a string
+		return token.getTokenValue();
 	}
 
 	/**
@@ -156,23 +184,19 @@ public class GcpKeyValueStorage implements KeyValueStorage {
 		}
 	}
 
-	private void save(String configJson, Map<String, Object> updatedConfig) {
+	private void save(String configJson, Map<String, Object> updatedConfig) throws Exception {
 		if (updatedConfig != null && updatedConfig.size() > 0) {
-			try {
-				lastSavedConfigHash = calculateMd5(configJson);
-				String updatedConfigJson = JsonUtil.convertToString(updatedConfig);
-				updateConfigHash = calculateMd5(updatedConfigJson);
-				if (updateConfigHash != lastSavedConfigHash) {
-					lastSavedConfigHash = updateConfigHash;
-					configJson = updatedConfigJson;
-					configMap = JsonUtil.convertToMap(configJson);
-				}
-				byte[] encryptedData = encryptBuffer(configJson);
-				logger.debug("Encrypted json content.");
-				Files.write(Paths.get(configFileLocation), encryptedData);
-			} catch (Exception e) {
-				logger.error("Exception: " + e.getMessage());
+			lastSavedConfigHash = calculateMd5(configJson);
+			String updatedConfigJson = JsonUtil.convertToString(updatedConfig);
+			updateConfigHash = calculateMd5(updatedConfigJson);
+			if (updateConfigHash != lastSavedConfigHash) {
+				lastSavedConfigHash = updateConfigHash;
+				configJson = updatedConfigJson;
+				configMap = JsonUtil.convertToMap(configJson);
 			}
+			byte[] encryptedData = encryptBuffer(configJson);
+			logger.debug("Encrypted json content.");
+			Files.write(Paths.get(configFileLocation), encryptedData);
 		}
 	}
 
@@ -252,6 +276,22 @@ public class GcpKeyValueStorage implements KeyValueStorage {
 			ByteArrayOutputStream blob = new ByteArrayOutputStream();
 			writeLengthPrefixed(blob, encrypted);
 			return blob.toByteArray();
+		} else if (kmsClient.isKeyRAWSymmteric()) {
+			byte[] nonce = new byte[Constants.BLOCK_SIZE];
+			byte[] key = new byte[Constants.KEY_SIZE];
+			Cipher cipher = getGCMCipher(Cipher.ENCRYPT_MODE, key, nonce);
+			byte[] ciphertext = cipher.doFinal(message.getBytes());
+			byte[] tag = cipher.getIV();
+			String token = getOAuthToken(sessionConfig.getCredentialsPath(), Constants.CLOUD_API_URL);
+			EncryptResponse encryptedRawResponse = kmsClient.encryptRawSymmetric(this.sessionConfig, key, token);
+			ByteArrayOutputStream blob = new ByteArrayOutputStream();
+			blob.write(Constants.BLOB_HEADER);
+			writeLengthPrefixed(blob, encryptedRawResponse.getCiphertext().getBytes());
+			writeLengthPrefixed(blob, encryptedRawResponse.getInitializeVector().getBytes());
+			writeLengthPrefixed(blob, nonce);
+			writeLengthPrefixed(blob, tag);
+			writeLengthPrefixed(blob, ciphertext);
+			return blob.toByteArray();
 		} else {
 			byte[] nonce = new byte[Constants.BLOCK_SIZE];
 			byte[] key = new byte[Constants.KEY_SIZE];
@@ -267,6 +307,7 @@ public class GcpKeyValueStorage implements KeyValueStorage {
 			writeLengthPrefixed(blob, nonce);
 			writeLengthPrefixed(blob, tag);
 			writeLengthPrefixed(blob, ciphertext);
+			System.out.println(blob);
 			return blob.toByteArray();
 		}
 	}
@@ -282,7 +323,25 @@ public class GcpKeyValueStorage implements KeyValueStorage {
 			ByteArrayInputStream blobInputStream = new ByteArrayInputStream(encryptedData);
 			byte[] encrypted = readLengthPrefixed(blobInputStream);
 			return kmsClient.decryptSymmetric(ByteString.copyFrom(encrypted));
+		} else if (kmsClient.isKeyRAWSymmteric()) {
+			ByteArrayInputStream blobInputStream = new ByteArrayInputStream(encryptedData);
 
+			byte[] header = new byte[Constants.BLOB_HEADER.length];
+			blobInputStream.read(header);
+			if (!MessageDigest.isEqual(header, Constants.BLOB_HEADER)) {
+				throw new IllegalArgumentException("Invalid blob header");
+			}
+			byte[] decryptedKey = readLengthPrefixed(blobInputStream);
+			byte[] initializationVector = readLengthPrefixed(blobInputStream);
+			byte[] nonce = readLengthPrefixed(blobInputStream);
+			byte[] tag = readLengthPrefixed(blobInputStream);
+			byte[] ciphertext = readLengthPrefixed(blobInputStream);
+
+			String token = getOAuthToken(sessionConfig.getCredentialsPath(), Constants.CLOUD_API_URL);
+			byte[] key = kmsClient.decryptRawSymmetric(this.sessionConfig, decryptedKey, initializationVector, token);
+			Cipher cipher = getGCMCipher(Cipher.DECRYPT_MODE, key, nonce);
+			byte[] decryptedMessage = cipher.doFinal(ciphertext);
+			return new String(decryptedMessage, StandardCharsets.UTF_8);
 		} else {
 			ByteArrayInputStream blobInputStream = new ByteArrayInputStream(encryptedData);
 

@@ -157,3 +157,62 @@ public class GcpSessionConfig {
 		this.credentialsPath = credentialsPath;
 	}
 }
+
+/**
+ * The {@code EncryptResponse} class represents the response
+ * of an encryption operation, including the ciphertext and
+ * initialization vector.
+ */
+class EncryptResponse {
+
+	private String ciphertext;
+	private String initializeVector;
+
+	/**
+	 * Constructs a new {@code EncryptResponse} object with the specified
+	 * ciphertext and initialization vector.
+	 *
+	 * @param ciphertext       The encrypted text.
+	 * @param initializeVector The initialization vector used in encryption.
+	 */
+	public EncryptResponse(String ciphertext, String initializeVector) {
+		this.ciphertext = ciphertext;
+		this.initializeVector = initializeVector;
+	}
+
+	/**
+	 * Gets the encrypted text (ciphertext).
+	 *
+	 * @return The ciphertext.
+	 */
+	public String getCiphertext() {
+		return ciphertext;
+	}
+
+	/**
+	 * Sets the encrypted text (ciphertext).
+	 *
+	 * @param ciphertext The ciphertext to set.
+	 */
+	public void setCiphertext(String ciphertext) {
+		this.ciphertext = ciphertext;
+	}
+
+	/**
+	 * Gets the initialization vector used in encryption.
+	 *
+	 * @return The initialization vector.
+	 */
+	public String getInitializeVector() {
+		return initializeVector;
+	}
+
+	/**
+	 * Sets the initialization vector used in encryption.
+	 *
+	 * @param initializeVector The initialization vector to set.
+	 */
+	public void setInitializeVector(String initializeVector) {
+		this.initializeVector = initializeVector;
+	}
+}
