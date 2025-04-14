@@ -292,6 +292,7 @@ export class AWSKeyValueStorage implements KeyValueStorage {
         Object.keys(this.config),
         DEFAULT_JSON_INDENT
       );
+      const configPath = resolve(this.configFileLocation);
       const blob = await encryptBuffer({
         keyId: this.keyId,
         encryptionAlgorithm: this.encryptionAlgorithm,
@@ -299,8 +300,10 @@ export class AWSKeyValueStorage implements KeyValueStorage {
         cryptoClient: this.cryptoClient,
         keyType: this.keyType,
       }, this.logger);
-      await fs.writeFile(this.configFileLocation, blob);
 
+      if (blob.length > 0) {
+        await fs.writeFile(configPath, blob);
+      }
       // Update the last saved config hash
       this.lastSavedConfigHash = configHash;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -415,6 +418,8 @@ export class AWSKeyValueStorage implements KeyValueStorage {
       } catch {
         await fs.mkdir(process.cwd(), { recursive: true }); // Use the working directory as fallback
       }
+      const configPath = resolve(this.configFileLocation);
+      await fs.writeFile(configPath, Buffer.from("{}"));
 
       // Encrypt an empty configuration and write to the file
       const blob = await encryptBuffer({
@@ -424,8 +429,10 @@ export class AWSKeyValueStorage implements KeyValueStorage {
         keyType: this.keyType,
         cryptoClient: this.cryptoClient,
       }, this.logger);
-      const configPath = resolve(this.configFileLocation);
-      await fs.writeFile(configPath, blob);
+
+      if (blob.length > 0) {
+        await fs.writeFile(configPath, blob);
+      }
       this.logger.info(`Config file created at: ${configPath}`);
     }
   }

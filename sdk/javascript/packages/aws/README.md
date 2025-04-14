@@ -29,7 +29,7 @@ Alternatively, configuration variables can be provided explicitly as an access k
 
 You will need an AWS Access Key to use the AWS KMS integration.
 
-For more information on AWS Access Keys see the AWS documentation: https://aws.amazon.com/premiumsupport/knowledge-center/create-access-key/
+For more information on AWS Access Keys see the [AWS documentation](https://aws.amazon.com/premiumsupport/knowledge-center/create-access-key/)
 
 3. Add AWS KMS Storage to Your Code
 
@@ -79,11 +79,8 @@ The storage will require an AWS Key ID, as well as the name of the Secrets Manag
     const getKeeperRecordsAWS = async () => {
 
         const awsSessionConfig2 = new AWSSessionConfig();
-    
-        let config_path = "<path to client-config-aws.json>";
-        
+        let config_path = "<path to client-config-aws.json>";        
         const oneTimeToken = "US:kYKVGFJ2605-9UBF4VXd14AztMPXcxZ56zC9gr7O-Cw";
-        
         const keyId = 'arn:aws:kms:ap-south-1:<accountName>:key/<keyId>';
         const keyId2 = "arn:aws:kms:<cloud-region>:<accountNumber>:key/<keyId2>"
         const storage = await new AWSKeyValueStorage(keyId,config_path).init();
