@@ -1,12 +1,15 @@
 import { KeyManagementServiceClient } from "@google-cloud/kms";
+import { JWT } from 'google-auth-library';
 import { GCPKeyValueStorageError } from "./error";
 import pino from "pino";
 import { getLogger } from "./Logger";
-import { DEFAULT_LOG_LEVEL } from "./constants";
+import { DEFAULT_LOG_LEVEL, SCOPES } from "./constants";
+import { readFileSync } from "fs";
 
 export class GCPKSMClient {
   private logger: pino.Logger;
-  private KMSClient;
+  private KMSClient: KeyManagementServiceClient | null = null;
+  private credentials: JWT | null = null;
 
 
   /**
@@ -47,9 +50,23 @@ export class GCPKSMClient {
 
   public createClientFromCredentialsFile(credentialsKeyFilePath: string) {
     this.logger.debug(`Creating KMS client using credentials file: ${credentialsKeyFilePath}`);
-    this.KMSClient = new KeyManagementServiceClient({
-      keyFilename: credentialsKeyFilePath,
+
+    const rawKeyFile = readFileSync(credentialsKeyFilePath, 'utf-8');
+    const keyFileJson = JSON.parse(rawKeyFile);
+
+    this.credentials = new JWT({
+      email: keyFileJson.client_email,
+      key: keyFileJson.private_key,
+      scopes: SCOPES,
     });
+
+    this.KMSClient = new KeyManagementServiceClient({
+      credentials: {
+        client_email: keyFileJson.client_email,
+        private_key: keyFileJson.private_key,
+      }
+    });
+
     return this;
   }
 
@@ -70,11 +87,16 @@ export class GCPKSMClient {
 
   public createClientUsingCredentials(clientEmail: string, privateKey: string) {
     this.logger.debug(`Creating KMS client using credentials: ${clientEmail}`);
+    this.credentials = new JWT({
+      email: clientEmail,
+      key: privateKey,
+      scopes: SCOPES,
+    });
     this.KMSClient = new KeyManagementServiceClient({
       credentials: {
         client_email: clientEmail,
-        private_key: privateKey,
-      },
+        private_key: privateKey
+      }
     });
     return this;
   }
@@ -91,5 +113,15 @@ export class GCPKSMClient {
       throw new GCPKeyValueStorageError("KMS client not initialized. Please call createClientFromCredentialsFile or createClientUsingCredentials first.");
     }
     return this.KMSClient;
+  }
+
+  public async getToken() {
+    this.logger.debug("Getting KMS client");
+    if (!this.KMSClient) {
+      this.logger.error("KMS client not initialized. Neither createClientFromCredentialsFile nor createClientUsingCredentials have been called first.");
+      throw new GCPKeyValueStorageError("KMS client not initialized. Please call createClientFromCredentialsFile or createClientUsingCredentials first.");
+    }
+    const token = await this.credentials?.authorize();
+    return token?.access_token;
   }
 }

@@ -200,14 +200,22 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         jsonError = err;
       }
 
+
       if (jsonError) {
+        let token: string | null | undefined = null;
+        if (this.keyType === "RAW_ENCRYPT_DECRYPT") {
+          this.logger.debug("using raw symmetric key to encrypt the config.");
+          token = await this.gcpSessionConfig.getToken();
+        }
+
         const configJson = await decryptBuffer({
           isAsymmetric: this.isAsymmetric,
           ciphertext: contents,
           cryptoClient: this.cryptoClient,
           keyType: this.keyType,
           encryptionAlgorithm: this.encryptionAlgorithm,
-          keyProperties: this.gcpKeyConfig
+          keyProperties: this.gcpKeyConfig,
+          token
         }, this.logger);
         this.logger.debug("decrypted configuration, trying to parse decrypted configuration into a json");
         try {
@@ -297,15 +305,25 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         DEFAULT_JSON_INDENT
       );
       this.logger.debug("encrypting the config before writing to file.");
+
+      let token: string | null | undefined = null;
+      if (this.keyType === "RAW_ENCRYPT_DECRYPT") {
+        this.logger.debug("using raw symmetric key to encrypt the config.");
+        token = await this.gcpSessionConfig.getToken();
+      }
+
       const blob = await encryptBuffer({
         isAsymmetric: this.isAsymmetric,
         message: stringifiedValue,
         cryptoClient: this.cryptoClient,
         keyType: this.keyType,
         encryptionAlgorithm: this.encryptionAlgorithm,
-        keyProperties: this.gcpKeyConfig
+        keyProperties: this.gcpKeyConfig,
+        token: token
       }, this.logger);
-      await fs.writeFile(this.configFileLocation, blob);
+      if (blob.length > 0) {
+        await fs.writeFile(this.configFileLocation, blob);
+      }
       this.logger.debug("writing to the file completed successfully.");
       // Update the last saved config hash
       this.lastSavedConfigHash = configHash;
@@ -334,7 +352,13 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       throw new GCPKeyValueStorageError(`Failed to load config file ${this.configFileLocation.toString()}`);
     }
 
+
     try {
+      let token: string | null | undefined = null;
+      if (this.keyType === "RAW_ENCRYPT_DECRYPT") {
+        this.logger.debug("using raw symmetric key to encrypt the config.");
+        token = await this.gcpSessionConfig.getToken();
+      }
       // Decrypt the file contents
       plaintext = await decryptBuffer({
         isAsymmetric: this.isAsymmetric,
@@ -342,6 +366,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         keyType: this.keyType,
         encryptionAlgorithm: this.encryptionAlgorithm,
         keyProperties: this.gcpKeyConfig,
+        token: token,
         ciphertext,
       }, this.logger);
       if (plaintext.length === 0) {
@@ -352,7 +377,10 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         // Optionally autosave the decrypted content
         this.logger.debug("Autosave is true here. hence saving to file the decrypted configuration.");
         this.logger.warn("Saving the credentials file as plaintext file, please consider encrypting.");
-        await fs.writeFile(this.configFileLocation, plaintext);
+        if (plaintext.length > 0) {
+          this.logger.error("saving the credentials file as plaintext file, please consider encrypting.");
+          await fs.writeFile(this.configFileLocation, plaintext);
+        }
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
@@ -420,7 +448,14 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       } catch {
         await fs.mkdir(process.cwd(), { recursive: true }); // Use the working directory as fallback
       }
+      const configPath = resolve(this.configFileLocation);
+      await fs.writeFile(configPath, Buffer.from("{}"));
 
+      let token: string | null | undefined = null;
+      if (this.keyType === "RAW_ENCRYPT_DECRYPT") {
+        this.logger.debug("using raw symmetric key to encrypt the config.");
+        token = await this.gcpSessionConfig.getToken();
+      }
       // Encrypt an empty configuration and write to the file
       const blob = await encryptBuffer({
         isAsymmetric: this.isAsymmetric,
@@ -428,10 +463,12 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         keyType: this.keyType,
         cryptoClient: this.cryptoClient,
         encryptionAlgorithm: this.encryptionAlgorithm,
-        keyProperties: this.gcpKeyConfig
+        keyProperties: this.gcpKeyConfig,
+        token: token
       }, this.logger);
-      const configPath = resolve(this.configFileLocation);
-      await fs.writeFile(configPath, blob);
+      if (blob.length > 0) {
+        await fs.writeFile(configPath, blob);
+      }
       this.logger.info(`Config file created at: ${configPath}`);
     }
   }

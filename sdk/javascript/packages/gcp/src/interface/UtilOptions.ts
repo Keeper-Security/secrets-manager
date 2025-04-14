@@ -8,6 +8,7 @@ export interface Options {
   cryptoClient: KMSClient;
   keyProperties: GCPKeyConfig;
   encryptionAlgorithm: string;
+  token?: string | null | undefined;
 };
 
 export interface BufferOptions extends Options {

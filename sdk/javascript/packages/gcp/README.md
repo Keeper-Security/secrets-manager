@@ -26,13 +26,13 @@ The Secrets Manager GCP KSM module can be installed using npm
 
 By default the @google-cloud/kms library will utilize the default connection session setup with the GCP CLI with the gcloud auth command.  If you would like to specify the connection details, the two configuration files located at `~/.config/gcloud/configurations/config_default` and `~/.config/gcloud/legacy_credentials/<user>/adc.json` can be manually edited.
 
-See the GCP documentation for more information on setting up an GCP session (https://cloud.google.com/sdk/gcloud/reference/auth)[here]
+See the GCP documentation for more information on setting up an GCP session [here](https://cloud.google.com/sdk/gcloud/reference/auth)
 
 Alternatively, configuration variables can be provided explicitly as a service account file using the GcpSessionConfig data class and providing  a path to the service account json file.
 
 You will need a GCP service account to use the GCP KMS integration.
 
-For more information on GCP service accounts see the (https://cloud.google.com/iam/docs/service-accounts)[GCP documentation]
+For more information on GCP service accounts see the [GCP documentation](https://cloud.google.com/iam/docs/service-accounts)
 
 3. Add GCP KMS Storage to Your Code
 
@@ -40,23 +40,24 @@ Now that the GCP connection has been configured, you need to tell the Secrets Ma
 
 To do this, use GcpKmsKeyValueStorage as your Secrets Manager storage in the SecretsManager constructor.
 
-The storage will require a GCP Key ID, as well as the name of the Secrets Manager configuration file which will be encrypted by GCP KMS.
+The storage will require a GCP Key ID, as well as the name of the Secrets Manager configuration file which will be encrypted by GCP KMS. We need to make sure that key version is present in key ID provided.
 ```
     import {GCPKeyValueStorage,GCPKeyConfig,GCPKSMClient,LoggerLogLevelOptions} from "@keeper-security/secrets-manager-gcp";
 
     const getKeeperRecordsGCP = async () => {
 
+        // example key : projects/<project>/locations/<location>/keyRings/<key>/cryptoKeys/<key_name>/cryptoKeyVersions/<key_version>
         const keyConfig2  = new GCPKeyConfig("<key_version_resource_url_1>");
         const keyConfig = new GCPKeyConfig("key_version_resource_url_2");
         console.log("extracted key details")
         const gcpSessionConfig = new GCPKSMClient().createClientFromCredentialsFile('<gcp_credentials_json_location>')
         console.log("extracted gcp session config")
         let config_path = "<path to client-config-gcp.json>"
-        let logLevel = LoggerLogLevelOptions.debug;
+        let logLevel = LoggerLogLevelOptions.<log level>;
 
         // oneTimeToken is used only once to initialize the storage
         // after the first run, subsequent calls will use ksm-config.txt
-        const oneTimeToken = "US:kYKVGFJ2605-9UBF4VXd14AztMPXcxZ56zC9gr7O-Cw";
+        const oneTimeToken = "<one time token>";
         
         const storage = await new GCPKeyValueStorage(config_path,keyConfig2,gcpSessionConfig,logLevel).init();
         await initializeStorage(storage, oneTimeToken);
@@ -83,7 +84,7 @@ You can change the key used to encrypt and decrypt your configuration file by ca
 We can decrypt the configuration file and revert it back to plaintext and save it in default location if needed.
 ```
   const storage = await new GCPKeyValueStorage(configPath,keyConfig,gcpSessionConfig).init();
-  await storage.decryptConfig(keyConfig2);
+  await storage.decryptConfig(true);
 ```
 
 ## Logging
@@ -94,8 +95,9 @@ We support logging for the AWS KSM integration. Supported log levels are as foll
 * warn
 * error
 * fatal
-All these levels should be accessed from the LoggerLogLevelOptions enum. If no log level is set, the default log level is info. We can set the logging level to debug to get more information about the integration.
 
+All these levels should be accessed from the `LoggerLogLevelOptions` enum. If no log level is set, the default log level is `info`. We can set the logging level to debug to get more information about the integration.
+`
 You're ready to use the KSM integration 👍
 Using the GCP KMS Integration
 

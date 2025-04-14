@@ -15,11 +15,15 @@ import {
     SHA_1,
     UTF_8_ENCODING,
     SHA_512,
+    ADDITIONAL_AUTHENTICATION_DATA,
+    RAW_ENCRYPT_GCP_API_URL,
+    RAW_DECRYPT_GCP_API_URL,
 } from "./constants";
 import { publicEncrypt } from "crypto";
 import { RSA_PKCS1_OAEP_PADDING } from "constants";
 import { GCPKeyValueStorageError } from "./error";
 import pino from "pino";
+import axios from "axios";
 
 
 export async function encryptBuffer(
@@ -47,9 +51,10 @@ export async function encryptBuffer(
             keyProperties: options.keyProperties,
             isAsymmetric: options.isAsymmetric,
             encryptionAlgorithm: options.encryptionAlgorithm,
+            token: options.token
         };
 
-        const CiphertextBlob: Buffer = options.isAsymmetric ? await encryptDataAndValidateCRCAsymmetric(encryptOptions, logger) : await encryptDataAndValidateCRC(encryptOptions, logger);
+        const CiphertextBlob: Buffer = options.isAsymmetric ? await encryptDataAndValidateCRCAsymmetric(encryptOptions, logger) : (options.token ? await encryptDataSymmetricRaw(encryptOptions, logger) : await encryptDataAndValidateCRC(encryptOptions, logger));
 
         const parts = [CiphertextBlob, nonce, tag, ciphertext];
 
@@ -64,7 +69,7 @@ export async function encryptBuffer(
         return Buffer.concat(buffers);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
-        logger.error("KCP KMS Storage failed to encrypt:", err.message);
+        logger.warn("KCP KMS Storage failed to encrypt:", err.message);
         return Buffer.alloc(0); // Return empty buffer in case of an error
     }
 }
@@ -111,6 +116,67 @@ async function encryptDataAndValidateCRCAsymmetric(
     );
     logger.debug("Encryption using asymmetric key provided successful.");
     return ciphertextBuffer;
+}
+
+export async function encryptDataSymmetricRaw(
+    options: encryptOptions,
+    logger: pino.Logger
+): Promise<Buffer> {
+    logger.debug('Trying to extract resource name');
+    const keyName = options.keyProperties.toResourceName();
+
+    logger.debug('Trying to encrypt data with given resource name %s', keyName);
+
+    const additionalData = Buffer.from(ADDITIONAL_AUTHENTICATION_DATA, 'utf-8');
+    const encodedMessage = options.message;
+
+    const payload = {
+        plaintext: encodedMessage.toString('base64'),
+        additionalAuthenticatedData: additionalData.toString('base64')
+    };
+
+    const apiUrl = RAW_ENCRYPT_GCP_API_URL.replace('{}', keyName);
+
+    try {
+        const response = await axios.post(apiUrl, payload, {
+            headers: {
+                Authorization: `Bearer ${options.token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        logger.debug('rawEncrypt API call completed successfully');
+
+        const result = response.data;
+
+        if (!result.ciphertext || !result.initializationVector) {
+            logger.error('Failed to parse response from rawEncrypt API call');
+            throw new Error('Failed to parse response from rawEncrypt API call');
+        }
+
+        const ciphertext = Buffer.from(result.ciphertext, 'base64');
+        const initializationVector = Buffer.from(result.initializationVector, 'base64');
+
+        const encryptedData = Buffer.concat([initializationVector, ciphertext]);
+
+        // 2-byte big endian length prefix
+        const lengthPrefix = Buffer.alloc(2);
+        lengthPrefix.writeUInt16BE(encryptedData.length, 0);
+
+        logger.debug('Raw encryption completed, concatenating data with length prefix');
+        return Buffer.concat([lengthPrefix, encryptedData]);
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+        logger.error(
+            'rawEncrypt API call failed with status: %s, response: %s',
+            error.response?.status,
+            error.response?.data
+        );
+        throw new Error(
+            `rawEncrypt API call failed with status: ${error.response?.status}, response: ${JSON.stringify(error.response?.data)}`
+        );
+    }
 }
 
 async function encryptDataAndValidateCRC(
@@ -191,6 +257,7 @@ export async function decryptBuffer(
             keyProperties: options.keyProperties,
             isAsymmetric: options.isAsymmetric,
             encryptionAlgorithm: options.encryptionAlgorithm,
+            token: options.token
         }, logger);
 
         const key = decryptedData;
@@ -207,8 +274,69 @@ export async function decryptBuffer(
         return decrypted.toString(UTF_8_ENCODING);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
-        logger.error("Google KMS KeyVault Storage failed to decrypt:", err.message);
+        logger.warn("Google KMS KeyVault Storage failed to decrypt:", err.message);
         return ""; // Return empty string in case of an error
+    }
+}
+
+export async function decryptDataSymmetricRaw(
+    options: decryptOptions,
+    logger: pino.Logger
+): Promise<Buffer> {
+    logger.debug('Trying to extract resource name');
+    const keyName = options.keyProperties.toResourceName();
+
+    logger.debug(`Trying to decrypt data with given resource name ${keyName}`);
+    const additionalData = Buffer.from(ADDITIONAL_AUTHENTICATION_DATA, 'utf-8');
+
+    const encryptedData = options.cipherText;
+
+    if (encryptedData.length < 14) {
+        logger.error('Invalid ciphertext structure: size buffer length mismatch.');
+        throw new Error('Invalid ciphertext structure: size buffer length mismatch.');
+    }
+
+    const initializationVector = encryptedData.subarray(2, 14);
+    const ciphertext = encryptedData.subarray(14);
+
+    const payload = {
+        ciphertext: ciphertext.toString('base64'),
+        additionalAuthenticatedData: additionalData.toString('base64'),
+        initializationVector: initializationVector.toString('base64')
+    };
+
+    const apiUrl = RAW_DECRYPT_GCP_API_URL.replace('{}', keyName);
+
+    try {
+        const response = await axios.post(apiUrl, payload, {
+            headers: {
+                Authorization: `Bearer ${options.token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        logger.debug('rawDecrypt API call completed successfully');
+
+        const result = response.data;
+
+        if (!result.plaintext) {
+            logger.error('Failed to parse response from rawDecrypt API call');
+            throw new Error('Failed to parse response from rawDecrypt API call');
+        }
+
+        logger.debug('Raw decryption completed');
+        return Buffer.from(result.plaintext, 'base64');
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+        logger.error(
+            'rawDecrypt API call failed with status: %s, response: %s',
+            error.response?.status,
+            error.response?.data
+        );
+        throw new Error(
+            `rawDecrypt API call failed with status: ${error.response?.status}, response: ${JSON.stringify(error.response?.data)}`
+        );
     }
 }
 
@@ -235,6 +363,10 @@ async function decryptDataAndValidateCRC(
         const [decryptResponse] = await KMSClient.asymmetricDecrypt(input);
         decryptResponseData = decryptResponse;
     } else {
+        if (options.token) {
+            const plaintext = await decryptDataSymmetricRaw(options, logger);
+            return plaintext;
+        }
         logger.debug(`decrypting using symmetric key ${keyName}`);
         const [decryptResponse] = await KMSClient.decrypt(input);
         decryptResponseData = decryptResponse;
