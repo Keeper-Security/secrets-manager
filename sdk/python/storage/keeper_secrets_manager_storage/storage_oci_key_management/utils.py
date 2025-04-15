@@ -14,7 +14,6 @@ import traceback
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 from .constants import BLOB_HEADER, UTF_8_ENCODING
-from oci.exceptions import ServiceError
 
 
 try:
@@ -27,32 +26,34 @@ except ImportError:
     raise Exception(f"Missing import dependencies: oci. Additional data related to error is as follows: {traceback.format_exc()}")
 
 
-def encrypt_buffer(key_id, message, crypto_client, key_version_id=None, is_asymmetric=False):
+def encrypt_buffer(key_id, message, crypto_client, key_version_id=None, is_asymmetric=False,logger=None):
     try:
-        # Generate a random 32-byte key
+        logger.debug("Encrypting data using encrypt_buffer")
         key = get_random_bytes(32)
 
-        # Create AES-GCM cipher instance
         cipher = AES.new(key, AES.MODE_GCM)
 
-        # Encrypt the message
         ciphertext, tag = cipher.encrypt_and_digest(
             message.encode())
-
+        logger.debug("symmetric encryption using generated AES key is successful")
     
+        logger.debug("generating encrypt data details payload")
         encrypt_data_details= EncryptDataDetails(
                 key_id= key_id,
                 plaintext= base64.b64encode(key).decode(UTF_8_ENCODING),
             )
         if key_version_id:
+            logger.debug("key version id is set")
             encrypt_data_details.key_version_id = key_version_id
 
         if is_asymmetric:
+            logger.debug("asymmetric encryption is being used")
             encrypt_data_details.encryption_algorithm = EncryptDataDetails.ENCRYPTION_ALGORITHM_RSA_OAEP_SHA_256
 
         encrypt_response = crypto_client.encrypt(encrypt_data_details)
         encrypted_key = base64.b64decode(encrypt_response.data.ciphertext)
-
+        logger.debug("symmetric encryption using generated AES key is successful")
+        
         parts = [encrypted_key, cipher.nonce, tag, ciphertext]
 
         buffers = bytearray()
@@ -64,11 +65,12 @@ def encrypt_buffer(key_id, message, crypto_client, key_version_id=None, is_asymm
 
         return buffers
     except Exception as err:
-        print(f"KCP KMS Storage failed to encrypt: {err}")
+        logger.warning(f"KCP KMS Storage failed to encrypt: {err}")
         return b''  # Return empty buffer in case of an error
 
-def decrypt_buffer(key_id : str, ciphertext : str,  crypto_client: KmsCryptoClient, key_version_id: str, is_asymmetric=False):
+def decrypt_buffer(key_id : str, ciphertext : str,  crypto_client: KmsCryptoClient, key_version_id: str, is_asymmetric=False,logger=None):
     try:
+        logger.debug("Decrypting data using decrypt_buffer,Validating blob header.")
         # Validate BLOB_HEADER
         header = ciphertext[:2]
         if header != BLOB_HEADER:
@@ -89,20 +91,25 @@ def decrypt_buffer(key_id : str, ciphertext : str,  crypto_client: KmsCryptoClie
                 if len(buf) == buflen:
                     parts.append(buf)
                 else:
-                    logging.error("Decryption buffer contains incomplete data.")
+                    logger.error("Decryption buffer contains incomplete data.")
                     raise ValueError("Decryption buffer contains incomplete data.")
 
         encrypted_key, nonce, tag, encrypted_text = parts
+        logger.debug(" extracted encrypted key from encrypted buffer data")
 
         decrpt_data  = DecryptDataDetails(key_id= key_id, ciphertext= base64.b64encode(encrypted_key).decode())
+        
         if key_version_id:
+            logger.debug("key version id is set for decryption")
             decrpt_data.key_version_id = key_version_id
         
         if is_asymmetric:
+            logger.debug("asymmetric decryption is being used for decryption")
             decrpt_data.encryption_algorithm = DecryptDataDetails.ENCRYPTION_ALGORITHM_RSA_OAEP_SHA_256
         
         encrypt_response = crypto_client.decrypt(decrypt_data_details=decrpt_data)
         key = base64.b64decode(encrypt_response.data.plaintext)
+        logger.info("decryption successful, key is to be extracted")
         
         # Decrypt the message using AES-GCM
         cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
@@ -111,5 +118,5 @@ def decrypt_buffer(key_id : str, ciphertext : str,  crypto_client: KmsCryptoClie
         # Convert decrypted data to a UTF-8 string
         return decrypted.decode()
     except Exception as err:
-        print(f"Oracle KMS KeyVault Storage failed to decrypt: {err}")
+        logger.warning(f"Oracle KMS KeyVault Storage failed to decrypt: {err}")
         return ""  # Return empty string in case of an error

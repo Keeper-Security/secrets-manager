@@ -23,7 +23,7 @@ The Secrets Manager OCI KSM module can be installed using pip
 
 By default the oci library will utilize the default connection session setup located at `/home/<user>/.oci/config`.
 
-See the OCI (documentation)[https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm] for more information on setting up an OCI session.
+See the OCI [documentation](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm) for more information on setting up an OCI session.
 
 Alternatively, configuration variables can be provided explicitly as a service account file using the `OCISessionConfig` data class and providing  a path to the service account json file, profile name, and ksm endpoint name.
 

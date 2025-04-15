@@ -76,7 +76,9 @@ class OracleKeyValueStorage(KeyValueStorage):
                 dir_path = os.path.dirname(self.config_file_location)
                 if not os.path.exists(dir_path):
                     os.makedirs(dir_path, exist_ok=True)
-
+                with open(self.config_file_location, 'wb') as config_file:
+                    config_file.write(b"{}")
+                    self.logger.info(f"Config file created at: {self.config_file_location}")
                 # Encrypt an empty configuration and write to the file
                 empty_config = "{}"
                 blob = encrypt_buffer(
@@ -84,10 +86,12 @@ class OracleKeyValueStorage(KeyValueStorage):
                     message=empty_config,
                     crypto_client=self.crypto_client,
                     key_version_id=self.key_version_id,
-                    is_asymmetric=self.is_asymmetric
+                    is_asymmetric=self.is_asymmetric,
+                    logger = self.logger
                 )
-                with open(self.config_file_location, 'wb') as config_file:
-                    config_file.write(blob)
+                if len(blob) != 0:    
+                    with open(self.config_file_location, 'wb') as config_file:
+                        config_file.write(blob)
                 self.logger.info(
                     f"Config file created at: {self.config_file_location}")
             else:
@@ -121,7 +125,8 @@ class OracleKeyValueStorage(KeyValueStorage):
                 ciphertext=ciphertext,
                 crypto_client=self.crypto_client,
                 key_version_id=self.key_version_id,
-                is_asymmetric=self.is_asymmetric
+                is_asymmetric=self.is_asymmetric,
+                logger= self.logger
             )
             if len(plaintext) == 0:
                 self.logger.error(
@@ -175,11 +180,12 @@ class OracleKeyValueStorage(KeyValueStorage):
                 message=stringified_value,
                 crypto_client=self.crypto_client,
                 key_version_id=self.key_version_id,
-                is_asymmetric=self.is_asymmetric
+                is_asymmetric=self.is_asymmetric,
+                logger = self.logger
             )
-            with open(self.config_file_location, 'wb') as config_file:
-                config_file.write(blob)
-
+            if len(blob)!=0:
+                with open(self.config_file_location, 'wb') as config_file:
+                    config_file.write(blob)
             # Update the last saved config hash
             self.last_saved_config_hash = config_hash
 
@@ -231,7 +237,8 @@ class OracleKeyValueStorage(KeyValueStorage):
                     ciphertext=contents,
                     crypto_client=self.crypto_client,
                     key_version_id=self.key_version_id,
-                    is_asymmetric=self.is_asymmetric
+                    is_asymmetric=self.is_asymmetric,
+                    logger = self.logger
                 )
                 try:
                     config = json.loads(config_json)
