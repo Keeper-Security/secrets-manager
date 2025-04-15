@@ -168,41 +168,40 @@ To do this, use AwsKeyValueStorage as your Secrets Manager storage in the Secret
 The storage will require an AWS Key ID, as well as the name of the Secrets Manager configuration file which will be encrypted by AWS KMS. Below is the sample Test class
 
 ```
-import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider;
 import com.keepersecurity.secretmanager.aws.kms.AwsKeyValueStorage;
 import com.keepersecurity.secretmanager.aws.kms.AwsSessionConfig;
-import com.keepersecurity.secretsManager.core.InMemoryStorage;
+import com.keepersecurity.secretsManager.core.KeeperSecrets;
 import com.keepersecurity.secretsManager.core.SecretsManager;
 import com.keepersecurity.secretsManager.core.SecretsManagerOptions;
 import static com.keepersecurity.secretsManager.core.SecretsManager.initializeStorage;
-
 import software.amazon.awssdk.regions.Region;
 
-import java.security.Security;
-import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider;
-
-		class Test{
-		   public static void main(String args[]){
-		  			String keyId = "<Key ID>";
-				    String awsAccessKeyId = "<AWS Access ID>";
-				    String awsSecretAccessKey = "<AWS Secret>";
-				    String oneTimeToken = "[One Time Token]";
-				    Region region = Region.<cloud-region>;
-				    String profile = null OR "DEFAULT";     //set profile (ex. DEFUALT/UAT/PROD) if ~/.aws/config is et
-				    String configFileLocation = "client_config_test.json";
-				try{
-		    			//set AWS configuration, It can be null if profile is set for aws credentials
-				    AwsSessionConfig sessionConfig = new AwsSessionConfig(awsAccessKeyId, awsSecretAccessKey);
-				    //Get Storage 
-			  		AwsKeyValueStorage awskvstorage =  new AwsKeyValueStorage(keyId, configFileLocation, profile, sessionConfig, region);
-				 	initializeStorage(awskvstorage, oneTimeToken);
-			       SecretsManagerOptions options = new SecretsManagerOptions(awskvstorage);
-			    	 	//getSecrets(OPTIONS);
-				}catch (Exception e) {
-		  			  System.out.println(e.getMessage());
-		 		}
-	 	  }
-	 	}
-
-			
+public class AWSTest {
+    public static void main(String args[]) {
+		// arn:<partition>:kms:<region>:<account-id>:key/<key_id>
+        String keyId = "key_id";
+        String awsAccessKeyId = "client_id";
+        String awsSecretAccessKey = "client_secret";
+        String oneTimeToken = "one_time_token";
+        Region region = Region.cloud_region;
+        String updateKeyId = "key_id";
+        String profile = null; // OR "DEFAULT"; // set profile (ex. DEFUALT/UAT/PROD) if ~/.aws/config is set
+        String configFileLocation = "client_config_test.json";
+        try {
+            AwsSessionConfig sessionConfig = new AwsSessionConfig(awsAccessKeyId, awsSecretAccessKey);
+            AwsKeyValueStorage awskvstorage = new AwsKeyValueStorage(keyId, configFileLocation, profile, sessionConfig, region);
+            initializeStorage(awskvstorage, oneTimeToken);
+            SecretsManagerOptions options = new SecretsManagerOptions(awskvstorage);
+            KeeperSecrets secrets = SecretsManager.getSecrets(options);
+            System.out.println(secrets.getRecords());
+            boolean isChanged = awskvstorage.changeKey(updateKeyId);
+            System.out.println("Key changed: " + isChanged);
+            String decryptConfig = awskvstorage.decryptConfig(true);
+            System.out.println("Decrypt config: " + decryptConfig);
+            // getSecrets(OPTIONS);
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+    }
+}	
 ```
