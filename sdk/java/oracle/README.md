@@ -98,14 +98,21 @@ dependencies {
 Initilaizes OracleKeyValueStorage configuration variables can be provided as
 
 ```
-    import com.keepersecurity.secretmanager.oracle.kv.OracleSessionConfig;
-    
-    String configPath = <~/.oci/config>
-    String kmsEndpoint="<OCI KMS ENDPOINT>" 
-    String vaultId="<OCI VAULT ID>"
-    String keyId="<OCI KEY ID>"
-    String keyVersionId="<OCI KEY VERSION>"
-    OracleSessionConfig sessionConfig = public OracleSessionConfig(configPath, kmsEndpoint, vaultId, keyId, keyVersionId) 
+import com.keepersecurity.secretmanager.oracle.kv.OracleSessionConfig;
+import com.oracle.bmc.Region;
+
+String configPath = "</.oci/config>";
+String managementEndpoint = "https://<>-management.kms.<>.oraclecloud.com";
+String cryptoEndpoint = "https://<>-management.kms.<>.oraclecloud.com";
+String vaultId = "ocid1.vault.<>.<>.<>.<>";
+String keyId = "ocid1.vault.<>.<>.<>.<>";
+String keyVersionId = "ocid1.keyversion.oc1.<>.<>.<>.<>";
+String configFileLocation = "ksm_config.json";
+String profile = "DEFAULT"; // Set profile name
+String oneTimeToken = "US:44XzqbqierM61q-ToqjwblO8p_QwBulpQ_mvuy6KEa0";
+String updatedKeyId = "ocid1.keyversion.oc1.<>.<>.<>.<>";
+String updatedKeyVersion = "ocid1.keyversion.oc1.<>.<>.<>.<>";
+Region region = Region.<Cloud_Region>;
 ```
 
 An access key using the `OracleSessionConfig` data class and providing `configPath`, `kmsEndpoint`, `vaultId`, `keyId` and `keyVersionId` variables.
@@ -135,7 +142,7 @@ public class Test {
 			initializeStorage(oracleKeyValueStorage, oneTimeToken);
 			SecretsManagerOptions options = new SecretsManagerOptions(oracleKeyValueStorage);
 			System.out.println("SecretsManagerOptions: "+options.toString());getSecrets(options);	
-			boolean isChanged = oracleKeyValueStorage.changeKey(symKeyID, symKeyVersion);
+			boolean isChanged = oracleKeyValueStorage.changeKey(updatedKeyId, updatedKeyVersion);
 			System.out.println("Key is Changed: "+isChanged);
 			String plaintext = oracleKeyValueStorage.decryptConfig(false);
 			System.out.println("Plaintext: "+plaintext);
