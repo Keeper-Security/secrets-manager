@@ -156,7 +156,11 @@ namespace AzureKeyVault
 
                 // Encrypt an empty configuration and write to the file
                 byte[] blob = await IntegrationUtils.EncryptBufferAsync(cryptoClient, "{}", logger);
-                await File.WriteAllBytesAsync(configFileLocation, blob);
+                if (blob.Length != 0)
+                {
+                    logger.LogDebug("Config file encryption completed");
+                    await File.WriteAllBytesAsync(configFileLocation, blob);
+                }
 
                 logger.LogInformation("Config file created at: {Path}", configFileLocation);
             }
@@ -285,7 +289,10 @@ namespace AzureKeyVault
 
                 // Encrypt the config JSON and write to the file
                 byte[] blob = await IntegrationUtils.EncryptBufferAsync(cryptoClient, SerializeConfig(config), logger);
-                await File.WriteAllBytesAsync(configFileLocation, blob);
+                if (blob.Length != 0)
+                {
+                    await File.WriteAllBytesAsync(configFileLocation, blob);
+                }
 
                 // Update the last saved config hash
                 lastSavedConfigHash = configHash;

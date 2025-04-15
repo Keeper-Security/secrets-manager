@@ -42,7 +42,7 @@ An authentication configuration is created using the **AzureSessionConfig** clas
 You will need an Azure App directory App to use the Azure Key Vault integration.
 
 
-For more information on Azure App Directory App registration and Permissions see the Azure documentation: https://learn.microsoft.com/en-us/azure/key-vault/general/authentication
+For more information on Azure App Directory App registration and Permissions see the [Azure documentation](https://learn.microsoft.com/en-us/azure/key-vault/general/authentication)
 
 1. Add Azure Key Vault Storage to Your Code
 
