@@ -24,7 +24,7 @@ The Secrets Manager oracle KSM module can be installed using dotnet nuget packag
 
 By default, the **OCI.DotNetSDK.Keymanagement** library will use the **default OCI configuration file** (`~/.oci/config`).
 
-See the (OCI documentation)[https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm] for more details.
+See the [OCI documentation](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm) for more details.
 
 3. Add oracle KMS Storage to Your Code
 
