@@ -47,13 +47,15 @@ namespace AWSKeyManagement
             lastSavedConfigHash = "";
         }
 
-        private async Task InitializeClient(){
+        private async Task InitializeClient()
+        {
             await GetKeyDetailsAsync();
             await LoadConfigAsync();
-            IsInitialized =  true;
+            IsInitialized = true;
         }
 
-        private ILogger GetLogger(ILogger? logger){
+        private ILogger GetLogger(ILogger? logger)
+        {
             return logger ?? LoggerFactory.Create(builder =>
             {
                 builder.SetMinimumLevel(LogLevel.Information);
@@ -63,7 +65,8 @@ namespace AWSKeyManagement
 
         public string? GetString(string key)
         {
-            if (!IsInitialized){
+            if (!IsInitialized)
+            {
                 InitializeClient().Wait();
             }
             if (config.Count == 0)
@@ -75,7 +78,8 @@ namespace AWSKeyManagement
 
         public void SaveString(string key, string value)
         {
-            if (!IsInitialized){
+            if (!IsInitialized)
+            {
                 InitializeClient().Wait();
             }
             if (config.Count == 0)
@@ -88,7 +92,8 @@ namespace AWSKeyManagement
 
         public byte[]? GetBytes(string key)
         {
-            if (!IsInitialized){
+            if (!IsInitialized)
+            {
                 InitializeClient().Wait();
             }
             if (config.Count == 0)
@@ -102,7 +107,8 @@ namespace AWSKeyManagement
 
         public void SaveBytes(string key, byte[] value)
         {
-            if (!IsInitialized){
+            if (!IsInitialized)
+            {
                 InitializeClient().Wait();
             }
             if (config.Count == 0)
@@ -115,7 +121,8 @@ namespace AWSKeyManagement
 
         public void Delete(string key)
         {
-            if (!IsInitialized){
+            if (!IsInitialized)
+            {
                 InitializeClient().Wait();
             }
             config.Remove(key);
@@ -147,7 +154,10 @@ namespace AWSKeyManagement
                 };
                 // Encrypt an empty configuration and write to the file
                 byte[] blob = await IntegrationUtils.EncryptBufferAsync(cryptoClient, options, logger);
-                await File.WriteAllBytesAsync(configFileLocation, blob);
+                if (blob.Length > 0)
+                {
+                    await File.WriteAllBytesAsync(configFileLocation, blob);
+                }
 
                 logger.LogInformation("Config file created at: {Path}", configFileLocation);
             }
@@ -186,7 +196,8 @@ namespace AWSKeyManagement
                     }
                     logger.LogInformation("Loaded config file {Path}", configFileLocation);
                 }
-                catch (JsonException ex){
+                catch (JsonException ex)
+                {
                     logger.LogDebug($"Error parsing valid JSON: {ex.Message}");
                     contents = await File.ReadAllBytesAsync(configFileLocation);
                     jsonError = ex;
@@ -209,13 +220,13 @@ namespace AWSKeyManagement
                     try
                     {
                         logger.LogDebug("Config file is not a valid JSON file: {Message}", jsonError.Message);
-                       DecryptBufferOptions options = new DecryptBufferOptions
+                        DecryptBufferOptions options = new DecryptBufferOptions
                         {
                             KeyType = keyType,
                             KeyId = keyId,
                             Ciphertext = contents
                         };
-                        string decryptedJson = await IntegrationUtils.DecryptBufferAsync(cryptoClient,options, logger);
+                        string decryptedJson = await IntegrationUtils.DecryptBufferAsync(cryptoClient, options, logger);
                         parsedConfig = JsonSerializer.Deserialize<Dictionary<string, string>>(decryptedJson);
                         logger.LogDebug("Decrypted config file successfully.");
 
@@ -315,7 +326,10 @@ namespace AWSKeyManagement
                 };
                 // Encrypt the config JSON and write to the file
                 byte[] blob = await IntegrationUtils.EncryptBufferAsync(cryptoClient, options, logger);
-                await File.WriteAllBytesAsync(configFileLocation, blob);
+                if(blob.Length > 0){
+                    logger.LogDebug("Saved config file successfully.");
+                    await File.WriteAllBytesAsync(configFileLocation, blob);
+                }
 
                 // Update the last saved config hash
                 lastSavedConfigHash = configHash;
@@ -328,7 +342,8 @@ namespace AWSKeyManagement
 
         public async Task<string> DecryptConfigAsync(bool autosave = true)
         {
-            if (!IsInitialized){
+            if (!IsInitialized)
+            {
                 InitializeClient().Wait();
             }
             byte[] ciphertext;
@@ -387,7 +402,8 @@ namespace AWSKeyManagement
 
         public async Task<bool> ChangeKeyAsync(string newKeyId, AWSSessionConfig? awsSessionConfig = null)
         {
-            if (!IsInitialized){
+            if (!IsInitialized)
+            {
                 InitializeClient().Wait();
             }
             string oldKeyId = keyId;
@@ -397,10 +413,11 @@ namespace AWSKeyManagement
             {
                 // Update the key and reinitialize the CryptographyClient
                 keyId = newKeyId;
-                if(awsSessionConfig == null){
+                if (awsSessionConfig == null)
+                {
                     awsSessionConfig = awsCredentials;
                 }
-                cryptoClient = new AwsKmsClient( awsSessionConfig,logger).GetCryptoClient();
+                cryptoClient = new AwsKmsClient(awsSessionConfig, logger).GetCryptoClient();
                 await GetKeyDetailsAsync();
                 await SaveConfigAsync(force: true);
             }

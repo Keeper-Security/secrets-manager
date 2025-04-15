@@ -30,7 +30,7 @@ Alternatively, configuration variables can be provided explicitly as an access k
 
 You will need an AWS Access Key to use the AWS KMS integration.
 
-For more information on AWS Access Keys see the AWS documentation: https://aws.amazon.com/premiumsupport/knowledge-center/create-access-key/
+For more information on AWS Access Keys see the [AWS documentation](https://aws.amazon.com/premiumsupport/knowledge-center/create-access-key/)
 
 3. Add AWS KMS Storage to Your Code
 
