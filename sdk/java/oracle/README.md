@@ -111,7 +111,7 @@ Initilaizes OracleKeyValueStorage configuration variables can be provided as
 An access key using the `OracleSessionConfig` data class and providing `configPath`, `kmsEndpoint`, `vaultId`, `keyId` and `keyVersionId` variables.
 
 You will need an `~/.oci/config` to use the OCI KMS Integration.
-Refer the (oracle official documentation)[https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm]
+Refer the [oracle official documentation](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm)
  for setup. 
 
 **Add Oracle Key Vault Storage to Your Code**
