@@ -114,8 +114,8 @@ public class OracleKeyValueStorage implements KeyValueStorage {
 		String oldKeyVersion = this.keyVersionId;
 		OracleKeyVaultConnector oldOciClient = this.ociClient;
 		try {
-			this.keyId = newKeyId;
-			this.keyVersionId = newKeyVersion;
+			this.ociClient.sessionConfig.setKeyId(newKeyId);
+			this.ociClient.sessionConfig.setKeyVersionId(newKeyVersion);
 			save(configJson, configMap);
 			logger.info("Encrypted using new KeyId");
 			return true;
