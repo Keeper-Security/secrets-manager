@@ -11,9 +11,12 @@ require (
 	github.com/keeper-security/secrets-manager-go/core v1.6.4
 )
 
+// while not fixed in github.com/hashicorp/vault/sdk
+replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.5.4
+
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/armon/go-metrics v0.4.1 // indirect
+	github.com/armon/go-metrics v0.5.4 // indirect
 	github.com/armon/go-radix v1.0.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
