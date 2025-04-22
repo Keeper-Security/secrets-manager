@@ -97,22 +97,28 @@ export class OciKeyValueStorage implements KeyValueStorage {
 	}
 
 	private async getKeyDetails() {
-		const opcRequestId = randomUUID();
-		this.logger.info(`Making a getKey request with request Id ${opcRequestId}`);
-		const keyDetailsRequest: GetKeyRequest = {
-			keyId: this.keyId,
-			opcRequestId: opcRequestId
-		};
+		try {
+			const opcRequestId = randomUUID();
+			this.logger.info(`Making a getKey request with request Id ${opcRequestId}`);
+			const keyDetailsRequest: GetKeyRequest = {
+				keyId: this.keyId,
+				opcRequestId: opcRequestId
+			};
 
-		const keyDetails: GetKeyResponse = await this.managementClient.getKey(keyDetailsRequest);
-		const algorithm: KeyShape.Algorithm = keyDetails.key.keyShape.algorithm;
+			const keyDetails: GetKeyResponse = await this.managementClient.getKey(keyDetailsRequest);
+			const algorithm: KeyShape.Algorithm = keyDetails.key.keyShape.algorithm;
 
-		if (algorithm == KeyShape.Algorithm.Aes) {
-			this.isAsymmetric = false;
-		} else if (algorithm == KeyShape.Algorithm.Rsa) {
-			this.isAsymmetric = true;
-		} else {
-			throw new OracleKeyValueStorageError(` given key has unsupported algorithm: ${algorithm}`);
+			if (algorithm == KeyShape.Algorithm.Aes) {
+				this.isAsymmetric = false;
+			} else if (algorithm == KeyShape.Algorithm.Rsa) {
+				this.isAsymmetric = true;
+			} else {
+				throw new OracleKeyValueStorageError(` given key has unsupported algorithm: ${algorithm}`);
+			}
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		} catch (error: any) {
+			this.logger.error(`Error occurred while trying to get key details. Are permissions for getting key details assigned to the service principal? . Exact error message ${error.message}`);
+			throw new OracleKeyValueStorageError(`Failed to get key details: ${error.message}`);
 		}
 	}
 
@@ -266,7 +272,9 @@ export class OciKeyValueStorage implements KeyValueStorage {
 				keyVersionId: this.keyVersion,
 				isAsymmetric: this.isAsymmetric
 			}, this.logger);
-			await fs.writeFile(this.configFileLocation, blob);
+			if (blob.length > 0) {
+				await fs.writeFile(this.configFileLocation, blob);
+			}
 
 			// Update the last saved config hash
 			this.lastSavedConfigHash = configHash;
@@ -359,40 +367,43 @@ export class OciKeyValueStorage implements KeyValueStorage {
 
 	private async createConfigFileIfMissing(): Promise<void> {
 		try {
-		  // Ensure the config file path is absolute
-		  const configPath = resolve(this.configFileLocation);
-	
-		  // Check if the config file exists
-		  await fs.access(configPath);
-		  this.logger.info(`Config file already exists at: ${configPath}`);
+			// Ensure the config file path is absolute
+			const configPath = resolve(this.configFileLocation);
+
+			// Check if the config file exists
+			await fs.access(configPath);
+			this.logger.info(`Config file already exists at: ${configPath}`);
 		} catch {
-		  // If file does not exist, proceed to create it
-	
-		  try {
-			const dir = dirname(resolve(this.configFileLocation)); // Ensure absolute directory path
-	
+			// If file does not exist, proceed to create it
+
 			try {
-			  await fs.access(dir); // Check if directory exists
+				const dir = dirname(resolve(this.configFileLocation)); // Ensure absolute directory path
+
+				try {
+					await fs.access(dir); // Check if directory exists
+				} catch {
+					await fs.mkdir(dir, { recursive: true }); // Create directory if missing
+				}
 			} catch {
-			  await fs.mkdir(dir, { recursive: true }); // Create directory if missing
+				await fs.mkdir(process.cwd(), { recursive: true }); // Use the working directory as fallback
 			}
-		  } catch {
-			await fs.mkdir(process.cwd(), { recursive: true }); // Use the working directory as fallback
-		  }
-	
-		  // Encrypt an empty configuration and write to the file
-		  const blob = await encryptBuffer({
-			keyId: this.keyId,
-			message: "{}",
-			cryptoClient: this.cryptoClient,
-			keyVersionId: this.keyVersion,
-			isAsymmetric: this.isAsymmetric
-		}, this.logger);
-		  const configPath = resolve(this.configFileLocation);
-		  await fs.writeFile(configPath, blob);
-		  this.logger.info(`Config file created at: ${configPath}`);
+
+			const configPath = resolve(this.configFileLocation);
+			await fs.writeFile(configPath, Buffer.alloc(0));
+			// Encrypt an empty configuration and write to the file
+			const blob = await encryptBuffer({
+				keyId: this.keyId,
+				message: "{}",
+				cryptoClient: this.cryptoClient,
+				keyVersionId: this.keyVersion,
+				isAsymmetric: this.isAsymmetric
+			}, this.logger);
+			if(blob.length>0){
+				await fs.writeFile(configPath, blob);
+				this.logger.info(`Config file created at: ${configPath}`);
+			}
 		}
-	  }
+	}
 
 	private async readStorage(): Promise<Record<string, string>> {
 		if (!this.config) {
