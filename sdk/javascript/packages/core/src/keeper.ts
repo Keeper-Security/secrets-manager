@@ -503,11 +503,12 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
 const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload | FileUploadPayload): Promise<EncryptedPayload> => {
     const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
     const encryptedPayload = await platform.encryptWithKey(payloadBytes, transmissionKey.key)
-    const signatureBase = Uint8Array.of(...transmissionKey.encryptedKey, ...encryptedPayload)
+    const signatureBase = new Uint8Array(transmissionKey.encryptedKey.length + encryptedPayload.length)
+    signatureBase.set(transmissionKey.encryptedKey, 0)
+    signatureBase.set(encryptedPayload, transmissionKey.encryptedKey.length)
     const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
     return {payload: encryptedPayload, signature}
 }
-
 const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
