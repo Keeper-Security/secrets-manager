@@ -48,6 +48,7 @@ export type SecretManagerOptions = {
 export type QueryOptions = {
     recordsFilter?: string[]
     foldersFilter?: string[]
+    requestLinks?: boolean
 }
 
 export type CreateOptions = {
@@ -85,6 +86,7 @@ type GetPayload = CommonPayload & {
     publicKey?: string   // passed once when binding
     requestedRecords?: string[] // only return these records
     requestedFolders?: string[] // only return these folders
+    requestLinks?: boolean
 }
 
 type DeletePayload = CommonPayload & {
@@ -278,6 +280,9 @@ const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryO
     }
     if (queryOptions?.foldersFilter) {
         payload.requestedFolders = queryOptions.foldersFilter
+    }
+    if( queryOptions?.requestLinks) {
+        payload.requestLinks = queryOptions.requestLinks
     }
     return payload
 }
