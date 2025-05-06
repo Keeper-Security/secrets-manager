@@ -13,7 +13,7 @@ base {
 java {
     toolchain {
         // Vancouver-- built with OpenJDK 11.x
-        languageVersion = JavaLanguageVersion.of(11)
+        //languageVersion = JavaLanguageVersion.of(11)
 
         // Washington DC: A ServiceNow build of OpenJDK 17.0.8.1 is Supported and Included (17.0.8.1-sncmid1)
         // Administrators will need to make sure any 3rd party JAR files for Credential resolvers, JDBC drivers, etc.
@@ -21,7 +21,7 @@ java {
         // More information: KB1273036 MID Server - JRE 17 Upgrade
 
         // Washington DC, Xanadu++ built with OpenJDK 17.x
-        //languageVersion = JavaLanguageVersion.of(17)
+        languageVersion.set(JavaLanguageVersion.of(17))
     }
 }
 
@@ -36,7 +36,7 @@ repositories {
 }
 
 dependencies {
-    implementation ("com.keepersecurity.secrets-manager:core:16.6.4+")
+    implementation ("com.keepersecurity.secrets-manager:core:17.0.0+")
 
     // MID server dependencies, not required to be uploaded
     // MID jar dependency for config APIs
