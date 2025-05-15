@@ -164,12 +164,12 @@ type SecretsManagerResponseRecord = {
     revision: number
     files: SecretsManagerResponseFile[]
     innerFolderUid: string
-    links?: SecretsManagerResponseLink[]
+    links?: KeeperRecordLink[]
 }
 
-type SecretsManagerResponseLink = {
+type KeeperRecordLink = {
     recordUid: string
-    data: string
+    data?: string
 }
 
 type SecretsManagerResponseFile = {
@@ -220,7 +220,7 @@ export type KeeperRecord = {
     data: any
     revision: number
     files?: KeeperFile[]
-    links?: SecretsManagerResponseLink[]
+    links?: KeeperRecordLink[]
 }
 
 export type KeeperFolder = {
@@ -702,12 +702,9 @@ export const initializeStorage = async (storage: KeyValueStorage, oneTimeToken: 
     await platform.generatePrivateKey(KEY_PRIVATE_KEY, storage)
 }
 
-export const getSecrets = async (options: SecretManagerOptions, recordsFilter?: string[], requestLinks?: boolean): Promise<KeeperSecrets> => {
+export const getSecrets = async (options: SecretManagerOptions, recordsFilter?: string[]): Promise<KeeperSecrets> => {
     const queryOptions = recordsFilter
-        ? {
-            recordsFilter: recordsFilter,
-            requestLinks: requestLinks
-        }
+        ? {recordsFilter: recordsFilter}
         : undefined
     return getSecrets2(options, queryOptions)
 }
