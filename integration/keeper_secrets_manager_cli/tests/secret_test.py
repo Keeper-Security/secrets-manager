@@ -1020,10 +1020,12 @@ class SecretTest(unittest.TestCase):
             # stderr and stdout are merged:
             # Depending on OS, Python version, buffering CR/LF could happend
             # before or after the expected value.
+            # 'UIDxxxxxxxxxxxxxxxxxxxThe following is the new record UID..' or
             # 'The following is the new record UID..\nUIDxxxxxxxxxxxxxxxxxxx\n'
-            lines = [line for line in output.split("\n") if line.strip()]
-            if lines and lines[0] == 'The following is the new record UID ...':
-                lines = lines[1:]
+            prefix = "The following is the new record UID ..."
+            lines = [line for line in
+                     (line.replace(prefix, "").strip()
+                      for line in output.split("\n")) if line]
             self.assertTrue(lines, "did not get back a record uid")  # empty
             self.assertRegex(lines[0], r'^[\w_-]{22}$', "did not get back a record uid")
 
