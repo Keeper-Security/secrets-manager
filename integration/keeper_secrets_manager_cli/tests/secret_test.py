@@ -1022,9 +1022,10 @@ class SecretTest(unittest.TestCase):
             # before or after the expected value.
             # 'The following is the new record UID..\nUIDxxxxxxxxxxxxxxxxxxx\n'
             lines = [line for line in output.split("\n") if line.strip()]
-            self.assertGreater(len(lines), 1, "did not get back a record uid")
-            self.assertEqual(lines[0], '', "did not get back a record uid")
-            self.assertRegex(lines[1], r'^[\w_-]{22}$', "did not get back a record uid")
+            if lines and lines[0] == 'The following is the new record UID ...':
+                lines = lines[1:]
+            self.assertTrue(lines, "did not get back a record uid")  # empty
+            self.assertRegex(lines[0], r'^[\w_-]{22}$', "did not get back a record uid")
 
 
 if __name__ == '__main__':
