@@ -1023,6 +1023,7 @@ class SecretTest(unittest.TestCase):
             # 'The following is the new record UID..\nUIDxxxxxxxxxxxxxxxxxxx\n'
             lines = [line for line in output.split("\n") if line.strip()]
             self.assertGreater(len(lines), 1, "did not get back a record uid")
+            self.assertEqual(lines[0], '', "did not get back a record uid")
             self.assertRegex(lines[1], r'^[\w_-]{22}$', "did not get back a record uid")
 
 
