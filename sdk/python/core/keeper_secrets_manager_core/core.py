@@ -254,6 +254,9 @@ class SecretsManager:
         current_secret_key = None
 
         if env_secret_key:
+            if ":" in env_secret_key:
+                _, env_secret_key = env_secret_key.split(":", 1)
+
             current_secret_key = env_secret_key
             self.logger.info("Secret key found in environment variable")
 
