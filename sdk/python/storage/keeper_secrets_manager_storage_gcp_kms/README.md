@@ -20,7 +20,7 @@ Keeper Secrets Manager integrates with GCP KMS in order to provide protection fo
 
 The Secrets Manager GCP KSM module can be installed using pip
 
-> `pip3 install keeper-secrets-manager-storage`
+> `pip3 install keeper-secrets-manager-storage-gcp-kms`
 
 2. Configure GCP Connection
 
@@ -42,7 +42,7 @@ To do this, use GcpKmsKeyvalueStorage as your Secrets Manager storage in the Sec
 
 The storage will require a GCP Key ID, as well as the name of the Secrets Manager configuration file which will be encrypted by GCP KMS.
 ```
-    from keeper_secrets_manager_storage.storage_gcp_kms import GCPKeyConfig, GCPKeyValueStorage,GCPKMSClientConfig
+    from keeper_secrets_manager_storage_gcp_kms import GCPKeyConfig, GCPKeyValueStorage, GCPKMSClientConfig
 
     from keeper_secrets_manager_core import SecretsManager
 
