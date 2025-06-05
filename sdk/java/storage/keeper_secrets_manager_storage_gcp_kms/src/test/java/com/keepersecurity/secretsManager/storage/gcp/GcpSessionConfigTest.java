@@ -1,4 +1,4 @@
-package com.keepersecurity.secretsmanager.gcp;
+package com.keepersecurity.secretsManager.storage.gcp;
 
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;

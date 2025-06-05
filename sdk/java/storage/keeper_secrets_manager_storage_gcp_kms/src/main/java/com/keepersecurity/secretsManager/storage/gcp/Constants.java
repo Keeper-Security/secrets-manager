@@ -1,4 +1,4 @@
-package com.keepersecurity.secretsmanager.gcp;
+package com.keepersecurity.secretsManager.storage.gcp;
 
 /**
  * The {@code Constants} class defines a set of constants used for cryptographic

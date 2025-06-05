@@ -1,4 +1,4 @@
-package com.keepersecurity.secretsmanager.gcp;
+package com.keepersecurity.secretsManager.storage.gcp;
 
 /*
 *  _  __

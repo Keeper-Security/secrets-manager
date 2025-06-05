@@ -10,5 +10,5 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "0.8.0"
 }
 
-rootProject.name = "keeper-secrets-manager-storage-gcp-kms"
+rootProject.name = "storage-gcp-kms"
 
