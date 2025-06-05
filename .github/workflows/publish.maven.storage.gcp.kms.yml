@@ -1,4 +1,4 @@
-name: Publish Java GCP KMS Storage to Maven
+name: Publish to Maven (Java Storage GCP KMS)
 on:
   workflow_dispatch:
 
