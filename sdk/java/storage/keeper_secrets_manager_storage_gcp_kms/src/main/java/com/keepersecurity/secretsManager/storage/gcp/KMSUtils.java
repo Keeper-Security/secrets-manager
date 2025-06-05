@@ -64,6 +64,7 @@ public class KMSUtils {
 
 	private KeyManagementServiceClient kmsClient;
 	private GcpSessionConfig sessionConfig;
+	private boolean clientInitialized = false;
 	private static final Map<String, String> rsaAlgorithmToSHA = new HashMap<>();
 
 	static {
@@ -84,7 +85,17 @@ public class KMSUtils {
 	 * @param sessionConfig The GCP session configuration.
 	 */
 	public KMSUtils(GcpSessionConfig sessionConfig) {
-		try {
+		// Store configuration but don't initialize client until needed
+		this.sessionConfig = sessionConfig;
+	}
+
+	/**
+	 * Lazily initializes the KMS client when first needed.
+	 * 
+	 * @throws Exception if client initialization fails
+	 */
+	private void initializeClientIfNeeded() throws Exception {
+		if (!clientInitialized && sessionConfig != null) {
 			if (sessionConfig.getCredentialsPath().isEmpty()) {
 				// Create the KMS client using Environment variable
 				kmsClient = KeyManagementServiceClient.create();
@@ -101,10 +112,7 @@ public class KMSUtils {
 				// Create the KeyManagementServiceClient with the specified settings
 				kmsClient = KeyManagementServiceClient.create(kmsSettings);
 			}
-			this.sessionConfig = sessionConfig;
-
-		} catch (Exception e) {
-			logger.error("Exception: " + e.getMessage());
+			clientInitialized = true;
 		}
 	}
 
@@ -135,6 +143,7 @@ public class KMSUtils {
 	 */
 	public byte[] encryptAsymmetricRsa(byte[] text) throws Exception {
 		logger.debug("Encrypt Using Asymmetric Key");
+		initializeClientIfNeeded();
 
 		// Perform encryption and get the ciphertext
 		CryptoKeyVersionName keyVersionName = getCryptoKeyVersionName();
@@ -187,6 +196,7 @@ public class KMSUtils {
 	 */
 	public byte[] decryptAsymmetricRsa(byte[] ciphertext) throws Exception {
 		logger.debug("Decrypt Using Asymmetric Key");
+		initializeClientIfNeeded();
 		// Perform encryption and get the ciphertext
 		CryptoKeyVersionName keyVersionName = getCryptoKeyVersionName();
 
@@ -207,6 +217,7 @@ public class KMSUtils {
 	 */
 	public ByteString encryptSymmetric(String plaintext) throws Exception {
 		logger.debug("Encrypt Using Symmetric Key");
+		initializeClientIfNeeded();
 		// Convert plaintext to ByteString
 		ByteString plaintextByteString = ByteString.copyFrom(plaintext, StandardCharsets.UTF_8);
 
@@ -229,6 +240,7 @@ public class KMSUtils {
 	 */
 	public String decryptSymmetric(ByteString ciphertext) throws Exception {
 		logger.debug("Decrypt Using Symmetric Key");
+		initializeClientIfNeeded();
 		// Decrypt the data
 		DecryptRequest decryptRequest = DecryptRequest.newBuilder().setName(getFullName()).setCiphertext(ciphertext)
 				.build();
@@ -282,6 +294,12 @@ public class KMSUtils {
 	}
 
 	private CryptoKeyVersionAlgorithm getCryptoKeyVersionAlgorithm() {
+		try {
+			initializeClientIfNeeded();
+		} catch (Exception e) {
+			logger.error("Failed to initialize KMS client: " + e.getMessage());
+			throw new RuntimeException("KMS client initialization failed", e);
+		}
 		CryptoKeyVersionName keyVersionName = getCryptoKeyVersionName();
 		CryptoKeyVersion cryptoKeyVersion = kmsClient.getCryptoKeyVersion(keyVersionName);
 		CryptoKeyVersionAlgorithm algorithms = cryptoKeyVersion.getAlgorithm();
