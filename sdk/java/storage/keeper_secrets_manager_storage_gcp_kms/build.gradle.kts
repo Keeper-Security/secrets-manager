@@ -52,12 +52,10 @@ dependencies {
     implementation("com.fasterxml.jackson.core:jackson-databind:2.18.2")
     implementation("com.fasterxml.jackson.core:jackson-core:2.18.2")
     
-    // Logging
+    // Logging - Only API for library consumers
     implementation("org.slf4j:slf4j-api:1.7.32") {
         exclude("org.slf4j:slf4j-log4j12")
     }
-    implementation("ch.qos.logback:logback-classic:1.2.6")
-    implementation("ch.qos.logback:logback-core:1.2.6")
     
     // Test dependencies
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
@@ -65,6 +63,10 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter-engine:5.10.2")
     testImplementation("org.mockito:mockito-core:5.8.0")
     testImplementation("org.mockito:mockito-junit-jupiter:5.8.0")
+    
+    // Logging implementation for tests only
+    testImplementation("ch.qos.logback:logback-classic:1.2.6")
+    testImplementation("ch.qos.logback:logback-core:1.2.6")
 }
 
 tasks.jar {
