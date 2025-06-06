@@ -49,6 +49,8 @@ jobs:
       project-version: ${{ needs.get-version.outputs.version }}
       sbom-format: spdx-json
       additional-labels: ksm,sdk,java,security
+    secrets:
+      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
 
   publish-to-maven-central:
     needs: generate-and-upload-sbom
