@@ -10,3 +10,4 @@ jobs:
       project-name: keeper-secrets-manager-java
       project-title: Keeper Secrets Manager Java Core SDK
       java-version: '11'
+    secrets: inherit
