@@ -1,13 +1,39 @@
-name: Publish to Maven (Java Storage GCP KMS)
+name: Reusable Maven Central Publishing
+
 on:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Working directory for the Java project'
+        required: true
+        type: string
+      project-name:
+        description: 'Project name for SBOM generation'
+        required: true
+        type: string
+      project-title:
+        description: 'Human readable project title'
+        required: true
+        type: string
+      java-version:
+        description: 'Java version to use for building'
+        required: false
+        type: string
+        default: '11'
+    secrets:
+      KSM_ARTIFACT_JAVA_APP_CONFIG:
+        description: 'Keeper Secrets Manager configuration for Maven Central credentials'
+        required: true
+      MANIFEST_TOKEN:
+        description: 'Token for SBOM manifest generation'
+        required: true
 
 jobs:
   get-version:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./sdk/java/storage/keeper_secrets_manager_storage_gcp_kms
+        working-directory: ${{ inputs.working-directory }}
     outputs:
       version: ${{ steps.extract-version.outputs.version }}
     steps:
@@ -23,33 +49,36 @@ jobs:
     needs: get-version
     uses: ./.github/workflows/reusable.sbom.workflow.yml
     with:
-      working-directory: ./sdk/java/storage/keeper_secrets_manager_storage_gcp_kms
-      project-name: keeper-secrets-manager-storage-gcp-kms
+      working-directory: ${{ inputs.working-directory }}
+      project-name: ${{ inputs.project-name }}
       project-type: java
       project-version: ${{ needs.get-version.outputs.version }}
       sbom-format: spdx-json
-      additional-labels: ksm,sdk,java,storage,gcp,kms,security
+      additional-labels: ksm,sdk,java,security
     secrets:
       MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
 
-  publish-java-storage-gcp-kms:
+  publish-to-maven-central:
     needs: generate-and-upload-sbom
     environment: prod
     runs-on: ubuntu-latest
 
     defaults:
       run:
-        working-directory: ./sdk/java/storage/keeper_secrets_manager_storage_gcp_kms
+        working-directory: ${{ inputs.working-directory }}
 
     steps:
       - name: Get the source code
         uses: actions/checkout@v3
 
-      - name: Set up Java 11
-        uses: actions/setup-java@v2
+      - name: Set up Java ${{ inputs.java-version }}
+        uses: actions/setup-java@v3
         with:
-          java-version: '11'
+          java-version: ${{ inputs.java-version }}
           distribution: 'adopt'
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
 
       - name: Validate Gradle wrapper
         uses: gradle/wrapper-validation-action@e6e38bacfdf1a337459f332974bb2327a31aaf4b
@@ -63,10 +92,12 @@ jobs:
             zOVOneDczofWFlfizjC5Qw/file/90A46CD1-private-key.asc > file:/tmp/signing_secret_key_ring_file.asc
             zOVOneDczofWFlfizjC5Qw/custom_field/signing.keyId > env:SIGNING_KEY_ID
             zOVOneDczofWFlfizjC5Qw/custom_field/signing.password > env:SIGNING_PASSWORD
-            zOVOneDczofWFlfizjC5Qw/custom_field/ossrhUsername > env:OSSRH_USERNAME
-            zOVOneDczofWFlfizjC5Qw/custom_field/ossrhPassword > env:OSSRH_PASSWORD
+            zOVOneDczofWFlfizjC5Qw/custom_field/centralPortalUsername > env:MAVEN_USERNAME
+            zOVOneDczofWFlfizjC5Qw/custom_field/centralPortalPassword > env:MAVEN_PASSWORD
 
-      - name: Publish package
+      - name: Publish to Maven Central
         env:
           SIGNING_SECRET_KEY_RING_FILE: /tmp/signing_secret_key_ring_file.asc
-        run: gradle publishMavenJavaPublicationToSonatypeRepository 
+        run: |
+          echo "Publishing ${{ inputs.project-title }} to Maven Central..."
+          gradle publishToSonatype 

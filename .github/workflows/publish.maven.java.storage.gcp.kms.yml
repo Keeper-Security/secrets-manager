@@ -1,0 +1,15 @@
+name: Publish to Maven (Java Storage GCP KMS)
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    uses: ./.github/workflows/reusable.maven.central.publish.yml
+    with:
+      working-directory: ./sdk/java/storage/keeper_secrets_manager_storage_gcp_kms
+      project-name: keeper-secrets-manager-storage-gcp-kms
+      project-title: Keeper Secrets Manager GCP KMS Storage
+      java-version: '11'
+    secrets:
+      KSM_ARTIFACT_JAVA_APP_CONFIG: ${{ secrets.KSM_ARTIFACT_JAVA_APP_CONFIG }}
+      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }} 
