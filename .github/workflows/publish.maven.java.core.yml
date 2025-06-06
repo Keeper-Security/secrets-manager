@@ -1,0 +1,15 @@
+name: Publish to Maven (Java Core SDK)
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    uses: ./.github/workflows/reusable.maven.central.publish.yml
+    with:
+      working-directory: ./sdk/java/core
+      project-name: keeper-secrets-manager-java
+      project-title: Keeper Secrets Manager Java Core SDK
+      java-version: '11'
+    secrets:
+      KSM_ARTIFACT_JAVA_APP_CONFIG: ${{ secrets.KSM_ARTIFACT_JAVA_APP_CONFIG }}
+      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
