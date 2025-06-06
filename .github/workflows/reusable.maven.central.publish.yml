@@ -81,4 +81,4 @@ jobs:
           SIGNING_SECRET_KEY_RING_FILE: /tmp/signing_secret_key_ring_file.asc
         run: |
           echo "Publishing ${{ inputs.project-title }} to Maven Central..."
-          gradle publishToSonatype 
+          gradle publish 

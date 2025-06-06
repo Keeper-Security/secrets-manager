@@ -81,8 +81,8 @@ tasks.jar {
 ext["signing.keyId"] = null
 ext["signing.password"] = null
 ext["signing.secretKeyRingFile"] = null
-ext["ossrhUsername"] = null
-ext["ossrhPassword"] = null
+ext["mavenUsername"] = null
+ext["mavenPassword"] = null
 
 // Grabbing secrets from local.properties file or from environment variables, which could be used on CI
 val secretPropsFile = project.rootProject.file("local.properties")
@@ -96,8 +96,8 @@ if (secretPropsFile.exists()) {
     ext["signing.keyId"] = System.getenv("SIGNING_KEY_ID")
     ext["signing.password"] = System.getenv("SIGNING_PASSWORD")
     ext["signing.secretKeyRingFile"] = System.getenv("SIGNING_SECRET_KEY_RING_FILE")
-    ext["ossrhUsername"] = System.getenv("OSSRH_USERNAME")
-    ext["ossrhPassword"] = System.getenv("OSSRH_PASSWORD")
+    ext["mavenUsername"] = System.getenv("MAVEN_USERNAME")
+    ext["mavenPassword"] = System.getenv("MAVEN_PASSWORD")
 }
 
 java {
@@ -178,8 +178,8 @@ publishing {
             }
 
             credentials {
-                username = getExtraString("ossrhUsername")
-                password = getExtraString("ossrhPassword")
+                username = getExtraString("mavenUsername")
+                password = getExtraString("mavenPassword")
             }
         }
     }
