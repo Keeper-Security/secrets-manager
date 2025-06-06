@@ -30,10 +30,6 @@ on:
         required: false
         type: string
         default: ''
-    secrets:
-      MANIFEST_TOKEN:
-        description: 'Token for Manifest.io authentication'
-        required: true
 
 jobs:
   generate-sbom:
