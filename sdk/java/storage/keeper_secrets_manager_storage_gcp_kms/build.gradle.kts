@@ -15,7 +15,7 @@ plugins {
     kotlin("plugin.serialization") version "2.0.20"
     `maven-publish`
     signing
-    id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
+    id("org.sonatype.central-portal") version "1.0.0"
 }
 
 java {
@@ -112,81 +112,42 @@ publishing {
         create<MavenPublication>("mavenJava") {
             artifactId = project.rootProject.name
             from(components["java"])
-            versionMapping {
-                usage("java-api") {
-                    fromResolutionOf("runtimeClasspath")
-                }
-                usage("java-runtime") {
-                    fromResolutionResult()
-                }
-            }
-
-            pom {
-                name.set("Keeper Secrets Manager GCP KMS Storage")
-                description.set("GCP KMS storage provider for Keeper Secrets Manager. " +
-                        "Provides secure storage of KSM configuration using Google Cloud Key Management Service. " +
-                        "Supports symmetric, asymmetric, and raw symmetric encryption.")
-                url.set("https://github.com/Keeper-Security/secrets-manager")
-                licenses {
-                    license {
-                        name.set("MIT")
-                        url.set("https://opensource.org/licenses/MIT")
-                    }
-                }
-                developers {
-                    developer {
-                        id.set("SergeyAldoukhov")
-                        name.set("Sergey Aldoukhov")
-                        email.set("saldoukhov@keepersecurity.com")
-                    }
-                    developer {
-                        id.set("MaksimUstinov")
-                        name.set("Maksim Ustinov")
-                        email.set("mustinov@keepersecurity.com")
-                    }
-                }
-                contributors {
-                    contributor {
-                        name.set("Craig Lurey")
-                        url.set("https://github.com/craiglurey")
-                    }
-                    contributor {
-                        name.set("Sergey Aldoukhov")
-                        url.set("https://github.com/saldoukhov")
-                    }
-                    contributor {
-                        name.set("Maksim Ustinov")
-                        url.set("https://github.com/maksimu")
-                    }
-                }
-                scm {
-                    connection.set("scm:git:git://github.com/Keeper-Security/secrets-manager.git")
-                    url.set("https://github.com/Keeper-Security/secrets-manager")
-                }
-            }
-        }
-    }
-
-    repositories {
-        maven {
-            name = "Sonatype"
-
-            if (project.version.toString().endsWith("SNAPSHOT")) {
-                setUrl("https://s01.oss.sonatype.org/content/repositories/snapshots/")
-            } else {
-                setUrl("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
-            }
-
-            credentials {
-                username = getExtraString("mavenUsername")
-                password = getExtraString("mavenPassword")
-            }
         }
     }
 }
 
 signing {
     sign(publishing.publications["mavenJava"])
+}
+
+centralPortal {
+    username = getExtraString("mavenUsername")
+    password = getExtraString("mavenPassword")
+    
+    pom {
+        name.set("Keeper Secrets Manager GCP KMS Storage")
+        description.set("GCP KMS storage provider for Keeper Secrets Manager. " +
+                "Provides secure storage of KSM configuration using Google Cloud Key Management Service. " +
+                "Supports symmetric, asymmetric, and raw symmetric encryption.")
+        url.set("https://github.com/Keeper-Security/secrets-manager")
+        licenses {
+            license {
+                name.set("MIT")
+                url.set("https://opensource.org/licenses/MIT")
+            }
+        }
+        developers {
+            developer {
+                id.set("MaksimUstinov")
+                name.set("Maksim Ustinov")
+                email.set("mustinov@keepersecurity.com")
+            }
+        }
+        scm {
+            connection.set("scm:git:git://github.com/Keeper-Security/secrets-manager.git")
+            url.set("https://github.com/Keeper-Security/secrets-manager")
+        }
+    }
 }
 
 tasks.javadoc {
