@@ -1,8 +1,6 @@
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.kotlin.dsl.`maven-publish`
-import org.gradle.kotlin.dsl.signing
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import java.util.*
 
 group = "com.keepersecurity.secrets-manager"
 
@@ -14,13 +12,14 @@ plugins {
     kotlin("jvm") version "2.0.20"
     kotlin("plugin.serialization") version "2.0.20"
     `maven-publish`
-    signing
-    id("org.sonatype.central-portal") version "1.0.0"
+    id("org.jreleaser") version "1.18.0"
 }
 
 java {
     sourceCompatibility = JavaVersion.VERSION_1_8
     targetCompatibility = JavaVersion.VERSION_1_8
+    withJavadocJar()
+    withSourcesJar()
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -78,74 +77,79 @@ tasks.jar {
     }
 }
 
-ext["signing.keyId"] = null
-ext["signing.password"] = null
-ext["signing.secretKeyRingFile"] = null
-ext["mavenUsername"] = null
-ext["mavenPassword"] = null
-
-// Grabbing secrets from local.properties file or from environment variables, which could be used on CI
-val secretPropsFile = project.rootProject.file("local.properties")
-if (secretPropsFile.exists()) {
-    // Retrieving variables from the properties file
-    val localProperties = Properties()
-    localProperties.load(secretPropsFile.inputStream())
-    localProperties.forEach { prop -> ext[prop.key.toString()] = prop.value }
-} else {
-    // Retrieving variables from environment variables
-    ext["signing.keyId"] = System.getenv("SIGNING_KEY_ID")
-    ext["signing.password"] = System.getenv("SIGNING_PASSWORD")
-    ext["signing.secretKeyRingFile"] = System.getenv("SIGNING_SECRET_KEY_RING_FILE")
-    ext["mavenUsername"] = System.getenv("MAVEN_USERNAME")
-    ext["mavenPassword"] = System.getenv("MAVEN_PASSWORD")
-}
-
-java {
-    withJavadocJar()
-    withSourcesJar()
-}
-
-fun getExtraString(name: String) = ext[name]?.toString()
-
 publishing {
     publications {
         create<MavenPublication>("mavenJava") {
             artifactId = project.rootProject.name
             from(components["java"])
+            
+            pom {
+                name.set("Keeper Secrets Manager GCP KMS Storage")
+                description.set("GCP KMS storage provider for Keeper Secrets Manager. " +
+                        "Provides secure storage of KSM configuration using Google Cloud Key Management Service. " +
+                        "Supports symmetric, asymmetric, and raw symmetric encryption.")
+                url.set("https://github.com/Keeper-Security/secrets-manager")
+                licenses {
+                    license {
+                        name.set("MIT")
+                        url.set("https://opensource.org/licenses/MIT")
+                    }
+                }
+                developers {
+                    developer {
+                        id.set("MaksimUstinov")
+                        name.set("Maksim Ustinov")
+                        email.set("mustinov@keepersecurity.com")
+                    }
+                }
+                scm {
+                    connection.set("scm:git:git://github.com/Keeper-Security/secrets-manager.git")
+                    url.set("https://github.com/Keeper-Security/secrets-manager")
+                }
+            }
+        }
+    }
+    
+    repositories {
+        maven {
+            name = "staging"
+            url = uri(layout.buildDirectory.dir("staging-deploy"))
         }
     }
 }
 
-signing {
-    sign(publishing.publications["mavenJava"])
-}
-
-centralPortal {
-    username = getExtraString("mavenUsername")
-    password = getExtraString("mavenPassword")
+// Configure JReleaser for Central Portal publishing
+configure<org.jreleaser.gradle.plugin.JReleaserExtension> {
+    project {
+        copyright = "Keeper Security Inc."
+        description = "GCP KMS storage provider for Keeper Secrets Manager"
+        authors = listOf("Keeper Security Inc.")
+        license = "MIT"
+        inceptionYear = "2024"
+    }
     
-    pom {
-        name.set("Keeper Secrets Manager GCP KMS Storage")
-        description.set("GCP KMS storage provider for Keeper Secrets Manager. " +
-                "Provides secure storage of KSM configuration using Google Cloud Key Management Service. " +
-                "Supports symmetric, asymmetric, and raw symmetric encryption.")
-        url.set("https://github.com/Keeper-Security/secrets-manager")
-        licenses {
-            license {
-                name.set("MIT")
-                url.set("https://opensource.org/licenses/MIT")
+    gitRootSearch = true
+    
+    signing {
+        active = org.jreleaser.model.Active.ALWAYS
+        armored = true
+    }
+    
+    deploy {
+        maven {
+            mavenCentral {
+                create("sonatype") {
+                    active = org.jreleaser.model.Active.ALWAYS
+                    url = "https://central.sonatype.com/api/v1/publisher"
+                    stagingRepository(layout.buildDirectory.dir("staging-deploy").get().asFile.path)
+                }
             }
         }
-        developers {
-            developer {
-                id.set("MaksimUstinov")
-                name.set("Maksim Ustinov")
-                email.set("mustinov@keepersecurity.com")
-            }
-        }
-        scm {
-            connection.set("scm:git:git://github.com/Keeper-Security/secrets-manager.git")
-            url.set("https://github.com/Keeper-Security/secrets-manager")
+    }
+    
+    release {
+        github {
+            enabled = false
         }
     }
 }

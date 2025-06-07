@@ -9,5 +9,5 @@ jobs:
       working-directory: ./sdk/java/storage/keeper_secrets_manager_storage_gcp_kms
       project-name: keeper-secrets-manager-storage-gcp-kms
       project-title: Keeper Secrets Manager GCP KMS Storage
-      java-version: '11'
+      java-version: '8'
     secrets: inherit 
