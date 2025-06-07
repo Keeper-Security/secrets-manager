@@ -62,8 +62,8 @@ jobs:
             IR14oITcuvFr9Ek-lKVrXw/custom_field/signing.password > env:JRELEASER_GPG_PASSPHRASE
             IR14oITcuvFr9Ek-lKVrXw/custom_field/signing.privateKey > env:JRELEASER_GPG_SECRET_KEY
             IR14oITcuvFr9Ek-lKVrXw/custom_field/signing.publicKey > env:JRELEASER_GPG_PUBLIC_KEY
-            IR14oITcuvFr9Ek-lKVrXw/custom_field/centralPortalUsername > env:JRELEASER_MAVENCENTRAL_USERNAME
-            IR14oITcuvFr9Ek-lKVrXw/custom_field/centralPortalPassword > env:JRELEASER_MAVENCENTRAL_PASSWORD
+            GXzhWrjH4xVtfYvRKdX4Eg/field/login > env:JRELEASER_MAVENCENTRAL_USERNAME
+            GXzhWrjH4xVtfYvRKdX4Eg/field/password > env:JRELEASER_MAVENCENTRAL_PASSWORD
 
       - name: Set up Java ${{ inputs.java-version }}
         uses: actions/setup-java@v4
