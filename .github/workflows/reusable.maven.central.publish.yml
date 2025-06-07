@@ -86,32 +86,14 @@ jobs:
         run: ./gradlew publishAllPublicationsToStagingRepository
 
         # Signing docs: https://jreleaser.org/guide/latest/reference/signing.html
-      - name: Debug environment variables
-        run: |
-          echo "Checking environment variables (masked):"
-          echo "JRELEASER_GPG_PASSPHRASE: ${JRELEASER_GPG_PASSPHRASE:+SET}"
-          echo "JRELEASER_GPG_SECRET_KEY: $JRELEASER_GPG_SECRET_KEY"
-          echo "JRELEASER_GPG_PUBLIC_KEY: $JRELEASER_GPG_PUBLIC_KEY"
-          echo "JRELEASER_MAVENCENTRAL_USERNAME: ${JRELEASER_MAVENCENTRAL_USERNAME:+SET}"
-          echo "JRELEASER_MAVENCENTRAL_PASSWORD: ${JRELEASER_MAVENCENTRAL_PASSWORD:+SET}"
-          echo "Checking key files exist:"
-          ls -la /tmp/private-key.asc /tmp/public-key.asc 2>/dev/null || echo "Key files missing!"
+      - name: Deploy to Maven Central via JReleaser
+        run: ./gradlew jreleaserDeploy
         env:
           JRELEASER_GPG_PASSPHRASE: ${{ env.JRELEASER_GPG_PASSPHRASE }}
           JRELEASER_GPG_SECRET_KEY: /tmp/private-key.asc
           JRELEASER_GPG_PUBLIC_KEY: /tmp/public-key.asc
           JRELEASER_MAVENCENTRAL_USERNAME: ${{ env.JRELEASER_MAVENCENTRAL_USERNAME }}
           JRELEASER_MAVENCENTRAL_PASSWORD: ${{ env.JRELEASER_MAVENCENTRAL_PASSWORD }}
-
-      - name: Deploy to Maven Central via JReleaser (with debug)
-        run: ./gradlew jreleaserDeploy --info --debug --stacktrace
-        env:
-          JRELEASER_GPG_PASSPHRASE: ${{ env.JRELEASER_GPG_PASSPHRASE }}
-          JRELEASER_GPG_SECRET_KEY: /tmp/private-key.asc
-          JRELEASER_GPG_PUBLIC_KEY: /tmp/public-key.asc
-          JRELEASER_MAVENCENTRAL_USERNAME: ${{ env.JRELEASER_MAVENCENTRAL_USERNAME }}
-          JRELEASER_MAVENCENTRAL_PASSWORD: ${{ env.JRELEASER_MAVENCENTRAL_PASSWORD }}
-          JRELEASER_LOG_LEVEL: DEBUG
 
       - name: Upload JReleaser logs on failure
         if: failure()
