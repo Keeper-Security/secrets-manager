@@ -133,6 +133,7 @@ configure<org.jreleaser.gradle.plugin.JReleaserExtension> {
     signing {
         active = org.jreleaser.model.Active.ALWAYS
         armored = true
+        mode = org.jreleaser.model.Signing.Mode.FILE
     }
     
     deploy {

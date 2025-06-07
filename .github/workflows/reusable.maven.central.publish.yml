@@ -61,6 +61,7 @@ jobs:
           secrets: |
             IR14oITcuvFr9Ek-lKVrXw/custom_field/signing.password > env:JRELEASER_GPG_PASSPHRASE
             IR14oITcuvFr9Ek-lKVrXw/file/90A46CD1-private-key.asc > file:/tmp/private-key.asc
+            IR14oITcuvFr9Ek-lKVrXw/file/90A46CD1-public-key.asc > file:/tmp/public-key.asc
             GXzhWrjH4xVtfYvRKdX4Eg/field/login > env:JRELEASER_MAVENCENTRAL_USERNAME
             GXzhWrjH4xVtfYvRKdX4Eg/field/password > env:JRELEASER_MAVENCENTRAL_PASSWORD
 
@@ -84,11 +85,13 @@ jobs:
       - name: Publish to staging repository
         run: ./gradlew publishAllPublicationsToStagingRepository
 
+        # Signing docs: https://jreleaser.org/guide/latest/reference/signing.html
       - name: Deploy to Maven Central via JReleaser
         run: ./gradlew jreleaserDeploy
         env:
           JRELEASER_GPG_PASSPHRASE: ${{ env.JRELEASER_GPG_PASSPHRASE }}
           JRELEASER_GPG_SECRET_KEY: /tmp/private-key.asc
+          JRELEASER_GPG_PUBLIC_KEY: /tmp/public-key.asc
           JRELEASER_MAVENCENTRAL_USERNAME: ${{ env.JRELEASER_MAVENCENTRAL_USERNAME }}
           JRELEASER_MAVENCENTRAL_PASSWORD: ${{ env.JRELEASER_MAVENCENTRAL_PASSWORD }}
 
