@@ -20,13 +20,6 @@ on:
         required: false
         type: string
         default: '11'
-    secrets:
-      KSM_ARTIFACT_JAVA_APP_CONFIG:
-        description: 'Keeper Secrets Manager configuration for Maven Central credentials'
-        required: true
-      MANIFEST_TOKEN:
-        description: 'Token for SBOM manifest generation'
-        required: true
 
 jobs:
   get-version:
@@ -45,21 +38,8 @@ jobs:
           echo "Version retrieved: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-  generate-and-upload-sbom:
-    needs: get-version
-    uses: ./.github/workflows/reusable.sbom.workflow.yml
-    with:
-      working-directory: ${{ inputs.working-directory }}
-      project-name: ${{ inputs.project-name }}
-      project-type: java
-      project-version: ${{ needs.get-version.outputs.version }}
-      sbom-format: spdx-json
-      additional-labels: ksm,sdk,java,security
-    secrets:
-      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
-
   publish-to-maven-central:
-    needs: generate-and-upload-sbom
+    needs: get-version
     environment: prod
     runs-on: ubuntu-latest
 
@@ -69,19 +49,9 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
-
-      - name: Set up Java ${{ inputs.java-version }}
-        uses: actions/setup-java@v3
+        uses: actions/checkout@v4
         with:
-          java-version: ${{ inputs.java-version }}
-          distribution: 'adopt'
-          server-id: central
-          server-username: MAVEN_USERNAME
-          server-password: MAVEN_PASSWORD
-
-      - name: Validate Gradle wrapper
-        uses: gradle/wrapper-validation-action@e6e38bacfdf1a337459f332974bb2327a31aaf4b
+          fetch-depth: 0
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
@@ -89,15 +59,47 @@ jobs:
         with:
           keeper-secret-config: ${{ secrets.KSM_ARTIFACT_JAVA_APP_CONFIG }}
           secrets: |
-            zOVOneDczofWFlfizjC5Qw/file/90A46CD1-private-key.asc > file:/tmp/signing_secret_key_ring_file.asc
-            zOVOneDczofWFlfizjC5Qw/custom_field/signing.keyId > env:SIGNING_KEY_ID
-            zOVOneDczofWFlfizjC5Qw/custom_field/signing.password > env:SIGNING_PASSWORD
-            zOVOneDczofWFlfizjC5Qw/custom_field/centralPortalUsername > env:MAVEN_USERNAME
-            zOVOneDczofWFlfizjC5Qw/custom_field/centralPortalPassword > env:MAVEN_PASSWORD
+            IR14oITcuvFr9Ek-lKVrXw/custom_field/signing.password > env:JRELEASER_GPG_PASSPHRASE
+            IR14oITcuvFr9Ek-lKVrXw/file/90A46CD1-private-key.asc > file:/tmp/private-key.asc
+            IR14oITcuvFr9Ek-lKVrXw/file/90A46CD1-public-key.asc > file:/tmp/public-key.asc
+            IR14oITcuvFr9Ek-lKVrXw/custom_field/centralUsername > env:JRELEASER_MAVENCENTRAL_USERNAME
+            IR14oITcuvFr9Ek-lKVrXw/custom_field/centralPassword > env:JRELEASER_MAVENCENTRAL_PASSWORD
 
-      - name: Publish to Maven Central
+      - name: Set up Java ${{ inputs.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: wrapper
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v3
+
+      - name: Build and test
+        run: ./gradlew clean build test
+
+      - name: Publish to staging repository
+        run: ./gradlew publishAllPublicationsToStagingRepository
+
+        # Signing docs: https://jreleaser.org/guide/latest/reference/signing.html
+      - name: Deploy to Maven Central via JReleaser
+        run: ./gradlew jreleaserDeploy
         env:
-          SIGNING_SECRET_KEY_RING_FILE: /tmp/signing_secret_key_ring_file.asc
-        run: |
-          echo "Publishing ${{ inputs.project-title }} to Maven Central..."
-          gradle publishToSonatype 
+          JRELEASER_GPG_PASSPHRASE: ${{ env.JRELEASER_GPG_PASSPHRASE }}
+          JRELEASER_GPG_SECRET_KEY: /tmp/private-key.asc
+          JRELEASER_GPG_PUBLIC_KEY: /tmp/public-key.asc
+          JRELEASER_MAVENCENTRAL_USERNAME: ${{ env.JRELEASER_MAVENCENTRAL_USERNAME }}
+          JRELEASER_MAVENCENTRAL_PASSWORD: ${{ env.JRELEASER_MAVENCENTRAL_PASSWORD }}
+
+      - name: Upload JReleaser logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jreleaser-logs-${{ inputs.project-name }}
+          path: |
+            ${{ inputs.working-directory }}/build/jreleaser/
+          retention-days: 5 

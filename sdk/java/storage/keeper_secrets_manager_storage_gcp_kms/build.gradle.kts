@@ -1,8 +1,6 @@
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.kotlin.dsl.`maven-publish`
-import org.gradle.kotlin.dsl.signing
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import java.util.*
 
 group = "com.keepersecurity.secrets-manager"
 
@@ -14,13 +12,14 @@ plugins {
     kotlin("jvm") version "2.0.20"
     kotlin("plugin.serialization") version "2.0.20"
     `maven-publish`
-    signing
-    id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
+    id("org.jreleaser") version "1.18.0"
 }
 
 java {
     sourceCompatibility = JavaVersion.VERSION_1_8
     targetCompatibility = JavaVersion.VERSION_1_8
+    withJavadocJar()
+    withSourcesJar()
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -78,49 +77,12 @@ tasks.jar {
     }
 }
 
-ext["signing.keyId"] = null
-ext["signing.password"] = null
-ext["signing.secretKeyRingFile"] = null
-ext["ossrhUsername"] = null
-ext["ossrhPassword"] = null
-
-// Grabbing secrets from local.properties file or from environment variables, which could be used on CI
-val secretPropsFile = project.rootProject.file("local.properties")
-if (secretPropsFile.exists()) {
-    // Retrieving variables from the properties file
-    val localProperties = Properties()
-    localProperties.load(secretPropsFile.inputStream())
-    localProperties.forEach { prop -> ext[prop.key.toString()] = prop.value }
-} else {
-    // Retrieving variables from environment variables
-    ext["signing.keyId"] = System.getenv("SIGNING_KEY_ID")
-    ext["signing.password"] = System.getenv("SIGNING_PASSWORD")
-    ext["signing.secretKeyRingFile"] = System.getenv("SIGNING_SECRET_KEY_RING_FILE")
-    ext["ossrhUsername"] = System.getenv("OSSRH_USERNAME")
-    ext["ossrhPassword"] = System.getenv("OSSRH_PASSWORD")
-}
-
-java {
-    withJavadocJar()
-    withSourcesJar()
-}
-
-fun getExtraString(name: String) = ext[name]?.toString()
-
 publishing {
     publications {
         create<MavenPublication>("mavenJava") {
             artifactId = project.rootProject.name
             from(components["java"])
-            versionMapping {
-                usage("java-api") {
-                    fromResolutionOf("runtimeClasspath")
-                }
-                usage("java-runtime") {
-                    fromResolutionResult()
-                }
-            }
-
+            
             pom {
                 name.set("Keeper Secrets Manager GCP KMS Storage")
                 description.set("GCP KMS storage provider for Keeper Secrets Manager. " +
@@ -135,28 +97,9 @@ publishing {
                 }
                 developers {
                     developer {
-                        id.set("SergeyAldoukhov")
-                        name.set("Sergey Aldoukhov")
-                        email.set("saldoukhov@keepersecurity.com")
-                    }
-                    developer {
                         id.set("MaksimUstinov")
                         name.set("Maksim Ustinov")
                         email.set("mustinov@keepersecurity.com")
-                    }
-                }
-                contributors {
-                    contributor {
-                        name.set("Craig Lurey")
-                        url.set("https://github.com/craiglurey")
-                    }
-                    contributor {
-                        name.set("Sergey Aldoukhov")
-                        url.set("https://github.com/saldoukhov")
-                    }
-                    contributor {
-                        name.set("Maksim Ustinov")
-                        url.set("https://github.com/maksimu")
                     }
                 }
                 scm {
@@ -166,27 +109,50 @@ publishing {
             }
         }
     }
-
+    
     repositories {
         maven {
-            name = "Sonatype"
-
-            if (project.version.toString().endsWith("SNAPSHOT")) {
-                setUrl("https://s01.oss.sonatype.org/content/repositories/snapshots/")
-            } else {
-                setUrl("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
-            }
-
-            credentials {
-                username = getExtraString("ossrhUsername")
-                password = getExtraString("ossrhPassword")
-            }
+            name = "staging"
+            url = uri(layout.buildDirectory.dir("staging-deploy"))
         }
     }
 }
 
-signing {
-    sign(publishing.publications["mavenJava"])
+// Configure JReleaser for Central Portal publishing
+configure<org.jreleaser.gradle.plugin.JReleaserExtension> {
+    project {
+        copyright = "Keeper Security Inc."
+        description = "GCP KMS storage provider for Keeper Secrets Manager"
+        authors = listOf("Keeper Security Inc.")
+        license = "MIT"
+        inceptionYear = "2024"
+    }
+    
+    gitRootSearch = true
+    
+    signing {
+        active = org.jreleaser.model.Active.ALWAYS
+        armored = true
+        mode = org.jreleaser.model.Signing.Mode.FILE
+    }
+    
+    deploy {
+        maven {
+            mavenCentral {
+                create("sonatype") {
+                    active = org.jreleaser.model.Active.ALWAYS
+                    url = "https://central.sonatype.com/api/v1/publisher"
+                    stagingRepository(layout.buildDirectory.dir("staging-deploy").get().asFile.path)
+                }
+            }
+        }
+    }
+    
+    release {
+        github {
+            enabled = false
+        }
+    }
 }
 
 tasks.javadoc {
