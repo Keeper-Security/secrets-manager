@@ -38,7 +38,7 @@ jobs:
           
       - name: Generate and upload SBOM
         env:
-          MANIFEST_API_KEY: ${{ secrets.MANIFEST_API_KEY }}
+          MANIFEST_API_KEY: ${{ secrets.MANIFEST_TOKEN }}
         run: |
           JAVASCRIPT_SDK_DIR="./sdk/javascript"
           
