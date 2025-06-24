@@ -2,17 +2,15 @@ import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
 import {privateDerToPublicRaw} from '../utils'
 
 const bytesToBase64 = (data: Uint8Array): string => {
-    const chunkSize = 0x10000 // max size accepted by String.fromCharCode
+    const chunkSize = 0x8000 // String.fromCharCode has limitations
     if (data.length <= chunkSize) {
-        // @ts-ignore
         return btoa(String.fromCharCode(...data))
     }
-    let chunks: string = ''
-    for (let i = 0; i < data.length; i = i + chunkSize) {
-        // @ts-ignore
-        chunks = chunks + String.fromCharCode(...data.slice(i, i + chunkSize))
+    const chunks: string[] = []
+    for (let i = 0; i < data.length; i += chunkSize) {
+        chunks.push(String.fromCharCode(...data.subarray(i, i + chunkSize)))
     }
-    return btoa(chunks)
+    return btoa(chunks.join(''))
 }
 
 const base64ToBytes = (data: string): Uint8Array => Uint8Array.from(atob(data), c => c.charCodeAt(0))
@@ -208,7 +206,10 @@ const __encrypt = async (data: Uint8Array, key: CryptoKey, useCBC?: boolean): Pr
         name: algorithmName,
         iv: iv
     }, key, data)
-    return Uint8Array.of(...iv, ...new Uint8Array(res))
+    const encrypted = new Uint8Array(iv.length + res.byteLength)
+    encrypted.set(iv, 0)
+    encrypted.set(new Uint8Array(res), iv.length)
+    return encrypted
 }
 
 const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean, useCBC?: boolean): Promise<void> => {

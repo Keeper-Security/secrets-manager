@@ -48,6 +48,7 @@ export type SecretManagerOptions = {
 export type QueryOptions = {
     recordsFilter?: string[]
     foldersFilter?: string[]
+    requestLinks?: boolean
 }
 
 export type CreateOptions = {
@@ -85,6 +86,7 @@ type GetPayload = CommonPayload & {
     publicKey?: string   // passed once when binding
     requestedRecords?: string[] // only return these records
     requestedFolders?: string[] // only return these folders
+    requestLinks?: boolean
 }
 
 type DeletePayload = CommonPayload & {
@@ -169,6 +171,12 @@ type SecretsManagerResponseRecord = {
     revision: number
     files: SecretsManagerResponseFile[]
     innerFolderUid: string
+    links?: KeeperRecordLink[]
+}
+
+type KeeperRecordLink = {
+    recordUid: string
+    data?: string
 }
 
 type SecretsManagerResponseFile = {
@@ -219,6 +227,7 @@ export type KeeperRecord = {
     data: any
     revision: number
     files?: KeeperFile[]
+    links?: KeeperRecordLink[]
 }
 
 export type KeeperFolder = {
@@ -278,6 +287,9 @@ const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryO
     }
     if (queryOptions?.foldersFilter) {
         payload.requestedFolders = queryOptions.foldersFilter
+    }
+    if( queryOptions?.requestLinks) {
+        payload.requestLinks = queryOptions.requestLinks
     }
     return payload
 }
@@ -503,11 +515,12 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
 const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload | FileUploadPayload): Promise<EncryptedPayload> => {
     const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
     const encryptedPayload = await platform.encryptWithKey(payloadBytes, transmissionKey.key)
-    const signatureBase = Uint8Array.of(...transmissionKey.encryptedKey, ...encryptedPayload)
+    const signatureBase = new Uint8Array(transmissionKey.encryptedKey.length + encryptedPayload.length)
+    signatureBase.set(transmissionKey.encryptedKey, 0)
+    signatureBase.set(encryptedPayload, transmissionKey.encryptedKey.length)
     const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
     return {payload: encryptedPayload, signature}
 }
-
 const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
@@ -563,6 +576,9 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
                 thumbnailUrl: file.thumbnailUrl
             })
         }
+    }
+    if (record.links) {
+        keeperRecord.links = record.links
     }
     return keeperRecord
 }
