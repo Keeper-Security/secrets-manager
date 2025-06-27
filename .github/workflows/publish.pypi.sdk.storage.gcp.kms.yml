@@ -1,22 +1,21 @@
-name: Publish to PyPI (Python SDK Storage)
+name: Publish to PyPI (Python SDK Storage GCP KMS)
 on:
   workflow_dispatch:
 
 jobs:
   publish-pypi:
-    name: Publish KSM Python SDK Storages to PyPI
+    name: Publish KSM Python SDK Storage GCP KMS to PyPI
     environment: prod
     runs-on: ubuntu-latest
     timeout-minutes: 10 # To keep builds from running too long
 
     defaults:
       run:
-        working-directory: ./sdk/python/storage/keeper_secrets_manager_storages
+        working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
-
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v4
@@ -29,18 +28,17 @@ jobs:
         with:
           keeper-secret-config: ${{ secrets.KSM_PYPI_PUBLISHER_PYPI_SDK_CONFIG }}
           secrets: |
-            -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN
+            -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN_GCP_KMS
 
       - name: Install dependencies
         run: |
-          python3 -m pip install --upgrade setuptools pip wheel twine
+          python3 -m pip install --upgrade pip build twine
           python3 -m pip install -r requirements.txt
 
       - name: Build and Publish
         env:
           TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ steps.ksmsecrets.outputs.PYPI_API_TOKEN }}
+          TWINE_PASSWORD: ${{ steps.ksmsecrets.outputs.PYPI_API_TOKEN_GCP_KMS }}
         run: |
-          python3 setup.py build
-          python3 setup.py sdist
-          python3 -m twine upload --verbose dist/*
+          python3 -m build
+          python3 -m twine upload --verbose dist/* 
