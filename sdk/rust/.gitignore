@@ -79,6 +79,3 @@ test_*
 # Local configuration
 config.local.json
 *.local.json
-
-# Temporary exclusions
-CLAUDE.md 
