@@ -140,6 +140,9 @@ jobs:
     needs: [test-ruby-sdk, generate-sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
 
     defaults:
       run:
