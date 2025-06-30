@@ -42,11 +42,13 @@ namespace SecretsManager
     {
         public string[] RecordsFilter { get; }
         public string[] FoldersFilter { get; }
+        public bool? RequestLinks { get; }
 
-        public QueryOptions(string[] recordsFilter = null, string[] foldersFilter = null)
+        public QueryOptions(string[] recordsFilter = null, string[] foldersFilter = null, bool? requestLinks = null)
         {
             RecordsFilter = recordsFilter;
             FoldersFilter = foldersFilter;
+            RequestLinks = requestLinks;
         }
     }
 
@@ -113,14 +115,16 @@ namespace SecretsManager
         public string publicKey { get; }
         public string[] requestedRecords { get; }
         public string[] requestedFolders { get; }
+        public bool? requestLinks { get; }
 
-        public GetPayload(string clientVersion, string clientId, string publicKey, string[] requestedRecords, string[] requestedFolders)
+        public GetPayload(string clientVersion, string clientId, string publicKey, string[] requestedRecords, string[] requestedFolders, bool? requestLinks = null)
         {
             this.clientVersion = clientVersion;
             this.clientId = clientId;
             this.publicKey = publicKey;
             this.requestedRecords = requestedRecords;
             this.requestedFolders = requestedFolders;
+            this.requestLinks = requestLinks;
         }
     }
 
@@ -314,6 +318,18 @@ namespace SecretsManager
         public SecretsManagerResponseRecord[] records { get; set; }
     }
 
+    public class KeeperRecordLink
+    {
+        public string recordUid { get; }
+        public string data { get; }
+
+        public KeeperRecordLink(string recordUid, string data = null)
+        {
+            this.recordUid = recordUid;
+            this.data = data;
+        }
+    }
+
     public class SecretsManagerResponseRecord
     {
         public string recordUid { get; set; }
@@ -323,6 +339,7 @@ namespace SecretsManager
         public bool isEditable { get; set; }
         public SecretsManagerResponseFile[] files { get; set; }
         public string innerFolderUid { get; set; }
+        public KeeperRecordLink[] links { get; set; }
     }
 
     public class SecretsManagerResponseFile
@@ -357,7 +374,7 @@ namespace SecretsManager
 
     public class KeeperRecord
     {
-        public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, byte[] folderKey, string innerFolderUid, KeeperRecordData data, long revision, KeeperFile[] files)
+        public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, byte[] folderKey, string innerFolderUid, KeeperRecordData data, long revision, KeeperFile[] files, KeeperRecordLink[] links)
         {
             RecordKey = recordKey;
             RecordUid = recordUid;
@@ -367,6 +384,7 @@ namespace SecretsManager
             Data = data;
             Revision = revision;
             Files = files;
+            Links = links;
         }
 
         public byte[] RecordKey { get; }
@@ -377,6 +395,7 @@ namespace SecretsManager
         public KeeperRecordData Data { get; }
         public long Revision { get; }
         public KeeperFile[] Files { get; }
+        public KeeperRecordLink[] Links { get; }
 
         public object FieldValue(string fieldType)
         {
@@ -1046,7 +1065,7 @@ namespace SecretsManager
             }
 
             var recordData = JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord);
-            return new KeeperRecord(recordKey, record.recordUid, folderUid, folderKey, record.innerFolderUid, recordData, record.revision, files.ToArray());
+            return new KeeperRecord(recordKey, record.recordUid, folderUid, folderKey, record.innerFolderUid, recordData, record.revision, files.ToArray(), recordData.links);
         }
 
         private static async Task<KeeperFolder[]> FetchAndDecryptFolders(SecretsManagerOptions options)
@@ -1127,7 +1146,7 @@ namespace SecretsManager
                 publicKey = CryptoUtils.BytesToBase64(CryptoUtils.ExportPublicKey(privateKeyBytes));
             }
 
-            return new GetPayload(GetClientVersion(), clientId, publicKey, queryOptions?.RecordsFilter, queryOptions?.FoldersFilter);
+            return new GetPayload(GetClientVersion(), clientId, publicKey, queryOptions?.RecordsFilter, queryOptions?.FoldersFilter, queryOptions?.RequestLinks);
         }
 
         private static UpdatePayload PrepareUpdatePayload(IKeyValueStorage storage, KeeperRecord record, UpdateTransactionType? transactionType = null)
