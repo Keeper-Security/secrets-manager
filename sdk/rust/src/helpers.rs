@@ -17,7 +17,7 @@ use url::Url;
 
 use crate::{
     config_keys::ConfigKeys, constants::get_keeper_servers, custom_error::KSMRError,
-    dto::SecretsManagerResponse, enums::KvStoreType, storage::KeyValueStorage,
+    enums::KvStoreType, storage::KeyValueStorage,
 };
 
 pub fn get_servers(code: String, config_store: KvStoreType) -> Result<String, KSMRError> {
@@ -49,26 +49,6 @@ pub fn get_servers(code: String, config_store: KvStoreType) -> Result<String, KS
                 .unwrap_or_else(|| server_to_use.clone())
         }
     };
-    debug!(
-        "{}",
-        format!(
-            "keeper hostname resolved to: {}",
-            server_to_return.to_string()
-        )
-    );
+    debug!("keeper hostname resolved to: {}", server_to_return);
     Ok(server_to_return)
-}
-
-pub fn get_folder_key(
-    folder_uid: String,
-    secrets_and_folders: SecretsManagerResponse,
-) -> std::option::Option<Vec<u8>> {
-    let folders = secrets_and_folders.folders;
-
-    for folder in folders {
-        if folder.uid == folder_uid {
-            return Some(folder.get_folder_key());
-        }
-    }
-    None
 }

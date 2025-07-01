@@ -38,7 +38,7 @@ mod tests {
     fn test_get_enum() {
         assert_eq!(ConfigKeys::get_enum("url"), Some(ConfigKeys::KeyUrl));
         assert_eq!(
-            ConfigKeys::get_enum("KeyClientId"),
+            ConfigKeys::get_enum("clientId"),
             Some(ConfigKeys::KeyClientId)
         );
         assert_eq!(ConfigKeys::get_enum("invalidKey"), None);

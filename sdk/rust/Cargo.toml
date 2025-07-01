@@ -11,10 +11,6 @@ readme = "README.md"
 keywords = ["secrets", "security", "keeper", "vault", "password-manager"]
 categories = ["cryptography", "api-bindings"]
 
-[[bin]]
-name = "keeper_secrets_manager_core"
-path = "src/main.rs"
-
 [lib]
 name = "keeper_secrets_manager_core"
 path = "src/lib.rs"
@@ -32,9 +28,9 @@ block-padding = "0.3"
 cipher = "0.4"
 chrono = "0.4"
 ecdsa = "0.16"
-log = "0.4"
 hex = "0.4"
 hmac = "0.12"
+log = "0.4"
 lazy_static = "1.4.0"
 mockall = "0.13"
 p256 = {version = "0.13.2", features = ["ecdh"]}
@@ -49,15 +45,13 @@ sha1 = "0.10"
 strum = "0.26"
 strum_macros = "0.26"
 tempfile = "3.3"
+tracing = "0.1"
+tracing-subscriber = "0.2"
 num-bigint = "0.4"
 url = "2.5"
-openssl = { version = "0.10", features = ["vendored"] }
-env_logger = "0.11"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3" ,features = ["securitybaseapi","winbase","winerror","errhandlingapi","winnt"]}
 
 [dev-dependencies]
-tempfile = "3.14"
-tracing = "0.1"
-tracing-subscriber = "0.2" 
+tempfile = "3.14" 

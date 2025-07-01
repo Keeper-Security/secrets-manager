@@ -19,16 +19,26 @@ use crate::custom_error::KSMRError;
 
 #[derive(Debug, Clone, Display, EnumString, Eq, PartialEq, Hash, serde::Deserialize, Serialize)]
 pub enum ConfigKeys {
+    #[serde(rename = "url")]
     KeyUrl, // base url for the Secrets Manager service
+    #[serde(rename = "clientId")]
     KeyClientId,
-    KeyClientKey, // The key that is used to identify the client before public key. This is token.
+    #[serde(rename = "clientKey")]
+    KeyClientKey, // The key that is used to identify the client before public key. This is token.   
+    #[serde(rename = "appKey")]
     KeyAppKey,    // The application key with which all secrets are encrypted
+    #[serde(rename = "appOwnerPublicKey")]
     KeyOwnerPublicKey, // The application owner public key, to create records
+    #[serde(rename = "privateKey")]
     KeyPrivateKey, // The client's private key
+    #[serde(rename = "serverPublicKeyId")]
     KeyServerPublicKeyId, // Which public key should be using?
 
+    #[serde(rename = "bat")]
     KeyBindingToken,
+    #[serde(rename = "bindingKey")]
     KeyBindingKey,
+    #[serde(rename = "hostname")]
     KeyHostname,
 }
 
@@ -78,6 +88,7 @@ impl ConfigKeys {
     /// ```
     /// use keeper_secrets_manager_core::config_keys::ConfigKeys;
     /// assert_eq!(ConfigKeys::key_from_str("url"), Some(ConfigKeys::KeyUrl));
+    /// assert_eq!(ConfigKeys::key_from_str("clientId"), Some(ConfigKeys::KeyClientId));
     /// assert_eq!(ConfigKeys::key_from_str("unknown"), None);
     /// ```
     pub fn key_from_str(value: &str) -> Option<Self> {
@@ -113,21 +124,21 @@ impl ConfigKeys {
     /// ```
     /// use keeper_secrets_manager_core::config_keys::ConfigKeys;
     /// assert_eq!(ConfigKeys::get_enum("url"), Some(ConfigKeys::KeyUrl));
-    /// assert_eq!(ConfigKeys::get_enum("KeyClientId"), Some(ConfigKeys::KeyClientId));
+    /// assert_eq!(ConfigKeys::get_enum("clientId"), Some(ConfigKeys::KeyClientId));
     /// assert_eq!(ConfigKeys::get_enum("invalidKey"), None);
     /// ```
     pub fn get_enum(value: &str) -> Option<Self> {
         match value {
-            "url" | "KeyUrl" => Some(ConfigKeys::KeyUrl),
-            "clientId" | "KeyClientId" => Some(ConfigKeys::KeyClientId),
-            "clientKey" | "KeyClientKey" => Some(ConfigKeys::KeyClientKey),
-            "appKey" | "KeyAppKey" => Some(ConfigKeys::KeyAppKey),
-            "appOwnerPublicKey" | "KeyOwnerPublicKey" => Some(ConfigKeys::KeyOwnerPublicKey),
-            "privateKey" | "KeyPrivateKey" => Some(ConfigKeys::KeyPrivateKey),
-            "serverPublicKeyId" | "KeyServerPublicKeyId" => Some(ConfigKeys::KeyServerPublicKeyId),
-            "bat" | "KeyBindingToken" => Some(ConfigKeys::KeyBindingToken),
-            "bindingKey" | "KeyBindingKey" => Some(ConfigKeys::KeyBindingKey),
-            "hostname" | "KeyHostname" => Some(ConfigKeys::KeyHostname),
+            "url"  => Some(ConfigKeys::KeyUrl),
+            "clientId"  => Some(ConfigKeys::KeyClientId),
+            "clientKey"  => Some(ConfigKeys::KeyClientKey),
+            "appKey" => Some(ConfigKeys::KeyAppKey),
+            "appOwnerPublicKey" => Some(ConfigKeys::KeyOwnerPublicKey),
+            "privateKey" => Some(ConfigKeys::KeyPrivateKey),
+            "serverPublicKeyId"  => Some(ConfigKeys::KeyServerPublicKeyId),
+            "bat"  => Some(ConfigKeys::KeyBindingToken),
+            "bindingKey"  => Some(ConfigKeys::KeyBindingKey),
+            "hostname"  => Some(ConfigKeys::KeyHostname),
             _ => None,
         }
     }

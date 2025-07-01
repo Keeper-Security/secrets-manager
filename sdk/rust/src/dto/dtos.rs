@@ -355,11 +355,9 @@ impl Record {
             ValueResult::Single(Some(value)) => Ok(value[0].clone()),
             ValueResult::Single(None) => Ok(Value::Null),
             ValueResult::Multiple(values) => {
-                let values_mapped = values
-                    .iter()
-                    .map(|v| serde_json::Value::Array(v.clone()))
-                    .collect();
-                Ok(values_mapped)
+                // Flatten the 2D array to 1D
+                let flat: Vec<Value> = values.into_iter().flatten().collect();
+                Ok(Value::Array(flat))
             }
         }
     }
@@ -510,11 +508,9 @@ impl Record {
             ValueResult::Single(Some(value)) => Ok(value[0].clone()),
             ValueResult::Single(None) => Ok(Value::Null),
             ValueResult::Multiple(values) => {
-                let values_mapped = values
-                    .iter()
-                    .map(|v| serde_json::Value::Array(v.clone()))
-                    .collect();
-                Ok(values_mapped)
+                // Flatten the 2D array to 1D
+                let flat: Vec<Value> = values.into_iter().flatten().collect();
+                Ok(Value::Array(flat))
             }
         }
     }

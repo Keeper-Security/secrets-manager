@@ -1,15 +1,11 @@
-# secrets-manager-rust
-secrets-manager-rust
+## Secrets Manager -  Rust
+This SDK helps you retrieve and manage your secrets from keeper.
 
-# How to get it to work locally
+### How to get it to work locally
 To get it to work locally we need to have
 * Rust installed
 * cargo installed
 * rustc installed
-
-This SDK requires that openssl is installed on your OS and that it is accessible by rust. To get this working you need pkg-config to be runnable by rust when its building.
-
-> sudo apt install pkg-config
 
 ## Code usage samples
 
@@ -22,7 +18,7 @@ This SDK requires that openssl is installed on your OS and that it is accessible
     fn main()-> Result<(), KSMRError>{
 
         let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
 
         let client_options = ClientOptions::new_client_options(token, file_name); 
 
@@ -39,14 +35,14 @@ This SDK requires that openssl is installed on your OS and that it is accessible
 ```
 
 ```rust
-    use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage};
+    use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::InMemoryKeyValueStorage};
 
 
     fn main()-> Result<(), KSMRError>{
 
         let im_base64 = "my_base_64_string".to_string();
-        let config = InMemoryKeyValueStorage::new_for_kv_store_type(Some(im_base64))?;
-        let client_options = ClientOptions::new_client_options("".to_string(), config);
+        let config = InMemoryKeyValueStorage::new_config_storage(Some(im_base64))?;
+        let client_options = ClientOptions::new_client_options(config);
         let mut secrets_manager = SecretsManager::new(client_options)?;
         let secrets_manager_response = secrets_manager.get_secrets_full_response(Vec::new())?;
         let records = secrets_manager_response.records;
@@ -71,14 +67,14 @@ This SDK requires that openssl is installed on your OS and that it is accessible
 
 
 ```rust
-    use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage};
+    use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::InMemoryKeyValueStorage};
 
 
     fn main()-> Result<(), KSMRError>{
 
         let im_base64 = "my_base_64_string".to_string();
-        let config = InMemoryKeyValueStorage::new_for_kv_store_type(Some(im_base64))?;
-        let client_options = ClientOptions::new_client_options("".to_string(), config);
+        let config = InMemoryKeyValueStorage::new_config_storage(Some(im_base64))?;
+        let client_options = ClientOptions::new_client_options(config);
         let mut secrets_manager = SecretsManager::new(client_options)?;
         let secrets_manager_response = secrets_manager.get_secrets_full_response(Vec::new())?;
         let records = secrets_manager_response.records;
@@ -109,7 +105,7 @@ This SDK requires that openssl is installed on your OS and that it is accessible
     fn main()-> Result<(), KSMRError>{
 
         let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
 
         let client_options = ClientOptions::new_client_options(token, file_name); 
 
@@ -134,7 +130,7 @@ This SDK requires that openssl is installed on your OS and that it is accessible
 
     fn main()-> Result<(), KSMRError>{
         let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
 
         let client_options = ClientOptions::new_client_options(token, file_name); 
 
@@ -163,7 +159,7 @@ This SDK requires that openssl is installed on your OS and that it is accessible
 
     fn main()-> Result<(), KSMRError>{
         let token = "<Token>".to_string();
-        let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
 
         let client_options = ClientOptions::new_client_options(token, file_name); 
 
@@ -188,14 +184,14 @@ This SDK requires that openssl is installed on your OS and that it is accessible
 * using generate password feature
 
 ```rust
-    use keeper_secrets_manager_core::{custom_error::KSMRError, utils::{generate_password, PasswordOptions}};
+    use keeper_secrets_manager_core::{custom_error::KSMRError, utils::{generate_password_with_options, PasswordOptions}};
 
     fn main()-> Result<(), KSMRError>{
         let password_options = PasswordOptions::new();
         let charset = "~".to_string();
         let password_options = password_options.length(34).digits(5).lowercase(5).uppercase(7).special_characters(5).special_characterset(charset);
 
-        let password = generate_password(password_options)?;
+        let password = generate_password_with_options(password_options)?;
         println!("Password: {}", password);
         Ok(())
     }
@@ -209,7 +205,7 @@ This SDK requires that openssl is installed on your OS and that it is accessible
 
     fn main()-> Result<(), KSMRError>{
         let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
 
         let client_options = ClientOptions::new_client_options(token, file_name); 
 
@@ -234,7 +230,7 @@ use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_
 
     fn main()-> Result<(), KSMRError>{
         let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
 
         let client_options = ClientOptions::new_client_options(token, file_name); 
 
@@ -253,7 +249,7 @@ use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_
 
     fn main()-> Result<(), KSMRError>{
         let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
 
         let client_options = ClientOptions::new_client_options(token, file_name); 
 
@@ -274,7 +270,7 @@ use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_
 
     fn main()-> Result<(), KSMRError>{
         let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
 
         let client_options = ClientOptions::new_client_options(token, file_name); 
 
@@ -298,7 +294,7 @@ use serde_json;
 
 fn main()-> Result<(), KSMRError>{
     let token = "<token>".to_string();
-    let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+    let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
     
     let client_options = ClientOptions::new_client_options(token, file_name); 
     
@@ -346,7 +342,7 @@ use serde_json;
 
 fn main()-> Result<(), KSMRError>{
     let token = "<token>".to_string();
-    let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+    let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
     
     let client_options = ClientOptions::new_client_options(token, file_name); 
     
@@ -377,7 +373,7 @@ use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_
 
 fn main()-> Result<(), KSMRError>{
     let token = "<Your One time token>".to_string();
-    let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+    let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
 
     let client_options = ClientOptions::new_client_options(token, file_name); 
 
@@ -399,61 +395,67 @@ fn main()-> Result<(), KSMRError>{
 * How to create a record
 
 ```rust
-use keeper_secrets_manager_core::{
-    core::{ClientOptions, SecretsManager},
-    custom_error::KSMRError,
-    dto::{
-        dtos::{RecordCreate},
-        field_structs::{self},
-    },
-    enums::{DefaultRecordType},
-    storage::FileKeyValueStorage,
-    utils::{self},
-};
-use log::error;
-use tracing::{info};
-
-fn main()-> Result<(), KSMRError>{
-    let token = "<Your One time token>".to_string();
-    let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
-
-    let client_options = ClientOptions::new_client_options(token, file_name); 
-
-    println!("Create Secret\n--------------------------------------------------------------");
-    let mut secrets_manager_3 = SecretsManager::new(client_options)?;
-    let mut new_record = RecordCreate::new(
-        DefaultRecordType::Login.get_type().to_string(),
-        "sample create record".to_string(),
-        None,
-    );
-    let login_field = field_structs::Login::new(
-        "sample_email@metron.com".to_string(),
-        None,
-        Some(false),
-        Some(false),
-    );
-    new_record.append_standard_fields(login_field);
-    let password_field = field_structs::Password::new(
-        "Dummy_Password#123".to_string(),
-        None,
-        Some(true),
-        Some(false),
-        Some(true),
-        None,
-    )?;
-    new_record.append_standard_fields(password_field);
-    let created_record: Result<String, KSMRError> =
-        secrets_manager.create_secret("<folder_uid>".to_string(), new_record);
-    match created_record {
-        Ok(data) => {
-            info!("created_record uid: {}", data);
-            data
-        }
-        Err(err) => {
-            error!("Error creating record: {}", err);
-            return Err(err);
-        }
+fn test_record_create_normal() -> Result<(), KSMRError>{
+    use keeper_secrets_manager_core::{
+        core::{ClientOptions, SecretsManager},
+        storage::FileKeyValueStorage,
+        dto::{dtos::RecordCreate, field_structs::RecordField}
     };
+    use serde_json::{self, json, Number, Value};
+
+    // setup secrets manager
+    let token = "<token_here>".to_string();
+    let config = FileKeyValueStorage::new_config_storage("test_demo.json".to_string())?;
+    let client_options = ClientOptions::new_client_options(token, config);
+    let mut secrets_manager = SecretsManager::new(client_options)?;
+
+    // This is how we create a Record
+    let mut created_record =  RecordCreate::new("login".to_string(), "Login Record RUST_LOG_TEST".to_string(), Some("Dummy Notes".to_string()));
+    
+    // This is how we create a single field 
+    let password_field = RecordField::new_record_field_with_options("password", Value::String(utils::generate_password()?), Some("Random password label".to_string()), false, true);
+
+    // This is one of the ways to create a value object from JSON String
+    let security_question_value = Value::from_str("{\"question\": \"What is the question?\", \"answer\": \"This is the answer!\"}")?;
+    
+    //This is one way to create all fields directly in a vector
+    let fields = vec![
+        RecordField::new_record_field("login",  Value::String("login@email.com".to_string()), Some("My Custom Login lbl".to_string())),
+
+        RecordField::new_record_field("login",  Value::String("login@email.com".to_string()), Some("My Label".to_string())),
+
+        password_field,
+        
+        RecordField::new_record_field("securityQuestion", security_question_value , Some("My Label".to_string())),
+
+        RecordField::new_record_field("multiline", Value::String("This\nIs a multiline\nnote".to_string()) , Some("My Multiline lbl".to_string())),
+
+        RecordField::new_record_field("secret", Value::String("SecretText".to_string()) , Some("My Hidden Field lbl".to_string())),
+
+        RecordField::new_record_field("pinCode", Value::String("1234567890".to_string()) , Some("My Pin Code Field Lbl".to_string())),
+
+        RecordField::new_record_field("addressRef", Value::String("some_UID".to_string()) , Some("My Address Reference".to_string())),
+
+        RecordField::new_record_field("phone", json!({"region": "US", "number": "510-444-3333"}) , Some("My Phone Number".to_string())),
+
+        RecordField::new_record_field("date", Value::Number(Number::from(1641934793000i64)) , Some("My date".to_string())),
+
+        RecordField::new_record_field("date", Value::String("September eleventh two thousand and eleven".to_string()) , Some("Bad day in history of humanity".to_string())),
+
+        RecordField::new_record_field("name", json!({"first": "Lincoln", "last": "Adams"}) , Some("His Name".to_string())),
+        ];
+
+    // Here we are adding fields object to standard fields 
+    created_record.fields = Some(fields);
+    
+    created_record.custom = Some(
+        vec![
+            RecordField::new_record_field("phone", json!({"region": "US", "number": "510-222-5555", "ext": "99887", "type": "Mobile"}) , Some("My Custom Phone Lbl".to_string())),
+        ]
+    );
+   
+    // Make the API call
+    let _ = secrets_manager.create_secret("Shared Folder UID".to_string(), created_record)?;
 
     Ok(())
 }
@@ -478,7 +480,7 @@ use tracing::{info};
 
 fn main()-> Result<(), KSMRError>{
     let token = "<Your One time token>".to_string();
-    let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+    let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
 
     let client_options = ClientOptions::new_client_options(token, file_name); 
 
@@ -529,13 +531,13 @@ use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_
 fn main()-> Result<(), KSMRError>{
     let token = "<Token>".to_string();
 
-    let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+    let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
     
     let client_options = ClientOptions::new_client_options(token, file_name); 
     
     let mut secrets_manager = SecretsManager::new(client_options)?;  
     
-    let secrets_notation_result2 = secrets_manager.get_notation("2AVyrCRB5w5zLUGHXL8IAw/field/email[2]".to_string());
+    let secrets_notation_result2 = secrets_manager.get_notation("<record_uid>/field/email[2]".to_string());
     
     match secrets_notation_result2 {
         Ok(data) => {
@@ -559,9 +561,9 @@ fn main(){
 
     let token = "<Token>".to_string();
 
-    let file_name = FileKeyValueStorage::new_for_kv_store_type("test.json".to_string())?;
+    let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
     
-    let mut client_options = ClientOptions::new_client_options(token, file_name);
+    let mut client_options = ClientOptions::new_client_options_with_token(token, file_name);
     client_options.set_cache(cache.into()); 
     
     let mut secrets_manager = SecretsManager::new(client_options)?;  
@@ -577,10 +579,9 @@ Using In Memory Storage for Creating a Folder
 use keeper_secrets_manager_core::{core::{SecretsManager, ClientOptions}, enums::InMemoryKeyValueStorage, custom_error::KSMRError};
 
 fn main() -> Result<(), KSMRError> {
-    let token = "".to_string();
     let base_64_string = "<YOUR_BASE64_STRING>".to_string();
-    let config = InMemoryKeyValueStorage::new_for_kv_store_type(Some(base_64_string))?;
-    let client_options = ClientOptions::new_client_options(token, config);
+    let config = InMemoryKeyValueStorage::new_config_storage(Some(base_64_string))?;
+    let client_options = ClientOptions::new_client_options(config);
     let secrets_manager = SecretsManager::new(client_options)?;
 
     //Create Folder
@@ -602,10 +603,9 @@ Using In Memory Storage for retrieving all folders
 use keeper_secrets_manager_core::{core::{SecretsManager, ClientOptions}, enums::InMemoryKeyValueStorage, custom_error::KSMRError};
 
 fn main() -> Result<(), KSMRError> {
-    let token = "".to_string();
     let base_64_string = "<YOUR_BASE64_STRING>".to_string();
-    let config = InMemoryKeyValueStorage::new_for_kv_store_type(Some(base_64_string))?;
-    let client_options = ClientOptions::new_client_options(token, config);
+    let config = InMemoryKeyValueStorage::new_config_storage(Some(base_64_string))?;
+    let client_options = ClientOptions::new_client_options(config);
     let secrets_manager = SecretsManager::new(client_options)?;
 
     //Get all Folders
@@ -627,10 +627,9 @@ Using In Memory Storage for update folder
 use keeper_secrets_manager_core::{core::{SecretsManager, ClientOptions}, enums::InMemoryKeyValueStorage, custom_error::KSMRError};
 
 fn main() -> Result<(), KSMRError> {
-    let token = "".to_string();
     let base_64_string = "<YOUR_BASE64_STRING>".to_string();
-    let config = InMemoryKeyValueStorage::new_for_kv_store_type(Some(base_64_string))?;
-    let client_options = ClientOptions::new_client_options(token, config);
+    let config = InMemoryKeyValueStorage::new_config_storage(Some(base_64_string))?;
+    let client_options = ClientOptions::new_client_options(config);
     let secrets_manager = SecretsManager::new(client_options)?;
 
     //Update folder name

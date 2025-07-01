@@ -247,7 +247,8 @@ impl Password {
                     .lowercase(pass_complexity.lower.into())
                     .uppercase(pass_complexity.caps.into())
                     .special_characters(pass_complexity.special.into());
-                let generated_password_value = utils::generate_password(password_options)?;
+                let generated_password_value =
+                    utils::generate_password_with_options(password_options)?;
                 password_value = Value::Array(vec![Value::String(generated_password_value)]);
             } else {
                 return Err(KSMRError::RecordDataError("Password value is empty and enforce generation is false, please make one or other a true value".to_string()));
@@ -2393,5 +2394,62 @@ where
         None => Err(KSMRError::DataConversionError(
             "Expected an object but found something else".to_string(),
         )),
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RecordField {
+    #[serde(rename(serialize = "type", deserialize = "field_type"))]
+    pub field_type: String,
+    pub value: Value,
+    pub required: bool,
+    pub privacy_screen: bool,
+    pub label: Option<String>,
+}
+
+impl RecordField {
+    pub fn new(
+        field_type: String,
+        value: Value,
+        label: Option<String>,
+        required: bool,
+        privacy_screen: bool,
+    ) -> KeeperField {
+        let arrayed_value = Value::Array(vec![value]);
+
+        match label {
+            Some(val) => KeeperField {
+                field_type,
+                value: arrayed_value,
+                required,
+                privacy_screen,
+                label: val,
+            },
+            None => KeeperField {
+                field_type,
+                value: arrayed_value,
+                required,
+                privacy_screen,
+                label: "".to_string(),
+            },
+        }
+    }
+
+    pub fn new_record_field(
+        field_type: &str,
+        value: Value,
+        label: Option<String>,
+    ) -> KeeperField {
+        Self::new(field_type.to_string(), value, label, false, false)
+    }
+
+    pub fn new_record_field_with_options(
+        field_type: &str,
+        value: Value,
+        label: Option<String>,
+        required: bool,
+        privacy_screen: bool,
+    ) -> KeeperField {
+        Self::new(field_type.to_string(), value, label, required, privacy_screen)
     }
 }

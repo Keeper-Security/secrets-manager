@@ -13,7 +13,7 @@
 pub struct CryptoUtils;
 use std::error::Error;
 use std::vec;
-
+use cipher::{BlockEncrypt, BlockDecrypt};
 use crate::custom_error::KSMRError;
 use crate::utils;
 use aes::Aes256;
@@ -22,17 +22,7 @@ use aes_gcm::KeyInit;
 use aes_gcm::{self, AeadCore, Aes256Gcm};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, prelude::BASE64_URL_SAFE, Engine as _};
 use block_padding::generic_array::GenericArray;
-use cipher::BlockEncrypt;
 use num_bigint::BigUint;
-use openssl::bn::BigNumContext;
-use openssl::ec::{EcGroup, EcKey};
-use openssl::nid::Nid;
-use openssl::pkey::PKey;
-use openssl::{
-    pkey,
-    symm::{Cipher, Crypter, Mode},
-};
-
 use ecdsa::signature::Signer;
 use ecdsa::signature::Verifier;
 use p256::elliptic_curve::rand_core::OsRng;
@@ -708,21 +698,6 @@ impl CryptoUtils {
             .map_err(|_| KSMRError::CryptoError("Failed to create SigningKey from bytes".into()))
     }
 
-    pub fn generate_ecc_keys_openssl() -> Result<PKey<pkey::Private>, KSMRError> {
-        // Load SECP256R1 curve group
-        let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)
-            .map_err(|e| KSMRError::CryptoError(format!("Failed to get curve: {}", e)))?;
-
-        // Generate ephemeral ECC key pair
-        let ec_key = EcKey::generate(&group)
-            .map_err(|e| KSMRError::CryptoError(format!("Failed to generate EC key: {}", e)))?;
-
-        // Wrap in PKey for easy use in OpenSSL operations
-        let pkey: PKey<pkey::Private> = PKey::from_ec_key(ec_key)
-            .map_err(|e| KSMRError::CryptoError(format!("Failed to wrap EC key: {}", e)))?;
-
-        Ok(pkey)
-    }
 
     #[allow(clippy::needless_doctest_main)]
     /// Derives the public key from a given ECC private key.
@@ -774,35 +749,6 @@ impl CryptoUtils {
         pub_key_bytes
     }
 
-    pub fn public_key_ecc_openssl(private_key: &PKey<pkey::Private>) -> Result<Vec<u8>, KSMRError> {
-        // Ensure the private key is an EC key and on the prime256v1 curve
-        let ec_key = private_key
-            .ec_key()
-            .map_err(|err| KSMRError::CryptoError(err.to_string()))?;
-        let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)
-            .map_err(|err| KSMRError::CryptoError(err.to_string()))?;
-
-        // Validate the curve
-        if ec_key.group().curve_name() != Some(Nid::X9_62_PRIME256V1) {
-            return Err(KSMRError::CryptoError("Invalid curve".to_string()));
-        }
-
-        // Get the public key from the private key
-        let public_key = ec_key.public_key();
-
-        let mut big_num_ref =
-            BigNumContext::new().map_err(|err| KSMRError::CryptoError(err.to_string()))?;
-        // Serialize the public key in uncompressed format
-        let pub_key_bytes = public_key
-            .to_bytes(
-                &group,
-                openssl::ec::PointConversionForm::UNCOMPRESSED,
-                &mut big_num_ref,
-            )
-            .map_err(|err| KSMRError::CryptoError(err.to_string()))?;
-
-        Ok(pub_key_bytes)
-    }
 
     #[allow(clippy::needless_doctest_main)]
     /// Generates a new ECC private key.
@@ -866,9 +812,10 @@ impl CryptoUtils {
         // Create a byte array from the integer representation (needs 32 bytes)
         let mut key_bytes = [0u8; 32];
 
-        // Fill the first 16 bytes with the encryption_key_int
-        let int_bytes = encryption_key_int.to_bytes_be(); // This gives a 16-byte array because BigUint will only be able to handle 16 bytes of data
-        key_bytes.copy_from_slice(&int_bytes); // Fill the first 16 bytes
+        // Right-align int_bytes in key_bytes
+        let int_bytes = encryption_key_int.to_bytes_be();
+        let start = 32 - int_bytes.len();
+        key_bytes[start..].copy_from_slice(&int_bytes);
 
         // Create SigningKey from the byte array
         SigningKey::from_bytes(GenericArray::from_slice(&key_bytes)).map_err(|e| {
@@ -941,20 +888,7 @@ impl CryptoUtils {
         }
     }
 
-    pub fn _generate_private_key_der() -> Result<Vec<u8>, KSMRError> {
-        let group: EcGroup = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)
-            .map_err(|err| KSMRError::CryptoError(err.to_string()))?;
-        let ec_key =
-            EcKey::generate(&group).map_err(|err| KSMRError::CryptoError(err.to_string()))?;
-        let priv_key =
-            PKey::from_ec_key(ec_key).map_err(|err| KSMRError::CryptoError(err.to_string()))?;
 
-        let private_key_der = priv_key
-            .private_key_to_der()
-            .map_err(|err| KSMRError::CryptoError(err.to_string()))?;
-
-        Ok(private_key_der)
-    }
 
     #[allow(clippy::needless_doctest_main)]
     /// Generates a new ephemeral ECC signing key using the SECP256R1 curve.
@@ -1337,41 +1271,37 @@ impl CryptoUtils {
         if key.len() != 32 {
             return Err(KSMRError::CryptoError("Invalid key size".to_string()));
         }
-
         // Validate that data is large enough to contain an IV (16 bytes for AES-CBC)
         if data.len() < 16 {
             return Err(KSMRError::CryptoError(
                 "Data too short to contain IV".to_string(),
             ));
         }
-
         // Extract the IV and ciphertext
         let iv = &data[..16]; // First 16 bytes are the IV
         let ciphertext = &data[16..]; // Remaining bytes are the encrypted data
-
-        // Initialize the OpenSSL AES-256-CBC cipher
-        let cipher = Cipher::aes_256_cbc();
-
-        // Create a Crypter for decryption
-        let mut crypter = Crypter::new(cipher, Mode::Decrypt, key, Some(iv))
-            .map_err(|e| KSMRError::CryptoError(format!("Failed to create crypter: {}", e)))?;
-
-        crypter.pad(false);
-
-        // Allocate a buffer to store decrypted data
-        let mut plaintext = vec![0; ciphertext.len() + cipher.block_size()];
-
-        // Decrypt the ciphertext
-        let mut count = crypter
-            .update(ciphertext, &mut plaintext)
-            .map_err(|e| KSMRError::CryptoError(format!("Decryption failed: {}", e)))?;
-        count += crypter
-            .finalize(&mut plaintext[count..])
-            .map_err(|e| KSMRError::CryptoError(format!("Finalization failed: {}", e)))?;
-
-        // Truncate the plaintext to the actual size after decryption
-        plaintext.truncate(count);
-
+        // Validate ciphertext length
+        if ciphertext.len() % BLOCK_SIZE != 0 {
+            return Err(KSMRError::CryptoError("Data is probably not encoded".to_string()));
+        }
+        let cipher = Aes256::new(GenericArray::from_slice(key));
+        let mut plaintext = Vec::with_capacity(ciphertext.len());
+        let mut previous_block = iv.to_vec();
+        for block in ciphertext.chunks(BLOCK_SIZE) {
+            let mut block_arr = GenericArray::clone_from_slice(block);
+            cipher.decrypt_block(&mut block_arr);
+            // XOR decrypted block with previous ciphertext block (or IV)
+            let decrypted_block: Vec<u8> = block_arr
+            .iter()
+            .zip(&previous_block)
+            .map(|(b, p)| b ^ p)
+            .collect();
+            plaintext.extend_from_slice(&decrypted_block);
+            previous_block = block.to_vec();
+        }
+        // Remove PKCS#7 padding
+        // let unpadded = unpad_data(&plaintext)
+        //     .map_err(|e| KSMRError::CryptoError(format!("Unpadding failed: {}", e)))?;
         Ok(plaintext)
     }
 
@@ -1512,16 +1442,11 @@ impl CryptoUtils {
             .decode(value)
             .map_err(|e| KSMRError::CryptoError(format!("Base64 decoding failed: {}", e)))?;
 
-        // Create a SHA-256 hasher
-        let mut hasher = openssl::sha::Sha256::new();
-
-        // Update the hasher with the byte data
+        // Use sha2 crate for SHA-256 hashing
+        let mut hasher = sha2::Sha256::new();
         hasher.update(&value_bytes);
+        let hash_result = hasher.finalize();
 
-        // Finalize the hash and return it
-        let hash_result = hasher.finish();
-
-        // Return the hash as a Vec<u8>
         Ok(hash_result.to_vec())
     }
 
