@@ -25,8 +25,6 @@ pub enum KSMRError {
     CacheRetrieveError(String),
     CachePurgeError(String),
     SecretManagerCreationError(String),
-    LoggerError(String),
-    InvalidLogLevel(String),
     StorageError(String),
     DirectoryCreationError(String, std::io::Error),
     FileCreationError(String, std::io::Error),
@@ -65,8 +63,6 @@ impl fmt::Display for KSMRError {
                 write!(f, "Secret manager creation Error: {}", msg)
             }
             KSMRError::PasswordCreationError(msg) => write!(f, "Password creation Error: {}", msg),
-            KSMRError::LoggerError(msg) => write!(f, "Logger Error: {}", msg),
-            KSMRError::InvalidLogLevel(msg) => write!(f, "Invalid log level: {}", msg),
             KSMRError::StorageError(msg) => write!(f, "Storage Error: {}", msg),
             KSMRError::DirectoryCreationError(er, error) => {
                 write!(f, "Directory Creation failed: {}: {}", er, error)
@@ -133,8 +129,6 @@ impl PartialEq for KSMRError {
                 KSMRError::SecretManagerCreationError(msg2),
             ) => msg1 == msg2,
             (KSMRError::KeyNotFoundError(msg1), KSMRError::KeyNotFoundError(msg2)) => msg1 == msg2,
-            (KSMRError::LoggerError(msg1), KSMRError::LoggerError(msg2)) => msg1 == msg2,
-            (KSMRError::InvalidLogLevel(msg1), KSMRError::InvalidLogLevel(msg2)) => msg1 == msg2,
             (KSMRError::FileError(msg1), KSMRError::FileError(msg2)) => msg1 == msg2,
             (KSMRError::StorageError(msg1), KSMRError::StorageError(msg2)) => msg1 == msg2,
             (

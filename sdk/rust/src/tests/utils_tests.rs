@@ -679,7 +679,7 @@ mod set_config_mode_tests {
         let file_path = "C:\\path\\to\\config_file.txt";
 
         // Mock SID retrieval function, mock command execution to simulate success/failure
-        let mock_get_windows_user_sid_and_name = || {
+        let _mock_get_windows_user_sid_and_name = || {
             // Return a mock SID and username
             (
                 Some("S-1-5-21-3623811015-3361044348-30300820-1013".to_string()),
@@ -705,7 +705,7 @@ mod set_config_mode_tests {
         File::create(file_path).expect("Failed to create test file");
 
         // Execute the function to set Unix permissions
-        let result = set_config_mode(file_path, None);
+        let result = set_config_mode(file_path);
 
         // Assert that the function completed successfully
         assert!(result.is_ok());
@@ -734,7 +734,7 @@ mod set_config_mode_tests {
         File::create(file_path).expect("Failed to create test file");
 
         // Call the function and expect it to return Ok immediately
-        let result = set_config_mode(file_path, None);
+        let result = set_config_mode(file_path);
         assert!(result.is_ok());
 
         // Clean up
@@ -751,18 +751,18 @@ mod check_config_mode_tests {
     use crate::utils::ConfigError;
     use std::env;
     use std::fs;
-    #[cfg(target_os = "windows")]
-    use std::io::{self, Write};
+    // #[cfg(target_os = "windows")]
+    // use std::io::{self, Write};
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
-    #[cfg(target_os = "windows")]
-    use std::process::Command;
-    #[cfg(target_os = "windows")]
-    use tempfile::NamedTempFile;
+    // #[cfg(target_os = "windows")]
+    // use std::process::Command;
+    // #[cfg(target_os = "windows")]
+    // use tempfile::NamedTempFile;
 
     // Helper function to create a temporary file for testing
-    fn create_temp_file_with_permissions(content: &str, mode: u32) -> String {
+    fn create_temp_file_with_permissions(content: &str, _mode: u32) -> String {
         // let temp_file = tempfile::NamedTempFile::new().unwrap();
         // let path = temp_file.path().to_str().unwrap().to_string();
 
@@ -776,7 +776,7 @@ mod check_config_mode_tests {
         #[cfg(unix)]
         {
             let mut permissions = fs::metadata(&path).unwrap().permissions();
-            permissions.set_mode(mode);
+            permissions.set_mode(_mode);
             fs::set_permissions(&path, permissions).expect("Unable to set permissions");
 
             // // Adjust ownership (Unix only)
@@ -960,20 +960,20 @@ mod check_config_mode_tests {
 mod generate_password_tests {
     use crate::{
         custom_error::KSMRError,
-        utils::{generate_password, PasswordOptions},
+        utils::{generate_password_with_options, PasswordOptions},
     };
 
     #[test]
     fn test_generate_password_default_options() {
         let options = PasswordOptions::new().length(32);
-        let password = generate_password(options).unwrap();
+        let password = generate_password_with_options(options).unwrap();
         assert_eq!(password.len(), 32);
     }
 
     #[test]
     fn test_generate_password_with_lowercase() {
         let options = PasswordOptions::new().length(32).lowercase(4);
-        let password = generate_password(options).unwrap();
+        let password = generate_password_with_options(options).unwrap();
         assert_eq!(password.len(), 32);
         assert!(password.chars().filter(|c| c.is_lowercase()).count() >= 4);
     }
@@ -981,7 +981,7 @@ mod generate_password_tests {
     #[test]
     fn test_generate_password_with_uppercase() {
         let options = PasswordOptions::new().length(32).uppercase(4);
-        let password = generate_password(options).unwrap();
+        let password = generate_password_with_options(options).unwrap();
         assert_eq!(password.len(), 32);
         assert!(password.chars().filter(|c| c.is_uppercase()).count() >= 4);
     }
@@ -989,7 +989,7 @@ mod generate_password_tests {
     #[test]
     fn test_generate_password_with_digits() {
         let options = PasswordOptions::new().length(32).digits(4);
-        let password = generate_password(options).unwrap();
+        let password = generate_password_with_options(options).unwrap();
         assert_eq!(password.len(), 32);
         assert!(password.chars().filter(|c| c.is_digit(10)).count() >= 4);
     }
@@ -997,7 +997,7 @@ mod generate_password_tests {
     #[test]
     fn test_generate_password_with_special_characters() {
         let options = PasswordOptions::new().length(32).special_characters(4);
-        let password = generate_password(options).unwrap();
+        let password = generate_password_with_options(options).unwrap();
         assert_eq!(password.len(), 32);
         assert!(
             password
@@ -1016,7 +1016,7 @@ mod generate_password_tests {
             .uppercase(4)
             .digits(4)
             .special_characters(4);
-        let password = generate_password(options).unwrap();
+        let password = generate_password_with_options(options).unwrap();
         assert_eq!(password.len(), 32);
         assert!(password.chars().filter(|c| c.is_lowercase()).count() >= 4);
         assert!(password.chars().filter(|c| c.is_uppercase()).count() >= 4);
@@ -1037,7 +1037,7 @@ mod generate_password_tests {
             .lowercase(15)
             .uppercase(10)
             .digits(10);
-        let result = generate_password(options);
+        let result = generate_password_with_options(options);
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
@@ -1050,7 +1050,7 @@ mod generate_password_tests {
     #[test]
     fn test_generate_password_with_zero_length() {
         let options = PasswordOptions::new().length(0);
-        let result = generate_password(options);
+        let result = generate_password_with_options(options);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 32);
     }
@@ -1061,7 +1061,7 @@ mod generate_password_tests {
             .length(32)
             .special_characters(32)
             .special_characterset("!@#$%^&*()".to_string());
-        let password = generate_password(options).unwrap();
+        let password = generate_password_with_options(options).unwrap();
         assert_eq!(password.len(), 32);
         assert!(password.chars().all(|c| "!@#$%^&*()".contains(c)));
     }
@@ -1069,7 +1069,7 @@ mod generate_password_tests {
     #[test]
     fn test_generate_password_with_no_constraints() {
         let options = PasswordOptions::new().length(32);
-        let password = generate_password(options).unwrap();
+        let password = generate_password_with_options(options).unwrap();
         assert_eq!(password.len(), 32);
         assert!(password.chars().any(|c| c.is_lowercase()
             || c.is_uppercase()

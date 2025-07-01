@@ -13,7 +13,7 @@
 use crate::config_keys::ConfigKeys;
 use crate::custom_error::KSMRError;
 use crate::enums::KvStoreType;
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{engine::general_purpose::{STANDARD, STANDARD_NO_PAD}, Engine as _};
 use serde_json::{self};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
@@ -57,7 +57,7 @@ impl FileKeyValueStorage {
         })
     }
 
-    pub fn new_for_kv_store_type(file_name: String) -> Result<KvStoreType, KSMRError> {
+    pub fn new_config_storage(file_name: String) -> Result<KvStoreType, KSMRError> {
         let file_storage = FileKeyValueStorage::new(Some(file_name.to_string()))?;
         Ok(KvStoreType::File(file_storage))
     }
@@ -149,7 +149,7 @@ impl KeyValueStorage for FileKeyValueStorage {
         value: String,
     ) -> Result<HashMap<ConfigKeys, String>, KSMRError> {
         // Check if the key is valid
-        if ConfigKeys::get_enum(&key.to_string()).is_none() {
+        if ConfigKeys::get_enum(key.value()).is_none() {
             return Err(KSMRError::StorageError(format!("Invalid key: {:?}", key)));
         }
 
@@ -177,9 +177,9 @@ impl KeyValueStorage for FileKeyValueStorage {
 
         // Check if the key exists in the config and remove it
         if config.remove(&key).is_some() {
-            log::debug!("Removed key {}", key.to_string());
+            log::debug!("Removed key {}", key);
         } else {
-            log::debug!("No key {} was found in config", key.to_string());
+            log::debug!("No key {} was found in config", key);
         }
 
         // Save the updated configuration
@@ -259,36 +259,40 @@ impl InMemoryKeyValueStorage {
     pub fn new(config: Option<String>) -> Result<Self, KSMRError> {
         let mut config_map: HashMap<ConfigKeys, String> = HashMap::new();
 
-        if let Some(config) = config {
-            // Check if the string is base64 encoded
-            if Self::is_base64(&config) {
-                // Decode the base64 string
-                let decoded_bytes = STANDARD.decode(&config).map_err(|e| {
-                    KSMRError::DecodeError(format!("Failed to decode Base64 string: {}", e))
-                })?;
+        if let Some(cfg) = config {
+            if Self::is_base64(&cfg) {
+                // Try decoding as padded, then un-padded
+                let decoded_bytes = STANDARD
+                    .decode(&cfg)
+                    .or_else(|_| STANDARD_NO_PAD.decode(&cfg))
+                    .map_err(|e| {
+                        KSMRError::DecodeError(format!("Failed to decode Base64 string: {}", e))
+                    })?;
+
                 let decoded_string = String::from_utf8(decoded_bytes).map_err(|e| {
                     KSMRError::StringConversionError(format!(
                         "Failed to convert decoded bytes to string: {}",
                         e
                     ))
                 })?;
+
                 config_map = Self::json_to_dict(&decoded_string)?;
             } else {
                 // Directly parse the JSON string
-                config_map = Self::json_to_dict(&config)?;
+                config_map = Self::json_to_dict(&cfg)?;
             }
         }
         Ok(InMemoryKeyValueStorage { config: config_map })
     }
 
-    pub fn new_for_kv_store_type(config: Option<String>) -> Result<KvStoreType, KSMRError> {
+    pub fn new_config_storage(config: Option<String>) -> Result<KvStoreType, KSMRError> {
         let in_memory = InMemoryKeyValueStorage::new(config)?;
         Ok(KvStoreType::InMemory(in_memory))
     }
 
     fn is_base64(s: &str) -> bool {
-        // Check if the string can be Base64 decoded
-        STANDARD.decode(s).is_ok()
+        // Accept either padded or un-padded Base64
+        STANDARD.decode(s).is_ok() || STANDARD_NO_PAD.decode(s).is_ok()
     }
 
     pub fn json_to_dict(json_str: &str) -> Result<HashMap<ConfigKeys, String>, KSMRError> {
