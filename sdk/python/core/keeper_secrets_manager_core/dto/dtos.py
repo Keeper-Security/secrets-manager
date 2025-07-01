@@ -91,14 +91,14 @@ class Record:
 
         return found_file
 
-    def download_file_by_title(self, title, path):
+    def download_file_by_title(self, title, path, replace_crlf=False):
 
         found_file = self.find_file_by_title(title)
 
         if not found_file:
             raise KeeperError("File %s not found" % title)
 
-        found_file.save_file(path)
+        found_file.save_file(path, False, replace_crlf)
 
     def __str__(self):
         return '[Record: uid=%s, type: %s, title: %s, files count: %s]' % (self.uid, self.type, self.title,
@@ -387,7 +387,7 @@ class KeeperFile:
 
         return self.file_data
 
-    def save_file(self, path, create_folders=False):
+    def save_file(self, path, create_folders=False, replace_crlf=False):
         """
         Save decrypted file data to the provided path
         """
@@ -405,6 +405,9 @@ class KeeperFile:
 
         file = open(path, "wb")
 
+        if replace_crlf:
+            # replace all CRLF terminated lines with just the newlines
+            file_data = file_data.replace(b'\r\n', b'\n')
         file.write(file_data)
         file.close()
 
