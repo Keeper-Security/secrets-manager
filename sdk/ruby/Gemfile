@@ -1,0 +1,13 @@
+source 'https://rubygems.org'
+
+# Specify gem dependencies in keeper_secrets_manager.gemspec
+gemspec
+
+group :development, :test do
+  gem 'rspec', '~> 3.12'
+  gem 'rake', '~> 13.0'
+  gem 'simplecov', '~> 0.22'
+  gem 'webmock', '~> 3.18'
+  gem 'rubocop', '~> 1.12.0'
+  gem 'yard', '~> 0.9'
+end
