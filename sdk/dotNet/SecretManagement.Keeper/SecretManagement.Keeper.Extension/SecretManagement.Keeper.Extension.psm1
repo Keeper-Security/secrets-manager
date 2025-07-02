@@ -2,6 +2,11 @@ function Get-Config {
     param (
         [string] $LocalVaultName
     )
+    if ($PSVersionTable.PSVersion.Major -lt 6) {
+        Write-Error "Keeper Secrets Manager requires PowerShell version 6 or greater - version ($($PSVersionTable.PSVersion.ToString())) is not supported."
+        return $null
+    }
+
     $vaults = Microsoft.Powershell.SecretManagement\Get-SecretVault
     $localVault = $vaults.Where( { $_.Name -eq $LocalVaultName } ) # SecretStore/LocalStore
     if (!$localVault) {
