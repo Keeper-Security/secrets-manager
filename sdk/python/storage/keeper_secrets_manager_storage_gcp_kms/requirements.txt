@@ -20,7 +20,7 @@ pyasn1==0.6.1
 pyasn1_modules==0.4.1
 pycparser==2.22
 pycryptodome==3.21.0
-requests==2.32.3
+requests==2.32.4
 rsa==4.9
 urllib3==2.3.0
 zipp==3.21.0
