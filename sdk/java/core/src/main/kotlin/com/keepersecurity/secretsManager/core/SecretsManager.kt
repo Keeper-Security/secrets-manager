@@ -52,6 +52,7 @@ data class SecretsManagerOptions @JvmOverloads constructor(
 data class QueryOptions @JvmOverloads constructor(
     val recordsFilter: List<String> = emptyList(),
     val foldersFilter: List<String> = emptyList(),
+    val requestLinks: Boolean? = null
 )
 
 data class CreateOptions @JvmOverloads constructor(
@@ -78,7 +79,8 @@ private data class GetPayload(
     override val clientId: String,
     var publicKey: String? = null,
     var requestedRecords: List<String>? = null,
-    var requestedFolders: List<String>? = null
+    var requestedFolders: List<String>? = null,
+    var requestLinks: Boolean? = null
 ): CommonPayload()
 
 @Serializable
@@ -184,7 +186,14 @@ private data class SecretsManagerResponseRecord(
     val revision: Long,
     val isEditable: Boolean,
     val files: List<SecretsManagerResponseFile>?,
-    val innerFolderUid: String?
+    val innerFolderUid: String?,
+    val links: List<KeeperRecordLink>? = null
+)
+
+@Serializable
+data class KeeperRecordLink(
+    val recordUid: String,
+    val data: String? = null
 )
 
 @Serializable
@@ -251,7 +260,8 @@ data class KeeperRecord(
     var innerFolderUid: String? = null,
     val data: KeeperRecordData,
     val revision: Long,
-    val files: List<KeeperFile>? = null
+    val files: List<KeeperFile>? = null,
+    val links: List<KeeperRecordLink>? = null
 ) {
     fun getPassword(): String? {
         val passwordField = data.getField<Password>() ?: return null
@@ -858,7 +868,17 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
         }
     }
 
-    return if (recordData != null) KeeperRecord(recordKey, record.recordUid, null, null, record.innerFolderUid, recordData, record.revision, files) else null
+    return if (recordData != null) KeeperRecord(
+        recordKey,
+        record.recordUid,
+        null,
+        null,
+        record.innerFolderUid,
+        recordData,
+        record.revision,
+        files,
+        record.links
+    ) else null
 }
 
 @ExperimentalSerializationApi
@@ -919,7 +939,10 @@ private fun prepareGetPayload(
             payload.requestedRecords = queryOptions.recordsFilter
         }
         if (queryOptions.foldersFilter.isNotEmpty()) {
-            payload.requestedRecords = queryOptions.foldersFilter
+            payload.requestedFolders = queryOptions.foldersFilter
+        }
+        if (queryOptions.requestLinks != null) {
+            payload.requestLinks = queryOptions.requestLinks
         }
     }
     return payload
