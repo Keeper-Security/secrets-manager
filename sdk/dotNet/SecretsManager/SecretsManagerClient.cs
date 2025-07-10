@@ -384,7 +384,7 @@ namespace SecretsManager
             Data = data;
             Revision = revision;
             Files = files;
-            Links = links;
+            Links = links ?? new KeeperRecordLink[0];
         }
 
         public byte[] RecordKey { get; }
@@ -1065,7 +1065,7 @@ namespace SecretsManager
             }
 
             var recordData = JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord);
-            return new KeeperRecord(recordKey, record.recordUid, folderUid, folderKey, record.innerFolderUid, recordData, record.revision, files.ToArray(), recordData.links);
+            return new KeeperRecord(recordKey, record.recordUid, folderUid, folderKey, record.innerFolderUid, recordData, record.revision, files.ToArray(), record.links);
         }
 
         private static async Task<KeeperFolder[]> FetchAndDecryptFolders(SecretsManagerOptions options)

@@ -11,7 +11,6 @@ namespace SecretsManager
         public KeeperRecordField[] fields { get; set; }
         public KeeperRecordField[] custom { get; set; }
         public string notes { get; set; }
-        public KeeperRecordLink[] links { get; set; }
     }
 
     public class KeeperRecordField
