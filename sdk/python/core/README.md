@@ -11,6 +11,7 @@ For more information see our official documentation page https://docs.keeper.io/
 * **Security**: Added explicit dependency on `urllib3>=2.6.0` to fix CVE-2025-66418 and CVE-2025-66471 (HIGH severity)
 * KSM-740 - Added transmission public key #18 for Gov Cloud Dev support
 * KSM-747 - Fixed record key decryption for shared folder records
+* KSM-628 - Added GraphSync links
 * Removed Python 3.6, 3.7, and 3.8 support (all are end-of-life)
 
 ## 17.0.0
