@@ -33,6 +33,7 @@ class GetPayload:
         self.publicKey = None
         self.requestedRecords = None
         self.requestedFolders = None
+        self.requestLinks = None
 
 
 class CreatePayload:
@@ -132,9 +133,10 @@ class KSMHttpResponse:
 
 class QueryOptions:
 
-    def __init__(self, records_filter, folders_filter):
+    def __init__(self, records_filter, folders_filter, request_links=None):
         self.records_filter = records_filter
         self.folders_filter = folders_filter
+        self.request_links = request_links
 
 
 class CreateOptions:

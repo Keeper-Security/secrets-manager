@@ -334,7 +334,7 @@ class SecretsManager:
         return payload
 
     @staticmethod
-    def prepare_get_payload(storage, query_options:QueryOptions):
+    def prepare_get_payload(storage, query_options: QueryOptions):
         payload = GetPayload()
 
         payload.clientVersion = keeper_secrets_manager_sdk_client_id
@@ -354,6 +354,8 @@ class SecretsManager:
                 payload.requestedRecords = query_options.records_filter
             if query_options.folders_filter:
                 payload.requestedFolders = query_options.folders_filter
+            if query_options.request_links:
+                payload.requestLinks = True
 
         return payload
 
@@ -692,7 +694,7 @@ class SecretsManager:
             parent = parent_folder.get('parent', '')
 
     def fetch_and_decrypt_folders(self):
-        payload = SecretsManager.prepare_get_payload(self.config, [])
+        payload = SecretsManager.prepare_get_payload(self.config, None)
         decrypted_response_bytes = self._post_query('get_folders', payload)
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
         decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
@@ -771,6 +773,7 @@ class SecretsManager:
             for r in records_resp:
                 try:
                     record = Record(r, secret_key)
+                    record.links = r.get('links') or []
                     records.append(record)
                 except Exception as err:
                     msg = f"{err.__class__.__name__}, {str(err)}"
@@ -827,7 +830,7 @@ class SecretsManager:
         if isinstance(uids, str):
             uids = [uids]
 
-        query_options = QueryOptions(records_filter=uids, folders_filter=None)
+        query_options = QueryOptions(records_filter=uids, folders_filter=None, request_links=None)
         return self.get_secrets_with_options(query_options, full_response)
 
     def get_secrets_with_options(self, query_options=None, full_response=False):
