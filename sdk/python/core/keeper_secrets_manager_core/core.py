@@ -355,7 +355,7 @@ class SecretsManager:
             if query_options.folders_filter:
                 payload.requestedFolders = query_options.folders_filter
             if query_options.request_links:
-                payload.requestLinks = query_options.request_links
+                payload.requestLinks = True
 
         return payload
 
