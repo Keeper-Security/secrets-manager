@@ -4,7 +4,7 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
-## 16.6.7
+## 17.0.0
 * KSM-566 - Added parsing for KSM tokens with prefix
 
 ## 16.6.6
