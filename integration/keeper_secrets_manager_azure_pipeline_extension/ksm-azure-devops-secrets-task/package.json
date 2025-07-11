@@ -12,13 +12,13 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@keeper-security/secrets-manager-core": "^17.1.0",
+    "@keeper-security/secrets-manager-core": "^17.2.0",
     "azure-pipelines-task-lib": "^5.2.1"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "^24.0.4",
-    "dotenv": "^16.6.0",
+    "@types/node": "^24.0.13",
+    "dotenv": "^17.2.0",
     "mocha": "^11.7.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
