@@ -33,6 +33,7 @@ class GetPayload:
         self.publicKey = None
         self.requestedRecords = None
         self.requestedFolders = None
+        self.requestLinks = None
 
 
 class CreatePayload:
@@ -94,6 +95,7 @@ class FileUploadPayload:
         self.ownerRecordData = None
         self.linkKey = None
         self.fileSize = None
+        self.ownerRecordRevision = None
 
 
 class UpdatePayload:
@@ -105,6 +107,7 @@ class UpdatePayload:
         self.data = None
         self.revision = None
         self.transactionType = None  # 'general' or 'rotation'
+        self.links2Remove = None  # List[str] - file UIDs
 
 
 class CompleteTransactionPayload:
@@ -132,9 +135,10 @@ class KSMHttpResponse:
 
 class QueryOptions:
 
-    def __init__(self, records_filter, folders_filter):
+    def __init__(self, records_filter, folders_filter, request_links=None):
         self.records_filter = records_filter
         self.folders_filter = folders_filter
+        self.request_links = request_links
 
 
 class CreateOptions:
@@ -142,3 +146,10 @@ class CreateOptions:
     def __init__(self, folder_uid, subfolder_uid):
         self.folder_uid = folder_uid
         self.subfolder_uid = subfolder_uid
+
+
+class UpdateOptions:
+
+    def __init__(self, transaction_type, links_to_remove):
+        self.transaction_type = transaction_type
+        self.links_to_remove = links_to_remove

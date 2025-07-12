@@ -29,6 +29,7 @@ class Record:
         self.files = []
         self.raw_json = None
         self.dict = {}
+        self.links = []  # [{"recordUid":"", "data": null|base64}, ...]
         self.password = None
         self.revision = None
         self.is_editable = None
@@ -321,6 +322,7 @@ class Folder:
         for r in folder_records:
 
             record = Record(r, folder_key, folder_uid)
+            record.links = r.get('links') or []
             self.records.append(record)
 
 

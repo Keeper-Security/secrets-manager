@@ -27,7 +27,7 @@ from keeper_secrets_manager_core.dto.dtos import Folder, Record, \
     RecordCreate, SecretsManagerResponse, AppData, \
     KeeperFileUpload, KeeperFile, KeeperFolder
 from keeper_secrets_manager_core.dto.payload import GetPayload, \
-    CompleteTransactionPayload, UpdatePayload, TransmissionKey, \
+    CompleteTransactionPayload, UpdateOptions, UpdatePayload, TransmissionKey, \
     EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, \
     DeletePayload, CreateFolderPayload, UpdateFolderPayload, \
     DeleteFolderPayload, CreateOptions, QueryOptions
@@ -254,6 +254,9 @@ class SecretsManager:
         current_secret_key = None
 
         if env_secret_key:
+            if ":" in env_secret_key:
+                _, env_secret_key = env_secret_key.split(":", 1)
+
             current_secret_key = env_secret_key
             self.logger.info("Secret key found in environment variable")
 
@@ -331,7 +334,7 @@ class SecretsManager:
         return payload
 
     @staticmethod
-    def prepare_get_payload(storage, query_options:QueryOptions):
+    def prepare_get_payload(storage, query_options: QueryOptions):
         payload = GetPayload()
 
         payload.clientVersion = keeper_secrets_manager_sdk_client_id
@@ -351,6 +354,8 @@ class SecretsManager:
                 payload.requestedRecords = query_options.records_filter
             if query_options.folders_filter:
                 payload.requestedFolders = query_options.folders_filter
+            if query_options.request_links:
+                payload.requestLinks = True
 
         return payload
 
@@ -392,7 +397,7 @@ class SecretsManager:
         return payload
 
     @staticmethod
-    def prepare_update_payload(storage, record, transaction_type=None):
+    def prepare_update_payload(storage, record, update_options=None):
 
         payload = UpdatePayload()
 
@@ -403,13 +408,36 @@ class SecretsManager:
         payload.recordUid = record.uid
         payload.revision = record.revision
 
+        if update_options and update_options.links_to_remove:
+            ltr = (update_options.links_to_remove
+                   if isinstance(update_options.links_to_remove, list)
+                   else [str(update_options.links_to_remove)])
+            payload.links2Remove = ltr
+
+            # NB! files[] are parsed from raw JSON and may not be up to date
+            # file_refs = [f for f in record.files if f.f.get('fileUid') not in update_options.links_to_remove]
+            # use raw JSON directly
+            dic = utils.json_to_dict(record.raw_json)
+            fields = dic.get('fields')
+            if isinstance(fields, list):
+                fref = [f for f in fields if f.get('type') == 'fileRef']
+                if fref:
+                    fld = fref[0]
+                    val = fld.get('value')
+                    if val and isinstance(val, list):
+                        file_refs = [r for r in val if r not in update_options.links_to_remove]
+                        if len(val) != len(file_refs):
+                            fld['value'] = file_refs
+                            record.raw_json = utils.dict_to_json(dic)
+
         raw_json_bytes = utils.string_to_bytes(record.raw_json)
         encrypted_raw_json_bytes = CryptoUtils.encrypt_aes(raw_json_bytes, record.record_key_bytes)
 
         payload.data = bytes_to_base64(encrypted_raw_json_bytes)
 
-        if transaction_type:
-            payload.transactionType = transaction_type
+        # transaction_type - 'general' or 'rotation'
+        if update_options and update_options.transaction_type:
+            payload.transactionType = update_options.transaction_type
 
         return payload
 
@@ -482,6 +510,7 @@ class SecretsManager:
         payload.fileRecordData = CryptoUtils.bytes_to_url_safe_str(encrypted_file_record_bytes)
         payload.fileRecordKey = bytes_to_base64(encrypted_file_record_key)
         payload.ownerRecordUid = owner_record.uid
+        payload.ownerRecordRevision = owner_record.revision
 
         payload.ownerRecordData = encrypted_owner_record_str
 
@@ -689,7 +718,7 @@ class SecretsManager:
             parent = parent_folder.get('parent', '')
 
     def fetch_and_decrypt_folders(self):
-        payload = SecretsManager.prepare_get_payload(self.config, [])
+        payload = SecretsManager.prepare_get_payload(self.config, None)
         decrypted_response_bytes = self._post_query('get_folders', payload)
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
         decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
@@ -768,6 +797,7 @@ class SecretsManager:
             for r in records_resp:
                 try:
                     record = Record(r, secret_key)
+                    record.links = r.get('links') or []
                     records.append(record)
                 except Exception as err:
                     msg = f"{err.__class__.__name__}, {str(err)}"
@@ -824,7 +854,7 @@ class SecretsManager:
         if isinstance(uids, str):
             uids = [uids]
 
-        query_options = QueryOptions(records_filter=uids, folders_filter=None)
+        query_options = QueryOptions(records_filter=uids, folders_filter=None, request_links=None)
         return self.get_secrets_with_options(query_options, full_response)
 
     def get_secrets_with_options(self, query_options=None, full_response=False):
@@ -1064,14 +1094,21 @@ class SecretsManager:
 
         return self.upload_file(owner_record, file_to_upload)
 
-    def save(self, record, transaction_type=None):
+    def save(self, record, transaction_type=None, links_to_remove=None):
         """
         Save updated secret values
+        """
+        options = UpdateOptions(transaction_type, links_to_remove)
+        self.save_with_options(record, options)
+
+    def save_with_options(self, record, update_options=None):
+        """
+        Save updated secret values using options
         """
 
         self.logger.info("Updating record uid: %s" % record.uid)
 
-        payload = SecretsManager.prepare_update_payload(self.config, record, transaction_type)
+        payload = SecretsManager.prepare_update_payload(self.config, record, update_options)
 
         self._post_query(
             'update_secret',
