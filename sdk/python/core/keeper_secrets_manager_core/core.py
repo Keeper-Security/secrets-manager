@@ -27,7 +27,7 @@ from keeper_secrets_manager_core.dto.dtos import Folder, Record, \
     RecordCreate, SecretsManagerResponse, AppData, \
     KeeperFileUpload, KeeperFile, KeeperFolder
 from keeper_secrets_manager_core.dto.payload import GetPayload, \
-    CompleteTransactionPayload, UpdatePayload, TransmissionKey, \
+    CompleteTransactionPayload, UpdateOptions, UpdatePayload, TransmissionKey, \
     EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, \
     DeletePayload, CreateFolderPayload, UpdateFolderPayload, \
     DeleteFolderPayload, CreateOptions, QueryOptions
@@ -395,7 +395,7 @@ class SecretsManager:
         return payload
 
     @staticmethod
-    def prepare_update_payload(storage, record, transaction_type=None):
+    def prepare_update_payload(storage, record, update_options=None):
 
         payload = UpdatePayload()
 
@@ -406,13 +406,36 @@ class SecretsManager:
         payload.recordUid = record.uid
         payload.revision = record.revision
 
+        if update_options and update_options.links_to_remove:
+            ltr = (update_options.links_to_remove
+                   if isinstance(update_options.links_to_remove, list)
+                   else [str(update_options.links_to_remove)])
+            payload.links2Remove = ltr
+
+            # NB! files[] are parsed from raw JSON and may not be up to date
+            # file_refs = [f for f in record.files if f.f.get('fileUid') not in update_options.links_to_remove]
+            # use raw JSON directly
+            dic = utils.json_to_dict(record.raw_json)
+            fields = dic.get('fields')
+            if isinstance(fields, list):
+                fref = [f for f in fields if f.get('type') == 'fileRef']
+                if fref:
+                    fld = fref[0]
+                    val = fld.get('value')
+                    if val and isinstance(val, list):
+                        file_refs = [r for r in val if r not in update_options.links_to_remove]
+                        if len(val) != len(file_refs):
+                            fld['value'] = file_refs
+                            record.raw_json = utils.dict_to_json(dic)
+
         raw_json_bytes = utils.string_to_bytes(record.raw_json)
         encrypted_raw_json_bytes = CryptoUtils.encrypt_aes(raw_json_bytes, record.record_key_bytes)
 
         payload.data = bytes_to_base64(encrypted_raw_json_bytes)
 
-        if transaction_type:
-            payload.transactionType = transaction_type
+        # transaction_type - 'general' or 'rotation'
+        if update_options and update_options.transaction_type:
+            payload.transactionType = update_options.transaction_type
 
         return payload
 
@@ -485,6 +508,7 @@ class SecretsManager:
         payload.fileRecordData = CryptoUtils.bytes_to_url_safe_str(encrypted_file_record_bytes)
         payload.fileRecordKey = bytes_to_base64(encrypted_file_record_key)
         payload.ownerRecordUid = owner_record.uid
+        payload.ownerRecordRevision = owner_record.revision
 
         payload.ownerRecordData = encrypted_owner_record_str
 
@@ -1067,14 +1091,21 @@ class SecretsManager:
 
         return self.upload_file(owner_record, file_to_upload)
 
-    def save(self, record, transaction_type=None):
+    def save(self, record, transaction_type=None, links_to_remove=None):
         """
         Save updated secret values
+        """
+        options = UpdateOptions(transaction_type, links_to_remove)
+        self.save_with_options(record, options)
+
+    def save_with_options(self, record, update_options=None):
+        """
+        Save updated secret values using options
         """
 
         self.logger.info("Updating record uid: %s" % record.uid)
 
-        payload = SecretsManager.prepare_update_payload(self.config, record, transaction_type)
+        payload = SecretsManager.prepare_update_payload(self.config, record, update_options)
 
         self._post_query(
             'update_secret',
