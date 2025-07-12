@@ -95,6 +95,7 @@ class FileUploadPayload:
         self.ownerRecordData = None
         self.linkKey = None
         self.fileSize = None
+        self.ownerRecordRevision = None
 
 
 class UpdatePayload:
@@ -106,6 +107,7 @@ class UpdatePayload:
         self.data = None
         self.revision = None
         self.transactionType = None  # 'general' or 'rotation'
+        self.links2Remove = None  # List[str] - file UIDs
 
 
 class CompleteTransactionPayload:
@@ -144,3 +146,10 @@ class CreateOptions:
     def __init__(self, folder_uid, subfolder_uid):
         self.folder_uid = folder_uid
         self.subfolder_uid = subfolder_uid
+
+
+class UpdateOptions:
+
+    def __init__(self, transaction_type, links_to_remove):
+        self.transaction_type = transaction_type
+        self.links_to_remove = links_to_remove
