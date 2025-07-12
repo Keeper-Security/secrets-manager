@@ -1,5 +1,5 @@
 @{
-    ModuleVersion = '16.6.7'
+    ModuleVersion = '17.0.0'
     CompatiblePSEditions = @('Core')
     GUID = '20ab89cb-f0dd-4e8e-b276-f3a7708c1eb2'
     Author = 'Sergey Aldoukhov'
@@ -8,7 +8,7 @@
     Description = 'SecretManagement extension vault for Keeper'
     RootModule = './SecretManagement.Keeper.psm1'
     NestedModules = @('./SecretManagement.Keeper.Extension')
-    PowerShellVersion = '5.1'
+    PowerShellVersion = '6.0'
     FunctionsToExport = @('Register-KeeperVault')
     CmdletsToExport = @()
     VariablesToExport = @()
