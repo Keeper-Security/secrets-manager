@@ -36,7 +36,7 @@ This `keepersecurity-keeper_secret_manager_puppet` module facilitates secure int
 ### System Requirements
 
 - **Puppet**: 7.24 or later (for `preprocess_deferred` support)
-- **Python**: 3.6 or later on agent nodes (automatically installed if not present)
+- **Python**: 3.6 or later on agent nodes
 - **Keeper Secrets Manager**: Valid credentials and access
 
 ### Supported Operating Systems

@@ -164,7 +164,7 @@ Puppet::Functions.create_function(:'keeper_secret_manager_puppet::lookup') do
     paths = get_os_specific_paths
     script_path = paths['script_path']
     input_path = paths['input_path']
-    python_executable = Puppet::Util.which('python3')
+    python_executable = Puppet::Util.which('python3') || Puppet::Util.which('python')
     keeper_env_path = paths['keeper_env_path']
 
     # Validate prerequisites before execution
