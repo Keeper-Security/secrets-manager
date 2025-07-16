@@ -1,29 +1,21 @@
 # Puppet Keeper Secret Manager
 
-[![Puppet Forge](https://img.shields.io/puppetforge/v/root/keeper_secret_manager_puppet.svg)](https://forge.puppet.com/root/keeper_secret_manager_puppet)
-[![Puppet Forge - downloads](https://img.shields.io/puppetforge/dt/root/keeper_secret_manager_puppet.svg)](https://forge.puppet.com/root/keeper_secret_manager_puppet)
-[![Puppet Forge - scores](https://img.shields.io/puppetforge/f/root/keeper_secret_manager_puppet.svg)](https://forge.puppet.com/root/keeper_secret_manager_puppet)
-[![License](https://img.shields.io/github/license/root/puppet-keeper-python.svg)](https://github.com/root/puppet-keeper-python/blob/main/LICENSE)
-
-
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [Features](#features)
 - [Prerequisites](#prerequisites)
 - [Keeper Notation](#keeper-notation)
-- [Quick Start](#quick-start)
 - [Usage](#usage)
 - [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
-- [Testing](#testing)
 - [Support](#support)
 
-## 🎯 Overview
+## Overview
 
 This `keepersecurity-keeper_secret_manager_puppet` module facilitates secure integration between Puppet and Keeper Secret Manager, enabling the retrieval of secrets during catalog execution. It supports a range of authentication mechanisms, including token-based and encoded credential formats, while also allowing for environment-specific configurations to enhance access control. Retrieved secrets are returned in structured JSON, ensuring seamless integration and efficient consumption within Puppet manifests.
 
-## ✨ Features
+## Features
 
 - 🔐 **Secure Secret Retrieval**: Uses deferred functions for runtime secret access
 - 🌐 **Cross-Platform Support**: Linux, Windows, and macOS compatibility
@@ -31,7 +23,7 @@ This `keepersecurity-keeper_secret_manager_puppet` module facilitates secure int
 - 🛡️ **Error Handling**: Graceful error handling with helpful messages
 - 📁 **File Management**: Supports secret output to files and environment variables
 
-## 📋 Prerequisites
+## Prerequisites
 
 ### System Requirements
 
@@ -58,11 +50,11 @@ preprocess_deferred = false
 
 This ensures deferred functions execute during catalog enforcement, not before.
 
-## 📝 Keeper Notation
+## Keeper Notation
 
 The module supports comprehensive Keeper notation for flexible secret mapping: [Visit Docs](https://docs.keeper.io/en/keeperpam/secrets-manager/about/keeper-notation)
 
-### Notation Format
+### Notation Format 
 
 The notation follows the pattern: `"KEEPER_NOTATION > OUTPUT_SPECIFICATION"`
 
@@ -81,7 +73,7 @@ The notation follows the pattern: `"KEEPER_NOTATION > OUTPUT_SPECIFICATION"`
 ```puppet
 "secret-uid/field/password > env:DB_PASSWORD"
 # Sets DB_PASSWORD environment variable on agent node
-# Note: env:Label2 will be exported as environment variable, and Label2 will not be included in output JSON
+# Note: env:DB_PASSWORD will be exported as environment variable, and DB_PASSWORD will not be included in output JSON
 ```
 
 #### 3. File Output
@@ -92,23 +84,20 @@ The notation follows the pattern: `"KEEPER_NOTATION > OUTPUT_SPECIFICATION"`
 # Note: filename becomes the key, file path becomes the value
 ```
 
-## 🚀 Quick Start
+## Usage
 
 ### Step 1: Install the Module
 
 ```bash
 # Install from Puppet Forge
 puppet module install keepersecurity-keeper_secret_manager_puppet
-
-# Configure puppet.conf on agent
-echo "preprocess_deferred = false" >> /etc/puppetlabs/puppet/puppet.conf
 ```
-
-
 
 ### Step 2: Configure Hiera
 
-Create or update your Hiera configuration file (`data/common.yaml`):
+Create or update your Hiera configuration file (eg : `data/common.yaml`):
+
+
 
 ```yaml
 keeper::config:
@@ -120,12 +109,11 @@ keeper::config:
     - "your-secret-uid/field/login > login_name"
     - "your-secret-uid/field/password > env:DB_PASSWORD"
 ```
+**Note**: Passing secrets array under **keeper::config** can be skipped if you are passing secrets array directly as parameter in the ```'keeper_secret_manager_puppet::lookup'``` function call.
 
-### Step 3: Set Up ENV variable (Applicable: if you are using ENV:KEEPER_CONFIG for AUTH_VALUE)
+### Step 3: Set Up Environment Variable (Optional)
 
-Set the environment variable on your Puppet master:
-
-Note: You can use your own env variable name insted of KEEPER_CONFIG 
+If you're using `ENV:KEEPER_CONFIG` for AUTH_VALUE, then set the environment variable on your Puppet master:
 
 ```bash
 # For base64 authentication (recommended)
@@ -138,57 +126,26 @@ echo "KEEPER_CONFIG='your-token-configuration'" >> /etc/environment
 echo "KEEPER_CONFIG='your-json-configuration-path-on-master'" >> /etc/environment
 ```
 
-### Step 4: Create Your First Manifest
+**Note**: You can use your own environment variable name instead of `KEEPER_CONFIG`.
 
-```puppet
-# manifests/site.pp
-node 'your-node-name' {
-  # Include the keeper module
-  include keeper_secret_manager_puppet
+### Step 4: Use module in manifests
 
-  # Define secrets to retrieve
-  $secrets = [
-    'your-secret-uid/title > my_title',                    # Simple mapping
-    'your-secret-uid/field/login > my_login',             # Simple mapping
-    'your-secret-uid/field/password > env:MY_PASSWORD'    # Environment variable
-  ]
-
-  # Use deferred function to fetch secrets
-  $retrieved_secrets = Deferred('keeper_secret_manager_puppet::lookup', [$secrets])
-
-  # Test the integration
-  notify { 'Secrets retrieved':
-    message => $retrieved_secrets,
-  }
-}
-```
-
-### Step 5: Test the Integration
-
-```bash
-puppet agent --test
-```
-
-
-
-## 💡 Usage
-
-### Basic Module Inclusion
+#### Include the Module
 
 ```puppet
 # Include the module in your manifests
 include keeper_secret_manager_puppet
 ```
 
-### Using Deferred Functions
+#### Using Deferred Functions
 
-#### 1. Default Lookup (No Parameters)
+**1. Default Lookup (No Parameters)**
 ```puppet
 # Use deferred function to lookup secrets using Hiera configuration
 $multiple_secrets = Deferred('keeper_secret_manager_puppet::lookup', [])
 ```
 
-#### 2. Lookup with Parameters
+**2. Lookup with Parameters**
 ```puppet
 # Define secrets in Array[String<Keeper Notation Format>] 
 $node_secrets = [
@@ -202,13 +159,14 @@ $node_secrets = [
 $multiple_secrets = Deferred('keeper_secret_manager_puppet::lookup', [$node_secrets])
 ```
 
-#### 3. Accessing Individual Secret Values
+**3. Accessing Individual Secret Values**
 ```puppet
 # Access individual values from JSON response
 $label2_value = Deferred('dig', [$multiple_secrets, 'Label2'])
 ```
 
-## 📚 Examples
+
+## Examples
 
 ### Example 1: Basic Secret Retrieval
 
@@ -363,7 +321,7 @@ class profile::myapp {
 ```
 
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Debug Mode
 
@@ -393,7 +351,7 @@ log_level = debug
 
 
 
-## 🛡️ Security Considerations
+## Security Considerations
 
 ### Best Practices
 
@@ -408,29 +366,7 @@ log_level = debug
 - **File Output Control**: Direct file writing with proper permissions
 - **Cross-Platform Security**: Consistent security across different operating systems
 
-## 🧪 Testing
-
-### Prerequisites
-- PDK (Puppet Development Kit) - for RSpec tests
-- Ruby and Bundler - for rake tasks
-
-
-### For Users With PDK
-```bash
-pdk test unit # RSpec tests
-rake test_files # Files tests
-```
-
-### For Users Without PDK
-If you don't have PDK installed, you can run tests with:
-```bash
-bundle install
-bundle exec rake spec        # RSpec tests
-bundle exec rake test_files # Files tests
-```
-
-
-## 🆘 Support
+## Support
 
 ### Getting Help
 
@@ -439,6 +375,6 @@ bundle exec rake test_files # Files tests
 - **Forge**: [Puppet Forge](https://forge.puppet.com/root/keeper_secret_manager_puppet)
 
 
-## 📄 License
+## License
 
-This module is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the full license text.
+This module is licensed under the Apache License, Version 2.0.
