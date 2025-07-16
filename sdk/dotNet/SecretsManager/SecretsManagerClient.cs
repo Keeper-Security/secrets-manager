@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -128,6 +127,16 @@ namespace SecretsManager
         }
     }
 
+    public class UpdateOptions
+    {
+        public UpdateTransactionType? TransactionType { get; }
+        public List<string> LinksToRemove { get; }
+        public UpdateOptions(UpdateTransactionType? transactionType = null, List<string> linksToRemove = null)
+        {
+            this.TransactionType = transactionType;
+            this.LinksToRemove = linksToRemove;
+        }
+    }
     public enum UpdateTransactionType {
         General,
         Rotation
@@ -141,8 +150,9 @@ namespace SecretsManager
         public string data { get; }
         public long revision { get; }
         public string transactionType { get; }
+        public string[] links2Remove { get; }
 
-        public UpdatePayload(string clientVersion, string clientId, string recordUid, string data, long revision, UpdateTransactionType? transactionType = null)
+        public UpdatePayload(string clientVersion, string clientId, string recordUid, string data, long revision, UpdateTransactionType? transactionType = null, string[] links2Remove = null)
         {
             this.clientVersion = clientVersion;
             this.clientId = clientId;
@@ -150,10 +160,9 @@ namespace SecretsManager
             this.data = data;
             this.revision = revision;
             if (transactionType.HasValue)
-            {
                 this.transactionType = transactionType.Value.ToString().ToLower();
-            }
-
+            if ((links2Remove?.Length ?? 0) > 0)
+                this.links2Remove = links2Remove;
         }
     }
 
@@ -272,12 +281,14 @@ namespace SecretsManager
         public string fileRecordData { get; }
         public string ownerRecordUid { get; }
         public string ownerRecordData { get; }
+        public long ownerRecordRevision { get; }
         public string linkKey { get; }
         public int fileSize { get; }
 
         public FileUploadPayload(string clientVersion, string clientId,
             string fileRecordUid, string fileRecordKey, string fileRecordData,
-            string ownerRecordUid, string ownerRecordData, string linkKey, int fileSize)
+            string ownerRecordUid, string ownerRecordData, long ownerRecordRevision,
+            string linkKey, int fileSize)
         {
             this.clientVersion = clientVersion;
             this.clientId = clientId;
@@ -286,6 +297,7 @@ namespace SecretsManager
             this.fileRecordData = fileRecordData;
             this.ownerRecordUid = ownerRecordUid;
             this.ownerRecordData = ownerRecordData;
+            this.ownerRecordRevision = ownerRecordRevision;
             this.linkKey = linkKey;
             this.fileSize = fileSize;
         }
@@ -814,7 +826,12 @@ namespace SecretsManager
 
         public static async Task UpdateSecret(SecretsManagerOptions options, KeeperRecord record, UpdateTransactionType? transactionType = null)
         {
-            var payload = PrepareUpdatePayload(options.Storage, record, transactionType);
+            await UpdateSecretWithOptions(options, record, new UpdateOptions(transactionType, null));
+        }
+
+        public static async Task UpdateSecretWithOptions(SecretsManagerOptions options, KeeperRecord record, UpdateOptions? updateOptions = null)
+        {
+            var payload = PrepareUpdatePayload(options.Storage, record, updateOptions);
             await PostQuery(options, "update_secret", payload);
         }
 
@@ -1149,12 +1166,36 @@ namespace SecretsManager
             return new GetPayload(GetClientVersion(), clientId, publicKey, queryOptions?.RecordsFilter, queryOptions?.FoldersFilter, queryOptions?.RequestLinks);
         }
 
-        private static UpdatePayload PrepareUpdatePayload(IKeyValueStorage storage, KeeperRecord record, UpdateTransactionType? transactionType = null)
+        private static UpdatePayload PrepareUpdatePayload(IKeyValueStorage storage, KeeperRecord record, UpdateOptions updateOptions = null)
         {
             var clientId = storage.GetString(KeyClientId);
             if (clientId == null)
             {
                 throw new Exception("Client Id is missing from the configuration");
+            }
+
+            var linksToRemove = updateOptions?.LinksToRemove ?? new List<string>(0);
+            if (linksToRemove.Count > 0)
+            {
+                var fileRef = record.Data.fields.FirstOrDefault(x => x.type == "fileRef");
+
+                // Cast<string> won't work with JsonValueKind.String
+                //var fileRefs = fileRef?.value?.Cast<string>().ToList() ?? new List<string>(0);
+                var fobj = fileRef?.value ?? new object[0];
+                var frefs = new List<string>(fobj.Length);
+                foreach (var obj in fobj)
+                {
+                    if (obj is JsonElement elem && elem.ValueKind == JsonValueKind.String)
+                        frefs.Add(elem.GetString()); // JsonElement.ToString: hello -> "\"hello\""
+                    else
+                        frefs.Add(obj.ToString());
+                }
+                if (frefs.Count > 0)
+                {
+                    int removed = frefs.RemoveAll(item => linksToRemove.Contains(item));
+                    if (removed > 0)
+                        fileRef.value = new List<object>(frefs).ToArray();
+                }
             }
 
             var recordBytes = JsonUtils.SerializeJson(record.Data);
@@ -1165,7 +1206,8 @@ namespace SecretsManager
                 record.RecordUid,
                 CryptoUtils.WebSafe64FromBytes(encryptedRecord),
                 record.Revision,
-                transactionType);
+                updateOptions?.TransactionType,
+                updateOptions?.LinksToRemove?.ToArray());
             return payload;
         }
 
@@ -1317,6 +1359,7 @@ namespace SecretsManager
                 CryptoUtils.WebSafe64FromBytes(encryptedFileRecord),
                 ownerRecord.RecordUid,
                 CryptoUtils.WebSafe64FromBytes(encryptedOwnerRecord),
+                ownerRecord.Revision,
                 CryptoUtils.BytesToBase64(encryptedLinkKey),
                 encryptedFileData.Length);
             return Tuple.Create(fileUploadPayload, encryptedFileData);
