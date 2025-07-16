@@ -59,7 +59,10 @@ The module supports comprehensive Keeper notation for flexible secret mapping: [
 The notation follows the pattern: `"KEEPER_NOTATION > OUTPUT_SPECIFICATION"`
 
 - **Left side**: Keeper notation (e.g., `UID/custom_field/Label1`)
-- **Right side**: Output specification (e.g., `Label2`, `env:Label2`, `file:/path/to/file`)
+- **Right side**: Output specification
+  - `VARIABLE_NAME` (eg: `Label2`)
+  - `env:VARIABLE_NAME` (eg: `env:Label2`)
+  - `file:/path/to/file-on-agent` (eg: `file:/opt/ssl/cert.pem`)
 
 ### Output Mapping Options
 
@@ -84,7 +87,7 @@ The notation follows the pattern: `"KEEPER_NOTATION > OUTPUT_SPECIFICATION"`
 # Note: filename becomes the key, file path becomes the value
 ```
 
-## Usage
+## Configuration
 
 ### Step 1: Install the Module
 
@@ -128,7 +131,8 @@ echo "KEEPER_CONFIG='your-json-configuration-path-on-master'" >> /etc/environmen
 
 **Note**: You can use your own environment variable name instead of `KEEPER_CONFIG`.
 
-### Step 4: Use module in manifests
+## Usage
+
 
 #### Include the Module
 
