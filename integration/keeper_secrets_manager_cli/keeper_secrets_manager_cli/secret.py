@@ -401,7 +401,7 @@ class Secret:
         fetch_uids = None
 
         # If we are not searching by title, then set the fetch uid to the uids passed in.
-        if len(titles) == 0:
+        if len(titles) == 0 and uids:
             fetch_uids = uids
 
         secrets = self.cli.client.get_secrets(uids=fetch_uids)
