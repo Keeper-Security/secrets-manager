@@ -40,9 +40,9 @@ action_class do
     if new_resource.input_path
       command_parts << '--input'
       command_parts << new_resource.input_path
-      Chef::Log.info("🚀 Running Keeper script with: #{new_resource.input_path}")
+      Chef::Log.info("Running Keeper script with: #{new_resource.input_path}")
     else
-      Chef::Log.info('🚀 Running Keeper script with default input.json')
+      Chef::Log.info('Running Keeper script with default input.json')
     end
 
     full_command = command_parts.join(' ')
@@ -58,7 +58,7 @@ action_class do
       # sensitive true
     end
 
-    Chef::Log.info('✅ Keeper script completed')
+    Chef::Log.info('Keeper script completed')
   end
 
   def which_python

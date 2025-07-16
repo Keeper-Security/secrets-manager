@@ -1,32 +1,16 @@
-# kitchen.yml
 driver:
-  name: vagrant
-
-platforms:
-  - name: ubuntu-22.04
-    driver:
-      box: bento/ubuntu-22.04
-      memory: 2048
-      cpus: 2
+  name: docker
 
 provisioner:
   name: chef_zero
-  product_name: chef
-  chef_license: accept
-  data_bags_path: test/fixtures/data_bags
 
-verifier:
-  name: shell
+platforms:
+  - name: ubuntu-22.04
 
 suites:
   - name: default
     run_list:
-      - recipe[keeper_secrets_manager::install]
+      - recipe[keeper_secrets_manager_chef::default]
     verifier:
-      name: shell
-      command: |
-        test -d /opt/keeper_secrets_manager || exit 1
-        test -f /opt/keeper_secrets_manager/scripts/ksm.py || exit 1
-        python3 --version || exit 1
-        pip3 show keeper-secrets-manager-core || exit 1
-        echo "✅ All tests passed!"
+      inspec_tests:
+        - test/integration/default

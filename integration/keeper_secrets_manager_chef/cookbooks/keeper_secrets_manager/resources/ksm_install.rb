@@ -111,7 +111,7 @@ action_class do
       action :create
     end
 
-          Chef::Log.info("📜 KSM script installed: #{scripts_dir}/ksm.py")
+          Chef::Log.info("KSM script installed: #{scripts_dir}/ksm.py")
   end
 
   def remove_directories
@@ -204,7 +204,7 @@ action_class do
         command sdk_test_cmd
         timeout 30
       end
-      Chef::Log.info('✅ Keeper Python SDK verified')
+      Chef::Log.info('Keeper Python SDK verified')
     end
 
     if new_resource.cli_tool
@@ -214,11 +214,11 @@ action_class do
         command cli_test_cmd
         timeout 30
       end
-      Chef::Log.info('✅ Keeper CLI verified')
+      Chef::Log.info('Keeper CLI verified')
     end
 
     if new_resource.install_script
-      Chef::Log.info("✅ KSM script available at: #{scripts_dir}/ksm.py")
+      Chef::Log.info("KSM script available at: #{scripts_dir}/ksm.py")
     end
   end
 
@@ -232,7 +232,7 @@ action_class do
         only_if pip_show_cmd
       end
     end
-    Chef::Log.info('🗑️  Keeper packages removed')
+    Chef::Log.info('Keeper packages removed')
   end
 
   def upgrade_keeper_packages
@@ -249,7 +249,7 @@ action_class do
         only_if pip_show_cmd
       end
     end
-    Chef::Log.info('⬆️  Keeper packages upgraded')
+    Chef::Log.info('Keeper packages upgraded')
   end
 
   # --- Encrypted Data Bag Loader ---

@@ -1,5 +1,5 @@
 # Cookbook:: keeper_secrets_manager
-# Recipe:: demo
+# Recipe:: fetch
 
 # Fetch secrets from Keeper Vault using the custom resource
 ksm_fetch 'fetch_secrets' do

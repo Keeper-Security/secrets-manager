@@ -1,6 +1,6 @@
 require 'spec_helper'
 
-describe 'keeper_secrets_manager::demo' do
+describe 'keeper_secrets_manager::fetch' do
   platform 'ubuntu'
 
   let(:shellout_double_python3) do

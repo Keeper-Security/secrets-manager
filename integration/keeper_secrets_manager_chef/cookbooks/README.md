@@ -58,6 +58,20 @@ knife cookbook upload keeper_secrets_manager
 
 The cookbook uses **Encrypted Data Bags** for secure authentication. This method allows you to store your Keeper configuration securely on the Chef server and make it available to your nodes.
 
+#### 🔐 Creating the Secret Key File
+
+Before creating encrypted data bags, you need to create a shared **secret file** that Chef will use to encrypt and decrypt sensitive data.
+
+Run the following commands:
+
+```bash
+# Create directory for Chef secrets if it doesn't exist
+sudo mkdir -p /etc/chef
+
+# Generate a base64-encoded secret and store it securely
+openssl rand -base64 512 | sudo tee /etc/chef/encrypted_data_bag_secret > /dev/null
+
+
 #### Configuring Encrypted Data Bags
 
 Create an encrypted data bag to store your Keeper configuration:
