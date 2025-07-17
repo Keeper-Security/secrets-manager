@@ -59,6 +59,11 @@ data class CreateOptions @JvmOverloads constructor(
     val subFolderUid: String? = null,
 )
 
+data class UpdateOptions @JvmOverloads constructor(
+    val transactionType: UpdateTransactionType? = null,
+    val linksToRemove: List<String>? = null,
+)
+
 typealias QueryFunction = (url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload) -> KeeperHttpResponse
 
 data class TransmissionKey(var publicKeyId: Int, var key: ByteArray, val encryptedKey: ByteArray)
@@ -94,7 +99,8 @@ private data class UpdatePayload(
     val recordUid: String,
     val data: String,
     val revision: Long,
-    val transactionType: UpdateTransactionType? = null
+    val transactionType: UpdateTransactionType? = null,
+    val links2Remove: List<String>? = null
 ): CommonPayload()
 
 @Serializable
@@ -159,6 +165,7 @@ private data class FileUploadPayload(
     val fileRecordData: String,
     val ownerRecordUid: String,
     val ownerRecordData: String,
+    val ownerRecordRevision: Long,
     val linkKey: String,
     val fileSize: Int, // we will not allow upload size > 2GB due to memory constraints
 ): CommonPayload()
@@ -585,7 +592,12 @@ fun deleteFolder(options: SecretsManagerOptions, folderUids: List<String>, force
 
 @ExperimentalSerializationApi
 fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord, transactionType: UpdateTransactionType? = null) {
-    val payload = prepareUpdatePayload(options.storage, record, transactionType)
+    updateSecretWithOptions(options, record, UpdateOptions(transactionType, null))
+}
+
+@ExperimentalSerializationApi
+fun updateSecretWithOptions(options: SecretsManagerOptions, record: KeeperRecord, updateOptions: UpdateOptions? = null) {
+    val payload = prepareUpdatePayload(options.storage, record, updateOptions)
     postQuery(options, "update_secret", payload)
 }
 
@@ -948,12 +960,29 @@ private fun prepareDeleteFolderPayload(
 private fun prepareUpdatePayload(
     storage: KeyValueStorage,
     record: KeeperRecord,
-    transactionType: UpdateTransactionType? = null
+    updateOptions: UpdateOptions? = null
 ): UpdatePayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+
+    updateOptions?.linksToRemove?.takeIf { it.isNotEmpty() }?.let {
+        val frefs = record.data.getField<FileRef>()
+        if (frefs?.value?.isNotEmpty() == true){
+            frefs.value.removeAll(it)
+        }
+    }
+
     val recordBytes = stringToBytes(Json.encodeToString(record.data))
     val encryptedRecord = encrypt(recordBytes, record.recordKey)
-    return UpdatePayload(KEEPER_CLIENT_VERSION, clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision, transactionType)
+
+    return UpdatePayload(
+        clientVersion = KEEPER_CLIENT_VERSION,
+        clientId = clientId,
+        recordUid = record.recordUid,
+        data = webSafe64FromBytes(encryptedRecord),
+        revision = record.revision,
+        transactionType = updateOptions?.transactionType,
+        links2Remove = updateOptions?.linksToRemove
+    )
 }
 
 @ExperimentalSerializationApi
@@ -1066,6 +1095,7 @@ private fun prepareFileUploadPayload(
             webSafe64FromBytes(encryptedFileRecord),
             ownerRecord.recordUid,
             webSafe64FromBytes(encryptedOwnerRecord),
+            ownerRecord.revision,
             bytesToBase64(encryptedLinkKey),
             encryptedFileData.size
         ),
