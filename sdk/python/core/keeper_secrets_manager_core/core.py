@@ -699,7 +699,7 @@ class SecretsManager:
         # This is a unknown error, not one of ours, just throw a HTTPError
         reason = f", Reason: {str(rs.reason)}" if rs.reason else ""
         message = f", Message: {str(rs.text)}" if rs.text else ""
-        raise requests.HTTPError(f"Status Code: {rs.status_code}{reason}{message}")
+        raise requests.HTTPError(f"Status Code: {rs.status_code}{reason}{message}", response=rs)
 
     @staticmethod
     def get_shared_folder_key(folders: list, response_folders: list, parent: str):

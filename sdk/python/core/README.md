@@ -8,6 +8,7 @@ For more information see our official documentation page https://docs.keeper.io/
 * KSM-566 - Added parsing for KSM tokens with prefix
 * KSM-628 - Added GraphSync links
 * KSM-631 - Added links2Remove parameter for files removal
+* KSM-635 - HTTPError should include response object
 
 ## 16.6.6
 * KSM-552 - Stop generating UIDs that start with "-"
