@@ -1,7 +1,7 @@
 rootProject.name = "core"
 
 plugins {
-    id("org.gradle.toolchains.foojay-resolver") version "0.8.0"
+    id("org.gradle.toolchains.foojay-resolver") version "1.0.0"
 }
 
 @Suppress("UnstableApiUsage")
