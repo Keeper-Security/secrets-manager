@@ -1,12 +1,23 @@
+#
 # Cookbook:: keeper_secrets_manager
 # Recipe:: fetch
+#
 
-# Fetch secrets from Keeper Vault using the custom resource
+# Deploy the input.json file to the instance at runtime
+cookbook_file '/tmp/input.json' do
+  source 'input.json'                    # looks in files/default/input.json
+  owner 'root'
+  group 'root'
+  mode '0644'
+end
+
+# Use the custom ksm_fetch resource to fetch secrets using the input.json
 ksm_fetch 'fetch_secrets' do
-  input_path '/Users/yashsolanki/Documents/chef-repo/cookbooks/keeper_secrets_manager/files/default/input.json'
+  input_path '/tmp/input.json'           # This path now exists in the instance
   action :run
 end
 
-log 'Keeper secrets fetched successfully !' do
+# Log success
+log 'Keeper secrets fetched successfully!' do
   level :info
 end

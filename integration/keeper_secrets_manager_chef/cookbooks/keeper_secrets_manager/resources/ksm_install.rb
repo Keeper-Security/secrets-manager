@@ -110,8 +110,7 @@ action_class do
       mode '0755'
       action :create
     end
-
-          Chef::Log.info("KSM script installed: #{scripts_dir}/ksm.py")
+    Chef::Log.info("KSM script installed: #{scripts_dir}/ksm.py")
   end
 
   def remove_directories
@@ -270,8 +269,6 @@ action_class do
     user_flag = new_resource.user_install ? '--user' : ''
 
     if platform_family?('windows')
-      "#{pip_cmd} #{args} #{user_flag}".strip
-    elsif new_resource.user_install
       "#{pip_cmd} #{args} #{user_flag}".strip
     else
       "sudo #{pip_cmd} #{args}".strip

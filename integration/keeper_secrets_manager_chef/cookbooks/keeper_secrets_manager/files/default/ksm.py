@@ -122,21 +122,21 @@ def initialize_ksm(auth_config):
     
     # Check if keeper_config.json file exists and is not empty
     if method in ['token', 'json'] and os.path.exists(config_file_path) and os.path.getsize(config_file_path) > 0:
-        try:
-            sm = SecretsManager(config=FileKeyValueStorage(config_file_path))
+        sm = SecretsManager(config=FileKeyValueStorage(config_file_path))
             
-            # Check if current keeper_config.json is not expired
-            if not is_config_expired(sm):
-                return sm
-            
-            # Remove the expired keeper_config.json file
-            os.remove(config_file_path)
-        except Exception as e:
-            try: 
-                os.remove(config_file_path)
-            except: 
-                pass
-    
+        # Check if current keeper_config.json is not expired
+        if not is_config_expired(sm):
+            return sm
+        
+        # If expired, remove the keeper_config.json file
+        os.remove(config_file_path)
+
+        if method == 'json':
+            log_message("INFO", "Current keeper_config.json is expired, removing it")
+            return None
+        elif method == 'token':
+            log_message("INFO", "Current keeper_config.json is expired, removing it and trying to authenticate with token")                
+                
     if method == 'token':
         return _authenticate_with_token(value, config_file_path)
     elif method == 'base64':
@@ -311,27 +311,30 @@ def process_folders(sm, folders_config, cumulative_output):
 
 # -------------------- Main --------------------
 
-def main():    
-    parser = argparse.ArgumentParser(description="Keeper Secrets CLI")
-    parser.add_argument("--input", help="Path to input.json")
-    args = parser.parse_args()
+def main():   
+    try: 
+        parser = argparse.ArgumentParser(description="Keeper Secrets CLI")
+        parser.add_argument("--input", help="Path to input.json")
+        args = parser.parse_args()
 
-    input_path = args.input if args.input else os.path.join(Constants.DEFAULT_PATH, Constants.INPUT_FILE)
+        input_path = args.input if args.input else os.path.join(Constants.DEFAULT_PATH, Constants.INPUT_FILE)
 
-    try:
+
         config = get_configurations(input_path)
-    except Exception as e:
-        log_message("ERROR", str(e))
-        sys.exit(1)
 
-    auth_config = config.get(Constants.AUTHENTICATION)
-    secrets_config = config.get(Constants.SECRETS, [])
-    folders_config = config.get(Constants.FOLDERS, {})
 
-    cumulative_output = {}
+        auth_config = config.get(Constants.AUTHENTICATION)
+        secrets_config = config.get(Constants.SECRETS, [])
+        folders_config = config.get(Constants.FOLDERS, {})
 
-    try:
+        cumulative_output = {}
+
+
         sm = initialize_ksm(auth_config)
+        
+        if(not sm):
+            log_message("INFO", "Failed to initialize SecretsManager with provided authentication configuration.")
+            return None
 
         # Process secrets array (GitHub Actions-like format)
         if isinstance(secrets_config, list):
@@ -342,7 +345,7 @@ def main():
 
         # Perform folder operations
         process_folders(sm, folders_config, cumulative_output)
-        
+            
         # Always output as JSON
         if cumulative_output:
             print(json.dumps(cumulative_output, indent=2))
@@ -353,4 +356,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()
