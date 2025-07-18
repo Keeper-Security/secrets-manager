@@ -268,7 +268,7 @@ action_class do
     pip_cmd = which('pip3') || which('pip') || python_command('-m pip')
     user_flag = new_resource.user_install ? '--user' : ''
 
-    if platform_family?('windows')
+    if platform_family?('windows') and new_resource.user_install
       "#{pip_cmd} #{args} #{user_flag}".strip
     else
       "sudo #{pip_cmd} #{args}".strip

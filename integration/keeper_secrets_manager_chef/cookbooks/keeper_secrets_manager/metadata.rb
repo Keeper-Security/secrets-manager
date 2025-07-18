@@ -1,6 +1,6 @@
 name 'keeper_secrets_manager'
-maintainer 'The Authors'
-maintainer_email 'you@example.com'
+maintainer 'Keeper Security'
+maintainer_email 'sm@keepersecurity.com'
 license 'All Rights Reserved'
 description 'Installs/Configures keeper_secrets_manager'
 version '0.1.0'
