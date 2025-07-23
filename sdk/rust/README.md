@@ -1,6 +1,15 @@
 ## Secrets Manager -  Rust
 This SDK helps you retrieve and manage your secrets from keeper.
 
+# Change Log
+
+## 17.0.1
+* Publish test
+
+## 17.0.0
+* Initial releae
+
+
 ### How to get it to work locally
 To get it to work locally we need to have
 * Rust installed

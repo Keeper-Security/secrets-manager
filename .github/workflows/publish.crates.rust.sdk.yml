@@ -1,0 +1,110 @@
+name: Publish to Crates.io (Rust SDK)
+on:
+  workflow_dispatch:
+
+jobs:
+  generate-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v3
+        
+      - name: Install Syft
+        run: |
+          echo "Installing Syft v1.18.1..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /tmp/bin v1.18.1
+          echo "/tmp/bin" >> $GITHUB_PATH
+          
+      - name: Install Manifest CLI
+        run: |
+          echo "Installing Manifest CLI v0.18.3..."
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /tmp/bin v0.18.3
+          
+      - name: Create Syft configuration
+        run: |
+          cat > syft-config.yaml << 'EOF'
+          package:
+            search:
+              scope: all-layers
+            cataloger:
+              enabled: true
+              rust:
+                enabled: true
+              java:
+                enabled: false
+              python:
+                enabled: false
+              nodejs:
+                enabled: false
+          EOF
+          
+      - name: Generate and upload SBOM
+        env:
+          MANIFEST_API_KEY: ${{ secrets.MANIFEST_TOKEN }}
+        run: |
+          RUST_SDK_DIR="./sdk/rust"
+          
+          # Get version from Cargo.toml
+          echo "Detecting Rust SDK version..."
+          if [ -f "${RUST_SDK_DIR}/Cargo.toml" ]; then
+            VERSION=$(grep -E '^version = "[^"]*"' "${RUST_SDK_DIR}/Cargo.toml" | head -1 | cut -d'"' -f2)
+            echo "Detected version: ${VERSION}"
+          else
+            VERSION="1.0.0"
+            echo "Could not detect version, using default: ${VERSION}"
+          fi
+          
+          echo "Generating SBOM with Manifest CLI..."
+          /tmp/bin/manifest sbom "${RUST_SDK_DIR}" \
+            --generator=syft \
+            --name=keeper-secrets-manager-rust-sdk \
+            --version=${VERSION} \
+            --output=spdx-json \
+            --file=rust-sdk-sbom.json \
+            --api-key=${MANIFEST_API_KEY} \
+            --publish=true \
+            --asset-label=application,sbom-generated,rust \
+            --generator-config=syft-config.yaml
+            
+          echo "SBOM generated and uploaded successfully: rust-sdk-sbom.json"
+          echo "---------- SBOM Preview (first 20 lines) ----------"
+          head -n 20 rust-sdk-sbom.json
+
+  publish-crates:
+    needs: generate-sbom
+#    environment: prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: ./sdk/rust
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v3
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
+          secrets: |
+            wiXP0rU0tHSCQXXy72Q02w/field/password > env:CARGO_REGISTRY_TOKEN
+
+      - name: Run cargo check
+        run: cargo check
+
+      - name: Run cargo test
+        run: cargo test
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ env.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --no-verify
