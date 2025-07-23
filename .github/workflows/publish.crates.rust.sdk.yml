@@ -72,7 +72,7 @@ jobs:
 
   publish-crates:
     needs: generate-sbom
-#    environment: prod
+    environment: prod
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
