@@ -1,0 +1,141 @@
+name: Publish to Puppet Forge
+on:
+  workflow_dispatch:
+
+jobs:
+  generate-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v3
+        
+      - name: Install Syft
+        run: |
+          echo "Installing Syft v1.18.1..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /tmp/bin v1.18.1
+          echo "/tmp/bin" >> $GITHUB_PATH
+          
+      - name: Install Manifest CLI
+        run: |
+          echo "Installing Manifest CLI v0.18.3..."
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /tmp/bin v0.18.3
+          
+      - name: Create Syft configuration
+        run: |
+          cat > syft-config.yaml << 'EOF'
+          package:
+            search:
+              scope: all-layers
+              exclude:
+                - "**/spec/**"
+                - "**/examples/**"
+                - "**/tests/**"
+            cataloger:
+              enabled: true
+              ruby:
+                enabled: true
+                search-gems: true
+              java:
+                enabled: false
+              python:
+                enabled: false
+              nodejs:
+                enabled: false
+          EOF
+          
+      - name: Generate and upload SBOM
+        env:
+          MANIFEST_API_KEY: ${{ secrets.MANIFEST_TOKEN }}
+        run: |
+          PUPPET_MODULE_DIR="./integration/keeper_secrets_manager_puppet"
+          
+          # Get version from metadata.json
+          echo "Detecting Puppet module version..."
+          if [ -f "${PUPPET_MODULE_DIR}/metadata.json" ]; then
+            VERSION=$(cat "${PUPPET_MODULE_DIR}/metadata.json" | jq -r .version)
+            echo "Detected version: ${VERSION}"
+          else
+            VERSION="1.0.0"
+            echo "Could not detect version, using default: ${VERSION}"
+          fi
+          
+          echo "Generating SBOM with Manifest CLI..."
+          /tmp/bin/manifest sbom "${PUPPET_MODULE_DIR}" \
+            --generator=syft \
+            --name=keeper-secrets-manager-puppet \
+            --version=${VERSION} \
+            --output=spdx-json \
+            --file=puppet-module-sbom.json \
+            --api-key=${MANIFEST_API_KEY} \
+            --publish=true \
+            --asset-label=application,sbom-generated,ruby,puppet \
+            --generator-config=syft-config.yaml
+            
+          echo "SBOM generated and uploaded successfully: puppet-module-sbom.json"
+          echo "---------- SBOM Preview (first 20 lines) ----------"
+          head -n 20 puppet-module-sbom.json
+
+  publish-puppet-forge:
+    needs: generate-sbom
+    environment: prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: ./integration/keeper_secrets_manager_puppet
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v3
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: ./integration/keeper_secrets_manager_puppet
+
+      - name: Install dependencies
+        run: |
+          bundle install
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
+          secrets: |
+            _gC1qMMHRcD6Fztyd692kw/field/password > PUPPET_FORGE_API_KEY
+
+      - name: Run Puppet Lint
+        run: |
+          bundle exec puppet-lint \
+            --no-140chars-check \
+            --no-autoloader_layout-check \
+            --no-documentation-check \
+            --no-class_inherits_from_params_class-check \
+            manifests/
+
+      - name: Validate Puppet manifests
+        run: |
+          bundle exec puppet parser validate manifests/*.pp
+
+      - name: Run metadata lint
+        run: |
+          bundle exec metadata-json-lint metadata.json
+
+      - name: Run RSpec tests
+        run: |
+          bundle exec rake spec
+
+      - name: Build module
+        run: |
+          bundle exec pdk build
+
+      - name: Publish to Puppet Forge
+        env:
+          PDK_DISABLE_ANALYTICS: true
+        run: |
+          # Use PDK to publish with API key
+          bundle exec pdk release publish --forge-token=${{ secrets.PUPPET_FORGE_API_KEY }} --force
