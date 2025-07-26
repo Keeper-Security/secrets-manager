@@ -1,0 +1,136 @@
+name: Publish to Puppet Forge
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./integration/keeper_secrets_manager_puppet
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: ./integration/keeper_secrets_manager_puppet
+
+      - name: Install dependencies
+        run: |
+          bundle install
+
+      - name: Run Puppet Lint
+        run: |
+          bundle exec puppet-lint \
+            --no-140chars-check \
+            --no-autoloader_layout-check \
+            --no-documentation-check \
+            --no-class_inherits_from_params_class-check \
+            manifests/
+
+      - name: Validate Puppet manifests
+        run: |
+          bundle exec puppet parser validate manifests/*.pp
+
+      - name: Run metadata lint
+        run: |
+          bundle exec metadata-json-lint metadata.json
+
+      - name: Security scan for Ruby dependencies
+        run: |
+          gem install bundler-audit
+          bundle audit check --update
+
+      - name: Check for hardcoded secrets
+        run: |
+          # Check for potential secrets in manifests
+          echo "Checking for hardcoded secrets..."
+          ! grep -rE "(password|secret|token|key)\s*=\s*['\"][^'\"]+['\"]" manifests/ || {
+            echo "::error::Found potential hardcoded secrets in manifests"
+            exit 1
+          }
+
+      - name: Run RSpec tests
+        run: |
+          bundle exec rake spec
+
+  publish:
+    name: Build and Publish to Puppet Forge
+    needs: security-scan
+    environment: prod
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./integration/keeper_secrets_manager_puppet
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: ./integration/keeper_secrets_manager_puppet
+
+      - name: Install dependencies
+        run: |
+          bundle install
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_PUPPET_FORGE_CONFIG }}
+          secrets: |
+            _gC1qMMHRcD6Fztyd692kw/field/password > PUPPET_FORGE_API_KEY
+
+      - name: Build module
+        run: |
+          bundle exec pdk build
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: ./integration/keeper_secrets_manager_puppet
+          format: cyclonedx-json
+          output-file: puppet-module-sbom.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: puppet-module-sbom
+          path: puppet-module-sbom.json
+          retention-days: 90
+
+      - name: Publish to Puppet Forge
+        env:
+          PDK_DISABLE_ANALYTICS: true
+        run: |
+          # Use PDK to publish with API key
+          bundle exec pdk release publish --forge-token=${{ steps.ksmsecrets.outputs.PUPPET_FORGE_API_KEY }} --force
+
+      - name: Create GitHub Release Assets
+        if: github.event_name == 'release'
+        run: |
+          # Find the built module
+          MODULE_FILE=$(find pkg -name "*.tar.gz" | head -1)
+          
+          # Upload to GitHub release
+          gh release upload ${{ github.event.release.tag_name }} \
+            "${MODULE_FILE}" \
+            --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
