@@ -14,7 +14,7 @@
 
 ## Overview
 
-This `keepersecurity-keeper_secret_manager_puppet` module facilitates secure integration between Puppet and Keeper Secret Manager, enabling the retrieval of secrets during catalog execution. 
+This `keepersecurity-keeper_secrets_manager_puppet` module facilitates secure integration between Puppet and Keeper Secret Manager, enabling the retrieval of secrets during catalog execution. 
 
 It supports a range of authentication mechanisms, including token-based and encoded credential formats, while also allowing for environment-specific configurations to enhance access control. Retrieved secrets are returned in structured JSON, ensuring seamless integration and efficient consumption within Puppet manifests.
 
@@ -100,7 +100,7 @@ The notation follows the pattern: `"KEEPER_NOTATION > OUTPUT_SPECIFICATION"`
 
 ```bash
 # Install from Puppet Forge
-puppet module install keepersecurity-keeper_secret_manager_puppet
+puppet module install keepersecurity-keeper_secrets_manager_puppet
 ```
 
 ### Step 2: Configure Hiera
@@ -138,7 +138,7 @@ keeper::config:
   - `[1]`: Authentication value (your credentials or `ENV:VARIABLE_NAME`)
 - **`secrets`** (Optional): Array of Keeper notation strings
 
-**Note**: Passing secrets array under **keeper::config** can be skipped if you are passing secrets array directly as parameter in the ```Deferred('keeper_secret_manager_puppet::lookup', [SECRETS_ARRAY_HERE])``` function call.
+**Note**: Passing secrets array under **keeper::config** can be skipped if you are passing secrets array directly as parameter in the ```Deferred('keeper_secrets_manager_puppet::lookup', [SECRETS_ARRAY_HERE])``` function call.
 
 ### Step 3: Set Up Environment Variable (Optional)
 
@@ -164,21 +164,21 @@ echo "KEEPER_CONFIG='your-json-configuration-path-on-master'" >> /etc/environmen
 
 ```puppet
 # Include the module in your manifests
-contain keeper_secret_manager_puppet
+contain keeper_secrets_manager_puppet
 ```
 
 #### Using the Custom Lookup Function with Deferred
 
-The module provides a custom function `keeper_secret_manager_puppet::lookup` that must be used with Puppet's `Deferred()` wrapper for runtime execution. [Learn more about Deferred Functions](https://www.puppet.com/docs/puppet/7/deferred_functions)
+The module provides a custom function `keeper_secrets_manager_puppet::lookup` that must be used with Puppet's `Deferred()` wrapper for runtime execution. [Learn more about Deferred Functions](https://www.puppet.com/docs/puppet/7/deferred_functions)
 
 
-The `Deferred('keeper_secret_manager_puppet::lookup', [])` function accepts three parameter options:
+The `Deferred('keeper_secrets_manager_puppet::lookup', [])` function accepts three parameter options:
 
 | **Parameter Type** | **Description** | **Example** |
 ---------------------|-----------------|-------------|
-**No Parameters** | Uses secrets from Hiera configuration |  `Deferred('keeper_secret_manager_puppet::lookup', [])` |
-**Array[String]** | Uses secrets from parameters | `Deferred('keeper_secret_manager_puppet::lookup', [$secrets_array])` |
-**String** | Uses secrets from parameters | `Deferred('keeper_secret_manager_puppet::lookup', ['UID/field/login > login_name'])` |
+**No Parameters** | Uses secrets from Hiera configuration |  `Deferred('keeper_secrets_manager_puppet::lookup', [])` |
+**Array[String]** | Uses secrets from parameters | `Deferred('keeper_secrets_manager_puppet::lookup', [$secrets_array])` |
+**String** | Uses secrets from parameters | `Deferred('keeper_secrets_manager_puppet::lookup', ['UID/field/login > login_name'])` |
 
 **Detailed Examples:**
 
@@ -186,7 +186,7 @@ The `Deferred('keeper_secret_manager_puppet::lookup', [])` function accepts thre
 **Option 1: Default Lookup - No Parameters**
 ```puppet
 # Uses secrets defined in Hiera configuration
-$secrets = Deferred('keeper_secret_manager_puppet::lookup', [])
+$secrets = Deferred('keeper_secrets_manager_puppet::lookup', [])
 ```
 
 **Option 2: Array of Strings**
@@ -199,13 +199,13 @@ $secrets_array = [
   'UID/file/ssl_cert.pem > file:/etc/ssl/certs/agent2_ssl_cert.pem',
 ]
 
-$secrets = Deferred('keeper_secret_manager_puppet::lookup', [$secrets_array])
+$secrets = Deferred('keeper_secrets_manager_puppet::lookup', [$secrets_array])
 ```
 
 **Option 3: Single String**
 ```puppet
 # Single secret lookup
-$secrets = Deferred('keeper_secret_manager_puppet::lookup', ['UID/field/login > agent2_login'])
+$secrets = Deferred('keeper_secrets_manager_puppet::lookup', ['UID/field/login > agent2_login'])
 ```
 
 **4. Accessing Individual Secret Values**
@@ -220,7 +220,7 @@ $label2_value = Deferred('dig', [$secrets, 'Label2'])
 ```puppet
 node 'puppetagent' {
   # Include the keeper module
-  contain keeper_secret_manager_puppet
+  contain keeper_secrets_manager_puppet
 
   # Define secrets to retrieve
   $secrets = [
@@ -231,7 +231,7 @@ node 'puppetagent' {
   ]
 
   # Fetch secrets using deferred function
-  $secrets_result = Deferred('keeper_secret_manager_puppet::lookup', [$secrets])
+  $secrets_result = Deferred('keeper_secrets_manager_puppet::lookup', [$secrets])
 
   # Use retrieved secrets
   notify { 'Retrieved secrets':

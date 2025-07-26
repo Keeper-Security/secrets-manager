@@ -1,6 +1,6 @@
 require 'spec_helper'
 
-describe 'keeper_secret_manager_puppet' do
+describe 'keeper_secrets_manager_puppet' do
   # Filter to only test Linux, macOS, and Windows
   supported_os = on_supported_os.select do |os, _os_facts|
     # Simple filtering based on operating system names
@@ -45,7 +45,7 @@ describe 'keeper_secret_manager_puppet' do
             }
           }
           function file($path) { '{"test": "json", "config": "data"}' }
-          function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+          function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
             undef
           }
           PUPPET
@@ -65,7 +65,7 @@ describe 'keeper_secret_manager_puppet' do
             }
           }
           function file($path) { '{"test": "json", "config": "data"}' }
-          function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+          function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
             undef
           }
           PUPPET
@@ -98,7 +98,7 @@ describe 'keeper_secret_manager_puppet' do
             }
           }
           function file($path) { '{"test": "json", "config": "data"}' }
-          function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+          function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
             if $env_var_name == 'ENV:MY_ENV_VAR' {
               'env_value'
             } else {
@@ -127,20 +127,20 @@ describe 'keeper_secret_manager_puppet' do
 
       it { is_expected.to compile.with_all_deps }
 
-      it { is_expected.to contain_class('keeper_secret_manager_puppet::config') }
-      it { is_expected.to contain_class('keeper_secret_manager_puppet::install_ksm') }
+      it { is_expected.to contain_class('keeper_secrets_manager_puppet::config') }
+      it { is_expected.to contain_class('keeper_secrets_manager_puppet::install_ksm') }
 
       it 'has proper ordering' do
-        is_expected.to contain_class('keeper_secret_manager_puppet::config')
-          .that_comes_before('Class[keeper_secret_manager_puppet::install_ksm]')
+        is_expected.to contain_class('keeper_secrets_manager_puppet::config')
+          .that_comes_before('Class[keeper_secrets_manager_puppet::install_ksm]')
       end
 
       it 'contains the main class' do
-        is_expected.to contain_class('keeper_secret_manager_puppet')
+        is_expected.to contain_class('keeper_secrets_manager_puppet')
       end
 
       it 'has no parameters' do
-        is_expected.to contain_class('keeper_secret_manager_puppet').with({})
+        is_expected.to contain_class('keeper_secrets_manager_puppet').with({})
       end
 
       # Test that the actual resources are created

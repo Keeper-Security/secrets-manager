@@ -1,7 +1,7 @@
-# Class: keeper_secret_manager_puppet::install_ksm
+# Class: keeper_secrets_manager_puppet::install_ksm
 #
 #
-class keeper_secret_manager_puppet::install_ksm (
+class keeper_secrets_manager_puppet::install_ksm (
 
 ) {
   # Validate that config directory exists before proceeding
@@ -26,12 +26,12 @@ class keeper_secret_manager_puppet::install_ksm (
     ensure => file,
     owner  => $owner_value,
     group  => $group_value,
-    source => "puppet:///modules/keeper_secret_manager_puppet/${script_name}",
+    source => "puppet:///modules/keeper_secrets_manager_puppet/${script_name}",
     mode   => $mode_value,
   }
 
   $exec_command = $facts['os']['family'] ? {
-    'windows' => "powershell.exe -File \"${script_full_path}"",
+    'windows' => "powershell.exe -File \"${script_full_path}\"",
     default   => "\"/bin/bash\" \"${script_full_path}\"",
   }
 

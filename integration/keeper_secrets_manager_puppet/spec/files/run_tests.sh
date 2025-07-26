@@ -9,7 +9,7 @@ echo "================================================================"
 
 # Check if we're in the right directory
 if [ ! -f "files/ksm.py" ]; then
-    echo "❌ Error: Please run this script from the keeper_secret_manager_puppet directory"
+    echo "❌ Error: Please run this script from the keeper_secrets_manager_puppet directory"
     echo "   Current directory: $(pwd)"
     echo "   Expected files: files/ksm.py, files/install_ksm.sh, files/install_ksm.ps1"
     exit 1

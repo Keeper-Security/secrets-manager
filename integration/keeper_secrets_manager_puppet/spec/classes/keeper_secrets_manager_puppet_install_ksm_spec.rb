@@ -1,6 +1,6 @@
 require 'spec_helper'
 
-describe 'keeper_secret_manager_puppet::install_ksm' do
+describe 'keeper_secrets_manager_puppet::install_ksm' do
   supported_os = on_supported_os.select do |os, _facts|
     os_name = os.split('-').first
     ['redhat', 'centos', 'ubuntu', 'debian', 'darwin', 'windows'].include?(os_name)
@@ -26,14 +26,14 @@ describe 'keeper_secret_manager_puppet::install_ksm' do
           if is_windows
             is_expected.to contain_file(script_path)
               .with_ensure('file')
-              .with_source("puppet:///modules/keeper_secret_manager_puppet/#{script_name}")
+              .with_source("puppet:///modules/keeper_secrets_manager_puppet/#{script_name}")
               .without_owner
               .without_group
               .without_mode
           else
             is_expected.to contain_file(script_path)
               .with_ensure('file')
-              .with_source("puppet:///modules/keeper_secret_manager_puppet/#{script_name}")
+              .with_source("puppet:///modules/keeper_secrets_manager_puppet/#{script_name}")
               .with_owner('root')
               .with_group('root')
               .with_mode('0755')
@@ -59,10 +59,10 @@ describe 'keeper_secret_manager_puppet::install_ksm' do
         it 'uses the correct script name based on OS family' do
           if is_windows
             is_expected.to contain_file(script_path)
-              .with_source('puppet:///modules/keeper_secret_manager_puppet/install_ksm.ps1')
+              .with_source('puppet:///modules/keeper_secrets_manager_puppet/install_ksm.ps1')
           else
             is_expected.to contain_file(script_path)
-              .with_source('puppet:///modules/keeper_secret_manager_puppet/install_ksm.sh')
+              .with_source('puppet:///modules/keeper_secrets_manager_puppet/install_ksm.sh')
           end
         end
       end
@@ -79,7 +79,7 @@ describe 'keeper_secret_manager_puppet::install_ksm' do
           custom_script_path = File.join(custom_config_dir, script_name)
           is_expected.to contain_file(custom_script_path)
             .with_ensure('file')
-            .with_source("puppet:///modules/keeper_secret_manager_puppet/#{script_name}")
+            .with_source("puppet:///modules/keeper_secrets_manager_puppet/#{script_name}")
         end
 
         it 'executes the install script from the custom directory' do
@@ -134,7 +134,7 @@ describe 'keeper_secret_manager_puppet::install_ksm' do
             special_script_path = File.join(special_config_dir, script_name)
             is_expected.to contain_file(special_script_path)
               .with_ensure('file')
-              .with_source("puppet:///modules/keeper_secret_manager_puppet/#{script_name}")
+              .with_source("puppet:///modules/keeper_secrets_manager_puppet/#{script_name}")
           end
         end
 
@@ -150,7 +150,7 @@ describe 'keeper_secret_manager_puppet::install_ksm' do
             nested_script_path = File.join(nested_config_dir, script_name)
             is_expected.to contain_file(nested_script_path)
               .with_ensure('file')
-              .with_source("puppet:///modules/keeper_secret_manager_puppet/#{script_name}")
+              .with_source("puppet:///modules/keeper_secrets_manager_puppet/#{script_name}")
           end
         end
       end
@@ -167,7 +167,7 @@ describe 'keeper_secret_manager_puppet::install_ksm' do
           it 'uses PowerShell script and command' do
             windows_script_path = File.join(config_dir, 'install_ksm.ps1')
             is_expected.to contain_file(windows_script_path)
-              .with_source('puppet:///modules/keeper_secret_manager_puppet/install_ksm.ps1')
+              .with_source('puppet:///modules/keeper_secrets_manager_puppet/install_ksm.ps1')
               .without_owner
               .without_group
               .without_mode
@@ -189,7 +189,7 @@ describe 'keeper_secret_manager_puppet::install_ksm' do
           it 'uses bash script and command' do
             bash_script_path = File.join(config_dir, 'install_ksm.sh')
             is_expected.to contain_file(bash_script_path)
-              .with_source('puppet:///modules/keeper_secret_manager_puppet/install_ksm.sh')
+              .with_source('puppet:///modules/keeper_secrets_manager_puppet/install_ksm.sh')
               .with_owner('root')
               .with_group('root')
               .with_mode('0755')
@@ -211,7 +211,7 @@ describe 'keeper_secret_manager_puppet::install_ksm' do
           it 'uses bash script and command' do
             bash_script_path = File.join(config_dir, 'install_ksm.sh')
             is_expected.to contain_file(bash_script_path)
-              .with_source('puppet:///modules/keeper_secret_manager_puppet/install_ksm.sh')
+              .with_source('puppet:///modules/keeper_secrets_manager_puppet/install_ksm.sh')
               .with_owner('root')
               .with_group('root')
               .with_mode('0755')
@@ -233,7 +233,7 @@ describe 'keeper_secret_manager_puppet::install_ksm' do
           it 'uses bash script and command' do
             bash_script_path = File.join(config_dir, 'install_ksm.sh')
             is_expected.to contain_file(bash_script_path)
-              .with_source('puppet:///modules/keeper_secret_manager_puppet/install_ksm.sh')
+              .with_source('puppet:///modules/keeper_secrets_manager_puppet/install_ksm.sh')
               .with_owner('root')
               .with_group('root')
               .with_mode('0755')

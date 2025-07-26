@@ -1,5 +1,5 @@
 begin
-  require 'keeper_secret_manager_puppet/constants'
+  require 'keeper_secrets_manager_puppet/constants'
 rescue LoadError => e
   Facter.debug("Could not load constants: #{e.message}")
 end
@@ -10,13 +10,13 @@ Facter.add('preprocess_deferred_correct') do
     puppet_conf_paths = case Facter.value(:os)['family'].downcase
                         when 'windows'
                           [
-                            KeeperSecretManagerPuppet::Constants::WINDOWS_PUPPET_CONF_PATH,
-                            KeeperSecretManagerPuppet::Constants::WINDOWS_USER_PUPPET_CONF_PATH,
+                            KeeperSecretsManagerPuppet::Constants::WINDOWS_PUPPET_CONF_PATH,
+                            KeeperSecretsManagerPuppet::Constants::WINDOWS_USER_PUPPET_CONF_PATH,
                           ]
                         else
                           [
-                            KeeperSecretManagerPuppet::Constants::UNIX_PUPPET_CONF_PATH,
-                            KeeperSecretManagerPuppet::Constants::UNIX_USER_PUPPET_CONF_PATH,
+                            KeeperSecretsManagerPuppet::Constants::UNIX_PUPPET_CONF_PATH,
+                            KeeperSecretsManagerPuppet::Constants::UNIX_USER_PUPPET_CONF_PATH,
                           ]
                         end
 

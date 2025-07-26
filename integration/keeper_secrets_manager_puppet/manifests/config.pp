@@ -1,7 +1,7 @@
-# Class: keeper_secret_manager_puppet::config
+# Class: keeper_secrets_manager_puppet::config
 #
 #
-class keeper_secret_manager_puppet::config {
+class keeper_secrets_manager_puppet::config {
   # Check if preprocess_deferred is set to false in puppet.conf on the agent 
   if $facts['preprocess_deferred_correct'] != true {
     return fail('❌ Puppet Configuration Error: The "preprocess_deferred = false" setting is missing from your agent\'s puppet.conf file. Please add this line to the [agent] section of your puppet.conf file.')

@@ -1,4 +1,4 @@
-Puppet::Functions.create_function(:'keeper_secret_manager_puppet::lookup_env_value') do
+Puppet::Functions.create_function(:'keeper_secrets_manager_puppet::lookup_env_value') do
   dispatch :lookup_env_value do
     param 'String', :env_var_name
   end

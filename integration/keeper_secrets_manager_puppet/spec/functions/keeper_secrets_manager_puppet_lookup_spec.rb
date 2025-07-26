@@ -1,7 +1,7 @@
 require 'spec_helper'
 require 'json'
 
-describe 'keeper_secret_manager_puppet::lookup' do
+describe 'keeper_secrets_manager_puppet::lookup' do
   let(:default_env_path) { '/opt/keeper_secret_manager/keeper_env.sh' }
   let(:default_input_path) { '/opt/keeper_secret_manager/input.json' }
   let(:default_script_path) { '/opt/keeper_secret_manager/ksm.py' }

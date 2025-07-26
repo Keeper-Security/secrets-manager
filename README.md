@@ -1,4 +1,4 @@
-# Keeper Secrets Manager
+fg# Keeper Secrets Manager
 
 Keeper Secrets Manager is a component of the Keeper Enterprise platform. It provides your DevOps, IT Security and
 software development teams with a fully cloud-based, Zero-Knowledge platform for managing all of your

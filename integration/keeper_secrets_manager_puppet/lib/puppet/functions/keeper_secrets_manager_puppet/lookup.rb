@@ -1,7 +1,7 @@
 require 'puppet'
-require 'keeper_secret_manager_puppet/constants'
+require 'keeper_secrets_manager_puppet/constants'
 
-Puppet::Functions.create_function(:'keeper_secret_manager_puppet::lookup') do
+Puppet::Functions.create_function(:'keeper_secrets_manager_puppet::lookup') do
   # Dispatch for no parameters - uses default input.json
   dispatch :lookup_no_params do
   end
@@ -90,17 +90,17 @@ Puppet::Functions.create_function(:'keeper_secret_manager_puppet::lookup') do
     # Get OS-specific paths
     if Facter.value(:osfamily) == 'windows'
       {
-        'script_path' => KeeperSecretManagerPuppet::Constants::WINDOWS_CONFIG_PATH + '/' + KeeperSecretManagerPuppet::Constants::PYTHON_SCRIPT_NAME,
-        'config_path' => KeeperSecretManagerPuppet::Constants::WINDOWS_CONFIG_PATH + '/' + KeeperSecretManagerPuppet::Constants::KSM_CONFIG_FILE_NAME,
-        'input_path' => KeeperSecretManagerPuppet::Constants::WINDOWS_CONFIG_PATH + '/' + KeeperSecretManagerPuppet::Constants::CONFIG_FILE_NAME,
-        'keeper_env_path' => KeeperSecretManagerPuppet::Constants::WINDOWS_CONFIG_PATH + '/' + KeeperSecretManagerPuppet::Constants::KEEPER_ENV_FILE_NAME
+        'script_path' => KeeperSecretsManagerPuppet::Constants::WINDOWS_CONFIG_PATH + '/' + KeeperSecretsManagerPuppet::Constants::PYTHON_SCRIPT_NAME,
+        'config_path' => KeeperSecretsManagerPuppet::Constants::WINDOWS_CONFIG_PATH + '/' + KeeperSecretsManagerPuppet::Constants::KSM_CONFIG_FILE_NAME,
+        'input_path' => KeeperSecretsManagerPuppet::Constants::WINDOWS_CONFIG_PATH + '/' + KeeperSecretsManagerPuppet::Constants::CONFIG_FILE_NAME,
+        'keeper_env_path' => KeeperSecretsManagerPuppet::Constants::WINDOWS_CONFIG_PATH + '/' + KeeperSecretsManagerPuppet::Constants::KEEPER_ENV_FILE_NAME
       }
     else
       {
-        'script_path' => KeeperSecretManagerPuppet::Constants::UNIX_CONFIG_PATH + '/' + KeeperSecretManagerPuppet::Constants::PYTHON_SCRIPT_NAME,
-        'config_path' => KeeperSecretManagerPuppet::Constants::UNIX_CONFIG_PATH + '/' + KeeperSecretManagerPuppet::Constants::KSM_CONFIG_FILE_NAME,
-        'input_path' => KeeperSecretManagerPuppet::Constants::UNIX_CONFIG_PATH + '/' + KeeperSecretManagerPuppet::Constants::CONFIG_FILE_NAME,
-        'keeper_env_path' => KeeperSecretManagerPuppet::Constants::UNIX_CONFIG_PATH + '/' + KeeperSecretManagerPuppet::Constants::KEEPER_ENV_FILE_NAME
+        'script_path' => KeeperSecretsManagerPuppet::Constants::UNIX_CONFIG_PATH + '/' + KeeperSecretsManagerPuppet::Constants::PYTHON_SCRIPT_NAME,
+        'config_path' => KeeperSecretsManagerPuppet::Constants::UNIX_CONFIG_PATH + '/' + KeeperSecretsManagerPuppet::Constants::KSM_CONFIG_FILE_NAME,
+        'input_path' => KeeperSecretsManagerPuppet::Constants::UNIX_CONFIG_PATH + '/' + KeeperSecretsManagerPuppet::Constants::CONFIG_FILE_NAME,
+        'keeper_env_path' => KeeperSecretsManagerPuppet::Constants::UNIX_CONFIG_PATH + '/' + KeeperSecretsManagerPuppet::Constants::KEEPER_ENV_FILE_NAME
       }
     end
   end

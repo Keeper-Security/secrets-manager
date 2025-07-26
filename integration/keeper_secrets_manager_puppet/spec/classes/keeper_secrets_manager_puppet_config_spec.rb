@@ -1,6 +1,6 @@
 require 'spec_helper'
 
-describe 'keeper_secret_manager_puppet::config' do
+describe 'keeper_secrets_manager_puppet::config' do
   supported_os = on_supported_os.select do |os, _facts|
     os_name = os.split('-').first
     ['redhat', 'centos', 'ubuntu', 'debian', 'darwin', 'windows'].include?(os_name)
@@ -82,7 +82,7 @@ describe 'keeper_secret_manager_puppet::config' do
               .without_owner
               .without_group
               .without_mode
-              .with_source('puppet:///modules/keeper_secret_manager_puppet/ksm.py')
+              .with_source('puppet:///modules/keeper_secrets_manager_puppet/ksm.py')
               .that_requires("File[#{config_dir}]")
           else
             is_expected.to contain_file(ksm_py)
@@ -90,7 +90,7 @@ describe 'keeper_secret_manager_puppet::config' do
               .with_owner('root')
               .with_group('root')
               .with_mode('0755')
-              .with_source('puppet:///modules/keeper_secret_manager_puppet/ksm.py')
+              .with_source('puppet:///modules/keeper_secrets_manager_puppet/ksm.py')
               .that_requires("File[#{config_dir}]")
           end
         end
@@ -133,7 +133,7 @@ describe 'keeper_secret_manager_puppet::config' do
               default: { $default }
             }
           }
-          function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+          function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
             undef
           }
           PUPPET
@@ -166,7 +166,7 @@ describe 'keeper_secret_manager_puppet::config' do
               default: { $default }
             }
           }
-          function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+          function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
             '/path/to/token/config.json'
           }
           PUPPET
@@ -210,7 +210,7 @@ describe 'keeper_secret_manager_puppet::config' do
               default: { $default }
             }
           }
-          function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+          function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
             undef
           }
           PUPPET
@@ -240,7 +240,7 @@ describe 'keeper_secret_manager_puppet::config' do
               default: { $default }
             }
           }
-          function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+          function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
             undef
           }
           PUPPET
@@ -403,7 +403,7 @@ describe 'keeper_secret_manager_puppet::config' do
                 default: { $default }
               }
             }
-            function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+            function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
               undef
             }
             PUPPET
@@ -433,7 +433,7 @@ describe 'keeper_secret_manager_puppet::config' do
                 default: { $default }
               }
             }
-            function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+            function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
               undef
             }
             PUPPET
@@ -523,7 +523,7 @@ describe 'keeper_secret_manager_puppet::config' do
                 default: { $default }
               }
             }
-            function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+            function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
               '"quoted_value"'
             }
             PUPPET
@@ -558,7 +558,7 @@ describe 'keeper_secret_manager_puppet::config' do
                 default: { $default }
               }
             }
-            function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+            function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
               '"/path/to/quoted/config.json"'
             }
             function file($path) {
@@ -605,7 +605,7 @@ describe 'keeper_secret_manager_puppet::config' do
                 default: { $default }
               }
             }
-            function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+            function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
               "'single_quoted_value'"
             }
             PUPPET
@@ -640,7 +640,7 @@ describe 'keeper_secret_manager_puppet::config' do
                 default: { $default }
               }
             }
-            function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+            function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
               'unquoted_value'
             }
             PUPPET
@@ -675,7 +675,7 @@ describe 'keeper_secret_manager_puppet::config' do
                 default: { $default }
               }
             }
-            function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+            function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
               undef
             }
             PUPPET
@@ -705,7 +705,7 @@ describe 'keeper_secret_manager_puppet::config' do
                 default: { $default }
               }
             }
-            function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+            function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
               undef
             }
             PUPPET
@@ -735,7 +735,7 @@ describe 'keeper_secret_manager_puppet::config' do
                 default: { $default }
               }
             }
-            function keeper_secret_manager_puppet::lookup_env_value($env_var_name) {
+            function keeper_secrets_manager_puppet::lookup_env_value($env_var_name) {
               undef
             }
             PUPPET

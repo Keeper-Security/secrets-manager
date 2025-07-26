@@ -1,6 +1,6 @@
 require 'spec_helper'
 
-describe 'keeper_secret_manager_puppet::lookup_env_value' do
+describe 'keeper_secrets_manager_puppet::lookup_env_value' do
   it { is_expected.not_to eq(nil) }
 
   context 'input validation' do

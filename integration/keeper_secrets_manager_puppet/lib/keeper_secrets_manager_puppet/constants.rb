@@ -2,7 +2,7 @@
 
 # rubocop:disable Style/ClassAndModuleChildren
 
-module KeeperSecretManagerPuppet
+module KeeperSecretsManagerPuppet
   module Constants
     CONFIG_FILE_NAME         = 'input.json'
     PYTHON_SCRIPT_NAME       = 'ksm.py'

@@ -1,13 +1,13 @@
 {
-  "name": "keepersecurity-keeper_secret_manager_puppet",
+  "name": "keepersecurity-keeper_secrets_manager_puppet",
   "version": "1.0.0",
   "author": "Keeper Security",
-  "summary": "Puppet module for Keeper Secret Manager integration with deferred functions for secure runtime secret retrieval",
-  "source": "NEED TO UPDATE KEEPER GITHUB URL",
-  "project_page": "NEED TO UPDATE project documentation/homepage URL",
-  "issues_url": "NEED TO UPDATE KEEPER GITHUB ISSUE URL",
+  "summary": "Puppet module for Keeper Secrets Manager integration with deferred functions for secure runtime secret retrieval",
+  "source": "https://github.com/Keeper-Security/secrets-manager",
+  "project_page": "https://github.com/Keeper-Security/secrets-manager/tree/master/integration/keeper_secrets_manager_puppet",
+  "issues_url": "https://github.com/Keeper-Security/secrets-manager/issues",
   "tags": ["secrets", "keeper", "security", "deferred", "authentication"],
-  "license": "Apache-2.0",
+  "license": "MIT",
   "dependencies": [
     {
       "name": "puppetlabs-stdlib",
