@@ -55,7 +55,6 @@ action_class do
       timeout new_resource.timeout
       live_stream true
       environment('PYTHONUNBUFFERED' => '1', 'KEEPER_CONFIG' => keeper_config)
-      # sensitive true
     end
 
     Chef::Log.info('Keeper script completed')
@@ -74,8 +73,13 @@ action_class do
   # --- Encrypted Data Bag Loader ---
   def load_keeper_config
     begin
-      keeper_config = data_bag_item('keeper', 'keeper_config', IO.read('/etc/chef/encrypted_data_bag_secret'))
+      # keeper_config = data_bag_item('keeper', 'keeper_config', IO.read('/etc/chef/encrypted_data_bag_secret'))
+      # keeper_config['config_json'] || keeper_config['token']
+
+      secret = Chef::EncryptedDataBagItem.load_secret('/etc/chef/encrypted_data_bag_secret')
+      keeper_config = Chef::EncryptedDataBagItem.load('keeper', 'keeper_config', secret)
       keeper_config['config_json'] || keeper_config['token']
+
     rescue Net::HTTPServerException, Chef::Exceptions::InvalidDataBagPath, Errno::ENOENT
       Chef::Log.warn('No Encrypted Data Bag or environment variable found for KEEPER_CONFIG!')
       ENV['KEEPER_CONFIG']
