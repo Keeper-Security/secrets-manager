@@ -31,6 +31,7 @@ from .sync import Sync
 from .profile import Profile
 from .init import Init
 from .config import Config
+from .interpolate import Interpolate
 
 
 global_config = Config()
@@ -76,7 +77,8 @@ class AliasedGroup(HelpColorsGroup):
         "record",
         "file",
         "cache",
-        "record-type-dir"
+        "record-type-dir",
+        "interpolate"
     ]
 
     alias_commands = {
@@ -1139,6 +1141,55 @@ def exec_command(ctx, capture_output, inline, cmd):
     ex.execute(cmd=cmd, capture_output=capture_output, inline=inline)
 
 
+# INTERPOLATE COMMAND
+
+
+@click.command(
+    name='interpolate',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('-o', '--output-file', help='Write to file instead of stdout')
+@click.option('-w', '--in-place', is_flag=True, help='Edit files in place')
+@click.option('-b', '--backup-suffix', default='.bak', help='Backup suffix when using -w (default: .bak)')
+@click.option('-n', '--dry-run', is_flag=True, help='Show what would be replaced')
+@click.option('-v', '--verbose', is_flag=True, help='Verbose output')
+@click.option('-C', '--continue', is_flag=True, help='Continue on errors')
+@click.option('--validate', is_flag=True, help='Ensure all notations resolved')
+@click.option('--allow-unsafe-for-eval', is_flag=True,
+              help='[RISKY] Allow secrets with shell metacharacters (dangerous with eval/source)')
+@click.argument('input_file', type=click.Path(exists=True), required=False, nargs=-1)
+@click.pass_context
+def interpolate_command(ctx, output_file, in_place, backup_suffix, dry_run, verbose, input_file, **kwargs):
+    """Replace Keeper notation in files with secret values
+
+    SECURITY WARNING: Never use 'eval' or 'source' with interpolate output unless
+    you fully trust all users with Keeper write access. Malicious users could inject
+    arbitrary commands via newlines or shell metacharacters in secret values.
+
+    Safe usage:
+      ksm interpolate secrets.env -o /tmp/secrets.env
+      source /tmp/secrets.env && rm /tmp/secrets.env
+
+    Unsafe usage (requires --allow-unsafe-for-eval):
+      eval "$(ksm interpolate secrets.env --allow-unsafe-for-eval)"
+    """
+    interp = Interpolate(cli=ctx.obj["cli"])
+    # Pass the 'continue' parameter using its full name since it's a Python keyword
+    continue_on_error = kwargs.get('continue', False)
+    interp.interpolate(
+        input_file=input_file,
+        output_file=output_file,
+        in_place=in_place,
+        backup_suffix=backup_suffix,
+        dry_run=dry_run,
+        verbose=verbose,
+        continue_on_error=continue_on_error,
+        validate=kwargs.get('validate', False),
+        allow_unsafe_for_eval=kwargs.get('allow_unsafe_for_eval', False)
+    )
+
+
 # CONFIG COMMAND
 @click.group(
     name='config',
@@ -1418,6 +1469,7 @@ cli.add_command(sync_command)
 cli.add_command(folder_command)
 cli.add_command(secret_command)
 cli.add_command(exec_command)
+cli.add_command(interpolate_command)
 cli.add_command(config_command)
 cli.add_command(init_command)
 cli.add_command(version_command)
