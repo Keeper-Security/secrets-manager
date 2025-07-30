@@ -34,7 +34,7 @@ class keeper_secrets_manager_puppet::config {
   }
 
   # first Check if KEEPER_CONFIG is set in the environment
-  $auth_value_from_env = keeper_secret_manager_puppet::lookup_env_value($authentication_config[1])
+  $auth_value_from_env = keeper_secrets_manager_puppet::lookup_env_value($authentication_config[1])
 
   # if auth_value_from_env is nil/undef and $authentication_config[1] value starts with 'ENV:'
   if $auth_value_from_env == undef and $authentication_config[1] =~ String and $authentication_config[1] =~ /^ENV:/ {
@@ -151,7 +151,7 @@ class keeper_secrets_manager_puppet::config {
     owner   => $owner_value,
     group   => $group_value,
     mode    => $python_script_mode,
-    source  => "puppet:///modules/keeper_secret_manager_puppet/${python_script_name}",
+    source  => "puppet:///modules/keeper_secrets_manager_puppet/${python_script_name}",
     require => File[$config_dir_path],
   }
 

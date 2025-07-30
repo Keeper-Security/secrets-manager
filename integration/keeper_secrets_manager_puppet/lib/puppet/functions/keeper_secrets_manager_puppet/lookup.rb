@@ -125,7 +125,7 @@ Puppet::Functions.create_function(:'keeper_secrets_manager_puppet::lookup') do
       require 'open3'
       _stdout, _stderr, status = Open3.capture3(python_executable, '-c', 'import keeper_secrets_manager_core')
       unless status.success?
-        raise Puppet::Error, 'keeper-secrets-manager-core not installed. Ensure keeper_secret_manager_puppet class is applied first.'
+        raise Puppet::Error, 'keeper-secrets-manager-core not installed. Ensure keeper_secrets_manager_puppet class is applied first.'
       end
     rescue => e
       raise Puppet::Error, "Failed to validate keeper-secrets-manager-core installation: #{e.message}"
