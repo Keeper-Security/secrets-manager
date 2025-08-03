@@ -1,4 +1,4 @@
-# Puppet Keeper Secret Manager
+# Puppet Keeper Secrets Manager
 
 ## Table of Contents
 
