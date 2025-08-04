@@ -79,7 +79,7 @@ jobs:
     needs: generate-sbom
     environment: prod
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     defaults:
       run:
@@ -87,18 +87,14 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Setup Ruby
+      - name: Setup Ruby with version from .ruby-version
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.2'
+          ruby-version: '3.2.4'
           bundler-cache: true
           working-directory: ./integration/keeper_secrets_manager_puppet
-
-      - name: Install dependencies
-        run: |
-          bundle install
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
@@ -108,34 +104,206 @@ jobs:
           secrets: |
             _gC1qMMHRcD6Fztyd692kw/field/password > PUPPET_FORGE_API_KEY
 
-      - name: Run Puppet Lint
+      - name: Get current version and validate
+        id: version
         run: |
-          bundle exec puppet-lint \
-            --no-140chars-check \
-            --no-autoloader_layout-check \
-            --no-documentation-check \
-            --no-class_inherits_from_params_class-check \
-            manifests/
+          if [[ -f "metadata.json" ]]; then
+            VERSION=$(grep '"version"' metadata.json | cut -d'"' -f4)
+            echo "current_version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Current version: $VERSION"
+          else
+            echo "Error: metadata.json not found"
+            exit 1
+          fi
 
-      - name: Validate Puppet manifests
+      - name: Check if version already exists on Puppet Forge
+        env:
+          VERSION: ${{ steps.version.outputs.current_version }}
         run: |
-          bundle exec puppet parser validate manifests/*.pp
+          echo "Checking if version $VERSION already exists on Puppet Forge..."
+          FORGE_CHECK=$(curl -s "https://forgeapi.puppet.com/v3/releases/keepersecurity-keeper_secrets_manager_puppet-$VERSION")
+          
+          if echo "$FORGE_CHECK" | grep -q '"uri"'; then
+            echo "Error: Version $VERSION already exists on Puppet Forge!"
+            echo ""
+            echo "To publish a new release, you need to:"
+            echo "1. Bump the version in metadata.json"
+            echo "   File: integration/keeper_secrets_manager_puppet/metadata.json"
+            echo "   Current: \"version\": \"$VERSION\""
+            echo "   Example: \"version\": \"1.0.3\" (for patch)"
+            echo "           \"version\": \"1.1.0\" (for minor)"
+            echo "           \"version\": \"2.0.0\" (for major)"
+            echo ""
+            echo "Version already published at: https://forge.puppet.com/modules/keepersecurity/keeper_secrets_manager_puppet"
+            exit 1
+          fi
+          echo "Version $VERSION is available for publishing"
 
-      - name: Run metadata lint
+      - name: Validate API key format
+        env:
+          PUPPET_FORGE_API_KEY: ${{ steps.ksmsecrets.outputs.PUPPET_FORGE_API_KEY }}
         run: |
-          bundle exec metadata-json-lint metadata.json
+          if [[ ! "$PUPPET_FORGE_API_KEY" =~ ^[a-f0-9]{64}$ ]]; then
+            echo "Warning: API key format doesn't match expected pattern (64 hex characters)"
+            echo "Key length: ${#PUPPET_FORGE_API_KEY}"
+            echo "Continuing anyway, but check your key if publishing fails..."
+          else
+            echo "API key format looks correct"
+          fi
 
-      - name: Run RSpec tests
+      - name: Install dependencies
         run: |
-          bundle exec rake spec
+          echo "Installing Ruby dependencies..."
+          if ! bundle install; then
+            echo "Failed to install dependencies"
+            echo "Gem versions installed:"
+            bundle list
+            exit 1
+          fi
+          echo "Dependencies installed successfully"
+          
+          # Show key dependency versions
+          echo "Key dependency versions:"
+          bundle list | grep -E "(puppet|rake|puppet-lint)"
+
+      - name: Run comprehensive validation
+        run: |
+          echo "Running comprehensive validation..."
+          
+          # Run lint with error handling
+          echo "Running puppet-lint..."
+          if ! bundle exec rake lint; then
+            echo "Lint failed"
+            exit 1
+          fi
+          echo "Lint passed"
+          
+          # Run validation
+          echo "Running puppet validate..."
+          if ! bundle exec rake validate; then
+            echo "Validation failed"
+            exit 1
+          fi
+          echo "Validation passed"
+          
+          # Run metadata lint
+          echo "Running metadata lint..."
+          if ! bundle exec metadata-json-lint metadata.json; then
+            echo "Metadata lint failed"
+            exit 1
+          fi
+          echo "Metadata validation passed"
+
+      - name: Run full test suite
+        run: |
+          echo "Running full test suite..."
+          if ! bundle exec rake spec; then
+            echo "Tests failed"
+            exit 1
+          fi
+          echo "All tests passed"
 
       - name: Build module
         run: |
-          bundle exec pdk build
+          echo "Building module..."
+          if ! bundle exec rake module:build; then
+            echo "Build failed"
+            exit 1
+          fi
+          echo "Module built successfully"
+          
+          # Show built packages
+          echo "Built packages:"
+          ls -la pkg/ | grep '.tar.gz' || echo "No packages found"
 
-      - name: Publish to Puppet Forge
+      - name: Publish to Puppet Forge with robust error handling
         env:
+          PUPPET_FORGE_API_KEY: ${{ steps.ksmsecrets.outputs.PUPPET_FORGE_API_KEY }}
+          VERSION: ${{ steps.version.outputs.current_version }}
           PDK_DISABLE_ANALYTICS: true
         run: |
-          # Use PDK to publish with API key
-          bundle exec pdk release publish --forge-token=${{ secrets.PUPPET_FORGE_API_KEY }} --force
+          echo "Publishing to Puppet Forge..."
+          
+          cd pkg
+          LATEST_FILE=$(ls -t keepersecurity-keeper_secrets_manager_puppet-*.tar.gz | head -1)
+          
+          if [[ -z "$LATEST_FILE" ]]; then
+            echo "No package file found to publish"
+            exit 1
+          fi
+          
+          echo "Publishing: $LATEST_FILE"
+          
+          RESULT=$(curl -s -X POST \
+            -H "Authorization: Bearer $PUPPET_FORGE_API_KEY" \
+            -F "file=@$LATEST_FILE" \
+            https://forgeapi.puppet.com/v3/releases)
+          
+          echo "$RESULT"
+          
+          if echo "$RESULT" | grep -q '"uri"'; then
+            echo ""
+            echo "Successfully published to Puppet Forge!"
+            echo "Module available at: https://forge.puppet.com/modules/keepersecurity/keeper_secrets_manager_puppet"
+            
+            # Extract and display the published version info
+            if echo "$RESULT" | grep -q '"version"'; then
+              PUBLISHED_VERSION=$(echo "$RESULT" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+              echo "Published version: $PUBLISHED_VERSION"
+            fi
+          else
+            echo ""
+            echo "Failed to publish. Check the error message above."
+            
+            # Enhanced error handling with specific guidance
+            if echo "$RESULT" | grep -q 'cannot publish releases'; then
+              echo ""
+              echo "API Key Issue: Your API key may not have permission to publish to the keepersecurity namespace."
+              echo "Solutions:"
+              echo "1. Verify you are using the correct API key from the keepersecurity organization"
+              echo "2. Check that your API key has publish permissions"
+              echo "3. Regenerate your API key at: https://forge.puppet.com/organization/api-keys"
+              echo "4. Update the secret in GitHub: PUPPET_FORGE_API_KEY"
+            elif echo "$RESULT" | grep -q -i 'version.*already.*exists\|duplicate.*version\|version.*conflict'; then
+              echo ""
+              echo "Version Conflict: This version already exists on Puppet Forge."
+              echo ""
+              echo "To publish a new release:"
+              echo "1. Bump the version in metadata.json"
+              echo "   File: integration/keeper_secrets_manager_puppet/metadata.json"
+              echo "   Current: \"version\": \"$VERSION\""
+              echo "   Example: \"version\": \"1.0.3\" (patch), \"1.1.0\" (minor), \"2.0.0\" (major)"
+              echo "2. Commit and push the version change"
+              echo "3. Re-run this workflow"
+            elif echo "$RESULT" | grep -q -i 'unauthorized\|authentication'; then
+              echo ""
+              echo "Authentication Error: API key is invalid or expired."
+              echo "Solutions:"
+              echo "1. Check that PUPPET_FORGE_API_KEY secret is set correctly"
+              echo "2. Regenerate API key at: https://forge.puppet.com/organization/api-keys"
+              echo "3. Update the GitHub secret with the new key"
+            else
+              echo ""
+              echo "Unknown error occurred. Please check the API response above."
+              echo "For help, visit: https://forge.puppet.com/docs/publish"
+            fi
+            exit 1
+          fi
+
+      - name: Create release summary
+        env:
+          VERSION: ${{ steps.version.outputs.current_version }}
+        run: |
+          echo "## Puppet Module Published Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**Module:** keepersecurity-keeper_secrets_manager_puppet" >> $GITHUB_STEP_SUMMARY
+          echo "**Forge URL:** https://forge.puppet.com/modules/keepersecurity/keeper_secrets_manager_puppet" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Puppet Lint: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Puppet Validate: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Metadata Lint: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Test Suite: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Module Build: Successful" >> $GITHUB_STEP_SUMMARY
+          echo "- Forge Publish: Successful" >> $GITHUB_STEP_SUMMARY
