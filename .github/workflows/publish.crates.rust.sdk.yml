@@ -1,4 +1,5 @@
 name: Publish to Crates.io (Rust SDK)
+
 on:
   workflow_dispatch:
 
