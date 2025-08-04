@@ -1,6 +1,6 @@
 {
   "name": "keepersecurity-keeper_secrets_manager_puppet",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "author": "Keeper Security",
   "summary": "Puppet module for Keeper Secrets Manager integration with deferred functions for secure runtime secrets retrieval",
   "source": "https://github.com/Keeper-Security/secrets-manager",
