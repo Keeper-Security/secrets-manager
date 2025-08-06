@@ -1,0 +1,403 @@
+{
+  "name": "keeper-secrets-manager",
+  "displayName": "Keeper Secrets Manager",
+  "description": "Keeper Secrets Manager VS Code Extension - Secure secret management and template substitution",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:keeper.secretsTree"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "keeper.authenticate",
+        "title": "Authenticate",
+        "category": "Keeper"
+      },
+      {
+        "command": "keeper.listSecrets",
+        "title": "List Secrets",
+        "category": "Keeper"
+      },
+      {
+        "command": "keeper.refreshSecrets",
+        "title": "Refresh Secrets",
+        "category": "Keeper"
+      },
+      {
+        "command": "keeper.insertSecret",
+        "title": "Insert Secret Reference",
+        "category": "Keeper"
+      },
+      {
+        "command": "keeper.logout",
+        "title": "Logout",
+        "category": "Keeper"
+      },
+      {
+        "command": "keeper.syncEnv",
+        "title": "Sync Secret References in .env Files",
+        "category": "Keeper"
+      },
+      {
+        "command": "keeper.addToEnv",
+        "title": "Add to .env File",
+        "category": "Keeper"
+      },
+      {
+        "command": "keeper.generateEnvTemplate",
+        "title": "Generate .env Template",
+        "category": "Keeper"
+      },
+      {
+        "command": "keeper.generateCode",
+        "title": "Generate SDK Code Sample",
+        "category": "Keeper"
+      },
+      {
+        "command": "keeper.quickAccess",
+        "title": "Quick Secret Launcher",
+        "category": "Keeper"
+      },
+      {
+        "command": "keeper.openSettings",
+        "title": "Open Settings",
+        "category": "Keeper"
+      },
+      {
+        "command": "keeper.tree.addConfiguration",
+        "title": "Add KSM Device",
+        "category": "Keeper",
+        "icon": "$(add)"
+      },
+      {
+        "command": "keeper.tree.authenticate",
+        "title": "Authenticate",
+        "category": "Keeper",
+        "icon": "$(key)"
+      },
+      {
+        "command": "keeper.tree.refresh",
+        "title": "Refresh",
+        "category": "Keeper",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "keeper.tree.removeConfiguration",
+        "title": "Remove Configuration",
+        "category": "Keeper",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "keeper.tree.setActiveConfiguration",
+        "title": "Set as Active",
+        "category": "Keeper",
+        "icon": "$(check)"
+      },
+      {
+        "command": "keeper.tree.copySecret",
+        "title": "Copy Secret",
+        "category": "Keeper",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "keeper.tree.generateCode",
+        "title": "Generate Code Sample",
+        "category": "Keeper",
+        "icon": "$(code)"
+      },
+      {
+        "command": "keeper.tree.addToFavorites",
+        "title": "Add to Favorites",
+        "category": "Keeper",
+        "icon": "$(star-empty)"
+      },
+      {
+        "command": "keeper.tree.showExamples",
+        "title": "Show SDK Examples",
+        "category": "Keeper",
+        "icon": "$(book)"
+      },
+      {
+        "command": "keeper.tree.showRawData",
+        "title": "Show Raw JSON",
+        "category": "Keeper",
+        "icon": "$(json)"
+      },
+      {
+        "command": "keeper.tree.copyRecordUid",
+        "title": "Copy Record UID",
+        "category": "Keeper",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "keeper.tree.downloadFile",
+        "title": "Download File",
+        "category": "Keeper",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "keeper.tree.generateEditCode",
+        "title": "Generate Edit Record Code",
+        "category": "Keeper",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "keeper.tree.generateDeleteCode",
+        "title": "Generate Delete Record Code",
+        "category": "Keeper",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "keeper.tree.generateCreateCode",
+        "title": "Generate Create Record Code",
+        "category": "Keeper",
+        "icon": "$(plus)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "keeper-secrets-manager",
+          "title": "Keeper Secrets Manager",
+          "icon": "./icon-keeper-coin.svg"
+        }
+      ]
+    },
+    "views": {
+      "keeper-secrets-manager": [
+        {
+          "id": "keeper.secretsTree",
+          "name": "KSM Devices",
+          "visibility": "visible"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "keeper.secretsTree",
+        "contents": "Welcome to Keeper Secrets Manager!\n\nGet started by adding your first KSM configuration.\n\n[Add KSM Device](command:keeper.tree.addConfiguration)\n\nNeed help? Check out the [documentation](https://docs.keeper.com/secrets-manager/)."
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "keeper.authenticate",
+          "when": "false"
+        },
+        {
+          "command": "keeper.listSecrets",
+          "when": "false"
+        },
+        {
+          "command": "keeper.refreshSecrets",
+          "when": "false"
+        },
+        {
+          "command": "keeper.logout",
+          "when": "false"
+        },
+        {
+          "command": "keeper.tree.authenticate",
+          "when": "false"
+        },
+        {
+          "command": "keeper.tree.refresh",
+          "when": "false"
+        },
+        {
+          "command": "keeper.tree.removeConfiguration",
+          "when": "false"
+        },
+        {
+          "command": "keeper.tree.setActiveConfiguration",
+          "when": "false"
+        },
+        {
+          "command": "keeper.tree.copySecret",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "keeper.tree.addConfiguration",
+          "when": "view == keeper.secretsTree",
+          "group": "navigation"
+        },
+        {
+          "command": "keeper.tree.refresh",
+          "when": "view == keeper.secretsTree",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "keeper.tree.authenticate",
+          "when": "view == keeper.secretsTree && viewItem == configuration.unauthenticated",
+          "group": "inline"
+        },
+        {
+          "command": "keeper.tree.refresh",
+          "when": "view == keeper.secretsTree && viewItem =~ /^configuration/",
+          "group": "inline"
+        },
+        {
+          "command": "keeper.tree.setActiveConfiguration",
+          "when": "view == keeper.secretsTree && viewItem =~ /^configuration/",
+          "group": "1_actions"
+        },
+        {
+          "command": "keeper.tree.removeConfiguration",
+          "when": "view == keeper.secretsTree && viewItem =~ /^configuration/",
+          "group": "2_destructive"
+        },
+        {
+          "command": "keeper.tree.copySecret",
+          "when": "view == keeper.secretsTree && viewItem =~ /^field/",
+          "group": "inline"
+        },
+        {
+          "command": "keeper.tree.addToFavorites",
+          "when": "view == keeper.secretsTree && viewItem =~ /^field/",
+          "group": "1_copy"
+        },
+        {
+          "command": "keeper.tree.generateCode",
+          "when": "view == keeper.secretsTree && viewItem =~ /^field/",
+          "group": "2_generate"
+        },
+        {
+          "command": "keeper.tree.showExamples",
+          "when": "view == keeper.secretsTree && viewItem =~ /^field/",
+          "group": "2_generate"
+        },
+        {
+          "command": "keeper.tree.copyRecordUid",
+          "when": "view == keeper.secretsTree && viewItem =~ /^record/",
+          "group": "1_copy"
+        },
+        {
+          "command": "keeper.addToEnv",
+          "when": "view == keeper.secretsTree && viewItem =~ /^record/",
+          "group": "2_actions"
+        },
+        {
+          "command": "keeper.insertSecret",
+          "when": "view == keeper.secretsTree && viewItem =~ /^record/",
+          "group": "2_actions"
+        },
+        {
+          "command": "keeper.tree.generateEditCode",
+          "when": "view == keeper.secretsTree && viewItem =~ /^record/",
+          "group": "2_actions"
+        },
+        {
+          "command": "keeper.tree.generateDeleteCode",
+          "when": "view == keeper.secretsTree && viewItem =~ /^record/",
+          "group": "2_actions"
+        },
+        {
+          "command": "keeper.tree.generateCreateCode",
+          "when": "view == keeper.secretsTree && viewItem =~ /^record/",
+          "group": "2_actions"
+        },
+        {
+          "command": "keeper.tree.showRawData",
+          "when": "view == keeper.secretsTree && viewItem =~ /^record/",
+          "group": "3_inspect"
+        },
+        {
+          "command": "keeper.tree.downloadFile",
+          "when": "view == keeper.secretsTree && viewItem =~ /^field\\.file/",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Keeper Secrets Manager",
+      "properties": {
+        "keeper.showSecretValues": {
+          "type": "boolean",
+          "default": false,
+          "description": "Display actual secret values in TreeView instead of masked text (••••••••)",
+          "markdownDescription": "⚠️ **Security Warning**: When enabled, actual passwords, tokens, and other sensitive data will be visible in plain text in the TreeView. Only enable when working in a secure environment.",
+          "order": 1
+        },
+        "keeper.authentication.type": {
+          "type": "string",
+          "enum": [
+            "none",
+            "oneTimeToken",
+            "base64Config"
+          ],
+          "enumDescriptions": [
+            "Not authenticated",
+            "One-Time Token (e.g., US:TOKEN)",
+            "Base64 Configuration"
+          ],
+          "default": "none",
+          "description": "Current authentication method for active configuration",
+          "readOnly": true,
+          "order": 2
+        },
+        "keeper.authentication.lastAuthenticated": {
+          "type": "string",
+          "default": "Never",
+          "description": "Last successful authentication time for active configuration",
+          "readOnly": true,
+          "order": 3
+        },
+        "keeper.authentication.secretCount": {
+          "type": "number",
+          "default": 0,
+          "description": "Number of secrets loaded in active configuration",
+          "readOnly": true,
+          "order": 4
+        },
+        "keeper.clipboardAutoClear": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically clear copied secrets from clipboard after 30 seconds for security",
+          "markdownDescription": "When enabled, secrets copied to clipboard will be automatically cleared after 30 seconds to prevent accidental exposure.",
+          "order": 5
+        },
+        "keeper.terminalDetection": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show suggestions when terminal processes that might need secrets are detected",
+          "markdownDescription": "When enabled, VS Code will show helpful suggestions when processes like `docker run`, `npm start`, etc. are detected that might need secret values.",
+          "order": 6
+        },
+        "keeper.quickAccessFavorites": {
+          "type": "number",
+          "default": 0,
+          "description": "Number of favorite secrets configured for quick access",
+          "readOnly": true,
+          "order": 7
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "16.x",
+    "@types/vscode": "^1.74.0",
+    "typescript": "^4.9.4"
+  },
+  "dependencies": {
+    "@keeper-security/secrets-manager-core": "^17.2.0",
+    "@types/uuid": "^10.0.0",
+    "uuid": "^11.1.0"
+  }
+}
