@@ -724,22 +724,39 @@ impl SecretsManager {
                 }
             }
         } else if rc == "key" {
-            if let Some(key_id) = response_dict.get("key_id").and_then(|v| v.as_str()) {
+            // Server returns key_id as a number, not a string, so we need to handle both cases
+            let key_id_value = response_dict.get("key_id");
+            let key_id_str = if let Some(key_id_val) = key_id_value {
+                // Try to get as number first (which is what server actually sends)
+                if let Some(key_id_num) = key_id_val.as_u64() {
+                    Some(key_id_num.to_string())
+                } else if let Some(key_id_str) = key_id_val.as_str() {
+                    Some(key_id_str.to_string())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            if let Some(key_id) = key_id_str {
                 info!("Server has requested we use public key {}", key_id);
                 let keeper_public_keys = get_keeper_public_keys();
                 if key_id.is_empty() {
                     msg = "The public key is blank from the server".to_string();
-                } else if keeper_public_keys.contains_key(key_id) {
+                } else if keeper_public_keys.contains_key(&key_id) {
                     let _ = self
                         .config
-                        .set(ConfigKeys::KeyServerPublicKeyId, key_id.to_string())
+                        .set(ConfigKeys::KeyServerPublicKeyId, key_id.clone())
                         .map_err(|err| KSMRError::StorageError(err.to_string()))?;
-                    info!("Server has requested we use public key {}", key_id);
+                    info!("Updated to use public key {}", key_id);
                     _retry = true;
                     return Ok(_retry);
                 } else {
                     msg = format!("The public key at {} does not exist in the SDK", key_id);
                 }
+            } else {
+                msg = "Server returned key error but no key_id was provided".to_string();
             }
         } else {
             let response_msg = response_dict

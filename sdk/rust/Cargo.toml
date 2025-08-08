@@ -1,6 +1,6 @@
 [package]
 name = "keeper-secrets-manager-core"
-version = "17.0.1"
+version = "17.0.2"
 authors = ["Keeper Security <sm@keepersecurity.com>"]
 edition = "2021"
 description = "Rust SDK for Keeper Secrets Manager"
@@ -26,7 +26,7 @@ data-encoding = "2.9"
 base64 = "0.22"
 block-padding = "0.3"
 cipher = "0.4"
-chrono = "0.4"
+chrono = "0.4.41"
 ecdsa = "0.16"
 hex = "0.4"
 hmac = "0.12"
@@ -36,10 +36,10 @@ mockall = "0.13"
 p256 = { version = "0.13", features = ["ecdh"] }
 rand = "0.8"
 regex = "1.11"
-reqwest = { version = "0.12", features = ["blocking", "json", "multipart"] }
-tokio = { version = "1.43", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0", features = ["preserve_order", "arbitrary_precision"] }
+reqwest = { version = "0.12.22", features = ["blocking", "json", "multipart"] }
+tokio = { version = "1.47", features = ["full"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = { version = "1.0.142", features = ["preserve_order", "arbitrary_precision"] }
 sha2 = "0.10"
 sha1 = "0.10"
 strum = "0.26"
