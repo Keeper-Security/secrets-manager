@@ -812,7 +812,7 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
     // When SDK is behind/ahead of record/field type definitions then
     // strict mapping between JSON attributes and object properties
     // will fail on any unknown field/key - currently just log the error
-    // and continue without the field - nb! field will be lost on save
+    // and continue without the field - NB! field will be lost on save
     var recordData: KeeperRecordData? = null
     try {
         recordData = Json.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
