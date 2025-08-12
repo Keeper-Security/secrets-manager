@@ -1,0 +1,34 @@
+---
+- name: "Create Keeper Secrets Manager credential type"
+  vars:
+    _controller_args: >-
+      {{
+        dict()
+        | combine(controller_oauthtoken|length > 0
+            | ternary({'controller_oauthtoken': controller_oauthtoken}, {
+                'controller_username': controller_username,
+                'controller_password': controller_password
+              })
+          )
+        | combine({
+            'controller_host': controller_host,
+            'validate_certs': controller_verify_ssl
+          })
+      }}
+  loop: "{{ aap_credential_types | default([]) }}"
+  loop_control:
+    loop_var: ct
+    label: "{{ ct.name }}"
+  awx.awx.credential_type:
+    name: "{{ ct.name }}"
+    description: "{{ ct.description | default(omit) }}"
+    kind: "{{ ct.kind | default('cloud') }}"
+    inputs: "{{ ct.inputs | default({}) }}"
+    injectors: "{{ ct.injectors | default({}) }}"
+    state: "{{ ct.state | default('present') }}"
+    # Controller connection
+    controller_host: "{{ _controller_args.controller_host }}"
+    controller_username: "{{ _controller_args.controller_username | default(omit) }}"
+    controller_password: "{{ _controller_args.controller_password | default(omit) }}"
+    controller_oauthtoken: "{{ _controller_args.controller_oauthtoken | default(omit) }}"
+    validate_certs: "{{ _controller_args.validate_certs }}"

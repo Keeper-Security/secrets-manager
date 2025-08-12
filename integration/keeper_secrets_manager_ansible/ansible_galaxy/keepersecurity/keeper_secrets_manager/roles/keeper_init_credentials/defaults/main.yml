@@ -1,0 +1,29 @@
+---
+# Controller connection (you can also pass these as extra vars or env)
+controller_host: "https://aap.example.com"
+controller_username: "admin"
+controller_password: ""
+controller_oauthtoken: ""
+controller_verify_ssl: true
+
+aap_credential_types:
+  - name: "Keeper Secrets Manager"
+    description: "Keeper Secrets Manager access"
+    kind: "cloud" # 'cloud' is a safe default bucket for custom types
+    state: "present"
+    inputs:
+      fields:
+        - id: keeper_config
+          type: string
+          label: "Keeper Config (Base64)"
+          secret: true
+        - id: ksm_profile
+          type: string
+          label: KSM Profile Name
+          help_text: "Optional. Defaults to 'default'"
+      required:
+        - keeper_config
+    injectors:
+      extra_vars:
+        keeper_config: "{{ keeper_config }}"
+        keeper_profile: "{{ ksm_profile | default('default') }}"
