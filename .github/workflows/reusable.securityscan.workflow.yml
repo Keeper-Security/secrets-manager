@@ -32,6 +32,40 @@ on:
         type: boolean
         default: true
 
+name: Reusable Security Scanning
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory containing the project files'
+        required: true
+        type: string
+      project-type:
+        description: 'Type of project (python, dotnet, nodejs, java, go)'
+        required: true
+        type: string
+      fail-level:
+        description: 'Minimum severity level to fail the build (low, moderate, high, critical)'
+        required: false
+        type: string
+        default: 'moderate'
+      enable-snyk:
+        description: 'Enable Snyk scanning'
+        required: false
+        type: boolean
+        default: false
+      enable-ossar:
+        description: 'Enable OSSAR scanning'
+        required: false
+        type: boolean
+        default: true
+      enable-dependency-review:
+        description: 'Enable Dependency Review'
+        required: false
+        type: boolean
+        default: true
+
 
 jobs:
   security-scan:
@@ -40,7 +74,193 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
 
+
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for OSSAR
+
+      # Language-specific setup
+      - name: Setup Python
+        if: inputs.project-type == 'python'
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node.js
+        if: inputs.project-type == 'nodejs'
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Setup .NET
+        if: inputs.project-type == 'dotnet'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Setup Java
+        if: inputs.project-type == 'java'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Setup Go
+        if: inputs.project-type == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      # Language-specific dependency installation
+      - name: Install Dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "::group::Installing Dependencies"
+          case "${{ inputs.project-type }}" in
+            "python")
+              if [ -f "requirements.txt" ]; then
+                python -m pip install -r requirements.txt
+              elif [ -f "pyproject.toml" ]; then
+                python -m pip install poetry
+                poetry install
+              fi
+              ;;
+            "nodejs")
+              if [ -f "package-lock.json" ]; then
+                npm ci
+              elif [ -f "package.json" ]; then
+                npm install
+              fi
+              ;;
+            "dotnet")
+              dotnet restore
+              ;;
+            "java")
+              if [ -f "pom.xml" ]; then
+                echo "Maven project detected"
+                mvn dependency:resolve
+              elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
+                echo "Gradle project detected"
+                chmod +x ./gradlew
+                ./gradlew dependencies
+              else
+                echo "::error::No pom.xml or build.gradle found"
+                exit 1
+              fi
+              ;;
+            "go")
+              echo "Downloading Go dependencies..."
+              go mod download
+              ;;
+          esac
+          echo "::endgroup::"
+
+      # Language-specific security checks
+      - name: Run Language-Specific Security Checks
+        id: lang-security
+        working-directory: ${{ inputs.working-directory }}
+        continue-on-error: true
+        run: |
+          echo "::group::Language-Specific Security Checks"
+          case "${{ inputs.project-type }}" in
+            "python")
+              python -m pip install safety bandit
+              SAFETY_OUTPUT=$(safety check 2>&1) || true
+              echo "SAFETY_OUTPUT<<EOF" >> $GITHUB_ENV
+              echo "$SAFETY_OUTPUT" >> $GITHUB_ENV
+              echo "EOF" >> $GITHUB_ENV
+          
+              bandit -r . -ll --format json --output security-report-bandit.json || true
+              ;;
+          
+            "nodejs")
+              # Map severity levels for npm audit
+              NPM_LEVEL="${{ inputs.fail-level }}"
+              if [ "$NPM_LEVEL" = "medium" ]; then
+              NPM_LEVEL="moderate"
+              fi
+              
+              # npm audit with mapped level
+              NPM_AUDIT=$(npm audit --audit-level=$NPM_LEVEL --json || true)
+              echo "NPM_AUDIT<<EOF" >> $GITHUB_ENV
+              echo "$NPM_AUDIT" >> $GITHUB_ENV
+              echo "EOF" >> $GITHUB_ENV
+          
+              if echo "$NPM_AUDIT" | grep -i ".*vulnerabilities.*"; then
+                echo "::error::npm audit found vulnerabilities"
+                exit 1
+              fi
+              ;;
+          
+            "dotnet")
+              # Install security tools
+              dotnet tool install --global security-scan
+              dotnet security-scan --version
+              dotnet security-scan . --output-format json --output-file security-report-dotnet.json || true
+              ;;
+          
+            "java")
+              echo "Running Java security checks..."
+          
+              # OWASP Dependency Check
+              if [ -f "pom.xml" ]; then
+                mvn org.owasp:dependency-check-maven:check
+                mvn com.github.spotbugs:spotbugs-maven-plugin:check
+              elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
+                ./gradlew dependencyCheckAnalyze spotbugsMain
+              fi
+              ;;
+          
+            "go")
+              echo "Running Go security checks..."
+          
+              # Install security tools
+              go install golang.org/x/vuln/cmd/govulncheck@latest
+              go install github.com/securego/gosec/v2/cmd/gosec@latest
+              govulncheck ./... || true
+              gosec -fmt=json -out=security-report-gosec.json ./... || true
+              ;;
+          esac
+          echo "::endgroup::"
+
+      # Snyk scanning (optional)
+      - name: Snyk Security Scan
+        if: inputs.enable-snyk
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        with:
+          args: --severity-threshold=${{ inputs.fail-level }}
+
+      # OSSAR scanning (optional)
+      - name: Run OSSAR Scan
+        if: inputs.enable-ossar
+        uses: github/ossar-action@v1
+        continue-on-error: true
+
+      # Dependency review (optional)
+      - name: Dependency Review
+        if: inputs.enable-dependency-review && github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v3
+        continue-on-error: true
+        with:
+          fail-on-severity: ${{ inputs.fail-level }}
+
+      # Upload scan results
+      - name: Upload Scan Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: |
+            *.json
+            *.sarif
+            *.xml
+            *.txt
+          retention-days: 90
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
