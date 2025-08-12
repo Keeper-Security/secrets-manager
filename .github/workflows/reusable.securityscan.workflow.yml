@@ -36,6 +36,8 @@ on:
 jobs:
   security-scan:
     name: Security Scan
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
 
     steps:
