@@ -591,6 +591,7 @@ data class PamRbiConnection @JvmOverloads constructor(
     val protocol: String? = null,
     val recordingIncludeKeys: Boolean? = null,
     val userRecords: MutableList<String>? = null,
+    val recordingIncludeKeys: Boolean? = null,
     val allowUrlManipulation: Boolean? = null,
     val allowedUrlPatterns: String? = null,
     val allowedResourceUrlPatterns: String? = null,
@@ -668,6 +669,8 @@ data class PamSettingsConnection @JvmOverloads constructor(
     val preconnectionId: String? = null,
     val preconnectionBlob: String? = null,
     val disableAudio: Boolean? = null,
+    val enableWallpaper: Boolean? = null,
+    val enableFullWindowDrag: Boolean? = null,
     val sftp: SFTPConnection? = null,
 
     // Telnet specific fields
