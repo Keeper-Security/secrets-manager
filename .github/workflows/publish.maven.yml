@@ -1,3 +1,5 @@
+permissions:
+  contents: read
 name: Publish to Maven
 on:
   workflow_dispatch:
