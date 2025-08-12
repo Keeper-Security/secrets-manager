@@ -5,6 +5,7 @@ package com.keepersecurity.secretsManager.core
 import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.net.HttpURLConnection.HTTP_OK
@@ -194,7 +195,136 @@ private data class SecretsManagerResponseRecord(
 data class KeeperRecordLink(
     val recordUid: String,
     val data: String? = null
-)
+) {
+    
+    /**
+     * Parse the link data as a JSON object, handling errors gracefully
+     */
+    private fun parseJsonData(): Map<String, Any>? {
+        if (data == null) return null
+        
+        return try {
+            val decodedData = String(java.util.Base64.getDecoder().decode(data))
+            val jsonElement = Json.parseToJsonElement(decodedData)
+            if (jsonElement is JsonObject) {
+                jsonElement.entries.associate { (key, value) ->
+                    key to when {
+                        value is JsonPrimitive && value.isString -> value.content
+                        value is JsonPrimitive -> {
+                            // Try to parse as different types
+                            when {
+                                value.content == "true" -> true
+                                value.content == "false" -> false
+                                value.content.toIntOrNull() != null -> value.content.toInt()
+                                value.content.toLongOrNull() != null -> value.content.toLong()
+                                else -> value.content
+                            }
+                        }
+                        else -> value.toString()
+                    }
+                }
+            } else {
+                System.err.println("KeeperRecordLink: Link data is not a valid JSON object")
+                null
+            }
+        } catch (e: Exception) {
+            System.err.println("KeeperRecordLink: Failed to parse link data - ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Get a boolean value from the parsed JSON data
+     */
+    private fun getBooleanValue(key: String): Boolean {
+        return parseJsonData()?.get(key) as? Boolean ?: false
+    }
+
+    /**
+     * Get an integer value from the parsed JSON data  
+     */
+    private fun getIntValue(key: String): Int? {
+        return parseJsonData()?.get(key) as? Int
+    }
+
+    /**
+     * Get a string value from the parsed JSON data
+     */
+    private fun getStringValue(key: String): String? {
+        return parseJsonData()?.get(key) as? String
+    }
+
+    /**
+     * Check if the link data indicates admin status for a user
+     */
+    fun isAdminUser(): Boolean = getBooleanValue("is_admin")
+    
+    /**
+     * Check if this is a launch credential link
+     */
+    fun isLaunchCredential(): Boolean = getBooleanValue("is_launch_credential")
+    
+    /**
+     * Check if rotation is allowed based on link settings
+     */
+    fun allowsRotation(): Boolean = getBooleanValue("rotation")
+    
+    /**
+     * Check if connections are allowed based on link settings
+     */
+    fun allowsConnections(): Boolean = getBooleanValue("connections")
+    
+    /**
+     * Check if port forwards are allowed based on link settings
+     */
+    fun allowsPortForwards(): Boolean = getBooleanValue("portForwards")
+    
+    /**
+     * Check if session recording is enabled
+     */
+    fun allowsSessionRecording(): Boolean = getBooleanValue("sessionRecording")
+    
+    /**
+     * Check if TypeScript recording is enabled
+     */
+    fun allowsTypescriptRecording(): Boolean = getBooleanValue("typescriptRecording")
+    
+    /**
+     * Check if remote browser isolation is enabled
+     */
+    fun allowsRemoteBrowserIsolation(): Boolean = getBooleanValue("remoteBrowserIsolation")
+    
+    /**
+     * Check if rotation on termination is enabled
+     */
+    fun rotatesOnTermination(): Boolean = getBooleanValue("rotateOnTermination")
+    
+    /**
+     * Get the link data version (if available)
+     */
+    fun getLinkDataVersion(): Int? = getIntValue("version")
+    
+    /**
+     * Get the decoded JSON data as a string (for debugging/advanced use)
+     */
+    fun getDecodedData(): String? {
+        if (data == null) return null
+        return try {
+            String(java.util.Base64.getDecoder().decode(data))
+        } catch (e: Exception) {
+            System.err.println("KeeperRecordLink: Failed to decode Base64 data - ${e.message}")
+            null
+        }
+    }
+    
+    /**
+     * Check if the link has readable JSON data (vs. encrypted/binary data)
+     */
+    fun hasReadableData(): Boolean {
+        val decoded = getDecodedData()
+        return decoded != null && (decoded.startsWith("{") || decoded.startsWith("["))
+    }
+}
 
 @Serializable
 private data class SecretsManagerResponseFile(
