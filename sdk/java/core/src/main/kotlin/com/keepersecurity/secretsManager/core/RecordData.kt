@@ -15,7 +15,7 @@ data class KeeperRecordData @JvmOverloads constructor(
     var notes: String? = null
 ) {
     inline fun <reified T> getField(): T? {
-        return (fields + custom).find { x -> x is T } as T
+        return (fields + (custom ?: listOf())).find { x -> x is T } as? T
     }
 
     fun getField(clazz: Class<out KeeperRecordField>): KeeperRecordField? {
