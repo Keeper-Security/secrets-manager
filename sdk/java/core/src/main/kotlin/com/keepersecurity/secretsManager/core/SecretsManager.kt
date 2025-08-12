@@ -43,7 +43,8 @@ interface KeyValueStorage {
 data class SecretsManagerOptions @JvmOverloads constructor(
     val storage: KeyValueStorage,
     val queryFunction: QueryFunction? = null,
-    val allowUnverifiedCertificate: Boolean = false
+    val allowUnverifiedCertificate: Boolean = false,
+    val loggingEnabled: Boolean = true
 ) {
     init {
         testSecureRandom()
@@ -545,7 +546,9 @@ fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emp
         try {
             fetchAndDecryptSecrets(options, queryOptions)
         } catch (e: Exception) {
-            println(e)
+            if (options.loggingEnabled) {
+                println(e)
+            }
         }
     }
     return secrets
@@ -559,7 +562,9 @@ fun getSecrets2(options: SecretsManagerOptions, queryOptions: QueryOptions? = nu
         try {
             fetchAndDecryptSecrets(options, queryOptions)
         } catch (e: Exception) {
-            println(e)
+            if (options.loggingEnabled) {
+                println(e)
+            }
         }
     }
     return secrets
@@ -577,7 +582,9 @@ fun tryGetNotationResults(options: SecretsManagerOptions, notation: String): Lis
     try {
         return getNotationResults(options, notation)
     } catch (e: Exception) {
-        println(e.message)
+        if (options.loggingEnabled) {
+            println(e.message)
+        }
     }
     return emptyList()
 }
@@ -706,7 +713,7 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
 
             val res = getFieldStringValues(field, idx, objPropertyName)
             val expectedSize = if (idx >= 0) 1 else valuesCount
-            if (res.size != expectedSize)
+            if (res.size != expectedSize && options.loggingEnabled)
                 println("Notation warning - extracted ${res.size} out of $valuesCount values for '$objPropertyName' property.")
             if (res.isNotEmpty())
                 result.addAll(res)
@@ -897,7 +904,7 @@ private fun fetchAndDecryptSecrets(
     if (response.records != null) {
         response.records.forEach {
             val recordKey = decrypt(it.recordKey, appKey)
-            val decryptedRecord = decryptRecord(it, recordKey)
+            val decryptedRecord = decryptRecord(it, recordKey, options)
             if (decryptedRecord != null) {
                 records.add(decryptedRecord)
             }
@@ -908,7 +915,7 @@ private fun fetchAndDecryptSecrets(
             val folderKey = decrypt(folder.folderKey, appKey)
             folder.records!!.forEach { record ->
                 val recordKey = decrypt(record.recordKey, folderKey)
-                val decryptedRecord = decryptRecord(record, recordKey)
+                val decryptedRecord = decryptRecord(record, recordKey, options)
                 if (decryptedRecord != null) {
                     decryptedRecord.folderUid = folder.folderUid
                     decryptedRecord.folderKey = folderKey
@@ -930,7 +937,7 @@ private fun fetchAndDecryptSecrets(
 }
 
 @ExperimentalSerializationApi
-private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray): KeeperRecord? {
+private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray, options: SecretsManagerOptions): KeeperRecord? {
     val decryptedRecord = decrypt(record.data, recordKey)
 
     val files: MutableList<KeeperFile> = mutableListOf()
@@ -985,13 +992,15 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
             else -> "Unexpected error: ${e.message}"
         }
 
-        println("""
-        Record ${record.recordUid} (type: $recordType) parsing error:
-        Error: $errorDetails
-        This may occur if the Keeper Secrets Manager (KSM) SDK version you're using is not compatible with the record's data schema.
-        Please ensure that you are using the latest version of the KSM SDK. If the issue persists, contact support@keepersecurity.com for assistance.
-        """.trimIndent())
-
+        if (options.loggingEnabled) {
+            println("""
+            Record ${record.recordUid} (type: $recordType) parsing error:
+            Error: $errorDetails
+            This may occur if the Keeper Secrets Manager (KSM) SDK version you're using is not compatible with the record's data schema.
+            Please ensure that you are using the latest version of the KSM SDK. If the issue persists, contact support@keepersecurity.com for assistance.
+            """.trimIndent()
+            )
+        }
         try {
             // Attempt to parse with non-strict JSON parser for recovery
             recordData = nonStrictJson.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
@@ -1002,11 +1011,14 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
                 }
                 else -> "Unexpected error during non-strict parsing: ${e2.message}"
             }
-            println("""
-            Failed to parse record ${record.recordUid} (type: $recordType) even with non-strict parser.
-            Error: $secondaryError
-            Record will be skipped.
-            """.trimIndent())
+            if (options.loggingEnabled) {
+                println("""
+                Failed to parse record ${record.recordUid} (type: $recordType) even with non-strict parser.
+                Error: $secondaryError
+                Record will be skipped.
+                """.trimIndent()
+                )
+            }
         }
     }
 
