@@ -1,0 +1,105 @@
+name: Reusable Maven Central Publishing
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Working directory for the Java project'
+        required: true
+        type: string
+      project-name:
+        description: 'Project name for SBOM generation'
+        required: true
+        type: string
+      project-title:
+        description: 'Human readable project title'
+        required: true
+        type: string
+      java-version:
+        description: 'Java version to use for building'
+        required: false
+        type: string
+        default: '11'
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Extract version from build.gradle.kts
+        id: extract-version
+        run: |
+          VERSION=$(grep -Po 'version\s*=\s*"\K[^"]*' build.gradle.kts || echo "0.0.0-unknown")
+          echo "Version retrieved: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+  publish-to-maven-central:
+    needs: get-version
+    environment: prod
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@v1
+        with:
+          keeper-secret-config: ${{ secrets.KSM_ARTIFACT_JAVA_APP_CONFIG }}
+          secrets: |
+            IR14oITcuvFr9Ek-lKVrXw/custom_field/signing.password > env:JRELEASER_GPG_PASSPHRASE
+            IR14oITcuvFr9Ek-lKVrXw/file/90A46CD1-private-key.asc > file:/tmp/private-key.asc
+            IR14oITcuvFr9Ek-lKVrXw/file/90A46CD1-public-key.asc > file:/tmp/public-key.asc
+            IR14oITcuvFr9Ek-lKVrXw/custom_field/centralUsername > env:JRELEASER_MAVENCENTRAL_USERNAME
+            IR14oITcuvFr9Ek-lKVrXw/custom_field/centralPassword > env:JRELEASER_MAVENCENTRAL_PASSWORD
+
+      - name: Set up Java ${{ inputs.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: wrapper
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v3
+
+      - name: Build and test
+        run: ./gradlew clean build test
+
+      - name: Publish to staging repository
+        run: ./gradlew publishAllPublicationsToStagingRepository
+
+        # Signing docs: https://jreleaser.org/guide/latest/reference/signing.html
+      - name: Deploy to Maven Central via JReleaser
+        run: ./gradlew jreleaserDeploy
+        env:
+          JRELEASER_GPG_PASSPHRASE: ${{ env.JRELEASER_GPG_PASSPHRASE }}
+          JRELEASER_GPG_SECRET_KEY: /tmp/private-key.asc
+          JRELEASER_GPG_PUBLIC_KEY: /tmp/public-key.asc
+          JRELEASER_MAVENCENTRAL_USERNAME: ${{ env.JRELEASER_MAVENCENTRAL_USERNAME }}
+          JRELEASER_MAVENCENTRAL_PASSWORD: ${{ env.JRELEASER_MAVENCENTRAL_PASSWORD }}
+
+      - name: Upload JReleaser logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jreleaser-logs-${{ inputs.project-name }}
+          path: |
+            ${{ inputs.working-directory }}/build/jreleaser/
+          retention-days: 5 

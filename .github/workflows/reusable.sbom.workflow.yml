@@ -351,6 +351,7 @@ jobs:
       - name: Generate and publish SBOM
         env:
           PROJECT_VERSION: ${{ inputs.project-version != '' && inputs.project-version || steps.detect-version.outputs.version }}
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
           SYFT_PACKAGE_SEARCH_UNINDEXED_ARCHIVES: "true"
           SYFT_PACKAGE_SEARCH_INDEXED_ARCHIVES: "true"
           SYFT_SCOPE: "all-layers"
@@ -464,7 +465,7 @@ jobs:
             --name=${{ inputs.project-name }} \
             --version=${PROJECT_VERSION} \
             --output=${{ inputs.sbom-format }} \
-            --api-key=${{ secrets.MANIFEST_TOKEN }} \
+            --api-key=${MANIFEST_TOKEN} \
             --publish=true \
             --label=${FINAL_LABELS}
           
