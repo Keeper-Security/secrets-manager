@@ -4,11 +4,14 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
-## 17.0.1
-- KSM-634 - Added links2Remove parameter for files removal
-
-## 17.0.0
+## 17.1.0
 - KSM-580 - Added new PAM fields
+- KSM-581 - Add GraphSync library to KSM SDK
+- KSM-582 - fix NPE use safe cast in KeeperRecordData.getField()
+ -KSM-586 - Add recordingIncludeKeys to data classes
+- KSM-587 - Add logging option
+- KSM-627 - Java SDK Add GraphSync links
+- KSM-634 - Added links2Remove parameter for files removal
 
 ## 16.6.6
 - KSM-560 - Improved error handling when parsing JSON

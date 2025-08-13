@@ -7,7 +7,7 @@ import java.util.*
 group = "com.keepersecurity.secrets-manager"
 
 // During publishing, If version ends with '-SNAPSHOT' then it will be published to Maven snapshot repository
-version = "17.0.0"
+version = "17.1.0"
 
 plugins {
     `java-library`
@@ -56,7 +56,7 @@ dependencies {
     // Use the Kotlin JUnit integration.
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.2.0")
 
-    testImplementation("org.bouncycastle:bc-fips:2.1.0")
+    testImplementation("org.bouncycastle:bc-fips:2.1.1")
 //    testImplementation("org.bouncycastle:bcprov-jdk15on:1.70")
 }
 
