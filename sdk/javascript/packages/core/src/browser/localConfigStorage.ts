@@ -23,11 +23,6 @@ export const localConfigStorage = (client: string, useObjects: boolean): KeyValu
         }))
     }
 
-    const getBytes = async (key: string): Promise<Uint8Array | undefined> => {
-        const value = await getValue(key)
-        return typeof value === 'string' ? platform.base64ToBytes(value) : value;
-    }
-
     const saveValue = async (key: string, value: any): Promise<void> => {
         const objectStore = await getObjectStore('readwrite')
         return new Promise<void>(((resolve, reject) => {
@@ -51,7 +46,7 @@ export const localConfigStorage = (client: string, useObjects: boolean): KeyValu
     let storage: KeyValueStorage = {
         getString: getValue,
         saveString: saveValue,
-        getBytes: getBytes,
+        getBytes: getValue,
         saveBytes: saveValue,
         delete: deleteValue
     }

@@ -9,8 +9,8 @@
   "author": "Keeper Security",
   "version": {
     "Major": 1,
-    "Minor": 1,
-    "Patch": 0
+    "Minor": 0,
+    "Patch": 8
   },
   "instanceNameFormat": "KeeperSecretsManager",
   "inputs": [
@@ -36,15 +36,8 @@
 
     }
   ],
-  "minimumAgentVersion": "2.144.0",
   "execution": {
     "Node10": {
-      "target": "index.js"
-    },
-    "Node16": {
-      "target": "index.js"
-    },
-    "Node20_1": {
       "target": "index.js"
     }
   }

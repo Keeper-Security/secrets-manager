@@ -2,15 +2,17 @@ import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
 import {privateDerToPublicRaw} from '../utils'
 
 const bytesToBase64 = (data: Uint8Array): string => {
-    const chunkSize = 0x8000 // String.fromCharCode has limitations
+    const chunkSize = 0x10000 // max size accepted by String.fromCharCode
     if (data.length <= chunkSize) {
+        // @ts-ignore
         return btoa(String.fromCharCode(...data))
     }
-    const chunks: string[] = []
-    for (let i = 0; i < data.length; i += chunkSize) {
-        chunks.push(String.fromCharCode(...data.subarray(i, i + chunkSize)))
+    let chunks: string = ''
+    for (let i = 0; i < data.length; i = i + chunkSize) {
+        // @ts-ignore
+        chunks = chunks + String.fromCharCode(...data.slice(i, i + chunkSize))
     }
-    return btoa(chunks.join(''))
+    return btoa(chunks)
 }
 
 const base64ToBytes = (data: string): Uint8Array => Uint8Array.from(atob(data), c => c.charCodeAt(0))
@@ -206,10 +208,7 @@ const __encrypt = async (data: Uint8Array, key: CryptoKey, useCBC?: boolean): Pr
         name: algorithmName,
         iv: iv
     }, key, data)
-    const encrypted = new Uint8Array(iv.length + res.byteLength)
-    encrypted.set(iv, 0)
-    encrypted.set(new Uint8Array(res), iv.length)
-    return encrypted
+    return Uint8Array.of(...iv, ...new Uint8Array(res))
 }
 
 const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean, useCBC?: boolean): Promise<void> => {
@@ -335,35 +334,37 @@ const post = async (
     }
 }
 
-const fileUpload = async (
+const fileUpload = (
     url: string,
     uploadParameters: { [key: string]: string },
-    data: Uint8Array
-): Promise<any> => {
+    data: Blob
+): Promise<any> => new Promise<any>((resolve, reject) => {
     const form = new FormData();
 
     for (const key in uploadParameters) {
         form.append(key, uploadParameters[key]);
     }
-    form.append('file', new Blob([data], {type: 'application/octet-stream'}));
+    form.append('file', data)
 
     const fetchCfg = {
-        method: 'POST',
+        method: 'PUT',
         body: form,
-    };
-
-    try {
-        const res = await fetch(url, fetchCfg);
-        return {
-            headers: res.headers,
-            statusCode: res.status,
-            statusMessage: res.statusText
-        };
-    } catch (error) {
-        console.error('Error uploading file:', error);
-        throw error;
     }
-};
+
+    fetch(url, fetchCfg)
+        .then(response => response.json())
+        .then(res => {
+            resolve({
+                headers: res.headers,
+                statusCode: res.statusCode,
+                statusMessage: res.statusMessage
+            })
+        })
+        .catch(error => {
+            console.error('Error uploading file:', error);
+            reject(error)
+        });
+})
 
 const cleanKeyCache = () => {
     for (const key in keyCache) {

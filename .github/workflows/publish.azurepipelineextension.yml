@@ -1,3 +1,5 @@
+permissions:
+  contents: read
 name: Publish to Azure Pipeline Extension
 on:
   workflow_dispatch:
