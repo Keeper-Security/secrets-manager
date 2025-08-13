@@ -589,7 +589,6 @@ data class AppFillers @JvmOverloads constructor(
 @SerialName("connection")
 data class PamRbiConnection @JvmOverloads constructor(
     val protocol: String? = null,
-    val recordingIncludeKeys: Boolean? = null,
     val userRecords: MutableList<String>? = null,
     val recordingIncludeKeys: Boolean? = null,
     val allowUrlManipulation: Boolean? = null,
@@ -642,8 +641,6 @@ data class PamSettingsConnection @JvmOverloads constructor(
     // Common display and security settings
     val colorScheme: String? = null,
     val resizeMethod: String? = null,
-    val enableFullWindowDrag: Boolean? = null,
-    val enableWallpaper: Boolean? = null,
     val security: String? = null,
     val ignoreCert: Boolean? = null,
 
