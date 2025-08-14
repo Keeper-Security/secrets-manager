@@ -6,10 +6,12 @@
 #              |_|
 #
 # Keeper Secrets Manager
-# Copyright 2025 Keeper Security Inc.
+# Copyright 2021 Keeper Security Inc.
 # Contact: ops@keepersecurity.com
 #
 
+from ansible.plugins.action import ActionBase
+from keeper_secrets_manager_ansible import KeeperAnsible
 
 DOCUMENTATION = r'''
 ---
@@ -36,3 +38,15 @@ removed_ksm_cache:
   returned: success
   sample: true  
 '''
+
+
+class ActionModule(ActionBase):
+
+    def run(self, tmp=None, task_vars=None):
+        super(ActionModule, self).run(tmp, task_vars)
+
+        if task_vars is None:
+            task_vars = {}
+
+        keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
+        return keeper.cleanup()

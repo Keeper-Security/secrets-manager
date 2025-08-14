@@ -6,10 +6,12 @@
 #              |_|
 #
 # Keeper Secrets Manager
-# Copyright 2025 Keeper Security Inc.
+# Copyright 2021 Keeper Security Inc.
 # Contact: ops@keepersecurity.com
 #
 
+from ansible.plugins.action import ActionBase
+from keeper_secrets_manager_ansible import KeeperAnsible
 
 DOCUMENTATION = r'''
 ---
@@ -88,3 +90,42 @@ value:
   returned: success
   sample: { "password": "XXXX" }
 '''
+
+
+class ActionModule(ActionBase):
+
+    def run(self, tmp=None, task_vars=None):
+        super(ActionModule, self).run(tmp, task_vars)
+
+        if task_vars is None:
+            task_vars = {}
+
+        keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
+
+        length = self._task.args.get("length", 64)
+        allow_lowercase = self._task.args.get("allow_lowercase", True)
+        allow_uppercase = self._task.args.get("allow_uppercase", True)
+        allow_digits = self._task.args.get("allow_digits", True)
+        allow_symbols = self._task.args.get("allow_symbols", True)
+        filter_characters = self._task.args.get("filter_characters")
+
+        complexity = keeper.password_complexity_translation(
+            length=length,
+            allow_lowercase=allow_lowercase,
+            allow_uppercase=allow_uppercase,
+            allow_digits=allow_digits,
+            allow_symbols=allow_symbols,
+            filter_characters=filter_characters
+        )
+
+        password = keeper.generate_password(**complexity)
+
+        keeper.stash_secret_value(password)
+
+        result = {
+            "password": password
+        }
+
+        keeper.add_secret_values_to_results(result)
+
+        return result
