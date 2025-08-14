@@ -6,14 +6,10 @@
 #              |_|
 #
 # Keeper Secrets Manager
-# Copyright 2021 Keeper Security Inc.
+# Copyright 2025 Keeper Security Inc.
 # Contact: ops@keepersecurity.com
 #
 
-from ansible.plugins.action import ActionBase
-from ansible.errors import AnsibleError
-from ansible.utils.display import Display
-from keeper_secrets_manager_ansible import KeeperAnsible
 
 DOCUMENTATION = r'''
 ---
@@ -67,29 +63,3 @@ existed:
       "existed": True
     },
 '''
-
-display = Display()
-
-
-class ActionModule(ActionBase):
-
-    def run(self, tmp=None, task_vars=None):
-        super(ActionModule, self).run(tmp, task_vars)
-
-        if task_vars is None:
-            task_vars = {}
-
-        keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
-
-        cache = self._task.args.get("cache")
-
-        uid = self._task.args.get("uid")
-        title = self._task.args.pop("title", None)
-        if uid is None and title is None:
-            raise AnsibleError("The uid and title are blank. keeper_get requires one to be set.")
-        if uid is not None and title is not None:
-            raise AnsibleError("The uid and title are both set. keeper_get requires one to be set, but not both.")
-
-        keeper.remove_record(uids=uid, titles=title, cache=cache)
-
-        return {}
