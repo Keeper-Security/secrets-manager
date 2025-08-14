@@ -13,10 +13,9 @@
 from ansible.plugins.action import ActionBase
 from ansible.utils.display import Display
 from ansible.errors import AnsibleError
-from keeper_secrets_manager_ansible import KeeperAnsible
+from keeper_secrets_manager_ansible import KeeperAnsible, strtobool
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 
-from distutils.util import strtobool
 import json
 import yaml
 import re

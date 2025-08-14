@@ -14,7 +14,6 @@ from ansible.utils.display import Display
 from ansible.errors import AnsibleError
 from ansible.module_utils.basic import missing_required_lib
 from ansible.module_utils.common.text.converters import jsonify
-from distutils.util import strtobool
 import os
 import sys
 import re
@@ -47,6 +46,15 @@ else:
 
 display = Display()
 
+# Support of deprecated strtobool function.
+def strtobool(val):
+    val = val.lower()
+    if val in ("y", "yes", "t", "true", "on", "1"):
+        return 1
+    elif val in ("n", "no", "f", "false", "off", "0"):
+        return 0
+    else:
+        raise ValueError(f"invalid truth value {val!r}")
 
 class KeeperFieldType(Enum):
     FIELD = "field"
