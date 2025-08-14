@@ -36,7 +36,7 @@ else:
     from keeper_secrets_manager_core import SecretsManager
     from keeper_secrets_manager_core.core import KSMCache
     from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
-    from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password
+    from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password, strtobool
 
     # If keeper_secrets_manager_core is installed, then these will be installed. They are deps.
     from cryptography.fernet import Fernet
@@ -46,15 +46,6 @@ else:
 
 display = Display()
 
-# Support of deprecated strtobool function.
-def strtobool(val):
-    val = val.lower()
-    if val in ("y", "yes", "t", "true", "on", "1"):
-        return 1
-    elif val in ("n", "no", "f", "false", "off", "0"):
-        return 0
-    else:
-        raise ValueError(f"invalid truth value {val!r}")
 
 class KeeperFieldType(Enum):
     FIELD = "field"
