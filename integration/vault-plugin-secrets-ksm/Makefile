@@ -25,7 +25,7 @@ release:
 release-all: release-other release-win-x86 release-win-x64 release-checksum drop-keys
 
 # NB! Use Go 1.25+ CGO_ENABLED=0 stable at Go 1.22+ but faulty and unreliable (min working version: Go 1.25)
-# Produces truly static build relying only no Go toolkit - no more MUSL/GLIBC version mismatch troubles
+# Produces truly static build relying only on Go toolchain - no more MUSL/GLIBC version mismatch troubles
 release-other:
 	$(eval GOOS=darwin)  $(eval GOARCH=amd64) GOOS=${GOOS} GOARCH=${GOARCH} go build -o ${NAME} ; zip -m ${NAME}_${VERSION}_${GOOS}_${GOARCH}.zip ${NAME}
 	$(eval GOOS=darwin)  $(eval GOARCH=arm64) GOOS=${GOOS} GOARCH=${GOARCH} go build -o ${NAME} ; zip -m ${NAME}_${VERSION}_${GOOS}_${GOARCH}.zip ${NAME}
