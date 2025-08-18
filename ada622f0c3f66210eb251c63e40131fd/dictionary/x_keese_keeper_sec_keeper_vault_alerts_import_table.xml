@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?><database>
+    <element db_object_id="9ec75cf3c3b6ae10eb251c63e40131a5" extends="sys_import_set_row" label="Keeper Vault Alerts Import Table" max_length="40" name="x_keese_keeper_sec_keeper_vault_alerts_import_table" type="collection">
+        <element label="App client type" max_length="15" name="app_client_type" type="string"/>
+        <element label="App UID" max_length="30" name="app_uid" type="string"/>
+        <element label="Alert name" max_length="20" name="alert_name" type="string"/>
+        <element label="category" max_length="10" name="category" type="string"/>
+        <element label="Record UID" max_length="30" name="record_uid" type="string"/>
+        <element label="description" max_length="4000" name="description" type="string"/>
+        <element label="Remote address" max_length="40" name="remote_address" type="ip_addr"/>
+        <element label="username" max_length="30" name="username" type="string"/>
+        <element label="Audit event" max_length="20" name="audit_event" type="string"/>
+        <element label="channel" max_length="10" name="channel" type="string"/>
+        <element label="Device name" max_length="20" name="device_name" type="string"/>
+        <element label="Client version" max_length="15" name="client_version" type="string"/>
+        <element label="timestamp" max_length="30" name="timestamp" type="string"/>
+    </element>
+</database>

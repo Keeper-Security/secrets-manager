@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?><database>
+    <element db_object_id="09267849474bee10216abc74116d4373" label="Keeper Vault Alerts Reference" max_length="40" name="x_keese_keeper_sec_keeper_vaults_alerts_reference" type="collection">
+        <element label="App client type" max_length="30" name="app_client_type" read_only="true" type="string"/>
+        <element label="Channel" max_length="10" name="channel" type="string"/>
+        <element label="Record UID" max_length="100" name="record_uid" type="string"/>
+        <element display="true" label="SIR_Reference" max_length="32" name="sir_reference" read_only="true" reference="sn_si_incident" type="reference"/>
+        <element label="App UID" max_length="30" name="app_uid" type="string"/>
+        <element label="Device name" max_length="30" name="device_name" type="string"/>
+        <index name="index">
+            <element name="sir_reference"/>
+        </index>
+    </element>
+</database>

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update>
+    <sys_ui_section action="DELETE" caption="oauth_entity" section_id="98e4255ec347aa50eb251c63e40131f6" sys_domain="global" table="oauth_entity" version="3" view="Keeper_Oauth_View">
+        <sys_ui_section action="DELETE">
+            <caption>oauth_entity</caption>
+            <header>false</header>
+            <name>oauth_entity</name>
+            <roles/>
+            <sys_class_name>sys_ui_section</sys_class_name>
+            <sys_created_by>srujan-metron</sys_created_by>
+            <sys_created_on>2025-08-01 07:05:26</sys_created_on>
+            <sys_domain>global</sys_domain>
+            <sys_domain_path>/</sys_domain_path>
+            <sys_id>98e4255ec347aa50eb251c63e40131f6</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_name>oauth_entity</sys_name>
+            <sys_overrides/>
+            <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+            <sys_policy/>
+            <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+            <sys_update_name>sys_ui_section_98e4255ec347aa50eb251c63e40131f6</sys_update_name>
+            <sys_updated_by>srujan-metron</sys_updated_by>
+            <sys_updated_on>2025-08-01 07:05:26</sys_updated_on>
+            <sys_user/>
+            <title>false</title>
+            <view display_value="Keeper Oauth View" name="Keeper_Oauth_View">50e4255ec347aa50eb251c63e40131f2</view>
+            <view_name/>
+        </sys_ui_section>
+    </sys_ui_section>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>sys_ui_section_98e4255ec347aa50eb251c63e40131f6</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update><sys_ui_section caption="oauth_entity" section_id="98e4255ec347aa50eb251c63e40131f6" sys_domain="global" table="oauth_entity" version="3" view="Keeper_Oauth_View"><sys_ui_section action="INSERT_OR_UPDATE"><caption>oauth_entity</caption><header>false</header><name>oauth_entity</name><roles/><sys_class_name>sys_ui_section</sys_class_name><sys_created_by>srujan-metron</sys_created_by><sys_created_on>2025-08-01 07:05:26</sys_created_on><sys_domain>global</sys_domain><sys_domain_path>/</sys_domain_path><sys_id>98e4255ec347aa50eb251c63e40131f6</sys_id><sys_mod_count>0</sys_mod_count><sys_name>oauth_entity</sys_name><sys_overrides/><sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package><sys_policy/><sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope><sys_update_name>sys_ui_section_98e4255ec347aa50eb251c63e40131f6</sys_update_name><sys_updated_by>srujan-metron</sys_updated_by><sys_updated_on>2025-08-01 07:05:26</sys_updated_on><sys_user/><title>false</title><view display_value="Keeper Oauth View" name="Keeper_Oauth_View">50e4255ec347aa50eb251c63e40131f2</view><view_name/></sys_ui_section></sys_ui_section></record_update>]]></payload>
+        <payload_hash>-435769727</payload_hash>
+        <record_name>Application Registries</record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 07:05:26</sys_created_on>
+        <sys_id>54e4255ec347aa50eb251c63e40131fa</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>19864732bba0000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 07:05:26</sys_updated_on>
+        <type>Form Layout</type>
+        <update_guid>d8e4255eae47aa50261c610981348cf9</update_guid>
+        <update_guid_history>d8e4255eae47aa50261c610981348cf9:-435769727</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete/>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 07:06:07</sys_created_on>
+        <sys_db_object display_value="" name="sys_ui_section">sys_ui_section</sys_db_object>
+        <sys_id>217c1a55685141e0b938affb214d8e40</sys_id>
+        <sys_metadata>98e4255ec347aa50eb251c63e40131f6</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>oauth_entity</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent display_value="Oauth Entity">70bc932847322210216abc74116d4318</sys_parent>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>sys_ui_section_98e4255ec347aa50eb251c63e40131f6</sys_update_name>
+        <sys_update_version display_value="sys_ui_section_98e4255ec347aa50eb251c63e40131f6">54e4255ec347aa50eb251c63e40131fa</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 07:06:07</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

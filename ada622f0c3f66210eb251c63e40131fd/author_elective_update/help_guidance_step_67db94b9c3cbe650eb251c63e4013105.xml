@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="help_guidance_step">
+    <help_guidance_step action="DELETE">
+        <actions_label>{"next":"Next","prev":"Previous","submit":"Submit"}</actions_label>
+        <active>true</active>
+        <allow_delegation>true</allow_delegation>
+        <callout_position>default</callout_position>
+        <description/>
+        <guidance display_value="Keeper Security ITSM Guided Setup">4bbb54b9c3cbe650eb251c63e4013197</guidance>
+        <has_decision>false</has_decision>
+        <layout>text</layout>
+        <name>Generate authentication token</name>
+        <order>1</order>
+        <parent display_value="Generate Auth Token">cbcb54b9c3cbe650eb251c63e40131fd</parent>
+        <rich_description><![CDATA[<p>steps to generate authentication token</p>]]></rich_description>
+        <roles/>
+        <script/>
+        <skippable>false</skippable>
+        <status>0</status>
+        <sys_class_name>help_guidance_step</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-30 12:29:28</sys_created_on>
+        <sys_decision/>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>67db94b9c3cbe650eb251c63e4013105</sys_id>
+        <sys_mod_count>4</sys_mod_count>
+        <sys_name>Generate authentication token</sys_name>
+        <sys_overrides/>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>help_guidance_step_67db94b9c3cbe650eb251c63e4013105</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 06:01:37</sys_updated_on>
+        <target_element/>
+        <task_type>basic</task_type>
+        <type>activity</type>
+        <unlock_by_decision_step>false</unlock_by_decision_step>
+    </help_guidance_step>
+    <sys_translated_text action="DELETE" query="documentkey=67db94b9c3cbe650eb251c63e4013105"/>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>help_guidance_step_67db94b9c3cbe650eb251c63e4013105</name>
+        <payload>&lt;?xml version="1.0" encoding="UTF-8"?&gt;&lt;record_update sys_domain="global" table="help_guidance_step"&gt;&lt;help_guidance_step action="INSERT_OR_UPDATE"&gt;&lt;actions_label&gt;{"next":"Next","prev":"Previous","submit":"Submit"}&lt;/actions_label&gt;&lt;active&gt;true&lt;/active&gt;&lt;allow_delegation&gt;true&lt;/allow_delegation&gt;&lt;callout_position&gt;default&lt;/callout_position&gt;&lt;description/&gt;&lt;guidance display_value="Keeper Security ITSM Guided Setup"&gt;4bbb54b9c3cbe650eb251c63e4013197&lt;/guidance&gt;&lt;has_decision&gt;false&lt;/has_decision&gt;&lt;layout&gt;text&lt;/layout&gt;&lt;name&gt;Generate authentication token&lt;/name&gt;&lt;order&gt;1&lt;/order&gt;&lt;parent display_value="Generate Auth Token"&gt;cbcb54b9c3cbe650eb251c63e40131fd&lt;/parent&gt;&lt;rich_description&gt;&lt;![CDATA[&lt;p&gt;steps to generate authentication token&lt;/p&gt;]]&gt;&lt;/rich_description&gt;&lt;roles/&gt;&lt;script/&gt;&lt;skippable&gt;false&lt;/skippable&gt;&lt;status&gt;0&lt;/status&gt;&lt;sys_class_name&gt;help_guidance_step&lt;/sys_class_name&gt;&lt;sys_created_by&gt;srujan-metron&lt;/sys_created_by&gt;&lt;sys_created_on&gt;2025-07-30 12:29:28&lt;/sys_created_on&gt;&lt;sys_decision/&gt;&lt;sys_domain&gt;global&lt;/sys_domain&gt;&lt;sys_domain_path&gt;/&lt;/sys_domain_path&gt;&lt;sys_id&gt;67db94b9c3cbe650eb251c63e4013105&lt;/sys_id&gt;&lt;sys_mod_count&gt;4&lt;/sys_mod_count&gt;&lt;sys_name&gt;Generate authentication token&lt;/sys_name&gt;&lt;sys_overrides/&gt;&lt;sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec"&gt;ada622f0c3f66210eb251c63e40131fd&lt;/sys_package&gt;&lt;sys_policy/&gt;&lt;sys_scope display_value="Keeper Security ITSM"&gt;ada622f0c3f66210eb251c63e40131fd&lt;/sys_scope&gt;&lt;sys_update_name&gt;help_guidance_step_67db94b9c3cbe650eb251c63e4013105&lt;/sys_update_name&gt;&lt;sys_updated_by&gt;srujan-metron&lt;/sys_updated_by&gt;&lt;sys_updated_on&gt;2025-08-01 06:01:37&lt;/sys_updated_on&gt;&lt;target_element/&gt;&lt;task_type&gt;basic&lt;/task_type&gt;&lt;type&gt;activity&lt;/type&gt;&lt;unlock_by_decision_step&gt;false&lt;/unlock_by_decision_step&gt;&lt;/help_guidance_step&gt;&lt;sys_translated_text action="delete_multiple" query="documentkey=67db94b9c3cbe650eb251c63e4013105"/&gt;&lt;/record_update&gt;</payload>
+        <payload_hash>-1363716689</payload_hash>
+        <record_name>Generate authentication token</record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 06:01:37</sys_created_on>
+        <sys_id>254659dac307aa50eb251c63e4013160</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>1986438c0ba0000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 06:01:37</sys_updated_on>
+        <type>Help Guidance Step</type>
+        <update_guid>2d4659daa107aa50d9cf037ebd03695f</update_guid>
+        <update_guid_history>2d4659daa107aa50d9cf037ebd03695f:-1363716689,cb3695da7407aa509853e81dbcaf8809:146085042,124c9cb978cbe65093c288eb141327a9:-1788837967,d6ebd4b9efcbe6502b3e8fb252107df3:1017783272,abdb18b92fcbe6505ce6f057ab6913f3:-1326461265</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete display_value="Generate authentication token">ba0f763f4703e210216abc74116d431d</sys_audit_delete>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-06 05:30:15</sys_created_on>
+        <sys_db_object display_value="" name="help_guidance_step">help_guidance_step</sys_db_object>
+        <sys_id>0f5479f1f8044fb382d43184a1df2279</sys_id>
+        <sys_metadata>67db94b9c3cbe650eb251c63e4013105</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Generate authentication token</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>help_guidance_step_67db94b9c3cbe650eb251c63e4013105</sys_update_name>
+        <sys_update_version display_value="help_guidance_step_67db94b9c3cbe650eb251c63e4013105">254659dac307aa50eb251c63e4013160</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-06 05:30:15</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

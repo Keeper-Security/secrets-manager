@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_app_application">
+    <sys_app_application action="DELETE">
+        <active>true</active>
+        <category display_value="Custom Applications">e0355b31ef303000a61d5a3615c0fb78</category>
+        <description/>
+        <device_type>browser</device_type>
+        <hint/>
+        <name>Keeper Security Credentials</name>
+        <order>100</order>
+        <roles>x_keese_keeper_sec.keeper_security_credentials_user</roles>
+        <sys_class_name>sys_app_application</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 07:28:36</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>af2aa516c387aa50eb251c63e4013185</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Keeper Security Credentials</sys_name>
+        <sys_overrides/>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_app_application_af2aa516c387aa50eb251c63e4013185</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 07:28:36</sys_updated_on>
+        <title>Keeper Security Credentials</title>
+        <view_name/>
+    </sys_app_application>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>sys_app_application_af2aa516c387aa50eb251c63e4013185</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_app_application"><sys_app_application action="INSERT_OR_UPDATE"><active>true</active><category display_value="Custom Applications">e0355b31ef303000a61d5a3615c0fb78</category><description/><device_type>browser</device_type><hint/><name>Keeper Security Credentials</name><order>100</order><roles>x_keese_keeper_sec.keeper_security_credentials_user</roles><sys_class_name>sys_app_application</sys_class_name><sys_created_by>srujan-metron</sys_created_by><sys_created_on>2025-08-01 07:28:36</sys_created_on><sys_domain>global</sys_domain><sys_domain_path>/</sys_domain_path><sys_id>af2aa516c387aa50eb251c63e4013185</sys_id><sys_mod_count>0</sys_mod_count><sys_name>Keeper Security Credentials</sys_name><sys_overrides/><sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package><sys_policy/><sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope><sys_update_name>sys_app_application_af2aa516c387aa50eb251c63e4013185</sys_update_name><sys_updated_by>srujan-metron</sys_updated_by><sys_updated_on>2025-08-01 07:28:36</sys_updated_on><title>Keeper Security Credentials</title><view_name/></sys_app_application></record_update>]]></payload>
+        <payload_hash>-1635430697</payload_hash>
+        <record_name>Keeper Security Credentials</record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 07:28:36</sys_created_on>
+        <sys_id>ab2a6916c387aa50eb251c63e4013135</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>198648861600000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 07:28:36</sys_updated_on>
+        <type>Application Menu</type>
+        <update_guid>af2a69161787aa500b1c5e43f6807734</update_guid>
+        <update_guid_history>af2a69161787aa500b1c5e43f6807734:-1635430697</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete display_value="Keeper Security Credentials">1f3a6916c387aa50eb251c63e401311c</sys_audit_delete>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 07:28:51</sys_created_on>
+        <sys_db_object display_value="" name="sys_app_application">sys_app_application</sys_db_object>
+        <sys_id>6b66a23087244c788dad9bf9a7a465c1</sys_id>
+        <sys_metadata>af2aa516c387aa50eb251c63e4013185</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Keeper Security Credentials</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>sys_app_application_af2aa516c387aa50eb251c63e4013185</sys_update_name>
+        <sys_update_version display_value="sys_app_application_af2aa516c387aa50eb251c63e4013185">ab2a6916c387aa50eb251c63e4013135</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 07:28:51</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

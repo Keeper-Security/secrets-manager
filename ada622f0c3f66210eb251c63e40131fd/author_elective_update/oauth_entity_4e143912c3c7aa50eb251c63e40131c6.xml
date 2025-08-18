@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="oauth_entity">
+    <oauth_entity action="DELETE">
+        <access>package_private</access>
+        <access_token_lifespan>1800</access_token_lifespan>
+        <active>true</active>
+        <auth_code_lifespan>60</auth_code_lifespan>
+        <auth_url/>
+        <certificate_url/>
+        <client_id>0e1439128cc7aa50ee85aef3f74cb0c6</client_id>
+        <client_secret>﷞﷟﷒1a28c87047362210216abc74116d43f5﷬﷔1﷬﷭ALj7Mf5iWBnLIPWZ8_Faiw==7FH2YrodbrzYiR0RlhnAza2bWRZ5cD_YuKw=﷮﷯</client_secret>
+        <client_uuid>ca143912c3c7aa50eb251c63e40131c6</client_uuid>
+        <code_challenge_method>S256</code_challenge_method>
+        <comments/>
+        <default_grant_type>password</default_grant_type>
+        <id_token_lifespan>86400</id_token_lifespan>
+        <jwt_provider/>
+        <login_url/>
+        <logo_url/>
+        <message_signature_lifespan>60</message_signature_lifespan>
+        <mobile_client>false</mobile_client>
+        <name>demokeeperr</name>
+        <oauth_api_script/>
+        <protocol_name/>
+        <public_client>false</public_client>
+        <redirect_url/>
+        <refresh_token_lifespan>8640000</refresh_token_lifespan>
+        <refresh_token_url/>
+        <restricted_binding>false</restricted_binding>
+        <revoke_token_url/>
+        <salt/>
+        <send_client_credentials_as>request_body_parameter</send_client_credentials_as>
+        <skip_authorize>false</skip_authorize>
+        <sys_class_name>oauth_entity</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 08:12:26</sys_created_on>
+        <sys_id>4e143912c3c7aa50eb251c63e40131c6</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>demokeeperr</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>oauth_entity_4e143912c3c7aa50eb251c63e40131c6</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 08:12:26</sys_updated_on>
+        <token_url/>
+        <type>client</type>
+        <use_mutual_auth>false</use_mutual_auth>
+        <user/>
+    </oauth_entity>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>oauth_entity_4e143912c3c7aa50eb251c63e40131c6</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update table="oauth_entity"><oauth_entity action="INSERT_OR_UPDATE"><access>package_private</access><access_token_lifespan>1800</access_token_lifespan><active>true</active><auth_code_lifespan>60</auth_code_lifespan><auth_url/><certificate_url/><client_id>0e1439128cc7aa50ee85aef3f74cb0c6</client_id><client_secret>﷞﷟﷒1a28c87047362210216abc74116d43f5﷬﷔1﷬﷭ALj7Mf5iWBnLIPWZ8_Faiw==7FH2YrodbrzYiR0RlhnAza2bWRZ5cD_YuKw=﷮﷯</client_secret><client_uuid>ca143912c3c7aa50eb251c63e40131c6</client_uuid><code_challenge_method>S256</code_challenge_method><comments/><default_grant_type>password</default_grant_type><id_token_lifespan>86400</id_token_lifespan><jwt_provider/><login_url/><logo_url/><message_signature_lifespan>60</message_signature_lifespan><mobile_client>false</mobile_client><name>demokeeperr</name><oauth_api_script/><protocol_name/><public_client>false</public_client><redirect_url/><refresh_token_lifespan>8640000</refresh_token_lifespan><refresh_token_url/><restricted_binding>false</restricted_binding><revoke_token_url/><salt/><send_client_credentials_as>request_body_parameter</send_client_credentials_as><skip_authorize>false</skip_authorize><sys_class_name>oauth_entity</sys_class_name><sys_created_by>srujan-metron</sys_created_by><sys_created_on>2025-08-01 08:12:26</sys_created_on><sys_id>4e143912c3c7aa50eb251c63e40131c6</sys_id><sys_mod_count>0</sys_mod_count><sys_name>demokeeperr</sys_name><sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package><sys_policy/><sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope><sys_update_name>oauth_entity_4e143912c3c7aa50eb251c63e40131c6</sys_update_name><sys_updated_by>srujan-metron</sys_updated_by><sys_updated_on>2025-08-01 08:12:26</sys_updated_on><token_url/><type>client</type><use_mutual_auth>false</use_mutual_auth><user/></oauth_entity></record_update>]]></payload>
+        <payload_hash>-566913905</payload_hash>
+        <record_name>demokeeperr</record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 08:12:26</sys_created_on>
+        <sys_id>7d343912c3c7aa50eb251c63e401318b</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>19864b083300000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 08:12:26</sys_updated_on>
+        <type>Application Registries</type>
+        <update_guid>71343912f2c7aa506edf21d68a11368b</update_guid>
+        <update_guid_history>71343912f2c7aa506edf21d68a11368b:-566913905</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete display_value="demokeeperr">aa78f916c3c7aa50eb251c63e401311b</sys_audit_delete>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 08:31:03</sys_created_on>
+        <sys_db_object display_value="" name="oauth_entity">oauth_entity</sys_db_object>
+        <sys_id>89a969fd61484c7c8f4ea51e242cebb9</sys_id>
+        <sys_metadata>4e143912c3c7aa50eb251c63e40131c6</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>demokeeperr</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>oauth_entity_4e143912c3c7aa50eb251c63e40131c6</sys_update_name>
+        <sys_update_version display_value="oauth_entity_4e143912c3c7aa50eb251c63e40131c6">7d343912c3c7aa50eb251c63e401318b</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 08:31:03</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

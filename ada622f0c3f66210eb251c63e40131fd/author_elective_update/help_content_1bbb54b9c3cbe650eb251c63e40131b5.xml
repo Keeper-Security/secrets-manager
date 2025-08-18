@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="help_content">
+    <help_content action="DELETE">
+        <active>true</active>
+        <configuration_types>install_plugin</configuration_types>
+        <custom_html/>
+        <default_content>true</default_content>
+        <field_name/>
+        <filter/>
+        <footer/>
+        <guidance_step display_value="Install Plugins ">0bbb9c79c3cbe650eb251c63e401317e</guidance_step>
+        <has_custom_html>false</has_custom_html>
+        <has_image_link>false</has_image_link>
+        <image/>
+        <image_alt/>
+        <image_link/>
+        <open_in>new_tab</open_in>
+        <options/>
+        <order/>
+        <records/>
+        <related_content/>
+        <resource_id/>
+        <subtitle/>
+        <sys_class_name>help_content</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-30 12:28:54</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>1bbb54b9c3cbe650eb251c63e40131b5</sys_id>
+        <sys_mod_count>1</sys_mod_count>
+        <sys_name>Install Plugins </sys_name>
+        <sys_overrides/>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>help_content_1bbb54b9c3cbe650eb251c63e40131b5</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-06 05:46:15</sys_updated_on>
+        <table_name>v_plugin</table_name>
+        <text/>
+        <title>Install Plugins </title>
+        <type>text</type>
+        <url/>
+        <version>washingtondc</version>
+        <video_alt/>
+        <video_link/>
+        <view>Default view</view>
+    </help_content>
+    <sys_translated_text action="DELETE" query="documentkey=1bbb54b9c3cbe650eb251c63e40131b5"/>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>help_content_1bbb54b9c3cbe650eb251c63e40131b5</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="help_content"><help_content action="INSERT_OR_UPDATE"><active>true</active><configuration_types>install_plugin</configuration_types><custom_html/><default_content>true</default_content><field_name/><filter/><footer/><guidance_step display_value="Install Plugins ">0bbb9c79c3cbe650eb251c63e401317e</guidance_step><has_custom_html>false</has_custom_html><has_image_link>false</has_image_link><image/><image_alt/><image_link/><open_in>new_tab</open_in><options/><order/><records/><related_content/><resource_id/><subtitle/><sys_class_name>help_content</sys_class_name><sys_created_by>srujan-metron</sys_created_by><sys_created_on>2025-07-30 12:28:54</sys_created_on><sys_domain>global</sys_domain><sys_domain_path>/</sys_domain_path><sys_id>1bbb54b9c3cbe650eb251c63e40131b5</sys_id><sys_mod_count>1</sys_mod_count><sys_name>Install Plugins </sys_name><sys_overrides/><sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package><sys_policy/><sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope><sys_update_name>help_content_1bbb54b9c3cbe650eb251c63e40131b5</sys_update_name><sys_updated_by>srujan-metron</sys_updated_by><sys_updated_on>2025-08-06 05:46:15</sys_updated_on><table_name>v_plugin</table_name><text/><title>Install Plugins </title><type>text</type><url/><version>washingtondc</version><video_alt/><video_link/><view>Default view</view></help_content><sys_translated_text action="delete_multiple" query="documentkey=1bbb54b9c3cbe650eb251c63e40131b5"/></record_update>]]></payload>
+        <payload_hash>-419399662</payload_hash>
+        <record_name>Install Plugins </record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-06 05:46:15</sys_created_on>
+        <sys_id>81b2c7334743e210216abc74116d4301</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>1987dea7a230000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-06 05:46:15</sys_updated_on>
+        <type>Help Content</type>
+        <update_guid>49b2c733f043e2100820adc6ad373400</update_guid>
+        <update_guid_history>49b2c733f043e2100820adc6ad373400:-419399662,9fbb54b99dcbe650b6f82167b62b33b7:-1902425470</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete display_value="Install Plugins ">fa054fb34743e210216abc74116d4391</sys_audit_delete>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-06 05:56:28</sys_created_on>
+        <sys_db_object display_value="" name="help_content">help_content</sys_db_object>
+        <sys_id>67da611a1ca54978acec9caa1f6ac040</sys_id>
+        <sys_metadata>1bbb54b9c3cbe650eb251c63e40131b5</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Install Plugins </sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>help_content_1bbb54b9c3cbe650eb251c63e40131b5</sys_update_name>
+        <sys_update_version display_value="help_content_1bbb54b9c3cbe650eb251c63e40131b5">81b2c7334743e210216abc74116d4301</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-06 05:56:28</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

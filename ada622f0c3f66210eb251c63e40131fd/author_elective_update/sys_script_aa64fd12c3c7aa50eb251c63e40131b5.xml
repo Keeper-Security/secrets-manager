@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_script">
+    <sys_script action="DELETE">
+        <abort_action>false</abort_action>
+        <access>package_private</access>
+        <action_delete>false</action_delete>
+        <action_insert>true</action_insert>
+        <action_query>false</action_query>
+        <action_update>false</action_update>
+        <active>true</active>
+        <add_message>true</add_message>
+        <advanced>false</advanced>
+        <change_fields>false</change_fields>
+        <client_callable>false</client_callable>
+        <collection>oauth_entity</collection>
+        <condition/>
+        <description/>
+        <execute_function>false</execute_function>
+        <filter_condition/>
+        <is_rest>false</is_rest>
+        <message><![CDATA[<p>Access token lifespan is set to 10 years.</p>]]></message>
+        <name>Set Access Token Lifespan</name>
+        <order>100</order>
+        <priority>100</priority>
+        <rest_method/>
+        <rest_method_text/>
+        <rest_service/>
+        <rest_service_text/>
+        <rest_variables/>
+        <role_conditions/>
+        <script><![CDATA[(function executeRule(current, previous /*null when async*/) {
+
+	// Add your code here
+
+})(current, previous);]]></script>
+        <sys_class_name>sys_script</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 08:16:15</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>aa64fd12c3c7aa50eb251c63e40131b5</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Set Access Token Lifespan</sys_name>
+        <sys_overrides/>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_script_aa64fd12c3c7aa50eb251c63e40131b5</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 08:16:15</sys_updated_on>
+        <template>access_token_lifespan=315,360,000^EQ</template>
+        <when>before</when>
+    </sys_script>
+    <sys_translated_text action="DELETE" query="documentkey=aa64fd12c3c7aa50eb251c63e40131b5"/>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>sys_script_aa64fd12c3c7aa50eb251c63e40131b5</name>
+        <payload>&lt;?xml version="1.0" encoding="UTF-8"?&gt;&lt;record_update sys_domain="global" table="sys_script"&gt;&lt;sys_script action="INSERT_OR_UPDATE"&gt;&lt;abort_action&gt;false&lt;/abort_action&gt;&lt;access&gt;package_private&lt;/access&gt;&lt;action_delete&gt;false&lt;/action_delete&gt;&lt;action_insert&gt;true&lt;/action_insert&gt;&lt;action_query&gt;false&lt;/action_query&gt;&lt;action_update&gt;false&lt;/action_update&gt;&lt;active&gt;true&lt;/active&gt;&lt;add_message&gt;true&lt;/add_message&gt;&lt;advanced&gt;false&lt;/advanced&gt;&lt;change_fields&gt;false&lt;/change_fields&gt;&lt;client_callable&gt;false&lt;/client_callable&gt;&lt;collection&gt;oauth_entity&lt;/collection&gt;&lt;condition/&gt;&lt;description/&gt;&lt;execute_function&gt;false&lt;/execute_function&gt;&lt;filter_condition/&gt;&lt;is_rest&gt;false&lt;/is_rest&gt;&lt;message&gt;&lt;![CDATA[&lt;p&gt;Access token lifespan is set to 10 years.&lt;/p&gt;]]&gt;&lt;/message&gt;&lt;name&gt;Set Access Token Lifespan&lt;/name&gt;&lt;order&gt;100&lt;/order&gt;&lt;priority&gt;100&lt;/priority&gt;&lt;rest_method/&gt;&lt;rest_method_text/&gt;&lt;rest_service/&gt;&lt;rest_service_text/&gt;&lt;rest_variables/&gt;&lt;role_conditions/&gt;&lt;script&gt;&lt;![CDATA[(function executeRule(current, previous /*null when async*/) {
+
+	// Add your code here
+
+})(current, previous);]]&gt;&lt;/script&gt;&lt;sys_class_name&gt;sys_script&lt;/sys_class_name&gt;&lt;sys_created_by&gt;srujan-metron&lt;/sys_created_by&gt;&lt;sys_created_on&gt;2025-08-01 08:16:15&lt;/sys_created_on&gt;&lt;sys_domain&gt;global&lt;/sys_domain&gt;&lt;sys_domain_path&gt;/&lt;/sys_domain_path&gt;&lt;sys_id&gt;aa64fd12c3c7aa50eb251c63e40131b5&lt;/sys_id&gt;&lt;sys_mod_count&gt;0&lt;/sys_mod_count&gt;&lt;sys_name&gt;Set Access Token Lifespan&lt;/sys_name&gt;&lt;sys_overrides/&gt;&lt;sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec"&gt;ada622f0c3f66210eb251c63e40131fd&lt;/sys_package&gt;&lt;sys_policy/&gt;&lt;sys_scope display_value="Keeper Security ITSM"&gt;ada622f0c3f66210eb251c63e40131fd&lt;/sys_scope&gt;&lt;sys_update_name&gt;sys_script_aa64fd12c3c7aa50eb251c63e40131b5&lt;/sys_update_name&gt;&lt;sys_updated_by&gt;srujan-metron&lt;/sys_updated_by&gt;&lt;sys_updated_on&gt;2025-08-01 08:16:15&lt;/sys_updated_on&gt;&lt;template&gt;access_token_lifespan=315,360,000^EQ&lt;/template&gt;&lt;when&gt;before&lt;/when&gt;&lt;/sys_script&gt;&lt;sys_translated_text action="delete_multiple" query="documentkey=aa64fd12c3c7aa50eb251c63e40131b5"/&gt;&lt;/record_update&gt;</payload>
+        <payload_hash>-1141561165</payload_hash>
+        <record_name>Set Access Token Lifespan</record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 08:16:15</sys_created_on>
+        <sys_id>b9153d52c3c7aa50eb251c63e4013103</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>19864b4033e0000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 08:16:15</sys_updated_on>
+        <type>Business Rule</type>
+        <update_guid>7d153d5247c7aa50db7f342e17adae02</update_guid>
+        <update_guid_history>7d153d5247c7aa50db7f342e17adae02:-1141561165</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete/>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-05 09:16:26</sys_created_on>
+        <sys_db_object display_value="" name="sys_script">sys_script</sys_db_object>
+        <sys_id>0f38e877695d4deaa94c894808514ea4</sys_id>
+        <sys_metadata>aa64fd12c3c7aa50eb251c63e40131b5</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Set Access Token Lifespan</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent display_value="Oauth Entity">70bc932847322210216abc74116d4318</sys_parent>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>sys_script_aa64fd12c3c7aa50eb251c63e40131b5</sys_update_name>
+        <sys_update_version display_value="sys_script_aa64fd12c3c7aa50eb251c63e40131b5">b9153d52c3c7aa50eb251c63e4013103</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-05 09:16:26</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

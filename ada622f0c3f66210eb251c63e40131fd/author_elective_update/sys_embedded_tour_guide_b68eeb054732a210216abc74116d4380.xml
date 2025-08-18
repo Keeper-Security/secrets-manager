@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_embedded_tour_guide">
+    <sys_embedded_tour_guide action="DELETE">
+        <active>true</active>
+        <additional_parameters/>
+        <autolaunch_order>0</autolaunch_order>
+        <context>home</context>
+        <description/>
+        <has_concl>false</has_concl>
+        <has_intro>true</has_intro>
+        <name>Keeper ITSM Setup</name>
+        <options/>
+        <roles>admin</roles>
+        <route_parameters/>
+        <sp_page/>
+        <sp_portal/>
+        <status>draft</status>
+        <sys_class_name>sys_embedded_tour_guide</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-16 09:38:48</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>b68eeb054732a210216abc74116d4380</sys_id>
+        <sys_mod_count>1</sys_mod_count>
+        <sys_name>Keeper ITSM Setup</sys_name>
+        <sys_overrides/>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_embedded_tour_guide_b68eeb054732a210216abc74116d4380</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-16 09:41:56</sys_updated_on>
+        <tour_id>TOUR0000009</tour_id>
+        <type>platform</type>
+    </sys_embedded_tour_guide>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>sys_embedded_tour_guide_b68eeb054732a210216abc74116d4380</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_embedded_tour_guide"><sys_embedded_tour_guide action="INSERT_OR_UPDATE"><active>true</active><additional_parameters/><autolaunch_order>0</autolaunch_order><context>home</context><description/><has_concl>false</has_concl><has_intro>true</has_intro><name>Keeper ITSM Setup</name><options/><roles>admin</roles><route_parameters/><sp_page/><sp_portal/><status>draft</status><sys_class_name>sys_embedded_tour_guide</sys_class_name><sys_created_by>srujan-metron</sys_created_by><sys_created_on>2025-07-16 09:38:48</sys_created_on><sys_domain>global</sys_domain><sys_domain_path>/</sys_domain_path><sys_id>b68eeb054732a210216abc74116d4380</sys_id><sys_mod_count>1</sys_mod_count><sys_name>Keeper ITSM Setup</sys_name><sys_overrides/><sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package><sys_policy/><sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope><sys_update_name>sys_embedded_tour_guide_b68eeb054732a210216abc74116d4380</sys_update_name><sys_updated_by>srujan-metron</sys_updated_by><sys_updated_on>2025-07-16 09:41:56</sys_updated_on><tour_id>TOUR0000009</tour_id><type>platform</type></sys_embedded_tour_guide></record_update>]]></payload>
+        <payload_hash>-470381701</payload_hash>
+        <record_name>Keeper ITSM Setup</record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-16 09:41:56</sys_created_on>
+        <sys_id>bc4fe7454732a210216abc74116d439a</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>198129cb4eb0000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-16 09:41:56</sys_updated_on>
+        <type>Guided Tour</type>
+        <update_guid>744fe7452732a2108294d02f1b054a9a</update_guid>
+        <update_guid_history>744fe7452732a2108294d02f1b054a9a:-470381701,4f8eeb054532a2106c5182a89ef24c84:1869872188</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete/>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-31 08:51:45</sys_created_on>
+        <sys_db_object display_value="" name="sys_embedded_tour_guide">sys_embedded_tour_guide</sys_db_object>
+        <sys_id>5acc8566c3fa4b3dbcf8f1815085a0c9</sys_id>
+        <sys_metadata>b68eeb054732a210216abc74116d4380</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Keeper ITSM Setup</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>sys_embedded_tour_guide_b68eeb054732a210216abc74116d4380</sys_update_name>
+        <sys_update_version display_value="sys_embedded_tour_guide_b68eeb054732a210216abc74116d4380">bc4fe7454732a210216abc74116d439a</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-31 08:51:45</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

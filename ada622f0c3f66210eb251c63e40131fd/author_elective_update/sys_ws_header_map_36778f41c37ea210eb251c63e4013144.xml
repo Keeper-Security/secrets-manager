@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ws_header_map">
+    <sys_ws_header_map action="DELETE">
+        <sys_class_name>sys_ws_header_map</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-16 06:48:33</sys_created_on>
+        <sys_id>36778f41c37ea210eb251c63e4013144</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>461fb609c33ea210eb251c63e40131a7</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_ws_header_map_36778f41c37ea210eb251c63e4013144</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-16 06:48:33</sys_updated_on>
+        <web_service_header display_value="Authentication">461fb609c33ea210eb251c63e40131a7</web_service_header>
+        <web_service_operation display_value="sir_webhook">c01af281c33ea210eb251c63e40131d5</web_service_operation>
+    </sys_ws_header_map>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>sys_ws_header_map_36778f41c37ea210eb251c63e4013144</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ws_header_map"><sys_ws_header_map action="INSERT_OR_UPDATE"><sys_class_name>sys_ws_header_map</sys_class_name><sys_created_by>srujan-metron</sys_created_by><sys_created_on>2025-07-16 06:48:33</sys_created_on><sys_id>36778f41c37ea210eb251c63e4013144</sys_id><sys_mod_count>0</sys_mod_count><sys_name>461fb609c33ea210eb251c63e40131a7</sys_name><sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package><sys_policy/><sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope><sys_update_name>sys_ws_header_map_36778f41c37ea210eb251c63e4013144</sys_update_name><sys_updated_by>srujan-metron</sys_updated_by><sys_updated_on>2025-07-16 06:48:33</sys_updated_on><web_service_header display_value="Authentication">461fb609c33ea210eb251c63e40131a7</web_service_header><web_service_operation display_value="sir_webhook">c01af281c33ea210eb251c63e40131d5</web_service_operation></sys_ws_header_map></record_update>]]></payload>
+        <payload_hash>-494273418</payload_hash>
+        <record_name>461fb609c33ea210eb251c63e40131a7</record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-16 06:48:33</sys_created_on>
+        <sys_id>8d978f41c37ea210eb251c63e401319d</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>19811fdf9600000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-16 06:48:33</sys_updated_on>
+        <type>Scripted REST Header Association</type>
+        <update_guid>81978f410c7ea2106695ab11f4c3c99d</update_guid>
+        <update_guid_history>81978f410c7ea2106695ab11f4c3c99d:-494273418</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete/>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-07 06:35:41</sys_created_on>
+        <sys_db_object display_value="" name="sys_ws_header_map">sys_ws_header_map</sys_db_object>
+        <sys_id>1cc1a39762a9412eaea249320121e5c4</sys_id>
+        <sys_metadata>36778f41c37ea210eb251c63e4013144</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>461fb609c33ea210eb251c63e40131a7</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>sys_ws_header_map_36778f41c37ea210eb251c63e4013144</sys_update_name>
+        <sys_update_version display_value="sys_ws_header_map_36778f41c37ea210eb251c63e4013144">8d978f41c37ea210eb251c63e401319d</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-07 06:35:41</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

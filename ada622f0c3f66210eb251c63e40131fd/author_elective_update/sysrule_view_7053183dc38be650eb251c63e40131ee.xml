@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sysrule_view">
+    <sysrule_view action="DELETE">
+        <active>true</active>
+        <advanced>false</advanced>
+        <condition/>
+        <description/>
+        <device_type>browser</device_type>
+        <match_conditions>ALL</match_conditions>
+        <name>Keeper Security Incident View</name>
+        <order>100</order>
+        <overrides_user_preference>true</overrides_user_preference>
+        <script><![CDATA[(function overrideView(view, is_list) {
+
+	// Add your code here
+	answer = null;  // set the new view to answer
+
+})(view, is_list);]]></script>
+        <sys_class_name>sysrule_view</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-30 11:53:17</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>7053183dc38be650eb251c63e40131ee</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Keeper Security Incident View</sys_name>
+        <sys_overrides/>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sysrule_view_7053183dc38be650eb251c63e40131ee</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-30 11:53:17</sys_updated_on>
+        <table>sn_si_incident</table>
+        <view>Keeper Security Alerts Incident</view>
+    </sysrule_view>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>sysrule_view_7053183dc38be650eb251c63e40131ee</name>
+        <payload>&lt;?xml version="1.0" encoding="UTF-8"?&gt;&lt;record_update sys_domain="global" table="sysrule_view"&gt;&lt;sysrule_view action="INSERT_OR_UPDATE"&gt;&lt;active&gt;true&lt;/active&gt;&lt;advanced&gt;false&lt;/advanced&gt;&lt;condition/&gt;&lt;description/&gt;&lt;device_type&gt;browser&lt;/device_type&gt;&lt;match_conditions&gt;ALL&lt;/match_conditions&gt;&lt;name&gt;Keeper Security Incident View&lt;/name&gt;&lt;order&gt;100&lt;/order&gt;&lt;overrides_user_preference&gt;true&lt;/overrides_user_preference&gt;&lt;script&gt;&lt;![CDATA[(function overrideView(view, is_list) {
+
+	// Add your code here
+	answer = null;  // set the new view to answer
+
+})(view, is_list);]]&gt;&lt;/script&gt;&lt;sys_class_name&gt;sysrule_view&lt;/sys_class_name&gt;&lt;sys_created_by&gt;srujan-metron&lt;/sys_created_by&gt;&lt;sys_created_on&gt;2025-07-30 11:53:17&lt;/sys_created_on&gt;&lt;sys_domain&gt;global&lt;/sys_domain&gt;&lt;sys_domain_path&gt;/&lt;/sys_domain_path&gt;&lt;sys_id&gt;7053183dc38be650eb251c63e40131ee&lt;/sys_id&gt;&lt;sys_mod_count&gt;0&lt;/sys_mod_count&gt;&lt;sys_name&gt;Keeper Security Incident View&lt;/sys_name&gt;&lt;sys_overrides/&gt;&lt;sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec"&gt;ada622f0c3f66210eb251c63e40131fd&lt;/sys_package&gt;&lt;sys_policy/&gt;&lt;sys_scope display_value="Keeper Security ITSM"&gt;ada622f0c3f66210eb251c63e40131fd&lt;/sys_scope&gt;&lt;sys_update_name&gt;sysrule_view_7053183dc38be650eb251c63e40131ee&lt;/sys_update_name&gt;&lt;sys_updated_by&gt;srujan-metron&lt;/sys_updated_by&gt;&lt;sys_updated_on&gt;2025-07-30 11:53:17&lt;/sys_updated_on&gt;&lt;table&gt;sn_si_incident&lt;/table&gt;&lt;view&gt;Keeper Security Alerts Incident&lt;/view&gt;&lt;/sysrule_view&gt;&lt;/record_update&gt;</payload>
+        <payload_hash>-1724871080</payload_hash>
+        <record_name>Keeper Security Incident View</record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-30 11:53:17</sys_created_on>
+        <sys_id>1d93903dc38be650eb251c63e40131ac</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>1985b2dfdd50000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-30 11:53:17</sys_updated_on>
+        <type>View Rule</type>
+        <update_guid>1193903dc38be650f81844b424bdf8ac</update_guid>
+        <update_guid_history>1193903dc38be650f81844b424bdf8ac:-1724871080</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete/>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-31 08:17:21</sys_created_on>
+        <sys_db_object display_value="" name="sysrule_view">sysrule_view</sys_db_object>
+        <sys_id>2240f76584f44900957503cad7a84000</sys_id>
+        <sys_metadata>7053183dc38be650eb251c63e40131ee</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Keeper Security Incident View</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent display_value="Security Incident">e30e371b477e6a10216abc74116d43b8</sys_parent>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>sysrule_view_7053183dc38be650eb251c63e40131ee</sys_update_name>
+        <sys_update_version display_value="sysrule_view_7053183dc38be650eb251c63e40131ee">1d93903dc38be650eb251c63e40131ac</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-31 08:17:21</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

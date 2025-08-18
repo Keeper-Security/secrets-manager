@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_properties">
+    <sys_properties action="DELETE">
+        <choices/>
+        <description>Used to authoriae the payload source.</description>
+        <ignore_cache>true</ignore_cache>
+        <is_private>false</is_private>
+        <name>x_keese_keeper_sec.webhook_authorization</name>
+        <read_roles/>
+        <suffix>webhook_authorization</suffix>
+        <sys_class_name>sys_properties</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-16 07:17:12</sys_created_on>
+        <sys_id>95dd4749c37ea210eb251c63e40131c3</sys_id>
+        <sys_mod_count>1</sys_mod_count>
+        <sys_name>x_keese_keeper_sec.webhook_authorization</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_properties_95dd4749c37ea210eb251c63e40131c3</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-23 06:25:54</sys_updated_on>
+        <type>password</type>
+        <value>aop#5uoqdN5OPw/nmGo/CX83HhEjwMhjFVXfeRQsZ/bUMGvjq1MFZRTMI9eHF+qsTa5RCpuFrKd7jhm6+RereFZEPYXo3BCT0/phREe5WxirUy4=</value>
+        <write_roles/>
+    </sys_properties>
+    <sys_translated_text action="DELETE" query="documentkey=95dd4749c37ea210eb251c63e40131c3"/>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>sys_properties_95dd4749c37ea210eb251c63e40131c3</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_properties"><sys_properties action="INSERT_OR_UPDATE"><choices/><description>Used to authoriae the payload source.</description><ignore_cache>true</ignore_cache><is_private>false</is_private><name>x_keese_keeper_sec.webhook_authorization</name><read_roles/><suffix>webhook_authorization</suffix><sys_class_name>sys_properties</sys_class_name><sys_created_by>srujan-metron</sys_created_by><sys_created_on>2025-07-16 07:17:12</sys_created_on><sys_id>95dd4749c37ea210eb251c63e40131c3</sys_id><sys_mod_count>1</sys_mod_count><sys_name>x_keese_keeper_sec.webhook_authorization</sys_name><sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package><sys_policy/><sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope><sys_update_name>sys_properties_95dd4749c37ea210eb251c63e40131c3</sys_update_name><sys_updated_by>srujan-metron</sys_updated_by><sys_updated_on>2025-07-23 06:25:54</sys_updated_on><type>password</type><value>aop#5uoqdN5OPw/nmGo/CX83HhEjwMhjFVXfeRQsZ/bUMGvjq1MFZRTMI9eHF+qsTa5RCpuFrKd7jhm6+RereFZEPYXo3BCT0/phREe5WxirUy4=</value><write_roles/></sys_properties><sys_translated_text action="delete_multiple" query="documentkey=95dd4749c37ea210eb251c63e40131c3"/></record_update>]]></payload>
+        <payload_hash>-1886130709</payload_hash>
+        <record_name>x_keese_keeper_sec.webhook_authorization</record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-23 06:25:54</sys_created_on>
+        <sys_id>a9854f1fc33e2e10eb251c63e40131dd</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>19835f5be8f0000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-23 06:25:54</sys_updated_on>
+        <type>System Property</type>
+        <update_guid>61854f1fc23e2e1071fcf2d1c1fe6edd</update_guid>
+        <update_guid_history>61854f1fc23e2e1071fcf2d1c1fe6edd:-1886130709,7c2e8b49267ea210040a12baf409d5d8:552315746</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete/>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-23 10:26:33</sys_created_on>
+        <sys_db_object display_value="" name="sys_properties">sys_properties</sys_db_object>
+        <sys_id>29738d1d1e2c4dac8aee552eb955a3e1</sys_id>
+        <sys_metadata>95dd4749c37ea210eb251c63e40131c3</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>x_keese_keeper_sec.webhook_authorization</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>sys_properties_95dd4749c37ea210eb251c63e40131c3</sys_update_name>
+        <sys_update_version display_value="sys_properties_95dd4749c37ea210eb251c63e40131c3">a9854f1fc33e2e10eb251c63e40131dd</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-23 10:26:33</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

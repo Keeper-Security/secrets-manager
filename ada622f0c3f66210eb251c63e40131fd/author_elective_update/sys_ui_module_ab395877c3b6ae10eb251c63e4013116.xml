@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_ui_module">
+    <sys_ui_module action="DELETE">
+        <active>true</active>
+        <application/>
+        <filter/>
+        <name>Keeper Vault Alerts Import Tables</name>
+        <order/>
+        <path/>
+        <path_relative_to_root>false</path_relative_to_root>
+        <roles>x_keese_keeper_sec.keeper_vault_alerts_import_table_user</roles>
+        <sys_class_name>sys_ui_module</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-24 07:10:09</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>ab395877c3b6ae10eb251c63e4013116</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Keeper Vault Alerts Import Tables</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_ui_module_ab395877c3b6ae10eb251c63e4013116</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-24 07:10:09</sys_updated_on>
+        <table>x_keese_keeper_sec_keeper_vault_alerts_import_table</table>
+        <uncancelable>false</uncancelable>
+        <view_name/>
+    </sys_ui_module>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>sys_ui_module_ab395877c3b6ae10eb251c63e4013116</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_ui_module"><sys_ui_module action="INSERT_OR_UPDATE"><active>true</active><application/><filter/><name>Keeper Vault Alerts Import Tables</name><order/><path/><path_relative_to_root>false</path_relative_to_root><roles>x_keese_keeper_sec.keeper_vault_alerts_import_table_user</roles><sys_class_name>sys_ui_module</sys_class_name><sys_created_by>srujan-metron</sys_created_by><sys_created_on>2025-07-24 07:10:09</sys_created_on><sys_domain>global</sys_domain><sys_domain_path>/</sys_domain_path><sys_id>ab395877c3b6ae10eb251c63e4013116</sys_id><sys_mod_count>0</sys_mod_count><sys_name>Keeper Vault Alerts Import Tables</sys_name><sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package><sys_policy/><sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope><sys_update_name>sys_ui_module_ab395877c3b6ae10eb251c63e4013116</sys_update_name><sys_updated_by>srujan-metron</sys_updated_by><sys_updated_on>2025-07-24 07:10:09</sys_updated_on><table>x_keese_keeper_sec_keeper_vault_alerts_import_table</table><uncancelable>false</uncancelable><view_name/></sys_ui_module></record_update>]]></payload>
+        <payload_hash>1477250418</payload_hash>
+        <record_name>Keeper Vault Alerts Import Tables</record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-31 05:56:41</sys_created_on>
+        <sys_id>e78b044ec30f2a50eb251c63e40131f5</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>1985f0ddf6d0000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-31 05:56:41</sys_updated_on>
+        <type>Module</type>
+        <update_guid>e33958770cb6ae101236d27794278019</update_guid>
+        <update_guid_history>e33958770cb6ae101236d27794278019:-1310548067,e33958770cb6ae101236d27794278019:-1310548067</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete/>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-31 05:57:01</sys_created_on>
+        <sys_db_object display_value="" name="sys_ui_module">sys_ui_module</sys_db_object>
+        <sys_id>7c47d9c6ecf04936ac39b892a27e9a09</sys_id>
+        <sys_metadata>ab395877c3b6ae10eb251c63e4013116</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Keeper Vault Alerts Import Tables</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>sys_ui_module_ab395877c3b6ae10eb251c63e4013116</sys_update_name>
+        <sys_update_version display_value="sys_ui_module_ab395877c3b6ae10eb251c63e4013116">e78b044ec30f2a50eb251c63e40131f5</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-31 05:57:01</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

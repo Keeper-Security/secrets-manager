@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_app_application">
+    <sys_app_application action="DELETE">
+        <active>true</active>
+        <category display_value="Custom Applications">e0355b31ef303000a61d5a3615c0fb78</category>
+        <description/>
+        <device_type>browser</device_type>
+        <hint/>
+        <name>Keeper Vaults Alerts Reference</name>
+        <order>100</order>
+        <roles>x_keese_keeper_sec.keeper_vaults_alerts_reference_user</roles>
+        <sys_class_name>sys_app_application</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-28 06:29:48</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>1b563c49474bee10216abc74116d43f5</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Keeper Vaults Alerts Reference</sys_name>
+        <sys_overrides/>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_app_application_1b563c49474bee10216abc74116d43f5</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-28 06:29:48</sys_updated_on>
+        <title>Keeper Vaults Alerts Reference</title>
+        <view_name/>
+    </sys_app_application>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>sys_app_application_1b563c49474bee10216abc74116d43f5</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_app_application"><sys_app_application action="INSERT_OR_UPDATE"><active>true</active><category display_value="Custom Applications">e0355b31ef303000a61d5a3615c0fb78</category><description/><device_type>browser</device_type><hint/><name>Keeper Vaults Alerts Reference</name><order>100</order><roles>x_keese_keeper_sec.keeper_vaults_alerts_reference_user</roles><sys_class_name>sys_app_application</sys_class_name><sys_created_by>srujan-metron</sys_created_by><sys_created_on>2025-07-28 06:29:48</sys_created_on><sys_domain>global</sys_domain><sys_domain_path>/</sys_domain_path><sys_id>1b563c49474bee10216abc74116d43f5</sys_id><sys_mod_count>0</sys_mod_count><sys_name>Keeper Vaults Alerts Reference</sys_name><sys_overrides/><sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package><sys_policy/><sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope><sys_update_name>sys_app_application_1b563c49474bee10216abc74116d43f5</sys_update_name><sys_updated_by>srujan-metron</sys_updated_by><sys_updated_on>2025-07-28 06:29:48</sys_updated_on><title>Keeper Vaults Alerts Reference</title><view_name/></sys_app_application></record_update>]]></payload>
+        <payload_hash>2127194430</payload_hash>
+        <record_name>Keeper Vaults Alerts Reference</record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-28 06:29:48</sys_created_on>
+        <sys_id>17563c49474bee10216abc74116d43f9</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>1984fb91f1b0000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-28 06:29:48</sys_updated_on>
+        <type>Application Menu</type>
+        <update_guid>d7563c495f4bee1095676aae038d0bf8</update_guid>
+        <update_guid_history>d7563c495f4bee1095676aae038d0bf8:2127194430</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete display_value="Keeper Vaults Alerts Reference">552bc00ec30f2a50eb251c63e4013115</sys_audit_delete>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-31 05:54:54</sys_created_on>
+        <sys_db_object display_value="" name="sys_app_application">sys_app_application</sys_db_object>
+        <sys_id>535e0cc60e2846b59ce836f36d401e89</sys_id>
+        <sys_metadata>1b563c49474bee10216abc74116d43f5</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Keeper Vaults Alerts Reference</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>sys_app_application_1b563c49474bee10216abc74116d43f5</sys_update_name>
+        <sys_update_version display_value="sys_app_application_1b563c49474bee10216abc74116d43f5">17563c49474bee10216abc74116d43f9</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-31 05:54:54</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

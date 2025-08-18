@@ -11,7 +11,6 @@
             <sys_class_name>sys_documentation</sys_class_name>
             <sys_created_by>srujan-metron</sys_created_by>
             <sys_created_on>2025-07-28 09:12:42</sys_created_on>
-            <sys_id>a1ab958d47cbee10216abc74116d4333</sys_id>
             <sys_mod_count>0</sys_mod_count>
             <sys_name>Device name</sys_name>
             <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>

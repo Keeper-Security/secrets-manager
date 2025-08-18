@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_transform_entry">
+    <sys_transform_entry action="DELETE">
+        <choice_action>create</choice_action>
+        <coalesce>false</coalesce>
+        <coalesce_case_sensitive>false</coalesce_case_sensitive>
+        <coalesce_empty_fields>false</coalesce_empty_fields>
+        <date_format>yyyy-MM-dd HH:mm:ss</date_format>
+        <map display_value="Keeper Vault Alerts Transform Map">f9e1b4f3c33aae10eb251c63e40131d3</map>
+        <reference_value_field/>
+        <source_field>timestamp</source_field>
+        <source_script><![CDATA[answer = (function transformEntry(source) {
+    var isoDate = source.timestamp; // Replace with your source field name
+	gs.info("[Keeper Vault Alerts] - TransformMap received datetime as: "+JSON.stringify(source));
+
+    // GlideDateTime can parse ISO format
+    var gdt = new GlideDateTime(isoDate);
+
+	// Add your code here
+	return gdt; // return the value to be put into the target field
+
+})(source);]]></source_script>
+        <source_table>x_keese_keeper_sec_keeper_vault_alerts_import_table</source_table>
+        <sys_class_name>sys_transform_entry</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-25 07:03:21</sys_created_on>
+        <sys_id>19d06948c38fee10eb251c63e401316b</sys_id>
+        <sys_mod_count>4</sys_mod_count>
+        <sys_name>timestamp</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_transform_entry_19d06948c38fee10eb251c63e401316b</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-29 06:39:43</sys_updated_on>
+        <target_field>incident_detection_date</target_field>
+        <target_table>sn_si_incident</target_table>
+        <use_source_script>false</use_source_script>
+    </sys_transform_entry>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>sys_transform_entry_19d06948c38fee10eb251c63e401316b</name>
+        <payload>&lt;?xml version="1.0" encoding="UTF-8"?&gt;&lt;record_update table="sys_transform_entry"&gt;&lt;sys_transform_entry action="INSERT_OR_UPDATE"&gt;&lt;choice_action&gt;create&lt;/choice_action&gt;&lt;coalesce&gt;false&lt;/coalesce&gt;&lt;coalesce_case_sensitive&gt;false&lt;/coalesce_case_sensitive&gt;&lt;coalesce_empty_fields&gt;false&lt;/coalesce_empty_fields&gt;&lt;date_format&gt;yyyy-MM-dd HH:mm:ss&lt;/date_format&gt;&lt;map display_value="Keeper Vault Alerts Transform Map"&gt;f9e1b4f3c33aae10eb251c63e40131d3&lt;/map&gt;&lt;reference_value_field/&gt;&lt;source_field&gt;timestamp&lt;/source_field&gt;&lt;source_script&gt;&lt;![CDATA[answer = (function transformEntry(source) {
+    var isoDate = source.timestamp; // Replace with your source field name
+	gs.info("[Keeper Vault Alerts] - TransformMap received datetime as: "+JSON.stringify(source));
+
+    // GlideDateTime can parse ISO format
+    var gdt = new GlideDateTime(isoDate);
+
+	// Add your code here
+	return gdt; // return the value to be put into the target field
+
+})(source);]]&gt;&lt;/source_script&gt;&lt;source_table&gt;x_keese_keeper_sec_keeper_vault_alerts_import_table&lt;/source_table&gt;&lt;sys_class_name&gt;sys_transform_entry&lt;/sys_class_name&gt;&lt;sys_created_by&gt;srujan-metron&lt;/sys_created_by&gt;&lt;sys_created_on&gt;2025-07-25 07:03:21&lt;/sys_created_on&gt;&lt;sys_id&gt;19d06948c38fee10eb251c63e401316b&lt;/sys_id&gt;&lt;sys_mod_count&gt;4&lt;/sys_mod_count&gt;&lt;sys_name&gt;timestamp&lt;/sys_name&gt;&lt;sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec"&gt;ada622f0c3f66210eb251c63e40131fd&lt;/sys_package&gt;&lt;sys_policy/&gt;&lt;sys_scope display_value="Keeper Security ITSM"&gt;ada622f0c3f66210eb251c63e40131fd&lt;/sys_scope&gt;&lt;sys_update_name&gt;sys_transform_entry_19d06948c38fee10eb251c63e401316b&lt;/sys_update_name&gt;&lt;sys_updated_by&gt;srujan-metron&lt;/sys_updated_by&gt;&lt;sys_updated_on&gt;2025-07-29 06:39:43&lt;/sys_updated_on&gt;&lt;target_field&gt;incident_detection_date&lt;/target_field&gt;&lt;target_table&gt;sn_si_incident&lt;/target_table&gt;&lt;use_source_script&gt;false&lt;/use_source_script&gt;&lt;/sys_transform_entry&gt;&lt;/record_update&gt;</payload>
+        <payload_hash>-1114685573</payload_hash>
+        <record_name>timestamp</record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-29 06:39:43</sys_created_on>
+        <sys_id>9e324295470f2250216abc74116d431a</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>19854e88ed70000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-29 06:39:43</sys_updated_on>
+        <type>Field Map</type>
+        <update_guid>d2324295c10f225097e1acd344e52b1a</update_guid>
+        <update_guid_history>d2324295c10f225097e1acd344e52b1a:-1114685573,c71b359d6ccb22506afa7f03a888dcb2:-1319629528,ddd5c549c18bee10dcfbebce0b28552e:1380364045,038449c56c8bee1065f1f3efcc7d42a7:461418592,35416948f08fee1084dba20693f05910:440265876</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete/>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-29 07:30:39</sys_created_on>
+        <sys_db_object display_value="" name="sys_transform_entry">sys_transform_entry</sys_db_object>
+        <sys_id>831a02a90b4d4fe89bc4cf2347027910</sys_id>
+        <sys_metadata>19d06948c38fee10eb251c63e401316b</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>timestamp</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>sys_transform_entry_19d06948c38fee10eb251c63e401316b</sys_update_name>
+        <sys_update_version display_value="sys_transform_entry_19d06948c38fee10eb251c63e401316b">9e324295470f2250216abc74116d431a</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-29 07:30:39</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

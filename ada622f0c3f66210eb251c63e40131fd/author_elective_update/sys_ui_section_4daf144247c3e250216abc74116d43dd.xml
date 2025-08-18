@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update>
+    <sys_ui_section action="DELETE" caption="New section 1" section_id="4daf144247c3e250216abc74116d43dd" sys_domain="global" table="sn_si_incident" version="3" view="Keeper_Security_Alerts_Incidents">
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>short_description</element>
+            <position>0</position>
+            <sys_created_by>srujan-metron</sys_created_by>
+            <sys_created_on>2025-07-31 07:24:28</sys_created_on>
+            <sys_id>99af544247c3e250216abc74116d437f</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="New section 1" display_value="New section 1" name="sn_si_incident" sys_domain="global" view="61311c79c38be650eb251c63e4013117">4daf144247c3e250216abc74116d43dd</sys_ui_section>
+            <sys_updated_by>srujan-metron</sys_updated_by>
+            <sys_updated_on>2025-07-31 07:24:28</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>sn_si_recommended_actions.xml</element>
+            <position>1</position>
+            <sys_created_by>srujan-metron</sys_created_by>
+            <sys_created_on>2025-07-31 07:24:28</sys_created_on>
+            <sys_id>91af544247c3e250216abc74116d4380</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter display_value="Recommended Actions Panel">630a31f543f0521060e11ce19ab8f283</sys_ui_formatter>
+            <sys_ui_section caption="New section 1" display_value="New section 1" name="sn_si_incident" sys_domain="global" view="61311c79c38be650eb251c63e4013117">4daf144247c3e250216abc74116d43dd</sys_ui_section>
+            <sys_updated_by>srujan-metron</sys_updated_by>
+            <sys_updated_on>2025-07-31 07:24:28</sys_updated_on>
+            <sys_user/>
+            <type>formatter</type>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>cxs_table_search.xml</element>
+            <position>2</position>
+            <sys_created_by>srujan-metron</sys_created_by>
+            <sys_created_on>2025-07-31 07:24:28</sys_created_on>
+            <sys_id>5daf544247c3e250216abc74116d4380</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter display_value="Contextual Search Results">11eb1622eb1121003623666cd206fe56</sys_ui_formatter>
+            <sys_ui_section caption="New section 1" display_value="New section 1" name="sn_si_incident" sys_domain="global" view="61311c79c38be650eb251c63e4013117">4daf144247c3e250216abc74116d43dd</sys_ui_section>
+            <sys_updated_by>srujan-metron</sys_updated_by>
+            <sys_updated_on>2025-07-31 07:24:28</sys_updated_on>
+            <sys_user/>
+            <type>formatter</type>
+        </sys_ui_element>
+        <sys_ui_section action="DELETE">
+            <caption>New section 1</caption>
+            <header>false</header>
+            <name>sn_si_incident</name>
+            <roles/>
+            <sys_class_name>sys_ui_section</sys_class_name>
+            <sys_created_by>srujan-metron</sys_created_by>
+            <sys_created_on>2025-07-31 07:24:27</sys_created_on>
+            <sys_domain>global</sys_domain>
+            <sys_domain_path>/</sys_domain_path>
+            <sys_id>4daf144247c3e250216abc74116d43dd</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_name>sn_si_incident</sys_name>
+            <sys_overrides/>
+            <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+            <sys_policy/>
+            <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+            <sys_update_name>sys_ui_section_4daf144247c3e250216abc74116d43dd</sys_update_name>
+            <sys_updated_by>srujan-metron</sys_updated_by>
+            <sys_updated_on>2025-07-31 07:24:27</sys_updated_on>
+            <sys_user/>
+            <title>false</title>
+            <view display_value="Keeper Security Alerts Incidents" name="Keeper_Security_Alerts_Incidents">61311c79c38be650eb251c63e4013117</view>
+            <view_name/>
+        </sys_ui_section>
+    </sys_ui_section>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</application>
+        <file_path/>
+        <instance_id>83ec2868db57dd989df22f17d49619a2</instance_id>
+        <instance_name>ven05798</instance_name>
+        <name>sys_ui_section_4daf144247c3e250216abc74116d43dd</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update><sys_ui_section caption="New section 1" section_id="4daf144247c3e250216abc74116d43dd" sys_domain="global" table="sn_si_incident" version="3" view="Keeper_Security_Alerts_Incidents"><sys_ui_element action="INSERT_OR_UPDATE"><element>short_description</element><position>0</position><sys_created_by>srujan-metron</sys_created_by><sys_created_on>2025-07-31 07:24:28</sys_created_on><sys_id>99af544247c3e250216abc74116d437f</sys_id><sys_mod_count>0</sys_mod_count><sys_ui_formatter/><sys_ui_section caption="New section 1" display_value="New section 1" name="sn_si_incident" sys_domain="global" view="61311c79c38be650eb251c63e4013117">4daf144247c3e250216abc74116d43dd</sys_ui_section><sys_updated_by>srujan-metron</sys_updated_by><sys_updated_on>2025-07-31 07:24:28</sys_updated_on><sys_user/><type/></sys_ui_element><sys_ui_element action="INSERT_OR_UPDATE"><element>sn_si_recommended_actions.xml</element><position>1</position><sys_created_by>srujan-metron</sys_created_by><sys_created_on>2025-07-31 07:24:28</sys_created_on><sys_id>91af544247c3e250216abc74116d4380</sys_id><sys_mod_count>0</sys_mod_count><sys_ui_formatter display_value="Recommended Actions Panel">630a31f543f0521060e11ce19ab8f283</sys_ui_formatter><sys_ui_section caption="New section 1" display_value="New section 1" name="sn_si_incident" sys_domain="global" view="61311c79c38be650eb251c63e4013117">4daf144247c3e250216abc74116d43dd</sys_ui_section><sys_updated_by>srujan-metron</sys_updated_by><sys_updated_on>2025-07-31 07:24:28</sys_updated_on><sys_user/><type>formatter</type></sys_ui_element><sys_ui_element action="INSERT_OR_UPDATE"><element>cxs_table_search.xml</element><position>2</position><sys_created_by>srujan-metron</sys_created_by><sys_created_on>2025-07-31 07:24:28</sys_created_on><sys_id>5daf544247c3e250216abc74116d4380</sys_id><sys_mod_count>0</sys_mod_count><sys_ui_formatter display_value="Contextual Search Results">11eb1622eb1121003623666cd206fe56</sys_ui_formatter><sys_ui_section caption="New section 1" display_value="New section 1" name="sn_si_incident" sys_domain="global" view="61311c79c38be650eb251c63e4013117">4daf144247c3e250216abc74116d43dd</sys_ui_section><sys_updated_by>srujan-metron</sys_updated_by><sys_updated_on>2025-07-31 07:24:28</sys_updated_on><sys_user/><type>formatter</type></sys_ui_element><sys_ui_section action="INSERT_OR_UPDATE"><caption>New section 1</caption><header>false</header><name>sn_si_incident</name><roles/><sys_class_name>sys_ui_section</sys_class_name><sys_created_by>srujan-metron</sys_created_by><sys_created_on>2025-07-31 07:24:27</sys_created_on><sys_domain>global</sys_domain><sys_domain_path>/</sys_domain_path><sys_id>4daf144247c3e250216abc74116d43dd</sys_id><sys_mod_count>0</sys_mod_count><sys_name>sn_si_incident</sys_name><sys_overrides/><sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package><sys_policy/><sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope><sys_update_name>sys_ui_section_4daf144247c3e250216abc74116d43dd</sys_update_name><sys_updated_by>srujan-metron</sys_updated_by><sys_updated_on>2025-07-31 07:24:27</sys_updated_on><sys_user/><title>false</title><view display_value="Keeper Security Alerts Incidents" name="Keeper_Security_Alerts_Incidents">61311c79c38be650eb251c63e4013117</view><view_name/></sys_ui_section></sys_ui_section></record_update>]]></payload>
+        <payload_hash>2013559030</payload_hash>
+        <record_name>Security Incident</record_name>
+        <reverted_from/>
+        <source>e1a662f0c3f66210eb251c63e4013100</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-31 07:24:28</sys_created_on>
+        <sys_id>91af544247c3e250216abc74116d4383</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>1985f5e3e920000001</sys_recorded_at>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-31 07:24:28</sys_updated_on>
+        <type>Form Layout</type>
+        <update_guid>19af544251c3e2502bff03ab0c160e82</update_guid>
+        <update_guid_history>19af544251c3e2502bff03ab0c160e82:2013559030</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete/>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-31 07:41:44</sys_created_on>
+        <sys_db_object display_value="" name="sys_ui_section">sys_ui_section</sys_db_object>
+        <sys_id>3b7e64abc30d486c97114c705975ea61</sys_id>
+        <sys_metadata>4daf144247c3e250216abc74116d43dd</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>New section 1</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_parent display_value="Security Incident">e30e371b477e6a10216abc74116d43b8</sys_parent>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_scope_delete display_value="">380d59a0cbd349809e10ed32f3124000</sys_scope_delete>
+        <sys_update_name>sys_ui_section_4daf144247c3e250216abc74116d43dd</sys_update_name>
+        <sys_update_version display_value="sys_ui_section_4daf144247c3e250216abc74116d43dd">91af544247c3e250216abc74116d4383</sys_update_version>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-31 07:41:44</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>
