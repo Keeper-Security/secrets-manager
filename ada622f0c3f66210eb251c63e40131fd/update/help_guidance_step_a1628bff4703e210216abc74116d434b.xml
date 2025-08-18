@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="help_guidance_step">
+    <help_guidance_step action="INSERT_OR_UPDATE">
+        <actions_label>{"next":"Next","prev":"Previous","submit":"Submit"}</actions_label>
+        <active>true</active>
+        <allow_delegation>true</allow_delegation>
+        <callout_position>default</callout_position>
+        <description/>
+        <guidance display_value="Keeper Security ITSM Guided Setup">4bbb54b9c3cbe650eb251c63e4013197</guidance>
+        <has_decision>false</has_decision>
+        <layout>text</layout>
+        <name> Select your credentials for generating token</name>
+        <order>2</order>
+        <parent display_value="Keeper Security ServiceNow Integration Guide">cbcb54b9c3cbe650eb251c63e40131fd</parent>
+        <rich_description><![CDATA[<p>Choose the OAuth credential you created in the previous step.<br />This credential will be used to securely generate an access token for external API authentication.</p>]]></rich_description>
+        <roles/>
+        <script/>
+        <skippable>false</skippable>
+        <status>0</status>
+        <sys_class_name>help_guidance_step</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-06 05:44:54</sys_created_on>
+        <sys_decision/>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>a1628bff4703e210216abc74116d434b</sys_id>
+        <sys_mod_count>4</sys_mod_count>
+        <sys_name> Select your credentials for generating token</sys_name>
+        <sys_overrides/>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>help_guidance_step_a1628bff4703e210216abc74116d434b</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-06 05:45:43</sys_updated_on>
+        <target_element/>
+        <task_type>basic</task_type>
+        <type>activity</type>
+        <unlock_by_decision_step>false</unlock_by_decision_step>
+    </help_guidance_step>
+    <sys_translated_text action="delete_multiple" query="documentkey=a1628bff4703e210216abc74116d434b"/>
+</record_update>

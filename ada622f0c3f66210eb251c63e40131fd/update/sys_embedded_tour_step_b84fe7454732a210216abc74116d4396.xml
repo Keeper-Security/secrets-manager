@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_embedded_tour_step">
+    <sys_embedded_tour_step action="INSERT_OR_UPDATE">
+        <action>true</action>
+        <action_event>click</action_event>
+        <action_target/>
+        <action_target_ref/>
+        <active>true</active>
+        <content><![CDATA[Step-by-step setup for Keeper webhook integration]]></content>
+        <guide/>
+        <implicit>false</implicit>
+        <link/>
+        <name>Introduction</name>
+        <options/>
+        <order>0</order>
+        <placement>bottom</placement>
+        <skippable>false</skippable>
+        <step_type>intro</step_type>
+        <sys_class_name>sys_embedded_tour_step</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-16 09:41:56</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>b84fe7454732a210216abc74116d4396</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Introduction</sys_name>
+        <sys_overrides/>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_embedded_tour_step_b84fe7454732a210216abc74116d4396</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-16 09:41:56</sys_updated_on>
+        <target/>
+        <target_ref/>
+        <title><![CDATA[Keeper Security ITSM]]></title>
+        <ui_version>dynamic</ui_version>
+        <view/>
+        <window/>
+    </sys_embedded_tour_step>
+    <sys_translated_text action="delete_multiple" query="documentkey=b84fe7454732a210216abc74116d4396"/>
+</record_update>

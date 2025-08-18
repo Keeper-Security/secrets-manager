@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="gsw_content_group">
+    <gsw_content_group action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <checksum>15BJiuvCcHgiRc9IyKWNARMiDlo=</checksum>
+        <child_can_have_roles>false</child_can_have_roles>
+        <children_layout>1</children_layout>
+        <dependent_on_contents/>
+        <dependent_on_plugins/>
+        <dependent_on_plugins_ids/>
+        <description><![CDATA[<p><span style="font-size: 14pt; font-family: arial, helvetica, sans-serif;">This app helps you seamlessly ingest Keeper vault&#39;s security alerts into ServiceNow&#39;s Security Incident Response (SIR) system. It is designed to</span></p>
+<ul style="list-style-position: inside;"><li style="font-size: 12pt;"><span style="font-family: arial, helvetica, sans-serif;">Accept incoming alerts via a secure Scripted REST API.</span></li><li style="font-size: 12pt;"><span style="font-family: arial, helvetica, sans-serif;">Store raw alert data in a custom import set table.</span></li><li style="font-size: 12pt;"><span style="font-family: arial, helvetica, sans-serif;">Automatically transform and map data into the SIR table.</span></li><li style="font-size: 12pt;"><span style="font-family: arial, helvetica, sans-serif;">Optionally store additional alert metadata in a custom extension table.</span></li><li style="font-size: 12pt;"><span style="font-family: arial, helvetica, sans-serif;">Provide an OAuth 2.0-based authentication flow to protect your REST endpoint.</span></li><li style="font-size: 12pt;"><span style="font-family: arial, helvetica, sans-serif;">Allow administrators to generate bearer tokens for secure external integrations.</span></li></ul>
+<p><span style="font-size: 12pt; font-family: arial, helvetica, sans-serif;">Use this Guided Setup to configure your environment, connect external alert sources, and verify that incoming alerts are correctly handled.</span></p>]]></description>
+        <display_child_max_num/>
+        <done_status_text/>
+        <hide_getting_started>false</hide_getting_started>
+        <icon/>
+        <implicit_dependent_on/>
+        <implicit_plugin_dependencies/>
+        <is_root_content>false</is_root_content>
+        <order>100</order>
+        <parent display_value="Keeper Security ITSM Guided Setup">591aaa1d478f2250216abc74116d4391</parent>
+        <parents>591aaa1d478f2250216abc74116d4391</parents>
+        <progress_text/>
+        <roles/>
+        <root_intro_frame_link/>
+        <root_parent display_value="Keeper Security ITSM Guided Setup">591aaa1d478f2250216abc74116d4391</root_parent>
+        <skippable>false</skippable>
+        <supports_child_content>true</supports_child_content>
+        <sys_class_name>gsw_content_group</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-30 12:49:36</sys_created_on>
+        <sys_id>c160e0fdc3cbe650eb251c63e40131c1</sys_id>
+        <sys_mod_count>10</sys_mod_count>
+        <sys_name>Keeper Security ServiceNow Integration Guide</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>gsw_content_group_c160e0fdc3cbe650eb251c63e40131c1</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-05 07:13:54</sys_updated_on>
+        <title>Keeper Security ServiceNow Integration Guide</title>
+        <weight>1</weight>
+    </gsw_content_group>
+    <sys_translated_text action="delete_multiple" query="documentkey=c160e0fdc3cbe650eb251c63e40131c1"/>
+</record_update>

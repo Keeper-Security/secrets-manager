@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="oauth_entity">
+    <oauth_entity action="INSERT_OR_UPDATE">
+        <access>public</access>
+        <access_token_lifespan>315360000</access_token_lifespan>
+        <active>true</active>
+        <auth_code_lifespan>60</auth_code_lifespan>
+        <auth_url/>
+        <certificate_url/>
+        <client_id>912ff51afbc7aa508dba11b5a29d072c</client_id>
+        <client_secret>﷞﷟﷒1a28c87047362210216abc74116d43f5﷬﷔1﷬﷭f3JjfNEipSQPQMNTpwy3IQ==AYZkyWZazMNwKF7ubOaoDlCfhmz_xjLfvMw=﷮﷯</client_secret>
+        <client_uuid>512ff51ac3c7aa50eb251c63e401312c</client_uuid>
+        <code_challenge_method>S256</code_challenge_method>
+        <comments/>
+        <default_grant_type>password</default_grant_type>
+        <id_token_lifespan>86400</id_token_lifespan>
+        <jwt_provider/>
+        <login_url/>
+        <logo_url/>
+        <message_signature_lifespan>60</message_signature_lifespan>
+        <mobile_client>false</mobile_client>
+        <name>demokeepercreds</name>
+        <oauth_api_script/>
+        <protocol_name/>
+        <public_client>false</public_client>
+        <redirect_url/>
+        <refresh_token_lifespan>8640000</refresh_token_lifespan>
+        <refresh_token_url/>
+        <restricted_binding>false</restricted_binding>
+        <revoke_token_url/>
+        <salt/>
+        <send_client_credentials_as>request_body_parameter</send_client_credentials_as>
+        <skip_authorize>false</skip_authorize>
+        <sys_class_name>oauth_entity</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 09:00:20</sys_created_on>
+        <sys_id>d12ff51ac3c7aa50eb251c63e401312c</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>demokeepercreds</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>oauth_entity_d12ff51ac3c7aa50eb251c63e401312c</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 09:00:20</sys_updated_on>
+        <token_url/>
+        <type>client</type>
+        <use_mutual_auth>false</use_mutual_auth>
+        <user/>
+    </oauth_entity>
+</record_update>

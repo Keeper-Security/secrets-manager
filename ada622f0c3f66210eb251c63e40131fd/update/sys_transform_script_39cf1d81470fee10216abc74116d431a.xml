@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_transform_script">
+    <sys_transform_script action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <map display_value="Keeper Vault Alerts Transform Map">f9e1b4f3c33aae10eb251c63e40131d3</map>
+        <order>100</order>
+        <script><![CDATA[(function runTransformScript(source, map, log, target /*undefined onStart*/ ) {
+
+    if (source.app_uid || source.device_name || source.app_client_type || source.record_uid || source.channel) {
+
+        var ext = new GlideRecord('x_keese_keeper_sec_keeper_vaults_alerts_reference');
+        ext.initialize();
+
+        ext.sir_reference = target.sys_id;
+        ext.app_uid = source.app_uid;
+        ext.device_name = source.device_name;
+        ext.app_client_type = source.app_client_type;
+        ext.record_uid = source.record_uid;
+		ext.channel = source.channel;
+        ext.insert();
+    }
+
+})(source, map, log, target);]]></script>
+        <sys_class_name>sys_transform_script</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-28 09:53:09</sys_created_on>
+        <sys_id>39cf1d81470fee10216abc74116d431a</sys_id>
+        <sys_mod_count>1</sys_mod_count>
+        <sys_name>onAfter</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_transform_script_39cf1d81470fee10216abc74116d431a</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-07 06:20:13</sys_updated_on>
+        <when>onAfter</when>
+    </sys_transform_script>
+</record_update>

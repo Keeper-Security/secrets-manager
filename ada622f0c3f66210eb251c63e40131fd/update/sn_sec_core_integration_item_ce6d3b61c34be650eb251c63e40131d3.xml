@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sn_sec_core_integration_item">
+    <sn_sec_core_integration_item action="INSERT_OR_UPDATE">
+        <banner_logo/>
+        <capabilities/>
+        <categories/>
+        <configurable>true</configurable>
+        <create_child_integration_item>false</create_child_integration_item>
+        <description/>
+        <external_link/>
+        <help_link/>
+        <install_script/>
+        <installed>false</installed>
+        <max_child_integration_item/>
+        <name>ServiceNow Alerts</name>
+        <order>100</order>
+        <parent/>
+        <plugin_id/>
+        <short_description/>
+        <sys_class_name>sn_sec_core_integration_item</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-30 10:16:23</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_id>ce6d3b61c34be650eb251c63e40131d3</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>ServiceNow Alerts</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sn_sec_core_integration_item_ce6d3b61c34be650eb251c63e40131d3</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-30 10:16:23</sys_updated_on>
+        <validation_script><![CDATA[validate(sysId, values);
+
+function validate(sysId, values){
+	//Set the value of "result" variable to non empty string if validation fails
+	result = "";
+}]]></validation_script>
+    </sn_sec_core_integration_item>
+</record_update>

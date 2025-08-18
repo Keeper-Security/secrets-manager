@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ui_view">
+    <sys_ui_view action="INSERT_OR_UPDATE">
+        <group/>
+        <hidden>false</hidden>
+        <name>Keeper_security_auth_token</name>
+        <roles/>
+        <sys_class_name>sys_ui_view</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-04 06:58:01</sys_created_on>
+        <sys_id>34ff341bc3872210eb251c63e4013192</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Keeper security auth token</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_ui_view_34ff341bc3872210eb251c63e4013192</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-04 06:58:01</sys_updated_on>
+        <title>Keeper security auth token</title>
+        <user/>
+    </sys_ui_view>
+</record_update>

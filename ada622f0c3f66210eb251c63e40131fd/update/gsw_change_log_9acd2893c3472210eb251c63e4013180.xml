@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="gsw_change_log">
+    <gsw_change_log action="INSERT_OR_UPDATE">
+        <change_date>2025-08-04 05:38:39</change_date>
+        <changed_by display_value="Srujan Metron">13c69270c3b66210eb251c63e40131bf</changed_by>
+        <content display_value="Keeper Security ITSM Guided Setup">591aaa1d478f2250216abc74116d4391</content>
+        <related_change_log_entry/>
+        <related_task_entry/>
+        <sys_class_name>gsw_change_log</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-04 05:38:39</sys_created_on>
+        <sys_id>9acd2893c3472210eb251c63e4013180</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>2025-08-04 05:38:39</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>gsw_change_log_9acd2893c3472210eb251c63e4013180</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-04 05:38:39</sys_updated_on>
+        <type>1</type>
+    </gsw_change_log>
+</record_update>

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_app_module">
+    <sys_app_module action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <application display_value="Keeper Security Ticketing">3eeac471c38be650eb251c63e40131a6</application>
+        <assessment/>
+        <device_type/>
+        <filter table="sn_si_incident">integration_sourceLIKEServiceNow Alerts^EQ<item endquery="false" field="integration_source" goto="false" newquery="false" operator="LIKE" or="false" value="ServiceNow Alerts"/>
+            <item endquery="true" field="" goto="false" newquery="false" operator="=" or="false" value=""/>
+        </filter>
+        <hint/>
+        <homepage/>
+        <image/>
+        <link_type>LIST</link_type>
+        <map_page/>
+        <mobile_title>Keeper Security Incident</mobile_title>
+        <mobile_view_name>Mobile</mobile_view_name>
+        <name>sn_si_incident</name>
+        <order>100</order>
+        <override_menu_roles>false</override_menu_roles>
+        <query/>
+        <report/>
+        <require_confirmation>true</require_confirmation>
+        <roles/>
+        <sys_class_name>sys_app_module</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-30 11:18:29</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>670b8871c38be650eb251c63e40131a2</sys_id>
+        <sys_mod_count>2</sys_mod_count>
+        <sys_name>Keeper Security Incidents</sys_name>
+        <sys_overrides/>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_app_module_670b8871c38be650eb251c63e40131a2</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-31 08:28:10</sys_updated_on>
+        <timeline_page/>
+        <title>Keeper Security Incidents</title>
+        <uncancelable>false</uncancelable>
+        <view_name>keeper_vault_alert_incidents</view_name>
+        <window_name/>
+    </sys_app_module>
+</record_update>

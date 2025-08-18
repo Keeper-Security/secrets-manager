@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_embedded_help_role">
+    <sys_embedded_help_role action="INSERT_OR_UPDATE">
+        <order>1000</order>
+        <role display_value="x_keese_keeper_sec.keeper_security_credentials_user" name="x_keese_keeper_sec.keeper_security_credentials_user">672aa516c387aa50eb251c63e401317c</role>
+        <sys_class_name>sys_embedded_help_role</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 07:28:36</sys_created_on>
+        <sys_id>e72aa516c387aa50eb251c63e401317f</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>672aa516c387aa50eb251c63e401317c</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_embedded_help_role_e72aa516c387aa50eb251c63e401317f</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 07:28:36</sys_updated_on>
+    </sys_embedded_help_role>
+</record_update>

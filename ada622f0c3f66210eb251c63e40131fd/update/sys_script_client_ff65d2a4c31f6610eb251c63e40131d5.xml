@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_script_client">
+    <sys_script_client action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <applies_extended>false</applies_extended>
+        <condition/>
+        <description>To auto fill the webhook url form.</description>
+        <field/>
+        <global>true</global>
+        <isolate_script>false</isolate_script>
+        <messages/>
+        <name>show webhook url</name>
+        <order/>
+        <script><![CDATA[function onLoad() {
+
+	var endpoint = globalThis.window.location.origin+"/api/x_keese_keeper_sec/keeper_sir_webhook";
+
+	g_form.setValue("webhook_url",endpoint);
+
+   //Type appropriate comment here, and begin script below
+   
+}]]></script>
+        <sys_class_name>sys_script_client</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-08 10:32:58</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>ff65d2a4c31f6610eb251c63e40131d5</sys_id>
+        <sys_mod_count>9</sys_mod_count>
+        <sys_name>show webhook url</sys_name>
+        <sys_overrides/>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_script_client_ff65d2a4c31f6610eb251c63e40131d5</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-08 10:58:42</sys_updated_on>
+        <table>x_keese_keeper_sec_keeper_security_credentials</table>
+        <type>onLoad</type>
+        <ui_type>0</ui_type>
+        <view/>
+    </sys_script_client>
+</record_update>

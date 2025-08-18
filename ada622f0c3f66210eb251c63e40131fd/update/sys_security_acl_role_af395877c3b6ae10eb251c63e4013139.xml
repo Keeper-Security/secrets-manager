@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_security_acl_role">
+    <sys_security_acl_role action="INSERT_OR_UPDATE">
+        <sys_class_name>sys_security_acl_role</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-24 07:10:10</sys_created_on>
+        <sys_id>af395877c3b6ae10eb251c63e4013139</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>x_keese_keeper_sec_keeper_vault_alerts_import_table.x_keese_keeper_sec.keeper_vault_alerts_import_table_user</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_security_acl display_value="x_keese_keeper_sec_keeper_vault_alerts_import_table">2f395877c3b6ae10eb251c63e4013136</sys_security_acl>
+        <sys_update_name>sys_security_acl_role_af395877c3b6ae10eb251c63e4013139</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-24 07:10:10</sys_updated_on>
+        <sys_user_role display_value="x_keese_keeper_sec.keeper_vault_alerts_import_table_user" name="x_keese_keeper_sec.keeper_vault_alerts_import_table_user">13395473c3b6ae10eb251c63e4013109</sys_user_role>
+    </sys_security_acl_role>
+</record_update>

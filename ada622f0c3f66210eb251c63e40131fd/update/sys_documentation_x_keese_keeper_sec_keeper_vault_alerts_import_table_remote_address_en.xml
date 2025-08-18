@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update>
+    <sys_documentation element="remote_address" label="Remote address" language="en" table="x_keese_keeper_sec_keeper_vault_alerts_import_table">
+        <sys_documentation action="INSERT_OR_UPDATE">
+            <element>remote_address</element>
+            <help/>
+            <hint/>
+            <label>Remote address</label>
+            <language>en</language>
+            <name>x_keese_keeper_sec_keeper_vault_alerts_import_table</name>
+            <plural>Remote address</plural>
+            <sys_class_name>sys_documentation</sys_class_name>
+            <sys_created_by>srujan-metron</sys_created_by>
+            <sys_created_on>2025-07-24 07:23:12</sys_created_on>
+            <sys_id>6a3cd47bc3b6ae10eb251c63e4013170</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_name>Remote address</sys_name>
+            <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+            <sys_policy/>
+            <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+            <sys_update_name>sys_documentation_x_keese_keeper_sec_keeper_vault_alerts_import_table_remote_address_en</sys_update_name>
+            <sys_updated_by>srujan-metron</sys_updated_by>
+            <sys_updated_on>2025-07-24 07:23:12</sys_updated_on>
+            <url/>
+            <url_target/>
+        </sys_documentation>
+    </sys_documentation>
+</record_update>

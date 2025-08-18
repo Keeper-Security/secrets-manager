@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update>
+    <sys_ui_section caption="" section_id="f58add8947cbee10216abc74116d4357" sys_domain="global" table="x_keese_keeper_sec_keeper_vaults_alerts_reference" version="3" view="">
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>sir_reference</element>
+            <position>1</position>
+            <sys_created_by>srujan-metron</sys_created_by>
+            <sys_created_on>2025-07-28 09:10:39</sys_created_on>
+            <sys_id>a72b51c547cbee10216abc74116d4399</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_keese_keeper_sec_keeper_vaults_alerts_reference" sys_domain="global" view="Default view">f58add8947cbee10216abc74116d4357</sys_ui_section>
+            <sys_updated_by>srujan-metron</sys_updated_by>
+            <sys_updated_on>2025-07-28 09:10:39</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>app_client_type</element>
+            <position>2</position>
+            <sys_created_by>srujan-metron</sys_created_by>
+            <sys_created_on>2025-07-28 09:11:54</sys_created_on>
+            <sys_id>357b558d47cbee10216abc74116d43d0</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_keese_keeper_sec_keeper_vaults_alerts_reference" sys_domain="global" view="Default view">f58add8947cbee10216abc74116d4357</sys_ui_section>
+            <sys_updated_by>srujan-metron</sys_updated_by>
+            <sys_updated_on>2025-07-28 09:11:54</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>device_name</element>
+            <position>3</position>
+            <sys_created_by>srujan-metron</sys_created_by>
+            <sys_created_on>2025-07-28 09:12:42</sys_created_on>
+            <sys_id>a9ab958d47cbee10216abc74116d4330</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_keese_keeper_sec_keeper_vaults_alerts_reference" sys_domain="global" view="Default view">f58add8947cbee10216abc74116d4357</sys_ui_section>
+            <sys_updated_by>srujan-metron</sys_updated_by>
+            <sys_updated_on>2025-07-28 09:12:42</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>app_uid</element>
+            <position>4</position>
+            <sys_created_by>srujan-metron</sys_created_by>
+            <sys_created_on>2025-07-28 09:13:29</sys_created_on>
+            <sys_id>45dbdd8d47cbee10216abc74116d4388</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_keese_keeper_sec_keeper_vaults_alerts_reference" sys_domain="global" view="Default view">f58add8947cbee10216abc74116d4357</sys_ui_section>
+            <sys_updated_by>srujan-metron</sys_updated_by>
+            <sys_updated_on>2025-07-28 09:13:29</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>record_uid</element>
+            <position>5</position>
+            <sys_created_by>srujan-metron</sys_created_by>
+            <sys_created_on>2025-07-28 09:14:52</sys_created_on>
+            <sys_id>d92c15cd47cbee10216abc74116d43a2</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_keese_keeper_sec_keeper_vaults_alerts_reference" sys_domain="global" view="Default view">f58add8947cbee10216abc74116d4357</sys_ui_section>
+            <sys_updated_by>srujan-metron</sys_updated_by>
+            <sys_updated_on>2025-07-28 09:14:52</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>channel</element>
+            <position>6</position>
+            <sys_created_by>srujan-metron</sys_created_by>
+            <sys_created_on>2025-08-07 06:22:09</sys_created_on>
+            <sys_id>3484d8d047d72610216abc74116d43ca</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_keese_keeper_sec_keeper_vaults_alerts_reference" sys_domain="global" view="Default view">f58add8947cbee10216abc74116d4357</sys_ui_section>
+            <sys_updated_by>srujan-metron</sys_updated_by>
+            <sys_updated_on>2025-08-07 06:22:09</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_section action="INSERT_OR_UPDATE">
+            <caption/>
+            <header>false</header>
+            <name>x_keese_keeper_sec_keeper_vaults_alerts_reference</name>
+            <roles/>
+            <sys_class_name>sys_ui_section</sys_class_name>
+            <sys_created_by>srujan-metron</sys_created_by>
+            <sys_created_on>2025-07-28 09:07:48</sys_created_on>
+            <sys_domain>global</sys_domain>
+            <sys_domain_path>/</sys_domain_path>
+            <sys_id>f58add8947cbee10216abc74116d4357</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_name>x_keese_keeper_sec_keeper_vaults_alerts_reference</sys_name>
+            <sys_overrides/>
+            <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+            <sys_policy/>
+            <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+            <sys_update_name>sys_ui_section_f58add8947cbee10216abc74116d4357</sys_update_name>
+            <sys_updated_by>srujan-metron</sys_updated_by>
+            <sys_updated_on>2025-07-28 09:07:48</sys_updated_on>
+            <sys_user/>
+            <title>true</title>
+            <view display_value="Default view" name="NULL">Default view</view>
+            <view_name/>
+        </sys_ui_section>
+    </sys_ui_section>
+</record_update>

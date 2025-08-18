@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="help_content">
+    <help_content action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <configuration_types>custom</configuration_types>
+        <custom_html/>
+        <default_content>true</default_content>
+        <field_name/>
+        <filter/>
+        <footer/>
+        <guidance_step display_value="Keeper Security ServiceNow Integration Guide">cbcb54b9c3cbe650eb251c63e40131fd</guidance_step>
+        <has_custom_html>false</has_custom_html>
+        <has_image_link>false</has_image_link>
+        <image/>
+        <image_alt/>
+        <image_link/>
+        <open_in>new_tab</open_in>
+        <options/>
+        <order/>
+        <records/>
+        <related_content/>
+        <resource_id/>
+        <subtitle/>
+        <sys_class_name>help_content</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-06 05:59:06</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>1da50bf34743e210216abc74116d4367</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name/>
+        <sys_overrides/>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>help_content_1da50bf34743e210216abc74116d4367</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-06 05:59:06</sys_updated_on>
+        <table_name/>
+        <text/>
+        <title/>
+        <type>text</type>
+        <url/>
+        <version>washingtondc</version>
+        <video_alt/>
+        <video_link/>
+        <view/>
+    </help_content>
+    <sys_translated_text action="delete_multiple" query="documentkey=1da50bf34743e210216abc74116d4367"/>
+</record_update>

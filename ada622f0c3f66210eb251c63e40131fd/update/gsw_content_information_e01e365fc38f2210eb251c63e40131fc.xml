@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="gsw_content_information">
+    <gsw_content_information action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <article><![CDATA[<p><span style="font-size: 12pt; font-family: arial, helvetica, sans-serif;">Please create a dedicated integration account in ServiceNow.<br />This account will be used solely for API authentication and should have only the necessary roles to access your application&#39;s data securely.<br /></span></p>
+<p><span style="font-size: 12pt; font-family: arial, helvetica, sans-serif;">Below are the roles you should assign the user for seamless integration</span></p>
+<ul style="list-style-position: inside;"><li style="font-size: 12pt;"><span style="font-family: arial, helvetica, sans-serif;"><span style="font-size: 12pt;">x_keese_keeper_sec.keeper_vault_alerts_import_table_user</span></span></li></ul>
+<p> </p>]]></article>
+        <best_practice_acceptable>false</best_practice_acceptable>
+        <dependent_on_contents/>
+        <dependent_on_plugins/>
+        <dependent_on_plugins_ids/>
+        <description/>
+        <embedded_help_qualifier/>
+        <end_point/>
+        <end_point_open_mode>1</end_point_open_mode>
+        <end_point_type>9</end_point_type>
+        <field/>
+        <filter/>
+        <filter_result>2</filter_result>
+        <implicit_dependent_on/>
+        <implicit_plugin_dependencies/>
+        <is_dynamic>false</is_dynamic>
+        <more_info_available>false</more_info_available>
+        <more_info_html/>
+        <order>99</order>
+        <parent display_value="Keeper Security ServiceNow Integration Guide">c160e0fdc3cbe650eb251c63e40131c1</parent>
+        <parents>c160e0fdc3cbe650eb251c63e40131c1,591aaa1d478f2250216abc74116d4391</parents>
+        <plugin_id/>
+        <property_name/>
+        <property_value/>
+        <quick_startable>false</quick_startable>
+        <root_parent display_value="Keeper Security ITSM Guided Setup">591aaa1d478f2250216abc74116d4391</root_parent>
+        <skippable>false</skippable>
+        <supports_child_content>false</supports_child_content>
+        <sys_class_name>gsw_content_information</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-04 16:12:05</sys_created_on>
+        <sys_id>e01e365fc38f2210eb251c63e40131fc</sys_id>
+        <sys_mod_count>7</sys_mod_count>
+        <sys_name>Create A ServiceNow Integration Account</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>gsw_content_information_e01e365fc38f2210eb251c63e40131fc</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-05 07:14:14</sys_updated_on>
+        <table>sys_user</table>
+        <title>Create A ServiceNow Integration Account</title>
+        <weight>1</weight>
+    </gsw_content_information>
+    <sys_translated_text action="delete_multiple" query="documentkey=e01e365fc38f2210eb251c63e40131fc"/>
+</record_update>

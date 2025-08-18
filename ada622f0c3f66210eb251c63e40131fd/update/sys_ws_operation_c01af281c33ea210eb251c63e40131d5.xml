@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ws_operation">
+    <sys_ws_operation action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <consumes>application/json,application/xml,text/xml</consumes>
+        <consumes_customized>false</consumes_customized>
+        <default_operation_uri/>
+        <enforce_acl>cf9d01d3e73003009d6247e603f6a990</enforce_acl>
+        <http_method>POST</http_method>
+        <name>sir_webhook</name>
+        <operation_script><![CDATA[(function process(/*RESTAPIRequest*/ request, /*RESTAPIResponse*/ response) {
+    // implement resource here
+	var log_template = "[Keeper Vault Alerts]: ";
+	var import_set_table = "x_keese_keeper_sec_keeper_vault_alerts_import_table";
+    
+	try {
+		var payload = request.body.data;	
+        gs.info(log_template+"Received payload: " + JSON.stringify(payload));
+		gs.info(log_template+"Creating glide record for set import table");
+		
+		var gr = new GlideRecordSecure(import_set_table);
+
+		gr.username = payload.username;
+		gr.alert_name = payload.alert_name;
+		gr.description = payload.description;
+		gr.audit_event = payload.audit_event;
+		gr.remote_address = payload.remote_address;
+		var time_stamp = new Date(payload.timestamp);
+		gr.timestamp = time_stamp.toISOString().replace("T"," ").replace("Z","");
+		gr.category = payload.category;
+		gr.description = payload.description;
+		gr.client_version = payload.client_version;
+
+		if (payload.app_uid){
+			gr.app_uid = payload.app_uid;
+		}
+		
+		if (payload.device_name){
+			gr.device_name = payload.device_name;
+		}
+
+		if (payload.app_client_type){
+			gr.app_client_type = payload.app_client_type;
+		}
+
+		if (payload.record_uid){
+			gr.record_uid = payload.record_uid;
+		}
+
+		if (payload.channel){
+			gr.channel = payload.channel;
+		}
+
+		gr.insert();
+
+		gs.info(log_template+"Import set table updated successfully");
+
+        response.setStatus(200);
+        response.setBody({ status: "Alerts imported to ServiceNow successfully." });
+
+    } catch (e) {
+        gs.error(log_template + "Error: " + e.message);
+        response.setStatus(500);
+        response.setBody({ error: "Internal Server Error" });
+    }
+
+})(request, response);]]></operation_script>
+        <operation_uri>/api/x_keese_keeper_sec/keeper_sir_webhook</operation_uri>
+        <produces>application/json,application/xml,text/xml</produces>
+        <produces_customized>false</produces_customized>
+        <relative_path>/</relative_path>
+        <request_example/>
+        <requires_acl_authorization>true</requires_acl_authorization>
+        <requires_authentication>true</requires_authentication>
+        <requires_snc_internal_role>true</requires_snc_internal_role>
+        <short_description/>
+        <sys_class_name>sys_ws_operation</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-16 05:51:53</sys_created_on>
+        <sys_id>c01af281c33ea210eb251c63e40131d5</sys_id>
+        <sys_mod_count>46</sys_mod_count>
+        <sys_name>sir_webhook</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_ws_operation_c01af281c33ea210eb251c63e40131d5</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-07 06:31:51</sys_updated_on>
+        <web_service_definition display_value="keeper_sir_webhook">f679f641c33ea210eb251c63e40131ed</web_service_definition>
+        <web_service_version/>
+    </sys_ws_operation>
+</record_update>

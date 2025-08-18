@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_security_acl">
+    <sys_security_acl action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <admin_overrides>true</admin_overrides>
+        <advanced>true</advanced>
+        <condition/>
+        <description>Default access control on x_keese_keeper_sec_keeper_security_credentials</description>
+        <local_or_existing>Local</local_or_existing>
+        <name>x_keese_keeper_sec_keeper_security_credentials</name>
+        <operation display_value="delete">delete</operation>
+        <script/>
+        <security_attribute/>
+        <sys_class_name>sys_security_acl</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 07:28:36</sys_created_on>
+        <sys_id>f32a6916c387aa50eb251c63e4013170</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>x_keese_keeper_sec_keeper_security_credentials</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_security_acl_f32a6916c387aa50eb251c63e4013170</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-01 07:28:36</sys_updated_on>
+        <type display_value="record">record</type>
+    </sys_security_acl>
+</record_update>

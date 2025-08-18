@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_transform_map">
+    <sys_transform_map action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <copy_empty_fields>true</copy_empty_fields>
+        <create_new_record_on_empty_coalesce_fields>false</create_new_record_on_empty_coalesce_fields>
+        <enforce_mandatory_fields>No</enforce_mandatory_fields>
+        <name>Keeper Vault Alerts Transform Map</name>
+        <order>100</order>
+        <run_business_rules>true</run_business_rules>
+        <run_script>false</run_script>
+        <script><![CDATA[(function transformRow(source, target, map, log, isUpdate) {
+
+	// Add your code here
+
+})(source, target, map, log, action==="update");]]></script>
+        <source_table>x_keese_keeper_sec_keeper_vault_alerts_import_table</source_table>
+        <sys_class_name>sys_transform_map</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-07-24 09:01:17</sys_created_on>
+        <sys_id>f9e1b4f3c33aae10eb251c63e40131d3</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Keeper Vault Alerts Transform Map</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_transform_map_f9e1b4f3c33aae10eb251c63e40131d3</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-07-24 09:01:17</sys_updated_on>
+        <target_table>sn_si_incident</target_table>
+    </sys_transform_map>
+</record_update>

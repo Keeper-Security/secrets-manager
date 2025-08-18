@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="gsw_change_log">
+    <gsw_change_log action="INSERT_OR_UPDATE">
+        <change_date>2025-08-04 06:52:25</change_date>
+        <changed_by display_value="Srujan Metron">13c69270c3b66210eb251c63e40131bf</changed_by>
+        <content display_value="Create System Oauth Application Registry">5a77d15ec307aa50eb251c63e40131d7</content>
+        <related_change_log_entry/>
+        <related_task_entry/>
+        <sys_class_name>gsw_change_log</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-04 06:52:25</sys_created_on>
+        <sys_id>72ae7c97c3872210eb251c63e401315b</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>2025-08-04 06:52:25</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>gsw_change_log_72ae7c97c3872210eb251c63e401315b</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-04 06:52:25</sys_updated_on>
+        <type>1</type>
+    </gsw_change_log>
+</record_update>

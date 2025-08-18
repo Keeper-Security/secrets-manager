@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_script">
+    <sys_script action="INSERT_OR_UPDATE">
+        <abort_action>false</abort_action>
+        <access>package_private</access>
+        <action_delete>false</action_delete>
+        <action_insert>true</action_insert>
+        <action_query>false</action_query>
+        <action_update>false</action_update>
+        <active>true</active>
+        <add_message>false</add_message>
+        <advanced>true</advanced>
+        <change_fields>false</change_fields>
+        <client_callable>false</client_callable>
+        <collection>x_keese_keeper_sec_keeper_security_credentials</collection>
+        <condition/>
+        <description/>
+        <execute_function>false</execute_function>
+        <filter_condition/>
+        <is_rest>false</is_rest>
+        <message/>
+        <name>Keeper security token generator</name>
+        <order>100</order>
+        <priority>100</priority>
+        <rest_method/>
+        <rest_method_text/>
+        <rest_service/>
+        <rest_service_text/>
+        <rest_variables/>
+        <role_conditions/>
+        <script><![CDATA[(function executeRule(current, previous /*null when async*/) {
+	try{
+		gs.info("Business rule for getting auth token executed.");
+		
+		var instanceURL = gs.getProperty('glide.servlet.uri');
+
+		var username = current.getElement("username").toString();
+		var password = current.getElement("password").getDecryptedValue();
+		var client_id = current.oauth_registry.client_id.toString();
+		var client_sec = current.oauth_registry.client_secret.getDecryptedValue();
+
+		var r = new sn_ws.RESTMessageV2();
+		r.setHttpMethod("post");
+		r.setEndpoint(instanceURL+"oauth_token.do");
+		r.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+		
+		var body = 
+			"grant_type=password" +
+			"&username=" + encodeURIComponent(username) +
+			"&password=" + encodeURIComponent(password) +
+			"&client_id=" + encodeURIComponent(client_id) +
+			"&client_secret=" + encodeURIComponent(client_sec);		
+		r.setRequestBody(body);
+
+		var response = r.executeAsync();
+		var responseBody = JSON.parse(response.getBody());
+		var httpStatus = response.getStatusCode();
+
+		if(httpStatus == '200'){
+			gs.info("Token generated successfully!");
+			current.setValue("auth_token",responseBody.access_token.toString());
+			current.update();
+			gs.addInfoMessage("Token created successfully!");
+		}
+
+		else {
+			gs.error("Error occured in generating auth token: "+JSON.stringify(responseBody));
+			current.deleteRecord();
+			gs.addErrorMessage("Unable to generate token! Please see application log for more reference.");
+
+		}
+
+
+	}
+	catch(error){
+		gs.error("Keeper Security: Unable to receive token "+ error);
+		gs.addErrorMessage("Unable to generate token! Please see application log for more reference.");
+
+	}
+
+	// Add your code here
+
+})(current, previous);]]></script>
+        <sys_class_name>sys_script</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-04 08:52:43</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>62799d93c30b2210eb251c63e40131c4</sys_id>
+        <sys_mod_count>52</sys_mod_count>
+        <sys_name>Keeper security token generator</sys_name>
+        <sys_overrides/>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>sys_script_62799d93c30b2210eb251c63e40131c4</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-05 09:10:07</sys_updated_on>
+        <template/>
+        <when>after</when>
+    </sys_script>
+    <sys_translated_text action="delete_multiple" query="documentkey=62799d93c30b2210eb251c63e40131c4"/>
+</record_update>

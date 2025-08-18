@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="gsw_content_information">
+    <gsw_content_information action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <article><![CDATA[<p><span style="font-size: 12pt; font-family: arial, helvetica, sans-serif;">Choose the OAuth credential you created in the previous step.<br />This credential will be used to securely generate an access token for external API authentication. </span></p>]]></article>
+        <best_practice_acceptable>false</best_practice_acceptable>
+        <dependent_on_contents/>
+        <dependent_on_plugins/>
+        <dependent_on_plugins_ids/>
+        <description/>
+        <embedded_help_qualifier/>
+        <end_point>x_keese_keeper_sec_keeper_security_credentials_list.do</end_point>
+        <end_point_open_mode>1</end_point_open_mode>
+        <end_point_type>1</end_point_type>
+        <field/>
+        <filter/>
+        <filter_result>2</filter_result>
+        <implicit_dependent_on/>
+        <implicit_plugin_dependencies/>
+        <is_dynamic>false</is_dynamic>
+        <more_info_available>false</more_info_available>
+        <more_info_html/>
+        <order>200</order>
+        <parent display_value="Keeper Security ServiceNow Integration Guide">c160e0fdc3cbe650eb251c63e40131c1</parent>
+        <parents>c160e0fdc3cbe650eb251c63e40131c1,591aaa1d478f2250216abc74116d4391</parents>
+        <plugin_id/>
+        <property_name/>
+        <property_value/>
+        <quick_startable>false</quick_startable>
+        <root_parent display_value="Keeper Security ITSM Guided Setup">591aaa1d478f2250216abc74116d4391</root_parent>
+        <skippable>false</skippable>
+        <supports_child_content>false</supports_child_content>
+        <sys_class_name>gsw_content_information</sys_class_name>
+        <sys_created_by>srujan-metron</sys_created_by>
+        <sys_created_on>2025-08-01 06:57:05</sys_created_on>
+        <sys_id>a94a1112c347aa50eb251c63e4013117</sys_id>
+        <sys_mod_count>15</sys_mod_count>
+        <sys_name>Select your credentials for generating token</sys_name>
+        <sys_package display_value="Keeper Security ITSM" source="x_keese_keeper_sec">ada622f0c3f66210eb251c63e40131fd</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="Keeper Security ITSM">ada622f0c3f66210eb251c63e40131fd</sys_scope>
+        <sys_update_name>gsw_content_information_a94a1112c347aa50eb251c63e4013117</sys_update_name>
+        <sys_updated_by>srujan-metron</sys_updated_by>
+        <sys_updated_on>2025-08-05 07:14:25</sys_updated_on>
+        <table/>
+        <title>Select your credentials for generating token</title>
+        <weight>1</weight>
+    </gsw_content_information>
+    <sys_translated_text action="delete_multiple" query="documentkey=a94a1112c347aa50eb251c63e4013117"/>
+</record_update>
