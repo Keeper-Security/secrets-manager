@@ -57,7 +57,7 @@ class ResponseQueue:
         response = self.queue.popleft()
         return response.instance(transmission_key)
 
-    def auto_responder_patch(self, _, transmission_key, _two, _three):
+    def auto_responder_patch(self, _, transmission_key, _two, _three, _four):
         return self.get_response(transmission_key)
 
 
@@ -337,6 +337,8 @@ class Record:
 
         self.has_bad_encryption = kwargs.get("has_bad_encryption")
 
+        self.record_key_bytes = kwargs.get("record_key_bytes")
+
     @staticmethod
     def convert_keeper_record(keeper_record):
 
@@ -446,6 +448,18 @@ class Record:
         }
 
         return data
+    
+    @property
+    def dict(self):
+        return {
+            "uid": self.uid,
+            "record_type": self.record_type,
+            "title": self.title,
+            "notes": self.notes,
+            "is_editable": self.is_editable,
+            "files": self.files,
+            "fields": self._fields,
+        }
 
 
 class MockConfig:
