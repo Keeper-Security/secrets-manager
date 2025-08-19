@@ -34,50 +34,11 @@ on:
       MANIFEST_TOKEN:
         description: 'Token for Manifest.io authentication'
         required: true
-name: Reusable SBOM Generation
-
-on:
-  workflow_call:
-    inputs:
-      working-directory:
-        description: 'Directory containing the project files'
-        required: true
-        type: string
-      project-name:
-        description: 'Name of the project for SBOM identification'
-        required: true
-        type: string
-      project-type:
-        description: 'Type of project (python, dotnet, nodejs)'
-        required: true
-        type: string
-      project-version:
-        description: 'Version of the project (optional, will try to detect if not provided)'
-        required: false
-        type: string
-        default: ''
-      sbom-format:
-        description: 'Format for SBOM output (spdx-json, cyclonedx-json)'
-        required: false
-        type: string
-        default: 'spdx-json'
-      additional-labels:
-        description: 'Additional labels for SBOM categorization'
-        required: false
-        type: string
-        default: ''
-    secrets:
-      MANIFEST_TOKEN:
-        description: 'Token for Manifest.io authentication'
-        required: true
 
 jobs:
   generate-sbom:
     name: Generate SBOM
-  generate-sbom:
-    name: Generate SBOM
     runs-on: ubuntu-latest
-
 
     steps:
       - name: Checkout repository
@@ -390,6 +351,7 @@ jobs:
       - name: Generate and publish SBOM
         env:
           PROJECT_VERSION: ${{ inputs.project-version != '' && inputs.project-version || steps.detect-version.outputs.version }}
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
           SYFT_PACKAGE_SEARCH_UNINDEXED_ARCHIVES: "true"
           SYFT_PACKAGE_SEARCH_INDEXED_ARCHIVES: "true"
           SYFT_SCOPE: "all-layers"
@@ -503,7 +465,7 @@ jobs:
             --name=${{ inputs.project-name }} \
             --version=${PROJECT_VERSION} \
             --output=${{ inputs.sbom-format }} \
-            --api-key=${{ secrets.MANIFEST_TOKEN }} \
+            --api-key=${MANIFEST_TOKEN} \
             --publish=true \
             --label=${FINAL_LABELS}
           

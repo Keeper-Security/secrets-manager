@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "keeper-secrets-manager-storage-gcp-kms"
+version = "1.0.1"
+description = "Keeper Secrets Manager SDK storage integration with Google Cloud KMS for encrypted key-value storage."
+readme = "README.md"
+requires-python = ">=3.6"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Keeper Security", email = "sm@keepersecurity.com"},
+]
+keywords = [
+    "Keeper",
+    "Password",
+    "Secrets Manager",
+    "Storage",
+    "GCP",
+    "KMS",
+    "Google Cloud",
+    "Key Management"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Security :: Cryptography",
+]
+dependencies = [
+    "keeper-secrets-manager-core>=16.6.6",
+    "google-cloud-kms>=3.0.0",
+    "google-crc32c>=1.0.0",
+    "pycryptodome>=3.15.0",
+    "requests>=2.25.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Keeper-Security/secrets-manager"
+Documentation = "https://docs.keeper.io/secrets-manager/secrets-manager/overview"
+Repository = "https://github.com/Keeper-Security/secrets-manager"
+"Bug Tracker" = "https://github.com/Keeper-Security/secrets-manager/issues"
+
+[tool.setuptools]
+packages = ["keeper_secrets_manager_storage_gcp_kms"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.txt"] 

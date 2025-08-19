@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "keeper-secrets-manager",
-  "version": "1.0.8",
+  "version": "1.1.0",
   "publisher": "KeeperSecurity",
   "name": "Keeper Secrets Manager",
   "public": true,
