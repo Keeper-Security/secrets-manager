@@ -29,7 +29,7 @@ class Record:
         self.files = []
         self.raw_json = None
         self.dict = {}
-        self.links = []  # [{"recordUid":"", "data": null|base64}, ...]
+        self.links = []  # [{"recordUid":"", "data": null|base64, "path": null|string} ...]
         self.password = None
         self.revision = None
         self.is_editable = None
