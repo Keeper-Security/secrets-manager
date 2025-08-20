@@ -9,7 +9,46 @@ on:
         type: boolean
 
 jobs:
+  security-scan:
+    name: Security Scan
+    uses: ./.github/workflows/reusable.securityscan.workflow.yml
+    with:
+      working-directory: ./integration/keeper_secrets_manager_azure_pipeline_extension/ksm-azure-devops-secrets-task
+      project-type: nodejs
+      fail-level: moderate
+      enable-snyk: false  # Disable Snyk since we don't have a token
+      enable-ossar: true
+      enable-dependency-review: true
+
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Extract version from package.json
+        id: extract-version
+        working-directory: ./integration/keeper_secrets_manager_azure_pipeline_extension/ksm-azure-devops-secrets-task
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+  generate-and-upload-sbom:
+    needs: [security-scan, get-version]
+    uses: ./.github/workflows/reusable.sbom.workflow.yml
+    with:
+      working-directory: ./integration/keeper_secrets_manager_azure_pipeline_extension/ksm-azure-devops-secrets-task
+      project-name: ksm-extension-azure-pipeline
+      project-type: nodejs
+      project-version: ${{ needs.get-version.outputs.version }}
+      sbom-format: spdx-json
+      additional-labels: azure-pipeline,extension,security
+    secrets:
+      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+
   publish-az-pipeline-ext:
+    needs: generate-and-upload-sbom
+    if: success() && github.event.inputs.dry_run != 'true'
     environment: prod
     runs-on: ubuntu-latest
 
@@ -21,14 +60,12 @@ jobs:
       - name: Get the source code
         uses: actions/checkout@v3
 
-#      - name: Set up Docker
-#        uses: docker/setup-buildx-action@v3
-#
-#      - name: Run tests in Docker
-#        run: |
-#          cd ksm-azure-devops-secrets-task
-#          docker build -t keeper-secrets-test .
-#          docker run --rm keeper-secrets-test ./tests/run-tests.sh
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: ./integration/keeper_secrets_manager_azure_pipeline_extension/ksm-azure-devops-secrets-task/package-lock.json
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
@@ -39,24 +76,15 @@ jobs:
             DJz3ilHBHIbIZqkTClDV5Q/field/password > PAT
 
       - name: Build
-        if: success()
+        working-directory: ./integration/keeper_secrets_manager_azure_pipeline_extension/ksm-azure-devops-secrets-task
         run: |
-          cd ksm-azure-devops-secrets-task
           npm install
           npm run build
 
       - name: Publish
-        if: success() && github.event.inputs.dry_run == 'false'
+        if: github.event.inputs.dry_run != 'true'
+        working-directory: ./integration/keeper_secrets_manager_azure_pipeline_extension
         run: |
           npm install -g tfx-cli
           tfx extension publish --token ${{ steps.ksmsecrets.outputs.PAT }}
           ls -lh *.vsix
-
-#      - name: Step To run on failure
-#        if: ${{ failure() }}
-#        run: |
-#          curl --request POST \
-#          --url https://api.github.com/repos/${{ github.repository }}/issues \
-#          --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
-#          --header 'content-type: application/json' \
-#          --data '{"title": "Issue created due to failure in workflow ${{ github.workflow }}, run #: ${{ github.run_id }}","body": "This issue was automatically created by the GitHub Action workflow **${{ github.workflow }}**.\n\nDue to failure in run: [${{ github.run_id }}](https://github.com/Keeper-Security/secrets-manager/actions/runs/${{ github.run_id }}).\n\nIf error is related to access denied (expiration of Personal Access Token, aka PAT), here are the steps to generate a new one:\n\n-Steps to generate one documented [HERE](https://docs.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops&tabs=preview-page)\n- Update \"Password\" field in record UID `DJz3ilHBHIbIZqkTClDV5Q` (located in shared folder named \"Secrets Manager\")"}'
