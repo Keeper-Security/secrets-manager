@@ -334,11 +334,13 @@ namespace SecretsManager
     {
         public string recordUid { get; }
         public string data { get; }
+        public string path { get; }
 
-        public KeeperRecordLink(string recordUid, string data = null)
+        public KeeperRecordLink(string recordUid, string data = null, string path = null)
         {
             this.recordUid = recordUid;
             this.data = data;
+            this.path = path;
         }
     }
 
