@@ -202,7 +202,8 @@ private data class SecretsManagerResponseRecord(
 @Serializable
 data class KeeperRecordLink(
     val recordUid: String,
-    val data: String? = null
+    val data: String? = null,
+    val path: String? = null
 ) {
     
     /**
