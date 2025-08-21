@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+out/
+coverage/
+
+# Extension package
+*.vsix
+
+# Testing
+.vscode-test/
+
+# Generated files
+*.js.map
+*.ts.map
+
+# Package files
+package-lock.json
+yarn.lock
+
+# IDE files
+.vscode/

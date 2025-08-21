@@ -1,0 +1,136 @@
+{
+  "name": "ks-vscode",
+  "displayName": "Keeper Security",
+  "description": "Never commit secrets to your code again - secure them in Keeper vault",
+  "version": "1.0.0",
+  "license": "MIT",
+  "publisher": "keeper-security",
+  "galleryBanner": {
+    "color": "#1a365d",
+    "theme": "dark"
+  },
+  "icon": "keeper_logo.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Keeper-Security/secrets-manager"
+  },
+  "homepage": "https://github.com/Keeper-Security/secrets-manager/tree/master/integration/ks-vscode",
+  "bugs": {
+    "url": "https://github.com/Keeper-Security/secrets-manager/issues"
+  },
+  "keywords": [
+    "keeper",
+    "security",
+    "password",
+    "secrets",
+    "dotenv"
+  ],
+  "engines": {
+    "vscode": "^1.99.0"
+  },
+  "categories": [
+    "Security",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ks-vscode.saveValueToVault",
+        "title": "Save in Keeper Security",
+        "category": "Keeper Security"
+      },
+      {
+        "command": "ks-vscode.getValueFromVault",
+        "title": "Get from Keeper Security",
+        "category": "Keeper Security"
+      },
+      {
+        "command": "ks-vscode.generatePassword",
+        "title": "Generate Password",
+        "category": "Keeper Security"
+      },
+      {
+        "command": "ks-vscode.runSecurely",
+        "title": "Run Securely",
+        "category": "Keeper Security"
+      },
+      {
+        "command": "ks-vscode.chooseFolder",
+        "title": "Choose Folder",
+        "category": "Keeper Security"
+      },
+      {
+        "command": "ks-vscode.openLogs",
+        "title": "Open Logs",
+        "category": "Keeper Security"
+      }
+    ],
+    "configuration": [
+      {
+        "type": "object",
+        "title": "Keeper Security",
+        "id": "keeper-security",
+        "properties": {
+          "keeper-security.debug.enabled": {
+            "order": 1,
+            "type": "boolean",
+            "default": false,
+            "description": "Log debugger data. Reload required."
+          },
+          "keeper-security.editor.secretDetection": {
+            "order": 2,
+            "type": "boolean",
+            "default": true,
+            "description": "Suggest storing a value when it looks like a secret."
+          }
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "webpack": "webpack --mode production --devtool hidden-source-map",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "pre-commit": "npm run lint && npm run test",
+    "clean": "rm -rf dist out coverage",
+    "vscode:prepublish": "npm run webpack",
+    "package": "vsce package",
+    "publish:patch": "vsce publish patch",
+    "publish:minor": "vsce publish minor",
+    "publish:major": "vsce publish major"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.99.0",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.25.1",
+    "glob": "^11.0.3",
+    "jest": "^29.7.0",
+    "jest-environment-node": "^29.7.0",
+    "mocha": "^11.7.1",
+    "prettier": "^3.6.2",
+    "ts-jest": "^29.1.2",
+    "ts-loader": "^9.5.2",
+    "typescript": "^5.8.3",
+    "vsce": "^2.15.0",
+    "webpack": "^5.99.7",
+    "webpack-cli": "^6.0.1"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.0"
+  }
+}

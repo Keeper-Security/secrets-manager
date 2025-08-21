@@ -1,0 +1,36 @@
+# Source code (should be compiled)
+src/**
+
+# Development files
+.vscode/**
+.vscode-test/**
+out/**
+node_modules/**
+.gitignore
+.yarnrc
+webpack.config.js
+vsc-extension-quickstart.md
+**/tsconfig.json
+**/eslint.config.mjs
+**/*.map
+**/*.ts
+**/.vscode-test.*
+
+# Build configuration
+jest.config.js
+eslint.config.mjs
+.prettierrc
+.prettierignore
+
+# Documentation
+README.md
+CHANGELOG.md
+LICENSE
+
+# Development scripts
+*.test.js
+*.test.ts
+test/**
+
+# Source maps
+**/*.map

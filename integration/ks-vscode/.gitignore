@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+!tsconfig.json
+!tsconfig.test.json
+
+# Build outputs
+dist/
+out/
+coverage/
+
+# Extension package
+*.vsix
+
+# Testing
+.vscode-test/
+
+# IDE and editor files
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.temp
