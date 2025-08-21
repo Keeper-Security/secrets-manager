@@ -1,0 +1,24 @@
+{
+    "root": true,
+    "env": {
+      "node": true,
+      "es6": true
+    },
+    "parser": "@typescript-eslint/parser",
+    "extends": [
+      "eslint:recommended",
+      "plugin:@typescript-eslint/recommended"
+    ],
+    "rules": {
+      // Add any custom ESLint rules here
+    },
+    "ignorePatterns": ["dist/", "node_modules/"],
+    "overrides": [
+      {
+        "files": ["src/**/*.ts"],
+        "parserOptions": {
+          "project": "./tsconfig.json"
+        }
+      }
+    ]
+  }
