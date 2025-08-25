@@ -190,6 +190,12 @@ tasks.javadoc {
     }
 }
 
+// Task to copy all runtime dependencies for SBOM generation
+tasks.register<Copy>("copyDependencies") {
+    from(configurations.runtimeClasspath)
+    into(layout.buildDirectory.dir("sbom-deps"))
+}
+
 // Configure nexusPublishing for staging repository
 nexusPublishing {
     repositories {
