@@ -347,6 +347,7 @@ data class Host @JvmOverloads constructor(
     val hostName: String? = null,
     val port: String? = null,
     val allowSupplyUser: Boolean? = null,
+    val allowSupplyHost: Boolean? = null,
 )
 
 @Serializable
@@ -636,6 +637,7 @@ data class PamSettingsConnection @JvmOverloads constructor(
     val userRecords: MutableList<String>? = null,
     val port: String? = null,
     val allowSupplyUser: Boolean? = null,
+    val allowSupplyHost: Boolean? = null,
     val recordingIncludeKeys: Boolean? = null,
 
     // Common display and security settings
@@ -655,6 +657,8 @@ data class PamSettingsConnection @JvmOverloads constructor(
 
     // SSH/Connection verification
     val hostKey: String? = null,
+    val command: String? = null,
+    val fontSize: String? = null,
 
     // VNC/Proxy settings
     val destHost: String? = null,
@@ -694,7 +698,8 @@ data class PamSettingsPortForward @JvmOverloads constructor(
 @Serializable
 data class PamSetting @JvmOverloads constructor(
     val connection: PamSettingsConnection? = null,
-    val portForward: PamSettingsPortForward? = null
+    val portForward: PamSettingsPortForward? = null,
+    val allowSupplyHost: Boolean? = null
 )
 
 @Serializable

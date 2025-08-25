@@ -214,6 +214,13 @@ data class KeeperRecordLink(
         
         return try {
             val decodedData = String(java.util.Base64.getDecoder().decode(data))
+
+            // Check if the decoded data looks like JSON (starts with { or [)
+            // If not, it's likely encrypted/binary data, so return null silently
+            if (!decodedData.startsWith("{") && !decodedData.startsWith("[")) {
+                return null
+            }
+            
             val jsonElement = Json.parseToJsonElement(decodedData)
             if (jsonElement is JsonObject) {
                 jsonElement.entries.associate { (key, value) ->
@@ -233,11 +240,24 @@ data class KeeperRecordLink(
                     }
                 }
             } else {
-                System.err.println("KeeperRecordLink: Link data is not a valid JSON object")
+                // Only log if it looked like JSON but wasn't a JSON object
+                System.err.println("KeeperRecordLink: Link data is not a JSON object (was JSON array or primitive)")
                 null
             }
+        } catch (e: IllegalArgumentException) {
+            // Base64 decoding failed - likely not base64 encoded
+            null
         } catch (e: Exception) {
-            System.err.println("KeeperRecordLink: Failed to parse link data - ${e.message}")
+            // Only log parsing errors for data that looks like it should be JSON
+            val decodedData = try {
+                String(java.util.Base64.getDecoder().decode(data))
+            } catch (_: Exception) {
+                return null
+            }
+            
+            if (decodedData.startsWith("{") || decodedData.startsWith("[")) {
+                System.err.println("KeeperRecordLink: Failed to parse JSON data - ${e.message}")
+            }
             null
         }
     }
@@ -332,6 +352,216 @@ data class KeeperRecordLink(
     fun hasReadableData(): Boolean {
         val decoded = getDecodedData()
         return decoded != null && (decoded.startsWith("{") || decoded.startsWith("["))
+    }
+
+    /**
+     * Check if this link's path indicates potentially encrypted data
+     * Currently known encrypted paths: ai_settings, jit_settings
+     * @return true if the path is known to potentially contain encrypted data
+     */
+    fun mightBeEncrypted(): Boolean {
+        // Only return true for known encrypted paths
+        // Don't assume all *_settings are encrypted
+        return path != null && (path == "ai_settings" || path == "jit_settings")
+    }
+    
+    /**
+     * Check if this link contains encrypted data by examining the actual content
+     * This method inspects the data to determine if it's encrypted, rather than
+     * relying on path naming conventions
+     * @return true if the data appears to be encrypted
+     */
+    fun hasEncryptedData(): Boolean {
+        if (data == null) return false
+        
+        return try {
+            val decodedData = String(java.util.Base64.getDecoder().decode(data))
+            // If it doesn't start with JSON markers and isn't mostly printable, it's likely encrypted
+            !decodedData.startsWith("{") && !decodedData.startsWith("[") && !isPrintableText(decodedData)
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    /**
+     * Decrypt the link data using the provided record key
+     * This method attempts decryption only if the data appears to be encrypted
+     * 
+     * @param recordKey The record's encryption key
+     * @return Decrypted string data, or null if decryption fails
+     */
+    @JvmOverloads
+    fun getDecryptedData(recordKey: ByteArray? = null): String? {
+        if (data == null || recordKey == null) return null
+        
+        return try {
+            // Decode Base64 to get encrypted bytes
+            val encryptedData = java.util.Base64.getDecoder().decode(data)
+            
+            // Decrypt using AES-256-GCM (false = use GCM mode)
+            val decryptedBytes = decrypt(encryptedData, recordKey, false)
+            
+            // Convert to string
+            String(decryptedBytes, Charsets.UTF_8)
+        } catch (e: Exception) {
+            // Decryption failed - could be wrong key or not encrypted
+            null
+        }
+    }
+    
+    /**
+     * Get link data - automatically handles both encrypted and plain JSON
+     * 
+     * This method is designed to be forward-compatible as Keeper evolves
+     * the data structures. Returns a Map to preserve all fields, even ones
+     * this SDK version doesn't know about yet.
+     * 
+     * @param recordKey Optional key for decrypting encrypted link data
+     * @return Parsed data as a Map, or null if parsing fails
+     */
+    @JvmOverloads
+    fun getLinkData(recordKey: ByteArray? = null): Map<String, Any>? {
+        if (data == null) return null
+        
+        // First, try to decode and check if it's plain JSON
+        val decodedData = try {
+            String(java.util.Base64.getDecoder().decode(data))
+        } catch (e: Exception) {
+            return null
+        }
+        
+        // If it looks like JSON, parse it directly
+        if (decodedData.startsWith("{") || decodedData.startsWith("[")) {
+            return parseJsonToMap(decodedData)
+        }
+        
+        // If not JSON and we have a key, try decryption
+        if (recordKey != null) {
+            val decryptedData = getDecryptedData(recordKey) ?: return null
+            return parseJsonToMap(decryptedData)
+        }
+        
+        // Can't parse - not JSON and no key for decryption
+        return null
+    }
+    
+    /**
+     * Helper method to parse JSON string to Map
+     */
+    private fun parseJsonToMap(jsonString: String): Map<String, Any>? {
+        return try {
+            val jsonElement = Json.parseToJsonElement(jsonString)
+            when (jsonElement) {
+                is JsonObject -> {
+                    jsonElement.entries.associate { (key, value) ->
+                        key to when (value) {
+                            is JsonPrimitive -> {
+                                when {
+                                    value.isString -> value.content
+                                    else -> {
+                                        // Try to parse as different types
+                                        when {
+                                            value.content == "true" -> true
+                                            value.content == "false" -> false
+                                            value.content.toIntOrNull() != null -> value.content.toInt()
+                                            value.content.toLongOrNull() != null -> value.content.toLong()
+                                            value.content.toDoubleOrNull() != null -> value.content.toDouble()
+                                            else -> value.content
+                                        }
+                                    }
+                                }
+                            }
+                            is JsonObject -> value.toString() // Nested objects as strings
+                            is kotlinx.serialization.json.JsonArray -> value.toString() // Arrays as strings
+                        }
+                    }
+                }
+                else -> null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    /**
+     * Helper method to check if a string is mostly printable text
+     */
+    private fun isPrintableText(str: String): Boolean {
+        if (str.isEmpty()) return false
+        
+        val printableCount = str.take(100).count { c ->
+            c in ' '..'~' || c == '\n' || c == '\r' || c == '\t'
+        }
+        
+        val sampleSize = minOf(str.length, 100)
+        return (printableCount.toFloat() / sampleSize) > 0.9f
+    }
+    
+    // ============================================================================
+    // Convenience Methods for Settings Access
+    // ============================================================================
+    
+    /**
+     * Get AI settings data from this link
+     * 
+     * Known fields for ai_settings (as of SDK v17.1.0):
+     * - aiEnabled: Boolean - Whether AI features are enabled
+     * - aiModel: String - The AI model being used
+     * - aiProvider: String - The AI provider (e.g., "openai", "anthropic")
+     * - aiSessionTerminate: Boolean - Whether to terminate AI session
+     * - allowedSettings: Map - Nested settings for allowed operations
+     * 
+     * Note: Additional fields may be present in newer versions.
+     * The returned Map will preserve all fields sent by the server.
+     * 
+     * @param recordKey The record's encryption key
+     * @return Settings data as a Map, or null if not available
+     */
+    fun getAiSettingsData(recordKey: ByteArray): Map<String, Any>? {
+        if (path != "ai_settings") return null
+        return getLinkData(recordKey)
+    }
+    
+    /**
+     * Get JIT (Just-In-Time) settings data from this link
+     * 
+     * Known fields for jit_settings (as of SDK v17.1.0):
+     * - enabled: Boolean - Whether JIT access is enabled
+     * - ttl: Int - Time-to-live in seconds
+     * - maxUses: Int - Maximum number of uses allowed
+     * - expiresAt: Long - Expiration timestamp in milliseconds
+     * - allowedSettings: Map - Nested settings for allowed operations:
+     *   - rotation: Boolean - Allow credential rotation
+     *   - connections: Boolean - Allow connections
+     *   - portForwards: Boolean - Allow port forwarding
+     *   - sessionRecording: Boolean - Enable session recording
+     *   - typescriptRecording: Boolean - Enable TypeScript recording
+     * 
+     * Note: Additional fields may be present in newer versions.
+     * The returned Map will preserve all fields sent by the server.
+     * 
+     * @param recordKey The record's encryption key
+     * @return Settings data as a Map, or null if not available
+     */
+    fun getJitSettingsData(recordKey: ByteArray): Map<String, Any>? {
+        if (path != "jit_settings") return null
+        return getLinkData(recordKey)
+    }
+    
+    /**
+     * Get settings data for any path
+     * 
+     * This method works for current and future settings paths.
+     * It automatically detects whether the data is encrypted and
+     * handles it appropriately.
+     * 
+     * @param settingsPath The path to check (e.g., "ai_settings", "security_settings")
+     * @param recordKey The record's encryption key (required for encrypted data)
+     * @return Settings data as a Map, or null if path doesn't match or parsing fails
+     */
+    fun getSettingsForPath(settingsPath: String, recordKey: ByteArray? = null): Map<String, Any>? {
+        if (path != settingsPath) return null
+        return getLinkData(recordKey)
     }
 }
 
