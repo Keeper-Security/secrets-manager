@@ -473,7 +473,6 @@ data class KeeperRecordLink(
                             }
                             is JsonObject -> value.toString() // Nested objects as strings
                             is kotlinx.serialization.json.JsonArray -> value.toString() // Arrays as strings
-                            else -> value.toString()
                         }
                     }
                 }
