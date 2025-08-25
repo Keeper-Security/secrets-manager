@@ -16,6 +16,7 @@ plugins {
     `maven-publish`
     signing
     id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
+    id("org.jreleaser") version "1.18.0"
 }
 
 java {
@@ -162,7 +163,7 @@ publishing {
 
     repositories {
         maven {
-            name = "Sonatype"
+            name = "Staging"
 
 
             if (project.version.toString().endsWith("SNAPSHOT")) {
@@ -186,5 +187,52 @@ signing {
 tasks.javadoc {
     if (JavaVersion.current().isJava9Compatible) {
         (options as StandardJavadocDocletOptions).addBooleanOption("html5", true)
+    }
+}
+
+// Configure nexusPublishing for staging repository
+nexusPublishing {
+    repositories {
+        create("sonatype") {
+            nexusUrl = uri("https://s01.oss.sonatype.org/service/local/")
+            snapshotRepositoryUrl = uri("https://s01.oss.sonatype.org/content/repositories/snapshots/")
+
+            username = getExtraString("ossrhUsername")
+            password = getExtraString("ossrhPassword")
+        }
+    }
+}
+
+// Configure JReleaser for Central Portal publishing
+configure<org.jreleaser.gradle.plugin.JReleaserExtension> {
+    project {
+        copyright = "Keeper Security Inc."
+        description = "Keeper Secrets Manager Core SDK for Java"
+        inceptionYear = "2022"
+        authors.add("Keeper Security Inc.")
+        license = "MIT"
+        links {
+            homepage = "https://github.com/Keeper-Security/secrets-manager"
+        }
+    }
+
+    gitRootSearch = true
+
+    signing {
+        active = org.jreleaser.model.Active.ALWAYS
+        armored = true
+        mode = org.jreleaser.model.Signing.Mode.FILE
+    }
+
+    deploy {
+        maven {
+            mavenCentral {
+                create("sonatype") {
+                    active = org.jreleaser.model.Active.ALWAYS
+                    url = "https://central.sonatype.com/api/v1/publisher"
+                    stagingRepository(layout.buildDirectory.dir("staging-deploy").get().asFile.path)
+                }
+            }
+        }
     }
 }
