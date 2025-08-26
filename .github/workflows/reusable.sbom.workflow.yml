@@ -382,17 +382,16 @@ jobs:
           echo "Installing Syft v1.18.1 (matching krouter configuration)"
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
           
-          # Install Manifest CLI
-          echo "Installing Manifest CLI..."
-          curl -L https://github.com/manifest-cyber/cli/releases/download/v0.11.0/manifest_linux_x86_64.tar.gz > manifest.tar.gz
-          tar -xzf manifest.tar.gz
-          chmod +x manifest
+          # Install Manifest CLI using their installation script (same as our Docker test)
+          echo "Installing Manifest CLI v0.18.3..."
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b . v0.18.3
+          chmod +x ./manifest
           
           # Create a clean working directory for scanning
           SCAN_DIR="${{ runner.temp }}/scan-workspace"
           mkdir -p "$SCAN_DIR"
           
-          # Store the manifest binary path
+          # Store the manifest binary path (installed in current directory)
           MANIFEST_PATH="${{ github.workspace }}/manifest"
           
           # Copy only the project files to scan directory
@@ -430,9 +429,9 @@ jobs:
           if [ "${{ inputs.project-type }}" = "java" ]; then
             echo "Preparing Java/Kotlin project for SBOM generation..."
           
-            # Build the project first to ensure dependencies are resolved (with info output like krouter)
+            # Build the project first to ensure dependencies are resolved (skip tests to avoid failures)
             echo "Building project to resolve all dependencies:"
-            ./gradlew build --no-daemon --refresh-dependencies --info || true
+            ./gradlew build -x test --no-daemon --refresh-dependencies --info || true
           
             # Generate a comprehensive dependency list
             echo "Generating dependency list for SBOM:"
@@ -511,34 +510,58 @@ jobs:
             export SYFT_JAVA_USE_NETWORK=false
             export SYFT_JAVA_MAX_PARENT_RECURSIVE_DEPTH=10
             
-            # Run Syft directly first to generate comprehensive SBOM
-            syft packages . \
+            # Run Syft directly first to generate comprehensive SBOM (using v1.18.1 syntax)
+            syft scan . \
               --config syft-config.yaml \
-              --output spdx-json \
-              --file project-sbom.json \
-              --catalogers java,gradle || true
+              --output spdx-json=project-sbom.json \
+              --override-default-catalogers java || true
             
             # Also scan the dependencies directory if it exists
             if [ -d "build/sbom-deps" ] && [ -n "$(ls -A build/sbom-deps)" ]; then
               echo "Scanning dependencies directory..."
-              syft packages build/sbom-deps \
+              syft scan build/sbom-deps \
                 --config syft-config.yaml \
-                --output spdx-json \
-                --file deps-sbom.json \
-                --catalogers java || true
+                --output spdx-json=deps-sbom.json \
+                --override-default-catalogers java || true
             fi
           fi
           
+          # For Java, scan the dependencies directory for better detection
+          if [ "${{ inputs.project-type }}" = "java" ] && [ -d "build/sbom-deps" ]; then
+            SCAN_TARGET="build/sbom-deps"
+            echo "Scanning dependencies directory: $SCAN_TARGET"
+          else
+            SCAN_TARGET="."
+            echo "Scanning current directory: $SCAN_TARGET"
+          fi
+          
           # Generate SBOM using Manifest CLI
-          "$MANIFEST_PATH" sbom . \
+          # Important: We do NOT use --generator-config as it causes issues with Manifest CLI
+          # Instead, we rely on Syft's environment variables and pre-scanning
+          # Note: --label was deprecated in favor of --asset-label in newer versions
+          echo "Generating SBOM with Manifest CLI..."
+          echo "Debug: Running command: $MANIFEST_PATH sbom $SCAN_TARGET --generator=syft --name=${{ inputs.project-name }} --version=${PROJECT_VERSION} --output=${{ inputs.sbom-format }} --file=generated-sbom.json --api-key=*** --publish=true --asset-label=${FINAL_LABELS}"
+          
+          "$MANIFEST_PATH" sbom "$SCAN_TARGET" \
             --generator=syft \
             --name=${{ inputs.project-name }} \
             --version=${PROJECT_VERSION} \
             --output=${{ inputs.sbom-format }} \
+            --file=generated-sbom.json \
             --api-key=${MANIFEST_TOKEN} \
             --publish=true \
-            --label=${FINAL_LABELS} \
-            --generator-config=syft-config.yaml
+            --asset-label=${FINAL_LABELS} 2>&1 || {
+            echo "Trying with --label flag for compatibility..."
+            "$MANIFEST_PATH" sbom "$SCAN_TARGET" \
+              --generator=syft \
+              --name=${{ inputs.project-name }} \
+              --version=${PROJECT_VERSION} \
+              --output=${{ inputs.sbom-format }} \
+              --file=generated-sbom.json \
+              --api-key=${MANIFEST_TOKEN} \
+              --publish=true \
+              --label=${FINAL_LABELS}
+          }
           
           # Copy generated SBOM back to original directory for artifact upload
           cp *.json "${{ github.workspace }}/"
