@@ -4,7 +4,7 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
-## 17.1.0
+## 17.1.1
 - KSM-581 - Add GraphSync library to KSM SDK
 - KSM-582 - fix NPE use safe cast in KeeperRecordData.getField()
  -KSM-586 - Add recordingIncludeKeys to data classes
