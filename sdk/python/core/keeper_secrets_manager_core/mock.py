@@ -331,6 +331,7 @@ class Record:
         self.notes = ""
         self.is_editable = False
         self.files = {}
+        self.revision = kwargs.get("revision", 1)
 
         self._fields = []
         self._custom_fields = []
