@@ -60,6 +60,7 @@ class AliasedGroup(HelpColorsGroup):
         "totp",
         "download",
         "upload",
+        "delete-attachment",
         "get",
         "list",
         "notation",
@@ -827,6 +828,25 @@ def secret_download_command(ctx, uid, name, file_uid, file_output, create_folder
 
 
 @click.command(
+    name='delete-attachment',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--uid', '-u', required=True, type=str, help="UID of the secret.")
+@click.option('--file', '-f', required=True, type=str, multiple=True, help="Name or UID of the file to delete.")
+@click.pass_context
+def secret_delete_attachment_command(ctx, uid, file):
+    """Delete file attachment(s) from a secret record"""
+    if uid.strip() == '' or len(file) == 0:
+        raise KsmCliException("Both --uid and --file params must be provided and non-empty.")
+
+    ctx.obj["secret"].delete_attachment(
+        uid=uid,
+        file=file
+    )
+
+
+@click.command(
     name='totp',
     cls=HelpColorsCommand,
     help_options_color='blue'
@@ -1080,6 +1100,7 @@ secret_command.add_command(secret_delete_command)
 secret_command.add_command(secret_add_command)
 secret_command.add_command(secret_upload_command)
 secret_command.add_command(secret_download_command)
+secret_command.add_command(secret_delete_attachment_command)
 secret_command.add_command(secret_totp_command)
 secret_command.add_command(secret_password_command)
 secret_command.add_command(secret_template_command)
