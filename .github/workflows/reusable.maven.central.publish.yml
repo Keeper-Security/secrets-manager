@@ -92,11 +92,29 @@ jobs:
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v3
 
+      - name: Import GPG key and extract key ID
+        run: |
+          gpg --batch --import /tmp/private-key.asc
+          gpg --batch --import /tmp/public-key.asc
+          # Get the key ID from the imported key (last 8 characters)
+          KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | awk '{print $2}' | cut -d'/' -f2 | tail -c 9)
+          echo "GPG_KEY_ID=$KEY_ID" >> $GITHUB_ENV
+          # Read the armored private key for in-memory signing
+          echo "SIGNING_KEY<<EOF" >> $GITHUB_ENV
+          cat /tmp/private-key.asc >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
       - name: Build and test
         run: ./gradlew clean build test
 
       - name: Publish to staging repository
         run: ./gradlew publishAllPublicationsToStagingRepository
+        env:
+          SIGNING_KEY_ID: ${{ env.GPG_KEY_ID }}
+          SIGNING_PASSWORD: ${{ env.JRELEASER_GPG_PASSPHRASE }}
+          SIGNING_KEY: ${{ env.SIGNING_KEY }}
+          OSSRH_USERNAME: ${{ env.JRELEASER_MAVENCENTRAL_USERNAME }}
+          OSSRH_PASSWORD: ${{ env.JRELEASER_MAVENCENTRAL_PASSWORD }}
 
         # Signing docs: https://jreleaser.org/guide/latest/reference/signing.html
       - name: Deploy to Maven Central via JReleaser
