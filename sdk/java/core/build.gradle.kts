@@ -1,8 +1,6 @@
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.kotlin.dsl.`maven-publish`
-import org.gradle.kotlin.dsl.signing
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import java.util.*
 
 group = "com.keepersecurity.secrets-manager"
 
@@ -14,8 +12,6 @@ plugins {
     kotlin("jvm") version "2.2.0"
     kotlin("plugin.serialization") version "2.2.0"
     `maven-publish`
-    signing
-    id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
     id("org.jreleaser") version "1.18.0"
 }
 
@@ -70,34 +66,12 @@ tasks.jar {
     }
 }
 
-ext["signing.keyId"] = null
-ext["signing.password"] = null
-ext["signing.secretKeyRingFile"] = null
-ext["ossrhUsername"] = null
-ext["ossrhPassword"] = null
-
-// Grabbing secrets from local.properties file or from environment variables, which could be used on CI
-val secretPropsFile = project.rootProject.file("local.properties")
-if (secretPropsFile.exists()) {
-    // Retrieving variables from the properties file
-    val localProperties = Properties()
-    localProperties.load(secretPropsFile.inputStream())
-    localProperties.forEach { prop -> ext[prop.key.toString()] = prop.value }
-} else {
-    // Retrieving variables from the properties file
-    ext["signing.keyId"] = System.getenv("SIGNING_KEY_ID")
-    ext["signing.password"] = System.getenv("SIGNING_PASSWORD")
-    ext["signing.secretKeyRingFile"] = System.getenv("SIGNING_SECRET_KEY_RING_FILE")
-    ext["ossrhUsername"] = System.getenv("OSSRH_USERNAME")
-    ext["ossrhPassword"] = System.getenv("OSSRH_PASSWORD")
-}
 
 java {
     withJavadocJar()
     withSourcesJar()
 }
 
-fun getExtraString(name: String) = ext[name]?.toString()
 
 publishing {
     publications {
@@ -163,26 +137,12 @@ publishing {
 
     repositories {
         maven {
-            name = "Staging"
-
-
-            if (project.version.toString().endsWith("SNAPSHOT")) {
-                setUrl("https://s01.oss.sonatype.org/content/repositories/snapshots/")
-            } else {
-                setUrl("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
-            }
-
-            credentials {
-                username = getExtraString("ossrhUsername")
-                password = getExtraString("ossrhPassword")
-            }
+            name = "staging"
+            url = uri(layout.buildDirectory.dir("staging-deploy"))
         }
     }
 }
 
-signing {
-    sign(publishing.publications["mavenJava"])
-}
 
 tasks.javadoc {
     if (JavaVersion.current().isJava9Compatible) {
@@ -196,26 +156,14 @@ tasks.register<Copy>("copyDependencies") {
     into(layout.buildDirectory.dir("sbom-deps"))
 }
 
-// Configure nexusPublishing for staging repository
-nexusPublishing {
-    repositories {
-        create("sonatype") {
-            nexusUrl = uri("https://s01.oss.sonatype.org/service/local/")
-            snapshotRepositoryUrl = uri("https://s01.oss.sonatype.org/content/repositories/snapshots/")
-
-            username = getExtraString("ossrhUsername")
-            password = getExtraString("ossrhPassword")
-        }
-    }
-}
 
 // Configure JReleaser for Central Portal publishing
-configure<org.jreleaser.gradle.plugin.JReleaserExtension> {
+jreleaser {
     project {
         copyright = "Keeper Security Inc."
         description = "Keeper Secrets Manager Core SDK for Java"
         inceptionYear = "2022"
-        authors.add("Keeper Security Inc.")
+        authors = listOf("Keeper Security Inc.")
         license = "MIT"
         links {
             homepage = "https://github.com/Keeper-Security/secrets-manager"
@@ -228,6 +176,12 @@ configure<org.jreleaser.gradle.plugin.JReleaserExtension> {
         active = org.jreleaser.model.Active.ALWAYS
         armored = true
         mode = org.jreleaser.model.Signing.Mode.FILE
+    }
+    
+    release {
+        github {
+            enabled = false
+        }
     }
 
     deploy {

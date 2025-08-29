@@ -95,12 +95,12 @@ jobs:
       - name: Build and test
         run: ./gradlew clean build test
 
-      - name: Publish to staging repository
-        run: ./gradlew publishAllPublicationsToStagingRepository
+      - name: Publish to staging directory
+        run: ./gradlew publish
 
         # Signing docs: https://jreleaser.org/guide/latest/reference/signing.html
       - name: Deploy to Maven Central via JReleaser
-        run: ./gradlew jreleaserDeploy
+        run: ./gradlew jreleaserDeploy --no-configuration-cache --stacktrace
         env:
           JRELEASER_GPG_PASSPHRASE: ${{ env.JRELEASER_GPG_PASSPHRASE }}
           JRELEASER_GPG_SECRET_KEY: /tmp/private-key.asc
