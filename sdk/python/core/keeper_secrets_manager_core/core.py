@@ -158,7 +158,7 @@ class SecretsManager:
 
         self.config: KeyValueStorage = config
 
-        self.proxy_url = proxy_url or os.environ.get("KSM_PROXY") or None
+        self.proxy_url = proxy_url or None
 
         self._init()
 
