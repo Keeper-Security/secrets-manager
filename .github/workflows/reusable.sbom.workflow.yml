@@ -274,6 +274,32 @@ jobs:
           
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: Install Python dependencies
+        if: inputs.project-type == 'python'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "Installing Python dependencies for SBOM generation..."
+          if [ -f "requirements.txt" ]; then
+            echo "Found requirements.txt, installing dependencies..."
+            python3 -m pip install -r requirements.txt
+          elif [ -f "setup.py" ]; then
+            echo "Found setup.py, installing dependencies..."
+            python3 -m pip install -e .
+          elif [ -f "pyproject.toml" ]; then
+            echo "Found pyproject.toml, checking for Poetry..."
+            if [ -f "poetry.lock" ]; then
+              echo "Installing Poetry and dependencies..."
+              pip install poetry
+              poetry install
+            else
+              echo "Installing dependencies with pip..."
+              python3 -m pip install .
+            fi
+          fi
+          
+          echo "Python packages installed:"
+          pip list
+
       - name: Debug Java dependencies
         if: inputs.project-type == 'java'
         working-directory: ${{ inputs.working-directory }}
@@ -377,6 +403,33 @@ jobs:
           # Copy only the project files to scan directory
           echo "Copying project files to scan directory..."
           cp -r "${{ github.workspace }}/${{ inputs.working-directory }}"/* "$SCAN_DIR/"
+          
+          # For Python projects, ensure dependencies are available
+          if [ "${{ inputs.project-type }}" = "python" ]; then
+            echo "Setting up Python project for SBOM scanning..."
+            
+            cd "$SCAN_DIR"
+            
+            # Create a virtual environment and install everything there
+            echo "Creating virtual environment for comprehensive scanning..."
+            python3 -m venv scan-venv
+            
+            echo "Upgrading pip and installing build tools..."
+            ./scan-venv/bin/pip install --upgrade pip setuptools wheel
+            
+            echo "Installing package and all dependencies..."
+            ./scan-venv/bin/pip install .
+            
+            echo "Installed packages in virtual environment:"
+            ./scan-venv/bin/pip list
+            
+            echo "Package count in virtual environment:"
+            ./scan-venv/bin/pip list | wc -l
+            
+            # Update SCAN_DIR to point to the virtual environment for Syft
+            SCAN_DIR="$SCAN_DIR/scan-venv"
+            echo "Updated SCAN_DIR to virtual environment: $SCAN_DIR"
+          fi
           
           # For Java projects, ensure Gradle wrapper is properly set up
           if [ "${{ inputs.project-type }}" = "java" ]; then
