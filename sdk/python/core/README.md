@@ -5,9 +5,7 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 17.0.0
-* KSM-533 - Added proxy support
 * KSM-566 - Added parsing for KSM tokens with prefix
-* KSM-628 - Added GraphSync links
 * KSM-631 - Added links2Remove parameter for files removal
 * KSM-635 - HTTPError should include response object
 
