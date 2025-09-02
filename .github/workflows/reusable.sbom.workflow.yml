@@ -289,7 +289,7 @@ jobs:
             echo "Found pyproject.toml, checking for Poetry..."
             if [ -f "poetry.lock" ]; then
               echo "Installing Poetry and dependencies..."
-              pip install poetry
+              python3 -m pip install poetry
               poetry install
             else
               echo "Installing dependencies with pip..."
