@@ -300,7 +300,8 @@ jobs:
           echo "Python packages installed:"
           pip list
 
-      - name: Debug Java dependencies
+
+      - name: Build Java project and resolve dependencies
         if: inputs.project-type == 'java'
         working-directory: ${{ inputs.working-directory }}
         run: |
@@ -311,8 +312,14 @@ jobs:
           echo "Gradle version and info:"
           ./gradlew --version
           
+          echo "Building project to ensure all dependencies are downloaded:"
+          ./gradlew build --no-daemon --refresh-dependencies || true
+          
           echo "Project dependencies:"
           ./gradlew dependencies --configuration runtimeClasspath
+          
+          echo "Generating dependency report for SBOM:"
+          ./gradlew dependencies --configuration runtimeClasspath > dependencies.txt
           
           echo "Project structure:"
           find . -type f -name "*.jar"
@@ -326,45 +333,48 @@ jobs:
             ls -la $GRADLE_USER_HOME/caches || true
           fi
 
-      - name: Debug Syft scanning
+      - name: Prepare Java dependencies for SBOM scanning
         if: inputs.project-type == 'java'
         working-directory: ${{ inputs.working-directory }}
         run: |
-          echo "Installing Syft"
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          echo "Installing Syft v1.18.1 (matching krouter configuration)"
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
           
-          echo "Creating Syft config"
+          echo "Creating enhanced Syft config for Kotlin/Gradle projects"
           cat > syft-config.yaml << 'EOF'
           package:
             search:
               scope: all-layers
+              unindexed-archives: true
+              indexed-archives: true
             cataloger:
               enabled: true
               java:
                 search-unindexed-archives: true
                 search-indexed-archives: true
                 resolve-dependencies: true
+                use-network: false
+                maven-url: ""
+                max-parent-recursive-depth: 5
           EOF
           
-          echo "Building project to download dependencies"
-          ./gradlew build --no-daemon --refresh-dependencies
-
-    
+          echo "Creating a lib directory with all runtime dependencies"
+          mkdir -p build/sbom-deps
+          ./gradlew copyDependencies --configuration runtimeClasspath || true
+          
+          # Fallback: manually copy dependencies if custom task doesn't exist
+          echo "Copying runtime dependencies for SBOM..."
+          ./gradlew dependencies --configuration runtimeClasspath | grep -E "^\+---|\\---" | grep -v "{" | sed 's/[+\\]---//g' | awk '{print $1}' | grep ":" > deps-list.txt || true
+          
           cat syft-config.yaml
           echo "Syft version:"
           syft version
           
-          echo "Full project scan with verbose output:"
-          SYFT_LOG_LEVEL=debug syft packages . -c syft-config.yaml -o json | tee syft-scan.json
-    
-          echo "Scanning Gradle cache:"
-          find ~/.gradle/caches/modules-2 -type f -name "*.jar" | while read -r jar; do
-            echo "Found JAR: $jar"
-            syft packages "$jar" -c syft-config.yaml -o json
-          done
+          echo "Running comprehensive SBOM scan:"
+          SYFT_LOG_LEVEL=info syft packages . -c syft-config.yaml -o json > syft-scan.json
           
-          echo "Full project scan with verbose output:"
-          SYFT_LOG_LEVEL=debug syft packages . -c syft-config.yaml -o json | tee syft-scan.json
+          echo "Dependencies found in scan:"
+          cat syft-scan.json | jq '.artifacts[].name' | sort -u || true
 
       - name: Verify Syft Java scanning
         if: inputs.project-type == 'java'
@@ -377,27 +387,38 @@ jobs:
       - name: Generate and publish SBOM
         env:
           PROJECT_VERSION: ${{ inputs.project-version != '' && inputs.project-version || steps.detect-version.outputs.version }}
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
           SYFT_PACKAGE_SEARCH_UNINDEXED_ARCHIVES: "true"
           SYFT_PACKAGE_SEARCH_INDEXED_ARCHIVES: "true"
           SYFT_SCOPE: "all-layers"
           SYFT_JAVA_USE_MAVEN_LOCAL_REPOSITORY: "true"
           SYFT_JAVA_RESOLVE_TRANSITIVE_DEPENDENCIES: "true"
+          SYFT_PACKAGE_CATALOGER_ENABLED: "true"
+          # Disable all catalogers except Java (following krouter pattern)
+          SYFT_PACKAGE_CATALOGER_RUBY_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_PYTHON_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_NODEJS_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_DARTLANG_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_DOTNET_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_GOLANG_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_LINUX_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_PHP_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_RUST_ENABLED: "false"
 
         run: |
-          echo "Installing Syft"
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          echo "Installing Syft v1.18.1 (matching krouter configuration)"
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
           
-          # Install Manifest CLI
-          echo "Installing Manifest CLI..."
-          curl -L https://github.com/manifest-cyber/cli/releases/download/v0.11.0/manifest_linux_x86_64.tar.gz > manifest.tar.gz
-          tar -xzf manifest.tar.gz
-          chmod +x manifest
+          # Install Manifest CLI using their installation script (same as our Docker test)
+          echo "Installing Manifest CLI v0.18.3..."
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b . v0.18.3
+          chmod +x ./manifest
           
           # Create a clean working directory for scanning
           SCAN_DIR="${{ runner.temp }}/scan-workspace"
           mkdir -p "$SCAN_DIR"
           
-          # Store the manifest binary path
+          # Store the manifest binary path (installed in current directory)
           MANIFEST_PATH="${{ github.workspace }}/manifest"
           
           # Copy only the project files to scan directory
@@ -460,66 +481,141 @@ jobs:
           fi
           
           if [ "${{ inputs.project-type }}" = "java" ]; then
-            echo "Running Gradle dependencies resolution..."
+            echo "Preparing Java/Kotlin project for SBOM generation..."
           
-            # Debug: Show Gradle home and cache locations
-            echo "Debug: Gradle locations"
-            ./gradlew --version
-            echo "GRADLE_USER_HOME=${GRADLE_USER_HOME:-~/.gradle}"
+            # Build the project first to ensure dependencies are resolved (skip tests to avoid failures)
+            echo "Building project to resolve all dependencies:"
+            ./gradlew build -x test --no-daemon --refresh-dependencies --info || true
           
-            # Run dependencies task
-            ./gradlew dependencies --configuration runtimeClasspath
+            # Generate a comprehensive dependency list
+            echo "Generating dependency list for SBOM:"
+            ./gradlew dependencies --configuration runtimeClasspath > runtime-dependencies.txt
           
-            # Debug: Show locations and structure
-            echo "Debug: Directory structure before dependency collection:"
-            pwd
-            find . -type d
+            # Create a directory with all runtime dependencies
+            mkdir -p build/sbom-deps
+            
+            # Use the built-in copyDependencies task we added to build.gradle.kts
+            ./gradlew copyDependencies || true
+            
+            # If custom task fails, try alternative approach
+            if [ ! -d "build/sbom-deps" ] || [ -z "$(ls -A build/sbom-deps)" ]; then
+              echo "Attempting alternative dependency collection..."
+              mkdir -p build/sbom-deps
+              # Extract dependency coordinates and try to locate them
+              ./gradlew dependencies --configuration runtimeClasspath | grep -E "^\+---|\\---" | grep -v "{" | sed 's/[+\\]---//g' | awk '{print $1}' | grep ":" | while read dep; do
+                group=$(echo $dep | cut -d: -f1 | tr '.' '/')
+                name=$(echo $dep | cut -d: -f2)
+                version=$(echo $dep | cut -d: -f3)
+                jar_path="${GRADLE_USER_HOME:-~/.gradle}/caches/modules-2/files-2.1/$group/$name/$version"
+                if [ -d "$jar_path" ]; then
+                  find "$jar_path" -name "*.jar" -exec cp {} build/sbom-deps/ \; 2>/dev/null || true
+                fi
+              done
+            fi
           
-            echo "Debug: Gradle cache contents:"
-            ls -R "${GRADLE_USER_HOME:-~/.gradle}/caches/modules-2" || true
-          
-            # Create a directory for gathered dependencies
-            mkdir -p deps
-          
-            # Try to gather dependencies from Gradle cache
-            echo "Debug: Attempting to gather dependencies from Gradle cache"
-            find "${GRADLE_USER_HOME:-~/.gradle}/caches/modules-2" -name "*.jar" -exec cp {} deps/ \; || true
-          
-            echo "Debug: Contents of deps directory:"
-            ls -la deps/
-          
-            # Debug: Show what syft would scan
-            echo "Debug: All JAR files in scope:"
-            find . -type f -name "*.jar"
-          
-            echo "Debug: Syft config if exists:"
-            cat /tmp/syft-*.yaml || echo "No Syft config file found"
-          
-            echo "Debug: Running syft directly to see output:"
-            syft packages . -o json || echo "Direct syft scan failed"
+            echo "Dependencies collected in build/sbom-deps:"
+            ls -la build/sbom-deps/ || true
+            
+            # Also scan the build/libs directory for the compiled JAR
+            echo "JAR files in build directory:"
+            find build -name "*.jar" -type f || true
           fi
 
-          echo "Creating Syft config for Manifest"
+          echo "Creating enhanced Syft config for comprehensive scanning"
           cat > syft-config.yaml << 'EOF'
           package:
             search:
               scope: all-layers
+              unindexed-archives: true
+              indexed-archives: true
             cataloger:
               enabled: true
+              # Disable all catalogers except Java to avoid conflicts
+              ruby:
+                enabled: false
+              python:
+                enabled: false
+              nodejs:
+                enabled: false
+              dartlang:
+                enabled: false
+              dotnet:
+                enabled: false
+              golang:
+                enabled: false
+              linux:
+                enabled: false
+              php:
+                enabled: false
+              rust:
+                enabled: false
               java:
+                enabled: true
                 search-unindexed-archives: true
                 search-indexed-archives: true
                 resolve-dependencies: true
+                use-network: false
+                max-parent-recursive-depth: 10
           EOF
+          # For Java projects, ensure Syft scans both the project and dependencies
+          if [ "${{ inputs.project-type }}" = "java" ]; then
+            # Create a temporary syft config with custom settings
+            echo "Configuring Syft for comprehensive Java/Kotlin scanning..."
+            export SYFT_JAVA_USE_NETWORK=false
+            export SYFT_JAVA_MAX_PARENT_RECURSIVE_DEPTH=10
+            
+            # Run Syft directly first to generate comprehensive SBOM (using v1.18.1 syntax)
+            syft scan . \
+              --config syft-config.yaml \
+              --output spdx-json=project-sbom.json \
+              --override-default-catalogers java || true
+            
+            # Also scan the dependencies directory if it exists
+            if [ -d "build/sbom-deps" ] && [ -n "$(ls -A build/sbom-deps)" ]; then
+              echo "Scanning dependencies directory..."
+              syft scan build/sbom-deps \
+                --config syft-config.yaml \
+                --output spdx-json=deps-sbom.json \
+                --override-default-catalogers java || true
+            fi
+          fi
+          
+          # For Java, scan the dependencies directory for better detection
+          if [ "${{ inputs.project-type }}" = "java" ] && [ -d "build/sbom-deps" ]; then
+            SCAN_TARGET="build/sbom-deps"
+            echo "Scanning dependencies directory: $SCAN_TARGET"
+          else
+            SCAN_TARGET="."
+            echo "Scanning current directory: $SCAN_TARGET"
+          fi
+          
           # Generate SBOM using Manifest CLI
-          "$MANIFEST_PATH" sbom . \
+          # Important: We do NOT use --generator-config as it causes issues with Manifest CLI
+          # Instead, we rely on Syft's environment variables and pre-scanning
+          # Note: --label was deprecated in favor of --asset-label in newer versions
+          echo "Generating SBOM with Manifest CLI..."
+          echo "Debug: Running command: $MANIFEST_PATH sbom $SCAN_TARGET --generator=syft --name=${{ inputs.project-name }} --version=${PROJECT_VERSION} --output=${{ inputs.sbom-format }} --file=generated-sbom.json --api-key=*** --publish=true --asset-label=${FINAL_LABELS}"
+          
+          "$MANIFEST_PATH" sbom "$SCAN_TARGET" \
             --generator=syft \
             --name=${{ inputs.project-name }} \
             --version=${PROJECT_VERSION} \
             --output=${{ inputs.sbom-format }} \
-            --api-key=${{ secrets.MANIFEST_TOKEN }} \
+            --file=generated-sbom.json \
+            --api-key=${MANIFEST_TOKEN} \
             --publish=true \
-            --label=${FINAL_LABELS}
+            --asset-label=${FINAL_LABELS} 2>&1 || {
+            echo "Trying with --label flag for compatibility..."
+            "$MANIFEST_PATH" sbom "$SCAN_TARGET" \
+              --generator=syft \
+              --name=${{ inputs.project-name }} \
+              --version=${PROJECT_VERSION} \
+              --output=${{ inputs.sbom-format }} \
+              --file=generated-sbom.json \
+              --api-key=${MANIFEST_TOKEN} \
+              --publish=true \
+              --label=${FINAL_LABELS}
+          }
           
           # Copy generated SBOM back to original directory for artifact upload
           cp *.json "${{ github.workspace }}/"
