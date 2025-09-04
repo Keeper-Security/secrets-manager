@@ -90,7 +90,6 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.2.4'
-          bundler-cache: true
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
@@ -124,20 +123,15 @@ jobs:
           fi
           echo "Version $VERSION is available for publishing"
 
-      - name: Install dependencies
-        run: |
-          echo "Installing dependencies..."
-          bundle install || exit 1
-
       - name: Run linting (Cookstyle)
         run: |
           echo "Running cookstyle..."
-          bundle exec cookstyle || exit 1
+          cookstyle || exit 1
 
       - name: Run ChefSpec tests
         run: |
           echo "Running ChefSpec tests..."
-          bundle exec rspec || exit 1
+          rspec || exit 1
 
       - name: Build cookbook
         run: |
