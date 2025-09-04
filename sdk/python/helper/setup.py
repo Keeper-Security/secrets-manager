@@ -8,14 +8,14 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 install_requires = [
-    'keeper-secrets-manager-core>=16.2.2',
-    'pyyaml',
+    'keeper-secrets-manager-core>=16.6.6',
+    'pyyaml>=6.0.1',
     'iso8601'
 ]
 
 setup(
     name="keeper-secrets-manager-helper",
-    version="1.0.5",
+    version="1.0.6",
     description="Keeper Secrets Manager SDK helper for managing records.",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -50,6 +50,7 @@ setup(
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
         "Topic :: Security",
     ]
 )
