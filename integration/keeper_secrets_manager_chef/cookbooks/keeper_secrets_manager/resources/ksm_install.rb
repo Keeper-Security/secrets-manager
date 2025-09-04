@@ -259,9 +259,8 @@ action_class do
       # keeper_config['config_json'] || keeper_config['token']
 
       secret = Chef::EncryptedDataBagItem.load_secret('/etc/chef/encrypted_data_bag_secret')
-      keeper_config = Chef::EncryptedDataBagItem.load('keeper', 'keeper_config', secret)
+      keeper_config = data_bag_item('keeper', 'keeper_config', secret)
       keeper_config['config_json'] || keeper_config['token']
-
     rescue Net::HTTPServerException, Chef::Exceptions::InvalidDataBagPath, Errno::ENOENT
       Chef::Log.warn('No Encrypted Data Bag or environment variable found for KEEPER_CONFIG!')
       ENV['KEEPER_CONFIG']
@@ -274,7 +273,7 @@ action_class do
     pip_cmd = which('pip3') || which('pip') || python_command('-m pip')
     user_flag = new_resource.user_install ? '--user' : ''
 
-    if platform_family?('windows') and new_resource.user_install
+    if platform_family?('windows') && new_resource.user_install
       "#{pip_cmd} #{args} #{user_flag}".strip
     else
       "sudo #{pip_cmd} #{args}".strip

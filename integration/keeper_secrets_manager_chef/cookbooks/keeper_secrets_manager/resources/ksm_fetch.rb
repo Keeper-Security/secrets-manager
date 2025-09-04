@@ -77,12 +77,11 @@ action_class do
       # keeper_config['config_json'] || keeper_config['token']
 
       secret = Chef::EncryptedDataBagItem.load_secret('/etc/chef/encrypted_data_bag_secret')
-      keeper_config = Chef::EncryptedDataBagItem.load('keeper', 'keeper_config', secret)
+      keeper_config = data_bag_item('keeper', 'keeper_config', secret)
       keeper_config['config_json'] || keeper_config['token']
-
     rescue Net::HTTPServerException, Chef::Exceptions::InvalidDataBagPath, Errno::ENOENT
       Chef::Log.warn('No Encrypted Data Bag or environment variable found for KEEPER_CONFIG!')
       ENV['KEEPER_CONFIG']
     end
   end
-end 
+end

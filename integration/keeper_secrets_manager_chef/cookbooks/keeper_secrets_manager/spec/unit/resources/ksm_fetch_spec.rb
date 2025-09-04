@@ -178,4 +178,4 @@ describe 'ksm_fetch resource' do
       )
     end
   end
-end 
+end

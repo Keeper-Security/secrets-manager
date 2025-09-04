@@ -24,6 +24,6 @@ describe 'keeper_secrets_manager::fetch' do
   end
 
   it 'logs success message' do
-    expect(chef_run).to write_log('Keeper secrets fetched successfully !').with(level: :info)
+    expect(chef_run).to write_log('Keeper secrets fetched successfully!').with(level: :info)
   end
 end
