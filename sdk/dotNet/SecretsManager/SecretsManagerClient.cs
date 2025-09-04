@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 namespace SecretsManager
 {
     using GetRandomBytesFunction = Func<int, byte[]>;
-    using QueryFunction = Func<string, TransmissionKey, EncryptedPayload, Task<KeeperHttpResponse>>;
+    using QueryFunction = Func<string, TransmissionKey, EncryptedPayload, string, Task<KeeperHttpResponse>>;
 
     public interface IKeyValueStorage
     {
@@ -28,12 +28,13 @@ namespace SecretsManager
         public bool AllowUnverifiedCertificate { get; }
         public IKeyValueStorage Storage { get; }
         public QueryFunction QueryFunction { get; }
-
-        public SecretsManagerOptions(IKeyValueStorage storage, QueryFunction queryFunction = null, bool allowUnverifiedCertificate = false)
+        public string ProxyUrl { get; }
+        public SecretsManagerOptions(IKeyValueStorage storage, QueryFunction queryFunction = null, bool allowUnverifiedCertificate = false, string proxyUrl = null)
         {
             Storage = storage;
             QueryFunction = queryFunction;
             AllowUnverifiedCertificate = allowUnverifiedCertificate;
+            ProxyUrl = proxyUrl;
         }
     }
 
@@ -920,7 +921,7 @@ namespace SecretsManager
             var (payload, encryptedFileData) = PrepareFileUploadPayload(options.Storage, ownerRecord, file);
             var responseData = await PostQuery(options, "add_file", payload);
             var response = JsonUtils.ParseJson<SecretsManagerAddFileResponse>(responseData);
-            await UploadFile(response.url, response.parameters, response.successStatusCode, encryptedFileData);
+            await UploadFile(response.url, response.parameters, response.successStatusCode, encryptedFileData, options.ProxyUrl);
             return payload.fileRecordUid;
         }
 
@@ -948,10 +949,11 @@ namespace SecretsManager
             return CryptoUtils.Decrypt(StreamToBytes(responseStream), file.FileKey);
         }
 
-        private static async Task UploadFile(string url, string parameters, int successStatusCode, byte[] fileData)
+        private static async Task UploadFile(string url, string parameters, int successStatusCode, byte[] fileData, string proxyUrl = null)
         {
             var request = (HttpWebRequest)WebRequest.Create(url);
             request.Method = "POST";
+            ApplyProxyUrl(request, proxyUrl);
             var boundary = "----------" + DateTime.Now.Ticks.ToString("x");
             var boundaryBytes = Encoding.ASCII.GetBytes("\r\n--" + boundary);
             request.ContentType = "multipart/form-data; boundary=" + boundary;
@@ -1429,11 +1431,11 @@ namespace SecretsManager
             return new EncryptedPayload(encryptedPayload, signature);
         }
 
-        public static async Task<KeeperHttpResponse> CachingPostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload)
+        public static async Task<KeeperHttpResponse> CachingPostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload, string proxyUrl = null)
         {
             try
             {
-                var response = await PostFunction(url, transmissionKey, payload, false);
+                var response = await PostFunction(url, transmissionKey, payload, false, proxyUrl);
                 if (!response.IsError)
                 {
                     CacheStorage.SaveCachedValue(transmissionKey.Key.Concat(response.Data).ToArray());
@@ -1458,13 +1460,15 @@ namespace SecretsManager
             return memoryStream.ToArray();
         }
 
-        public static async Task<KeeperHttpResponse> PostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload, bool allowUnverifiedCertificate)
+        public static async Task<KeeperHttpResponse> PostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload, bool allowUnverifiedCertificate, string proxyUrl = null)
         {
             var request = (HttpWebRequest)WebRequest.Create(url);
             if (allowUnverifiedCertificate)
             {
                 request.ServerCertificateValidationCallback += (_, _, _, _) => true;
             }
+
+            ApplyProxyUrl(request, proxyUrl);
 
             request.ContentType = "application/octet-stream";
             request.Headers["PublicKeyId"] = transmissionKey.PublicKeyId.ToString();
@@ -1512,8 +1516,8 @@ namespace SecretsManager
                 var transmissionKey = GenerateTransmissionKey(options.Storage);
                 var encryptedPayload = EncryptAndSignPayload(options.Storage, transmissionKey, payload);
                 var response = options.QueryFunction == null
-                    ? await PostFunction(url, transmissionKey, encryptedPayload, options.AllowUnverifiedCertificate)
-                    : await options.QueryFunction(url, transmissionKey, encryptedPayload);
+                    ? await PostFunction(url, transmissionKey, encryptedPayload, options.AllowUnverifiedCertificate, options.ProxyUrl)
+                    : await options.QueryFunction(url, transmissionKey, encryptedPayload, options.ProxyUrl);
                 if (response.IsError)
                 {
                     try
@@ -1536,6 +1540,25 @@ namespace SecretsManager
                 return response.Data.Length == 0
                     ? response.Data
                     : CryptoUtils.Decrypt(response.Data, transmissionKey.Key);
+            }
+        }
+
+        private static void ApplyProxyUrl(HttpWebRequest request, string proxyUrl)
+        {
+            if (!string.IsNullOrEmpty(proxyUrl))
+            {
+                request.Proxy = new WebProxy(proxyUrl);
+
+                // Check if proxyUrl contains credentials (e.g., http://user:pass@host:port)
+                var uri = new Uri(proxyUrl);
+                if (!string.IsNullOrEmpty(uri.UserInfo))
+                {
+                    var userInfo = uri.UserInfo.Split(':');
+                    if (userInfo.Length == 2)
+                    {
+                        request.Proxy.Credentials = new NetworkCredential(userInfo[0], userInfo[1]);
+                    }
+                }
             }
         }
     }
