@@ -25,9 +25,9 @@ export type Platform = {
     getRandomCharacterInCharset(charset: string): Promise<string>
 
 //  network
-    get(url: string, headers: any): Promise<KeeperHttpResponse>
-    post(url: string, request: Uint8Array, headers?: { [key: string]: string }, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse>
-    fileUpload(url: string, uploadParameters: any, data: Uint8Array | Blob): Promise<any>
+    get(url: string, headers: any, proxyUrl?: string): Promise<KeeperHttpResponse>
+    post(url: string, request: Uint8Array, headers?: { [key: string]: string }, allowUnverifiedCertificate?: boolean, proxyUrl?: string): Promise<KeeperHttpResponse>
+    fileUpload(url: string, uploadParameters: any, data: Uint8Array | Blob, proxyUrl?: string): Promise<any>
 }
 
 export type KeyValueStorage = {

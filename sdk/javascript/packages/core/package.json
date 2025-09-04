@@ -30,5 +30,8 @@
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "https-proxy-agent": "^7.0.6"
   }
 }

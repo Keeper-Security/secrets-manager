@@ -5,13 +5,14 @@ import {
     createCipheriv,
     createDecipheriv,
     createECDH,
-    createHash, createHmac,
-    createPrivateKey,
+    createHash,
+    createHmac,
     createSign,
     generateKeyPair,
     randomBytes
 } from 'crypto'
 import * as https from "https";
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 const bytesToBase64 = (data: Uint8Array): string => Buffer.from(data).toString('base64')
 
@@ -24,6 +25,9 @@ const stringToBytes = (data: string): Uint8Array => Buffer.from(data)
 const getRandomBytes = (length: number): Uint8Array => randomBytes(length)
 
 const keyCache: Record<string, Uint8Array> = {}
+
+const proxyUrlFromEnv = process.env.HTTPS_PROXY
+const globalAgent = typeof proxyUrlFromEnv === 'string' ? new HttpsProxyAgent(proxyUrlFromEnv) : undefined
 
 const loadKey = async (keyId: string, storage?: KeyValueStorage): Promise<Uint8Array> => {
     const cachedKey = keyCache[keyId]
@@ -189,14 +193,16 @@ const fetchData = (res, resolve) => {
 
 const get = (
     url: string,
-    headers?: { [key: string]: string }
+    headers?: { [key: string]: string },
+    proxyUrl?: string
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
     const get = request(url, {
         method: 'get',
         headers: {
             'User-Agent': `Node/${process.version}`,
             ...headers
-        }
+        },
+        agent: getProxyAgent(proxyUrl)
     }, (res) => {
         fetchData(res, resolve)
     })
@@ -208,10 +214,12 @@ const post = (
     url: string,
     payload: Uint8Array,
     headers?: { [key: string]: string },
-    allowUnverifiedCertificate?: boolean
+    allowUnverifiedCertificate?: boolean,
+    proxyUrl?: string
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
     const options: RequestOptions = {
-        rejectUnauthorized: !allowUnverifiedCertificate
+        rejectUnauthorized: !allowUnverifiedCertificate,
+        agent: getProxyAgent(proxyUrl)
     }
     const post = request(url, {
         method: 'post',
@@ -233,7 +241,8 @@ const post = (
 const fileUpload = (
     url: string,
     uploadParameters: { [key: string]: string },
-    data: Uint8Array
+    data: Uint8Array,
+    proxyUrl?: string
 ): Promise<any> => new Promise<any>((resolve, reject) => {
     const boundary = `----------${Date.now()}`
     const boundaryBytes = stringToBytes(`\r\n--${boundary}`)
@@ -241,7 +250,8 @@ const fileUpload = (
         method: "post",
         headers: {
             'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        }
+        },
+        agent: getProxyAgent(proxyUrl)
     });
     post.on('response', function (res: any) {
         resolve({
@@ -301,6 +311,10 @@ const getRandomCharacterInCharset = async (charset: string): Promise<string> => 
     const count = charset.length
     const pos = await getRandomNumber(count)
     return Promise.resolve(charset[pos])
+}
+
+const getProxyAgent = (proxyUrl?: string): HttpsProxyAgent<string> | undefined => {
+    return proxyUrl ? new HttpsProxyAgent(proxyUrl) : globalAgent
 }
 
 export const nodePlatform: Platform = {
