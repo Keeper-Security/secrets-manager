@@ -3,6 +3,10 @@
 
 # Change Log
 
+## 17.0.0
+
+* KSM-535 - Added proxy support
+
 ## 16.6.7
 
 * KSM-550 - Stop generating UIDs that start with "-"
