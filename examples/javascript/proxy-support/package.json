@@ -1,0 +1,13 @@
+{
+  "name": "hello-secret",
+  "version": "1.0.0",
+  "description": "Secrets Manager basic usage sample for Node",
+  "license": "ISC",
+  "scripts": {
+    "run" : "node hello.js"
+  },
+  "dependencies": {
+    "@keeper-security/secrets-manager-core": "17.2.1",
+    "https-proxy-agent": "^7.0.6"
+  }
+}

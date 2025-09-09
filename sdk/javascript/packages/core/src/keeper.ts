@@ -41,9 +41,8 @@ export const initialize = (pkgVersion?: string) => {
 
 export type SecretManagerOptions = {
     storage: KeyValueStorage
-    queryFunction?: (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, proxyUrl?: string) => Promise<KeeperHttpResponse>
-    allowUnverifiedCertificate?: boolean,
-    proxyUrl?: string
+    queryFunction?: (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean) => Promise<KeeperHttpResponse>
+    allowUnverifiedCertificate?: boolean
 }
 
 export type QueryOptions = {
@@ -488,13 +487,13 @@ const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: K
     }
 }
 
-const postFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, proxyUrl?: string): Promise<KeeperHttpResponse> => {
+const postFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse> => {
     return platform.post(url, payload.payload,
         {
             PublicKeyId: transmissionKey.publicKeyId.toString(),
             TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
             Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-        }, allowUnverifiedCertificate, proxyUrl)
+        }, allowUnverifiedCertificate)
 }
 
 export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => {
@@ -531,7 +530,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
     while (true) {
         const transmissionKey = await generateTransmissionKey(options.storage)
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
-        const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, options.proxyUrl)
+        const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate)
         if (response.statusCode !== 200) {
             let errorMessage
             if (response.data) {
@@ -689,8 +688,7 @@ export const getClientId = async (clientKey: string): Promise<string> => {
 export const initializeStorage = async (
     storage: KeyValueStorage,
     oneTimeToken: string,
-    hostName?: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au',
-    proxyUrl?: string
+    hostName?: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au'
       ) => {
     const tokenParts = oneTimeToken.split(':')
     let host, clientKey
@@ -861,7 +859,7 @@ export const getNotationResults = async (options: SecretManagerOptions, notation
                 throw new Error(`Notation error - Record ${recordToken} has multiple files matching the search criteria '${parameter}'`)
             if (numFiles < 1)
                 throw new Error(`Notation error - Record ${recordToken} has no files matching the search criteria '${parameter}'`)
-            const contents = await downloadFile(files[0], options.proxyUrl)
+            const contents = await downloadFile(files[0])
             const text = webSafe64FromBytes(contents)
             result.push(text)
             break
@@ -1014,13 +1012,13 @@ export const updateFolder = async (options: SecretManagerOptions, folderUid: str
     await postQuery(options, 'update_folder', payload)
 }
 
-export const downloadFile = async (file: KeeperFile, proxyUrl?: string): Promise<Uint8Array> => {
-    const fileResponse = await platform.get(file.url!, {}, proxyUrl)
+export const downloadFile = async (file: KeeperFile): Promise<Uint8Array> => {
+    const fileResponse = await platform.get(file.url!, {})
     return platform.decrypt(fileResponse.data, file.fileUid)
 }
 
-export const downloadThumbnail = async (file: KeeperFile, proxyUrl?: string): Promise<Uint8Array> => {
-    const fileResponse = await platform.get(file.thumbnailUrl!, {}, proxyUrl)
+export const downloadThumbnail = async (file: KeeperFile): Promise<Uint8Array> => {
+    const fileResponse = await platform.get(file.thumbnailUrl!, {})
     return platform.decrypt(fileResponse.data, file.fileUid)
 }
 
@@ -1028,7 +1026,7 @@ export const uploadFile = async (options: SecretManagerOptions, ownerRecord: Kee
     const { payload, encryptedFileData } = await prepareFileUploadPayload(options.storage, ownerRecord, file)
     const responseData = await postQuery(options, 'add_file', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerAddFileResponse
-    const uploadResult = await platform.fileUpload(response.url, JSON.parse(response.parameters), encryptedFileData, options.proxyUrl)
+    const uploadResult = await platform.fileUpload(response.url, JSON.parse(response.parameters), encryptedFileData)
     if (uploadResult.statusCode !== response.successStatusCode) {
         throw new Error(`Upload failed (${uploadResult.statusMessage}), code ${uploadResult.statusCode}`)
     }

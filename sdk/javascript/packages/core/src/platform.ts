@@ -1,3 +1,5 @@
+import * as http from 'http';
+
 export type Platform = {
 //  string routines
     bytesToBase64(data: Uint8Array): string
@@ -25,9 +27,10 @@ export type Platform = {
     getRandomCharacterInCharset(charset: string): Promise<string>
 
 //  network
-    get(url: string, headers: any, proxyUrl?: string): Promise<KeeperHttpResponse>
-    post(url: string, request: Uint8Array, headers?: { [key: string]: string }, allowUnverifiedCertificate?: boolean, proxyUrl?: string): Promise<KeeperHttpResponse>
-    fileUpload(url: string, uploadParameters: any, data: Uint8Array | Blob, proxyUrl?: string): Promise<any>
+    get(url: string, headers: any): Promise<KeeperHttpResponse>
+    post(url: string, request: Uint8Array, headers?: { [key: string]: string }, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse>
+    fileUpload(url: string, uploadParameters: any, data: Uint8Array | Blob): Promise<any>
+    setCustomProxyAgent(proxyAgent: http.Agent): void
 }
 
 export type KeyValueStorage = {
@@ -140,4 +143,8 @@ export const inMemoryStorage = (storage: any): KeyValueStorage => {
             return Promise.resolve()
         }
     }
+}
+
+export const setCustomProxyAgent = (proxyAgent: http.Agent) => {
+    platform.setCustomProxyAgent(proxyAgent)
 }
