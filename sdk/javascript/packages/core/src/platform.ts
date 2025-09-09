@@ -1,5 +1,3 @@
-import * as http from 'http';
-
 export type Platform = {
 //  string routines
     bytesToBase64(data: Uint8Array): string
@@ -30,7 +28,7 @@ export type Platform = {
     get(url: string, headers: any): Promise<KeeperHttpResponse>
     post(url: string, request: Uint8Array, headers?: { [key: string]: string }, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse>
     fileUpload(url: string, uploadParameters: any, data: Uint8Array | Blob): Promise<any>
-    setCustomProxyAgent(proxyAgent: http.Agent): void
+    setCustomProxyAgent(proxyAgent: any): void
 }
 
 export type KeyValueStorage = {
@@ -145,6 +143,6 @@ export const inMemoryStorage = (storage: any): KeyValueStorage => {
     }
 }
 
-export const setCustomProxyAgent = (proxyAgent: http.Agent) => {
+export const setCustomProxyAgent = (proxyAgent: any) => {
     platform.setCustomProxyAgent(proxyAgent)
 }
