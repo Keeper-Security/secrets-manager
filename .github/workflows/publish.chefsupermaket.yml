@@ -123,6 +123,12 @@ jobs:
           fi
           echo "Version $VERSION is available for publishing"
 
+      - name: Install Chef Workstation
+        run: |
+          echo "Installing Chef Workstation..."
+          curl https://omnitruck.chef.io/install.sh | sudo bash -s -- -P chef-workstation
+          chef --version
+      
       - name: Run linting (Cookstyle)
         run: |
           echo "Running cookstyle..."
@@ -133,30 +139,17 @@ jobs:
           echo "Running ChefSpec tests..."
           rspec || exit 1
 
-      - name: Build cookbook
-        run: |
-          echo "Building cookbook tarball..."
-          berks package || exit 1
-          ls -la *.tar.gz || echo "No package found"
-
       - name: Publish to Chef Supermarket
         env:
           CHEF_SUPERMARKET_API_KEY: ${{ steps.ksmsecrets.outputs.CHEF_SUPERMARKET_API_KEY }}
           VERSION: ${{ steps.version.outputs.current_version }}
         run: |
           echo "Publishing to Chef Supermarket..."
-          LATEST_FILE=$(ls -t *.tar.gz | head -1)
-          if [[ -z "$LATEST_FILE" ]]; then
-            echo "No package found to publish"
-            exit 1
-          fi
-
-          knife supermarket share keeper_secrets_manager "Other" \
+          knife supermarket share keeper_secrets_manager "Utilities" \
             --supermarket-site https://supermarket.chef.io \
             --cookbook-path . \
-            --key $CHEF_SUPERMARKET_API_KEY || exit 1
-
-          echo "Successfully published $LATEST_FILE to Chef Supermarket!"
+            
+          echo "Successfully published to Chef Supermarket!"
 
       - name: Create release summary
         env:

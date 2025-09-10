@@ -1,6 +1,6 @@
 # Keeper Secrets Manager Cookbook
 
-[![Cookbook Version](https://img.shields.io/badge/cookbook-v0.1.0-blue)](https://github.com/your-org/keeper_secrets_manager)
+[![Cookbook Version](https://img.shields.io/badge/cookbook-v0.1.0-blue)](https://github.com/Keeper-Security/secrets-manager/tree/master/integration/keeper_secrets_manager_chef)
 [![Chef](https://img.shields.io/badge/chef-%3E%3D16.0-orange)](https://www.chef.io/)
 [![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-red)](LICENSE)
 
@@ -8,7 +8,7 @@ Install and configure Keeper Secrets Manager for secure secret retrieval in Chef
 
 ## Maintainers
 
-This cookbook is maintained by [Your Organization]. If you'd like to contribute or report issues, please visit our [GitHub repository](https://github.com/your-org/keeper_secrets_manager).
+This cookbook is maintained by Keeper Security. If you'd like to contribute or report issues, please visit our [GitHub repository](https://github.com/Keeper-Security/secrets-manager/tree/master/integration/keeper_secrets_manager_chef).
 
 ## Platforms
 
@@ -244,10 +244,10 @@ chef exec cookstyle .     # Style checks
 
 ### Test Coverage
 
-- ✅ Python Unit Tests (11 tests)
-- ✅ ChefSpec Tests (Resource and recipe testing)
-- ✅ Integration Tests (Docker-based end-to-end testing)
-- ✅ Style Tests (Cookstyle compliance)
+- Python Unit Tests (11 tests)
+- ChefSpec Tests (Resource and recipe testing)
+- Integration Tests (Docker-based end-to-end testing)
+- Style Tests (Cookstyle compliance)
 
 ## External Documentation
 
@@ -281,19 +281,7 @@ chef exec cookstyle .     # Style checks
 
 ## License
 
-All Rights Reserved
-
-This cookbook is proprietary software. All rights reserved.
-
-For licensing inquiries, please contact: [your-email@example.com]
-
-## Support
-
-For support and questions:
-
-- **Issues**: [GitHub Issues](https://github.com/your-org/keeper_secrets_manager/issues)
-- **Documentation**: [Wiki](https://github.com/your-org/keeper_secrets_manager/wiki)
-- **Contact**: [your-email@example.com]
+This module is licensed under the Apache License, Version 2.0.
 
 ---
 
