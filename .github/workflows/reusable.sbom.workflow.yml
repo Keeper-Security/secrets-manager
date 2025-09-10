@@ -1,0 +1,630 @@
+name: Reusable SBOM Generation
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory containing the project files'
+        required: true
+        type: string
+      project-name:
+        description: 'Name of the project for SBOM identification'
+        required: true
+        type: string
+      project-type:
+        description: 'Type of project (python, dotnet, nodejs)'
+        required: true
+        type: string
+      project-version:
+        description: 'Version of the project (optional, will try to detect if not provided)'
+        required: false
+        type: string
+        default: ''
+      sbom-format:
+        description: 'Format for SBOM output (spdx-json, cyclonedx-json)'
+        required: false
+        type: string
+        default: 'spdx-json'
+      additional-labels:
+        description: 'Additional labels for SBOM categorization'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      MANIFEST_TOKEN:
+        description: 'Token for Manifest.io authentication'
+        required: true
+
+jobs:
+  generate-sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        if: inputs.project-type == 'python'
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Setup .NET
+        if: inputs.project-type == 'dotnet'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Setup Node.js
+        if: inputs.project-type == 'nodejs'
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Setup Java
+        if: inputs.project-type == 'java'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'adopt'
+
+      - name: Setup Gradle
+        if: inputs.project-type == 'java'
+        uses: gradle/gradle-build-action@v2
+        with:
+          gradle-version: wrapper
+
+
+      - name: Detect project version
+        id: detect-version
+        if: inputs.project-version == ''
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          # Function to extract git ref version
+          get_git_ref_version() {
+            local ref_version="${GITHUB_REF##*/}"
+            echo "::group::Git Ref Detection"
+            echo "Git ref version: $ref_version"
+            echo "::endgroup::"
+            echo "$ref_version"
+          }
+          echo "::group::Version Detection Setup"
+          echo "Project Type: ${{ inputs.project-type }}"
+          echo "Working Directory Contents:"
+          ls -la
+          echo "::endgroup::"
+          
+          VERSION=""
+          
+          detect_python_version() {
+            echo "::group::Python Version Detection"
+          
+            # Try setup.py
+            if [ -f "setup.py" ]; then
+              echo "Found setup.py, attempting to extract version..."
+              setup_version=$(python3 setup.py --version 2>&1 || echo "")
+              if [ ! -z "$setup_version" ]; then
+                echo "✓ Successfully extracted version from setup.py: $setup_version"
+                echo "::endgroup::"
+                echo "$setup_version"
+                return 0
+              else
+                echo "⚠ Failed to extract version from setup.py"
+              fi
+            else
+              echo "setup.py not found"
+            fi
+
+            # Try pyproject.toml
+            if [ -f "pyproject.toml" ]; then
+              echo "Found pyproject.toml, attempting to extract version..."
+              if command -v poetry &> /dev/null && [ -f "poetry.lock" ]; then
+                poetry_version=$(poetry version -s 2>&1 || echo "")
+                if [ ! -z "$poetry_version" ]; then
+                  echo "✓ Successfully extracted version using poetry: $poetry_version"
+                  echo "::endgroup::"
+                  echo "$poetry_version"
+                  return 0
+                else
+                  echo "⚠ Failed to extract version using poetry"
+                fi
+              fi
+          
+              # Try grep for version string
+              toml_version=$(grep -Po '^version\s*=\s*["\x27]\K[^\x27"]*' pyproject.toml 2>/dev/null || echo "")
+              if [ ! -z "$toml_version" ]; then
+                echo "✓ Successfully extracted version from pyproject.toml: $toml_version"
+                echo "::endgroup::"
+                echo "$toml_version"
+                return 0
+              else
+                echo "⚠ Failed to extract version from pyproject.toml"
+              fi
+            else
+              echo "pyproject.toml not found"
+            fi
+          
+            # Try __init__.py
+            find . -name "__init__.py" -type f -print0 | while IFS= read -r -d '' file; do
+              echo "Checking $file for version..."
+              init_version=$(grep -Po '__version__\s*=\s*["\x27]\K[^\x27"]*' "$file" 2>/dev/null || echo "")
+              if [ ! -z "$init_version" ]; then
+                echo "✓ Successfully extracted version from $file: $init_version"
+                echo "::endgroup::"
+                echo "$init_version"
+                return 0
+              fi
+            done
+            echo "⚠ No version found in __init__.py files"
+          
+            echo "::endgroup::"
+            return 1
+          }
+
+          detect_dotnet_version() {
+            echo "::group::.NET Version Detection"
+          
+            # Try Directory.Build.props first (global version)
+            if [ -f "Directory.Build.props" ]; then
+              echo "Found Directory.Build.props, attempting to extract version..."
+              dir_version=$(grep -Po '<Version>\K[^<]*' Directory.Build.props 2>/dev/null || echo "")
+              if [ ! -z "$dir_version" ]; then
+                echo "✓ Successfully extracted version from Directory.Build.props: $dir_version"
+                echo "::endgroup::"
+                echo "$dir_version"
+                return 0
+              else
+                echo "⚠ No version found in Directory.Build.props"
+              fi
+            fi
+
+            # Try .csproj files
+            echo "Searching for .csproj files..."
+            find . -name "*.csproj" -type f -print0 | while IFS= read -r -d '' file; do
+              echo "Checking $file for version..."
+              # Check Version tag
+              csproj_version=$(grep -Po '<Version>\K[^<]*' "$file" 2>/dev/null || echo "")
+              if [ ! -z "$csproj_version" ]; then
+                echo "✓ Successfully extracted Version from $file: $csproj_version"
+                echo "::endgroup::"
+                echo "$csproj_version"
+                return 0
+              fi
+              # Check PackageVersion tag
+              pkg_version=$(grep -Po '<PackageVersion>\K[^<]*' "$file" 2>/dev/null || echo "")
+              if [ ! -z "$pkg_version" ]; then
+                echo "✓ Successfully extracted PackageVersion from $file: $pkg_version"
+                echo "::endgroup::"
+                echo "$pkg_version"
+                return 0
+              fi
+            done
+            echo "⚠ No version found in any .csproj files"
+          
+            echo "::endgroup::"
+            return 1
+          }
+
+          detect_nodejs_version() {
+            echo "::group::Node.js Version Detection"
+          
+            if [ -f "package.json" ]; then
+              echo "Found package.json, attempting to extract version..."
+              pkg_version=$(node -p "require('./package.json').version" 2>/dev/null || echo "")
+              if [ ! -z "$pkg_version" ]; then
+                echo "✓ Successfully extracted version from package.json: $pkg_version"
+                echo "::endgroup::"
+                echo "$pkg_version"
+                return 0
+              else
+                echo "⚠ Failed to extract version from package.json using Node"
+          
+                # Fallback to grep
+                echo "Attempting fallback with grep..."
+                grep_version=$(grep -Po '"version":\s*"\K[^"]*' package.json 2>/dev/null || echo "")
+                if [ ! -z "$grep_version" ]; then
+                  echo "✓ Successfully extracted version using grep: $grep_version"
+                  echo "::endgroup::"
+                  echo "$grep_version"
+                  return 0
+                else
+                  echo "⚠ Failed to extract version using grep"
+                fi
+              fi
+            else
+              echo "package.json not found"
+            fi
+          
+            echo "::endgroup::"
+            return 1
+          }
+          
+          case "${{ inputs.project-type }}" in
+            "python")
+              VERSION=$(detect_python_version)
+              ;;
+            "dotnet")
+              VERSION=$(detect_dotnet_version)
+              ;;
+            "nodejs")
+              VERSION=$(detect_nodejs_version)
+              ;;
+            "java")
+              if [ -f "build.gradle.kts" ]; then
+                VERSION=$(grep -Po 'version\s*=\s*"\K[^"]*' build.gradle.kts 2>/dev/null || echo "")
+              elif [ -f "build.gradle" ]; then
+                VERSION=$(grep -Po "version\s*=\s*'\K[^']*" build.gradle 2>/dev/null || echo "")
+              fi
+              ;;
+            *)
+              echo "::error::Unknown project type: ${{ inputs.project-type }}"
+              exit 1
+              ;;
+          esac
+          
+          echo "::group::Version Detection Results"
+          if [ -z "$VERSION" ]; then
+            VERSION="0.0.0-unknown"
+            echo "::warning::Could not detect version, using fallback version: $VERSION"
+          else
+            echo "Successfully detected version: $VERSION"
+          fi
+          echo "::endgroup::"
+          
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Python dependencies
+        if: inputs.project-type == 'python'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "Installing Python dependencies for SBOM generation..."
+          if [ -f "requirements.txt" ]; then
+            echo "Found requirements.txt, installing dependencies..."
+            python3 -m pip install -r requirements.txt
+          elif [ -f "setup.py" ]; then
+            echo "Found setup.py, installing dependencies..."
+            python3 -m pip install -e .
+          elif [ -f "pyproject.toml" ]; then
+            echo "Found pyproject.toml, checking for Poetry..."
+            if [ -f "poetry.lock" ]; then
+              echo "Installing Poetry and dependencies..."
+              python3 -m pip install poetry
+              poetry install
+            else
+              echo "Installing dependencies with pip..."
+              python3 -m pip install .
+            fi
+          fi
+          
+          echo "Python packages installed:"
+          pip list
+
+
+      - name: Build Java project and resolve dependencies
+        if: inputs.project-type == 'java'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "Environment:"
+          echo "JAVA_HOME=$JAVA_HOME"
+          echo "GRADLE_USER_HOME=$GRADLE_USER_HOME"
+          
+          echo "Gradle version and info:"
+          ./gradlew --version
+          
+          echo "Building project to ensure all dependencies are downloaded:"
+          ./gradlew build --no-daemon --refresh-dependencies || true
+          
+          echo "Project dependencies:"
+          ./gradlew dependencies --configuration runtimeClasspath
+          
+          echo "Generating dependency report for SBOM:"
+          ./gradlew dependencies --configuration runtimeClasspath > dependencies.txt
+          
+          echo "Project structure:"
+          find . -type f -name "*.jar"
+          
+          echo "Gradle cache location:"
+          if [ -z "$GRADLE_USER_HOME" ]; then
+            echo "Looking in default ~/.gradle location"
+            ls -la ~/.gradle/caches || true
+          else
+            echo "Looking in $GRADLE_USER_HOME/caches"
+            ls -la $GRADLE_USER_HOME/caches || true
+          fi
+
+      - name: Prepare Java dependencies for SBOM scanning
+        if: inputs.project-type == 'java'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "Installing Syft v1.18.1 (matching krouter configuration)"
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
+          
+          echo "Creating enhanced Syft config for Kotlin/Gradle projects"
+          cat > syft-config.yaml << 'EOF'
+          package:
+            search:
+              scope: all-layers
+              unindexed-archives: true
+              indexed-archives: true
+            cataloger:
+              enabled: true
+              java:
+                search-unindexed-archives: true
+                search-indexed-archives: true
+                resolve-dependencies: true
+                use-network: false
+                maven-url: ""
+                max-parent-recursive-depth: 5
+          EOF
+          
+          echo "Creating a lib directory with all runtime dependencies"
+          mkdir -p build/sbom-deps
+          ./gradlew copyDependencies --configuration runtimeClasspath || true
+          
+          # Fallback: manually copy dependencies if custom task doesn't exist
+          echo "Copying runtime dependencies for SBOM..."
+          ./gradlew dependencies --configuration runtimeClasspath | grep -E "^\+---|\\---" | grep -v "{" | sed 's/[+\\]---//g' | awk '{print $1}' | grep ":" > deps-list.txt || true
+          
+          cat syft-config.yaml
+          echo "Syft version:"
+          syft version
+          
+          echo "Running comprehensive SBOM scan:"
+          SYFT_LOG_LEVEL=info syft packages . -c syft-config.yaml -o json > syft-scan.json
+          
+          echo "Dependencies found in scan:"
+          cat syft-scan.json | jq '.artifacts[].name' | sort -u || true
+
+      - name: Verify Syft Java scanning
+        if: inputs.project-type == 'java'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          syft --version
+          echo "Testing direct Syft scan:"
+          syft packages . -vv || true
+
+      - name: Generate and publish SBOM
+        env:
+          PROJECT_VERSION: ${{ inputs.project-version != '' && inputs.project-version || steps.detect-version.outputs.version }}
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+          SYFT_PACKAGE_SEARCH_UNINDEXED_ARCHIVES: "true"
+          SYFT_PACKAGE_SEARCH_INDEXED_ARCHIVES: "true"
+          SYFT_SCOPE: "all-layers"
+          SYFT_JAVA_USE_MAVEN_LOCAL_REPOSITORY: "true"
+          SYFT_JAVA_RESOLVE_TRANSITIVE_DEPENDENCIES: "true"
+          SYFT_PACKAGE_CATALOGER_ENABLED: "true"
+          # Disable all catalogers except Java (following krouter pattern)
+          SYFT_PACKAGE_CATALOGER_RUBY_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_PYTHON_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_NODEJS_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_DARTLANG_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_DOTNET_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_GOLANG_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_LINUX_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_PHP_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_RUST_ENABLED: "false"
+
+        run: |
+          echo "Installing Syft v1.18.1 (matching krouter configuration)"
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
+          
+          # Install Manifest CLI using their installation script (same as our Docker test)
+          echo "Installing Manifest CLI v0.18.3..."
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b . v0.18.3
+          chmod +x ./manifest
+          
+          # Create a clean working directory for scanning
+          SCAN_DIR="${{ runner.temp }}/scan-workspace"
+          mkdir -p "$SCAN_DIR"
+          
+          # Store the manifest binary path (installed in current directory)
+          MANIFEST_PATH="${{ github.workspace }}/manifest"
+          
+          # Copy only the project files to scan directory
+          echo "Copying project files to scan directory..."
+          cp -r "${{ github.workspace }}/${{ inputs.working-directory }}"/* "$SCAN_DIR/"
+          
+          # For Python projects, ensure dependencies are available
+          if [ "${{ inputs.project-type }}" = "python" ]; then
+            echo "Setting up Python project for SBOM scanning..."
+            
+            cd "$SCAN_DIR"
+            
+            # Create a virtual environment and install everything there
+            echo "Creating virtual environment for comprehensive scanning..."
+            python3 -m venv scan-venv
+            
+            echo "Upgrading pip and installing build tools..."
+            ./scan-venv/bin/pip install --upgrade pip setuptools wheel
+            
+            echo "Installing package and all dependencies..."
+            ./scan-venv/bin/pip install .
+            
+            echo "Installed packages in virtual environment:"
+            ./scan-venv/bin/pip list
+            
+            echo "Package count in virtual environment:"
+            ./scan-venv/bin/pip list | wc -l
+            
+            # Update SCAN_DIR to point to the virtual environment for Syft
+            SCAN_DIR="$SCAN_DIR/scan-venv"
+            echo "Updated SCAN_DIR to virtual environment: $SCAN_DIR"
+          fi
+          
+          # For Java projects, ensure Gradle wrapper is properly set up
+          if [ "${{ inputs.project-type }}" = "java" ]; then
+            echo "Setting up Gradle wrapper..."
+            if [ -f "$SCAN_DIR/gradlew" ]; then
+              chmod +x "$SCAN_DIR/gradlew"
+              # Ensure gradle wrapper jar is present
+              if [ ! -f "$SCAN_DIR/gradle/wrapper/gradle-wrapper.jar" ]; then
+                mkdir -p "$SCAN_DIR/gradle/wrapper"
+                cp "${{ github.workspace }}/${{ inputs.working-directory }}/gradle/wrapper/gradle-wrapper.jar" "$SCAN_DIR/gradle/wrapper/"
+                cp "${{ github.workspace }}/${{ inputs.working-directory }}/gradle/wrapper/gradle-wrapper.properties" "$SCAN_DIR/gradle/wrapper/"
+              fi
+            fi
+          fi
+          
+          # Navigate to scan directory
+          cd "$SCAN_DIR"
+          
+          echo "Current directory contents (should only contain project files):"
+          ls -la
+          
+          # Prepare labels
+          BASE_LABELS="application,sbom-generated,${{ inputs.project-type }}"
+          if [ ! -z "${{ inputs.additional-labels }}" ]; then
+            FINAL_LABELS="${BASE_LABELS},${{ inputs.additional-labels }}"
+          else
+            FINAL_LABELS="${BASE_LABELS}"
+          fi
+          
+          if [ "${{ inputs.project-type }}" = "java" ]; then
+            echo "Preparing Java/Kotlin project for SBOM generation..."
+          
+            # Build the project first to ensure dependencies are resolved (skip tests to avoid failures)
+            echo "Building project to resolve all dependencies:"
+            ./gradlew build -x test --no-daemon --refresh-dependencies --info || true
+          
+            # Generate a comprehensive dependency list
+            echo "Generating dependency list for SBOM:"
+            ./gradlew dependencies --configuration runtimeClasspath > runtime-dependencies.txt
+          
+            # Create a directory with all runtime dependencies
+            mkdir -p build/sbom-deps
+            
+            # Use the built-in copyDependencies task we added to build.gradle.kts
+            ./gradlew copyDependencies || true
+            
+            # If custom task fails, try alternative approach
+            if [ ! -d "build/sbom-deps" ] || [ -z "$(ls -A build/sbom-deps)" ]; then
+              echo "Attempting alternative dependency collection..."
+              mkdir -p build/sbom-deps
+              # Extract dependency coordinates and try to locate them
+              ./gradlew dependencies --configuration runtimeClasspath | grep -E "^\+---|\\---" | grep -v "{" | sed 's/[+\\]---//g' | awk '{print $1}' | grep ":" | while read dep; do
+                group=$(echo $dep | cut -d: -f1 | tr '.' '/')
+                name=$(echo $dep | cut -d: -f2)
+                version=$(echo $dep | cut -d: -f3)
+                jar_path="${GRADLE_USER_HOME:-~/.gradle}/caches/modules-2/files-2.1/$group/$name/$version"
+                if [ -d "$jar_path" ]; then
+                  find "$jar_path" -name "*.jar" -exec cp {} build/sbom-deps/ \; 2>/dev/null || true
+                fi
+              done
+            fi
+          
+            echo "Dependencies collected in build/sbom-deps:"
+            ls -la build/sbom-deps/ || true
+            
+            # Also scan the build/libs directory for the compiled JAR
+            echo "JAR files in build directory:"
+            find build -name "*.jar" -type f || true
+          fi
+
+          echo "Creating enhanced Syft config for comprehensive scanning"
+          cat > syft-config.yaml << 'EOF'
+          package:
+            search:
+              scope: all-layers
+              unindexed-archives: true
+              indexed-archives: true
+            cataloger:
+              enabled: true
+              # Disable all catalogers except Java to avoid conflicts
+              ruby:
+                enabled: false
+              python:
+                enabled: false
+              nodejs:
+                enabled: false
+              dartlang:
+                enabled: false
+              dotnet:
+                enabled: false
+              golang:
+                enabled: false
+              linux:
+                enabled: false
+              php:
+                enabled: false
+              rust:
+                enabled: false
+              java:
+                enabled: true
+                search-unindexed-archives: true
+                search-indexed-archives: true
+                resolve-dependencies: true
+                use-network: false
+                max-parent-recursive-depth: 10
+          EOF
+          # For Java projects, ensure Syft scans both the project and dependencies
+          if [ "${{ inputs.project-type }}" = "java" ]; then
+            # Create a temporary syft config with custom settings
+            echo "Configuring Syft for comprehensive Java/Kotlin scanning..."
+            export SYFT_JAVA_USE_NETWORK=false
+            export SYFT_JAVA_MAX_PARENT_RECURSIVE_DEPTH=10
+            
+            # Run Syft directly first to generate comprehensive SBOM (using v1.18.1 syntax)
+            syft scan . \
+              --config syft-config.yaml \
+              --output spdx-json=project-sbom.json \
+              --override-default-catalogers java || true
+            
+            # Also scan the dependencies directory if it exists
+            if [ -d "build/sbom-deps" ] && [ -n "$(ls -A build/sbom-deps)" ]; then
+              echo "Scanning dependencies directory..."
+              syft scan build/sbom-deps \
+                --config syft-config.yaml \
+                --output spdx-json=deps-sbom.json \
+                --override-default-catalogers java || true
+            fi
+          fi
+          
+          # For Java, scan the dependencies directory for better detection
+          if [ "${{ inputs.project-type }}" = "java" ] && [ -d "build/sbom-deps" ]; then
+            SCAN_TARGET="build/sbom-deps"
+            echo "Scanning dependencies directory: $SCAN_TARGET"
+          else
+            SCAN_TARGET="."
+            echo "Scanning current directory: $SCAN_TARGET"
+          fi
+          
+          # Generate SBOM using Manifest CLI
+          # Important: We do NOT use --generator-config as it causes issues with Manifest CLI
+          # Instead, we rely on Syft's environment variables and pre-scanning
+          # Note: --label was deprecated in favor of --asset-label in newer versions
+          echo "Generating SBOM with Manifest CLI..."
+          echo "Debug: Running command: $MANIFEST_PATH sbom $SCAN_TARGET --generator=syft --name=${{ inputs.project-name }} --version=${PROJECT_VERSION} --output=${{ inputs.sbom-format }} --file=generated-sbom.json --api-key=*** --publish=true --asset-label=${FINAL_LABELS}"
+          
+          "$MANIFEST_PATH" sbom "$SCAN_TARGET" \
+            --generator=syft \
+            --name=${{ inputs.project-name }} \
+            --version=${PROJECT_VERSION} \
+            --output=${{ inputs.sbom-format }} \
+            --file=generated-sbom.json \
+            --api-key=${MANIFEST_TOKEN} \
+            --publish=true \
+            --asset-label=${FINAL_LABELS} 2>&1 || {
+            echo "Trying with --label flag for compatibility..."
+            "$MANIFEST_PATH" sbom "$SCAN_TARGET" \
+              --generator=syft \
+              --name=${{ inputs.project-name }} \
+              --version=${PROJECT_VERSION} \
+              --output=${{ inputs.sbom-format }} \
+              --file=generated-sbom.json \
+              --api-key=${MANIFEST_TOKEN} \
+              --publish=true \
+              --label=${FINAL_LABELS}
+          }
+          
+          # Copy generated SBOM back to original directory for artifact upload
+          cp *.json "${{ github.workspace }}/"
+
+      - name: Archive SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ inputs.project-name }}-${{ env.PROJECT_VERSION }}
+          path: |
+            ./*.json
+            ./*.xml
+          retention-days: 90
