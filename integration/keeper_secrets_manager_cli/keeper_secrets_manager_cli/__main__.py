@@ -355,6 +355,21 @@ def profile_init_command(ctx, token, hostname, ini_file, profile_name, token_arg
         token = token_arg[0]
     if token is None:
         token = os.environ.get("KSM_CLI_TOKEN", None)
+        # KSM_TOKEN is for use by KSM SDKs and may be used
+        # by CLI but only when using CLI within a container
+        # to use auto-created profile which conflicts with
+        # any non-default setup (INI file) then it requires
+        # all 5-6 env vars to be provided
+        # https://docs.keeper.io/en/keeperpam/secrets-manager/secrets-manager-command-line-interface#create-a-local-client-device
+        # Use only --token option or KSM_CLI_TOKEN to initialize CLI
+        sdk_token = os.environ.get("KSM_TOKEN", None)
+        if token and sdk_token:
+            print("NOTE: Both KSM_CLI_TOKEN and KSM_TOKEN env vars are set! "
+                  "KSM CLI gives preference to --token option (if present) "
+                  "then KSM_CLI_TOKEN so after consuming the token you should "
+                  "unset KSM_TOKEN (or both env vars - they are one-time use) "
+                  "or risk getting errors while trying to use second token on "
+                  "an already initialized config.")
     if token is None:
         raise KsmCliException("A one time access token is required either as a command parameter or an argument.")
 
