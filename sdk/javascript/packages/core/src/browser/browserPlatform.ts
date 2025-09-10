@@ -410,6 +410,10 @@ const getRandomCharacterInCharset = async (charset: string): Promise<string> => 
     return Promise.resolve(charset[pos])
 }
 
+const setCustomProxyAgent = () => {
+    console.warn('setCustomProxyAgent is not supported in browser')
+}
+
 export const browserPlatform: Platform = {
     bytesToBase64: bytesToBase64,
     base64ToBytes: base64ToBytes,
@@ -434,5 +438,6 @@ export const browserPlatform: Platform = {
     hasKeysCached: hasKeysCached,
     getHmacDigest: getHmacDigest,
     getRandomNumber: getRandomNumber,
-    getRandomCharacterInCharset: getRandomCharacterInCharset
+    getRandomCharacterInCharset: getRandomCharacterInCharset,
+    setCustomProxyAgent: setCustomProxyAgent
 }

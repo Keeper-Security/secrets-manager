@@ -4,8 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
-## 17.2.0
+## 17.3.0
 - KSM-581: Added GraphSync library to read GraphSync links
+- KSM-534 Added proxy support
 
 ## 17.1.0
 - KSM-588: Enhance JS SDK to enable editing of external shares

@@ -685,7 +685,11 @@ export const getClientId = async (clientKey: string): Promise<string> => {
     return platform.bytesToBase64(clientKeyHash)
 }
 
-export const initializeStorage = async (storage: KeyValueStorage, oneTimeToken: string, hostName?: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au') => {
+export const initializeStorage = async (
+    storage: KeyValueStorage,
+    oneTimeToken: string,
+    hostName?: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au'
+      ) => {
     const tokenParts = oneTimeToken.split(':')
     let host, clientKey
     if (tokenParts.length === 1) {

@@ -5,13 +5,19 @@ import {
     createCipheriv,
     createDecipheriv,
     createECDH,
-    createHash, createHmac,
-    createPrivateKey,
+    createHash,
+    createHmac,
     createSign,
     generateKeyPair,
     randomBytes
 } from 'crypto'
 import * as https from "https";
+
+let customProxyAgent: https.Agent | undefined;
+
+const setCustomProxyAgent = (proxyAgent: https.Agent) => {
+    customProxyAgent = proxyAgent
+}
 
 const bytesToBase64 = (data: Uint8Array): string => Buffer.from(data).toString('base64')
 
@@ -196,7 +202,8 @@ const get = (
         headers: {
             'User-Agent': `Node/${process.version}`,
             ...headers
-        }
+        },
+        agent: getProxyAgent()
     }, (res) => {
         fetchData(res, resolve)
     })
@@ -211,7 +218,8 @@ const post = (
     allowUnverifiedCertificate?: boolean
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
     const options: RequestOptions = {
-        rejectUnauthorized: !allowUnverifiedCertificate
+        rejectUnauthorized: !allowUnverifiedCertificate,
+        agent: getProxyAgent()
     }
     const post = request(url, {
         method: 'post',
@@ -241,7 +249,8 @@ const fileUpload = (
         method: "post",
         headers: {
             'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        }
+        },
+        agent: getProxyAgent()
     });
     post.on('response', function (res: any) {
         resolve({
@@ -303,6 +312,10 @@ const getRandomCharacterInCharset = async (charset: string): Promise<string> => 
     return Promise.resolve(charset[pos])
 }
 
+const getProxyAgent = (): https.Agent | undefined => {
+    return customProxyAgent || undefined
+}
+
 export const nodePlatform: Platform = {
     bytesToBase64: bytesToBase64,
     base64ToBytes: base64ToBytes,
@@ -327,5 +340,6 @@ export const nodePlatform: Platform = {
     hasKeysCached: hasKeysCached,
     getHmacDigest: getHmacDigest,
     getRandomNumber: getRandomNumber,
-    getRandomCharacterInCharset: getRandomCharacterInCharset
+    getRandomCharacterInCharset: getRandomCharacterInCharset,
+    setCustomProxyAgent: setCustomProxyAgent
 }
