@@ -20,6 +20,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
   generate-ansible-sbom:
+    name: Generate and Upload SBOM
     needs: get-version-for-sbom
     uses: ./.github/workflows/reusable.sbom.workflow.yml
     with:
@@ -33,7 +34,8 @@ jobs:
       MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
 
   publish-pypi:
-    name: Publish KSM Ansible Pulugin to PyPI
+    name: Publish KSM Ansible Plugin to PyPI
+    needs: generate-ansible-sbom
     environment: prod
     runs-on: ubuntu-latest
     timeout-minutes: 10 # To keep builds from running too long
