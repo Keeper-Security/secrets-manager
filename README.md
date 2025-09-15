@@ -1,6 +1,8 @@
+![Keeper Secrets Manager Header](https://github.com/user-attachments/assets/09feeee9-d649-44df-a512-a9d4a2e41410)
+
 # Keeper Secrets Manager
 
-Keeper Secrets Manager is a component of the Keeper Enterprise platform. It provides your DevOps, IT Security and
+Keeper Secrets Manager ("KSM") is a component of the Keeper Enterprise and KeeperPAM platform. KSM provides your DevOps, IT Security and
 software development teams with a fully cloud-based, Zero-Knowledge platform for managing all of your
 infrastructure secrets such as API keys, Database passwords, access keys, certificates and any type of confidential data.
 
@@ -12,12 +14,13 @@ Common use cases for Secrets Manager include:
 - Providing vault access to machines and applications
 
 ### Documentation
-[Secrets Manager Guide](https://docs.keeper.io/secrets-manager/secrets-manager/overview)
+[Secrets Manager Guide](https://docs.keeper.io/en/keeperpam/secrets-manager/overview)
 
-[Keeper Commander Guide](https://docs.keeper.io/secrets-manager/commander-cli/overview)
+[Keeper Commander Guide](https://docs.keeper.io/en/keeperpam/commander-cli/overview)
 
 [Enterprise Admin Guide](https://docs.keeper.io/enterprise-guide/)
 
+[KeeperPAM Guide](https://docs.keeper.io/en/keeperpam)
 
 ### Integrations
 

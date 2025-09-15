@@ -177,6 +177,7 @@ type SecretsManagerResponseRecord = {
 type KeeperRecordLink = {
     recordUid: string
     data?: string
+    path?: string
 }
 
 type SecretsManagerResponseFile = {

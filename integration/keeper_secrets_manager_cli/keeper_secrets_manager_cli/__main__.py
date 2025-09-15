@@ -10,10 +10,18 @@
 # Contact: ops@keepersecurity.com
 #
 
+import difflib
+import os
+import sys
+import traceback
+import typing as t
+import importlib_metadata
 import click
+import keeper_secrets_manager_core
 from click_help_colors import HelpColorsGroup, HelpColorsCommand
 from click_repl import repl, exit as repl_exit
 from colorama import Fore, Style, init
+from update_checker import UpdateChecker
 from . import KeeperCli
 from .exception import KsmCliException
 from .exec import Exec
@@ -23,14 +31,6 @@ from .sync import Sync
 from .profile import Profile
 from .init import Init
 from .config import Config
-import sys
-import os
-import keeper_secrets_manager_core
-import traceback
-import importlib_metadata
-import difflib
-import typing as t
-from update_checker import UpdateChecker
 
 
 global_config = Config()
@@ -60,6 +60,7 @@ class AliasedGroup(HelpColorsGroup):
         "totp",
         "download",
         "upload",
+        "delete-attachment",
         "get",
         "list",
         "notation",
@@ -261,23 +262,28 @@ class Mutex(click.Option):
 
         super(Mutex, self).__init__(*args, **kwargs)
 
+
     def handle_parse_result(self, ctx, opts, args):
         # ('option','value') - option present with the specified value assigned
         # ('option',) - option present with or without any value
-        current_opt:bool = self.name in opts
-        for mutex_opt in self.not_required_if:
-            if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
-                if current_opt:
-                    opt = str(mutex_opt) if len(mutex_opt) > 1 else f"'{str(mutex_opt[0])}'"
-                    raise click.UsageError("Illegal usage: '" + str(self.name) + "' is mutually exclusive with " + opt + ".")
-                else:
-                    self.prompt = None
-        for mutex_opt in self.required_if:
-            if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
-                if not current_opt:
-                    raise click.UsageError("Illegal usage: '" + str(self.name) + "' is required with " + str(mutex_opt) + ".")
-                else:
-                    self.prompt = None
+        if not KsmCliException.in_a_shell:
+            # NB! shell completion hints cause premature eval/validation
+            # and crashes with mutually required options on unfinished command
+            # ex. Error: option1 is required with option2
+            current_opt: bool = self.name in opts
+            for mutex_opt in self.not_required_if:
+                if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
+                    if current_opt:
+                        opt = str(mutex_opt) if len(mutex_opt) > 1 else f"'{str(mutex_opt[0])}'"
+                        raise click.UsageError("Illegal usage: '" + str(self.name) + "' is mutually exclusive with " + opt + ".")
+                    else:
+                        self.prompt = None
+            for mutex_opt in self.required_if:
+                if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
+                    if not current_opt:
+                        raise click.UsageError("Illegal usage: '" + str(self.name) + "' is required with " + str(mutex_opt) + ".")
+                    else:
+                        self.prompt = None
         return super(Mutex, self).handle_parse_result(ctx, opts, args)
 
 
@@ -344,8 +350,26 @@ def profile_command():
 def profile_init_command(ctx, token, hostname, ini_file, profile_name, token_arg):
     """Initialize a profile"""
 
+    # Command line --token option overrides all other options
     if token is None and len(token_arg) > 0:
         token = token_arg[0]
+    if token is None:
+        token = os.environ.get("KSM_CLI_TOKEN", None)
+        # KSM_TOKEN is for use by KSM SDKs and may be used
+        # by CLI but only when using CLI within a container
+        # to use auto-created profile which conflicts with
+        # any non-default setup (INI file) then it requires
+        # all 5-6 env vars to be provided
+        # https://docs.keeper.io/en/keeperpam/secrets-manager/secrets-manager-command-line-interface#create-a-local-client-device
+        # Use only --token option or KSM_CLI_TOKEN to initialize CLI
+        sdk_token = os.environ.get("KSM_TOKEN", None)
+        if token and sdk_token:
+            print("NOTE: Both KSM_CLI_TOKEN and KSM_TOKEN env vars are set! "
+                  "KSM CLI gives preference to --token option (if present) "
+                  "then KSM_CLI_TOKEN so after consuming the token you should "
+                  "unset KSM_TOKEN (or both env vars - they are one-time use) "
+                  "or risk getting errors while trying to use second token on "
+                  "an already initialized config.")
     if token is None:
         raise KsmCliException("A one time access token is required either as a command parameter or an argument.")
 
@@ -819,6 +843,25 @@ def secret_download_command(ctx, uid, name, file_uid, file_output, create_folder
 
 
 @click.command(
+    name='delete-attachment',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--uid', '-u', required=True, type=str, help="UID of the secret.")
+@click.option('--file', '-f', required=True, type=str, multiple=True, help="Name or UID of the file to delete.")
+@click.pass_context
+def secret_delete_attachment_command(ctx, uid, file):
+    """Delete file attachment(s) from a secret record"""
+    if uid.strip() == '' or len(file) == 0:
+        raise KsmCliException("Both --uid and --file params must be provided and non-empty.")
+
+    ctx.obj["secret"].delete_attachment(
+        uid=uid,
+        file=file
+    )
+
+
+@click.command(
     name='totp',
     cls=HelpColorsCommand,
     help_options_color='blue'
@@ -1072,6 +1115,7 @@ secret_command.add_command(secret_delete_command)
 secret_command.add_command(secret_add_command)
 secret_command.add_command(secret_upload_command)
 secret_command.add_command(secret_download_command)
+secret_command.add_command(secret_delete_attachment_command)
 secret_command.add_command(secret_totp_command)
 secret_command.add_command(secret_password_command)
 secret_command.add_command(secret_template_command)
@@ -1342,10 +1386,10 @@ def quit_command():
     help_options_color='blue'
 )
 @click.option('--credentials', '-c', type=str, metavar="UID", help="Keeper record with credentials to access destination key/value store.",
-    cls=Mutex,
-    # not_required_if=[('type','json')],
-    required_if=[('type', 'azure'), ('type', 'aws'), ('type', 'gcp')]
-)
+              cls=Mutex,
+              # not_required_if=[('type','json')],
+              required_if=[('type', 'azure'), ('type', 'aws'), ('type', 'gcp')]
+              )
 @click.option('--type', '-t', type=click.Choice(['aws', 'azure', 'gcp', 'json']), default='json', help="Type of the target key/value storage (aws, azure, gcp, json).", show_default=True)
 @click.option('--dry-run', '-n', is_flag=True, help='Perform a trial run with no changes made.')
 @click.option('--preserve-missing', '-p', is_flag=True, help='Preserve destination value when source value is deleted.')
