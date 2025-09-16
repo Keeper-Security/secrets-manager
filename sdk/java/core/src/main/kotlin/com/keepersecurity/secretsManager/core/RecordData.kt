@@ -15,7 +15,7 @@ data class KeeperRecordData @JvmOverloads constructor(
     var notes: String? = null
 ) {
     inline fun <reified T> getField(): T? {
-        return (fields + custom).find { x -> x is T } as T
+        return (fields + (custom ?: listOf())).find { x -> x is T } as? T
     }
 
     fun getField(clazz: Class<out KeeperRecordField>): KeeperRecordField? {
@@ -346,6 +346,8 @@ data class KeyPairs @JvmOverloads constructor(
 data class Host @JvmOverloads constructor(
     val hostName: String? = null,
     val port: String? = null,
+    val allowSupplyUser: Boolean? = null,
+    val allowSupplyHost: Boolean? = null,
 )
 
 @Serializable
@@ -402,6 +404,7 @@ data class PamResource @JvmOverloads constructor(
     val controllerUid: String? = null,
     val folderUid: String? = null,
     val resourceRef: MutableList<String>? = null,
+    val adminCredentialRef: String? = null,
     val allowedSettings: AllowedSettings? = null
 )
 
@@ -588,11 +591,13 @@ data class AppFillers @JvmOverloads constructor(
 data class PamRbiConnection @JvmOverloads constructor(
     val protocol: String? = null,
     val userRecords: MutableList<String>? = null,
+    val recordingIncludeKeys: Boolean? = null,
     val allowUrlManipulation: Boolean? = null,
     val allowedUrlPatterns: String? = null,
     val allowedResourceUrlPatterns: String? = null,
     val httpCredentialsUid: String? = null,
-    val autofillConfiguration: String? = null
+    val autofillConfiguration: String? = null,
+    val ignoreInitialSslCert: Boolean? = null
 )
 @Serializable
 data class PamRemoteBrowserSetting @JvmOverloads constructor(
@@ -609,15 +614,81 @@ data class PamRemoteBrowserSettings @JvmOverloads constructor(
 }
 
 @Serializable
+data class SFTPRootDirectory @JvmOverloads constructor(
+    val enableSftp: Boolean? = null,
+    val sftpRootDirectory: String? = null
+)
+
+@Serializable
+data class SFTPConnection @JvmOverloads constructor(
+    val enableSftp: Boolean? = null,
+    val sftpRootDirectory: String? = null,
+    val sftpResourceUid: String? = null,
+    val sftpUserUid: String? = null,
+    val sftpDirectory: String? = null,
+    val sftpServerAliveInterval: Int? = null
+)
+
+@Serializable
 @SerialName("connection")
 data class PamSettingsConnection @JvmOverloads constructor(
+    // Base connection properties
     val protocol: String? = null,
     val userRecords: MutableList<String>? = null,
+    val port: String? = null,
+    val allowSupplyUser: Boolean? = null,
+    val allowSupplyHost: Boolean? = null,
+    val recordingIncludeKeys: Boolean? = null,
+
+    // Common display and security settings
+    val colorScheme: String? = null,
+    val resizeMethod: String? = null,
     val security: String? = null,
     val ignoreCert: Boolean? = null,
-    val resizeMethod: String? = null,
-    val colorScheme: String? = null
+
+    // Clipboard settings
+    val disableCopy: Boolean? = null,
+    val disablePaste: Boolean? = null,
+
+    // Database-specific fields
+    val database: String? = null,
+    val disableCsvExport: Boolean? = null,
+    val disableCsvImport: Boolean? = null,
+
+    // SSH/Connection verification
+    val hostKey: String? = null,
+    val command: String? = null,
+    val fontSize: String? = null,
+
+    // VNC/Proxy settings
+    val destHost: String? = null,
+    val destPort: String? = null,
+
+    // RDP specific settings
+    val disableAuth: Boolean? = null,
+    val loadBalanceInfo: String? = null,
+    val preconnectionId: String? = null,
+    val preconnectionBlob: String? = null,
+    val disableAudio: Boolean? = null,
+    val enableWallpaper: Boolean? = null,
+    val enableFullWindowDrag: Boolean? = null,
+    val sftp: SFTPConnection? = null,
+
+    // Telnet specific fields
+    val usernameRegex: String? = null,
+    val passwordRegex: String? = null,
+    val loginSuccessRegex: String? = null,
+    val loginFailureRegex: String? = null,
+
+    // Kubernetes specific fields
+    val caCert: String? = null,
+    val namespace: String? = null,
+    val pod: String? = null,
+    val container: String? = null,
+    val clientCert: String? = null,
+    val clientKey: String? = null
 )
+
 @Serializable
 @SerialName("portForward")
 data class PamSettingsPortForward @JvmOverloads constructor(
@@ -626,8 +697,9 @@ data class PamSettingsPortForward @JvmOverloads constructor(
 )
 @Serializable
 data class PamSetting @JvmOverloads constructor(
-    val portForward: MutableList<PamSettingsPortForward>? = null,
-    val connection: MutableList<PamSettingsConnection>? = null,
+    val connection: PamSettingsConnection? = null,
+    val portForward: PamSettingsPortForward? = null,
+    val allowSupplyHost: Boolean? = null
 )
 
 @Serializable

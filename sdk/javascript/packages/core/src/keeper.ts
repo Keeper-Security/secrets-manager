@@ -48,11 +48,17 @@ export type SecretManagerOptions = {
 export type QueryOptions = {
     recordsFilter?: string[]
     foldersFilter?: string[]
+    requestLinks?: boolean
 }
 
 export type CreateOptions = {
     folderUid: string
     subFolderUid?: string
+}
+
+export type UpdateOptions = {
+    transactionType?: UpdateTransactionType
+    links2Remove?: string[]
 }
 
 export enum UpdateTransactionType {
@@ -80,6 +86,7 @@ type GetPayload = CommonPayload & {
     publicKey?: string   // passed once when binding
     requestedRecords?: string[] // only return these records
     requestedFolders?: string[] // only return these folders
+    requestLinks?: boolean
 }
 
 type DeletePayload = CommonPayload & {
@@ -96,6 +103,7 @@ type UpdatePayload = CommonPayload & {
     data: string
     revision: number
     transactionType?: UpdateTransactionType
+    links2Remove?: string[]
 }
 
 type CompleteTransactionPayload = CommonPayload & {
@@ -130,6 +138,7 @@ type FileUploadPayload = CommonPayload & {
     fileRecordData: string
     ownerRecordUid: string
     ownerRecordData: string
+    ownerRecordRevision: number
     linkKey: string
     fileSize: number
 }
@@ -162,6 +171,13 @@ type SecretsManagerResponseRecord = {
     revision: number
     files: SecretsManagerResponseFile[]
     innerFolderUid: string
+    links?: KeeperRecordLink[]
+}
+
+type KeeperRecordLink = {
+    recordUid: string
+    data?: string
+    path?: string
 }
 
 type SecretsManagerResponseFile = {
@@ -212,6 +228,7 @@ export type KeeperRecord = {
     data: any
     revision: number
     files?: KeeperFile[]
+    links?: KeeperRecordLink[]
 }
 
 export type KeeperFolder = {
@@ -272,17 +289,31 @@ const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryO
     if (queryOptions?.foldersFilter) {
         payload.requestedFolders = queryOptions.foldersFilter
     }
+    if( queryOptions?.requestLinks) {
+        payload.requestLinks = queryOptions.requestLinks
+    }
     return payload
 }
 
-const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord, transactionType?: UpdateTransactionType): Promise<UpdatePayload> => {
+const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord, updateOptions?: UpdateOptions): Promise<UpdatePayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
     }
+    const {transactionType, links2Remove} = updateOptions ?? {}
+    if (links2Remove && links2Remove.length > 0) {
+        const fields = record.data.fields;
+        const fileRef = fields.find(x => x.type == 'fileRef');
+        if (fileRef) {
+            fileRef.value = fileRef.value.filter(uid => !links2Remove.includes(uid));
+            if (fileRef.value.length === 0) {
+                record.data.fields = fields.filter(x => x.type != 'fileRef');
+            }
+        }
+    }
     const recordBytes = platform.stringToBytes(JSON.stringify(record.data))
-    const encryptedRecord = await platform.encrypt(recordBytes, record.recordUid)
-    const payload: UpdatePayload =  {
+    const encryptedRecord = await platform.encrypt(recordBytes, record.recordUid || KEY_APP_KEY)
+    const payload: UpdatePayload = {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
         recordUid: record.recordUid,
@@ -291,6 +322,9 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperReco
     }
     if (transactionType) {
         payload.transactionType = transactionType
+    }
+    if (links2Remove && links2Remove.length > 0) {
+        payload.links2Remove = links2Remove
     }
     return payload
 }
@@ -424,7 +458,7 @@ const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: K
     const fileRecordUid = webSafe64FromBytes(platform.getRandomBytes(16))
     const encryptedFileRecord = await platform.encryptWithKey(fileRecordBytes, fileRecordKey)
     const encryptedFileRecordKey = await platform.publicEncrypt(fileRecordKey, ownerPublicKey)
-    const encryptedLinkKey = await platform.encrypt(fileRecordKey, ownerRecord.recordUid)
+    const encryptedLinkKey = await platform.encrypt(fileRecordKey, ownerRecord.recordUid || KEY_APP_KEY)
     const encryptedFileData = await platform.encryptWithKey(file.data, fileRecordKey)
 
     let fileRef = ownerRecord.data.fields.find(x => x.type == 'fileRef')
@@ -435,7 +469,7 @@ const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: K
         ownerRecord.data.fields.push(fileRef)
     }
     const ownerRecordBytes = platform.stringToBytes(JSON.stringify(ownerRecord.data))
-    const encryptedOwnerRecord = await platform.encrypt(ownerRecordBytes, ownerRecord.recordUid)
+    const encryptedOwnerRecord = await platform.encrypt(ownerRecordBytes, ownerRecord.recordUid || KEY_APP_KEY)
 
     return {
         payload: {
@@ -446,6 +480,7 @@ const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: K
             fileRecordData: webSafe64FromBytes(encryptedFileRecord),
             ownerRecordUid: ownerRecord.recordUid,
             ownerRecordData: webSafe64FromBytes(encryptedOwnerRecord),
+            ownerRecordRevision: ownerRecord.revision,
             linkKey: platform.bytesToBase64(encryptedLinkKey),
             fileSize: encryptedFileData.length
         },
@@ -481,11 +516,12 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
 const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload | FileUploadPayload): Promise<EncryptedPayload> => {
     const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
     const encryptedPayload = await platform.encryptWithKey(payloadBytes, transmissionKey.key)
-    const signatureBase = Uint8Array.of(...transmissionKey.encryptedKey, ...encryptedPayload)
+    const signatureBase = new Uint8Array(transmissionKey.encryptedKey.length + encryptedPayload.length)
+    signatureBase.set(transmissionKey.encryptedKey, 0)
+    signatureBase.set(encryptedPayload, transmissionKey.encryptedKey.length)
     const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
     return {payload: encryptedPayload, signature}
 }
-
 const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
@@ -513,7 +549,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
             }
             throw new Error(errorMessage)
         }
-        return response.data
+        return response.data && response.data.length > 0
             ? platform.decryptWithKey(response.data, transmissionKey.key)
             : new Uint8Array()
     }
@@ -541,6 +577,9 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
                 thumbnailUrl: file.thumbnailUrl
             })
         }
+    }
+    if (record.links) {
+        keeperRecord.links = record.links
     }
     return keeperRecord
 }
@@ -908,8 +947,12 @@ export const getSecretByTitle = async (options: SecretManagerOptions, recordTitl
     return secrets.records.find(record => record.data.title === recordTitle)
 }
 
-export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord, transactionType?: UpdateTransactionType): Promise<void> => {
-    const payload = await prepareUpdatePayload(options.storage, record, transactionType)
+export const updateSecret = async (options: SecretManagerOptions, record: KeeperRecord, transactionType?: UpdateTransactionType, links2Remove?: string[]): Promise<void> => {
+    return updateSecret2(options, record, {transactionType,links2Remove})
+}
+
+export const updateSecret2 = async (options: SecretManagerOptions, record: KeeperRecord, updateOptions?: UpdateOptions): Promise<void> => {
+    const payload = await prepareUpdatePayload(options.storage, record, updateOptions)
     await postQuery(options, 'update_secret', payload)
 }
 

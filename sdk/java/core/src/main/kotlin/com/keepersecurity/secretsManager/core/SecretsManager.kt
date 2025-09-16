@@ -5,6 +5,8 @@ package com.keepersecurity.secretsManager.core
 import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.net.HttpURLConnection.HTTP_OK
 import java.net.URI
@@ -17,7 +19,7 @@ import java.util.*
 import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj16.6.5"
+const val KEEPER_CLIENT_VERSION = "mj17.1.1"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -41,7 +43,8 @@ interface KeyValueStorage {
 data class SecretsManagerOptions @JvmOverloads constructor(
     val storage: KeyValueStorage,
     val queryFunction: QueryFunction? = null,
-    val allowUnverifiedCertificate: Boolean = false
+    val allowUnverifiedCertificate: Boolean = false,
+    val loggingEnabled: Boolean = true
 ) {
     init {
         testSecureRandom()
@@ -51,11 +54,17 @@ data class SecretsManagerOptions @JvmOverloads constructor(
 data class QueryOptions @JvmOverloads constructor(
     val recordsFilter: List<String> = emptyList(),
     val foldersFilter: List<String> = emptyList(),
+    val requestLinks: Boolean? = null
 )
 
 data class CreateOptions @JvmOverloads constructor(
     val folderUid: String,
     val subFolderUid: String? = null,
+)
+
+data class UpdateOptions @JvmOverloads constructor(
+    val transactionType: UpdateTransactionType? = null,
+    val linksToRemove: List<String>? = null,
 )
 
 typealias QueryFunction = (url: String, transmissionKey: TransmissionKey, payload: EncryptedPayload) -> KeeperHttpResponse
@@ -77,7 +86,8 @@ private data class GetPayload(
     override val clientId: String,
     var publicKey: String? = null,
     var requestedRecords: List<String>? = null,
-    var requestedFolders: List<String>? = null
+    var requestedFolders: List<String>? = null,
+    var requestLinks: Boolean? = null
 ): CommonPayload()
 
 @Serializable
@@ -93,7 +103,8 @@ private data class UpdatePayload(
     val recordUid: String,
     val data: String,
     val revision: Long,
-    val transactionType: UpdateTransactionType? = null
+    val transactionType: UpdateTransactionType? = null,
+    val links2Remove: List<String>? = null
 ): CommonPayload()
 
 @Serializable
@@ -158,6 +169,7 @@ private data class FileUploadPayload(
     val fileRecordData: String,
     val ownerRecordUid: String,
     val ownerRecordData: String,
+    val ownerRecordRevision: Long,
     val linkKey: String,
     val fileSize: Int, // we will not allow upload size > 2GB due to memory constraints
 ): CommonPayload()
@@ -183,8 +195,375 @@ private data class SecretsManagerResponseRecord(
     val revision: Long,
     val isEditable: Boolean,
     val files: List<SecretsManagerResponseFile>?,
-    val innerFolderUid: String?
+    val innerFolderUid: String?,
+    val links: List<KeeperRecordLink>? = null
 )
+
+@Serializable
+data class KeeperRecordLink(
+    val recordUid: String,
+    val data: String? = null,
+    val path: String? = null
+) {
+    
+    /**
+     * Parse the link data as a JSON object, handling errors gracefully
+     */
+    private fun parseJsonData(): Map<String, Any>? {
+        if (data == null) return null
+        
+        return try {
+            val decodedData = String(java.util.Base64.getDecoder().decode(data))
+
+            // Check if the decoded data looks like JSON (starts with { or [)
+            // If not, it's likely encrypted/binary data, so return null silently
+            if (!decodedData.startsWith("{") && !decodedData.startsWith("[")) {
+                return null
+            }
+            
+            val jsonElement = Json.parseToJsonElement(decodedData)
+            if (jsonElement is JsonObject) {
+                jsonElement.entries.associate { (key, value) ->
+                    key to when {
+                        value is JsonPrimitive && value.isString -> value.content
+                        value is JsonPrimitive -> {
+                            // Try to parse as different types
+                            when {
+                                value.content == "true" -> true
+                                value.content == "false" -> false
+                                value.content.toIntOrNull() != null -> value.content.toInt()
+                                value.content.toLongOrNull() != null -> value.content.toLong()
+                                else -> value.content
+                            }
+                        }
+                        else -> value.toString()
+                    }
+                }
+            } else {
+                // Only log if it looked like JSON but wasn't a JSON object
+                System.err.println("KeeperRecordLink: Link data is not a JSON object (was JSON array or primitive)")
+                null
+            }
+        } catch (e: IllegalArgumentException) {
+            // Base64 decoding failed - likely not base64 encoded
+            null
+        } catch (e: Exception) {
+            // Only log parsing errors for data that looks like it should be JSON
+            val decodedData = try {
+                String(java.util.Base64.getDecoder().decode(data))
+            } catch (_: Exception) {
+                return null
+            }
+            
+            if (decodedData.startsWith("{") || decodedData.startsWith("[")) {
+                System.err.println("KeeperRecordLink: Failed to parse JSON data - ${e.message}")
+            }
+            null
+        }
+    }
+
+    /**
+     * Get a boolean value from the parsed JSON data
+     */
+    private fun getBooleanValue(key: String): Boolean {
+        return parseJsonData()?.get(key) as? Boolean ?: false
+    }
+
+    /**
+     * Get an integer value from the parsed JSON data  
+     */
+    private fun getIntValue(key: String): Int? {
+        return parseJsonData()?.get(key) as? Int
+    }
+
+    /**
+     * Get a string value from the parsed JSON data
+     */
+    private fun getStringValue(key: String): String? {
+        return parseJsonData()?.get(key) as? String
+    }
+
+    /**
+     * Check if the link data indicates admin status for a user
+     */
+    fun isAdminUser(): Boolean = getBooleanValue("is_admin")
+    
+    /**
+     * Check if this is a launch credential link
+     */
+    fun isLaunchCredential(): Boolean = getBooleanValue("is_launch_credential")
+    
+    /**
+     * Check if rotation is allowed based on link settings
+     */
+    fun allowsRotation(): Boolean = getBooleanValue("rotation")
+    
+    /**
+     * Check if connections are allowed based on link settings
+     */
+    fun allowsConnections(): Boolean = getBooleanValue("connections")
+    
+    /**
+     * Check if port forwards are allowed based on link settings
+     */
+    fun allowsPortForwards(): Boolean = getBooleanValue("portForwards")
+    
+    /**
+     * Check if session recording is enabled
+     */
+    fun allowsSessionRecording(): Boolean = getBooleanValue("sessionRecording")
+    
+    /**
+     * Check if TypeScript recording is enabled
+     */
+    fun allowsTypescriptRecording(): Boolean = getBooleanValue("typescriptRecording")
+    
+    /**
+     * Check if remote browser isolation is enabled
+     */
+    fun allowsRemoteBrowserIsolation(): Boolean = getBooleanValue("remoteBrowserIsolation")
+    
+    /**
+     * Check if rotation on termination is enabled
+     */
+    fun rotatesOnTermination(): Boolean = getBooleanValue("rotateOnTermination")
+    
+    /**
+     * Get the link data version (if available)
+     */
+    fun getLinkDataVersion(): Int? = getIntValue("version")
+    
+    /**
+     * Get the decoded JSON data as a string (for debugging/advanced use)
+     */
+    fun getDecodedData(): String? {
+        if (data == null) return null
+        return try {
+            String(java.util.Base64.getDecoder().decode(data))
+        } catch (e: Exception) {
+            System.err.println("KeeperRecordLink: Failed to decode Base64 data - ${e.message}")
+            null
+        }
+    }
+    
+    /**
+     * Check if the link has readable JSON data (vs. encrypted/binary data)
+     */
+    fun hasReadableData(): Boolean {
+        val decoded = getDecodedData()
+        return decoded != null && (decoded.startsWith("{") || decoded.startsWith("["))
+    }
+
+    /**
+     * Check if this link's path indicates potentially encrypted data
+     * Currently known encrypted paths: ai_settings, jit_settings
+     * @return true if the path is known to potentially contain encrypted data
+     */
+    fun mightBeEncrypted(): Boolean {
+        // Only return true for known encrypted paths
+        // Don't assume all *_settings are encrypted
+        return path != null && (path == "ai_settings" || path == "jit_settings")
+    }
+    
+    /**
+     * Check if this link contains encrypted data by examining the actual content
+     * This method inspects the data to determine if it's encrypted, rather than
+     * relying on path naming conventions
+     * @return true if the data appears to be encrypted
+     */
+    fun hasEncryptedData(): Boolean {
+        if (data == null) return false
+        
+        return try {
+            val decodedData = String(java.util.Base64.getDecoder().decode(data))
+            // If it doesn't start with JSON markers and isn't mostly printable, it's likely encrypted
+            !decodedData.startsWith("{") && !decodedData.startsWith("[") && !isPrintableText(decodedData)
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    /**
+     * Decrypt the link data using the provided record key
+     * This method attempts decryption only if the data appears to be encrypted
+     * 
+     * @param recordKey The record's encryption key
+     * @return Decrypted string data, or null if decryption fails
+     */
+    @JvmOverloads
+    fun getDecryptedData(recordKey: ByteArray? = null): String? {
+        if (data == null || recordKey == null) return null
+        
+        return try {
+            // Decode Base64 to get encrypted bytes
+            val encryptedData = java.util.Base64.getDecoder().decode(data)
+            
+            // Decrypt using AES-256-GCM (false = use GCM mode)
+            val decryptedBytes = decrypt(encryptedData, recordKey, false)
+            
+            // Convert to string
+            String(decryptedBytes, Charsets.UTF_8)
+        } catch (e: Exception) {
+            // Decryption failed - could be wrong key or not encrypted
+            null
+        }
+    }
+    
+    /**
+     * Get link data - automatically handles both encrypted and plain JSON
+     * 
+     * This method is designed to be forward-compatible as Keeper evolves
+     * the data structures. Returns a Map to preserve all fields, even ones
+     * this SDK version doesn't know about yet.
+     * 
+     * @param recordKey Optional key for decrypting encrypted link data
+     * @return Parsed data as a Map, or null if parsing fails
+     */
+    @JvmOverloads
+    fun getLinkData(recordKey: ByteArray? = null): Map<String, Any>? {
+        if (data == null) return null
+        
+        // First, try to decode and check if it's plain JSON
+        val decodedData = try {
+            String(java.util.Base64.getDecoder().decode(data))
+        } catch (e: Exception) {
+            return null
+        }
+        
+        // If it looks like JSON, parse it directly
+        if (decodedData.startsWith("{") || decodedData.startsWith("[")) {
+            return parseJsonToMap(decodedData)
+        }
+        
+        // If not JSON and we have a key, try decryption
+        if (recordKey != null) {
+            val decryptedData = getDecryptedData(recordKey) ?: return null
+            return parseJsonToMap(decryptedData)
+        }
+        
+        // Can't parse - not JSON and no key for decryption
+        return null
+    }
+    
+    /**
+     * Helper method to parse JSON string to Map
+     */
+    private fun parseJsonToMap(jsonString: String): Map<String, Any>? {
+        return try {
+            val jsonElement = Json.parseToJsonElement(jsonString)
+            when (jsonElement) {
+                is JsonObject -> {
+                    jsonElement.entries.associate { (key, value) ->
+                        key to when (value) {
+                            is JsonPrimitive -> {
+                                when {
+                                    value.isString -> value.content
+                                    else -> {
+                                        // Try to parse as different types
+                                        when {
+                                            value.content == "true" -> true
+                                            value.content == "false" -> false
+                                            value.content.toIntOrNull() != null -> value.content.toInt()
+                                            value.content.toLongOrNull() != null -> value.content.toLong()
+                                            value.content.toDoubleOrNull() != null -> value.content.toDouble()
+                                            else -> value.content
+                                        }
+                                    }
+                                }
+                            }
+                            is JsonObject -> value.toString() // Nested objects as strings
+                            is kotlinx.serialization.json.JsonArray -> value.toString() // Arrays as strings
+                        }
+                    }
+                }
+                else -> null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    /**
+     * Helper method to check if a string is mostly printable text
+     */
+    private fun isPrintableText(str: String): Boolean {
+        if (str.isEmpty()) return false
+        
+        val printableCount = str.take(100).count { c ->
+            c in ' '..'~' || c == '\n' || c == '\r' || c == '\t'
+        }
+        
+        val sampleSize = minOf(str.length, 100)
+        return (printableCount.toFloat() / sampleSize) > 0.9f
+    }
+    
+    // ============================================================================
+    // Convenience Methods for Settings Access
+    // ============================================================================
+    
+    /**
+     * Get AI settings data from this link
+     * 
+     * Known fields for ai_settings (as of SDK v17.1.0):
+     * - aiEnabled: Boolean - Whether AI features are enabled
+     * - aiModel: String - The AI model being used
+     * - aiProvider: String - The AI provider (e.g., "openai", "anthropic")
+     * - aiSessionTerminate: Boolean - Whether to terminate AI session
+     * - allowedSettings: Map - Nested settings for allowed operations
+     * 
+     * Note: Additional fields may be present in newer versions.
+     * The returned Map will preserve all fields sent by the server.
+     * 
+     * @param recordKey The record's encryption key
+     * @return Settings data as a Map, or null if not available
+     */
+    fun getAiSettingsData(recordKey: ByteArray): Map<String, Any>? {
+        if (path != "ai_settings") return null
+        return getLinkData(recordKey)
+    }
+    
+    /**
+     * Get JIT (Just-In-Time) settings data from this link
+     * 
+     * Known fields for jit_settings (as of SDK v17.1.0):
+     * - enabled: Boolean - Whether JIT access is enabled
+     * - ttl: Int - Time-to-live in seconds
+     * - maxUses: Int - Maximum number of uses allowed
+     * - expiresAt: Long - Expiration timestamp in milliseconds
+     * - allowedSettings: Map - Nested settings for allowed operations:
+     *   - rotation: Boolean - Allow credential rotation
+     *   - connections: Boolean - Allow connections
+     *   - portForwards: Boolean - Allow port forwarding
+     *   - sessionRecording: Boolean - Enable session recording
+     *   - typescriptRecording: Boolean - Enable TypeScript recording
+     * 
+     * Note: Additional fields may be present in newer versions.
+     * The returned Map will preserve all fields sent by the server.
+     * 
+     * @param recordKey The record's encryption key
+     * @return Settings data as a Map, or null if not available
+     */
+    fun getJitSettingsData(recordKey: ByteArray): Map<String, Any>? {
+        if (path != "jit_settings") return null
+        return getLinkData(recordKey)
+    }
+    
+    /**
+     * Get settings data for any path
+     * 
+     * This method works for current and future settings paths.
+     * It automatically detects whether the data is encrypted and
+     * handles it appropriately.
+     * 
+     * @param settingsPath The path to check (e.g., "ai_settings", "security_settings")
+     * @param recordKey The record's encryption key (required for encrypted data)
+     * @return Settings data as a Map, or null if path doesn't match or parsing fails
+     */
+    fun getSettingsForPath(settingsPath: String, recordKey: ByteArray? = null): Map<String, Any>? {
+        if (path != settingsPath) return null
+        return getLinkData(recordKey)
+    }
+}
 
 @Serializable
 private data class SecretsManagerResponseFile(
@@ -250,7 +629,8 @@ data class KeeperRecord(
     var innerFolderUid: String? = null,
     val data: KeeperRecordData,
     val revision: Long,
-    val files: List<KeeperFile>? = null
+    val files: List<KeeperFile>? = null,
+    val links: List<KeeperRecordLink>? = null
 ) {
     fun getPassword(): String? {
         val passwordField = data.getField<Password>() ?: return null
@@ -397,7 +777,9 @@ fun getSecrets(options: SecretsManagerOptions, recordsFilter: List<String> = emp
         try {
             fetchAndDecryptSecrets(options, queryOptions)
         } catch (e: Exception) {
-            println(e)
+            if (options.loggingEnabled) {
+                println(e)
+            }
         }
     }
     return secrets
@@ -411,7 +793,9 @@ fun getSecrets2(options: SecretsManagerOptions, queryOptions: QueryOptions? = nu
         try {
             fetchAndDecryptSecrets(options, queryOptions)
         } catch (e: Exception) {
-            println(e)
+            if (options.loggingEnabled) {
+                println(e)
+            }
         }
     }
     return secrets
@@ -429,7 +813,9 @@ fun tryGetNotationResults(options: SecretsManagerOptions, notation: String): Lis
     try {
         return getNotationResults(options, notation)
     } catch (e: Exception) {
-        println(e.message)
+        if (options.loggingEnabled) {
+            println(e.message)
+        }
     }
     return emptyList()
 }
@@ -480,7 +866,7 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
     val selector = parsedNotation[2].text?.first ?: // type|title|notes or file|field|custom_field
         throw Exception("Invalid notation '$notation'")
     val recordToken = parsedNotation[1].text?.first ?: // UID or Title
-        throw Exception("Invalid notation $'notation'")
+        throw Exception("Invalid notation '$notation'")
 
     // to minimize traffic - if it looks like a Record UID try to pull a single record
     var records = listOf<KeeperRecord>()
@@ -558,7 +944,7 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
 
             val res = getFieldStringValues(field, idx, objPropertyName)
             val expectedSize = if (idx >= 0) 1 else valuesCount
-            if (res.size != expectedSize)
+            if (res.size != expectedSize && options.loggingEnabled)
                 println("Notation warning - extracted ${res.size} out of $valuesCount values for '$objPropertyName' property.")
             if (res.isNotEmpty())
                 result.addAll(res)
@@ -584,7 +970,12 @@ fun deleteFolder(options: SecretsManagerOptions, folderUids: List<String>, force
 
 @ExperimentalSerializationApi
 fun updateSecret(options: SecretsManagerOptions, record: KeeperRecord, transactionType: UpdateTransactionType? = null) {
-    val payload = prepareUpdatePayload(options.storage, record, transactionType)
+    updateSecretWithOptions(options, record, UpdateOptions(transactionType, null))
+}
+
+@ExperimentalSerializationApi
+fun updateSecretWithOptions(options: SecretsManagerOptions, record: KeeperRecord, updateOptions: UpdateOptions? = null) {
+    val payload = prepareUpdatePayload(options.storage, record, updateOptions)
     postQuery(options, "update_secret", payload)
 }
 
@@ -744,7 +1135,7 @@ private fun fetchAndDecryptSecrets(
     if (response.records != null) {
         response.records.forEach {
             val recordKey = decrypt(it.recordKey, appKey)
-            val decryptedRecord = decryptRecord(it, recordKey)
+            val decryptedRecord = decryptRecord(it, recordKey, options)
             if (decryptedRecord != null) {
                 records.add(decryptedRecord)
             }
@@ -755,7 +1146,7 @@ private fun fetchAndDecryptSecrets(
             val folderKey = decrypt(folder.folderKey, appKey)
             folder.records!!.forEach { record ->
                 val recordKey = decrypt(record.recordKey, folderKey)
-                val decryptedRecord = decryptRecord(record, recordKey)
+                val decryptedRecord = decryptRecord(record, recordKey, options)
                 if (decryptedRecord != null) {
                     decryptedRecord.folderUid = folder.folderUid
                     decryptedRecord.folderKey = folderKey
@@ -777,7 +1168,7 @@ private fun fetchAndDecryptSecrets(
 }
 
 @ExperimentalSerializationApi
-private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray): KeeperRecord? {
+private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteArray, options: SecretsManagerOptions): KeeperRecord? {
     val decryptedRecord = decrypt(record.data, recordKey)
 
     val files: MutableList<KeeperFile> = mutableListOf()
@@ -801,22 +1192,78 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
     // When SDK is behind/ahead of record/field type definitions then
     // strict mapping between JSON attributes and object properties
     // will fail on any unknown field/key - currently just log the error
-    // and continue without the field - nb! field will be lost on save
+    // and continue without the field - NB! field will be lost on save
     var recordData: KeeperRecordData? = null
     try {
         recordData = Json.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
     } catch (e: Exception) {
-        // New/missing field: Polymorphic serializer was not found for class discriminator 'UNKNOWN'...
-        // New/missing field property (field def updated): Encountered unknown key 'UNKNOWN'.
-        // Avoid 'ignoreUnknownKeys = true' to prevent erasing new properties on save/update
-        println("Record ${record.recordUid} has unexpected data properties (ignored).\n"+
-                " Error parsing record type - KSM SDK is behind/ahead of record/field type definitions." +
-                " Please upgrade to latest version. If you need assistance please email support@keepersecurity.com")
-        //println(e.message)
-        recordData = nonStrictJson.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
+        // Get record type safely without parsing the entire record
+        val recordType = try {
+            val jsonElement = Json.parseToJsonElement(bytesToString(decryptedRecord))
+            jsonElement.jsonObject["type"]?.jsonPrimitive?.content ?: "unknown"
+        } catch (_: Exception) {
+            "unknown"
+        }
+
+        // Get detailed error information
+        val errorDetails = when (e) {
+            is SerializationException -> {
+                when {
+                    e.message?.contains("Polymorphic serializer was not found") == true -> {
+                        val unknownType = e.message?.substringAfter("class discriminator '")?.substringBefore("'")
+                        "Unknown field type: '$unknownType'"
+                    }
+                    e.message?.contains("Encountered unknown key") == true -> {
+                        val unknownKey = e.message?.substringAfter("unknown key '")?.substringBefore("'")
+                        "Unknown field property: '$unknownKey'"
+                    }
+                    else -> "Serialization error: ${e.message}"
+                }
+            }
+            else -> "Unexpected error: ${e.message}"
+        }
+
+        if (options.loggingEnabled) {
+            println("""
+            Record ${record.recordUid} (type: $recordType) parsing error:
+            Error: $errorDetails
+            This may occur if the Keeper Secrets Manager (KSM) SDK version you're using is not compatible with the record's data schema.
+            Please ensure that you are using the latest version of the KSM SDK. If the issue persists, contact support@keepersecurity.com for assistance.
+            """.trimIndent()
+            )
+        }
+        try {
+            // Attempt to parse with non-strict JSON parser for recovery
+            recordData = nonStrictJson.decodeFromString<KeeperRecordData>(bytesToString(decryptedRecord))
+        } catch (e2: Exception) {
+            val secondaryError = when (e2) {
+                is SerializationException -> {
+                    "Serialization error during non-strict parsing: ${e2.message}"
+                }
+                else -> "Unexpected error during non-strict parsing: ${e2.message}"
+            }
+            if (options.loggingEnabled) {
+                println("""
+                Failed to parse record ${record.recordUid} (type: $recordType) even with non-strict parser.
+                Error: $secondaryError
+                Record will be skipped.
+                """.trimIndent()
+                )
+            }
+        }
     }
 
-    return if (recordData != null) KeeperRecord(recordKey, record.recordUid, null, null, record.innerFolderUid, recordData, record.revision, files) else null
+    return if (recordData != null) KeeperRecord(
+        recordKey,
+        record.recordUid,
+        null,
+        null,
+        record.innerFolderUid,
+        recordData,
+        record.revision,
+        files,
+        record.links
+    ) else null
 }
 
 @ExperimentalSerializationApi
@@ -877,7 +1324,10 @@ private fun prepareGetPayload(
             payload.requestedRecords = queryOptions.recordsFilter
         }
         if (queryOptions.foldersFilter.isNotEmpty()) {
-            payload.requestedRecords = queryOptions.foldersFilter
+            payload.requestedFolders = queryOptions.foldersFilter
+        }
+        if (queryOptions.requestLinks != null) {
+            payload.requestLinks = queryOptions.requestLinks
         }
     }
     return payload
@@ -906,12 +1356,29 @@ private fun prepareDeleteFolderPayload(
 private fun prepareUpdatePayload(
     storage: KeyValueStorage,
     record: KeeperRecord,
-    transactionType: UpdateTransactionType? = null
+    updateOptions: UpdateOptions? = null
 ): UpdatePayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+
+    updateOptions?.linksToRemove?.takeIf { it.isNotEmpty() }?.let {
+        val frefs = record.data.getField<FileRef>()
+        if (frefs?.value?.isNotEmpty() == true){
+            frefs.value.removeAll(it)
+        }
+    }
+
     val recordBytes = stringToBytes(Json.encodeToString(record.data))
     val encryptedRecord = encrypt(recordBytes, record.recordKey)
-    return UpdatePayload(KEEPER_CLIENT_VERSION, clientId, record.recordUid, webSafe64FromBytes(encryptedRecord), record.revision, transactionType)
+
+    return UpdatePayload(
+        clientVersion = KEEPER_CLIENT_VERSION,
+        clientId = clientId,
+        recordUid = record.recordUid,
+        data = webSafe64FromBytes(encryptedRecord),
+        revision = record.revision,
+        transactionType = updateOptions?.transactionType,
+        links2Remove = updateOptions?.linksToRemove
+    )
 }
 
 @ExperimentalSerializationApi
@@ -1024,6 +1491,7 @@ private fun prepareFileUploadPayload(
             webSafe64FromBytes(encryptedFileRecord),
             ownerRecord.recordUid,
             webSafe64FromBytes(encryptedOwnerRecord),
+            ownerRecord.revision,
             bytesToBase64(encryptedLinkKey),
             encryptedFileData.size
         ),
@@ -1075,7 +1543,13 @@ fun postFunction(
     return KeeperHttpResponse(statusCode, data)
 }
 
-private val nonStrictJson = Json { ignoreUnknownKeys = true }
+@ExperimentalSerializationApi
+private val nonStrictJson = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+    coerceInputValues = true
+    allowTrailingComma = true
+}
 
 var keyId = 7
 

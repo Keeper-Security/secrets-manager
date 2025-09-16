@@ -23,6 +23,11 @@ export const localConfigStorage = (client: string, useObjects: boolean): KeyValu
         }))
     }
 
+    const getBytes = async (key: string): Promise<Uint8Array | undefined> => {
+        const value = await getValue(key)
+        return typeof value === 'string' ? platform.base64ToBytes(value) : value;
+    }
+
     const saveValue = async (key: string, value: any): Promise<void> => {
         const objectStore = await getObjectStore('readwrite')
         return new Promise<void>(((resolve, reject) => {
@@ -46,7 +51,7 @@ export const localConfigStorage = (client: string, useObjects: boolean): KeyValu
     let storage: KeyValueStorage = {
         getString: getValue,
         saveString: saveValue,
-        getBytes: getValue,
+        getBytes: getBytes,
         saveBytes: saveValue,
         delete: deleteValue
     }
@@ -72,7 +77,7 @@ export function createCachingFunction(storage: KeyValueStorage): (url: string, t
                 Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
             })
             if (response.statusCode == 200) {
-                await storage.saveBytes('cache', Buffer.concat([transmissionKey.key, response.data]))
+                await storage.saveBytes('cache', new Uint8Array([...transmissionKey.key, ...response.data]))
             }
             return response
         } catch (e) {

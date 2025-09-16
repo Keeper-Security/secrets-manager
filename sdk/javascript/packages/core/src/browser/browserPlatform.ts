@@ -2,17 +2,15 @@ import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
 import {privateDerToPublicRaw} from '../utils'
 
 const bytesToBase64 = (data: Uint8Array): string => {
-    const chunkSize = 0x10000 // max size accepted by String.fromCharCode
+    const chunkSize = 0x8000 // String.fromCharCode has limitations
     if (data.length <= chunkSize) {
-        // @ts-ignore
         return btoa(String.fromCharCode(...data))
     }
-    let chunks: string = ''
-    for (let i = 0; i < data.length; i = i + chunkSize) {
-        // @ts-ignore
-        chunks = chunks + String.fromCharCode(...data.slice(i, i + chunkSize))
+    const chunks: string[] = []
+    for (let i = 0; i < data.length; i += chunkSize) {
+        chunks.push(String.fromCharCode(...data.subarray(i, i + chunkSize)))
     }
-    return btoa(chunks)
+    return btoa(chunks.join(''))
 }
 
 const base64ToBytes = (data: string): Uint8Array => Uint8Array.from(atob(data), c => c.charCodeAt(0))
@@ -114,9 +112,9 @@ const exportPublicKey = async (keyId: string, storage: KeyValueStorage): Promise
 }
 
 // derived from https://github.com/litert/signatures.js
-const p1363ToDER = (p1363: Buffer): Buffer => {
+const p1363ToDER = (p1363: Uint8Array): Uint8Array => {
 
-    const ecdsaRecoverRS = (input: Buffer): Buffer => {
+    const ecdsaRecoverRS = (input: Uint8Array): Uint8Array => {
         let start: number = 0
         while (input[start] === 0) {
             start++
@@ -127,15 +125,15 @@ const p1363ToDER = (p1363: Buffer): Buffer => {
         if (start > 0) {
             return input.slice(start - 1)
         }
-        const output = Buffer.alloc(input.length + 1)
-        input.copy(output, 1)
+        const output = new Uint8Array(input.length + 1)
         output[0] = 0
+        output.set(input, 1)
         return output
     }
 
     let base = 0
-    let r: Buffer
-    let s: Buffer
+    let r: Uint8Array
+    let s: Uint8Array
     const hL = p1363.length / 2
     /**
      * Prepend a 0x00 byte to R or S if it starts with a byte larger than 0x79.
@@ -154,7 +152,7 @@ const p1363ToDER = (p1363: Buffer): Buffer => {
     if (4 + s.length + r.length > 0x7f) {
         base++
     }
-    const der = Buffer.alloc(base + 6 + s.length + r.length)
+    const der = new Uint8Array(base + 6 + s.length + r.length)
     if (base) {
         der[1] = 0x81
     }
@@ -163,8 +161,9 @@ const p1363ToDER = (p1363: Buffer): Buffer => {
     der[base + r.length + 4] = der[base + 2] = 0x02
     der[base + r.length + 5] = s.length
     der[base + 3] = r.length
-    r.copy(der, base + 4)
-    s.copy(der, base + 6 + r.length)
+
+    der.set(r, base + 4)
+    der.set(s, base + 6 + r.length)
     return der
 }
 
@@ -174,7 +173,7 @@ const sign = async (data: Uint8Array, keyId: string, storage: KeyValueStorage): 
         name: 'ECDSA',
         hash: 'SHA-256'
     }, privateKey, data)
-    return new Uint8Array(p1363ToDER(Buffer.from(signature)))
+    return new Uint8Array(p1363ToDER(new Uint8Array(signature)))
 }
 
 const importKey = async (keyId: string, key: Uint8Array, storage?: KeyValueStorage): Promise<void> => {
@@ -207,7 +206,10 @@ const __encrypt = async (data: Uint8Array, key: CryptoKey, useCBC?: boolean): Pr
         name: algorithmName,
         iv: iv
     }, key, data)
-    return Uint8Array.of(...iv, ...new Uint8Array(res))
+    const encrypted = new Uint8Array(iv.length + res.byteLength)
+    encrypted.set(iv, 0)
+    encrypted.set(new Uint8Array(res), iv.length)
+    return encrypted
 }
 
 const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean, useCBC?: boolean): Promise<void> => {
@@ -333,37 +335,35 @@ const post = async (
     }
 }
 
-const fileUpload = (
+const fileUpload = async (
     url: string,
     uploadParameters: { [key: string]: string },
-    data: Blob
-): Promise<any> => new Promise<any>((resolve, reject) => {
+    data: Uint8Array
+): Promise<any> => {
     const form = new FormData();
 
     for (const key in uploadParameters) {
         form.append(key, uploadParameters[key]);
     }
-    form.append('file', data)
+    form.append('file', new Blob([data], {type: 'application/octet-stream'}));
 
     const fetchCfg = {
-        method: 'PUT',
+        method: 'POST',
         body: form,
-    }
+    };
 
-    fetch(url, fetchCfg)
-        .then(response => response.json())
-        .then(res => {
-            resolve({
-                headers: res.headers,
-                statusCode: res.statusCode,
-                statusMessage: res.statusMessage
-            })
-        })
-        .catch(error => {
-            console.error('Error uploading file:', error);
-            reject(error)
-        });
-})
+    try {
+        const res = await fetch(url, fetchCfg);
+        return {
+            headers: res.headers,
+            statusCode: res.status,
+            statusMessage: res.statusText
+        };
+    } catch (error) {
+        console.error('Error uploading file:', error);
+        throw error;
+    }
+};
 
 const cleanKeyCache = () => {
     for (const key in keyCache) {

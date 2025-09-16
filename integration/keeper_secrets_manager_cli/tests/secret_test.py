@@ -14,7 +14,6 @@ import json
 import re
 import os
 import base64
-import imghdr
 from requests import Response
 
 
@@ -299,9 +298,11 @@ class SecretTest(unittest.TestCase):
             result = runner.invoke(cli, ['secret', 'get',
                                          '--title', two.title, '--field', 'My Custom'], catch_exceptions=False)
             self.assertEqual(0, result.exit_code, "the exit code was not 0")
-            # The line feed are stderr to make console display more readable. Doing a FILED=$(ksm ...) will result
-            # in only the stdout being captured.
-            self.assertEqual("\ncustom2\n", result.output)
+            # The line feed are stderr to make console display more readable.
+            # Doing a FIELD=$(ksm ...) results in only stdout being captured.
+            # Depending on OS, Python version, buffering CR/LF could happend
+            # before or after the field value.
+            self.assertRegex(result.output, r"^\n*custom2\n*$", "didn't get the expected field value")
 
     def test_download(self):
 
@@ -495,7 +496,7 @@ class SecretTest(unittest.TestCase):
                 self.assertEqual(0, result.exit_code, "the exit code was not 0")
 
                 with open(tf_name, "rb") as fh:
-                    self.assertEqual("png", imghdr.what(fh), "did not get a PNG")
+                    self.assertEqual(fh.read(4), b"\x89PNG", "did not get a PNG")
                     fh.close()
 
                 # Write plain text to file. This should not be binary data.
@@ -1016,9 +1017,17 @@ class SecretTest(unittest.TestCase):
                                           'url=http://localhost'
                                           ], catch_exceptions=False)
             output = results.output
-            # stderr and stdout are merged
-            output_line = output.split('\n')
-            self.assertRegex(output_line[1], r'^[\w_-]{22}$', "did not get back a record uid")
+            # stderr and stdout are merged:
+            # Depending on OS, Python version, buffering CR/LF could happend
+            # before or after the expected value.
+            # 'UIDxxxxxxxxxxxxxxxxxxxThe following is the new record UID..' or
+            # 'The following is the new record UID..\nUIDxxxxxxxxxxxxxxxxxxx\n'
+            prefix = "The following is the new record UID ..."
+            lines = [line for line in
+                     (line.replace(prefix, "").strip()
+                      for line in output.split("\n")) if line]
+            self.assertTrue(lines, "did not get back a record uid")  # empty
+            self.assertRegex(lines[0], r'^[\w_-]{22}$', "did not get back a record uid")
 
 
 if __name__ == '__main__':
