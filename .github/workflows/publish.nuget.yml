@@ -10,8 +10,38 @@ on:
         type: boolean
 
 jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      sdk-version: ${{ steps.extract-sdk-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Extract SDK version
+        id: extract-sdk-version
+        working-directory: ./sdk/dotNet
+        run: |
+          VERSION=$(dotnet msbuild SecretsManager/SecretsManager.csproj -getProperty:PackageVersion)
+          echo "SDK Version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+  # Generate and upload SBOM for SDK
+  generate-sdk-sbom:
+    needs: get-version
+    uses: ./.github/workflows/reusable.sbom.workflow.yml
+    with:
+      working-directory: ./sdk/dotNet
+      project-name: keeper-secrets-manager-dotnet
+      project-type: dotnet
+      project-version: ${{ needs.get-version.outputs.sdk-version }}
+      sbom-format: spdx-json
+      additional-labels: ksm,sdk,dotnet,security
+    secrets:
+      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+  
   publish-nuget:
     environment: prod
+    needs: generate-sdk-sbom
     runs-on: ubuntu-latest
 
     defaults:
