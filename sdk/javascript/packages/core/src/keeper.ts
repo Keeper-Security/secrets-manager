@@ -568,14 +568,18 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
     if (record.files) {
         keeperRecord.files = []
         for (const file of record.files) {
-            await platform.unwrap(platform.base64ToBytes(file.fileKey), file.fileUid, record.recordUid || KEY_APP_KEY)
-            const decryptedFile = await platform.decrypt(platform.base64ToBytes(file.data), file.fileUid)
-            keeperRecord.files.push({
-                fileUid: file.fileUid,
-                data: JSON.parse(platform.bytesToString(decryptedFile)),
-                url: file.url,
-                thumbnailUrl: file.thumbnailUrl
-            })
+            try {
+                await platform.unwrap(platform.base64ToBytes(file.fileKey), file.fileUid, record.recordUid || KEY_APP_KEY)
+                const decryptedFile = await platform.decrypt(platform.base64ToBytes(file.data), file.fileUid)
+                keeperRecord.files.push({
+                    fileUid: file.fileUid,
+                    data: JSON.parse(platform.bytesToString(decryptedFile)),
+                    url: file.url,
+                    thumbnailUrl: file.thumbnailUrl
+                })
+            } catch (e) {
+                console.error(`File ${file.fileUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
+            }
         }
     }
     if (record.links) {
@@ -600,21 +604,33 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
     }
     if (response.records) {
         for (const record of response.records) {
-            if (record.recordKey) {
-                await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, KEY_APP_KEY, storage, true)
+            try {
+                if (record.recordKey) {
+                    await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, KEY_APP_KEY, storage, true)
+                }
+                const decryptedRecord = await decryptRecord(record, storage)
+                records.push(decryptedRecord)
+            } catch (e) {
+                console.error(`Record ${record.recordUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
             }
-            const decryptedRecord = await decryptRecord(record, storage)
-            records.push(decryptedRecord)
         }
     }
     if (response.folders) {
         for (const folder of response.folders) {
-            await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
-            for (const record of folder.records) {
-                await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, folder.folderUid)
-                const decryptedRecord = await decryptRecord(record)
-                decryptedRecord.folderUid = folder.folderUid
-                records.push(decryptedRecord)
+            try {
+                await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
+                for (const record of folder.records) {
+                    try {
+                        await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, folder.folderUid)
+                        const decryptedRecord = await decryptRecord(record)
+                        decryptedRecord.folderUid = folder.folderUid
+                        records.push(decryptedRecord)
+                    } catch (e) {
+                        console.error(`Record ${record.recordUid} in folder ${folder.folderUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
+                    }
+                }
+            } catch (e) {
+                console.error(`Folder ${folder.folderUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
             }
         }
     }
