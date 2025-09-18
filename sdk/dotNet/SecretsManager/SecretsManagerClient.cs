@@ -1000,9 +1000,16 @@ namespace SecretsManager
             {
                 foreach (var record in response.records)
                 {
-                    var recordKey = CryptoUtils.Decrypt(record.recordKey, appKey);
-                    var decryptedRecord = DecryptRecord(record, recordKey);
-                    records.Add(decryptedRecord);
+                    try
+                    {
+                        var recordKey = CryptoUtils.Decrypt(record.recordKey, appKey);
+                        var decryptedRecord = DecryptRecord(record, recordKey);
+                        records.Add(decryptedRecord);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"Record {record.recordUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
+                    }
                 }
             }
 
@@ -1010,12 +1017,26 @@ namespace SecretsManager
             {
                 foreach (var folder in response.folders)
                 {
-                    var folderKey = CryptoUtils.Decrypt(folder.folderKey, appKey);
-                    foreach (var record in folder.records)
+                    try
                     {
-                        var recordKey = CryptoUtils.Decrypt(record.recordKey, folderKey);
-                        var decryptedRecord = DecryptRecord(record, recordKey, folder.folderUid, folderKey);
-                        records.Add(decryptedRecord);
+                        var folderKey = CryptoUtils.Decrypt(folder.folderKey, appKey);
+                        foreach (var record in folder.records)
+                        {
+                            try
+                            {
+                                var recordKey = CryptoUtils.Decrypt(record.recordKey, folderKey);
+                                var decryptedRecord = DecryptRecord(record, recordKey, folder.folderUid, folderKey);
+                                records.Add(decryptedRecord);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.Error.WriteLine($"Record {record.recordUid} in folder {folder.folderUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"Folder {folder.folderUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
                     }
                 }
             }
@@ -1039,9 +1060,16 @@ namespace SecretsManager
             {
                 foreach (var file in record.files)
                 {
-                    var fileKey = CryptoUtils.Decrypt(file.fileKey, recordKey);
-                    var decryptedFile = CryptoUtils.Decrypt(file.data, fileKey);
-                    files.Add(new KeeperFile(fileKey, file.fileUid, JsonUtils.ParseJson<KeeperFileData>(decryptedFile), file.url, file.thumbnailUrl));
+                    try
+                    {
+                        var fileKey = CryptoUtils.Decrypt(file.fileKey, recordKey);
+                        var decryptedFile = CryptoUtils.Decrypt(file.data, fileKey);
+                        files.Add(new KeeperFile(fileKey, file.fileUid, JsonUtils.ParseJson<KeeperFileData>(decryptedFile), file.url, file.thumbnailUrl));
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"File {file.fileUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
+                    }
                 }
             }
 
