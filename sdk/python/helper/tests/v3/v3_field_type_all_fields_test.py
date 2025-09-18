@@ -1,5 +1,5 @@
 import unittest
-from keeper_secrets_manager_helper.v3.enum import AccountTypeEnum
+from keeper_secrets_manager_helper.v3.enum import AccountTypeEnum, CountryEnum
 from keeper_secrets_manager_helper.v3.field_type import (
     Address, AddressRef, BankAccount, BankAccounts, BirthDate,
     CardRef, Checkbox, DatabaseType, Date, DirectoryType, Email,
