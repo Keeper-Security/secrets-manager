@@ -1,3 +1,6 @@
+# This is basic example of creating custom caching function
+# KSMCache only stores last request, however you can use any tool to this extend functionality
+
 from keeper_secrets_manager_core.storage import FileKeyValueStorage
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.core import KSMCache, KSMHttpResponse
