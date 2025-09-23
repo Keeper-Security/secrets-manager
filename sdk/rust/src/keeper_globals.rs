@@ -15,7 +15,7 @@ use log::error;
 use std::process::Command;
 
 const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
-const RUST_VERSION_PREFIX: &str = "mp";
+const RUST_VERSION_PREFIX: &str = "mr";
 
 pub fn get_client_version(hardcode: bool) -> String {
     let mut version = SDK_VERSION.to_string();
