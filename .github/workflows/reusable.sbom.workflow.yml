@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       project-type:
-        description: 'Type of project (python, dotnet, nodejs)'
+        description: 'Type of project (python, dotnet, nodejs, java, ruby)'
         required: true
         type: string
       project-version:
@@ -74,6 +74,12 @@ jobs:
         uses: gradle/gradle-build-action@v2
         with:
           gradle-version: wrapper
+
+      - name: Setup Ruby
+        if: inputs.project-type == 'ruby'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2.4'
 
 
       - name: Detect project version
@@ -235,7 +241,60 @@ jobs:
             else
               echo "package.json not found"
             fi
-          
+
+            echo "::endgroup::"
+            return 1
+          }
+
+          detect_ruby_version() {
+            echo "::group::Ruby Version Detection"
+
+            # Try metadata.rb (Chef cookbooks)
+            if [ -f "metadata.rb" ]; then
+              echo "Found metadata.rb, attempting to extract version..."
+              metadata_version=$(grep -Po "^version\\s+['\"]\\K[^'\"]*" metadata.rb 2>/dev/null || echo "")
+              if [ ! -z "$metadata_version" ]; then
+                echo "✓ Successfully extracted version from metadata.rb: $metadata_version"
+                echo "::endgroup::"
+                echo "$metadata_version"
+                return 0
+              else
+                echo "⚠ Failed to extract version from metadata.rb"
+              fi
+            else
+              echo "metadata.rb not found"
+            fi
+
+            # Try .gemspec files
+            echo "Searching for .gemspec files..."
+            find . -name "*.gemspec" -type f -print0 | while IFS= read -r -d '' file; do
+              echo "Checking $file for version..."
+              gemspec_version=$(grep -Po "version\\s*=\\s*['\"]\\K[^'\"]*" "$file" 2>/dev/null || echo "")
+              if [ ! -z "$gemspec_version" ]; then
+                echo "✓ Successfully extracted version from $file: $gemspec_version"
+                echo "::endgroup::"
+                echo "$gemspec_version"
+                return 0
+              fi
+            done
+            echo "⚠ No version found in any .gemspec files"
+
+            # Try VERSION file
+            if [ -f "VERSION" ]; then
+              echo "Found VERSION file, attempting to extract version..."
+              version_file=$(cat VERSION 2>/dev/null | tr -d '\\n\\r' | head -1)
+              if [ ! -z "$version_file" ]; then
+                echo "✓ Successfully extracted version from VERSION file: $version_file"
+                echo "::endgroup::"
+                echo "$version_file"
+                return 0
+              else
+                echo "⚠ VERSION file is empty"
+              fi
+            else
+              echo "VERSION file not found"
+            fi
+
             echo "::endgroup::"
             return 1
           }
@@ -249,6 +308,9 @@ jobs:
               ;;
             "nodejs")
               VERSION=$(detect_nodejs_version)
+              ;;
+            "ruby")
+              VERSION=$(detect_ruby_version)
               ;;
             "java")
               if [ -f "build.gradle.kts" ]; then
@@ -322,15 +384,15 @@ jobs:
           
           echo "Building project to download dependencies"
           ./gradlew build --no-daemon --refresh-dependencies
-
-    
+          
+          
           cat syft-config.yaml
           echo "Syft version:"
           syft version
           
           echo "Full project scan with verbose output:"
           SYFT_LOG_LEVEL=debug syft packages . -c syft-config.yaml -o json | tee syft-scan.json
-    
+          
           echo "Scanning Gradle cache:"
           find ~/.gradle/caches/modules-2 -type f -name "*.jar" | while read -r jar; do
             echo "Found JAR: $jar"
@@ -448,7 +510,25 @@ jobs:
           fi
 
           echo "Creating Syft config for Manifest"
-          cat > syft-config.yaml << 'EOF'
+          if [ "${{ inputs.project-type }}" = "ruby" ]; then
+            cat > syft-config.yaml << 'EOF'
+          package:
+            search:
+              scope: all-layers
+            cataloger:
+              enabled: true
+              ruby:
+                enabled: true
+                search-gems: true
+              java:
+                enabled: false
+              python:
+                enabled: false
+              nodejs:
+                enabled: false
+          EOF
+          else
+            cat > syft-config.yaml << 'EOF'
           package:
             search:
               scope: all-layers
@@ -459,6 +539,7 @@ jobs:
                 search-indexed-archives: true
                 resolve-dependencies: true
           EOF
+          fi
           # Generate SBOM using Manifest CLI
           "$MANIFEST_PATH" sbom . \
             --generator=syft \
