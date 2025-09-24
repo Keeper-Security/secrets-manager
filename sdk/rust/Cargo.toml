@@ -1,6 +1,6 @@
 [package]
 name = "keeper-secrets-manager-core"
-version = "17.0.2"
+version = "17.0.3"
 authors = ["Keeper Security <sm@keepersecurity.com>"]
 edition = "2021"
 description = "Rust SDK for Keeper Secrets Manager"

@@ -17,7 +17,7 @@ use lazy_static::lazy_static;
 // const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");  // Not needed for now as we are just hard coding it
 const RUST_VERSION_PREFIX: &str = "mr";
 
-pub fn get_client_version(hardcode: bool) -> String {
+pub fn get_client_version(_hardcode: bool) -> String {
     // Hardcoded to version 17.0.0 as requested
     "17.0.0".to_string()
 
