@@ -96,7 +96,7 @@ class AliasedGroup(HelpColorsGroup):
         "exit": "quit",
         "pass": "password",
         "q": "quit",
-        "help": "--help"
+        "?": "help"
     }
 
     def get_command(self, ctx, cmd_name):
@@ -1379,6 +1379,17 @@ def quit_command():
     repl_exit()
 
 
+@click.command(
+    name='help',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.pass_context
+def help_command(ctx):
+    """Show help"""
+    print(ctx.parent.get_help())
+
+
 # SYNC COMMAND
 @click.command(
     name='sync',
@@ -1412,6 +1423,7 @@ cli.add_command(init_command)
 cli.add_command(version_command)
 cli.add_command(shell_command)
 cli.add_command(quit_command)
+cli.add_command(help_command)
 
 
 def main():
