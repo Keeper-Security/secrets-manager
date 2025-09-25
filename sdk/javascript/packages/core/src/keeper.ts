@@ -487,7 +487,7 @@ const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: K
     }
 }
 
-const postFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse> => {
+export const postFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse> => {
     return platform.post(url, payload.payload,
         {
             PublicKeyId: transmissionKey.publicKeyId.toString(),
