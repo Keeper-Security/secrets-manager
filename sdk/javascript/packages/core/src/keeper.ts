@@ -259,7 +259,7 @@ const getUidBytes = (): Uint8Array => {
     const dash = new Uint8Array([0b1111_1000, 0b0111_1111])
     let bytes = new Uint8Array(16)
     for (let i = 0; i < 8; i++) {
-        bytes = platform.getRandomBytes(16)
+        bytes = platform.getRandomBytes(16) as Uint8Array<ArrayBuffer>
         if ((dash[0] & bytes[0]) != dash[0]) break
     }
     if ((dash[0] & bytes[0]) == dash[0])

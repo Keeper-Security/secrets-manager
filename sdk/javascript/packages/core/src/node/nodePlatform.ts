@@ -125,6 +125,11 @@ const _encryptCBC = (data: Uint8Array, key: Uint8Array): Uint8Array => {
     return Buffer.concat([iv, encrypted]);
 }
 
+const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage, useCBC?: boolean): Promise<Uint8Array> => {
+    const key = await loadKey(keyId, storage)
+    return await _decrypt(data, key, useCBC)
+}
+
 const _decrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<Uint8Array> => {
     if (useCBC) {
         return _decryptCBC(data, key)
@@ -154,11 +159,6 @@ const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, s
     if (storage) {
         await storage.saveBytes(keyId, unwrappedKey)
     }
-}
-
-const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage, useCBC?: boolean): Promise<Uint8Array> => {
-    const key = await loadKey(keyId, storage)
-    return await _decrypt(data, key, useCBC)
 }
 
 function hash(data: Uint8Array): Promise<Uint8Array> {
@@ -288,7 +288,7 @@ const getHmacDigest = async (algorithm: string, secret: Uint8Array, message: Uin
     let digest = new Uint8Array()
     const algo = algorithm.toUpperCase().trim()
     if (['SHA1', 'SHA256', 'SHA512'].includes(algo))
-        digest = createHmac(algo, secret).update(message).digest()
+        digest = createHmac(algo, secret).update(message).digest() as Uint8Array<ArrayBuffer>
 
     return Promise.resolve(digest)
 }
@@ -300,7 +300,7 @@ const getRandomNumber = async (n: number): Promise<number> => {
     let values = new Uint32Array(1)
     do {
         const randomBytes = getRandomBytes(4)
-        values = new Uint32Array(randomBytes.buffer)
+        values = new Uint32Array(randomBytes.buffer) as Uint32Array<ArrayBuffer>
     } while (values[0] > limit)
     return Promise.resolve(values[0] % n)
 }
