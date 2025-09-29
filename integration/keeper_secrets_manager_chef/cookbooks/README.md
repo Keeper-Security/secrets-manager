@@ -19,12 +19,12 @@ The Keeper Secrets Manager cookbook allows Chef-managed nodes to integrate with 
 ## Prerequisites
 
 * Keeper Secrets Manager access (See the [Quick Start Guide](https://docs.keeper.io/secrets-manager/secrets-manager/quick-start-guide) for more details)
-  * Secrets Manager add-on enabled for your Keeper subscription
-  * Membership in a Role with the Secrets Manager enforcement policy enabled
+    * Secrets Manager add-on enabled for your Keeper subscription
+    * Membership in a Role with the Secrets Manager enforcement policy enabled
 * A Keeper Secrets Manager Application with secrets shared to it
-  * See the Quick Start Guide for instructions on creating an Application
+    * See the Quick Start Guide for instructions on creating an Application
 * An initialized Keeper Secrets Manager Configuration
-  * The cookbook accepts Base64 format configurations
+    * The cookbook accepts Base64 format configurations
 
 ## Installation
 
@@ -33,13 +33,13 @@ The Keeper Secrets Manager cookbook allows Chef-managed nodes to integrate with 
 Add this line to your `Berksfile`:
 
 ```ruby
-cookbook 'keeper_secrets_manager', git: 'https://github.com/your-org/keeper_secrets_manager.git'
+cookbook 'keeper_secrets_manager', git: 'https://github.com/Keeper-Security/secrets-manager.git', rel: 'integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager'
 ```
 
 ### Using Chef Supermarket
 
 ```bash
-knife cookbook site install keeper_secrets_manager
+knife supermarket install keeper_secrets_manager
 ```
 
 ### Manual Installation
