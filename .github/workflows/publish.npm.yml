@@ -8,18 +8,18 @@ jobs:
     steps:
       - name: Get the source code
         uses: actions/checkout@v3
-        
+
       - name: Install Syft
         run: |
           echo "Installing Syft v1.18.1..."
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /tmp/bin v1.18.1
           echo "/tmp/bin" >> $GITHUB_PATH
-          
+
       - name: Install Manifest CLI
         run: |
           echo "Installing Manifest CLI v0.18.3..."
           curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /tmp/bin v0.18.3
-          
+
       - name: Create Syft configuration
         run: |
           cat > syft-config.yaml << 'EOF'
@@ -35,13 +35,13 @@ jobs:
               nodejs:
                 enabled: true
           EOF
-          
+
       - name: Generate and upload SBOM
         env:
           MANIFEST_API_KEY: ${{ secrets.MANIFEST_TOKEN }}
         run: |
           JAVASCRIPT_SDK_DIR="./sdk/javascript"
-          
+
           # Get version from package.json
           echo "Detecting JavaScript SDK version..."
           if [ -f "${JAVASCRIPT_SDK_DIR}/packages/core/package.json" ]; then
@@ -51,7 +51,7 @@ jobs:
             VERSION="1.0.0"
             echo "Could not detect version, using default: ${VERSION}"
           fi
-          
+
           echo "Generating SBOM with Manifest CLI..."
           /tmp/bin/manifest sbom "${JAVASCRIPT_SDK_DIR}" \
             --generator=syft \
@@ -63,7 +63,7 @@ jobs:
             --publish=true \
             --asset-label=application,sbom-generated,nodejs \
             --generator-config=syft-config.yaml
-            
+
           echo "SBOM generated and uploaded successfully: js-sdk-sbom.json"
           echo "---------- SBOM Preview (first 20 lines) ----------"
           head -n 20 js-sdk-sbom.json

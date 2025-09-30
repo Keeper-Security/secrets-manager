@@ -38,8 +38,21 @@ jobs:
           echo "Version retrieved: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-  publish-to-maven-central:
+  generate-and-upload-sbom:
     needs: get-version
+    uses: ./.github/workflows/reusable.sbom.workflow.yml
+    with:
+      working-directory: ${{ inputs.working-directory }}
+      project-name: ${{ inputs.project-name }}
+      project-type: java
+      project-version: ${{ needs.get-version.outputs.version }}
+      sbom-format: spdx-json
+      additional-labels: java,sdk,maven,security
+    secrets:
+      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+
+  publish-to-maven-central:
+    needs: [get-version, generate-and-upload-sbom]
     environment: prod
     runs-on: ubuntu-latest
 
@@ -82,12 +95,12 @@ jobs:
       - name: Build and test
         run: ./gradlew clean build test
 
-      - name: Publish to staging repository
-        run: ./gradlew publishAllPublicationsToStagingRepository
+      - name: Publish to staging directory
+        run: ./gradlew publish
 
         # Signing docs: https://jreleaser.org/guide/latest/reference/signing.html
       - name: Deploy to Maven Central via JReleaser
-        run: ./gradlew jreleaserDeploy
+        run: ./gradlew jreleaserDeploy --no-configuration-cache --stacktrace
         env:
           JRELEASER_GPG_PASSPHRASE: ${{ env.JRELEASER_GPG_PASSPHRASE }}
           JRELEASER_GPG_SECRET_KEY: /tmp/private-key.asc

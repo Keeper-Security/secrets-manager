@@ -27,7 +27,7 @@ from keeper_secrets_manager_core.dto.dtos import Folder, Record, \
     RecordCreate, SecretsManagerResponse, AppData, \
     KeeperFileUpload, KeeperFile, KeeperFolder
 from keeper_secrets_manager_core.dto.payload import GetPayload, \
-    CompleteTransactionPayload, UpdatePayload, TransmissionKey, \
+    CompleteTransactionPayload, UpdateOptions, UpdatePayload, TransmissionKey, \
     EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, \
     DeletePayload, CreateFolderPayload, UpdateFolderPayload, \
     DeleteFolderPayload, CreateOptions, QueryOptions
@@ -79,8 +79,14 @@ class SecretsManager:
     }
 
     def __init__(self,
-                 token=None, hostname=None, verify_ssl_certs=True, config=None, log_level=None,
-                 custom_post_function=None):
+                 token=None,
+                 hostname=None,
+                 verify_ssl_certs=True,
+                 config=None,
+                 log_level=None,
+                 custom_post_function=None,
+                 proxy_url=None
+                 ):
 
         # Make sure the Python is 3.6 or higher. We'll handle Python 4 in the future :)
         python_version = sys.version_info
@@ -151,6 +157,8 @@ class SecretsManager:
             config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, SecretsManager.default_key_id)
 
         self.config: KeyValueStorage = config
+
+        self.proxy_url = proxy_url or None
 
         self._init()
 
@@ -254,6 +262,9 @@ class SecretsManager:
         current_secret_key = None
 
         if env_secret_key:
+            if ":" in env_secret_key:
+                _, env_secret_key = env_secret_key.split(":", 1)
+
             current_secret_key = env_secret_key
             self.logger.info("Secret key found in environment variable")
 
@@ -331,7 +342,7 @@ class SecretsManager:
         return payload
 
     @staticmethod
-    def prepare_get_payload(storage, query_options:QueryOptions):
+    def prepare_get_payload(storage, query_options: QueryOptions):
         payload = GetPayload()
 
         payload.clientVersion = keeper_secrets_manager_sdk_client_id
@@ -351,6 +362,8 @@ class SecretsManager:
                 payload.requestedRecords = query_options.records_filter
             if query_options.folders_filter:
                 payload.requestedFolders = query_options.folders_filter
+            if query_options.request_links:
+                payload.requestLinks = True
 
         return payload
 
@@ -392,7 +405,7 @@ class SecretsManager:
         return payload
 
     @staticmethod
-    def prepare_update_payload(storage, record, transaction_type=None):
+    def prepare_update_payload(storage, record, update_options=None):
 
         payload = UpdatePayload()
 
@@ -403,13 +416,36 @@ class SecretsManager:
         payload.recordUid = record.uid
         payload.revision = record.revision
 
+        if update_options and update_options.links_to_remove:
+            ltr = (update_options.links_to_remove
+                   if isinstance(update_options.links_to_remove, list)
+                   else [str(update_options.links_to_remove)])
+            payload.links2Remove = ltr
+
+            # NB! files[] are parsed from raw JSON and may not be up to date
+            # file_refs = [f for f in record.files if f.f.get('fileUid') not in update_options.links_to_remove]
+            # use raw JSON directly
+            dic = utils.json_to_dict(record.raw_json)
+            fields = dic.get('fields')
+            if isinstance(fields, list):
+                fref = [f for f in fields if f.get('type') == 'fileRef']
+                if fref:
+                    fld = fref[0]
+                    val = fld.get('value')
+                    if val and isinstance(val, list):
+                        file_refs = [r for r in val if r not in update_options.links_to_remove]
+                        if len(val) != len(file_refs):
+                            fld['value'] = file_refs
+                            record.raw_json = utils.dict_to_json(dic)
+
         raw_json_bytes = utils.string_to_bytes(record.raw_json)
         encrypted_raw_json_bytes = CryptoUtils.encrypt_aes(raw_json_bytes, record.record_key_bytes)
 
         payload.data = bytes_to_base64(encrypted_raw_json_bytes)
 
-        if transaction_type:
-            payload.transactionType = transaction_type
+        # transaction_type - 'general' or 'rotation'
+        if update_options and update_options.transaction_type:
+            payload.transactionType = update_options.transaction_type
 
         return payload
 
@@ -482,6 +518,7 @@ class SecretsManager:
         payload.fileRecordData = CryptoUtils.bytes_to_url_safe_str(encrypted_file_record_bytes)
         payload.fileRecordKey = bytes_to_base64(encrypted_file_record_key)
         payload.ownerRecordUid = owner_record.uid
+        payload.ownerRecordRevision = owner_record.revision
 
         payload.ownerRecordData = encrypted_owner_record_str
 
@@ -557,9 +594,9 @@ class SecretsManager:
             encrypted_payload_and_signature = self.encrypt_and_sign_payload(self.config, transmission_key, payload)
 
             if self.custom_post_function and path == 'get_secret':
-                ksm_rs = self.custom_post_function(url, transmission_key, encrypted_payload_and_signature, self.verify_ssl_certs)
+                ksm_rs = self.custom_post_function(url, transmission_key, encrypted_payload_and_signature, self.verify_ssl_certs, self.proxy_url)
             else:
-                ksm_rs = self.post_function(url, transmission_key, encrypted_payload_and_signature, self.verify_ssl_certs)
+                ksm_rs = self.post_function(url, transmission_key, encrypted_payload_and_signature, self.verify_ssl_certs, self.proxy_url)
 
             # If we are ok, then break out of the while loop
             if ksm_rs.status_code == 200:
@@ -574,7 +611,7 @@ class SecretsManager:
             return ksm_rs.data
 
     @staticmethod
-    def post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True):
+    def post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True, proxy_url=None):
 
         request_headers = {
             'Content-Type': 'application/octet-stream',
@@ -588,7 +625,8 @@ class SecretsManager:
             url,
             headers=request_headers,
             data=encrypted_payload_and_signature.encrypted_payload,
-            verify=verify_ssl_certs
+            verify=verify_ssl_certs,
+            proxies=SecretsManager.__get_proxies(proxy_url)
         )
 
         ksm_rs = KSMHttpResponse(rs.status_code, rs.content, rs)
@@ -596,13 +634,14 @@ class SecretsManager:
         return ksm_rs
 
     @staticmethod
-    def __upload_file_function(url, upload_parameters, encrypted_file_data):
+    def __upload_file_function(url, upload_parameters, encrypted_file_data, proxy_url=None):
         """Upload file to the server"""
         files = {'file': encrypted_file_data}
 
         rs = requests.post(url,
                            data=upload_parameters,
                            files=files,
+                           proxies=SecretsManager.__get_proxies(proxy_url)
                            )
 
         rs_status_code = rs.status_code
@@ -613,6 +652,14 @@ class SecretsManager:
             'statusCode': rs_status_code,
             'data': rs_data
         }
+
+    @staticmethod
+    def __get_proxies(proxy_url):
+        if proxy_url:
+            return { "https": proxy_url }
+        else:
+            return None
+
 
     def handler_http_error(self, rs):
 
@@ -670,7 +717,7 @@ class SecretsManager:
         # This is a unknown error, not one of ours, just throw a HTTPError
         reason = f", Reason: {str(rs.reason)}" if rs.reason else ""
         message = f", Message: {str(rs.text)}" if rs.text else ""
-        raise requests.HTTPError(f"Status Code: {rs.status_code}{reason}{message}")
+        raise requests.HTTPError(f"Status Code: {rs.status_code}{reason}{message}", response=rs)
 
     @staticmethod
     def get_shared_folder_key(folders: list, response_folders: list, parent: str):
@@ -689,7 +736,7 @@ class SecretsManager:
             parent = parent_folder.get('parent', '')
 
     def fetch_and_decrypt_folders(self):
-        payload = SecretsManager.prepare_get_payload(self.config, [])
+        payload = SecretsManager.prepare_get_payload(self.config, None)
         decrypted_response_bytes = self._post_query('get_folders', payload)
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
         decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
@@ -768,6 +815,7 @@ class SecretsManager:
             for r in records_resp:
                 try:
                     record = Record(r, secret_key)
+                    record.links = r.get('links') or []
                     records.append(record)
                 except Exception as err:
                     msg = f"{err.__class__.__name__}, {str(err)}"
@@ -824,7 +872,7 @@ class SecretsManager:
         if isinstance(uids, str):
             uids = [uids]
 
-        query_options = QueryOptions(records_filter=uids, folders_filter=None)
+        query_options = QueryOptions(records_filter=uids, folders_filter=None, request_links=None)
         return self.get_secrets_with_options(query_options, full_response)
 
     def get_secrets_with_options(self, query_options=None, full_response=False):
@@ -1046,7 +1094,7 @@ class SecretsManager:
         parameters_dict = json_to_dict(parameters_json_str)
 
         self.logger.debug(f"Uploading file data: upload url=[{upload_url}], file name: [{file.Name}], encrypted file size: [{len(encrypted_file_data)}]")
-        upload_result = SecretsManager.__upload_file_function(upload_url, parameters_dict, encrypted_file_data)
+        upload_result = SecretsManager.__upload_file_function(upload_url, parameters_dict, encrypted_file_data, proxy_url=self.proxy_url)
 
         self.logger.debug(f"Finished uploading file data. Status code: {upload_result.get('statusCode')}, response data: {upload_result.get('data')}")
 
@@ -1064,14 +1112,21 @@ class SecretsManager:
 
         return self.upload_file(owner_record, file_to_upload)
 
-    def save(self, record, transaction_type=None):
+    def save(self, record, transaction_type=None, links_to_remove=None):
         """
         Save updated secret values
+        """
+        options = UpdateOptions(transaction_type, links_to_remove)
+        self.save_with_options(record, options)
+
+    def save_with_options(self, record, update_options=None):
+        """
+        Save updated secret values using options
         """
 
         self.logger.info("Updating record uid: %s" % record.uid)
 
-        payload = SecretsManager.prepare_update_payload(self.config, record, transaction_type)
+        payload = SecretsManager.prepare_update_payload(self.config, record, update_options)
 
         self._post_query(
             'update_secret',
@@ -1697,11 +1752,11 @@ class KSMCache:
             os.unlink(KSMCache.kms_cache_file_name)
 
     @staticmethod
-    def caching_post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True):
+    def caching_post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True, proxy_url=None):
 
         try:
 
-            ksm_rs = SecretsManager.post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs)
+            ksm_rs = SecretsManager.post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs, proxy_url)
 
             if ksm_rs.status_code == 200:
                 KSMCache.save_cache(transmission_key.key + ksm_rs.data)
