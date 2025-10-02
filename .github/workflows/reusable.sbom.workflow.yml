@@ -50,6 +50,13 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Remove Python 3.6 from system
+        run: |
+          echo "Removing Python 3.6 from system to prevent it from appearing in SBOM..."
+          sudo apt-get remove --purge -y python3.6 python3.6-minimal libpython3.6-stdlib libpython3.6-minimal 2>/dev/null || echo "Python 3.6 packages not found or already removed"
+          sudo apt-get autoremove -y
+          echo "Python 3.6 removal complete"
+
       - name: Setup .NET
         if: inputs.project-type == 'dotnet'
         uses: actions/setup-dotnet@v4
