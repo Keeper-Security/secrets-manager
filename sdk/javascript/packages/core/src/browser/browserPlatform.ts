@@ -42,7 +42,7 @@ const loadPrivateKey = async (keyId: string, storage: KeyValueStorage): Promise<
         const privateKeyDer = await storage.getBytes(keyId)
         if (privateKeyDer) {
             privateKey = await crypto.subtle.importKey('pkcs8',
-                privateKeyDer as Uint8Array<ArrayBuffer>,
+                privateKeyDer,
                 {
                     name: 'ECDSA',
                     namedCurve: 'P-256'
@@ -73,7 +73,7 @@ const loadKey = async (keyId: string, storage?: KeyValueStorage, useCBC?: boolea
             const keyBytes = await storage.getBytes(keyId)
             if (keyBytes) {
                 const algorithmName = useCBC ? 'AES-CBC' : 'AES-GCM'
-                key = await crypto.subtle.importKey('raw', keyBytes as Uint8Array<ArrayBuffer>, algorithmName, false, ['encrypt', 'decrypt', 'unwrapKey'])
+                key = await crypto.subtle.importKey('raw', keyBytes, algorithmName, false, ['encrypt', 'decrypt', 'unwrapKey'])
             }
         }
     }
@@ -174,14 +174,14 @@ const sign = async (data: Uint8Array, keyId: string, storage: KeyValueStorage): 
     const signature = await crypto.subtle.sign({
         name: 'ECDSA',
         hash: 'SHA-256'
-    }, privateKey, data as Uint8Array<ArrayBuffer>)
+    }, privateKey, data)
     return new Uint8Array(p1363ToDER(new Uint8Array(signature)))
 }
 
 const importKey = async (keyId: string, key: Uint8Array, storage?: KeyValueStorage, useCBC?: boolean): Promise<void> => {
     const algorithmName = useCBC ? 'AES-CBC' : 'AES-GCM'
     const cacheKey = useCBC ? `cbc:${keyId}` : keyId
-    const _key = await crypto.subtle.importKey('raw', key as Uint8Array<ArrayBuffer>, algorithmName, false, ['encrypt', 'decrypt', 'unwrapKey'])
+    const _key = await crypto.subtle.importKey('raw', key, algorithmName, false, ['encrypt', 'decrypt', 'unwrapKey'])
     keyCache[cacheKey] = _key
     if (storage) {
         if (storage.saveObject) {
@@ -199,7 +199,7 @@ const encrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorag
 
 const _encrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<Uint8Array> => {
     const algorithmName = useCBC ? 'AES-CBC' : 'AES-GCM'
-    const _key = await crypto.subtle.importKey('raw', key as Uint8Array<ArrayBuffer>, algorithmName, false, ['encrypt'])
+    const _key = await crypto.subtle.importKey('raw', key, algorithmName, false, ['encrypt'])
     return __encrypt(data, _key, useCBC)
 }
 
@@ -209,8 +209,8 @@ const __encrypt = async (data: Uint8Array, key: CryptoKey, useCBC?: boolean): Pr
     const iv = getRandomBytes(ivLen)
     const res = await crypto.subtle.encrypt({
         name: algorithmName,
-        iv: iv as Uint8Array<ArrayBuffer>
-    }, key, data as Uint8Array<ArrayBuffer>)
+        iv: iv
+    }, key, data)
     const encrypted = new Uint8Array(iv.length + res.byteLength)
     encrypted.set(iv, 0)
     encrypted.set(new Uint8Array(res), iv.length)
@@ -225,9 +225,9 @@ const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, s
     const ivLen = useCBC ? 16 : 12
     const algorithmName = useCBC ? 'AES-CBC' : 'AES-GCM'
     const cacheKey = useCBC ? `cbc:${keyId}` : keyId
-    const unwrappedKey = await crypto.subtle.unwrapKey('raw', key.subarray(ivLen) as Uint8Array<ArrayBuffer>, unwrappingKey,
+    const unwrappedKey = await crypto.subtle.unwrapKey('raw', key.subarray(ivLen), unwrappingKey,
         {
-            iv: key.subarray(0, ivLen) as Uint8Array<ArrayBuffer>,
+            iv: key.subarray(0, ivLen),
             name: algorithmName
         },
         algorithmName, storage ? !storage.saveObject : false, ['encrypt', 'decrypt', 'unwrapKey'])
@@ -253,7 +253,7 @@ const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorag
 
 const _decrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<Uint8Array> => {
     const algorithmName = useCBC ? 'AES-CBC' : 'AES-GCM'
-    const _key = await crypto.subtle.importKey('raw', key as Uint8Array<ArrayBuffer>, algorithmName, false, ['decrypt'])
+    const _key = await crypto.subtle.importKey('raw', key, algorithmName, false, ['decrypt'])
     return __decrypt(data, _key, useCBC)
 }
 
@@ -264,19 +264,19 @@ const __decrypt = async (data: Uint8Array, key: CryptoKey, useCBC?: boolean): Pr
     const encrypted = data.subarray(ivLen)
     const res = await crypto.subtle.decrypt({
         name: algorithmName,
-        iv: iv as Uint8Array<ArrayBuffer>
-    }, key, encrypted as Uint8Array<ArrayBuffer>)
+        iv: iv
+    }, key, encrypted)
     return new Uint8Array(res)
 }
 
 const hash = async (data: Uint8Array, tag: string): Promise<Uint8Array> => {
-    const key = await crypto.subtle.importKey('raw', data as Uint8Array<ArrayBuffer>, {
+    const key = await crypto.subtle.importKey('raw', data, {
         name: 'HMAC',
         hash: {
             name: 'SHA-512'
         }
     }, false, ['sign'])
-    const signature = await crypto.subtle.sign('HMAC', key, stringToBytes(tag) as Uint8Array<ArrayBuffer>)
+    const signature = await crypto.subtle.sign('HMAC', key, stringToBytes(tag))
     return new Uint8Array(signature)
 }
 
@@ -287,7 +287,7 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
     }, false, ['deriveBits'])
     // @ts-ignore
     const ephemeralPublicKey = await crypto.subtle.exportKey('raw', ephemeralKeyPair.publicKey)
-    const recipientPublicKey = await crypto.subtle.importKey('raw', key as Uint8Array<ArrayBuffer>, {
+    const recipientPublicKey = await crypto.subtle.importKey('raw', key, {
         name: 'ECDH',
         namedCurve: 'P-256'
     }, true, [])
@@ -332,7 +332,7 @@ const post = async (
             'Content-Length': String(request.length),
             ...headers
         }),
-        body: typeof request === 'string' ? request : request as Uint8Array<ArrayBuffer>,
+        body: typeof request === 'string' ? request : request,
     })
     const body = await resp.arrayBuffer()
     return {
@@ -352,7 +352,7 @@ const fileUpload = async (
     for (const key in uploadParameters) {
         form.append(key, uploadParameters[key]);
     }
-    form.append('file', new Blob([data as Uint8Array<ArrayBuffer>], {type: 'application/octet-stream'}));
+    form.append('file', new Blob([data], {type: 'application/octet-stream'}));
 
     const fetchCfg = {
         method: 'POST',
@@ -388,11 +388,11 @@ const getHmacDigest = async (algorithm: string, secret: Uint8Array, message: Uin
     let algo = algorithm.toUpperCase().trim();
     if (['SHA1', 'SHA256', 'SHA512'].includes(algo)) {
         algo = 'SHA-' + algo.substr(3);
-        const key = await crypto.subtle.importKey('raw', secret as Uint8Array<ArrayBuffer>, {
+        const key = await crypto.subtle.importKey('raw', secret, {
             name: 'HMAC',
             hash: { name: algo  }
         }, false, ['sign'])
-        const signature = await crypto.subtle.sign('HMAC', key, message as Uint8Array<ArrayBuffer>)
+        const signature = await crypto.subtle.sign('HMAC', key, message)
         return new Uint8Array(signature)
     }
     return new Uint8Array();
@@ -405,7 +405,7 @@ const getRandomNumber = async (n: number): Promise<number> => {
     let values = new Uint32Array(1)
     do {
         const randomBytes = getRandomBytes(4)
-        values = new Uint32Array(randomBytes.buffer as ArrayBuffer)
+        values = new Uint32Array(randomBytes.buffer)
     } while (values[0] > limit)
     return Promise.resolve(values[0] % n)
 }

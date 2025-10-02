@@ -288,7 +288,7 @@ const getHmacDigest = async (algorithm: string, secret: Uint8Array, message: Uin
     let digest = new Uint8Array()
     const algo = algorithm.toUpperCase().trim()
     if (['SHA1', 'SHA256', 'SHA512'].includes(algo))
-        digest = createHmac(algo, secret).update(message).digest() as Uint8Array<ArrayBuffer>
+        digest = createHmac(algo, secret).update(message).digest()
 
     return Promise.resolve(digest)
 }
@@ -300,7 +300,7 @@ const getRandomNumber = async (n: number): Promise<number> => {
     let values = new Uint32Array(1)
     do {
         const randomBytes = getRandomBytes(4)
-        values = new Uint32Array(randomBytes.buffer as ArrayBuffer)
+        values = new Uint32Array(randomBytes.buffer)
     } while (values[0] > limit)
     return Promise.resolve(values[0] % n)
 }
