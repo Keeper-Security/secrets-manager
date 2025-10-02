@@ -59,8 +59,9 @@ const loadPrivateKey = async (keyId: string, storage: KeyValueStorage): Promise<
 }
 
 
-const loadKey = async (keyId: string, storage?: KeyValueStorage): Promise<CryptoKey> => {
-    const cachedKey = keyCache[keyId]
+const loadKey = async (keyId: string, storage?: KeyValueStorage, useCBC?: boolean): Promise<CryptoKey> => {
+    const cacheKey = useCBC ? `cbc:${keyId}` : keyId
+    const cachedKey = keyCache[cacheKey]
     if (cachedKey) {
         return cachedKey
     }
@@ -71,14 +72,15 @@ const loadKey = async (keyId: string, storage?: KeyValueStorage): Promise<Crypto
         } else {
             const keyBytes = await storage.getBytes(keyId)
             if (keyBytes) {
-                key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt', 'decrypt', 'unwrapKey'])
+                const algorithmName = useCBC ? 'AES-CBC' : 'AES-GCM'
+                key = await crypto.subtle.importKey('raw', keyBytes, algorithmName, false, ['encrypt', 'decrypt', 'unwrapKey'])
             }
         }
     }
     if (!key) {
         throw new Error(`Unable to load the key ${keyId}`)
     }
-    keyCache[keyId] = key
+    keyCache[cacheKey] = key
     return key
 }
 
@@ -176,9 +178,11 @@ const sign = async (data: Uint8Array, keyId: string, storage: KeyValueStorage): 
     return new Uint8Array(p1363ToDER(new Uint8Array(signature)))
 }
 
-const importKey = async (keyId: string, key: Uint8Array, storage?: KeyValueStorage): Promise<void> => {
-    const _key = await crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['encrypt', 'decrypt', 'unwrapKey'])
-    keyCache[keyId] = _key
+const importKey = async (keyId: string, key: Uint8Array, storage?: KeyValueStorage, useCBC?: boolean): Promise<void> => {
+    const algorithmName = useCBC ? 'AES-CBC' : 'AES-GCM'
+    const cacheKey = useCBC ? `cbc:${keyId}` : keyId
+    const _key = await crypto.subtle.importKey('raw', key, algorithmName, false, ['encrypt', 'decrypt', 'unwrapKey'])
+    keyCache[cacheKey] = _key
     if (storage) {
         if (storage.saveObject) {
             await storage.saveObject(keyId, _key)
@@ -189,12 +193,13 @@ const importKey = async (keyId: string, key: Uint8Array, storage?: KeyValueStora
 }
 
 const encrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage, useCBC?: boolean): Promise<Uint8Array> => {
-    const key = await loadKey(keyId, storage)
+    const key = await loadKey(keyId, storage, useCBC)
     return __encrypt(data, key, useCBC)
 }
 
 const _encrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<Uint8Array> => {
-    const _key = await crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['encrypt'])
+    const algorithmName = useCBC ? 'AES-CBC' : 'AES-GCM'
+    const _key = await crypto.subtle.importKey('raw', key, algorithmName, false, ['encrypt'])
     return __encrypt(data, _key, useCBC)
 }
 
@@ -213,19 +218,20 @@ const __encrypt = async (data: Uint8Array, key: CryptoKey, useCBC?: boolean): Pr
 }
 
 const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean, useCBC?: boolean): Promise<void> => {
-    const unwrappingKey = await loadKey(unwrappingKeyId, storage)
+    const unwrappingKey = await loadKey(unwrappingKeyId, storage, useCBC)
     if (!unwrappingKey.usages.includes('unwrapKey')) {
         throw new Error(`Key ${unwrappingKeyId} is not suitable for unwrapping`)
     }
     const ivLen = useCBC ? 16 : 12
     const algorithmName = useCBC ? 'AES-CBC' : 'AES-GCM'
+    const cacheKey = useCBC ? `cbc:${keyId}` : keyId
     const unwrappedKey = await crypto.subtle.unwrapKey('raw', key.subarray(ivLen), unwrappingKey,
         {
             iv: key.subarray(0, ivLen),
             name: algorithmName
         },
         algorithmName, storage ? !storage.saveObject : false, ['encrypt', 'decrypt', 'unwrapKey'])
-    keyCache[keyId] = unwrappedKey
+    keyCache[cacheKey] = unwrappedKey
     if (memoryOnly) {
         return
     }
@@ -241,12 +247,13 @@ const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, s
 }
 
 const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorage, useCBC?: boolean): Promise<Uint8Array> => {
-    const key = await loadKey(keyId, storage)
+    const key = await loadKey(keyId, storage, useCBC)
     return __decrypt(data, key, useCBC)
 }
 
 const _decrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Promise<Uint8Array> => {
-    const _key = await crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['decrypt'])
+    const algorithmName = useCBC ? 'AES-CBC' : 'AES-GCM'
+    const _key = await crypto.subtle.importKey('raw', key, algorithmName, false, ['decrypt'])
     return __decrypt(data, _key, useCBC)
 }
 
@@ -325,7 +332,7 @@ const post = async (
             'Content-Length': String(request.length),
             ...headers
         }),
-        body: request,
+        body: typeof request === 'string' ? request : request,
     })
     const body = await resp.arrayBuffer()
     return {
