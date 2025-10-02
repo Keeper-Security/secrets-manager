@@ -274,10 +274,10 @@ jobs:
           
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Print all installed packages
+      - name: Uninstall Python3.6
         run: |
-          echo "All apt installed packages"
-          apt list --installed
+          echo "Uninstalling Python3.6"
+          apt-get remove python3.6
 
       - name: Install Python dependencies
         if: inputs.project-type == 'python'
