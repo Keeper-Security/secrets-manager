@@ -50,13 +50,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Remove Python 3.6 from system
-        run: |
-          echo "Removing Python 3.6 from system to prevent it from appearing in SBOM..."
-          sudo apt-get remove --purge -y python3.6 python3.6-minimal libpython3.6-stdlib libpython3.6-minimal 2>/dev/null || echo "Python 3.6 packages not found or already removed"
-          sudo apt-get autoremove -y
-          echo "Python 3.6 removal complete"
-
       - name: Setup .NET
         if: inputs.project-type == 'dotnet'
         uses: actions/setup-dotnet@v4
@@ -401,8 +394,6 @@ jobs:
           SYFT_JAVA_USE_MAVEN_LOCAL_REPOSITORY: "true"
           SYFT_JAVA_RESOLVE_TRANSITIVE_DEPENDENCIES: "true"
           SYFT_PACKAGE_CATALOGER_ENABLED: "true"
-          # Exclude system-installed Python packages
-          SYFT_PYTHON_EXCLUDE_BINARY_OVERLAP_BY_OWNERSHIP: "true"
           # Disable all catalogers except Java (following krouter pattern)
           SYFT_PACKAGE_CATALOGER_RUBY_ENABLED: "false"
           SYFT_PACKAGE_CATALOGER_PYTHON_ENABLED: "false"
