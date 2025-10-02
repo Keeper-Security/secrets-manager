@@ -274,6 +274,11 @@ jobs:
           
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: Print all installed packages
+        run: |
+          echo "All apt installed packages"
+          apt list --installed
+
       - name: Install Python dependencies
         if: inputs.project-type == 'python'
         working-directory: ${{ inputs.working-directory }}
