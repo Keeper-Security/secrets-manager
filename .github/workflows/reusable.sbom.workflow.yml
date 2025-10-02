@@ -274,11 +274,6 @@ jobs:
           
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Uninstall Python3.6
-        run: |
-          echo "Uninstalling Python3.6"
-          apt-get remove python3.6
-
       - name: Install Python dependencies
         if: inputs.project-type == 'python'
         working-directory: ${{ inputs.working-directory }}
@@ -399,6 +394,8 @@ jobs:
           SYFT_JAVA_USE_MAVEN_LOCAL_REPOSITORY: "true"
           SYFT_JAVA_RESOLVE_TRANSITIVE_DEPENDENCIES: "true"
           SYFT_PACKAGE_CATALOGER_ENABLED: "true"
+          # Exclude system-installed Python packages
+          SYFT_PYTHON_EXCLUDE_BINARY_OVERLAP_BY_OWNERSHIP: "true"
           # Disable all catalogers except Java (following krouter pattern)
           SYFT_PACKAGE_CATALOGER_RUBY_ENABLED: "false"
           SYFT_PACKAGE_CATALOGER_PYTHON_ENABLED: "false"
