@@ -260,7 +260,7 @@ const getUidBytes = (): Uint8Array => {
     const dash = new Uint8Array([0b1111_1000, 0b0111_1111])
     let bytes = new Uint8Array(16)
     for (let i = 0; i < 8; i++) {
-        bytes = platform.getRandomBytes(16)
+        bytes = platform.getRandomBytes(16) as Uint8Array<ArrayBuffer>
         if ((dash[0] & bytes[0]) != dash[0]) break
     }
     if ((dash[0] & bytes[0]) == dash[0])
@@ -577,7 +577,7 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
                     url: file.url,
                     thumbnailUrl: file.thumbnailUrl
                 })
-            } catch (e) {
+            } catch (e: Error | any) {
                 console.error(`File ${file.fileUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
             }
         }
@@ -610,7 +610,7 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
                 }
                 const decryptedRecord = await decryptRecord(record, storage)
                 records.push(decryptedRecord)
-            } catch (e) {
+            } catch (e: Error | any) {
                 console.error(`Record ${record.recordUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
             }
         }
@@ -625,11 +625,11 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
                         const decryptedRecord = await decryptRecord(record)
                         decryptedRecord.folderUid = folder.folderUid
                         records.push(decryptedRecord)
-                    } catch (e) {
+                    } catch (e: Error | any) {
                         console.error(`Record ${record.recordUid} in folder ${folder.folderUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
                     }
                 }
-            } catch (e) {
+            } catch (e: Error | any) {
                 console.error(`Folder ${folder.folderUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
             }
         }
