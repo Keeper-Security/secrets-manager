@@ -542,7 +542,27 @@ jobs:
               indexed-archives: true
             cataloger:
               enabled: true
+              # Disable all catalogers except Java and .NET to avoid conflicts
+              ruby:
+                enabled: false
+              python:
+                enabled: false
+              nodejs:
+                enabled: false
+              dartlang:
+                enabled: false
+              dotnet:
+                enabled: true
+              golang:
+                enabled: false
+              linux:
+                enabled: false
+              php:
+                enabled: false
+              rust:
+                enabled: false
               java:
+                enabled: true
                 search-unindexed-archives: true
                 search-indexed-archives: true
                 resolve-dependencies: true
