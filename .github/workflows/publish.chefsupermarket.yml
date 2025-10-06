@@ -1,0 +1,9 @@
+name: Publish to Chef Supermarket
+on:
+  workflow_dispatch:
+
+jobs:
+  hello-world:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Hello world"
