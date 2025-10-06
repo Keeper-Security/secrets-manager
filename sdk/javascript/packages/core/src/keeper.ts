@@ -687,7 +687,7 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
                 await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, sharedFolderUid, storage, true, true)
                 decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
             } else {
-                await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
+                await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true, true)
                 decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
             }
             decryptedFolder.name = JSON.parse(platform.bytesToString(decryptedData))['name']
