@@ -42,22 +42,25 @@ jobs:
         with:
           dotnet-version: 6.0.x
 
-      - name: Restore and build for dependency resolution
+      - name: Restore and build production projects for dependency resolution
         run: |
-          dotnet restore
-          dotnet build --configuration Release --no-restore
+          dotnet restore SecretsManager/SecretsManager.csproj
+          dotnet build SecretsManager/SecretsManager.csproj --configuration Release --no-restore
+          dotnet restore SecretManagement.Keeper/SecretManagement.Keeper.csproj
+          dotnet build SecretManagement.Keeper/SecretManagement.Keeper.csproj --configuration Release --no-restore
 
       - name: Generate and publish SBOM
         env:
           MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
           SYFT_PACKAGE_CATALOGER_DOTNET_ENABLED: "true"
+          SYFT_EXCLUDE: "./SecretsManager.Test.Core,./QuickTest"
         run: |
           # Install tools
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
           curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b . v0.18.3
           chmod +x ./manifest
 
-          # Generate and publish SBOM
+          # Generate and publish SBOM for production projects only (excluding test projects)
           ./manifest sbom . \
             --generator=syft \
             --name=keeper-secrets-manager-dotnet \
