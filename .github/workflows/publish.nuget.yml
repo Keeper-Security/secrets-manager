@@ -1,4 +1,4 @@
-name: Publish to NuGet
+name: Publish to NuGet and PowerShell Gallery
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
     outputs:
       sdk-version: ${{ steps.extract-sdk-version.outputs.version }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Extract SDK version
         id: extract-sdk-version
@@ -83,6 +83,45 @@ jobs:
           name: non-strong-named-binaries-${{ github.run_number }}
           path: |
             ${{ github.workspace }}/sdk/dotNet/SecretsManager/bin/Release/*.nupkg
+
+  publish-powershell:
+    environment: prod
+    needs: publish-nuget
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./sdk/dotNet
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 6
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 6.0.x
+
+      - name: Install dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
+          secrets: |
+            FeE4uHTMEVJJhAdWK0ubMg/field/password > NUGET_AUTH_TOKEN
+
+      - name: Publish package
+        if: ${{ github.event.inputs.publish == 'true' }}
+        shell: pwsh
+        run: |
+          Set-Location ./SecretManagement.Keeper/
+          ./build.ps1 -Package -Publish -APIKey ${{steps.ksmsecrets.outputs.NUGET_AUTH_TOKEN}}
 
   # 2024-08-30
   # COMMENTING OUT FOR NOW BECAUSE PUBLISHIGN IS FALINING.
