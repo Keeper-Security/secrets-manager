@@ -131,12 +131,12 @@ jobs:
           Set-Location ./SecretManagement.Keeper/
           ./build.ps1 -Package
 
-      - name: Upload PowerShell packages
+      - name: Upload PowerShell module
         uses: actions/upload-artifact@v4
         with:
-          name: powershell-packages-${{ github.run_number }}
+          name: powershell-module-${{ github.run_number }}
           path: |
-            ${{ github.workspace }}/sdk/dotNet/SecretManagement.Keeper/bin/Release/*.nupkg
+            ${{ github.workspace }}/sdk/dotNet/SecretManagement.Keeper/out/
 
   publish-powershell:
     environment: prod
@@ -146,17 +146,14 @@ jobs:
 
     defaults:
       run:
-        working-directory: ./sdk/dotNet
+        working-directory: ./sdk/dotNet/SecretManagement.Keeper
 
     steps:
-      - name: Get the source code
-        uses: actions/checkout@v4
-
-      - name: Download PowerShell packages
+      - name: Download PowerShell module
         uses: actions/download-artifact@v4
         with:
-          name: powershell-packages-${{ github.run_number }}
-          path: ./packages
+          name: powershell-module-${{ github.run_number }}
+          path: ./out
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
@@ -166,8 +163,7 @@ jobs:
           secrets: |
             FeE4uHTMEVJJhAdWK0ubMg/field/password > NUGET_AUTH_TOKEN
 
-      - name: Publish package
+      - name: Publish module to PowerShell Gallery
         shell: pwsh
-        working-directory: ./sdk/dotNet/SecretManagement.Keeper
         run: |
-          ./build.ps1 -Publish -APIKey ${{steps.ksmsecrets.outputs.NUGET_AUTH_TOKEN}}
+          Publish-Module -Path ./out/SecretManagement.Keeper -NuGetApiKey ${{steps.ksmsecrets.outputs.NUGET_AUTH_TOKEN}} -Verbose
