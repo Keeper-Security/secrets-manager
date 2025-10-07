@@ -28,16 +28,52 @@ jobs:
   # Generate and upload SBOM for SDK
   generate-sdk-sbom:
     needs: get-version
-    uses: ./.github/workflows/reusable.sbom.workflow.yml
-    with:
-      working-directory: ./sdk/dotNet
-      project-name: keeper-secrets-manager-dotnet
-      project-type: dotnet
-      project-version: ${{ needs.get-version.outputs.sdk-version }}
-      sbom-format: spdx-json
-      additional-labels: ksm,sdk,dotnet,security
-    secrets:
-      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./sdk/dotNet
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 6
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 6.0.x
+
+      - name: Restore and build for dependency resolution
+        run: |
+          dotnet restore
+          dotnet build --configuration Release --no-restore
+
+      - name: Generate and publish SBOM
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+          SYFT_PACKAGE_CATALOGER_DOTNET_ENABLED: "true"
+        run: |
+          # Install tools
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b . v0.18.3
+          chmod +x ./manifest
+
+          # Generate and publish SBOM
+          ./manifest sbom . \
+            --generator=syft \
+            --name=keeper-secrets-manager-dotnet \
+            --version=${{ needs.get-version.outputs.sdk-version }} \
+            --output=spdx-json \
+            --file=sbom.json \
+            --api-key=${MANIFEST_TOKEN} \
+            --publish=true \
+            --asset-label=application,sbom-generated,dotnet,ksm,sdk,security
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-keeper-secrets-manager-dotnet-${{ needs.get-version.outputs.sdk-version }}
+          path: ./sdk/dotNet/sbom.json
+          retention-days: 90
   
   build-nuget:
     needs: generate-sdk-sbom
