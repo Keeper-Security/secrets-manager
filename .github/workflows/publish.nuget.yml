@@ -53,15 +53,23 @@ jobs:
         env:
           MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
           SYFT_PACKAGE_CATALOGER_DOTNET_ENABLED: "true"
-          SYFT_EXCLUDE: "./SecretsManager.Test.Core,./QuickTest"
         run: |
           # Install tools
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
           curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b . v0.18.3
           chmod +x ./manifest
 
-          # Generate and publish SBOM for production projects only (excluding test projects)
-          ./manifest sbom . \
+          # Create temp directory with only .NET production projects
+          SCAN_DIR="${{ runner.temp }}/dotnet-scan"
+          mkdir -p "$SCAN_DIR"
+
+          # Copy only production project directories
+          cp -r SecretsManager "$SCAN_DIR/"
+          cp -r SecretManagement.Keeper "$SCAN_DIR/"
+
+          # Generate and publish SBOM from clean directory (no Go modules, no test projects)
+          cd "$SCAN_DIR"
+          ../../../manifest sbom . \
             --generator=syft \
             --name=keeper-secrets-manager-dotnet \
             --version=${{ needs.get-version.outputs.sdk-version }} \
@@ -70,6 +78,9 @@ jobs:
             --api-key=${MANIFEST_TOKEN} \
             --publish=true \
             --asset-label=application,sbom-generated,dotnet,ksm,sdk,security
+
+          # Move SBOM back to working directory
+          mv sbom.json "${{ github.workspace }}/sdk/dotNet/"
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v4
