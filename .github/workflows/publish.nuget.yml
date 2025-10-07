@@ -56,8 +56,7 @@ jobs:
         run: |
           # Install tools
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
-          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b . v0.18.3
-          chmod +x ./manifest
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.18.3
 
           # Create temp directory with only .NET production projects
           SCAN_DIR="${{ runner.temp }}/dotnet-scan"
@@ -69,7 +68,7 @@ jobs:
 
           # Generate and publish SBOM from clean directory (no Go modules, no test projects)
           cd "$SCAN_DIR"
-          ../../../manifest sbom . \
+          manifest sbom . \
             --generator=syft \
             --name=keeper-secrets-manager-dotnet \
             --version=${{ needs.get-version.outputs.sdk-version }} \
