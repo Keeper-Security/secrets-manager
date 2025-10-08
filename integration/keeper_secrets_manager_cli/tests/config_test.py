@@ -1,7 +1,7 @@
 import os
 import re
 import unittest
-from click.testing import CliRunner
+from conftest import CliRunner
 import keeper_secrets_manager_cli
 from keeper_secrets_manager_cli.__main__ import cli
 from keeper_secrets_manager_cli.config import ConfigProfile
