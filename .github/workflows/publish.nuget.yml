@@ -124,10 +124,6 @@ jobs:
     if: ${{ github.event.inputs.publish == 'true' }}
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: ./sdk/dotNet
-
     steps:
       - name: Download NuGet packages
         uses: actions/download-artifact@v4
@@ -192,10 +188,6 @@ jobs:
     needs: build-powershell
     if: ${{ github.event.inputs.publish == 'true' }}
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: ./sdk/dotNet/SecretManagement.Keeper
 
     steps:
       - name: Download PowerShell module
