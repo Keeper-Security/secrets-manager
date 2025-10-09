@@ -723,6 +723,77 @@ class Sync:
             result["error"] = str(e)
         return result
 
+    def _validate_aws_map_keys(self, map):
+        """Validate AWS map keys for duplicates and format conflicts. Returns True if using JSON format."""
+        # Collect KMS keys from both formats
+        json_format_kms_keys = set()  # KMS keys from new format (kms_key+json_key)
+        plain_format_keys = set()     # Keys from old format (plain key)
+
+        # Track keys for duplicate detection
+        kms_json_keys = {}  # For JSON format: {kms_key: [json_keys]}
+        plain_key_counts = {}  # For plain format: {key: count}
+
+        # Collect all duplicate issues
+        duplicate_plain_keys = []
+        duplicate_json_keys = []
+        overlapping_keys = []
+
+        for m in map:
+            if '+' in m[0]:
+                # New format: kms_key+json_key
+                kms_key, json_key = m[0].split('+', 1)
+                json_format_kms_keys.add(kms_key)
+
+                # Track JSON keys for duplicate detection
+                if kms_key not in kms_json_keys:
+                    kms_json_keys[kms_key] = []
+                kms_json_keys[kms_key].append(json_key)
+            else:
+                # Old format: plain key
+                plain_format_keys.add(m[0])
+
+                # Track plain keys for duplicate detection
+                if m[0] not in plain_key_counts:
+                    plain_key_counts[m[0]] = 0
+                plain_key_counts[m[0]] += 1
+
+        # Check for duplicate plain keys
+        for key, count in plain_key_counts.items():
+            if count > 1:
+                duplicate_plain_keys.append(f"'{key}' (appears {count} times)")
+
+        # Check for duplicate JSON keys within same KMS key
+        for kms_key, json_keys in kms_json_keys.items():
+            seen = set()
+            duplicates = []
+            for json_key in json_keys:
+                if json_key in seen:
+                    duplicates.append(json_key)
+                seen.add(json_key)
+            if duplicates:
+                duplicate_json_keys.append(f"KMS key '{kms_key}': duplicate JSON keys {duplicates}")
+
+        # Check for overlapping KMS keys between formats
+        overlapping = json_format_kms_keys & plain_format_keys
+        if overlapping:
+            overlapping_keys = sorted(overlapping)
+
+        # Build error message if any duplicates found
+        error_messages = []
+        if duplicate_plain_keys:
+            error_messages.append(f"Duplicate plain keys: {', '.join(duplicate_plain_keys)}")
+        if duplicate_json_keys:
+            error_messages.append(f"Duplicate JSON keys within same KMS key: {'; '.join(duplicate_json_keys)}")
+        if overlapping_keys:
+            error_messages.append(f"Cannot use both plain and JSON format for the same KMS key(s): {', '.join(overlapping_keys)}")
+
+        # Raise exception with all duplicate issues
+        if error_messages:
+            raise KsmCliException("Duplicate keys found:\n  " + "\n  ".join(error_messages))
+
+        # Return True if we have JSON format keys
+        return bool(json_format_kms_keys)
+
     def sync_values(self, type:str, credentials:str="", dry_run=False, preserve_missing=False, map=None):
         map = map or []
         result = []
@@ -784,7 +855,31 @@ class Sync:
         elif type == 'azure':
             self.sync_azure(credentials, dry_run, preserve_missing, result)
         elif type == 'aws':
-            self.sync_aws(credentials, dry_run, preserve_missing, result)
+            if not result:
+                print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`" + Style.RESET_ALL, file=sys.stderr)
+                return
+
+            self._validate_aws_map_keys(map)
+
+            secretsmanager = self._get_aws_client(credentials)
+            if secretsmanager is None:
+                return
+
+            json_entries = [m for m in result if '+' in m["mapKey"]]
+            plain_entries = [m for m in result if '+' not in m["mapKey"]]
+
+            # Process both but suppress individual outputs
+            original_output = self._output
+            self._output = lambda data, hide_data=False: None  # Suppress output temporarily
+
+            if json_entries:
+                self.sync_aws_json_with_client(secretsmanager, dry_run, preserve_missing, json_entries)
+            if plain_entries:
+                self.sync_aws_with_client(secretsmanager, dry_run, preserve_missing, plain_entries)
+
+            # Output combined results
+            self._output = original_output
+            self._output(result, not dry_run)
         elif type == 'gcp':
             self.sync_gcp(credentials, dry_run, preserve_missing, result)
         else:
@@ -872,7 +967,8 @@ class Sync:
                         self.logger.error("Failed to set new value for key=" + key)
             self._output(map, True)
 
-    def sync_aws(self, credentials:str="", dry_run=False, preserve_missing=False, map:list=[]):
+    def _get_aws_client(self, credentials: str = ""):
+        """Common AWS client setup logic for both sync methods"""
         try:
             import boto3
         except ImportError as ie:
@@ -880,13 +976,9 @@ class Sync:
                 Fore.YELLOW + "pip3 install boto3\r\n" + Style.RESET_ALL, file=sys.stderr)
             raise KsmCliException("Missing AWS Dependencies: " + str(ie))
 
-        if not map or len(map) == 0:
-            print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`" + Style.RESET_ALL, file=sys.stderr)
-            return
-
         if not credentials or not str(credentials).strip():
             print(Fore.YELLOW + "Missing credentials' record UID - please provide UID with `--credentials <UID>`" + Style.RESET_ALL, file=sys.stderr)
-            return
+            return None
 
         credentials = str(credentials).strip()
         secrets = self.cli.client.get_secrets(uids=[credentials])
@@ -913,6 +1005,122 @@ class Sync:
             aws_secret_access_key=aws_secret_access_key,
             region_name=aws_region_name
         )
+
+        return secretsmanager
+
+    def sync_aws_json_with_client(self, secretsmanager, dry_run=False, preserve_missing=False, map: list = []):
+        """Sync to AWS using JSON format with provided client"""
+
+        # Group mappings by KMS key
+        kms_groups = {}
+        for m in map:
+            if '+' in m["mapKey"]:
+                kms_key, json_key = m["mapKey"].split('+', 1)
+                if kms_key not in kms_groups:
+                    kms_groups[kms_key] = []
+                kms_groups[kms_key].append({
+                    "json_key": json_key,
+                    "mapNotation": m["mapNotation"],
+                    "srcValue": m["srcValue"],
+                    "dstValue": None,
+                    "original": m
+                })
+
+        if dry_run:
+            for kms_key, json_mappings in kms_groups.items():
+                # Get current KMS value
+                res = self._get_secret_aws(secretsmanager, kms_key)
+                current_value = res.get("value", None)
+
+                # Parse existing JSON or preserve plaintext
+                existing_json = {}
+                if current_value:
+                    try:
+                        existing_json = json.loads(current_value)
+                    except (json.JSONDecodeError, TypeError):
+                        # If it's not JSON, we'll preserve it under a special key
+                        existing_json = {"_preserved_plaintext": current_value}
+
+                # Show what would be in the JSON
+                for mapping in json_mappings:
+                    json_key = mapping["json_key"]
+                    mapping["original"]["dstValue"] = existing_json.get(json_key)
+
+                if not res.get("not_found", False) and res.get("error", ""):
+                    for mapping in json_mappings:
+                        mapping["original"]["error"] = "Error reading the value from AWS Secrets Manager."
+                    self.log.append(f"Error reading the value from AWS Secrets Manager for key={kms_key}")
+
+            self._output(map)
+        else:
+            for kms_key, json_mappings in kms_groups.items():
+                # Get current KMS value
+                res = self._get_secret_aws(secretsmanager, kms_key)
+                current_value = res.get("value", None)
+
+                # Parse existing JSON or preserve plaintext
+                target_json = {}
+                preserved_plaintext = None
+                if current_value:
+                    try:
+                        target_json = json.loads(current_value)
+                    except (json.JSONDecodeError, TypeError):
+                        # Preserve existing plaintext value
+                        preserved_plaintext = current_value
+
+                # Build the new JSON value
+                has_updates = False
+                for mapping in json_mappings:
+                    json_key = mapping["json_key"]
+                    src_value = mapping["srcValue"]
+
+                    if src_value is not None:
+                        if target_json.get(json_key) != src_value:
+                            target_json[json_key] = src_value
+                            has_updates = True
+                        mapping["original"]["dstValue"] = src_value
+                    elif not preserve_missing and json_key in target_json:
+                        del target_json[json_key]
+                        has_updates = True
+
+                # If we preserved plaintext and have other updates, add it
+                if preserved_plaintext and has_updates:
+                    target_json["_preserved_plaintext"] = preserved_plaintext
+
+                # Store the JSON value
+                if has_updates:
+                    new_value = json.dumps(target_json, separators=(',', ':'))
+                    res = self._set_secret_aws(secretsmanager, kms_key, new_value)
+                    if res.get("error", ""):
+                        for mapping in json_mappings:
+                            mapping["original"]["error"] = "Failed to set new value for the key."
+                        self.log.append(f"Failed to set new value for key={kms_key}")
+                        self.logger.error(f"Failed to set new value for key={kms_key}")
+                # In JSON format: preserve KMS key with empty JSON value
+                # if not target_json and not preserve_missing and preserved_plaintext is None:
+                #     # Delete the KMS key if no values remain
+                #     res = self._delete_secret_aws(secretsmanager, kms_key)
+                #     err_msg = res.get("error", "")
+                #     if err_msg:
+                #         if "(ResourceNotFoundException)" not in err_msg:
+                #             for mapping in json_mappings:
+                #                 mapping["original"]["error"] = "Failed to delete remote key value pair."
+                #             self.log.append(f"Failed to delete key={kms_key}")
+                #             self.logger.error(f"Failed to delete key={kms_key}")
+
+            self._output(map, True)
+
+    def sync_aws_json(self, credentials: str = "", dry_run=False, preserve_missing=False, map: list = []):
+        """Sync to AWS using JSON format for KMS keys (kms_key+json_key format)"""
+        if not map or len(map) == 0:
+            print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`" + Style.RESET_ALL, file=sys.stderr)
+            return
+
+        secretsmanager = self._get_aws_client(credentials)
+        if secretsmanager:
+            self.sync_aws_json_with_client(secretsmanager, dry_run, preserve_missing, map)
+
+    def sync_aws_with_client(self, secretsmanager, dry_run=False, preserve_missing=False, map: list = []):
 
         if dry_run:
             for m in map:
@@ -949,6 +1157,16 @@ class Sync:
                         self.log.append(f"Failed to set new value for key={key}")
                         self.logger.error("Failed to set new value for key=" + key)
             self._output(map, True)
+
+    def sync_aws(self, credentials: str = "", dry_run=False, preserve_missing=False, map: list = []):
+        """Sync to AWS using plain format"""
+        if not map or len(map) == 0:
+            print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`" + Style.RESET_ALL, file=sys.stderr)
+            return
+
+        secretsmanager = self._get_aws_client(credentials)
+        if secretsmanager:
+            self.sync_aws_with_client(secretsmanager, dry_run, preserve_missing, map)
 
     def sync_gcp(self, credentials:str="", dry_run=False, preserve_missing=False, map:list=[]):
         try:
