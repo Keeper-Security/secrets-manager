@@ -3,6 +3,14 @@
 
 # Change Log
 
+## 17.0.0
+
+* KSM-535 - Added proxy support
+* KSM-625 - KSM .Net SDK Add GraphSync links
+* KSM-570 - KSM SecretManagement.Keeper Increase Min PowerShell version to 6.0
+* KSM-633 - KSM .Net SDK Add links2Remove parameter for files removal
+* KSM-659 - .NET SDK: Handle broken records, files, and folders
+
 ## 16.6.7
 
 * KSM-550 - Stop generating UIDs that start with "-"
