@@ -15,7 +15,7 @@ jobs:
         run: |
           echo "Detecting Chef cookbook version..."
           if [ -f "metadata.rb" ]; then
-            VERSION=$(grep "version" "metadata.rb" | awk '{print $2}' | tr -d "'\"")
+            VERSION=$(grep "^version" "metadata.rb" | awk '{print $2}' | tr -d "'\"")
             echo "Detected version: ${VERSION}"
           else
             VERSION="1.0.0"
@@ -26,16 +26,81 @@ jobs:
 
   generate-and-upload-sbom:
     needs: get-version
-    uses: ./.github/workflows/reusable.sbom.workflow.yml
-    with:
-      working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
-      project-name: keeper-secrets-manager-chef
-      project-type: ruby
-      project-version: ${{ needs.get-version.outputs.version }}
-      sbom-format: spdx-json
-      additional-labels: application,sbom-generated,ruby,chef
-    secrets:
-      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2.4'
+
+      - name: Install cookbook dependencies into vendor directory
+        run: |
+          echo "Installing gem dependencies for SBOM generation..."
+          gem install bundler
+
+          # Create Gemfile if it doesn't exist (for Chef cookbooks)
+          if [ ! -f "Gemfile" ]; then
+            cat > Gemfile << 'EOF'
+          source 'https://rubygems.org'
+
+          gem 'chef', '>= 16.0'
+          gem 'chefspec'
+          gem 'rspec'
+          gem 'cookstyle'
+          EOF
+          fi
+
+          # Install all dependencies into vendor/bundle
+          echo "Installing dependencies into vendor/bundle..."
+          bundle install --path vendor/bundle
+
+          echo "Installed gems:"
+          bundle list
+
+      - name: Generate and publish SBOM
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+        run: |
+          # Install tools (matching versions from master branch)
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.18.3
+
+          # Create temp directory for scanning
+          SCAN_DIR="${{ runner.temp }}/chef-scan"
+          mkdir -p "$SCAN_DIR"
+
+          # Copy cookbook and vendor directory (with all gem dependencies)
+          echo "Copying cookbook files to scan directory..."
+          cp -r . "$SCAN_DIR/"
+
+          # Generate and publish SBOM from scan directory
+          cd "$SCAN_DIR"
+          manifest sbom . \
+            --generator=syft \
+            --name=keeper-secrets-manager-chef \
+            --version=${{ needs.get-version.outputs.version }} \
+            --output=spdx-json \
+            --file=sbom.json \
+            --api-key=${MANIFEST_TOKEN} \
+            --publish=true \
+            --asset-label=application,sbom-generated,ruby,chef,cookbook,ksm,integration,secrets-manager
+
+          # Move SBOM back to working directory
+          mv sbom.json "${{ github.workspace }}/integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager/"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-keeper-secrets-manager-chef-${{ needs.get-version.outputs.version }}
+          path: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager/sbom.json
+          retention-days: 90
 
 
   publish-chef-supermarket:
@@ -56,6 +121,7 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.2.4'
+          bundler-cache: false
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
@@ -69,7 +135,7 @@ jobs:
         id: version
         run: |
           if [[ -f "metadata.rb" ]]; then
-            VERSION=$(grep "version" metadata.rb | awk '{print $2}' | tr -d "'\"")
+            VERSION=$(grep "^version" metadata.rb | awk '{print $2}' | tr -d "'\"")
             echo "current_version=$VERSION" >> $GITHUB_OUTPUT
             echo "Current version: $VERSION"
           else
@@ -82,18 +148,63 @@ jobs:
           VERSION: ${{ steps.version.outputs.current_version }}
         run: |
           echo "Checking if version $VERSION exists on Supermarket..."
-          RESULT=$(curl -s "https://supermarket.chef.io/api/v1/cookbooks/keeper_secrets_manager/versions/${VERSION}")
-          if echo "$RESULT" | grep -q '"version"'; then
+          HTTP_CODE=$(curl -s -o /tmp/supermarket_response.json -w "%{http_code}" \
+            "https://supermarket.chef.io/api/v1/cookbooks/keeper_secrets_manager/versions/${VERSION}")
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            # Version exists
             echo "Error: Version $VERSION already exists on Chef Supermarket!"
+            cat /tmp/supermarket_response.json
+            rm -f /tmp/supermarket_response.json
             exit 1
+          elif [ "$HTTP_CODE" = "404" ]; then
+            # Version doesn't exist (expected)
+            echo "Version $VERSION is available for publishing"
+            rm -f /tmp/supermarket_response.json
+          else
+            # Unexpected error
+            echo "Warning: Unexpected HTTP response code: $HTTP_CODE"
+            cat /tmp/supermarket_response.json
+            rm -f /tmp/supermarket_response.json
+            echo "Proceeding with caution..."
           fi
-          echo "Version $VERSION is available for publishing"
 
       - name: Install Chef Workstation
         run: |
           echo "Installing Chef Workstation..."
-          curl https://omnitruck.chef.io/install.sh | sudo bash -s -- -P chef-workstation
+          curl -L https://omnitruck.chef.io/install.sh -o /tmp/install.sh
+          sudo bash /tmp/install.sh -P chef-workstation -v 24.6.1019
+          rm /tmp/install.sh
           chef --version
+
+      - name: Install gem dependencies
+        run: |
+          echo "Installing gem dependencies..."
+          gem install bundler
+          gem install chefspec rspec cookstyle
+
+      - name: Install cookbook dependencies
+        run: |
+          echo "Installing cookbook dependencies via Berkshelf..."
+          berks install || echo "No Berkshelf dependencies or Berksfile not found"
+
+      - name: Validate cookbook metadata
+        run: |
+          echo "Validating cookbook metadata..."
+          if [ ! -f "metadata.rb" ]; then
+            echo "Error: metadata.rb not found!"
+            exit 1
+          fi
+
+          # Check required metadata fields
+          for field in name maintainer license version; do
+            if ! grep -q "^${field}" metadata.rb; then
+              echo "Error: Required field '${field}' not found in metadata.rb"
+              exit 1
+            fi
+          done
+
+          echo "Cookbook metadata validation passed"
 
       - name: Run linting (Cookstyle)
         run: |
@@ -113,8 +224,8 @@ jobs:
           echo "Publishing to Chef Supermarket..."
           knife supermarket share keeper_secrets_manager "Utilities" \
             --supermarket-site https://supermarket.chef.io \
-            --cookbook-path . \
-          
+            --cookbook-path ..
+
           echo "Successfully published to Chef Supermarket!"
 
       - name: Create release summary
