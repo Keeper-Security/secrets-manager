@@ -1,6 +1,10 @@
 name: Publish to Chef Supermarket
 on:
   workflow_dispatch:
+  # TEMPORARY: Push trigger for testing - REMOVE BEFORE FINAL MERGE
+  push:
+    branches:
+      - chef/workflow-update-sbom-inline
 
 jobs:
   get-version:
