@@ -6,13 +6,8 @@
 #              |_|
 #
 # Keeper Secrets Manager
-# Copyright 2023 Keeper Security Inc.
+# Copyright 2025 Keeper Security Inc.
 # Contact: ops@keepersecurity.com
-#
-
-from ansible.plugins.action import ActionBase
-from ansible.errors import AnsibleError
-from keeper_secrets_manager_ansible import KeeperAnsible
 
 
 DOCUMENTATION = r'''
@@ -79,29 +74,3 @@ value:
       "cache": "XXXX .... XXXXX"
     }
 '''
-
-
-class ActionModule(ActionBase):
-
-    def run(self, tmp=None, task_vars=None):
-        super(ActionModule, self).run(tmp, task_vars)
-
-        if task_vars is None:
-            task_vars = {}
-
-        keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
-
-        uid = self._task.args.get("uids")
-        title = self._task.args.get("titles")
-
-        if uid is None and title is None:
-            raise AnsibleError("The uid and title are both blank. keeper_cache_records requires at "
-                               "least on to be set. This will not cache your entire Keeper vault.")
-
-        results = {
-            "cache": keeper.get_records(uids=uid, titles=title, encrypt=True)
-        }
-
-        keeper.add_secret_values_to_results(results)
-
-        return results
