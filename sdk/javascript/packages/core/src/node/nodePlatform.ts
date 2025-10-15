@@ -145,8 +145,9 @@ const _decryptCBC = (data: Uint8Array, key: Uint8Array): Uint8Array => {
 }
 
 const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean, useCBC?: boolean): Promise<void> => {
+    const cbcDecrypt = unwrappingKeyId === "appKey" ? false : useCBC
     const unwrappingKey = await loadKey(unwrappingKeyId, storage)
-    const unwrappedKey = await _decrypt(key, unwrappingKey, useCBC)
+    const unwrappedKey = await _decrypt(key, unwrappingKey, cbcDecrypt)
     keyCache[keyId] = unwrappedKey
     if (memoryOnly) {
         return
