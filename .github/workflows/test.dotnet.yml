@@ -24,7 +24,33 @@ jobs:
         
     - name: Install dependencies
       run: dotnet restore
+
+    - name: Install mono-devel for strong-naming tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mono-devel
+
+    - name: Generate test strong-name key
+      working-directory: ./sdk/dotNet/SecretsManager
+      run: sn -k sgKSM.snk
+
     - name: Build
       run: dotnet build --configuration Release --no-restore
+
+    - name: Verify strong-naming on built assemblies
+      run: |
+        echo "Verifying strong-naming on net48 build..."
+        sn -T SecretsManager/bin/Release/net48/SecretsManager.dll
+        sn -v SecretsManager/bin/Release/net48/SecretsManager.dll
+
+        echo "Verifying strong-naming on netstandard2.0 build..."
+        sn -T SecretsManager/bin/Release/netstandard2.0/SecretsManager.dll
+        sn -v SecretsManager/bin/Release/netstandard2.0/SecretsManager.dll
+
     - name: Test
       run: dotnet test --no-restore --verbosity minimal
+
+    - name: Cleanup test strong-name key
+      if: always()
+      working-directory: ./sdk/dotNet/SecretsManager
+      run: rm -f sgKSM.snk

@@ -3,6 +3,30 @@
 
 # Change Log
 
+## 18.0.0
+
+**BREAKING CHANGE:** This release adds strong-naming to the Keeper.SecretsManager assembly.
+
+* KSM-368 - Strong-named assembly support
+* Assembly is now signed with a strong name, changing its identity
+* All dependencies (BouncyCastle.Cryptography, System.Text.Json, etc.) are already strong-named
+* No code changes required - existing code will work after recompilation
+* Required for compatibility with .NET Framework projects that require strong-named assemblies
+
+### Migration Guide
+
+**For existing users upgrading from v17.x:**
+1. Update your package reference to v18.0.0
+2. Rebuild your project (recompilation required due to assembly identity change)
+3. No code changes are necessary
+
+**Why a major version bump?**
+According to Microsoft's semantic versioning guidance, adding strong-naming changes an assembly's identity, which is a breaking change requiring a major version increment.
+
+**For more information:**
+- GitHub Issue: https://github.com/Keeper-Security/secrets-manager/issues/404
+- Microsoft Documentation: https://learn.microsoft.com/en-us/dotnet/standard/library-guidance/strong-naming
+
 ## 17.0.0
 
 * KSM-535 - Added proxy support

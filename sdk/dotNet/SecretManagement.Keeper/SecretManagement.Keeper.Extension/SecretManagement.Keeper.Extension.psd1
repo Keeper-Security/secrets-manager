@@ -1,5 +1,5 @@
 @{
-    ModuleVersion = '17.0.0'
+    ModuleVersion = '18.0.0'
     RootModule = 'SecretManagement.Keeper.Extension.psm1'
     RequiredAssemblies = '../SecretManagement.Keeper.dll'    
     CompatiblePSEditions = @('Core')

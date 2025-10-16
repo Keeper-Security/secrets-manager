@@ -29,6 +29,8 @@ jobs:
   generate-sdk-sbom:
     needs: get-version
     runs-on: ubuntu-latest
+    # Note: Uses test key for SBOM generation (signing key metadata not included in SBOM output)
+    # Only build-nuget and build-powershell jobs require production key for published artifacts
 
     defaults:
       run:
@@ -42,12 +44,26 @@ jobs:
         with:
           dotnet-version: 6.0.x
 
+      - name: Install mono-devel for strong-naming tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mono-devel
+
+      - name: Generate test strong-name key
+        working-directory: sdk/dotNet/SecretsManager
+        run: sn -k sgKSM.snk
+
       - name: Restore and build production projects for dependency resolution
         run: |
           dotnet restore SecretsManager/SecretsManager.csproj
           dotnet build SecretsManager/SecretsManager.csproj --configuration Release --no-restore
           dotnet restore SecretManagement.Keeper/SecretManagement.Keeper.csproj
           dotnet build SecretManagement.Keeper/SecretManagement.Keeper.csproj --configuration Release --no-restore
+
+      - name: Cleanup test strong-name key
+        if: always()
+        working-directory: sdk/dotNet/SecretsManager
+        run: rm -f sgKSM.snk
 
       - name: Generate and publish SBOM
         env:
@@ -105,11 +121,24 @@ jobs:
         with:
           dotnet-version: 6.0.x
 
+      - name: Retrieve strong-name key from KSM
+        id: ksmsecrets-build
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
+          secrets: |
+            Sq4nnb5HXXNp1l6KryXynw/file/sgKSM.snk > file:${{ github.workspace }}/sdk/dotNet/SecretsManager/sgKSM.snk
+
       - name: Install dependencies
         run: dotnet restore
 
       - name: Build
         run: dotnet build --configuration Release --no-restore
+
+      - name: Cleanup strong-name key file
+        if: always()
+        working-directory: ./SecretsManager
+        run: rm -f sgKSM.snk
 
       - name: Upload NuGet packages
         uses: actions/upload-artifact@v4
@@ -164,11 +193,24 @@ jobs:
         with:
           dotnet-version: 6.0.x
 
+      - name: Retrieve strong-name key from KSM
+        id: ksmsecrets-build-ps
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
+          secrets: |
+            Sq4nnb5HXXNp1l6KryXynw/file/sgKSM.snk > file:${{ github.workspace }}/sdk/dotNet/SecretsManager/sgKSM.snk
+
       - name: Install dependencies
         run: dotnet restore
 
       - name: Build
         run: dotnet build --configuration Release --no-restore
+
+      - name: Cleanup strong-name key file
+        if: always()
+        working-directory: ./SecretsManager
+        run: rm -f sgKSM.snk
 
       - name: Package PowerShell module
         shell: pwsh
