@@ -14,7 +14,6 @@ from ansible.utils.display import Display
 from ansible.errors import AnsibleError
 from ansible.module_utils.basic import missing_required_lib
 from ansible.module_utils.common.text.converters import jsonify
-from distutils.util import strtobool
 import os
 import sys
 import re
@@ -37,7 +36,7 @@ else:
     from keeper_secrets_manager_core import SecretsManager
     from keeper_secrets_manager_core.core import KSMCache
     from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
-    from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password
+    from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password, strtobool
 
     # If keeper_secrets_manager_core is installed, then these will be installed. They are deps.
     from cryptography.fernet import Fernet

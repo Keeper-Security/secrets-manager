@@ -724,22 +724,39 @@ impl SecretsManager {
                 }
             }
         } else if rc == "key" {
-            if let Some(key_id) = response_dict.get("key_id").and_then(|v| v.as_str()) {
+            // Server returns key_id as a number, not a string, so we need to handle both cases
+            let key_id_value = response_dict.get("key_id");
+            let key_id_str = if let Some(key_id_val) = key_id_value {
+                // Try to get as number first (which is what server actually sends)
+                if let Some(key_id_num) = key_id_val.as_u64() {
+                    Some(key_id_num.to_string())
+                } else if let Some(key_id_str) = key_id_val.as_str() {
+                    Some(key_id_str.to_string())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            if let Some(key_id) = key_id_str {
                 info!("Server has requested we use public key {}", key_id);
                 let keeper_public_keys = get_keeper_public_keys();
                 if key_id.is_empty() {
                     msg = "The public key is blank from the server".to_string();
-                } else if keeper_public_keys.contains_key(key_id) {
+                } else if keeper_public_keys.contains_key(&key_id) {
                     let _ = self
                         .config
-                        .set(ConfigKeys::KeyServerPublicKeyId, key_id.to_string())
+                        .set(ConfigKeys::KeyServerPublicKeyId, key_id.clone())
                         .map_err(|err| KSMRError::StorageError(err.to_string()))?;
-                    info!("Server has requested we use public key {}", key_id);
+                    info!("Updated to use public key {}", key_id);
                     _retry = true;
                     return Ok(_retry);
                 } else {
                     msg = format!("The public key at {} does not exist in the SDK", key_id);
                 }
+            } else {
+                msg = "Server returned key error but no key_id was provided".to_string();
             }
         } else {
             let response_msg = response_dict
@@ -968,12 +985,17 @@ impl SecretsManager {
                     .collect::<HashMap<String, Value>>();
                 let record_result =
                     Record::new_from_json(record_hashmap_parsed, &_secret_key, None);
-                if record_result.is_err() {
-                    log::error!("Error parsing record: {}", record);
-                } else {
-                    let unwrapped_record = record_result.unwrap();
-                    records_count += 1;
-                    records.push(unwrapped_record);
+                match record_result {
+                    Ok(unwrapped_record) => {
+                        records_count += 1;
+                        records.push(unwrapped_record);
+                    }
+                    Err(e) => {
+                        let uid = record_hashmap.get("recordUid")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        log::error!("Record {} skipped due to error: {:?}, {}", uid, e, e);
+                    }
                 }
             }
         }
@@ -988,15 +1010,30 @@ impl SecretsManager {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect::<HashMap<String, Value>>();
                 let folder_result: Option<Folder> =
-                    Folder::new_from_json(folder_hashmap_parsed, &_secret_key);
-                if folder_result.is_none() {
-                    log::error!("Error parsing folder: {}", folder);
-                } else {
-                    let unwrapped_folder = folder_result.unwrap();
-                    shared_folders_count += 1;
-                    records_count += unwrapped_folder.records()?.len();
-                    records.extend(unwrapped_folder.records()?);
-                    shared_folders.push(unwrapped_folder);
+                    Folder::new_from_json(folder_hashmap_parsed.clone(), &_secret_key);
+                match folder_result {
+                    Some(unwrapped_folder) => {
+                        shared_folders_count += 1;
+                        match unwrapped_folder.records() {
+                            Ok(folder_records) => {
+                                records_count += folder_records.len();
+                                records.extend(folder_records);
+                            }
+                            Err(e) => {
+                                let uid = folder_hashmap_parsed.get("folderUid")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown");
+                                log::error!("Error processing records in folder {}: {:?}", uid, e);
+                            }
+                        }
+                        shared_folders.push(unwrapped_folder);
+                    }
+                    None => {
+                        let uid = folder_hashmap_parsed.get("folderUid")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        log::error!("Folder {} skipped due to error during parsing", uid);
+                    }
                 }
             }
         }

@@ -300,6 +300,18 @@ jobs:
           echo "Python packages installed:"
           pip list
 
+      - name: Restore .NET dependencies
+        if: inputs.project-type == 'dotnet'
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "Restoring .NET dependencies for SBOM generation..."
+          dotnet restore
+
+          echo "Building project to ensure full dependency resolution..."
+          dotnet build --configuration Release --no-restore
+
+          echo "Listing resolved package references..."
+          dotnet list package
 
       - name: Build Java project and resolve dependencies
         if: inputs.project-type == 'java'
@@ -399,7 +411,7 @@ jobs:
           SYFT_PACKAGE_CATALOGER_PYTHON_ENABLED: "false"
           SYFT_PACKAGE_CATALOGER_NODEJS_ENABLED: "false"
           SYFT_PACKAGE_CATALOGER_DARTLANG_ENABLED: "false"
-          SYFT_PACKAGE_CATALOGER_DOTNET_ENABLED: "false"
+          SYFT_PACKAGE_CATALOGER_DOTNET_ENABLED: ${{ inputs.project-type == 'dotnet' && 'true' || 'false' }}
           SYFT_PACKAGE_CATALOGER_GOLANG_ENABLED: "false"
           SYFT_PACKAGE_CATALOGER_LINUX_ENABLED: "false"
           SYFT_PACKAGE_CATALOGER_PHP_ENABLED: "false"
@@ -530,7 +542,7 @@ jobs:
               indexed-archives: true
             cataloger:
               enabled: true
-              # Disable all catalogers except Java to avoid conflicts
+              # Disable all catalogers except Java and .NET to avoid conflicts
               ruby:
                 enabled: false
               python:
@@ -540,7 +552,7 @@ jobs:
               dartlang:
                 enabled: false
               dotnet:
-                enabled: false
+                enabled: true
               golang:
                 enabled: false
               linux:
