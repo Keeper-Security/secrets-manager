@@ -186,10 +186,10 @@ impl SecretsManager {
                 let token_host_key = token_parts[0].to_uppercase();
                 let keeper_servers = get_keeper_servers();
                 let token_host = keeper_servers.get(token_host_key.as_str());
-                if token_host.is_none() {
-                    secrets_manager.hostname = token_parts[0].to_string().to_owned();
+                if let Some(host) = token_host {
+                    secrets_manager.hostname = host.to_string();
                 } else {
-                    secrets_manager.hostname = token_host.as_ref().unwrap().to_string();
+                    secrets_manager.hostname = token_parts[0].to_string().to_owned();
                 }
                 secrets_manager.token = token_parts[1].to_string();
             }
@@ -242,20 +242,20 @@ impl SecretsManager {
                 config
                     .set(ConfigKeys::KeyServerPublicKeyId, DEFAULT_KEY_ID.to_string())
                     .unwrap();
-            } else if server_public_key_id.is_some()
-                && !keeper_public_keys.contains_key(server_public_key_id.unwrap().as_str())
-            {
-                debug!(
-                    "Public key id {} does not exists, set to default : {}",
-                    config
-                        .get(ConfigKeys::KeyServerPublicKeyId)
-                        .unwrap()
+            } else if let Some(key_id) = server_public_key_id {
+                if !keeper_public_keys.contains_key(key_id.as_str()) {
+                    debug!(
+                        "Public key id {} does not exists, set to default : {}",
+                        config
+                            .get(ConfigKeys::KeyServerPublicKeyId)
+                            .unwrap()
                         .unwrap(),
                     DEFAULT_KEY_ID
                 );
-                config
-                    .set(ConfigKeys::KeyServerPublicKeyId, DEFAULT_KEY_ID.to_string())
-                    .unwrap();
+                    config
+                        .set(ConfigKeys::KeyServerPublicKeyId, DEFAULT_KEY_ID.to_string())
+                        .unwrap();
+                }
             }
         } else {
             return Err(KSMRError::SecretManagerCreationError(
@@ -524,8 +524,7 @@ impl SecretsManager {
 
         let mut get_payload =
             GetPayload::new(client_version, client_id, base_64_public_key, None, None);
-        if query_options.is_some() {
-            let query_options_data = query_options.unwrap();
+        if let Some(query_options_data) = query_options {
             get_payload
                 .set_optional_field("records_filter", query_options_data.get_records_filter());
             get_payload
@@ -943,20 +942,15 @@ impl SecretsManager {
             true => {
                 let warnings_option = decrypted_response_dict.get("warnings");
                 match warnings_option {
-                    Some(warnings) => match warnings {
-                        Value::Array(warnings_array) => {
-                            for warning in warnings_array {
-                                warn!(
-                                    "Warning shown while fetching secrets: `{}`",
-                                    warning.as_str().unwrap()
-                                );
-                            }
+                    Some(Value::Array(warnings_array)) => {
+                        for warning in warnings_array {
+                            warn!(
+                                "Warning shown while fetching secrets: `{}`",
+                                warning.as_str().unwrap()
+                            );
                         }
-                        _ => {
-                            info!("No warnings found when pulling secrets");
-                        }
-                    },
-                    None => {
+                    }
+                    _ => {
                         info!("No warnings found when pulling secrets");
                     }
                 }
