@@ -6,6 +6,16 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.1.7
+- KSM-668 Restored ? command to cli
+
+## 1.1.6
+- KSM-558 Fixed crashes with mutually required options in shell mode
+- KSM-567 Added KSM_CLI_TOKEN environment variable
+- KSM-568 Removed dependency on legacy distutils
+- KSM-644 Added delete-attachment option
+- Bumping KSM SDK to 17.0.0 and helper module to 1.0.6
+
 ## 1.1.5
 - Bumping KSM SDK to 16.6.5
 

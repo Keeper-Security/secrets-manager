@@ -3,7 +3,38 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Get version and generate SBOM
+  get-version-and-sbom:
+    runs-on: ubuntu-latest
+    outputs:
+      cli-version: ${{ steps.extract-cli-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Extract CLI version
+        id: extract-cli-version
+        working-directory: ./integration/keeper_secrets_manager_cli
+        run: |
+          VERSION=$(python3 setup.py --version 2>/dev/null || grep -Po 'version\s*=\s*["\x27]\K[^\x27"]*' setup.py)
+          echo "CLI Version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+  # Generate SBOM using reusable workflow
+  generate-cli-sbom:
+    needs: get-version-and-sbom
+    uses: ./.github/workflows/reusable.sbom.workflow.yml
+    with:
+      working-directory: ./integration/keeper_secrets_manager_cli
+      project-name: keeper-secrets-manager-cli
+      project-type: python
+      project-version: ${{ needs.get-version-and-sbom.outputs.cli-version }}
+      sbom-format: spdx-json
+      additional-labels: ksm,cli,python,security
+    secrets:
+      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+
   publish-pypi:
+    needs: generate-cli-sbom
     name: Publish KSM CLI to PyPI
     environment: prod
     runs-on: ubuntu-latest
