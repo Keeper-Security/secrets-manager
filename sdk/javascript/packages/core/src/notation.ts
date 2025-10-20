@@ -22,9 +22,9 @@ export function getValue(secrets: KeeperSecrets, notation: string): any {
     if (!record)
         throw Error(`Record '${recordToken}' not found`)
 
-    const parameter = parsedNotation[2]?.parameter?.at(0) ?? null
-    const index1 = parsedNotation[2]?.index1?.at(0) ?? null
-    const index2 = parsedNotation[2]?.index2?.at(0) ?? null
+    const parameter = parsedNotation[2]?.parameter?.[0] ?? null
+    const index1 = parsedNotation[2]?.index1?.[0] ?? null
+    const index2 = parsedNotation[2]?.index2?.[0] ?? null
 
     switch (selector.toLowerCase()) {
         case 'type': return record.data.type ?? ''
@@ -90,7 +90,7 @@ export function getValue(secrets: KeeperSecrets, notation: string): any {
                 // return (typeof values[0] === 'string' ? values[0] as string : JSON.stringify(values[0]))
 
             // legacy compatibility mode - empty index, ex. /url[] returns ["value"]
-            if ('[]' == (parsedNotation[2]?.index1?.at(1) ?? '') && (index2 == null || index2 == ''))
+            if ('[]' == (parsedNotation[2]?.index1?.[1] ?? '') && (index2 == null || index2 == ''))
                 return values // legacy compatibility
                 // return JSON.stringify(values)
                 // should be handled by parseNotation w/ legacyMode=true converts /name[middle] to name[][middle]
