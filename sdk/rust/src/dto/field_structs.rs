@@ -2435,11 +2435,7 @@ impl RecordField {
         }
     }
 
-    pub fn new_record_field(
-        field_type: &str,
-        value: Value,
-        label: Option<String>,
-    ) -> KeeperField {
+    pub fn new_record_field(field_type: &str, value: Value, label: Option<String>) -> KeeperField {
         Self::new(field_type.to_string(), value, label, false, false)
     }
 
@@ -2450,6 +2446,12 @@ impl RecordField {
         required: bool,
         privacy_screen: bool,
     ) -> KeeperField {
-        Self::new(field_type.to_string(), value, label, required, privacy_screen)
+        Self::new(
+            field_type.to_string(),
+            value,
+            label,
+            required,
+            privacy_screen,
+        )
     }
 }
