@@ -168,7 +168,7 @@ impl SecretsManager {
                     || client_options
                         .hostname
                         .as_ref()
-                        .map_or(true, String::is_empty)
+                        .is_none_or(String::is_empty)
                 {
                     return Err(KSMRError::SecretManagerCreationError(
                         "The hostname must be present in the token or provided as a parameter"
@@ -716,7 +716,7 @@ impl SecretsManager {
                 .unwrap();
             error!(
                 "Client version {} was not registered in the backend",
-                client_id.to_string()
+                client_id
             );
             if let Some(additional_info) = response_dict.get("additional_info") {
                 if let Some(info) = additional_info.as_str() {
@@ -730,11 +730,7 @@ impl SecretsManager {
                 // Try to get as number first (which is what server actually sends)
                 if let Some(key_id_num) = key_id_val.as_u64() {
                     Some(key_id_num.to_string())
-                } else if let Some(key_id_str) = key_id_val.as_str() {
-                    Some(key_id_str.to_string())
-                } else {
-                    None
-                }
+                } else { key_id_val.as_str().map(|key_id_str| key_id_str.to_string()) }
             } else {
                 None
             };
@@ -952,7 +948,7 @@ impl SecretsManager {
                             for warning in warnings_array {
                                 warn!(
                                     "Warning shown while fetching secrets: `{}`",
-                                    warning.as_str().unwrap().to_string()
+                                    warning.as_str().unwrap()
                                 );
                             }
                         }
@@ -991,7 +987,8 @@ impl SecretsManager {
                         records.push(unwrapped_record);
                     }
                     Err(e) => {
-                        let uid = record_hashmap.get("recordUid")
+                        let uid = record_hashmap
+                            .get("recordUid")
                             .and_then(|v| v.as_str())
                             .unwrap_or("unknown");
                         log::error!("Record {} skipped due to error: {:?}, {}", uid, e, e);
@@ -1020,7 +1017,8 @@ impl SecretsManager {
                                 records.extend(folder_records);
                             }
                             Err(e) => {
-                                let uid = folder_hashmap_parsed.get("folderUid")
+                                let uid = folder_hashmap_parsed
+                                    .get("folderUid")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("unknown");
                                 log::error!("Error processing records in folder {}: {:?}", uid, e);
@@ -1029,7 +1027,8 @@ impl SecretsManager {
                         shared_folders.push(unwrapped_folder);
                     }
                     None => {
-                        let uid = folder_hashmap_parsed.get("folderUid")
+                        let uid = folder_hashmap_parsed
+                            .get("folderUid")
                             .and_then(|v| v.as_str())
                             .unwrap_or("unknown");
                         log::error!("Folder {} skipped due to error during parsing", uid);
@@ -1707,10 +1706,10 @@ impl SecretsManager {
             file.name, owner_record.uid
         );
         debug!(
-                "preparing upload payload. owner_record.uid=[{}], fine name: {}, file_size: {}",
-                owner_record.uid,
-                file.name,
-                file.data.len()
+            "preparing upload payload. owner_record.uid=[{}], fine name: {}, file_size: {}",
+            owner_record.uid,
+            file.name,
+            file.data.len()
         );
 
         let upload_payload =
@@ -2675,7 +2674,7 @@ impl SecretsManager {
                 let values: Vec<Value> = field
                     .get("value")
                     .and_then(|v| v.as_array().cloned())
-                    .unwrap_or_else(|| vec![]);
+                    .unwrap_or_default();
 
                 // Handle index1 (array index)
                 let idx = index1

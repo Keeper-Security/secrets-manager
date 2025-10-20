@@ -111,12 +111,15 @@ impl Record {
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect();
 
-                    let created_keeper_file =
-                        KeeperFile::new_from_json(file_map_hashmap.clone(), record_key_bytes.clone());
+                    let created_keeper_file = KeeperFile::new_from_json(
+                        file_map_hashmap.clone(),
+                        record_key_bytes.clone(),
+                    );
                     match created_keeper_file {
                         Ok(file) => files.push(file),
                         Err(e) => {
-                            let uid = file_map_hashmap.get("fileUid")
+                            let uid = file_map_hashmap
+                                .get("fileUid")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("unknown");
                             log::error!("File {} skipped due to error: {:?}, {}", uid, e, e);
@@ -700,7 +703,8 @@ impl Record {
                     match created_keeper_file {
                         Ok(file) => _files.push(file),
                         Err(e) => {
-                            let uid = file_map_hashmap.get("fileUid")
+                            let uid = file_map_hashmap
+                                .get("fileUid")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("unknown");
                             log::error!("File {} skipped due to error: {:?}, {}", uid, e, e);
@@ -1334,11 +1338,17 @@ impl Folder {
                     records.push(record);
                 }
                 Err(e) => {
-                    let uid = record_map.get("recordUid")
+                    let uid = record_map
+                        .get("recordUid")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
-                    log::error!("Record {} in folder {} skipped due to error: {:?}, {}",
-                        uid, self.uid, e, e);
+                    log::error!(
+                        "Record {} in folder {} skipped due to error: {:?}, {}",
+                        uid,
+                        self.uid,
+                        e,
+                        e
+                    );
                 }
             }
         }

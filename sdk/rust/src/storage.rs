@@ -13,7 +13,10 @@
 use crate::config_keys::ConfigKeys;
 use crate::custom_error::KSMRError;
 use crate::enums::KvStoreType;
-use base64::{engine::general_purpose::{STANDARD, STANDARD_NO_PAD}, Engine as _};
+use base64::{
+    engine::general_purpose::{STANDARD, STANDARD_NO_PAD},
+    Engine as _,
+};
 use serde_json::{self};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
