@@ -21,6 +21,7 @@ from jsonpath_rw_ext import parse
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_cli.common import launch_editor
 from keeper_secrets_manager_core.core import SecretsManager, CreateOptions, KeeperFolder, KeeperFileUpload
+from keeper_secrets_manager_core.dto.payload import UpdateOptions
 from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
 from keeper_secrets_manager_helper.record import Record
 from keeper_secrets_manager_helper.v3.record import Record as RecordV3
@@ -401,7 +402,7 @@ class Secret:
         fetch_uids = None
 
         # If we are not searching by title, then set the fetch uid to the uids passed in.
-        if len(titles) == 0:
+        if len(titles) == 0 and uids:
             fetch_uids = uids
 
         secrets = self.cli.client.get_secrets(uids=fetch_uids)
@@ -553,6 +554,37 @@ class Secret:
         else:
             raise KsmCliException("The file output {} is not supported. Cannot download and save the file.".format(
                 file_output))
+
+    def delete_attachment(self, uid, file):
+        """Delete a file (or list of files) from a record"""
+
+        files = file
+        if isinstance(file, tuple):
+            files = [str(x) for x in file]
+        elif not isinstance(file, dict):
+            files = [str(file)]
+
+        records = self.cli.client.get_secrets(uids=[uid])
+        if len(records) == 0:
+            raise KsmCliException(f"Cannot find a record for UID {uid}. Cannot delete file {file}")
+
+        record = records[0]
+        fuids = []
+        for fref in files:
+            attachment = None
+            for check_file in record.files:
+                if check_file.f.get("fileUid") == fref:
+                    attachment = check_file
+                    break
+            if attachment is None:
+                attachment = record.find_file_by_title(fref)
+            if attachment is None:
+                raise KsmCliException(f"Cannot find a file {fref} for UID {uid}. Cannot delete file.")
+            fuids.append(attachment.f.get("fileUid"))
+
+        fuids = list(set(fuids))  # remove duplicates
+        if fuids:
+            self.cli.client.save_with_options(record, UpdateOptions(None, fuids))
 
     def get_totp_code(self, uid):
         record = self.cli.client.get_secrets(uids=[uid])
