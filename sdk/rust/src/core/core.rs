@@ -985,12 +985,17 @@ impl SecretsManager {
                     .collect::<HashMap<String, Value>>();
                 let record_result =
                     Record::new_from_json(record_hashmap_parsed, &_secret_key, None);
-                if record_result.is_err() {
-                    log::error!("Error parsing record: {}", record);
-                } else {
-                    let unwrapped_record = record_result.unwrap();
-                    records_count += 1;
-                    records.push(unwrapped_record);
+                match record_result {
+                    Ok(unwrapped_record) => {
+                        records_count += 1;
+                        records.push(unwrapped_record);
+                    }
+                    Err(e) => {
+                        let uid = record_hashmap.get("recordUid")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        log::error!("Record {} skipped due to error: {:?}, {}", uid, e, e);
+                    }
                 }
             }
         }
@@ -1005,15 +1010,30 @@ impl SecretsManager {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect::<HashMap<String, Value>>();
                 let folder_result: Option<Folder> =
-                    Folder::new_from_json(folder_hashmap_parsed, &_secret_key);
-                if folder_result.is_none() {
-                    log::error!("Error parsing folder: {}", folder);
-                } else {
-                    let unwrapped_folder = folder_result.unwrap();
-                    shared_folders_count += 1;
-                    records_count += unwrapped_folder.records()?.len();
-                    records.extend(unwrapped_folder.records()?);
-                    shared_folders.push(unwrapped_folder);
+                    Folder::new_from_json(folder_hashmap_parsed.clone(), &_secret_key);
+                match folder_result {
+                    Some(unwrapped_folder) => {
+                        shared_folders_count += 1;
+                        match unwrapped_folder.records() {
+                            Ok(folder_records) => {
+                                records_count += folder_records.len();
+                                records.extend(folder_records);
+                            }
+                            Err(e) => {
+                                let uid = folder_hashmap_parsed.get("folderUid")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown");
+                                log::error!("Error processing records in folder {}: {:?}", uid, e);
+                            }
+                        }
+                        shared_folders.push(unwrapped_folder);
+                    }
+                    None => {
+                        let uid = folder_hashmap_parsed.get("folderUid")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        log::error!("Folder {} skipped due to error during parsing", uid);
+                    }
                 }
             }
         }

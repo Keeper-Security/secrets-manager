@@ -112,12 +112,14 @@ impl Record {
                         .collect();
 
                     let created_keeper_file =
-                        KeeperFile::new_from_json(file_map_hashmap, record_key_bytes.clone());
+                        KeeperFile::new_from_json(file_map_hashmap.clone(), record_key_bytes.clone());
                     match created_keeper_file {
                         Ok(file) => files.push(file),
                         Err(e) => {
-                            let msg = format!("Error loading file: {}", e);
-                            eprintln!("{}", msg);
+                            let uid = file_map_hashmap.get("fileUid")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            log::error!("File {} skipped due to error: {:?}, {}", uid, e, e);
                         }
                     }
                 }
@@ -692,14 +694,16 @@ impl Record {
                         .collect();
 
                     let created_keeper_file = KeeperFile::new_from_json(
-                        file_map_hashmap,
+                        file_map_hashmap.clone(),
                         record.record_key_bytes.to_vec(),
                     );
                     match created_keeper_file {
                         Ok(file) => _files.push(file),
                         Err(e) => {
-                            let msg = format!("Error loading file: {}", e);
-                            eprintln!("{}", msg);
+                            let uid = file_map_hashmap.get("fileUid")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            log::error!("File {} skipped due to error: {:?}, {}", uid, e, e);
                         }
                     }
                 }
@@ -1325,16 +1329,17 @@ impl Folder {
             let record_result =
                 Record::new_from_json(record_map.clone(), &self.key, Some(self.uid.to_string()));
 
-            // if record_result.is_err() {
-            //     log::error!("Error parsing folder record: {:?}", record_map);
-            // } else {
-            //     records.push(record_result.unwrap());
-            // }
-
-            if let Ok(record) = record_result {
-                records.push(record);
-            } else {
-                log::error!("Error parsing folder record: {:?}", record_map);
+            match record_result {
+                Ok(record) => {
+                    records.push(record);
+                }
+                Err(e) => {
+                    let uid = record_map.get("recordUid")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    log::error!("Record {} in folder {} skipped due to error: {:?}, {}",
+                        uid, self.uid, e, e);
+                }
             }
         }
         Ok(records)
