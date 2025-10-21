@@ -35,11 +35,7 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby-version }}
           working-directory: ./sdk/ruby
-
-      - name: Install dependencies
-        run: |
-          gem install bundler
-          bundle install
+          bundler-cache: true
 
       - name: Run linter
         run: |
