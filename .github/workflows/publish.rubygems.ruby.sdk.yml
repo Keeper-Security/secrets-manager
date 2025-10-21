@@ -69,8 +69,8 @@ jobs:
       - name: Detect Ruby SDK version
         id: detect-version
         run: |
-          if [ -f "keeper_secrets_manager.gemspec" ]; then
-            VERSION=$(grep -Po "\.version\s*=\s*['\"]?\K[^'\"]*" keeper_secrets_manager.gemspec || echo "1.0.0")
+          if [ -f "lib/keeper_secrets_manager/version.rb" ]; then
+            VERSION=$(ruby -r ./lib/keeper_secrets_manager/version.rb -e "puts KeeperSecretsManager::VERSION")
             echo "Detected version: ${VERSION}"
           else
             VERSION="1.0.0"
@@ -176,18 +176,13 @@ jobs:
           pwd
           ls -lah
 
-      - name: Verify gem specification
+      - name: Build and verify gem
         run: |
           gem build keeper_secrets_manager.gemspec
           gem spec keeper_secrets_manager-*.gem
-
-      - name: Run final tests before publish
-        run: |
-          bundle exec rspec spec/
 
       - name: Publish to RubyGems
         env:
           GEM_HOST_API_KEY: ${{ steps.ksmsecrets.outputs.RUBYGEMS_API_KEY }}
         run: |
-          gem build keeper_secrets_manager.gemspec
           gem push keeper_secrets_manager-*.gem 

@@ -2,20 +2,16 @@ require_relative 'version'
 
 module KeeperSecretsManager
   module KeeperGlobals
-    # Client version prefix
-    # **NOTE: 'mb' client version is NOT YET REGISTERED with Keeper servers!**
-    # **TODO: Register 'mb' (Ruby) client with Keeper before production use**
-    # **Currently using 'mr' which is already registered (likely Rust SDK)**
-    CLIENT_VERSION_PREFIX = 'mr'.freeze  # Should be 'mb' for Ruby, but using 'mr' temporarily
-    
-    # Get client version
+    # Client version prefix - 'mb' for Ruby SDK
+    CLIENT_VERSION_PREFIX = 'mb'.freeze
+
+    # Get client version dynamically from VERSION constant
     def self.client_version
       # Use standard version format matching other SDKs
-      # Java: mj17.0.0, Python: mp16.x.x, JavaScript: ms16.x.x, Go: mg16.x.x
-      # Ruby should be: mb17.0.0 (but not registered yet)
-      "#{CLIENT_VERSION_PREFIX}17.0.0"
+      # Java: mj17.x.x, Python: mp17.x.x, JavaScript: ms17.x.x, Go: mg17.x.x, Ruby: mb17.x.x
+      "#{CLIENT_VERSION_PREFIX}#{VERSION}"
     end
-    
+
     # Keeper public keys by ID
     KEEPER_PUBLIC_KEYS = {
       '1' => 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM',
@@ -49,10 +45,10 @@ module KeeperSecretsManager
 
     # Default server (US)
     DEFAULT_SERVER = KEEPER_SERVERS['US'].freeze
-    
+
     # Default public key ID
     DEFAULT_KEY_ID = '7'.freeze
-    
+
     # Logger name
     LOGGER_NAME = 'keeper_secrets_manager'.freeze
   end

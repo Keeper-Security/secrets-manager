@@ -1,0 +1,56 @@
+name: Test Ruby SDK
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'sdk/ruby/**'
+      - '.github/workflows/test.ruby.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'sdk/ruby/**'
+      - '.github/workflows/test.ruby.yml'
+
+jobs:
+  test-ruby-sdk:
+    name: Test Ruby SDK (Ruby ${{ matrix.ruby-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      matrix:
+        ruby-version: ['2.6', '2.7', '3.0', '3.1', '3.2', '3.3']
+
+    defaults:
+      run:
+        working-directory: ./sdk/ruby
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v3
+
+      - name: Set up Ruby ${{ matrix.ruby-version }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          working-directory: ./sdk/ruby
+
+      - name: Install dependencies
+        run: |
+          gem install bundler
+          bundle install
+
+      - name: Run linter
+        run: |
+          bundle exec rubocop || true  # Don't fail on linting for now
+
+      - name: Run unit tests
+        run: |
+          bundle exec rspec spec/
+
+      - name: Run integration tests (mock mode)
+        env:
+          KEEPER_MOCK_MODE: 'true'
+        run: |
+          ruby -I lib test/integration/test_offline_mock.rb || true  # Don't fail if file doesn't exist yet

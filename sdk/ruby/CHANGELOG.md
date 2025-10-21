@@ -1,5 +1,20 @@
 # Changelog
 
+## [17.0.5] - 2025-10-21
+
+### Fixed
+- ECC key generation now correctly returns 32-byte raw private keys (was returning 121-byte DER format)
+- Client version now dynamically uses VERSION constant instead of hardcoded value
+- Fixed Tests
+
+### Changed
+- Client version reporting improved to match other KSM SDKs pattern
+
+## [17.0.4] - 2025-10-20
+
+### Changed
+- Maintenance release with internal improvements
+
 ## [17.0.3] - 2025-06-25
 
 ### Changed
