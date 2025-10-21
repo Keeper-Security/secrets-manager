@@ -1,4 +1,8 @@
-require 'bundler/setup' rescue LoadError
+begin
+  require 'bundler/setup'
+rescue StandardError
+  LoadError
+end
 require 'keeper_secrets_manager'
 begin
   require 'webmock/rspec'
@@ -31,12 +35,12 @@ end
 module TestHelpers
   def mock_config
     KeeperSecretsManager::Storage::InMemoryStorage.new({
-      'hostname' => 'test.keepersecurity.com',
-      'clientId' => 'test-client-id',
-      'privateKey' => Base64.encode64('test-private-key'),
-      'appKey' => Base64.encode64('test-app-key'),
-      'serverPublicKeyId' => '10'
-    })
+                                                         'hostname' => 'test.keepersecurity.com',
+                                                         'clientId' => 'test-client-id',
+                                                         'privateKey' => Base64.encode64('test-private-key'),
+                                                         'appKey' => Base64.encode64('test-app-key'),
+                                                         'serverPublicKeyId' => '10'
+                                                       })
   end
 
   def mock_record_data

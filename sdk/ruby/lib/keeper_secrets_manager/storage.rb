@@ -6,18 +6,18 @@ module KeeperSecretsManager
   module Storage
     # Base storage interface
     module KeyValueStorage
-      def get_string(key)
-        raise NotImplementedError, "Subclass must implement get_string"
+      def get_string(_key)
+        raise NotImplementedError, 'Subclass must implement get_string'
       end
 
-      def save_string(key, value)
-        raise NotImplementedError, "Subclass must implement save_string"
+      def save_string(_key, _value)
+        raise NotImplementedError, 'Subclass must implement save_string'
       end
 
       def get_bytes(key)
         data = get_string(key)
         return nil unless data
-        
+
         # Handle both standard and URL-safe base64
         begin
           # First try standard base64
@@ -28,7 +28,7 @@ module KeeperSecretsManager
             padding = 4 - (data.length % 4)
             padding = 0 if padding == 4
             Base64.urlsafe_decode64(data + '=' * padding)
-          rescue => e
+          rescue StandardError => e
             # Last resort - try with decode64 which is more lenient
             Base64.decode64(data)
           end
@@ -39,8 +39,8 @@ module KeeperSecretsManager
         save_string(key, Base64.strict_encode64(value))
       end
 
-      def delete(key)
-        raise NotImplementedError, "Subclass must implement delete"
+      def delete(_key)
+        raise NotImplementedError, 'Subclass must implement delete'
       end
 
       def contains?(key)
@@ -54,7 +54,7 @@ module KeeperSecretsManager
 
       def initialize(config_data = nil)
         @data = {}
-        
+
         # Initialize from JSON string, base64 string, or hash
         if config_data
           parsed = case config_data
@@ -70,7 +70,7 @@ module KeeperSecretsManager
                    else
                      {}
                    end
-          
+
           parsed.each { |k, v| @data[k.to_s] = v.to_s }
         end
       end
@@ -94,20 +94,20 @@ module KeeperSecretsManager
       def to_json(*args)
         @data.to_json(*args)
       end
-      
+
       private
-      
+
       def is_base64?(str)
         # Check if string is valid base64
         return false if str.nil? || str.empty?
-        
+
         # Remove whitespace
         str = str.strip
-        
+
         # Check if length is multiple of 4 (with padding) or can be padded to multiple of 4
         # Also check if it only contains base64 characters
-        base64_regex = /\A[A-Za-z0-9+\/]*={0,2}\z/
-        
+        base64_regex = %r{\A[A-Za-z0-9+/]*={0,2}\z}
+
         str.match?(base64_regex) && (str.length % 4 == 0 || str.length % 4 == 2 || str.length % 4 == 3)
       end
     end
@@ -143,11 +143,11 @@ module KeeperSecretsManager
           begin
             content = File.read(@filename)
             # Handle empty files
-            if content.strip.empty?
-              @data = {}
-            else
-              @data = JSON.parse(content)
-            end
+            @data = if content.strip.empty?
+                      {}
+                    else
+                      JSON.parse(content)
+                    end
           rescue JSON::ParserError => e
             raise Error, "Failed to parse config file: #{e.message}"
           end
@@ -157,19 +157,19 @@ module KeeperSecretsManager
       def save_data
         # Ensure directory exists
         FileUtils.mkdir_p(File.dirname(@filename))
-        
+
         # Write atomically to avoid corruption
         temp_file = "#{@filename}.tmp"
         File.open(temp_file, 'w') do |f|
           f.write(JSON.pretty_generate(@data))
         end
-        
+
         # Move atomically
         File.rename(temp_file, @filename)
-        
+
         # Set restrictive permissions (owner read/write only)
-        File.chmod(0600, @filename)
-      rescue => e
+        File.chmod(0o600, @filename)
+      rescue StandardError => e
         raise Error, "Failed to save config file: #{e.message}"
       end
     end
@@ -186,12 +186,12 @@ module KeeperSecretsManager
         ENV["#{@prefix}#{key.to_s.upcase}"]
       end
 
-      def save_string(key, value)
-        raise Error, "Environment storage is read-only"
+      def save_string(_key, _value)
+        raise Error, 'Environment storage is read-only'
       end
 
-      def delete(key)
-        raise Error, "Environment storage is read-only"
+      def delete(_key)
+        raise Error, 'Environment storage is read-only'
       end
     end
 
@@ -208,11 +208,9 @@ module KeeperSecretsManager
 
       def get_string(key)
         key_str = key.to_s
-        
+
         # Check cache validity
-        if @cache.key?(key_str) && !expired?(key_str)
-          return @cache[key_str]
-        end
+        return @cache[key_str] if @cache.key?(key_str) && !expired?(key_str)
 
         # Fetch from base storage
         value = @base_storage.get_string(key)
@@ -220,7 +218,7 @@ module KeeperSecretsManager
           @cache[key_str] = value
           @timestamps[key_str] = Time.now
         end
-        
+
         value
       end
 
@@ -247,6 +245,7 @@ module KeeperSecretsManager
 
       def expired?(key)
         return true unless @timestamps[key]
+
         Time.now - @timestamps[key] > @ttl_seconds
       end
     end

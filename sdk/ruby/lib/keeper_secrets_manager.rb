@@ -24,12 +24,12 @@ module KeeperSecretsManager
   def self.new(options = {})
     Core::SecretsManager.new(options)
   end
-  
+
   # Convenience method to create from token
   def self.from_token(token, options = {})
     Core::SecretsManager.new(options.merge(token: token))
   end
-  
+
   # Convenience method to create from config file
   def self.from_file(filename, options = {})
     storage = Storage::FileStorage.new(filename)

@@ -10,7 +10,7 @@ module KeeperSecretsManager
     KEY_APP_KEY                 = 'appKey'.freeze
     KEY_OWNER_PUBLIC_KEY        = 'appOwnerPublicKey'.freeze
     KEY_APP_UID                 = 'appUid'.freeze
-    
+
     # All valid keys
     ALL_KEYS = [
       KEY_URL,

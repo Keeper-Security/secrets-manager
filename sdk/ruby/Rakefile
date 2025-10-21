@@ -27,4 +27,4 @@ task :rubocop do
 end
 
 desc 'Run all quality checks'
-task ci: [:rubocop, :spec]
+task ci: %i[rubocop spec]

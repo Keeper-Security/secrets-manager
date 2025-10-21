@@ -14,7 +14,7 @@ module KeeperSecretsManager
           @uid = attrs['recordUid'] || attrs['uid'] || attrs[:uid]
           @folder_uid = attrs['folderUid'] || attrs['folder_uid'] || attrs[:folder_uid]
           @revision = attrs['revision'] || attrs[:revision] || 0
-          
+
           # Handle encrypted data or direct attributes
           if attrs['data']
             data = attrs['data'].is_a?(String) ? JSON.parse(attrs['data']) : attrs['data']
@@ -30,11 +30,11 @@ module KeeperSecretsManager
             @custom = attrs['custom'] || attrs[:custom] || []
             @notes = attrs['notes'] || attrs[:notes] || ''
           end
-          
+
           @files = attrs['files'] || attrs[:files] || []
           @data = attrs
         end
-        
+
         # Ensure fields are always arrays of hashes
         normalize_fields!
       end
@@ -73,13 +73,13 @@ module KeeperSecretsManager
       # Add or update field
       def set_field(type, value, label = nil, custom_field = false)
         field_array = custom_field ? @custom : @fields
-        
+
         # Ensure value is an array
         value = [value] unless value.is_a?(Array)
-        
+
         # Find existing field
         existing = field_array.find { |f| f['type'] == type || (label && f['label'] == label) }
-        
+
         if existing
           existing['value'] = value
           existing['label'] = label if label
@@ -93,7 +93,7 @@ module KeeperSecretsManager
       # Dynamic field access methods
       def method_missing(method, *args, &block)
         method_name = method.to_s
-        
+
         # Handle setters
         if method_name.end_with?('=')
           field_name = method_name.chomp('=')
@@ -120,18 +120,18 @@ module KeeperSecretsManager
 
       def normalize_field_array(fields)
         return [] unless fields.is_a?(Array)
-        
+
         fields.map do |field|
           next field if field.is_a?(Hash)
-          
+
           # Convert to hash if needed
           field.to_h
         end
       end
 
       def common_field_types
-        %w[login password url fileRef oneTimeCode name phone email address 
-           paymentCard bankAccount birthDate secureNote sshKey host 
+        %w[login password url fileRef oneTimeCode name phone email address
+           paymentCard bankAccount birthDate secureNote sshKey host
            databaseType script passkey]
       end
     end

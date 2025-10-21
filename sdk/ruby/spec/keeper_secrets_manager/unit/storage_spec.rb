@@ -80,7 +80,7 @@ RSpec.describe KeeperSecretsManager::Storage do
     describe 'persistence' do
       it 'persists data to file' do
         storage.save_string('key1', 'value1')
-        
+
         # Create new instance to verify persistence
         new_storage = described_class.new(temp_file.path)
         expect(new_storage.get_string('key1')).to eq('value1')
@@ -88,16 +88,16 @@ RSpec.describe KeeperSecretsManager::Storage do
 
       it 'creates file with restrictive permissions' do
         storage.save_string('key1', 'value1')
-        
+
         file_stat = File.stat(temp_file.path)
         # Check for 0600 permissions (owner read/write only)
-        expect(file_stat.mode & 0777).to eq(0600)
+        expect(file_stat.mode & 0o777).to eq(0o600)
       end
 
       it 'handles concurrent writes safely' do
         storage.save_string('key1', 'value1')
         storage.save_string('key2', 'value2')
-        
+
         content = JSON.parse(File.read(temp_file.path))
         expect(content).to include('key1' => 'value1', 'key2' => 'value2')
       end
@@ -158,13 +158,13 @@ RSpec.describe KeeperSecretsManager::Storage do
     describe 'caching behavior' do
       it 'caches retrieved values' do
         base_storage.save_string('key1', 'value1')
-        
+
         # First read - from base storage
         expect(storage.get_string('key1')).to eq('value1')
-        
+
         # Change base storage
         base_storage.save_string('key1', 'value2')
-        
+
         # Should still get cached value
         expect(storage.get_string('key1')).to eq('value1')
       end
@@ -172,13 +172,13 @@ RSpec.describe KeeperSecretsManager::Storage do
       it 'respects TTL' do
         base_storage.save_string('key1', 'value1')
         storage.get_string('key1')
-        
+
         # Change base storage
         base_storage.save_string('key1', 'value2')
-        
+
         # Wait for cache to expire
         sleep 2.1
-        
+
         # Should get new value
         expect(storage.get_string('key1')).to eq('value2')
       end
@@ -186,7 +186,7 @@ RSpec.describe KeeperSecretsManager::Storage do
       it 'updates cache on write' do
         storage.save_string('key1', 'value1')
         expect(storage.get_string('key1')).to eq('value1')
-        
+
         storage.save_string('key1', 'value2')
         expect(storage.get_string('key1')).to eq('value2')
       end
@@ -194,7 +194,7 @@ RSpec.describe KeeperSecretsManager::Storage do
       it 'clears cache entries on delete' do
         storage.save_string('key1', 'value1')
         storage.get_string('key1') # Cache it
-        
+
         storage.delete('key1')
         expect(storage.get_string('key1')).to be_nil
       end
@@ -204,13 +204,13 @@ RSpec.describe KeeperSecretsManager::Storage do
       it 'removes all cached entries' do
         storage.save_string('key1', 'value1')
         storage.save_string('key2', 'value2')
-        
+
         storage.clear_cache
-        
+
         # Change base storage
         base_storage.save_string('key1', 'new_value1')
         base_storage.save_string('key2', 'new_value2')
-        
+
         # Should get new values
         expect(storage.get_string('key1')).to eq('new_value1')
         expect(storage.get_string('key2')).to eq('new_value2')

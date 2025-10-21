@@ -29,6 +29,6 @@ Gem::Specification.new do |spec|
 
   # Runtime dependencies
   # No required runtime dependencies - base32 is optional for TOTP support
-  
+
   # All development dependencies are in Gemfile
 end

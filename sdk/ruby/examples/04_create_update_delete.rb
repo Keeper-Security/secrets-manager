@@ -9,7 +9,7 @@ require 'securerandom'
 config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
 secrets_manager = KeeperSecretsManager.from_config(config)
 
-puts "=== CRUD Operations Example ==="
+puts '=== CRUD Operations Example ==='
 
 # 1. CREATE - Add a new secret
 puts "\n1. Creating a new secret..."
@@ -28,13 +28,13 @@ begin
     ],
     notes: 'Created via Ruby SDK example'
   }
-  
+
   # Create the record (optionally in a specific folder)
   # record_uid = secrets_manager.create_secret(new_record, folder_uid: 'FOLDER_UID')
   record_uid = secrets_manager.create_secret(new_record)
-  
+
   puts "✓ Created record with UID: #{record_uid}"
-  
+
   # 2. READ - Retrieve the created secret
   puts "\n2. Reading the secret..."
   secret = secrets_manager.get_secret_by_uid(record_uid)
@@ -42,15 +42,15 @@ begin
   puts "  Login: #{secret.login}"
   puts "  URL: #{secret.url}"
   puts "  Custom field: #{secret.custom.first['value']}" if secret.custom.any?
-  
+
   # 3. UPDATE - Modify the secret
   puts "\n3. Updating the secret..."
-  
+
   # Update specific fields
-  secret.password = SecureRandom.hex(20)  # New password
+  secret.password = SecureRandom.hex(20) # New password
   secret.url = 'https://updated-example.com'
   secret.notes = "Updated on #{Time.now}"
-  
+
   # Add a new custom field
   secret.custom ||= []
   secret.custom << {
@@ -58,47 +58,46 @@ begin
     'label' => 'Last Updated',
     'value' => [Time.now.to_s]
   }
-  
+
   # Save the updates
   secrets_manager.update_secret(secret)
-  puts "✓ Updated successfully"
-  
+  puts '✓ Updated successfully'
+
   # Verify the update
   updated = secrets_manager.get_secret_by_uid(record_uid)
   puts "  New URL: #{updated.url}"
   puts "  Notes: #{updated.notes}"
-  
+
   # 4. DELETE - Remove the secret
   puts "\n4. Deleting the secret..."
-  puts "Press Enter to delete the test record..."
+  puts 'Press Enter to delete the test record...'
   gets
-  
+
   secrets_manager.delete_secret(record_uid)
   puts "✓ Deleted record: #{record_uid}"
-  
+
   # Verify deletion
   begin
     secrets_manager.get_secret_by_uid(record_uid)
-    puts "✗ Record still exists!"
-  rescue
-    puts "✓ Confirmed: Record no longer exists"
+    puts '✗ Record still exists!'
+  rescue StandardError
+    puts '✓ Confirmed: Record no longer exists'
   end
-  
-rescue => e
+rescue StandardError => e
   puts "Error: #{e.message}"
-  puts "Make sure you have write permissions in your vault"
+  puts 'Make sure you have write permissions in your vault'
 end
 
 # Batch operations example
 puts "\n=== Batch Operations ==="
-puts "1. Create multiple records at once"
-puts "2. Update multiple records"
-puts "3. Delete multiple records"
-puts "(See documentation for batch operation examples)"
+puts '1. Create multiple records at once'
+puts '2. Update multiple records'
+puts '3. Delete multiple records'
+puts '(See documentation for batch operation examples)'
 
 # Tips
 puts "\n=== Tips ==="
-puts "- Always handle errors when creating/updating/deleting"
-puts "- Use folder_uid parameter to organize secrets"
-puts "- Check permissions if operations fail"
-puts "- Use batch operations for better performance with multiple records"
+puts '- Always handle errors when creating/updating/deleting'
+puts '- Use folder_uid parameter to organize secrets'
+puts '- Check permissions if operations fail'
+puts '- Use batch operations for better performance with multiple records'

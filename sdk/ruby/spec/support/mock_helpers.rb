@@ -31,7 +31,7 @@ module MockHelpers
       end,
       'folders' => []
     }
-    
+
     mock_api_response('get_secret', response)
   end
 
@@ -73,12 +73,12 @@ module MockHelpers
         { 'type' => 'host', 'value' => [
           { 'hostName' => '10.0.0.1', 'port' => '22' },
           { 'hostName' => '10.0.0.2', 'port' => '2222' }
-        ]},
+        ] },
         { 'type' => 'name', 'value' => [{ 'first' => 'John', 'middle' => 'Q', 'last' => 'Tester' }] },
         { 'type' => 'phone', 'value' => [
           { 'region' => 'US', 'number' => '555-0123', 'type' => 'Mobile' },
           { 'region' => 'US', 'number' => '555-0456', 'type' => 'Work' }
-        ]},
+        ] },
         { 'type' => 'address', 'value' => [{
           'street1' => '123 Test Street',
           'street2' => 'Suite 100',
@@ -86,17 +86,17 @@ module MockHelpers
           'state' => 'TC',
           'zip' => '12345',
           'country' => 'US'
-        }]},
+        }] },
         { 'type' => 'bankAccount', 'value' => [{
           'accountType' => 'Checking',
           'routingNumber' => '123456789',
           'accountNumber' => '9876543210'
-        }]}
+        }] }
       ],
       custom: [
         { 'type' => 'text', 'label' => 'Department', 'value' => ['Engineering'] },
         { 'type' => 'text', 'label' => 'Project', 'value' => ['Ruby SDK'] },
-        { 'type' => 'text', 'label' => 'Tags', 'value' => ['test', 'complex', 'multi-value'] },
+        { 'type' => 'text', 'label' => 'Tags', 'value' => %w[test complex multi-value] },
         { 'type' => 'date', 'label' => 'Created', 'value' => [Time.now.to_i * 1000] }
       ]
     }
@@ -112,8 +112,8 @@ module MockHelpers
         { 'type' => 'host', 'value' => [{ 'hostName' => '192.168.100.50', 'port' => '22' }] },
         { 'type' => 'sshKey', 'value' => [{
           'privateKey' => "-----BEGIN OPENSSH PRIVATE KEY-----\nMOCK_PRIVATE_KEY_DATA\n-----END OPENSSH PRIVATE KEY-----",
-          'publicKey' => "ssh-rsa AAAAB3NzaC1yc2EMOCK mock@example.com"
-        }]},
+          'publicKey' => 'ssh-rsa AAAAB3NzaC1yc2EMOCK mock@example.com'
+        }] },
         { 'type' => 'script', 'value' => ['#!/bin/bash\necho "Server setup script"'] }
       ],
       custom: [

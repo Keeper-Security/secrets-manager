@@ -8,7 +8,7 @@ require 'keeper_secrets_manager'
 config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
 secrets_manager = KeeperSecretsManager.from_config(config)
 
-puts "=== Field Types Example ==="
+puts '=== Field Types Example ==='
 
 # Create a record with various field types
 record_data = {
@@ -19,14 +19,14 @@ record_data = {
     { type: 'login', value: ['user@example.com'] },
     { type: 'password', value: ['SecurePassword123!'] },
     { type: 'url', value: ['https://example.com'] },
-    
+
     # Complex fields
     { type: 'name', value: [{ first: 'John', middle: 'Q', last: 'Doe' }] },
     { type: 'phone', value: [{ number: '555-1234', ext: '567', type: 'Work' }] },
     { type: 'email', value: ['john.doe@example.com'] },
-    
+
     # Address field
-    { 
+    {
       type: 'address',
       value: [{
         street1: '123 Main St',
@@ -37,7 +37,7 @@ record_data = {
         country: 'US'
       }]
     },
-    
+
     # Host field (for servers)
     {
       type: 'host',
@@ -46,7 +46,7 @@ record_data = {
         port: '22'
       }]
     },
-    
+
     # Security question
     {
       type: 'securityQuestion',
@@ -55,7 +55,7 @@ record_data = {
         answer: 'Blue'
       }]
     },
-    
+
     # Bank account
     {
       type: 'bankAccount',
@@ -65,7 +65,7 @@ record_data = {
         accountNumber: '1234567890'
       }]
     },
-    
+
     # Payment card
     {
       type: 'paymentCard',
@@ -75,14 +75,14 @@ record_data = {
         cardSecurityCode: '123'
       }]
     },
-    
+
     # Date field
     { type: 'date', value: [Time.now.to_i * 1000] }, # milliseconds
-    
+
     # Multiline field
     { type: 'multiline', value: ["Line 1\nLine 2\nLine 3"] }
   ],
-  
+
   # Custom fields
   custom: [
     { type: 'text', label: 'Department', value: ['Engineering'] },
@@ -97,12 +97,12 @@ puts "\n1. Standard Fields:"
 begin
   # If you have a record with these fields
   secret = secrets_manager.get_secrets.first
-  
+
   puts "  Login: #{secret.login}" if secret.respond_to?(:login)
-  puts "  Password: [hidden]" if secret.respond_to?(:password)
+  puts '  Password: [hidden]' if secret.respond_to?(:password)
   puts "  URL: #{secret.url}" if secret.respond_to?(:url)
-rescue => e
-  puts "  (Create a record with the fields above to see this in action)"
+rescue StandardError => e
+  puts '  (Create a record with the fields above to see this in action)'
 end
 
 # Example: Complex field access
@@ -113,23 +113,23 @@ puts "  Address field: #{record_data[:fields].find { |f| f[:type] == 'address' }
 
 # Example: Using field helpers (if available)
 puts "\n3. Field Helpers:"
-puts "  The SDK provides dynamic access to fields:"
-puts "  - secret.login"
-puts "  - secret.password"
-puts "  - secret.url"
-puts "  - secret.notes"
-puts "  - secret.custom"
+puts '  The SDK provides dynamic access to fields:'
+puts '  - secret.login'
+puts '  - secret.password'
+puts '  - secret.url'
+puts '  - secret.notes'
+puts '  - secret.custom'
 
 # Example: TOTP field (requires base32 gem)
 puts "\n4. TOTP Fields:"
-puts "  TOTP fields store the secret key for 2FA"
+puts '  TOTP fields store the secret key for 2FA'
 puts "  Install 'base32' gem to generate TOTP codes:"
 puts "  - { type: 'oneTimeCode', value: ['JBSWY3DPEHPK3PXP'] }"
 
 # Tips
 puts "\n=== Field Type Tips ==="
-puts "- Use appropriate field types for better UI experience"
-puts "- Complex fields (name, address, etc.) use structured data"
-puts "- Custom fields are flexible for any additional data"
-puts "- File references use fileRef type"
-puts "- Dates are stored as milliseconds since epoch"
+puts '- Use appropriate field types for better UI experience'
+puts '- Complex fields (name, address, etc.) use structured data'
+puts '- Custom fields are flexible for any additional data'
+puts '- File references use fileRef type'
+puts '- Dates are stored as milliseconds since epoch'

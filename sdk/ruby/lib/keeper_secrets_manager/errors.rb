@@ -7,6 +7,7 @@ module KeeperSecretsManager
 
   # Authentication/authorization errors
   class AuthenticationError < Error; end
+
   class AccessDeniedError < AuthenticationError; end
 
   # API/network errors
@@ -22,7 +23,9 @@ module KeeperSecretsManager
 
   # Crypto errors
   class CryptoError < Error; end
+
   class DecryptionError < CryptoError; end
+
   class EncryptionError < CryptoError; end
 
   # Notation errors
@@ -30,7 +33,9 @@ module KeeperSecretsManager
 
   # Record errors
   class RecordError < Error; end
+
   class RecordNotFoundError < RecordError; end
+
   class RecordValidationError < RecordError; end
 
   # Server errors
@@ -46,13 +51,19 @@ module KeeperSecretsManager
 
   # Specific server error types
   class InvalidClientVersionError < ServerError; end
+
   class InvalidTokenError < ServerError; end
+
   class BadRequestError < ServerError; end
+
   class RecordUidNotFoundError < ServerError; end
+
   class FolderUidNotFoundError < ServerError; end
+
   class AccessViolationError < ServerError; end
+
   class ThrottledError < ServerError; end
-  
+
   # Error factory
   class ErrorFactory
     def self.from_server_response(result_code, message = nil)

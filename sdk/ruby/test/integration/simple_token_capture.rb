@@ -20,14 +20,14 @@ else
 end
 
 hostname = case region.upcase
-when 'US' then 'keepersecurity.com'
-when 'EU' then 'keepersecurity.eu'
-when 'AU' then 'keepersecurity.com.au'
-when 'GOV' then 'govcloud.keepersecurity.us'
-when 'JP' then 'keepersecurity.jp'
-when 'CA' then 'keepersecurity.ca'
-else 'keepersecurity.com'
-end
+           when 'US' then 'keepersecurity.com'
+           when 'EU' then 'keepersecurity.eu'
+           when 'AU' then 'keepersecurity.com.au'
+           when 'GOV' then 'govcloud.keepersecurity.us'
+           when 'JP' then 'keepersecurity.jp'
+           when 'CA' then 'keepersecurity.ca'
+           else 'keepersecurity.com'
+           end
 
 puts "Using hostname: #{hostname}"
 puts "Token data: #{token_data}"
@@ -52,22 +52,21 @@ request.body = request_payload.to_json
 
 begin
   response = http.request(request)
-  
+
   puts "\n=== Token Exchange Response ==="
   puts "Status: #{response.code}"
-  puts "Body:"
+  puts 'Body:'
   response_json = JSON.parse(response.body)
   puts JSON.pretty_generate(response_json)
-  
+
   # Save for mocking
   File.write('captured_token_exchange.json', JSON.pretty_generate({
-    request: request_payload,
-    response: response_json,
-    status_code: response.code.to_i
-  }))
-  
+                                                                    request: request_payload,
+                                                                    response: response_json,
+                                                                    status_code: response.code.to_i
+                                                                  }))
+
   puts "\nSaved to captured_token_exchange.json"
-  
-rescue => e
+rescue StandardError => e
   puts "Error: #{e.message}"
 end

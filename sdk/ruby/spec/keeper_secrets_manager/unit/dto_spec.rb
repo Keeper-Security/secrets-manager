@@ -11,7 +11,7 @@ RSpec.describe KeeperSecretsManager::Dto do
             { 'type' => 'login', 'value' => ['username'] }
           ]
         )
-        
+
         expect(record.title).to eq('Test Record')
         expect(record.type).to eq('login')
         expect(record.fields.size).to eq(1)
@@ -25,7 +25,7 @@ RSpec.describe KeeperSecretsManager::Dto do
             { 'type' => 'password', 'value' => ['secret'] }
           ]
         )
-        
+
         expect(record.title).to eq('Test Record')
         expect(record.fields.first['type']).to eq('password')
       end
@@ -41,7 +41,7 @@ RSpec.describe KeeperSecretsManager::Dto do
             'custom' => []
           }
         }
-        
+
         record = described_class.new(api_data)
         expect(record.uid).to eq('uid-123')
         expect(record.revision).to eq(5)
@@ -157,7 +157,7 @@ RSpec.describe KeeperSecretsManager::Dto do
           fields: [{ 'type' => 'login', 'value' => ['user'] }],
           notes: 'Test notes'
         )
-        
+
         hash = record.to_h
         expect(hash).to include(
           'uid' => 'test-uid',
@@ -171,7 +171,7 @@ RSpec.describe KeeperSecretsManager::Dto do
       it 'excludes nil values' do
         record = described_class.new(title: 'Test')
         hash = record.to_h
-        
+
         expect(hash).to have_key('title')
         expect(hash).not_to have_key('folder_uid')
       end
@@ -185,7 +185,7 @@ RSpec.describe KeeperSecretsManager::Dto do
         'name' => 'My Folder',
         'parentUid' => 'parent-123'
       )
-      
+
       expect(folder.uid).to eq('folder-123')
       expect(folder.name).to eq('My Folder')
       expect(folder.parent_uid).to eq('parent-123')
@@ -205,7 +205,7 @@ RSpec.describe KeeperSecretsManager::Dto do
         'size' => 1024,
         'mimeType' => 'application/pdf'
       )
-      
+
       expect(file.uid).to eq('file-123')
       expect(file.name).to eq('document.pdf')
       expect(file.size).to eq(1024)

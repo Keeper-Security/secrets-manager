@@ -20,7 +20,7 @@ module KeeperSecretsManager
         instance_variables.each do |var|
           key = var.to_s.delete('@')
           value = instance_variable_get(var)
-          
+
           # Convert Ruby snake_case to camelCase for API
           api_key = Utils.snake_to_camel(key)
           hash[api_key] = value unless value.nil?
@@ -47,7 +47,7 @@ module KeeperSecretsManager
 
     # Create record payload
     class CreatePayload < BasePayload
-      attr_accessor :record_uid, :record_key, :folder_uid, :folder_key, 
+      attr_accessor :record_uid, :record_key, :folder_uid, :folder_key,
                     :data, :sub_folder_uid
 
       def initialize

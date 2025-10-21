@@ -75,7 +75,7 @@ module KeeperSecretsManager
       # Convert string to boolean
       def strtobool(val)
         return val if val.is_a?(TrueClass) || val.is_a?(FalseClass)
-        
+
         val_str = val.to_s.downcase.strip
         case val_str
         when 'true', '1', 'yes', 'y', 'on'
@@ -94,7 +94,7 @@ module KeeperSecretsManager
 
       # Deep merge hashes
       def deep_merge(hash1, hash2)
-        hash1.merge(hash2) do |key, old_val, new_val|
+        hash1.merge(hash2) do |_key, old_val, new_val|
           if old_val.is_a?(Hash) && new_val.is_a?(Hash)
             deep_merge(old_val, new_val)
           else
@@ -112,10 +112,9 @@ module KeeperSecretsManager
 
       # Convert snake_case to camelCase
       def snake_to_camel(str, capitalize_first = false)
-        result = str.split('_').map.with_index do |word, i|
+        str.split('_').map.with_index do |word, i|
           i == 0 && !capitalize_first ? word : word.capitalize
         end.join
-        result
       end
 
       # Safe integer conversion
@@ -135,10 +134,10 @@ module KeeperSecretsManager
       # Parse server URL from hostname
       def get_server_url(hostname, use_ssl = true)
         return nil if blank?(hostname)
-        
+
         # Remove protocol if present
         hostname = hostname.sub(%r{^https?://}, '')
-        
+
         # Build URL
         protocol = use_ssl ? 'https' : 'http'
         "#{protocol}://#{hostname}"
@@ -151,13 +150,13 @@ module KeeperSecretsManager
           parts = token_or_hostname.split(':')
           return parts[0].upcase if parts.length >= 2
         end
-        
+
         # Check if hostname matches a known region
         hostname = token_or_hostname.to_s.downcase
         KeeperGlobals::KEEPER_SERVERS.each do |region, server|
           return region if hostname.include?(server)
         end
-        
+
         # Default to US
         'US'
       end
@@ -165,12 +164,12 @@ module KeeperSecretsManager
       # Validate UID format
       def valid_uid?(uid)
         return false if blank?(uid)
-        
+
         # UIDs are base64url encoded 16-byte values
         begin
           bytes = url_safe_str_to_bytes(uid)
           bytes.length == 16
-        rescue
+        rescue StandardError
           false
         end
       end
@@ -180,13 +179,11 @@ module KeeperSecretsManager
         attempt = 0
         begin
           yield
-        rescue => e
+        rescue StandardError => e
           attempt += 1
-          if attempt >= max_attempts
-            raise e
-          end
-          
-          delay = [base_delay * (2 ** (attempt - 1)), max_delay].min
+          raise e if attempt >= max_attempts
+
+          delay = [base_delay * (2**(attempt - 1)), max_delay].min
           sleep(delay)
           retry
         end

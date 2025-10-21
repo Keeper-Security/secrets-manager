@@ -4,20 +4,20 @@
 
 require 'json'
 
-puts "=== Mock Coverage Verification ==="
-puts "Checking that all test scenarios can run offline"
-puts "-" * 50
+puts '=== Mock Coverage Verification ==='
+puts 'Checking that all test scenarios can run offline'
+puts '-' * 50
 
 # Read test files and extract test methods
 test_coverage = {}
 
-Dir.glob("test/integration/test_*.rb").each do |file|
+Dir.glob('test/integration/test_*.rb').each do |file|
   content = File.read(file)
   test_name = File.basename(file, '.rb')
-  
+
   # Extract test methods
   test_methods = content.scan(/def (test_\w+)/).flatten
-  
+
   # Check for API calls
   api_calls = {
     get_secrets: content.include?('.get_secrets'),
@@ -29,10 +29,10 @@ Dir.glob("test/integration/test_*.rb").each do |file|
     file_download: content.include?('download_file') || content.include?('file_download'),
     totp: content.include?('oneTimeCode') || content.include?('totp')
   }
-  
+
   # Check for mock support
   has_mock_support = content.include?('mock_helper') || content.include?('MockHelper')
-  
+
   test_coverage[test_name] = {
     methods: test_methods,
     api_calls: api_calls,
@@ -50,17 +50,19 @@ test_coverage.each do |test_name, info|
   puts "  Test methods: #{info[:methods].length}"
   puts "  Has mock support: #{info[:has_mock_support] ? '✅' : '❌'}"
   puts "  Requires config: #{info[:requires_config] ? 'YES' : 'NO'}"
-  
+
   api_usage = info[:api_calls].select { |_, used| used }
-  if api_usage.any?
-    puts "  API calls used: #{api_usage.keys.join(', ')}"
-  end
+  puts "  API calls used: #{api_usage.keys.join(', ')}" if api_usage.any?
   puts
 end
 
 # Check mock_helper.rb coverage
 puts "\nMock Helper Coverage:"
-mock_helper = File.read("test/integration/mock_helper.rb") rescue ""
+mock_helper = begin
+  File.read('test/integration/mock_helper.rb')
+rescue StandardError
+  ''
+end
 
 mock_features = {
   'Config generation': mock_helper.include?('get_config'),
@@ -84,38 +86,32 @@ puts "\nPotential Gaps:"
 missing = []
 
 # Check for batch operations
-unless mock_helper.include?('batch')
-  missing << "Batch operations (currently sequential in mock)"
-end
+missing << 'Batch operations (currently sequential in mock)' unless mock_helper.include?('batch')
 
 # Check for search
-unless mock_helper.include?('search')
-  missing << "Server-side search (currently client-side filtering)"
-end
+missing << 'Server-side search (currently client-side filtering)' unless mock_helper.include?('search')
 
 # Check for folder operations
-unless mock_helper.include?('create_folder')
-  missing << "Folder creation/update/delete operations"
-end
+missing << 'Folder creation/update/delete operations' unless mock_helper.include?('create_folder')
 
 if missing.any?
   missing.each { |m| puts "  ⚠️  #{m}" }
 else
-  puts "  ✅ All major operations covered"
+  puts '  ✅ All major operations covered'
 end
 
 # Recommendations
 puts "\nRecommendations:"
-puts "1. Update all test files to use MockHelper"
+puts '1. Update all test files to use MockHelper'
 puts "2. Add ENV['KEEPER_MOCK_MODE'] checks to test runners"
-puts "3. Ensure Docker tests set KEEPER_MOCK_MODE when needed"
-puts "4. Document both testing modes in README"
+puts '3. Ensure Docker tests set KEEPER_MOCK_MODE when needed'
+puts '4. Document both testing modes in README'
 
 # Test the offline mock
 puts "\nTesting offline mock functionality..."
-system("KEEPER_MOCK_MODE=true ruby -I lib test/integration/test_offline_mock.rb > /dev/null 2>&1")
+system('KEEPER_MOCK_MODE=true ruby -I lib test/integration/test_offline_mock.rb > /dev/null 2>&1')
 if $?.success?
-  puts "✅ Offline mock test passes!"
+  puts '✅ Offline mock test passes!'
 else
-  puts "❌ Offline mock test failed (may need Ruby 2.7+)"
+  puts '❌ Offline mock test failed (may need Ruby 2.7+)'
 end

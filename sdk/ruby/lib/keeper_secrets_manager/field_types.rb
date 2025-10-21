@@ -9,7 +9,7 @@ module KeeperSecretsManager
         @label = label
         @required = required
         @privacy_screen = privacy_screen
-        
+
         # Ensure value is always an array
         @value = value.is_a?(Array) ? value : [value]
       end
@@ -103,7 +103,7 @@ module KeeperSecretsManager
                     when String
                       (Date.parse(date).to_time.to_f * 1000).to_i
                     else
-                      raise ArgumentError, "Invalid date format"
+                      raise ArgumentError, 'Invalid date format'
                     end
         Field.new(type: 'birthDate', value: timestamp, label: label)
       end

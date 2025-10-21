@@ -21,8 +21,8 @@ config_data = JSON.parse(config_json)
 storage = KeeperSecretsManager::Storage::InMemoryStorage.new(config_data)
 secrets_manager = KeeperSecretsManager.new(config: storage)
 
-puts "=== Keeper Secrets Manager - Response Capture ==="
-puts "This will create test records and capture responses for offline testing"
+puts '=== Keeper Secrets Manager - Response Capture ==='
+puts 'This will create test records and capture responses for offline testing'
 puts
 
 responses = {}
@@ -31,7 +31,7 @@ test_folder = nil
 
 begin
   # 1. Capture existing records
-  puts "1. Capturing existing records..."
+  puts '1. Capturing existing records...'
   all_records = secrets_manager.get_secrets
   responses['get_all_records'] = all_records.map do |record|
     {
@@ -78,9 +78,9 @@ begin
 
   # 4. Create various test records
   puts "\n4. Creating test records..."
-  
+
   # Simple login record
-  puts "   Creating login record..."
+  puts '   Creating login record...'
   login_record = KeeperSecretsManager::Dto::KeeperRecord.new(
     title: "Test Login #{SecureRandom.hex(4)}",
     type: 'login',
@@ -91,13 +91,13 @@ begin
     ],
     notes: 'Created by Ruby SDK test suite'
   )
-  login_uid = secrets_manager.create_secret(login_record, 
-    KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: test_folder_uid))
+  login_uid = secrets_manager.create_secret(login_record,
+                                            KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: test_folder_uid))
   test_records << { uid: login_uid, type: 'login' }
   puts "   ✓ Login record created: #{login_uid}"
 
   # Complex record with many field types
-  puts "   Creating complex record..."
+  puts '   Creating complex record...'
   complex_record = KeeperSecretsManager::Dto::KeeperRecord.new(
     title: "Test Complex #{SecureRandom.hex(4)}",
     type: 'login',
@@ -124,12 +124,12 @@ begin
     ]
   )
   complex_uid = secrets_manager.create_secret(complex_record,
-    KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: test_folder_uid))
+                                              KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: test_folder_uid))
   test_records << { uid: complex_uid, type: 'complex' }
   puts "   ✓ Complex record created: #{complex_uid}"
 
   # Server/SSH record
-  puts "   Creating server record..."
+  puts '   Creating server record...'
   server_record = KeeperSecretsManager::Dto::KeeperRecord.new(
     title: "Test Server #{SecureRandom.hex(4)}",
     type: 'sshKeys',
@@ -138,7 +138,7 @@ begin
       { 'type' => 'host', 'value' => [{ 'hostName' => '10.0.0.50', 'port' => '2222' }] },
       { 'type' => 'sshKey', 'value' => [{
         'privateKey' => "-----BEGIN PRIVATE KEY-----\nTEST_PRIVATE_KEY_DATA\n-----END PRIVATE KEY-----",
-        'publicKey' => "ssh-rsa AAAAB3NzaC1yc2ETEST test@example.com"
+        'publicKey' => 'ssh-rsa AAAAB3NzaC1yc2ETEST test@example.com'
       }] }
     ],
     custom: [
@@ -147,13 +147,13 @@ begin
     ]
   )
   server_uid = secrets_manager.create_secret(server_record,
-    KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: test_folder_uid))
+                                             KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: test_folder_uid))
   test_records << { uid: server_uid, type: 'server' }
   puts "   ✓ Server record created: #{server_uid}"
 
   # 5. Test record retrieval
   puts "\n5. Testing record retrieval..."
-  
+
   # Get specific record
   retrieved_records = secrets_manager.get_secrets([login_uid])
   if retrieved_records.any?
@@ -163,7 +163,7 @@ begin
       title: retrieved.title,
       field_count: retrieved.fields.length
     }
-    puts "   ✓ Retrieved record by UID"
+    puts '   ✓ Retrieved record by UID'
   end
 
   # Get by title
@@ -173,7 +173,7 @@ begin
   # 6. Test notation
   puts "\n6. Testing notation..."
   notation_tests = []
-  
+
   # Test various notations
   notations = [
     "keeper://#{login_uid}/field/login",
@@ -181,16 +181,14 @@ begin
     "keeper://#{complex_uid}/field/host[hostName]",
     "keeper://#{complex_uid}/custom_field/Environment"
   ]
-  
+
   notations.each do |notation|
-    begin
-      value = secrets_manager.get_notation(notation)
-      notation_tests << { notation: notation, success: true, value_type: value.class.name }
-      puts "   ✓ Notation worked: #{notation}"
-    rescue => e
-      notation_tests << { notation: notation, success: false, error: e.message }
-      puts "   ✗ Notation failed: #{notation} - #{e.message}"
-    end
+    value = secrets_manager.get_notation(notation)
+    notation_tests << { notation: notation, success: true, value_type: value.class.name }
+    puts "   ✓ Notation worked: #{notation}"
+  rescue StandardError => e
+    notation_tests << { notation: notation, success: false, error: e.message }
+    puts "   ✗ Notation failed: #{notation} - #{e.message}"
   end
   responses['notation_tests'] = notation_tests
 
@@ -199,26 +197,24 @@ begin
   if retrieved_records.any?
     record_to_update = retrieved_records.first
     original_notes = record_to_update.notes
-    
+
     record_to_update.notes = "Updated by Ruby SDK at #{Time.now}"
     record_to_update.set_field('url', 'https://updated.example.com')
-    
+
     secrets_manager.update_secret(record_to_update)
-    puts "   ✓ Record updated successfully"
-    
+    puts '   ✓ Record updated successfully'
+
     # Verify update
     updated = secrets_manager.get_secrets([record_to_update.uid]).first
-    if updated.notes != original_notes
-      puts "   ✓ Update verified"
-    end
+    puts '   ✓ Update verified' if updated.notes != original_notes
   end
 
   # 8. Test file operations (create a record with file)
   puts "\n8. Testing file operations..."
   file_content = "This is a test file created by Ruby SDK\nTimestamp: #{Time.now}\n"
-  file_name = "test_document.txt"
-  
-  # Note: File upload requires additional implementation
+  file_name = 'test_document.txt'
+
+  # NOTE: File upload requires additional implementation
   # For now, we'll create a record that could have files
   file_record = KeeperSecretsManager::Dto::KeeperRecord.new(
     title: "Test with Files #{SecureRandom.hex(4)}",
@@ -230,59 +226,56 @@ begin
     notes: 'This record would have file attachments'
   )
   file_uid = secrets_manager.create_secret(file_record,
-    KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: test_folder_uid))
+                                           KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: test_folder_uid))
   test_records << { uid: file_uid, type: 'file_record' }
-  puts "   ✓ File record created (file upload would go here)"
+  puts '   ✓ File record created (file upload would go here)'
 
   # 9. Save all responses
   puts "\n9. Saving fixture data..."
-  
+
   # Save responses
   File.write(
     File.join(FIXTURES_DIR, 'api_responses.json'),
     JSON.pretty_generate(responses)
   )
-  
+
   # Save test record info
   File.write(
     File.join(FIXTURES_DIR, 'test_records.json'),
     JSON.pretty_generate({
-      folder: test_folder,
-      records: test_records,
-      timestamp: Time.now.to_s
-    })
+                           folder: test_folder,
+                           records: test_records,
+                           timestamp: Time.now.to_s
+                         })
   )
-  
+
   puts "   ✓ Fixtures saved to #{FIXTURES_DIR}"
 
   # 10. Test deletion
   puts "\n10. Testing deletion..."
-  puts "   Delete test records? (y/n)"
+  puts '   Delete test records? (y/n)'
   if gets.chomp.downcase == 'y'
     # Delete records
     test_records.each do |record|
-      begin
-        secrets_manager.delete_secret(record[:uid])
-        puts "   ✓ Deleted record: #{record[:uid]}"
-      rescue => e
-        puts "   ✗ Failed to delete record: #{e.message}"
-      end
+      secrets_manager.delete_secret(record[:uid])
+      puts "   ✓ Deleted record: #{record[:uid]}"
+    rescue StandardError => e
+      puts "   ✗ Failed to delete record: #{e.message}"
     end
-    
+
     # Delete folder
     if test_folder_uid
       begin
         secrets_manager.delete_folder(test_folder_uid, force: true)
         puts "   ✓ Deleted folder: #{test_folder_uid}"
-      rescue => e
+      rescue StandardError => e
         puts "   ✗ Failed to delete folder: #{e.message}"
       end
     end
   else
-    puts "   Skipping deletion - records remain for manual inspection"
+    puts '   Skipping deletion - records remain for manual inspection'
   end
-
-rescue => e
+rescue StandardError => e
   puts "\n✗ Error: #{e.class} - #{e.message}"
   puts e.backtrace.first(5)
 ensure
@@ -297,4 +290,4 @@ end
 
 puts "\n=== Response capture complete ==="
 puts "Fixture data saved to: #{FIXTURES_DIR}"
-puts "You can now run offline tests using this captured data"
+puts 'You can now run offline tests using this captured data'

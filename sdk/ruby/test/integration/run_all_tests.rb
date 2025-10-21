@@ -3,10 +3,14 @@
 # Master test runner for all integration tests
 
 require 'optparse'
-require 'colorize' rescue nil
+begin
+  require 'colorize'
+rescue StandardError
+  nil
+end
 
-puts "=== Keeper Secrets Manager Ruby SDK - Integration Test Suite ==="
-puts "=" * 60
+puts '=== Keeper Secrets Manager Ruby SDK - Integration Test Suite ==='
+puts '=' * 60
 
 # Define test files
 TEST_FILES = {
@@ -52,33 +56,33 @@ options = {
 }
 
 OptionParser.new do |opts|
-  opts.banner = "Usage: ruby run_all_tests.rb [options]"
-  
-  opts.on("-t", "--test TEST", "Run specific test (#{TEST_FILES.keys.join(', ')})") do |test|
+  opts.banner = 'Usage: ruby run_all_tests.rb [options]'
+
+  opts.on('-t', '--test TEST', "Run specific test (#{TEST_FILES.keys.join(', ')})") do |test|
     options[:tests] << test.to_sym
   end
-  
-  opts.on("-a", "--all", "Run all tests") do
+
+  opts.on('-a', '--all', 'Run all tests') do
     options[:tests] = TEST_FILES.keys
   end
-  
-  opts.on("-v", "--verbose", "Verbose output") do
+
+  opts.on('-v', '--verbose', 'Verbose output') do
     options[:verbose] = true
   end
-  
-  opts.on("-s", "--stop-on-error", "Stop on first error") do
+
+  opts.on('-s', '--stop-on-error', 'Stop on first error') do
     options[:stop_on_error] = true
   end
-  
-  opts.on("-l", "--list", "List available tests") do
+
+  opts.on('-l', '--list', 'List available tests') do
     puts "\nAvailable tests:"
     TEST_FILES.each do |key, info|
       puts "  #{key.to_s.ljust(15)} - #{info[:description]}"
     end
     exit 0
   end
-  
-  opts.on("-h", "--help", "Show this help") do
+
+  opts.on('-h', '--help', 'Show this help') do
     puts opts
     exit 0
   end
@@ -90,8 +94,8 @@ options[:tests] = TEST_FILES.keys if options[:tests].empty?
 # Check for config file
 config_file = File.expand_path('../../config.base64', __dir__)
 unless File.exist?(config_file)
-  puts "❌ ERROR: config.base64 not found"
-  puts "Please create a config.base64 file with your Keeper credentials"
+  puts '❌ ERROR: config.base64 not found'
+  puts 'Please create a config.base64 file with your Keeper credentials'
   exit 1
 end
 
@@ -105,44 +109,43 @@ options[:tests].each do |test_key|
     puts "❌ Unknown test: #{test_key}"
     next
   end
-  
+
   test_file = File.join(__dir__, test_info[:file])
   unless File.exist?(test_file)
     puts "❌ Test file not found: #{test_file}"
     next
   end
-  
-  puts "\n" + "=" * 60
+
+  puts "\n" + '=' * 60
   puts "Running: #{test_info[:description]} (#{test_info[:file]})"
-  puts "=" * 60
-  
+  puts '=' * 60
+
   begin
     test_start = Time.now
-    
+
     # Run test in subprocess to isolate failures
     if options[:verbose]
       system("ruby -I ../../lib #{test_file}")
     else
       output = `ruby -I ../../lib #{test_file} 2>&1`
-      
+
       # Show summary
       if $?.success?
-        puts "✅ PASSED"
+        puts '✅ PASSED'
         results[test_key] = :passed
       else
-        puts "❌ FAILED"
+        puts '❌ FAILED'
         results[test_key] = :failed
         puts "\nError output:"
         puts output.split("\n").last(10).join("\n")
-        
+
         exit 1 if options[:stop_on_error]
       end
     end
-    
+
     test_time = Time.now - test_start
     puts "⏱️  Time: #{test_time.round(2)}s"
-    
-  rescue => e
+  rescue StandardError => e
     puts "❌ ERROR: #{e.message}"
     results[test_key] = :error
     exit 1 if options[:stop_on_error]
@@ -151,9 +154,9 @@ end
 
 # Summary
 total_time = Time.now - start_time
-puts "\n" + "=" * 60
-puts "TEST SUMMARY"
-puts "=" * 60
+puts "\n" + '=' * 60
+puts 'TEST SUMMARY'
+puts '=' * 60
 
 passed = results.values.count(:passed)
 failed = results.values.count(:failed)
@@ -171,9 +174,9 @@ if options[:verbose] || failed > 0 || errors > 0
   puts "\nDetailed results:"
   results.each do |test, result|
     status = case result
-             when :passed then "✅ PASSED"
-             when :failed then "❌ FAILED"
-             when :error then "⚠️  ERROR"
+             when :passed then '✅ PASSED'
+             when :failed then '❌ FAILED'
+             when :error then '⚠️  ERROR'
              end
     puts "  #{test.to_s.ljust(15)} - #{status}"
   end
