@@ -47,6 +47,7 @@ class AliasedGroup(HelpColorsGroup):
         "color",
         "show",
         "exec",
+        "interpolate",
         "profile",
         "active",
         "export",
@@ -1139,6 +1140,53 @@ def exec_command(ctx, capture_output, inline, cmd):
     ex.execute(cmd=cmd, capture_output=capture_output, inline=inline)
 
 
+# INTERPOLATE COMMAND
+@click.command(
+    name='interpolate',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.argument('input_file', type=click.Path(exists=True, readable=True))
+@click.option('--output', '-o',
+              type=click.Path(dir_okay=False, writable=True),
+              help='Output file path (stdout if not specified)')
+@click.pass_context
+def interpolate_command(ctx, input_file, output):
+    """
+    Interpolate Keeper notation in a file.
+
+    Reads INPUT_FILE, replaces all keeper:// notation with secret values,
+    and outputs the result to stdout or a file.
+
+    Supports custom fields and file names.
+
+    Examples:
+
+    \b
+    # Output to stdout
+    ksm interpolate secrets.env
+
+    \b
+    # Save to file
+    ksm interpolate secrets.env --output /tmp/resolved.env
+
+    \b
+    # Load environment variables (bash/zsh)
+    eval "$(ksm interpolate secrets.env)"
+
+    \b
+    # Use with process substitution (bash/zsh)
+    source <(ksm interpolate secrets.env)
+
+    \b
+    # Process YAML config template
+    ksm interpolate config.template.yaml -o config.yaml
+    """
+    from keeper_secrets_manager_cli.interpolate import Interpolate
+    interpolator = Interpolate(cli=ctx.obj["cli"])
+    interpolator.interpolate_file(input_file, output)
+
+
 # CONFIG COMMAND
 @click.group(
     name='config',
@@ -1418,6 +1466,7 @@ cli.add_command(sync_command)
 cli.add_command(folder_command)
 cli.add_command(secret_command)
 cli.add_command(exec_command)
+cli.add_command(interpolate_command)
 cli.add_command(config_command)
 cli.add_command(init_command)
 cli.add_command(version_command)

@@ -6,6 +6,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.2.0
+- KSM-465 Added `ksm interpolate` command, resolves GitHub issue #543
+
 ## 1.1.7
 - KSM-668 Restored ? command to cli
 
