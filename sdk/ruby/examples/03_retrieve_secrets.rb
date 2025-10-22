@@ -66,16 +66,18 @@ end
 
 # 6. Using notation to get specific values
 puts "\n6. Using notation:"
-if secrets.any?
-  uid = secrets.first.uid
-  
-  # Get specific field value
-  login = secrets_manager.get_notation("keeper://#{uid}/field/login")
-  puts "  Login via notation: #{login}"
-  
-  # Get by title
-  value = secrets_manager.get_notation("keeper://My Login/field/password")
-  puts "  Password via notation: [hidden]"
+begin
+  if secrets.any?
+    uid = secrets.first.uid
+
+    # Get specific field value
+    login = secrets_manager.get_notation("keeper://#{uid}/field/login")
+    puts "  Login via notation: #{login}"
+
+    # Get by title
+    value = secrets_manager.get_notation("keeper://My Login/field/password")
+    puts "  Password via notation: [hidden]"
+  end
 rescue => e
   puts "  Notation error: #{e.message}"
 end
