@@ -1011,13 +1011,12 @@ class Sync:
                     field_label = custom_field.get('label')
                     field_value = custom_field.get('value')
 
-                    # Skip if no label or value is None/empty
-                    if not field_label or field_value is None:
+                    # Skip if value is None/empty
+                    if field_value is None or field_value == "" or field_value == []:
                         continue
 
-                    # Skip empty values
-                    if field_value == "" or field_value == []:
-                        continue
+                    if not field_label:  # labels aren't always present
+                        field_label = custom_field.get('type')
 
                     # Handle list values
                     if isinstance(field_value, list):
