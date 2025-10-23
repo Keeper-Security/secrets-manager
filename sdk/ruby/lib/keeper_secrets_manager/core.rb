@@ -519,7 +519,8 @@ module KeeperSecretsManager
         # Merge bound config into existing config if present
         if @config
           # Copy all values from bound config to existing config
-          bound_config.instance_variable_get(:@config).each do |key, value|
+          bound_data = bound_config.instance_variable_get(:@data)
+          bound_data&.each do |key, value|
             if value.is_a?(String)
               @config.save_string(key, value)
             else
