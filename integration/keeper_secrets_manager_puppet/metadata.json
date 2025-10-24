@@ -1,0 +1,79 @@
+{
+  "name": "keepersecurity-keeper_secrets_manager_puppet",
+  "version": "1.0.2",
+  "author": "Keeper Security",
+  "summary": "Puppet module for Keeper Secrets Manager integration with deferred functions for secure runtime secrets retrieval",
+  "source": "https://github.com/Keeper-Security/secrets-manager",
+  "project_page": "https://github.com/Keeper-Security/secrets-manager/tree/master/integration/keeper_secrets_manager_puppet",
+  "issues_url": "https://github.com/Keeper-Security/secrets-manager/issues",
+  "tags": ["secrets", "keeper", "security", "deferred", "authentication"],
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name": "puppetlabs-stdlib",
+      "version_requirement": ">= 4.13.1 < 10.0.0"
+    }
+  ],
+  "operatingsystem_support": [
+    {
+      "operatingsystem": "RedHat",
+      "operatingsystemrelease": [
+        "7",
+        "8",
+        "9"
+      ]
+    },
+    {
+      "operatingsystem": "CentOS",
+      "operatingsystemrelease": [
+        "7",
+        "8",
+        "9"
+      ]
+    },
+    {
+      "operatingsystem": "Ubuntu",
+      "operatingsystemrelease": [
+        "18.04",
+        "20.04",
+        "22.04"
+      ]
+    },
+    {
+      "operatingsystem": "Debian",
+      "operatingsystemrelease": [
+        "10",
+        "11",
+        "12"
+      ]
+    },
+    {
+      "operatingsystem": "Darwin",
+      "operatingsystemrelease": [
+        "10.15",
+        "11",
+        "12",
+        "13",
+        "14"
+      ]
+    },
+    {
+      "operatingsystem": "windows",
+      "operatingsystemrelease": [
+        "2019",
+        "2022",
+        "10",
+        "11"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "name": "puppet",
+      "version_requirement": ">= 7.24 < 9.0.0"
+    }
+  ],
+  "pdk-version": "3.4.0",
+  "template-url": "https://github.com/puppetlabs/pdk-templates#main",
+  "template-ref": "heads/main-0-ga1e4056"
+}
