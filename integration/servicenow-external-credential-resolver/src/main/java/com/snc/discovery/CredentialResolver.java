@@ -114,9 +114,9 @@ public class CredentialResolver implements IExternalCredential {
         Map<String, String> result = new HashMap<>();
 
         // input params
-        String credId = (String) args.get(ARG_ID);
-        String credType = (String) args.get(ARG_TYPE);
-        String midServer = (String) args.get(ARG_MID);
+        String credId = args.get(ARG_ID);
+        String credType = args.get(ARG_TYPE);
+        String midServer = args.get(ARG_MID);
 
         if(isNullOrEmpty(credId) || isNullOrEmpty(credType))
             throw new RuntimeException("Empty credential Id or type found.");
@@ -145,7 +145,7 @@ public class CredentialResolver implements IExternalCredential {
             throw new RuntimeException( "Invalid Credential ID: Credential Id has split string more than twice");
         }
 
-        List<String> recordsFilter = Collections.<String>emptyList();
+        List<String> recordsFilter = Collections.emptyList();
         if(!isNullOrEmpty(recType) || !isNullOrEmpty(recTitle)) {
             fLogger.info(String.format("Record Type: '%s', Record Title: '%s'", recType, recTitle));
         } else {
@@ -154,7 +154,7 @@ public class CredentialResolver implements IExternalCredential {
         }
 
         // Initialize storage
-        InMemoryStorage storage = null;
+        InMemoryStorage storage;
         try {
             storage = new InMemoryStorage(ksmConfig);
         } catch (Exception e) {
@@ -165,7 +165,7 @@ public class CredentialResolver implements IExternalCredential {
 
         try {
             // Connect to vault and retrieve credential
-            List<KeeperRecord> records = Collections.<KeeperRecord> emptyList();
+            List<KeeperRecord> records = Collections.emptyList();
             KeeperSecrets secrets;
             if (ksmCache)
                 secrets = getSecretsCached(storage, recordsFilter);
@@ -187,7 +187,7 @@ public class CredentialResolver implements IExternalCredential {
             KeeperRecord record = null;
             if (recordsFilter.isEmpty()) {
                 // no filter - search by type:title
-                List<KeeperRecord> found = new ArrayList<KeeperRecord>();
+                List<KeeperRecord> found = new ArrayList<>();
                 for (KeeperRecord rec : records) {
                     boolean matchesType = isNullOrEmpty(recType) || recType.equals(rec.getType());
                     boolean matchesTitle = recTitle.isEmpty() || recTitle.equals(rec.getTitle());
@@ -229,7 +229,7 @@ public class CredentialResolver implements IExternalCredential {
 
                 // find fields by label prefix
                 List<KeeperRecordField> fields = record.getData().getCustom();
-                fields = (fields != null ? fields : new ArrayList<KeeperRecordField>());
+                fields = (fields != null ? fields : new ArrayList<>());
                 for (KeeperRecordField field : fields) {
                     String label = field.getLabel();
                     if (!isNullOrEmpty(label) && label.startsWith(ksmLabelPrefix)){
@@ -239,7 +239,7 @@ public class CredentialResolver implements IExternalCredential {
                         } else if (result.containsKey(key)) {
                             fLogger.warn("### Skipped duplicate entry for field: " + label);
                         } else {
-                            List<String> values = Collections.<String> emptyList();
+                            List<String> values = Collections.emptyList();
                             if (field instanceof Text){
                                 Text fld = (Text)field;
                                 values = fld.getValue();
@@ -444,7 +444,7 @@ public class CredentialResolver implements IExternalCredential {
 
     private static byte[] getCachedValue() throws Exception {
         try (InputStream ins = Files.newInputStream(Paths.get(getCacheFilename()));
-             DataInputStream dis = new DataInputStream(ins);
+             DataInputStream dis = new DataInputStream(ins)
         ) {
             //ins.reset();
             byte[] bytes = new byte[ins.available()];
