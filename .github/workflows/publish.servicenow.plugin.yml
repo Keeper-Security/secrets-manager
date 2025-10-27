@@ -25,6 +25,15 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Validate Tag Format
+        run: |
+          TAG="${{ github.event.inputs.tagname }}"
+          if [[ ! "$TAG" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            echo "Error: Invalid tag format. Tag must contain only alphanumeric characters, dots, hyphens, and underscores."
+            exit 1
+          fi
+          echo "Tag format validation passed: $TAG"
+
       - name: Validate Release Tag
         run: |
           TAG="${{ github.event.inputs.tagname }}"
