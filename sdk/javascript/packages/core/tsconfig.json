@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "module": "commonjs",
+    "moduleResolution": "node",
     "noEmit": true,
     "noImplicitAny": false,
     "strict": true,

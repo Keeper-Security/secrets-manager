@@ -28,6 +28,7 @@ export type Platform = {
     get(url: string, headers: any): Promise<KeeperHttpResponse>
     post(url: string, request: Uint8Array, headers?: { [key: string]: string }, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse>
     fileUpload(url: string, uploadParameters: any, data: Uint8Array | Blob): Promise<any>
+    setCustomProxyAgent(proxyAgent: any): void
 }
 
 export type KeyValueStorage = {
@@ -140,4 +141,8 @@ export const inMemoryStorage = (storage: any): KeyValueStorage => {
             return Promise.resolve()
         }
     }
+}
+
+export const setCustomProxyAgent = (proxyAgent: any) => {
+    platform.setCustomProxyAgent(proxyAgent)
 }

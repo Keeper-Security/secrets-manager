@@ -12,12 +12,12 @@ install_requires = [
     'keeper-secrets-manager-core>=16.6.6',
     'keeper-secrets-manager-helper>=1.0.5',
     'importlib_metadata',
-    'ansible'
+    'ansible-core>=2.12.0'  # Use ansible-core instead of ansible to avoid community collections
 ]
 
 setup(
     name="keeper-secrets-manager-ansible",
-    version='1.2.4',
+    version='1.2.5',
     description="Keeper Secrets Manager plugins for Ansible.",
     long_description=long_description,
     long_description_content_type="text/markdown",
