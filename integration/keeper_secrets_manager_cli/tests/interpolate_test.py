@@ -138,8 +138,8 @@ class TestSecurityCritical:
                 interpolate._validate_path(path)
 
 
-class TestNewFeatures:
-    """Test new features: defaults, transforms, comments"""
+class TestAdvancedFeatures:
+    """Test advanced features: defaults, transforms, comments"""
 
     def test_default_values(self):
         """Test default values when secret not found"""
@@ -323,6 +323,134 @@ KEY3=keeper://DB/field/password
         for notation in patterns_should_match:
             matches = Interpolate.KEEPER_NOTATION_PATTERN.findall(notation)
             assert len(matches) > 0, f"Should match: {notation}"
+
+
+class TestEdgeCases:
+    """Edge case tests ported from cli-465 implementation"""
+
+    def test_unicode_handling(self):
+        """Test file with non-ASCII characters (ported from cli-465)"""
+        mock_cli = create_mock_cli()
+        mock_cli.client.get_notation = Mock(return_value="Пароль123")
+
+        interpolate = Interpolate(mock_cli)
+        interpolate.allow_unsafe_for_eval = True
+
+        # File with Cyrillic characters
+        content = """# Комментарий
+                    PASSWORD=keeper://TEST/field/password
+                    ДРУГОЕ=значение
+                    """
+        result = interpolate._process_content(content, False, False)
+
+        # Verify unicode in both secret and file content preserved
+        assert "Пароль123" in result
+        assert "Комментарий" in result
+        assert "ДРУГОЕ=значение" in result
+        assert "PASSWORD=Пароль123" in result
+
+    def test_quoted_notation(self):
+        """Test notation inside quotes (ported from cli-465)"""
+        mock_cli = create_mock_cli()
+        mock_cli.client.get_notation = Mock(return_value="QuotedSecret")
+
+        interpolate = Interpolate(mock_cli)
+        interpolate.allow_unsafe_for_eval = True
+
+        content = """VAR1="keeper://TEST/field/password"
+                    VAR2='keeper://TEST/field/password'
+                    """
+        result = interpolate._process_content(content, False, False)
+
+        # Quotes should be preserved, notation replaced
+        assert 'VAR1="QuotedSecret"' in result
+        assert "VAR2='QuotedSecret'" in result
+        assert interpolate.replacements_count == 2
+
+    def test_newline_preservation(self):
+        """Test that file ending is preserved (ported from cli-465)"""
+        mock_cli = create_mock_cli()
+        mock_cli.client.get_notation = Mock(return_value="Secret")
+
+        interpolate = Interpolate(mock_cli)
+        interpolate.allow_unsafe_for_eval = True
+
+        # Test WITH trailing newline
+        content_with_newline = "VAR=keeper://TEST/field/password\n"
+        result_with = interpolate._process_content(content_with_newline, False, False)
+
+        # Test WITHOUT trailing newline
+        content_without_newline = "VAR=keeper://TEST/field/password"
+        result_without = interpolate._process_content(content_without_newline, False, False)
+
+        # Verify newline behavior preserved
+        assert result_with.endswith('\n'), "Should preserve trailing newline"
+        assert not result_without.endswith('\n'), "Should not add trailing newline"
+
+    def test_custom_field_with_spaces(self):
+        """Test custom field with spaces in label (ported from cli-465)"""
+        mock_cli = create_mock_cli()
+        mock_cli.client.get_notation = Mock(return_value="CustomValueWithSpaces123")
+
+        interpolate = Interpolate(mock_cli)
+        interpolate.allow_unsafe_for_eval = True
+
+        # Field name with spaces: "My Custom Field"
+        content = "FIELD_WITH_SPACES=keeper://TEST/custom_field/My Custom Field\n"
+        result = interpolate._process_content(content, False, False)
+
+        assert "FIELD_WITH_SPACES=CustomValueWithSpaces123" in result
+        assert "keeper://" not in result
+
+    def test_large_file_performance(self):
+        """Test performance with large file (ported from cli-465)"""
+        mock_cli = create_mock_cli()
+        mock_cli.client.get_notation = Mock(return_value="Secret")
+
+        interpolate = Interpolate(mock_cli)
+        interpolate.allow_unsafe_for_eval = True
+
+        # Create 1000 lines with notation scattered throughout (every 100 lines)
+        lines = []
+        for i in range(1000):
+            if i % 100 == 0:
+                lines.append(f"SECRET_{i}=keeper://TEST/field/password")
+            else:
+                lines.append(f"VAR_{i}=value_{i}")
+
+        content = '\n'.join(lines) + '\n'
+        result = interpolate._process_content(content, False, False)
+
+        # Should have 10 secrets replaced (lines 0, 100, 200, ..., 900)
+        assert result.count("Secret") == 10
+        assert interpolate.replacements_count == 10
+
+        # Verify caching worked (only called once despite 10 replacements)
+        assert mock_cli.client.get_notation.call_count == 1
+
+    def test_caching_efficiency_multiple_fields(self):
+        """Test caching with multiple fields from same record (ported from cli-465)"""
+        mock_cli = create_mock_cli()
+        # Different return values for different fields
+        mock_cli.client.get_notation = Mock(side_effect=["user", "pass", "localhost"])
+
+        interpolate = Interpolate(mock_cli)
+        interpolate.allow_unsafe_for_eval = True
+
+        # Multiple fields from same record
+        content = """USER=keeper://DB/field/login
+                    PASS=keeper://DB/field/password
+                    HOST=keeper://DB/field/host
+                    """
+        result = interpolate._process_content(content, False, False)
+
+        assert "USER=user" in result
+        assert "PASS=pass" in result
+        assert "HOST=localhost" in result
+
+        # Each notation is cached separately (3 different notations)
+        assert mock_cli.client.get_notation.call_count == 3
+        assert interpolate.replacements_count == 3
 
 
 if __name__ == "__main__":
