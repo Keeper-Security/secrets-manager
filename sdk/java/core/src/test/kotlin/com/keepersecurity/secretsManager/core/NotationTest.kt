@@ -102,6 +102,29 @@ internal class NotationTest {
     }
 
     @Test
+    fun getFileWorksWithRecordTitle() {
+        // Test getFile should work with record titles, not just UIDs
+        
+        // Test getFile with record TITLE instead of UID
+        var file = getFile(secrets, "My Record 1/file/QR Code")
+        assertEquals("HKGdx7dSrtuTfA67wiEZkw", file.fileUid)
+        assertEquals("QR Code File Url", file.url)
+
+        file = getFile(secrets, "My Record 1/file/qr.png")
+        assertEquals("HKGdx7dSrtuTfA67wiEZkw", file.fileUid)
+        assertEquals("QR Code File Url", file.url)
+
+        // Test with keeper:// prefix and title
+        file = getFile(secrets, "keeper://My Record 1/file/QR Code")
+        assertEquals("HKGdx7dSrtuTfA67wiEZkw", file.fileUid)
+        assertEquals("QR Code File Url", file.url)
+
+        file = getFile(secrets, "keeper://My Record 1/file/qr.png")
+        assertEquals("HKGdx7dSrtuTfA67wiEZkw", file.fileUid)
+        assertEquals("QR Code File Url", file.url)
+    }
+
+    @Test
     fun notationParserWork() {
         try {
             parseNotation("/file") // file requires parameters
