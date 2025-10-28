@@ -325,5 +325,116 @@ KEY3=keeper://DB/field/password
             assert len(matches) > 0, f"Should match: {notation}"
 
 
+class TestBugFixes:
+    """Tests for specific bug fixes - regression tests"""
+
+    def test_security_error_not_misclassified_as_access_denied(self):
+        """
+        Regression test for bug where security errors were misclassified as 'Access denied'
+
+        Issue: When a password contains shell metacharacters, the SECURITY ERROR message
+        contains the word "access" (in "Keeper write access"), causing it to be
+        misclassified as an access/permission error.
+
+        Fix: Check for "security error" keyword BEFORE checking for "access" keyword.
+        """
+        mock_cli = create_mock_cli()
+
+        # Test the exact scenario from the bug report
+        def mock_get_notation(notation):
+            if "field/login" in notation:
+                return "user@example.com"
+            elif "field/password" in notation:
+                # Password with backtick and dollar sign (from original bug report)
+                return "dD%qj{]BA`Yzap$6z(h,"
+            raise Exception("Not found")
+
+        mock_cli.client.get_notation = Mock(side_effect=mock_get_notation)
+
+        interpolate = Interpolate(mock_cli)
+        interpolate.allow_unsafe_for_eval = False
+
+        content = """DB_USER=keeper://TEST/field/login
+DB_PASSWORD=keeper://TEST/field/password
+"""
+
+        # Process the content
+        result = interpolate._process_content(content, False, False)
+
+        # Should have exactly 1 error (for the password field)
+        assert len(interpolate.errors) == 1, f"Expected 1 error, got {len(interpolate.errors)}"
+
+        error_msg = interpolate.errors[0]
+
+        # The error should contain "SECURITY ERROR" not "Access denied"
+        assert "SECURITY ERROR" in error_msg, \
+            f"Error should contain 'SECURITY ERROR' but got: {error_msg[:100]}"
+
+        # Should NOT be misclassified as access denied
+        assert "Access denied" not in error_msg, \
+            f"Error should NOT say 'Access denied' but got: {error_msg[:100]}"
+
+        # Should mention the dangerous characters
+        assert "shell metacharacters" in error_msg or "backtick" in error_msg or "dollar" in error_msg, \
+            f"Error should mention dangerous characters but got: {error_msg[:100]}"
+
+    def test_all_dangerous_chars_show_security_error(self):
+        """Test that all 9 dangerous shell metacharacters show proper security errors"""
+        dangerous_chars = ['\n', '\r', '`', '$', ';', '|', '&', '>', '<']
+
+        for char in dangerous_chars:
+            mock_cli = create_mock_cli()
+            password_with_char = f"password{char}test"
+
+            def mock_get_notation(notation):
+                return password_with_char
+
+            mock_cli.client.get_notation = Mock(side_effect=mock_get_notation)
+
+            interpolate = Interpolate(mock_cli)
+            interpolate.allow_unsafe_for_eval = False
+
+            content = "PASSWORD=keeper://TEST/field/password\n"
+            result = interpolate._process_content(content, False, False)
+
+            # Should have an error
+            assert len(interpolate.errors) == 1, \
+                f"Char {repr(char)}: Expected 1 error, got {len(interpolate.errors)}"
+
+            error_msg = interpolate.errors[0]
+
+            # Should be a security error, not access denied
+            assert "SECURITY ERROR" in error_msg or "shell" in error_msg.lower(), \
+                f"Char {repr(char)}: Should show security error but got: {error_msg[:80]}"
+
+            assert "Access denied" not in error_msg, \
+                f"Char {repr(char)}: Should NOT be 'Access denied' but got: {error_msg[:80]}"
+
+    def test_real_access_denied_still_works(self):
+        """Ensure legitimate access denied errors still show correctly"""
+        mock_cli = create_mock_cli()
+
+        # Simulate a real access/permission error (no shell chars in message)
+        def mock_get_notation(notation):
+            raise Exception("Permission denied: User does not have access to this record")
+
+        mock_cli.client.get_notation = Mock(side_effect=mock_get_notation)
+
+        interpolate = Interpolate(mock_cli)
+        interpolate.allow_unsafe_for_eval = False
+
+        content = "PASSWORD=keeper://TEST/field/password\n"
+        result = interpolate._process_content(content, False, False)
+
+        # Should have an error
+        assert len(interpolate.errors) == 1
+
+        error_msg = interpolate.errors[0]
+
+        # Should still be classified as access denied (no "SECURITY ERROR" in original exception)
+        assert "Access denied" in error_msg or "permission" in error_msg.lower(), \
+            f"Real permission errors should still show 'Access denied' but got: {error_msg}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

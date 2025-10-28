@@ -563,7 +563,14 @@ class Interpolate:
                     else:
                         # Better error message with suggestions (inlined for simplicity)
                         error_str = str(e).lower()
-                        if "not found" in error_str:
+
+                        # Check for security errors FIRST (before generic "access" check)
+                        # Security errors contain "access" in "Keeper write access" which would
+                        # cause false matches with the "access denied" check below
+                        if "security error" in error_str:
+                            # Show security errors as-is (they already have detailed explanations)
+                            error_msg = f"Line {line_num}: {str(e)}"
+                        elif "not found" in error_str:
                             if "record" in error_str:
                                 error_msg = f"Line {line_num}: Record '{uid}' not found (check UID and sharing)"
                             else:
