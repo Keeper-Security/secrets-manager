@@ -1452,15 +1452,43 @@ def help_command(ctx):
               # not_required_if=[('type','json')],
               required_if=[('type', 'azure'), ('type', 'aws'), ('type', 'gcp')]
               )
-@click.option('--type', '-t', type=click.Choice(['aws', 'azure', 'gcp', 'json']), default='json', help="Type of the target key/value storage (aws, azure, gcp, json).", show_default=True)
+@click.option('--type', '-t', 'sync_type', type=click.Choice(['aws', 'azure', 'gcp', 'json']), default='json', help="Type of the target key/value storage (aws, azure, gcp, json).", show_default=True)
 @click.option('--dry-run', '-n', is_flag=True, help='Perform a trial run with no changes made.')
 @click.option('--preserve-missing', '-p', is_flag=True, help='Preserve destination value when source value is deleted.')
-@click.option('--map', '-m', nargs=2, type=(str, str), multiple=True, required=True, metavar="<KEY NOTATION>...", help='Map destination key names to values using notation URI.')
+@click.option('--map', '-m', 'maps', nargs=2, type=(str, str), multiple=True, metavar="<KEY NOTATION>...", help='Map destination key names to values using notation URI.')
+@click.option('--record', '-r', 'records', type=str, multiple=True, metavar="<TITLE_OR_UID>...", help='Record title or UID to sync (only for type=aws).')
+@click.option('--folder', '-f', 'folders', type=str, multiple=True, metavar="<FOLDER>...", help='Folder UID, path, or title to sync all records from (only for type=aws).')
+@click.option('--folder-recursive', '-fr', 'folders_recursive', type=str, multiple=True, metavar="<FOLDER>...", help='Folder UID, path, or title to sync all records from recursively (only for type=aws).')
+@click.option('--raw-json', '-rj', is_flag=True, help='Store full JSON in KMS secret (only for type=aws).')
 @click.pass_context
-def sync_command(ctx, credentials, type, dry_run, preserve_missing, map):
+def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, records, folders, folders_recursive, raw_json):
     """Sync selected keys from Keeper vault to secure cloud based key value store"""
+
+    # Validation for AWS only options (unless type=json)
+    if sync_type != 'json':
+        if records and sync_type != 'aws':
+            raise KsmCliException("--record/-r option is only supported with type=aws")
+
+        if folders and sync_type != 'aws':
+            raise KsmCliException("--folder/-f option is only supported with type=aws")
+
+        if folders_recursive and sync_type != 'aws':
+            raise KsmCliException("--folder-recursive/-fr option is only supported with type=aws")
+
+        if raw_json and sync_type != 'aws':
+            print(Fore.YELLOW + "Warning: --raw-json/-rj flag is only supported with type=aws, ignoring..." + Style.RESET_ALL, file=sys.stderr)
+            raw_json = False
+
+    # Validate that required options are provided based on type
+    if sync_type == 'aws' or sync_type == 'json':
+        if not (maps or records or folders or folders_recursive):
+            raise KsmCliException(f"For type={sync_type}, at least one of --map/-m, --record/-r, --folder/-f, or --folder-recursive/-fr must be provided")
+    else:
+        if not maps:
+            raise KsmCliException(f"For type={sync_type}, --map/-m must be provided")
+
     sync = Sync(cli=ctx.obj["cli"])
-    sync.sync_values(type=type, credentials=credentials, dry_run=dry_run, preserve_missing=preserve_missing, map=map)
+    sync.sync_values(sync_type=sync_type, credentials=credentials, dry_run=dry_run, preserve_missing=preserve_missing, maps=maps, records=records, folders=folders, folders_recursive=folders_recursive, raw_json=raw_json)
 
 
 # TOP LEVEL COMMANDS
