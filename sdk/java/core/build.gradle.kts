@@ -66,6 +66,7 @@ tasks.jar {
     }
 }
 
+// NOTE: fatJar is for used for testing (not published to Maven Central)
 tasks.register<Jar>("fatJar") {
     archiveClassifier.set("fat")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
