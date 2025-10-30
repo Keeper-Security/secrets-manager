@@ -6,8 +6,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
-## 1.1.8
+## 1.2.0
 - KSM-649 Added AWS KMS JSON support for sync command
+- KSM-465 Implemented ksm interpolate command for shell built-in compatibility
 
 ## 1.1.7
 - KSM-668 Restored ? command to cli
