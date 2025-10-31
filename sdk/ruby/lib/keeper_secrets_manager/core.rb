@@ -990,6 +990,34 @@ module KeeperSecretsManager
         )
       end
 
+      # Configure SSL for HTTP connection
+      # Sets up certificate store and verification mode
+      def configure_http_ssl(http)
+        http.use_ssl = true
+
+        if @verify_ssl_certs
+          http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+
+          # Set up certificate store with system defaults
+          # This ensures we use the system's trusted CA certificates
+          store = OpenSSL::X509::Store.new
+          store.set_default_paths
+
+          # Note: We don't enable CRL checking by default because:
+          # 1. CRL endpoints may be temporarily unreachable
+          # 2. Many enterprise networks block CRL endpoints
+          # 3. Certificate chain validation still provides strong security
+          # If strict CRL checking is needed, it can be added via configuration option
+          http.cert_store = store
+
+          @logger.debug('SSL verification enabled with system certificate store')
+          @logger.debug("OpenSSL version: #{OpenSSL::OPENSSL_VERSION}")
+        else
+          http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+          @logger.warn('SSL verification disabled - not recommended for production')
+        end
+      end
+
       # HTTP post function
       def post_function(url, transmission_key, encrypted_payload)
         uri = URI(url)
@@ -1010,8 +1038,7 @@ module KeeperSecretsManager
         request.body = encrypted_payload.encrypted_payload
 
         http = Net::HTTP.new(uri.host, uri.port)
-        http.use_ssl = true
-        http.verify_mode = @verify_ssl_certs ? OpenSSL::SSL::VERIFY_PEER : OpenSSL::SSL::VERIFY_NONE
+        configure_http_ssl(http)
 
         response = http.request(request)
 
@@ -1200,7 +1227,7 @@ module KeeperSecretsManager
         end
 
         http = Net::HTTP.new(uri.host, uri.port)
-        http.use_ssl = true
+        configure_http_ssl(http)
 
         response = http.request(request)
 
