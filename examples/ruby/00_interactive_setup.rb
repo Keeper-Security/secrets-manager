@@ -41,8 +41,9 @@ puts "Step 1: One-Time Token"
 puts "=" * 80
 puts
 puts "Get your one-time token from:"
-puts "  https://app.keeper-security.com/secrets-manager"
-puts
+puts "  https://keepersecurity.com/vault/"
+puts "Documentation for one-time tokens at:"
+puts "  https://docs.keeper.io/en/keeperpam/secrets-manager/about/one-time-token"
 puts "The token format is: REGION:TOKEN_STRING"
 puts "Example: US:ABCD1234..."
 puts
