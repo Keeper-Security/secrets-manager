@@ -1,14 +1,15 @@
 # Changelog
 
-## [17.0.5] - 2025-10-21
+## [17.1.0] - 2025-01-06
+
+### Changed
+- **BREAKING**: Minimum Ruby version increased to 3.1.0 (from 2.6.0)
+    - Users on older Ruby versions should upgrade or pin to keeper_secrets_manager >= 17.0.4
 
 ### Fixed
 - ECC key generation now correctly returns 32-byte raw private keys (was returning 121-byte DER format)
 - Client version now dynamically uses VERSION constant instead of hardcoded value
 - Fixed Tests
-
-### Changed
-- Client version reporting improved to match other KSM SDKs pattern
 
 ## [17.0.4] - 2025-10-20
 

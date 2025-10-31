@@ -4,7 +4,7 @@ The Ruby SDK for Keeper Secrets Manager provides a flexible, dynamic interface f
 
 ## Features
 
-- **Ruby 2.7+ Compatible**: Works with Chef, Puppet, and modern Ruby applications
+- **Ruby 3.1+ Compatible**: Works with Chef, Puppet, and modern Ruby applications
 - **Dynamic Record Handling**: JavaScript-style flexible records with no rigid class hierarchies
 - **Minimal Dependencies**: Uses only Ruby standard library (no external runtime dependencies)
 - **Comprehensive Crypto**: Full encryption/decryption support using OpenSSL

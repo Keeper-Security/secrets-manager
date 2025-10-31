@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.description   = 'Ruby SDK for Keeper Secrets Manager - A zero-knowledge platform for managing and protecting infrastructure secrets'
   spec.homepage      = 'https://github.com/Keeper-Security/secrets-manager'
   spec.license       = 'MIT'
-  spec.required_ruby_version = '>= 2.6.0'
+  spec.required_ruby_version = '>= 3.1.0'
 
   spec.metadata['allowed_push_host'] = 'https://rubygems.org'
   spec.metadata['homepage_uri'] = spec.homepage
