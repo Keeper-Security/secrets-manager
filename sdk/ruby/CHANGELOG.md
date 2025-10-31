@@ -4,7 +4,7 @@
 
 ### Changed
 - **BREAKING**: Minimum Ruby version increased to 3.1.0 (from 2.6.0)
-    - Users on older Ruby versions should upgrade or pin to keeper_secrets_manager >= 17.0.4
+    - Users on older Ruby versions should upgrade or pin to keeper_secrets_manager <= 17.0.4
 
 ### Fixed
 - ECC key generation now correctly returns 32-byte raw private keys (was returning 121-byte DER format)
