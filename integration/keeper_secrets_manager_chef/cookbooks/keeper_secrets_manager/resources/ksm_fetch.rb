@@ -24,6 +24,7 @@ action :run do
   # Always deploy the script from the cookbook to a known location
   cookbook_file new_resource.deploy_path do
     source 'ksm.py'
+    cookbook 'keeper_secrets_manager'
     mode '0755'
     action :create
   end

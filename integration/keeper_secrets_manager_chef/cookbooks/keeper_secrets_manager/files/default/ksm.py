@@ -12,7 +12,7 @@ from keeper_secrets_manager_core.exceptions import KeeperError
 # -------------------- Constants --------------------
 
 class Constants:
-    DEFAULT_PATH = "C:\\ProgramData\\keeper_secret_manager" if platform.system() == 'Windows' else "/opt/keeper_secret_manager"
+    DEFAULT_PATH = "C:\\ProgramData\\keeper_secrets_manager" if platform.system() == 'Windows' else "/opt/keeper_secrets_manager"
     INPUT_FILE = "input.json"
     CONFIG_FILE = "keeper_config.json"
     OUTPUT_FILE = "keeper_output.txt"

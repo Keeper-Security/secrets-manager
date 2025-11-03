@@ -107,6 +107,7 @@ action_class do
     # Install our enhanced Python script
     cookbook_file "#{scripts_dir}/ksm.py" do
       source 'ksm.py'
+      cookbook 'keeper_secrets_manager'
       mode '0755'
       action :create
     end
