@@ -77,7 +77,7 @@ RSpec.describe KeeperSecretsManager::Dto do
       end
 
       it 'finds custom field' do
-        field = record.get_field('Notes', true)
+        field = record.get_field('Notes')
         expect(field).not_to be_nil
         expect(field['value']).to eq(['Important info'])
       end

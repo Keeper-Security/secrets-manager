@@ -57,10 +57,11 @@ if secrets.any?
   
   # Using dynamic field access
   puts "  Password: #{secret.password}" if secret.respond_to?(:password)
-  
+
   # Custom fields
   secret.custom&.each do |field|
-    puts "  #{field['label']}: #{field['value']}"
+    label = field['label'] || field['type']
+    puts "  #{label}: #{field['value']}"
   end
 end
 

@@ -98,9 +98,8 @@ module KeeperSecretsManager
       def handle_field_selector(record, selector, parameter, index1, index2, parsed_section)
         raise NotationError, 'Missing required parameter for field' unless parameter
 
-        # Get field array
-        custom_field = selector.downcase == 'custom_field'
-        field = record.get_field(parameter, custom_field)
+        # Get field (works for both standard and custom fields)
+        field = record.get_field(parameter)
 
         raise NotationError, "Field '#{parameter}' not found" unless field
 

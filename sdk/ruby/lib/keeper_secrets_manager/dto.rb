@@ -52,33 +52,36 @@ module KeeperSecretsManager
         }.compact
       end
 
-      # Find field by type or label
-      def get_field(type_or_label, custom_field = false)
-        field_array = custom_field ? custom : fields
-        field_array.find { |f| f['type'] == type_or_label || f['label'] == type_or_label }
+      # Find field by type or label (searches both fields and custom arrays)
+      def get_field(type_or_label)
+        # Search in fields first
+        field = fields.find { |f| f['type'] == type_or_label || f['label'] == type_or_label }
+        return field if field
+
+        # Search in custom fields
+        custom.find { |f| f['type'] == type_or_label || f['label'] == type_or_label }
       end
 
       # Get field value (always returns array)
-      def get_field_value(type_or_label, custom_field = false)
-        field = get_field(type_or_label, custom_field)
+      def get_field_value(type_or_label)
+        field = get_field(type_or_label)
         field ? field['value'] || [] : []
       end
 
       # Get single field value (first element)
-      def get_field_value_single(type_or_label, custom_field = false)
-        values = get_field_value(type_or_label, custom_field)
+      def get_field_value_single(type_or_label)
+        values = get_field_value(type_or_label)
         values.first
       end
 
       # Add or update field
-      def set_field(type, value, label = nil, custom_field = false)
-        field_array = custom_field ? @custom : @fields
-
+      def set_field(type, value, label = nil)
         # Ensure value is an array
         value = [value] unless value.is_a?(Array)
 
-        # Find existing field
-        existing = field_array.find { |f| f['type'] == type || (label && f['label'] == label) }
+        # Find existing field in both arrays
+        existing = @fields.find { |f| f['type'] == type || (label && f['label'] == label) }
+        existing ||= @custom.find { |f| f['type'] == type || (label && f['label'] == label) }
 
         if existing
           existing['value'] = value
@@ -86,7 +89,15 @@ module KeeperSecretsManager
         else
           new_field = { 'type' => type, 'value' => value }
           new_field['label'] = label if label
-          field_array << new_field
+
+          # Decide which array to add to:
+          # - If it has a label, it's a custom field
+          # - If it's not a common field type, it's likely custom
+          if label || !common_field_types.include?(type)
+            @custom << new_field
+          else
+            @fields << new_field
+          end
         end
       end
 
