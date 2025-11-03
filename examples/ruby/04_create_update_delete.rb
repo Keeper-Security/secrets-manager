@@ -3,7 +3,6 @@
 # CRUD Operations Example - Create, Read, Update, and Delete secrets
 
 require 'keeper_secrets_manager'
-require 'securerandom'
 
 # Initialize
 config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
@@ -20,7 +19,7 @@ begin
     title: "Test Login #{Time.now.strftime('%Y%m%d_%H%M%S')}",
     fields: [
       { type: 'login', value: ['testuser@example.com'] },
-      { type: 'password', value: [SecureRandom.hex(16)] },
+      { type: 'password', value: [KeeperSecretsManager::Utils.generate_password(length: 32)] },
       { type: 'url', value: ['https://example.com'] }
     ],
     custom: [
@@ -47,7 +46,7 @@ begin
   puts "\n3. Updating the secret..."
 
   # Update specific fields
-  secret.password = SecureRandom.hex(20) # New password
+  secret.password = KeeperSecretsManager::Utils.generate_password(length: 40) # New password
   secret.url = 'https://updated-example.com'
   secret.notes = "Updated on #{Time.now}"
 
@@ -101,3 +100,4 @@ puts '- Always handle errors when creating/updating/deleting'
 puts '- Use folder_uid parameter to organize secrets'
 puts '- Check permissions if operations fail'
 puts '- Use batch operations for better performance with multiple records'
+puts '- Generate secure passwords with KeeperSecretsManager::Utils.generate_password'
