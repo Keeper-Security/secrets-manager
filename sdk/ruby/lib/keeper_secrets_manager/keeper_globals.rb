@@ -3,13 +3,13 @@ require_relative 'version'
 module KeeperSecretsManager
   module KeeperGlobals
     # Client version prefix - 'mb' for Ruby SDK
-    CLIENT_VERSION_PREFIX = 'mb'.freeze
+    CLIENT_VERSION_PREFIX = 'mr'.freeze
 
     # Get client version dynamically from VERSION constant
     def self.client_version
       # Use standard version format matching other SDKs
       # Java: mj17.x.x, Python: mp17.x.x, JavaScript: ms17.x.x, Go: mg17.x.x, Ruby: mb17.x.x
-      "#{CLIENT_VERSION_PREFIX}#{VERSION}"
+      "#{CLIENT_VERSION_PREFIX}17.0.0"
     end
 
     # Keeper public keys by ID
