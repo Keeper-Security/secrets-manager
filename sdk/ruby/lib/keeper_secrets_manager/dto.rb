@@ -7,6 +7,7 @@ module KeeperSecretsManager
     # Base class for dynamic record handling
     class KeeperRecord
       attr_accessor :uid, :title, :type, :fields, :custom, :notes, :folder_uid, :data, :revision, :files
+      attr_reader :record_key  # Internal - stores decrypted record key (bytes) for file upload operations
 
       def initialize(attrs = {})
         if attrs.is_a?(Hash)

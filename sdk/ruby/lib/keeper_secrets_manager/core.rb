@@ -422,33 +422,86 @@ module KeeperSecretsManager
       def upload_file(owner_record_uid, file_data, file_name, file_title = nil)
         file_title ||= file_name
 
-        # Generate file record
+        # Fetch the owner record (decrypted) to get current state
+        owner_records = get_secrets([owner_record_uid])
+        raise Error, "Owner record #{owner_record_uid} not found" if owner_records.empty?
+
+        owner_record = owner_records.first
+        owner_revision = owner_record.revision
+
+        # Get owner record data as hash for manipulation
+        owner_record_data = owner_record.to_h
+
+        # Get the record_key (stored during decryption)
+        owner_record_key = owner_record.record_key
+        raise Error, "Record key not available for owner record #{owner_record_uid}" unless owner_record_key
+
+        # Get owner record's public key from storage (app owner public key)
+        owner_public_key = @config.get_string(ConfigKeys::KEY_OWNER_PUBLIC_KEY)
+        raise Error, "Owner public key not found in config - application may need re-binding" unless owner_public_key
+
+        owner_public_key_bytes = Utils.url_safe_str_to_bytes(owner_public_key)
+
+        # Generate file record UID and key
         file_uid = Utils.generate_uid
         file_key = Crypto.generate_encryption_key_bytes
 
-        # Encrypt file data
+        # Encrypt file data with file key
         encrypted_file = Crypto.encrypt_aes_gcm(file_data, file_key)
 
-        # Create file record
+        # Create file record metadata
         file_record = {
-          'fileUid' => file_uid,
           'name' => file_name,
-          'title' => file_title,
           'size' => file_data.bytesize,
-          'mimeType' => 'application/octet-stream'
+          'title' => file_title,
+          'lastModified' => (Time.now.to_f * 1000).to_i,
+          'type' => 'application/octet-stream'
         }
+
+        # Encrypt file record metadata with file key
+        file_record_json = Utils.dict_to_json(file_record)
+        file_record_bytes = file_record_json.bytes
+        encrypted_file_record = Crypto.encrypt_aes_gcm(file_record_bytes.pack('C*'), file_key)
+
+        # Encrypt file record key with owner's public key (ECIES)
+        encrypted_file_record_key = Crypto.encrypt_ec(file_key, owner_public_key_bytes)
+
+        # Encrypt file record key with owner record key (for linkKey)
+        encrypted_link_key = Crypto.encrypt_aes_gcm(file_key, owner_record_key)
+
+        # Add fileRef to owner record's fields
+        fields = owner_record_data['fields'] || []
+
+        file_ref_field = fields.find { |f| f['type'] == 'fileRef' }
+        if file_ref_field
+          file_ref_field['value'] ||= []
+          file_ref_field['value'] << file_uid
+        else
+          fields << { 'type' => 'fileRef', 'value' => [file_uid] }
+        end
+
+        # Update owner record data
+        owner_record_data['fields'] = fields
+        owner_record_json = Utils.dict_to_json(owner_record_data)
+        owner_record_bytes = owner_record_json.bytes.pack('C*')
+
+        # Encrypt updated owner record with its record key
+        encrypted_owner_record_data = Crypto.encrypt_aes_gcm(owner_record_bytes, owner_record_key)
 
         # Prepare payload
         payload = prepare_file_upload_payload(
           file_record_uid: file_uid,
-          file_record_key: file_key,
-          file_record_data: file_record,
+          file_record_key: encrypted_file_record_key,
+          file_record_data: encrypted_file_record,
           owner_record_uid: owner_record_uid,
+          owner_record_data: encrypted_owner_record_data,
+          owner_record_revision: owner_revision,
+          link_key: encrypted_link_key,
           file_size: encrypted_file.bytesize
         )
 
         # Get upload URL
-        response = post_query('request_upload', payload)
+        response = post_query('add_file', payload)
         upload_result = JSON.parse(response)
 
         # Upload file
@@ -1252,14 +1305,17 @@ module KeeperSecretsManager
         payload
       end
 
-      def prepare_file_upload_payload(file_record_uid:, file_record_key:, file_record_data:, owner_record_uid:, file_size:)
+      def prepare_file_upload_payload(file_record_uid:, file_record_key:, file_record_data:, owner_record_uid:, owner_record_data:, owner_record_revision:, link_key:, file_size:)
         payload = Dto::FileUploadPayload.new
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.file_record_uid = file_record_uid
         payload.file_record_key = Utils.bytes_to_base64(file_record_key)
-        payload.file_record_data = Utils.dict_to_json(file_record_data)
+        payload.file_record_data = Utils.bytes_to_base64(file_record_data)
         payload.owner_record_uid = owner_record_uid
+        payload.owner_record_data = Utils.bytes_to_base64(owner_record_data)
+        payload.owner_record_revision = owner_record_revision
+        payload.link_key = Utils.bytes_to_base64(link_key)
         payload.file_size = file_size
         payload
       end
@@ -1267,22 +1323,43 @@ module KeeperSecretsManager
       def upload_file_function(url, parameters, encrypted_file_data)
         uri = URI(url)
 
-        # Use multipart form data
-        # This is a simplified version - might need proper multipart handling
-        request = Net::HTTP::Post.new(uri)
-        request.set_form([['file', encrypted_file_data]], 'multipart/form-data')
+        # Parse parameters if it's a JSON string
+        params_hash = parameters.is_a?(String) ? JSON.parse(parameters) : parameters
 
-        # Add parameters
-        parameters&.each do |key, value|
-          request[key] = value
+        # Build multipart form data
+        # Form data should include both the file and the parameters
+        form_data = params_hash.merge({ 'file' => encrypted_file_data })
+
+        request = Net::HTTP::Post.new(uri)
+
+        # Set form with file upload
+        # The file field needs to be handled as binary data
+        boundary = "----RubyMultipartPost#{rand(1000000)}"
+        body = []
+
+        # Add regular form fields first
+        params_hash.each do |key, value|
+          body << "--#{boundary}\r\n"
+          body << "Content-Disposition: form-data; name=\"#{key}\"\r\n\r\n"
+          body << "#{value}\r\n"
         end
+
+        # Add file field
+        body << "--#{boundary}\r\n"
+        body << "Content-Disposition: form-data; name=\"file\"; filename=\"file\"\r\n"
+        body << "Content-Type: application/octet-stream\r\n\r\n"
+        body << encrypted_file_data
+        body << "\r\n--#{boundary}--\r\n"
+
+        request.body = body.join
+        request['Content-Type'] = "multipart/form-data; boundary=#{boundary}"
 
         http = Net::HTTP.new(uri.host, uri.port)
         configure_http_ssl(http)
 
         response = http.request(request)
 
-        raise NetworkError, "File upload failed: HTTP #{response.code}" unless response.code.to_i == 200
+        raise NetworkError, "File upload failed: HTTP #{response.code} - #{response.body}" unless response.code.to_i.between?(200, 299)
 
         true
       end

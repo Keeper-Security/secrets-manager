@@ -8,6 +8,7 @@
 - Local record's revision number is automatically refreshed after successful update
 - Consecutive updates on the same record object now work without manual refetching
 - `download_file` now properly respects SSL certificate verification settings and disables CRL checking
+- `upload_file` now uses correct `add_file` endpoint and includes required `ownerRecordRevision` in payload
 
 ## [17.1.0] - 2025-01-06
 

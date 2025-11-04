@@ -87,7 +87,7 @@ module KeeperSecretsManager
     # File upload payload
     class FileUploadPayload < BasePayload
       attr_accessor :file_record_uid, :file_record_key, :file_record_data,
-                    :owner_record_uid, :owner_record_data, :link_key, :file_size
+                    :owner_record_uid, :owner_record_data, :owner_record_revision, :link_key, :file_size
 
       def initialize
         super()
