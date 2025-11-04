@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- `update_secret` now correctly encrypts record data before sending to server
+- `update_secret` now calls `finalize_secret_update` endpoint to persist changes
+- Local record's revision number is automatically refreshed after successful update
+- Consecutive updates on the same record object now work without manual refetching
+
 ## [17.1.0] - 2025-01-06
 
 ### Changed
