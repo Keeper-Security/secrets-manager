@@ -7,11 +7,9 @@ require 'fileutils'
 require 'json'
 require 'base64'
 
-# Ruby versions to test
+# Ruby versions to test (must match gemspec minimum requirement: >= 3.1.0)
 RUBY_VERSIONS = [
-  '2.7',     # Minimum version with AES-GCM support
-  '3.0',     # Major version with breaking changes
-  '3.1',     # Stable version
+  '3.1',     # Minimum required version
   '3.2',     # Recent stable
   '3.3',     # Latest stable
   'latest'   # Latest available
