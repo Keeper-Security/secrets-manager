@@ -7,6 +7,7 @@
 - `update_secret` now calls `finalize_secret_update` endpoint to persist changes
 - Local record's revision number is automatically refreshed after successful update
 - Consecutive updates on the same record object now work without manual refetching
+- `download_file` now properly respects SSL certificate verification settings and disables CRL checking
 
 ## [17.1.0] - 2025-01-06
 

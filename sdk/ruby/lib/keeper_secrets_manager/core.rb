@@ -524,7 +524,17 @@ module KeeperSecretsManager
       # Download encrypted file from URL
       def download_encrypted_file(url)
         uri = URI(url)
-        response = Net::HTTP.get_response(uri)
+
+        @logger.debug("Downloading file from URL: #{url}")
+
+        request = Net::HTTP::Get.new(uri)
+
+        http = Net::HTTP.new(uri.host, uri.port)
+        configure_http_ssl(http)
+
+        response = http.request(request)
+
+        @logger.debug("Download response status: #{response.code}")
 
         if response.code == '200'
           response.body
