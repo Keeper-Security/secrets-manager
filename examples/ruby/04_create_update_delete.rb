@@ -28,11 +28,17 @@ begin
     notes: 'Created via Ruby SDK example'
   }
 
-  # Create the record (optionally in a specific folder)
-  # record_uid = secrets_manager.create_secret(new_record, folder_uid: 'FOLDER_UID')
-  record_uid = secrets_manager.create_secret(new_record)
+  # Get the first available folder for creating the record
+  folders = secrets_manager.get_folders
+  folder_uid = folders.first&.uid
+  raise 'No folders available. Please create a folder in your vault first.' unless folder_uid
+
+  # Create the record with CreateOptions
+  options = KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: folder_uid)
+  record_uid = secrets_manager.create_secret(new_record, options)
 
   puts "✓ Created record with UID: #{record_uid}"
+  puts "  Folder: #{folder_uid}"
 
   # 2. READ - Retrieve the created secret
   puts "\n2. Reading the secret..."
@@ -97,7 +103,10 @@ puts '(See documentation for batch operation examples)'
 # Tips
 puts "\n=== Tips ==="
 puts '- Always handle errors when creating/updating/deleting'
-puts '- Use folder_uid parameter to organize secrets'
+puts '- Use CreateOptions with folder_uid to specify where to create records'
 puts '- Check permissions if operations fail'
 puts '- Use batch operations for better performance with multiple records'
 puts '- Generate secure passwords with KeeperSecretsManager::Utils.generate_password'
+puts "\n# Example with specific folder:"
+puts "options = KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: 'YOUR_FOLDER_UID')"
+puts 'record_uid = secrets_manager.create_secret(record_data, options)'

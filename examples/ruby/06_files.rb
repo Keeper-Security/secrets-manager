@@ -59,6 +59,13 @@ begin
   # Create or find a record to attach the file to
   record = secrets.first || begin
     # Create a new record if none exist
+    # Note: You need to specify a folder_uid where the record will be created
+    # Get the first available folder
+    folders = secrets_manager.get_folders
+    folder_uid = folders.first&.uid
+    raise 'No folders available. Please create a folder in your vault first.' unless folder_uid
+
+    options = KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: folder_uid)
     uid = secrets_manager.create_secret({
                                           type: 'login',
                                           title: 'File Upload Test',
@@ -66,7 +73,7 @@ begin
                                             { type: 'login', value: ['test@example.com'] },
                                             { type: 'password', value: ['test123'] }
                                           ]
-                                        })
+                                        }, options)
     secrets_manager.get_secret_by_uid(uid)
   end
 
