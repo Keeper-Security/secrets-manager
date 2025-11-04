@@ -37,20 +37,27 @@ end
 # 3. Create a folder
 puts "\n3. Creating a folder..."
 begin
-  folder_name = "Test Folder #{Time.now.strftime('%Y%m%d_%H%M%S')}"
+  # Need a parent folder to create new folders
+  if folders.empty?
+    puts "⚠ No folders available - skipping folder creation"
+  else
+    parent_folder = folders.first
+    folder_name = "Test Folder #{Time.now.strftime('%Y%m%d_%H%M%S')}"
 
-  # Create at root level
-  folder_uid = secrets_manager.create_folder(folder_name)
-  puts "✓ Created folder: #{folder_name}"
-  puts "  UID: #{folder_uid}"
+    # Create folder in parent
+    folder_uid = secrets_manager.create_folder(folder_name, parent_uid: parent_folder.uid)
+    puts "✓ Created folder: #{folder_name}"
+    puts "  UID: #{folder_uid}"
+    puts "  Parent: #{parent_folder.name || parent_folder.uid}"
 
-  # Create a subfolder
-  subfolder_name = 'Subfolder'
-  subfolder_uid = secrets_manager.create_folder(
-    name: subfolder_name,
-    parent_uid: folder_uid
-  )
-  puts "✓ Created subfolder: #{subfolder_name}"
+    # Create a subfolder
+    subfolder_name = 'Subfolder'
+    subfolder_uid = secrets_manager.create_folder(
+      subfolder_name,
+      parent_uid: folder_uid
+    )
+    puts "✓ Created subfolder: #{subfolder_name}"
+  end
 rescue StandardError => e
   puts "✗ Error creating folder: #{e.message}"
 end

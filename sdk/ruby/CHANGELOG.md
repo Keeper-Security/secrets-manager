@@ -9,6 +9,8 @@
 - Consecutive updates on the same record object now work without manual refetching
 - `download_file` now properly respects SSL certificate verification settings and disables CRL checking
 - `upload_file` now uses correct `add_file` endpoint and includes required `ownerRecordRevision` in payload
+- `create_folder` now properly encrypts folder key with AES-CBC and sets correct parent_uid (nil for root-level folders)
+- Fixed AES-CBC encryption to not double-pad data (OpenSSL handles padding automatically)
 
 ## [17.1.0] - 2025-01-06
 

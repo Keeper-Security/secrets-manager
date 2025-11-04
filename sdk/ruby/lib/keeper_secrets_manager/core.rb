@@ -352,24 +352,71 @@ module KeeperSecretsManager
 
       # Create folder
       def create_folder(folder_name, parent_uid: nil)
+        raise ArgumentError, 'parent_uid is required to create a folder' unless parent_uid
+
+        # Get folders to find parent's shared folder key
+        folders = get_folders
+
+        # Find parent folder
+        parent_folder = folders.find { |f| f.uid == parent_uid }
+        raise Error, "Parent folder #{parent_uid} not found" unless parent_folder
+
+        # Determine if parent is a shared folder root (no parent_uid)
+        is_shared_root = parent_folder.parent_uid.nil? || parent_folder.parent_uid.empty?
+
+        # Find the shared folder root by traversing up the hierarchy
+        if is_shared_root
+          # Parent is the shared root, so new folder is at root level
+          shared_folder_uid = parent_uid
+          actual_parent_uid = nil  # nil for root-level folders
+        else
+          # Parent is a subfolder, traverse up to find shared root
+          shared_folder_uid = parent_uid
+          current_folder = parent_folder
+
+          while current_folder.parent_uid && !current_folder.parent_uid.empty?
+            parent = folders.find { |f| f.uid == current_folder.parent_uid }
+            break unless parent
+
+            shared_folder_uid = current_folder.parent_uid
+            current_folder = parent
+          end
+
+          actual_parent_uid = parent_uid  # Subfolder creation
+        end
+
+        # Get shared folder's key (the root folder's key)
+        shared_folder = folders.find { |f| f.uid == shared_folder_uid }
+        raise Error, "Shared folder #{shared_folder_uid} not found" unless shared_folder
+
+        shared_folder_key = shared_folder.folder_key
+        raise Error, "Shared folder key missing for #{shared_folder_uid}" unless shared_folder_key
+
+        # Generate new folder UID and key
         folder_uid = Utils.generate_uid
         folder_key = Crypto.generate_encryption_key_bytes
 
+        # Prepare folder data
         folder_data = {
-          'name' => folder_name,
-          'folderType' => 'user_folder'
+          'name' => folder_name
         }
 
-        encrypted_data = Crypto.encrypt_aes_gcm(
+        # Encrypt folder data with NEW folder's key using AES-CBC
+        encrypted_data = Crypto.encrypt_aes_cbc(
           Utils.dict_to_json(folder_data),
           folder_key
         )
 
+        # Encrypt folder key with SHARED folder's key using AES-CBC
+        encrypted_folder_key = Crypto.encrypt_aes_cbc(folder_key, shared_folder_key)
+
+        # Prepare payload
         payload = prepare_create_folder_payload(
           folder_uid: folder_uid,
-          folder_key: folder_key,
+          shared_folder_uid: shared_folder_uid,
+          encrypted_folder_key: encrypted_folder_key,
           data: encrypted_data,
-          parent_uid: parent_uid
+          parent_uid: actual_parent_uid  # nil for root, subfolder UID for nested
         )
 
         post_query('create_folder', payload)
@@ -1273,16 +1320,17 @@ module KeeperSecretsManager
         payload
       end
 
-      def prepare_create_folder_payload(folder_uid:, folder_key:, data:, parent_uid:)
+      def prepare_create_folder_payload(folder_uid:, shared_folder_uid:, encrypted_folder_key:, data:, parent_uid:)
         payload = Dto::CreateFolderPayload.new
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.folder_uid = folder_uid
+        payload.shared_folder_uid = shared_folder_uid
         payload.data = Utils.bytes_to_base64(data)
         payload.parent_uid = parent_uid
 
-        # Handle shared folder key
-        payload.shared_folder_key = Utils.bytes_to_base64(folder_key)
+        # Use encrypted folder key (already encrypted with shared folder's key using AES-CBC)
+        payload.shared_folder_key = Utils.bytes_to_base64(encrypted_folder_key)
 
         payload
       end

@@ -156,9 +156,8 @@ module KeeperSecretsManager
         cipher.iv = iv
         cipher.key = key
 
-        # Apply PKCS7 padding
-        padded_data = pad_data(data)
-        encrypted = cipher.update(padded_data) + cipher.final
+        # OpenSSL handles PKCS7 padding automatically in cipher.final
+        encrypted = cipher.update(data) + cipher.final
 
         # Return IV + encrypted
         iv + encrypted
@@ -175,10 +174,10 @@ module KeeperSecretsManager
         cipher.iv = iv
         cipher.key = key
 
+        # OpenSSL handles PKCS7 padding removal automatically in cipher.final
         decrypted = cipher.update(ciphertext) + cipher.final
 
-        # Remove padding
-        unpad_data(decrypted)
+        decrypted
       rescue OpenSSL::Cipher::CipherError => e
         raise DecryptionError, "Failed to decrypt data: #{e.message}"
       end

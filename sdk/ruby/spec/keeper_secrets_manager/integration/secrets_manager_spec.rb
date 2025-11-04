@@ -217,8 +217,16 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager, :integration do
       it 'creates a new folder' do
         skip 'Skipping folder creation in mock mode' if use_mock_data
 
+        # Get folders to find a parent folder
+        folders = secrets_manager.get_folders
+        skip 'No folders available for testing' if folders.empty?
+
+        # Use first folder as parent
+        parent_folder = folders.first
+        parent_uid = parent_folder.uid
+
         folder_name = "RSpec Test Folder #{Time.now.to_i}"
-        folder_uid = secrets_manager.create_folder(folder_name)
+        folder_uid = secrets_manager.create_folder(folder_name, parent_uid: parent_uid)
 
         expect(folder_uid).to match(/^[A-Za-z0-9_-]+$/)
 
@@ -231,9 +239,15 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager, :integration do
       it 'updates folder name' do
         skip 'Skipping folder update in mock mode' if use_mock_data
 
+        # Get folders to find a parent folder
+        folders = secrets_manager.get_folders
+        skip 'No folders available for testing' if folders.empty?
+
+        parent_uid = folders.first.uid
+
         # Create folder
         original_name = "Update Test #{Time.now.to_i}"
-        folder_uid = secrets_manager.create_folder(original_name)
+        folder_uid = secrets_manager.create_folder(original_name, parent_uid: parent_uid)
 
         # Update
         new_name = "Updated #{Time.now.to_i}"
