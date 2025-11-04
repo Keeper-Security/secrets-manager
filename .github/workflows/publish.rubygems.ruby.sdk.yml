@@ -1,11 +1,6 @@
 name: Publish to RubyGems (Ruby SDK)
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - release/sdk/ruby/v17.1.0
-    paths:
-      - '.github/workflows/publish.rubygems.ruby.sdk.yml'
 
 jobs:
   test-ruby-sdk:
