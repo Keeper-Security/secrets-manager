@@ -40,16 +40,22 @@ module KeeperSecretsManager
       end
 
       # Convert to hash for API submission
+      # This should match the structure of the decrypted 'data' field from server
+      # (does NOT include uid, revision, folder_uid - those are in the outer payload)
       def to_h
-        {
-          'uid' => uid,
+        result = {
           'title' => title,
           'type' => type,
-          'fields' => fields,
-          'custom' => custom,
-          'notes' => notes,
-          'folder_uid' => folder_uid
-        }.compact
+          'fields' => fields
+        }
+
+        # Only include custom if it has entries (server doesn't send empty arrays)
+        result['custom'] = custom if custom && !custom.empty?
+
+        # Only include notes if present
+        result['notes'] = notes if notes && !notes.empty?
+
+        result
       end
 
       # Find field by type or label (searches both fields and custom arrays)

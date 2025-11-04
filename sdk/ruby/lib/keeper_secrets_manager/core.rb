@@ -270,25 +270,64 @@ module KeeperSecretsManager
         existing = get_secrets([record_uid]).first
         raise RecordNotFoundError, "Record #{record_uid} not found" unless existing
 
+        # Get record key for encryption
+        record_key = existing.record_key
+        raise Error, "Record key not available for #{record_uid}" unless record_key
+
+        # Record key is already raw bytes (stored during decryption)
+        # No conversion needed - use directly for encryption
+
+        # Debug: Log record data before encryption
+        @logger&.debug("update_secret: record_uid=#{record_uid}")
+        @logger&.debug("update_secret: record_data keys=#{record_data.keys.inspect}")
+        @logger&.debug("update_secret: record_data=#{record_data.inspect[0..200]}...")
+        @logger&.debug("update_secret: record_key present=#{!record_key.nil?}, length=#{record_key&.bytesize}")
+
+        # Encrypt record data with record key (same as create_secret)
+        json_data = Utils.dict_to_json(record_data)
+        @logger&.debug("update_secret: json_data length=#{json_data.bytesize}")
+        @logger&.debug("update_secret: json_data=#{json_data[0..200]}...")
+
+        encrypted_data = Crypto.encrypt_aes_gcm(json_data, record_key)
+        @logger&.debug("update_secret: encrypted_data length=#{encrypted_data.bytesize}")
+        @logger&.debug("update_secret: encrypted_data (base64)=#{Base64.strict_encode64(encrypted_data)[0..50]}...")
+
         # Prepare payload
         payload = prepare_update_payload(
           record_uid: record_uid,
-          data: record_data,
+          data: encrypted_data,
           revision: existing.revision,
           transaction_type: transaction_type
         )
 
+        @logger&.debug("update_secret: payload revision=#{existing.revision}")
+        @logger&.debug("update_secret: payload transaction_type=#{transaction_type}")
+
         # Send request
-        post_query('update_secret', payload)
+        @logger&.debug("update_secret: sending post_query to update_secret endpoint")
+        response = post_query('update_secret', payload)
+        @logger&.debug("update_secret: response received")
+        @logger&.debug("update_secret: response class=#{response.class}")
+        @logger&.debug("update_secret: response=#{response.inspect[0..500]}...")
 
-        # If rotation, complete transaction
-        if transaction_type == 'rotation'
-          complete_payload = Dto::CompleteTransactionPayload.new
-          complete_payload.client_version = KeeperGlobals.client_version
-          complete_payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
-          complete_payload.record_uid = record_uid
+        # Always finalize the update (required for changes to persist)
+        # This applies to both 'general' and 'rotation' transaction types
+        complete_payload = Dto::CompleteTransactionPayload.new
+        complete_payload.client_version = KeeperGlobals.client_version
+        complete_payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
+        complete_payload.record_uid = record_uid
 
-          post_query('complete_transaction', complete_payload)
+        post_query('finalize_secret_update', complete_payload)
+
+        # Update local record's revision to reflect server state
+        # Since the server doesn't return the new revision in the response,
+        # we need to refetch the record to get the actual revision
+        if record.is_a?(Dto::KeeperRecord)
+          updated_record = get_secrets([record_uid]).first
+          if updated_record
+            record.revision = updated_record.revision
+            @logger&.debug("update_secret: updated local revision to #{record.revision}")
+          end
         end
 
         true
@@ -1043,6 +1082,8 @@ module KeeperSecretsManager
         response = http.request(request)
 
         @logger.debug("Response status: #{response.code}")
+        @logger.debug("Response body length: #{response.body&.bytesize || 0} bytes")
+        @logger.debug("Response body (first 100 bytes): #{response.body&.[](0..100).inspect}") if response.body && !response.body.empty?
 
         Dto::KSMHttpResponse.new(
           status_code: response.code.to_i,
@@ -1155,7 +1196,7 @@ module KeeperSecretsManager
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.record_uid = record_uid
-        payload.data = Utils.dict_to_json(data)
+        payload.data = Utils.bytes_to_base64(data)
         payload.revision = revision
         payload.transaction_type = transaction_type
         payload

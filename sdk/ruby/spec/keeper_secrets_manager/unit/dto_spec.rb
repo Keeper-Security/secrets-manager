@@ -159,13 +159,16 @@ RSpec.describe KeeperSecretsManager::Dto do
         )
 
         hash = record.to_h
+        # to_h returns data structure for encryption (no uid/folder_uid/revision)
+        # Those fields are in the outer payload, not in the encrypted data
         expect(hash).to include(
-          'uid' => 'test-uid',
           'title' => 'Test',
           'type' => 'login',
           'notes' => 'Test notes'
         )
         expect(hash['fields']).to be_an(Array)
+        expect(hash).not_to have_key('uid')
+        expect(hash).not_to have_key('folder_uid')
       end
 
       it 'excludes nil values' do
