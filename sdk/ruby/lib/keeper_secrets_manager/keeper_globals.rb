@@ -7,9 +7,7 @@ module KeeperSecretsManager
 
     # Get client version dynamically from VERSION constant
     def self.client_version
-      # Use standard version format matching other SDKs
-      # Java: mj17.x.x, Python: mp17.x.x, JavaScript: ms17.x.x, Go: mg17.x.x, Ruby: mb17.x.x
-      "#{CLIENT_VERSION_PREFIX}17.0.0"
+      "#{CLIENT_VERSION_PREFIX}17.91.0"
     end
 
     # Keeper public keys by ID
