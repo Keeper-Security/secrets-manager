@@ -425,13 +425,28 @@ module KeeperSecretsManager
 
       # Update folder
       def update_folder(folder_uid, folder_name)
+        # Get folders to find the folder's key
+        folders = get_folders
+        folder = folders.find { |f| f.uid == folder_uid }
+        raise Error, "Folder #{folder_uid} not found" unless folder
+
+        folder_key = folder.folder_key
+        raise Error, "Folder key missing for #{folder_uid}" unless folder_key
+
+        # Prepare folder data
         folder_data = {
           'name' => folder_name
         }
 
+        # Encrypt folder data with folder's key using AES-CBC
+        encrypted_data = Crypto.encrypt_aes_cbc(
+          Utils.dict_to_json(folder_data),
+          folder_key
+        )
+
         payload = prepare_update_folder_payload(
           folder_uid: folder_uid,
-          data: folder_data
+          data: encrypted_data
         )
 
         post_query('update_folder', payload)
@@ -1340,7 +1355,7 @@ module KeeperSecretsManager
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.folder_uid = folder_uid
-        payload.data = Utils.dict_to_json(data)
+        payload.data = Utils.bytes_to_url_safe_str(data)
         payload
       end
 

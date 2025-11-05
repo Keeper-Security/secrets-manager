@@ -3,7 +3,7 @@
 source 'https://rubygems.org'
 
 # Core SDK dependency
-gem 'keeper_secrets_manager', '~> 17.0'
+gem 'keeper_secrets_manager', '~> 17.1'
 
 # Optional dependencies for specific examples
 gem 'base32', '~> 0.3.4' # Required for 09_totp.rb

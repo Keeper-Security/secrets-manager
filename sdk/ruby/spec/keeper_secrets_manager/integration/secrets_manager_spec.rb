@@ -254,6 +254,12 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager, :integration do
         result = secrets_manager.update_folder(folder_uid, new_name)
         expect(result).to be true
 
+        # Verify the folder name was actually updated
+        updated_folders = secrets_manager.get_folders
+        updated_folder = updated_folders.find { |f| f.uid == folder_uid }
+        expect(updated_folder).not_to be_nil
+        expect(updated_folder.name).to eq(new_name)
+
         # Clean up
         secrets_manager.delete_folder(folder_uid, force: true)
       end
