@@ -1326,11 +1326,11 @@ module KeeperSecretsManager
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.folder_uid = folder_uid
         payload.shared_folder_uid = shared_folder_uid
-        payload.data = Utils.bytes_to_base64(data)
+        payload.data = Utils.bytes_to_url_safe_str(data)
         payload.parent_uid = parent_uid
 
         # Use encrypted folder key (already encrypted with shared folder's key using AES-CBC)
-        payload.shared_folder_key = Utils.bytes_to_base64(encrypted_folder_key)
+        payload.shared_folder_key = Utils.bytes_to_url_safe_str(encrypted_folder_key)
 
         payload
       end

@@ -113,10 +113,7 @@ end
 puts "\n7. Updating folder..."
 begin
   if defined?(folder_uid)
-    secrets_manager.update_folder(
-      folder_uid: folder_uid,
-      name: 'Updated Test Folder'
-    )
+    secrets_manager.update_folder(folder_uid, 'Updated Test Folder')
     puts '✓ Updated folder name'
   end
 rescue StandardError => e
