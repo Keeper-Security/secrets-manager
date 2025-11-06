@@ -12,26 +12,30 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::keeper_globals::get_client_version;
+    use crate::keeper_globals::{get_client_version, KEEPER_SECRETS_MANAGER_SDK_CLIENT_ID};
 
     #[test]
     fn test_get_client_version_hardcode_true() {
-        // Test the behavior when hardcode is true, it should return the SDK version directly.
+        // Test the behavior when hardcode is true, it should return the hardcoded version.
         let version = get_client_version(true);
 
-        // Assert that the version returned matches the SDK version
-        assert_eq!(version, env!("CARGO_PKG_VERSION"));
+        // Assert that the version returned matches the hardcoded version
+        assert_eq!(version, "17.0.0");
     }
 
     #[test]
     fn test_get_client_version_hardcode_false_empty_metadata() {
-        // Simulate an environment where cargo metadata command fails or returns nothing
-        // This test will just verify the fallback mechanism if metadata retrieval fails.
-
-        // You could potentially use something like a temp Cargo.toml for testing.
+        // Test the behavior when hardcode is false, it should still return the hardcoded version.
         let version = get_client_version(false);
 
-        // If metadata fails, it should fall back to the default version, which is `SDK_VERSION`
-        assert_eq!(version, env!("CARGO_PKG_VERSION"));
+        // Should return the hardcoded version "17.0.0"
+        assert_eq!(version, "17.0.0");
+    }
+
+    #[test]
+    fn test_full_client_id() {
+        // Test that the full client ID is "mr17.0.0"
+        let client_id = &*KEEPER_SECRETS_MANAGER_SDK_CLIENT_ID;
+        assert_eq!(client_id, "mr17.0.0");
     }
 }

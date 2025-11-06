@@ -168,7 +168,7 @@ impl SecretsManager {
                     || client_options
                         .hostname
                         .as_ref()
-                        .map_or(true, String::is_empty)
+                        .is_none_or(String::is_empty)
                 {
                     return Err(KSMRError::SecretManagerCreationError(
                         "The hostname must be present in the token or provided as a parameter"
@@ -186,10 +186,10 @@ impl SecretsManager {
                 let token_host_key = token_parts[0].to_uppercase();
                 let keeper_servers = get_keeper_servers();
                 let token_host = keeper_servers.get(token_host_key.as_str());
-                if token_host.is_none() {
-                    secrets_manager.hostname = token_parts[0].to_string().to_owned();
+                if let Some(host) = token_host {
+                    secrets_manager.hostname = host.to_string();
                 } else {
-                    secrets_manager.hostname = token_host.as_ref().unwrap().to_string();
+                    secrets_manager.hostname = token_parts[0].to_string().to_owned();
                 }
                 secrets_manager.token = token_parts[1].to_string();
             }
@@ -242,20 +242,20 @@ impl SecretsManager {
                 config
                     .set(ConfigKeys::KeyServerPublicKeyId, DEFAULT_KEY_ID.to_string())
                     .unwrap();
-            } else if server_public_key_id.is_some()
-                && !keeper_public_keys.contains_key(server_public_key_id.unwrap().as_str())
-            {
-                debug!(
-                    "Public key id {} does not exists, set to default : {}",
-                    config
-                        .get(ConfigKeys::KeyServerPublicKeyId)
-                        .unwrap()
+            } else if let Some(key_id) = server_public_key_id {
+                if !keeper_public_keys.contains_key(key_id.as_str()) {
+                    debug!(
+                        "Public key id {} does not exists, set to default : {}",
+                        config
+                            .get(ConfigKeys::KeyServerPublicKeyId)
+                            .unwrap()
                         .unwrap(),
                     DEFAULT_KEY_ID
                 );
-                config
-                    .set(ConfigKeys::KeyServerPublicKeyId, DEFAULT_KEY_ID.to_string())
-                    .unwrap();
+                    config
+                        .set(ConfigKeys::KeyServerPublicKeyId, DEFAULT_KEY_ID.to_string())
+                        .unwrap();
+                }
             }
         } else {
             return Err(KSMRError::SecretManagerCreationError(
@@ -524,8 +524,7 @@ impl SecretsManager {
 
         let mut get_payload =
             GetPayload::new(client_version, client_id, base_64_public_key, None, None);
-        if query_options.is_some() {
-            let query_options_data = query_options.unwrap();
+        if let Some(query_options_data) = query_options {
             get_payload
                 .set_optional_field("records_filter", query_options_data.get_records_filter());
             get_payload
@@ -716,7 +715,7 @@ impl SecretsManager {
                 .unwrap();
             error!(
                 "Client version {} was not registered in the backend",
-                client_id.to_string()
+                client_id
             );
             if let Some(additional_info) = response_dict.get("additional_info") {
                 if let Some(info) = additional_info.as_str() {
@@ -724,22 +723,35 @@ impl SecretsManager {
                 }
             }
         } else if rc == "key" {
-            if let Some(key_id) = response_dict.get("key_id").and_then(|v| v.as_str()) {
+            // Server returns key_id as a number, not a string, so we need to handle both cases
+            let key_id_value = response_dict.get("key_id");
+            let key_id_str = if let Some(key_id_val) = key_id_value {
+                // Try to get as number first (which is what server actually sends)
+                if let Some(key_id_num) = key_id_val.as_u64() {
+                    Some(key_id_num.to_string())
+                } else { key_id_val.as_str().map(|key_id_str| key_id_str.to_string()) }
+            } else {
+                None
+            };
+
+            if let Some(key_id) = key_id_str {
                 info!("Server has requested we use public key {}", key_id);
                 let keeper_public_keys = get_keeper_public_keys();
                 if key_id.is_empty() {
                     msg = "The public key is blank from the server".to_string();
-                } else if keeper_public_keys.contains_key(key_id) {
+                } else if keeper_public_keys.contains_key(&key_id) {
                     let _ = self
                         .config
-                        .set(ConfigKeys::KeyServerPublicKeyId, key_id.to_string())
+                        .set(ConfigKeys::KeyServerPublicKeyId, key_id.clone())
                         .map_err(|err| KSMRError::StorageError(err.to_string()))?;
-                    info!("Server has requested we use public key {}", key_id);
+                    info!("Updated to use public key {}", key_id);
                     _retry = true;
                     return Ok(_retry);
                 } else {
                     msg = format!("The public key at {} does not exist in the SDK", key_id);
                 }
+            } else {
+                msg = "Server returned key error but no key_id was provided".to_string();
             }
         } else {
             let response_msg = response_dict
@@ -930,20 +942,15 @@ impl SecretsManager {
             true => {
                 let warnings_option = decrypted_response_dict.get("warnings");
                 match warnings_option {
-                    Some(warnings) => match warnings {
-                        Value::Array(warnings_array) => {
-                            for warning in warnings_array {
-                                warn!(
-                                    "Warning shown while fetching secrets: `{}`",
-                                    warning.as_str().unwrap().to_string()
-                                );
-                            }
+                    Some(Value::Array(warnings_array)) => {
+                        for warning in warnings_array {
+                            warn!(
+                                "Warning shown while fetching secrets: `{}`",
+                                warning.as_str().unwrap()
+                            );
                         }
-                        _ => {
-                            info!("No warnings found when pulling secrets");
-                        }
-                    },
-                    None => {
+                    }
+                    _ => {
                         info!("No warnings found when pulling secrets");
                     }
                 }
@@ -968,12 +975,18 @@ impl SecretsManager {
                     .collect::<HashMap<String, Value>>();
                 let record_result =
                     Record::new_from_json(record_hashmap_parsed, &_secret_key, None);
-                if record_result.is_err() {
-                    log::error!("Error parsing record: {}", record);
-                } else {
-                    let unwrapped_record = record_result.unwrap();
-                    records_count += 1;
-                    records.push(unwrapped_record);
+                match record_result {
+                    Ok(unwrapped_record) => {
+                        records_count += 1;
+                        records.push(unwrapped_record);
+                    }
+                    Err(e) => {
+                        let uid = record_hashmap
+                            .get("recordUid")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        log::error!("Record {} skipped due to error: {:?}, {}", uid, e, e);
+                    }
                 }
             }
         }
@@ -988,15 +1001,32 @@ impl SecretsManager {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect::<HashMap<String, Value>>();
                 let folder_result: Option<Folder> =
-                    Folder::new_from_json(folder_hashmap_parsed, &_secret_key);
-                if folder_result.is_none() {
-                    log::error!("Error parsing folder: {}", folder);
-                } else {
-                    let unwrapped_folder = folder_result.unwrap();
-                    shared_folders_count += 1;
-                    records_count += unwrapped_folder.records()?.len();
-                    records.extend(unwrapped_folder.records()?);
-                    shared_folders.push(unwrapped_folder);
+                    Folder::new_from_json(folder_hashmap_parsed.clone(), &_secret_key);
+                match folder_result {
+                    Some(unwrapped_folder) => {
+                        shared_folders_count += 1;
+                        match unwrapped_folder.records() {
+                            Ok(folder_records) => {
+                                records_count += folder_records.len();
+                                records.extend(folder_records);
+                            }
+                            Err(e) => {
+                                let uid = folder_hashmap_parsed
+                                    .get("folderUid")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown");
+                                log::error!("Error processing records in folder {}: {:?}", uid, e);
+                            }
+                        }
+                        shared_folders.push(unwrapped_folder);
+                    }
+                    None => {
+                        let uid = folder_hashmap_parsed
+                            .get("folderUid")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        log::error!("Folder {} skipped due to error during parsing", uid);
+                    }
                 }
             }
         }
@@ -1670,10 +1700,10 @@ impl SecretsManager {
             file.name, owner_record.uid
         );
         debug!(
-                "preparing upload payload. owner_record.uid=[{}], fine name: {}, file_size: {}",
-                owner_record.uid,
-                file.name,
-                file.data.len()
+            "preparing upload payload. owner_record.uid=[{}], fine name: {}, file_size: {}",
+            owner_record.uid,
+            file.name,
+            file.data.len()
         );
 
         let upload_payload =
@@ -2638,7 +2668,7 @@ impl SecretsManager {
                 let values: Vec<Value> = field
                     .get("value")
                     .and_then(|v| v.as_array().cloned())
-                    .unwrap_or_else(|| vec![]);
+                    .unwrap_or_default();
 
                 // Handle index1 (array index)
                 let idx = index1

@@ -2408,6 +2408,9 @@ pub struct RecordField {
 }
 
 impl RecordField {
+    /// Factory method that creates a KeeperField from RecordField parameters.
+    /// This is a deliberate design where RecordField acts as a builder for KeeperField.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         field_type: String,
         value: Value,
@@ -2435,11 +2438,7 @@ impl RecordField {
         }
     }
 
-    pub fn new_record_field(
-        field_type: &str,
-        value: Value,
-        label: Option<String>,
-    ) -> KeeperField {
+    pub fn new_record_field(field_type: &str, value: Value, label: Option<String>) -> KeeperField {
         Self::new(field_type.to_string(), value, label, false, false)
     }
 
@@ -2450,6 +2449,12 @@ impl RecordField {
         required: bool,
         privacy_screen: bool,
     ) -> KeeperField {
-        Self::new(field_type.to_string(), value, label, required, privacy_screen)
+        Self::new(
+            field_type.to_string(),
+            value,
+            label,
+            required,
+            privacy_screen,
+        )
     }
 }

@@ -11,13 +11,18 @@
 //
 
 use lazy_static::lazy_static;
-use log::error;
-use std::process::Command;
+// use log::error;  // Not needed for now as we are just hard coding it
+// use std::process::Command;  // Not needed for now as we are just hard coding it
 
-const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
-const RUST_VERSION_PREFIX: &str = "mp";
+// const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");  // Not needed for now as we are just hard coding it
+const RUST_VERSION_PREFIX: &str = "mr";
 
-pub fn get_client_version(hardcode: bool) -> String {
+pub fn get_client_version(_hardcode: bool) -> String {
+    // Hardcoded to version 17.0.0 as requested
+    "17.0.0".to_string()
+
+    // Original dynamic version logic - commented out
+    /*
     let mut version = SDK_VERSION.to_string();
 
     if !hardcode {
@@ -60,6 +65,7 @@ pub fn get_client_version(hardcode: bool) -> String {
     }
 
     version
+    */
 }
 
 lazy_static! {
