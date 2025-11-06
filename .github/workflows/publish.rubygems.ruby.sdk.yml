@@ -166,7 +166,7 @@ jobs:
         with:
           keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
           secrets: |
-            RQ7jXJ-r7WT2Cnq1nlFa6g/custom_/RUBYGEMS_API_KEY > RUBYGEMS_API_KEY
+            RQ7jXJ-r7WT2Cnq1nlFa6g/custom_field/RUBYGEMS_API_KEY > RUBYGEMS_API_KEY
 
       - name: Install dependencies
         run: |
