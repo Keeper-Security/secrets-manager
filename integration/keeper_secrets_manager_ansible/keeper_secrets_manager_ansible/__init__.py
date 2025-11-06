@@ -174,6 +174,8 @@ class KeeperAnsible:
                 cache_dir_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CACHE_DIR)
                 if task_vars.get(cache_dir_key) is not None and os.environ.get(KeeperAnsible.ENV_CACHE_DIR) is None:
                     os.environ[KeeperAnsible.ENV_CACHE_DIR] = task_vars.get(cache_dir_key)
+                    # Update the cache file path after setting the environment variable
+                    KSMCache.kms_cache_file_name = os.path.join(os.environ.get(KeeperAnsible.ENV_CACHE_DIR, ""), 'ksm_cache.bin')
 
                 display.vvv("Keeper Secrets Manager is using DR file cache. Cache directory is {}.".format(
                     os.environ.get(KeeperAnsible.ENV_CACHE_DIR)
