@@ -1,16 +1,19 @@
 # Changelog
 
-## [Unreleased]
+## [17.1.1] - 2025-11-07
 
 ### Fixed
-- `update_secret` now correctly encrypts record data before sending to server
-- `update_secret` now calls `finalize_secret_update` endpoint to persist changes
-- Local record's revision number is automatically refreshed after successful update
-- Consecutive updates on the same record object now work without manual refetching
-- `download_file` now properly respects SSL certificate verification settings and disables CRL checking
-- `upload_file` now uses correct `add_file` endpoint and includes required `ownerRecordRevision` in payload
-- `create_folder` now properly encrypts folder key with AES-CBC and sets correct parent_uid (nil for root-level folders)
-- Fixed AES-CBC encryption to not double-pad data (OpenSSL handles padding automatically)
+- KSM-685: `CreateOptions.subfolder_uid` parameter is now correctly sent to API when creating records
+- KSM-686: Implemented disaster recovery caching with `CachingPostFunction` to match other SDKs
+- API response caching now works for both `get_secret` and `get_folders` endpoints
+- Added `Cache` class for file-based encrypted cache storage
+- Removed unused `@cache` and `@cache_expiry` instance variables from `SecretsManager`
+
+### Added
+- `KeeperSecretsManager::CachingPostFunction` - Built-in disaster recovery caching
+- `KeeperSecretsManager::Cache` - File-based cache management (save, load, clear)
+- Cache file location configurable via `KSM_CACHE_DIR` environment variable
+- Comprehensive unit tests for caching functionality (17 new tests)
 
 ## [17.1.0] - 2025-01-06
 
@@ -22,6 +25,14 @@
 - ECC key generation now correctly returns 32-byte raw private keys (was returning 121-byte DER format)
 - Client version now dynamically uses VERSION constant instead of hardcoded value
 - Fixed Tests
+- `update_secret` now correctly encrypts record data before sending to server
+- `update_secret` now calls `finalize_secret_update` endpoint to persist changes
+- Local record's revision number is automatically refreshed after successful update
+- Consecutive updates on the same record object now work without manual refetching
+- `download_file` now properly respects SSL certificate verification settings and disables CRL checking
+- `upload_file` now uses correct `add_file` endpoint and includes required `ownerRecordRevision` in payload
+- `create_folder` now properly encrypts folder key with AES-CBC and sets correct parent_uid (nil for root-level folders)
+- Fixed AES-CBC encryption to not double-pad data (OpenSSL handles padding automatically)
 
 ## [17.0.4] - 2025-10-20
 
