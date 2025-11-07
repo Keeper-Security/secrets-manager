@@ -243,7 +243,8 @@ module KeeperSecretsManager
           record_key: record_key,
           folder_uid: options.folder_uid,
           folder_key: folder_key,
-          data: encrypted_data
+          data: encrypted_data,
+          subfolder_uid: options.subfolder_uid
         )
 
         # Send request
@@ -1032,13 +1033,14 @@ module KeeperSecretsManager
       end
 
       # Prepare create payload
-      def prepare_create_payload(record_uid:, record_key:, folder_uid:, folder_key:, data:)
+      def prepare_create_payload(record_uid:, record_key:, folder_uid:, folder_key:, data:, subfolder_uid: nil)
         payload = Dto::CreatePayload.new
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.record_uid = record_uid
         payload.record_key = Utils.bytes_to_base64(record_key)
         payload.folder_uid = folder_uid
+        payload.sub_folder_uid = subfolder_uid
         payload.data = Utils.bytes_to_base64(data)
 
         # Encrypt the record key with the folder key
