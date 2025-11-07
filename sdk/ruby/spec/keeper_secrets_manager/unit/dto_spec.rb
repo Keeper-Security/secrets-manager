@@ -220,4 +220,55 @@ RSpec.describe KeeperSecretsManager::Dto do
       expect(file.title).to eq('test.txt')
     end
   end
+
+  describe KeeperSecretsManager::Dto::CreateOptions do
+    it 'creates options with folder_uid only' do
+      options = described_class.new(folder_uid: 'folder-123')
+
+      expect(options.folder_uid).to eq('folder-123')
+      expect(options.subfolder_uid).to be_nil
+    end
+
+    it 'creates options with both folder_uid and subfolder_uid' do
+      options = described_class.new(
+        folder_uid: 'folder-123',
+        subfolder_uid: 'subfolder-456'
+      )
+
+      expect(options.folder_uid).to eq('folder-123')
+      expect(options.subfolder_uid).to eq('subfolder-456')
+    end
+
+    it 'allows setting subfolder_uid after creation' do
+      options = described_class.new(folder_uid: 'folder-123')
+      options.subfolder_uid = 'subfolder-456'
+
+      expect(options.subfolder_uid).to eq('subfolder-456')
+    end
+  end
+
+  describe KeeperSecretsManager::Dto::CreatePayload do
+    it 'has sub_folder_uid attribute' do
+      payload = described_class.new
+
+      expect(payload).to respond_to(:sub_folder_uid)
+      expect(payload).to respond_to(:sub_folder_uid=)
+    end
+
+    it 'allows setting sub_folder_uid' do
+      payload = described_class.new
+      payload.sub_folder_uid = 'subfolder-789'
+
+      expect(payload.sub_folder_uid).to eq('subfolder-789')
+    end
+
+    it 'converts sub_folder_uid to subFolderUid in JSON' do
+      payload = described_class.new
+      payload.sub_folder_uid = 'test-subfolder-uid'
+
+      hash = payload.to_h
+      expect(hash).to have_key('subFolderUid')
+      expect(hash['subFolderUid']).to eq('test-subfolder-uid')
+    end
+  end
 end
