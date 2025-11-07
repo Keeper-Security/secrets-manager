@@ -374,6 +374,39 @@ rescue => e
 end
 
 # ============================================================================
+# Example 6: Built-in Disaster Recovery Caching
+# ============================================================================
+puts "\n6. Built-in CachingPostFunction (Recommended):"
+puts "   File-based disaster recovery caching"
+puts
+
+begin
+  # Use built-in caching function
+  sm = KeeperSecretsManager.new(
+    config: storage,
+    verify_ssl_certs: false,
+    custom_post_function: KeeperSecretsManager::CachingPostFunction
+  )
+
+  puts "  Making request with built-in caching..."
+  secrets = sm.get_secrets
+  puts "  ✓ Retrieved #{secrets.length} secrets"
+
+  if KeeperSecretsManager::Cache.cache_exists?
+    cache_path = KeeperSecretsManager::Cache.cache_file_path
+    cache_size = File.size(cache_path)
+    puts "  ✓ Cache created: #{cache_path} (#{cache_size} bytes)"
+    puts "  ✓ Encrypted secrets saved for disaster recovery"
+
+    # Clean up
+    KeeperSecretsManager::Cache.clear_cache
+    puts "  ✓ Cache cleared"
+  end
+rescue => e
+  puts "  ✗ Error: #{e.message}"
+end
+
+# ============================================================================
 # Summary
 # ============================================================================
 puts "\n" + "=" * 80
@@ -385,6 +418,12 @@ puts "2. Response Caching - Reduce API calls with TTL-based cache"
 puts "3. Offline Fallback - Gracefully handle network failures"
 puts "4. Rate Limiting - Prevent excessive API usage"
 puts "5. Combined Pattern - Production-ready implementation"
+puts "6. Built-in CachingPostFunction - Disaster recovery (RECOMMENDED)"
+puts
+puts "Recommended Patterns:"
+puts "  ✓ For disaster recovery: Use built-in CachingPostFunction"
+puts "  ✓ For TTL-based caching: Implement custom function (see Example 2)"
+puts "  ✓ For production: Combine caching + logging + rate limiting (see Example 5)"
 puts
 puts "Tips:"
 puts "  - Use caching for read-heavy workloads"
@@ -392,5 +431,6 @@ puts "  - Implement offline fallback for resilient applications"
 puts "  - Add request logging for debugging and auditing"
 puts "  - Consider Redis/Memcached for distributed caching"
 puts "  - Always include error handling in custom functions"
+puts "  - Set KSM_CACHE_DIR environment variable to control cache location"
 puts
 puts "=" * 80

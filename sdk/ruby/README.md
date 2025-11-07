@@ -165,8 +165,49 @@ storage = KeeperSecretsManager::Storage::EnvironmentStorage.new('KSM_')
 ### Caching Storage
 ```ruby
 # Wrap any storage with caching (600 second TTL)
+# This caches configuration data, not API responses
 base_storage = KeeperSecretsManager::Storage::FileStorage.new('config.json')
 storage = KeeperSecretsManager::Storage::CachingStorage.new(base_storage, 600)
+```
+
+## API Response Caching (Disaster Recovery)
+
+Enable caching to protect against network failures. When enabled, encrypted API responses are saved to a local file. If the network becomes unavailable, the SDK automatically falls back to cached data.
+
+```ruby
+# Enable caching for disaster recovery
+storage = KeeperSecretsManager::Storage::FileStorage.new('config.json')
+secrets_manager = KeeperSecretsManager.new(
+  config: storage,
+  custom_post_function: KeeperSecretsManager::CachingPostFunction
+)
+
+# First call - hits network and saves to cache
+records = secrets_manager.get_secrets
+
+# Subsequent calls - use network if available, fall back to cache if network fails
+records = secrets_manager.get_secrets  # Uses cache if network is down
+```
+
+**Cache behavior**:
+- Network requests are always tried first
+- Successful responses are automatically saved to cache
+- Cache is used only when network requests fail
+- Cache stores encrypted data for security
+- Default cache location: `./ksm_cache.bin`
+
+**Configure cache location**:
+```ruby
+# Set via environment variable
+ENV['KSM_CACHE_DIR'] = '/path/to/cache/directory'
+
+# Or programmatically
+KeeperSecretsManager::Cache.cache_file_path  # => '/path/to/cache/directory/ksm_cache.bin'
+```
+
+**Clear cache**:
+```ruby
+KeeperSecretsManager::Cache.clear_cache
 ```
 
 ## CRUD Operations
