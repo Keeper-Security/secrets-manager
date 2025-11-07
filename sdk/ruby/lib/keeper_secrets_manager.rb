@@ -8,6 +8,7 @@ require 'keeper_secrets_manager/storage'
 require 'keeper_secrets_manager/dto'
 require 'keeper_secrets_manager/field_types'
 require 'keeper_secrets_manager/notation'
+require 'keeper_secrets_manager/cache'
 require 'keeper_secrets_manager/core'
 require 'keeper_secrets_manager/folder_manager'
 
