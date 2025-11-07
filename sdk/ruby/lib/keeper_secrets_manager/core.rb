@@ -81,9 +81,6 @@ module KeeperSecretsManager
           @hostname = @config.get_string(ConfigKeys::KEY_HOSTNAME) || KeeperGlobals::DEFAULT_SERVER
         end
 
-        # Cache configuration
-        @cache = {}
-        @cache_expiry = {}
       end
 
       # Get secrets with optional filtering
@@ -1069,7 +1066,9 @@ module KeeperSecretsManager
           encrypted_payload = encrypt_and_sign_payload(config, transmission_key, payload)
 
           # Make request
-          response = if @custom_post_function && path == 'get_secret'
+          # Use custom post function for read-only operations (get_secret, get_folders)
+          # This enables caching for disaster recovery
+          response = if @custom_post_function && (path == 'get_secret' || path == 'get_folders')
                        @custom_post_function.call(url, transmission_key, encrypted_payload, @verify_ssl_certs)
                      else
                        post_function(url, transmission_key, encrypted_payload)
