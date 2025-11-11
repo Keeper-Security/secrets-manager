@@ -25,6 +25,19 @@
   - `download_thumbnail` method for downloading file thumbnails
   - `expires_on` field to SecretsManagerResponse
 
+### Improved
+- Added 3 RSpec integration test files
+- **Mock Infrastructure:** Implemented proper AES-256-GCM encryption in `mock_helper.rb`
+  - Records now use proper AES-GCM encryption (was Base64 only)
+  - Folders use correct AES-CBC encryption for data
+  - Added transmission key encryption/decryption
+  - Enabled complete offline testing without config.base64
+- **Manual Test Scripts:** Fixed previously commented/skipped tests
+  - `test_totp.rb` - Enabled tests for SHA256/SHA512 algorithms and custom periods (60s, 90s)
+  - `test_file_operations.rb` - Enabled multiple file upload, metadata retrieval, and deletion tests
+  - `test_offline_mock.rb` - Now runs completely offline with proper encryption
+- **Dependencies:** Added base32 gem to test dependencies for TOTP support
+
 ## [17.1.0] - 2025-01-06
 
 ### Changed
