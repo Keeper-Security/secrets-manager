@@ -6,7 +6,7 @@ module KeeperSecretsManager
   module Dto
     # Base class for dynamic record handling
     class KeeperRecord
-      attr_accessor :uid, :title, :type, :fields, :custom, :notes, :folder_uid, :data, :revision, :files
+      attr_accessor :uid, :title, :type, :fields, :custom, :notes, :folder_uid, :inner_folder_uid, :data, :revision, :files
       attr_reader :record_key  # Internal - stores decrypted record key (bytes) for file upload operations
 
       def initialize(attrs = {})
@@ -14,6 +14,7 @@ module KeeperSecretsManager
           # Support both raw API response and user-friendly creation
           @uid = attrs['recordUid'] || attrs['uid'] || attrs[:uid]
           @folder_uid = attrs['folderUid'] || attrs['folder_uid'] || attrs[:folder_uid]
+          @inner_folder_uid = attrs['innerFolderUid'] || attrs['inner_folder_uid'] || attrs[:inner_folder_uid]
           @revision = attrs['revision'] || attrs[:revision] || 0
 
           # Handle encrypted data or direct attributes
