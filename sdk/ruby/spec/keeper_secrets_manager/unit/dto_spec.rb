@@ -271,4 +271,39 @@ RSpec.describe KeeperSecretsManager::Dto do
       expect(hash['subFolderUid']).to eq('test-subfolder-uid')
     end
   end
+
+  describe KeeperSecretsManager::Dto::KeeperRecord do
+    it 'has inner_folder_uid attribute' do
+      record = described_class.new
+
+      expect(record).to respond_to(:inner_folder_uid)
+      expect(record).to respond_to(:inner_folder_uid=)
+    end
+
+    it 'parses innerFolderUid from API response' do
+      record = described_class.new(
+        'recordUid' => 'test-uid',
+        'folderUid' => 'parent-folder-uid',
+        'innerFolderUid' => 'subfolder-uid',
+        'data' => { 'title' => 'Test', 'type' => 'login', 'fields' => [] }
+      )
+
+      expect(record.folder_uid).to eq('parent-folder-uid')
+      expect(record.inner_folder_uid).to eq('subfolder-uid')
+    end
+
+    it 'supports snake_case inner_folder_uid parameter' do
+      record = described_class.new(
+        'uid' => 'test-uid',
+        'folder_uid' => 'parent-folder-uid',
+        'inner_folder_uid' => 'subfolder-uid',
+        'title' => 'Test',
+        'type' => 'login',
+        'fields' => []
+      )
+
+      expect(record.folder_uid).to eq('parent-folder-uid')
+      expect(record.inner_folder_uid).to eq('subfolder-uid')
+    end
+  end
 end
