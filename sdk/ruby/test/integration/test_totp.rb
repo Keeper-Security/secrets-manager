@@ -172,7 +172,7 @@ class TOTPTests
       puts "      ✅ Code length: #{code.length} digits"
 
       # Verify code format
-      raise "Invalid TOTP code format for #{algo}" unless code =~ /^\d{6}$/
+      raise "Invalid TOTP code format for #{algo}" unless code =~ /\A\d{6}\z/
     end
 
     puts "   ✅ All algorithms tested successfully"
@@ -201,7 +201,7 @@ class TOTPTests
       puts "      ✅ Time until next code: #{period - (Time.now.to_i % period)} seconds"
 
       # Verify code format
-      raise "Invalid TOTP code format for #{period}s period" unless code =~ /^\d{6}$/
+      raise "Invalid TOTP code format for #{period}s period" unless code =~ /\A\d{6}\z/
 
       # Verify that the period was actually used
       raise "Period mismatch" unless totp_params['period'] == period
