@@ -31,6 +31,12 @@ module KeeperSecretsManager
     Core::SecretsManager.new(options.merge(token: token))
   end
 
+  # Convenience method to create from base64 config string
+  def self.from_config(config_base64, options = {})
+    storage = Storage::InMemoryStorage.new(config_base64)
+    Core::SecretsManager.new(options.merge(config: storage))
+  end
+
   # Convenience method to create from config file
   def self.from_file(filename, options = {})
     storage = Storage::FileStorage.new(filename)

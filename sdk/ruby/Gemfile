@@ -4,6 +4,7 @@ source 'https://rubygems.org'
 gemspec
 
 group :development, :test do
+  gem 'base32', '~> 0.3' # Required for TOTP support in tests
   gem 'dotenv', '~> 2.8'
   gem 'pry', '~> 0.14'
   gem 'rake', '~> 13.0'

@@ -7,7 +7,7 @@ module KeeperSecretsManager
 
     # Get client version dynamically from VERSION constant
     def self.client_version
-      "#{CLIENT_VERSION_PREFIX}17.91.1"
+      "#{CLIENT_VERSION_PREFIX}17.92.0"
     end
 
     # Keeper public keys by ID
