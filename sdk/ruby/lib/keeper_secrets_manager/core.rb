@@ -876,6 +876,8 @@ module KeeperSecretsManager
         # Create record object
         record = Dto::KeeperRecord.new(
           'recordUid' => record_uid,
+          'folderUid' => encrypted_record['folderUid'],
+          'innerFolderUid' => encrypted_record['innerFolderUid'],
           'data' => data,
           'revision' => encrypted_record['revision'],
           'files' => decrypted_files
