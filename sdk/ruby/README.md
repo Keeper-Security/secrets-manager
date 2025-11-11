@@ -12,6 +12,8 @@ The Ruby SDK for Keeper Secrets Manager provides a flexible, dynamic interface f
 - **Notation Support**: Access specific fields using `keeper://` URI notation
 - **Field Helpers**: Optional convenience methods for common field types
 
+For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/ruby-sdk
+
 ## Installation
 
 Add this line to your application's Gemfile:

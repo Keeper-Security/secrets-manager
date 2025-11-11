@@ -251,8 +251,8 @@ module KeeperSecretsManager
         record_uid
       end
 
-      # Update existing secret
-      def update_secret(record, transaction_type: 'general')
+      # Update existing secret with UpdateOptions
+      def update_secret_with_options(record, update_options = nil)
         # Handle both record object and hash
         if record.is_a?(Dto::KeeperRecord)
           record_uid = record.uid
@@ -272,50 +272,23 @@ module KeeperSecretsManager
         record_key = existing.record_key
         raise Error, "Record key not available for #{record_uid}" unless record_key
 
-        # Record key is already raw bytes (stored during decryption)
-        # No conversion needed - use directly for encryption
-
-        # Debug: Log record data before encryption
-        @logger&.debug("update_secret: record_uid=#{record_uid}")
-        @logger&.debug("update_secret: record_data keys=#{record_data.keys.inspect}")
-        @logger&.debug("update_secret: record_data=#{record_data.inspect[0..200]}...")
-        @logger&.debug("update_secret: record_key present=#{!record_key.nil?}, length=#{record_key&.bytesize}")
-
-        # Encrypt record data with record key (same as create_secret)
-        json_data = Utils.dict_to_json(record_data)
-        @logger&.debug("update_secret: json_data length=#{json_data.bytesize}")
-        @logger&.debug("update_secret: json_data=#{json_data[0..200]}...")
-
-        encrypted_data = Crypto.encrypt_aes_gcm(json_data, record_key)
-        @logger&.debug("update_secret: encrypted_data length=#{encrypted_data.bytesize}")
-        @logger&.debug("update_secret: encrypted_data (base64)=#{Base64.strict_encode64(encrypted_data)[0..50]}...")
-
-        # Prepare payload
+        # Prepare payload (handles UpdateOptions internally)
         payload = prepare_update_payload(
           record_uid: record_uid,
-          data: encrypted_data,
+          record_data: record_data,
+          record_key: record_key,
           revision: existing.revision,
-          transaction_type: transaction_type
+          update_options: update_options
         )
 
-        @logger&.debug("update_secret: payload revision=#{existing.revision}")
-        @logger&.debug("update_secret: payload transaction_type=#{transaction_type}")
-
         # Send request
-        @logger&.debug("update_secret: sending post_query to update_secret endpoint")
-        response = post_query('update_secret', payload)
-        @logger&.debug("update_secret: response received")
-        @logger&.debug("update_secret: response class=#{response.class}")
-        @logger&.debug("update_secret: response=#{response.inspect[0..500]}...")
+        post_query('update_secret', payload)
+      end
 
-        # Always finalize the update (required for changes to persist)
-        # This applies to both 'general' and 'rotation' transaction types
-        complete_payload = Dto::CompleteTransactionPayload.new
-        complete_payload.client_version = KeeperGlobals.client_version
-        complete_payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
-        complete_payload.record_uid = record_uid
-
-        post_query('finalize_secret_update', complete_payload)
+      # Update existing secret (convenience wrapper)
+      def update_secret(record, transaction_type: 'general')
+        update_options = Dto::UpdateOptions.new(transaction_type: transaction_type)
+        update_secret_with_options(record, update_options)
 
         # Update local record's revision to reflect server state
         # Since the server doesn't return the new revision in the response,
@@ -602,6 +575,35 @@ module KeeperSecretsManager
         }
       end
 
+      # Download file thumbnail
+      def download_thumbnail(file_data)
+        # Extract thumbnail metadata
+        file_uid = file_data['fileUid'] || file_data['uid'] || (file_data.respond_to?(:uid) ? file_data.uid : nil)
+        thumbnail_url = file_data['thumbnailUrl'] || file_data['thumbnail_url'] || (file_data.respond_to?(:thumbnail_url) ? file_data.thumbnail_url : nil)
+
+        raise ArgumentError, 'File UID is required' unless file_uid
+        raise Error, "No thumbnail URL available for file #{file_uid}" unless thumbnail_url
+
+        # The file key should already be decrypted (base64 encoded)
+        file_key_str = file_data['fileKey'] || file_data['file_key']
+        raise Error, "File key not available for #{file_uid}" unless file_key_str
+
+        file_key = Utils.base64_to_bytes(file_key_str)
+
+        # Download the encrypted thumbnail content
+        encrypted_content = download_encrypted_file(thumbnail_url)
+
+        # Decrypt the thumbnail content with the file key
+        decrypted_content = Crypto.decrypt_aes_gcm(encrypted_content, file_key)
+
+        # Return thumbnail data
+        {
+          'file_uid' => file_uid,
+          'data' => decrypted_content,
+          'size' => decrypted_content.bytesize
+        }
+      end
+
       # Get file metadata from server
       def get_file_data(file_uid)
         payload = prepare_get_payload(nil)
@@ -878,9 +880,11 @@ module KeeperSecretsManager
           'recordUid' => record_uid,
           'folderUid' => encrypted_record['folderUid'],
           'innerFolderUid' => encrypted_record['innerFolderUid'],
+          'isEditable' => encrypted_record['isEditable'],
           'data' => data,
           'revision' => encrypted_record['revision'],
-          'files' => decrypted_files
+          'files' => decrypted_files,
+          'links' => encrypted_record['links'] || []
         )
 
         # Store record key for later use (e.g., file downloads)
@@ -1026,6 +1030,7 @@ module KeeperSecretsManager
         if query_options
           payload.requested_records = query_options.records_filter
           payload.requested_folders = query_options.folders_filter
+          payload.request_links = query_options.request_links if query_options.request_links
         end
 
         payload
@@ -1319,14 +1324,40 @@ module KeeperSecretsManager
       end
 
       # Other helper methods...
-      def prepare_update_payload(record_uid:, data:, revision:, transaction_type:)
+      def prepare_update_payload(record_uid:, record_data:, record_key:, revision:, update_options: nil)
         payload = Dto::UpdatePayload.new
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.record_uid = record_uid
-        payload.data = Utils.bytes_to_base64(data)
         payload.revision = revision
+
+        # Handle UpdateOptions
+        transaction_type = 'general'
+        if update_options
+          transaction_type = update_options.transaction_type if update_options.transaction_type
+
+          # Handle links_to_remove
+          if update_options.links_to_remove && !update_options.links_to_remove.empty?
+            payload.links2_remove = update_options.links_to_remove
+
+            # Filter fileRef field values - remove specified link UIDs from record data
+            # This modifies the data hash before encryption (matches Python SDK behavior)
+            fileref_field = record_data['fields']&.find { |f| f['type'] == 'fileRef' }
+            if fileref_field && fileref_field['value'].is_a?(Array)
+              original_values = fileref_field['value']
+              filtered_values = original_values.reject { |uid| update_options.links_to_remove.include?(uid) }
+              fileref_field['value'] = filtered_values if filtered_values.length != original_values.length
+            end
+          end
+        end
+
         payload.transaction_type = transaction_type
+
+        # Encrypt record data
+        json_data = Utils.dict_to_json(record_data)
+        encrypted_data = Crypto.encrypt_aes_gcm(json_data, record_key)
+        payload.data = Utils.bytes_to_base64(encrypted_data)
+
         payload
       end
 
