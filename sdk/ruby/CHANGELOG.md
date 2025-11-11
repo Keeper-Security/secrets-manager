@@ -5,15 +5,25 @@
 ### Fixed
 - KSM-685: `CreateOptions.subfolder_uid` parameter is now correctly sent to API when creating records
 - KSM-686: Implemented disaster recovery caching with `CachingPostFunction` to match other SDKs
-- API response caching now works for both `get_secret` and `get_folders` endpoints
-- Added `Cache` class for file-based encrypted cache storage
-- Removed unused `@cache` and `@cache_expiry` instance variables from `SecretsManager`
+  - API response caching now works for both `get_secret` and `get_folders` endpoints
+  - Added `Cache` class for file-based encrypted cache storage
+  - Removed unused `@cache` and `@cache_expiry` instance variables from `SecretsManager`
 
 ### Added
 - `KeeperSecretsManager::CachingPostFunction` - Built-in disaster recovery caching
 - `KeeperSecretsManager::Cache` - File-based cache management (save, load, clear)
 - Cache file location configurable via `KSM_CACHE_DIR` environment variable
 - Comprehensive unit tests for caching functionality (17 new tests)
+- KSM-687: Missing DTO fields for complete SDK parity with other ksm sdks
+  - `links` field to KeeperRecord for linked records support
+  - `is_editable` field to KeeperRecord to check edit permissions
+  - `inner_folder_uid` field to KeeperRecord for folder location tracking
+  - `thumbnail_url` and `last_modified` fields to KeeperFile
+  - UpdateOptions class with `transaction_type` and `links_to_remove` support
+  - `update_secret_with_options` method to support removing file links
+  - `request_links` option to QueryOptions for fetching linked records
+  - `download_thumbnail` method for downloading file thumbnails
+  - `expires_on` field to SecretsManagerResponse
 
 ## [17.1.0] - 2025-01-06
 

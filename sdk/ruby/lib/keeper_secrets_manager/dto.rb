@@ -6,7 +6,7 @@ module KeeperSecretsManager
   module Dto
     # Base class for dynamic record handling
     class KeeperRecord
-      attr_accessor :uid, :title, :type, :fields, :custom, :notes, :folder_uid, :inner_folder_uid, :data, :revision, :files
+      attr_accessor :uid, :title, :type, :fields, :custom, :notes, :folder_uid, :inner_folder_uid, :data, :revision, :files, :links, :is_editable
       attr_reader :record_key  # Internal - stores decrypted record key (bytes) for file upload operations
 
       def initialize(attrs = {})
@@ -34,6 +34,19 @@ module KeeperSecretsManager
           end
 
           @files = attrs['files'] || attrs[:files] || []
+          @links = attrs['links'] || attrs[:links] || []
+
+          # Handle is_editable (can be false, so use has_key? check)
+          if attrs.key?('isEditable')
+            @is_editable = attrs['isEditable']
+          elsif attrs.key?('is_editable')
+            @is_editable = attrs['is_editable']
+          elsif attrs.key?(:is_editable)
+            @is_editable = attrs[:is_editable]
+          else
+            @is_editable = true  # Default to true if not specified
+          end
+
           @data = attrs
         end
 
@@ -180,7 +193,7 @@ module KeeperSecretsManager
 
     # File attachment representation
     class KeeperFile
-      attr_accessor :uid, :name, :title, :mime_type, :size, :data, :url
+      attr_accessor :uid, :name, :title, :mime_type, :size, :data, :url, :thumbnail_url, :last_modified
 
       def initialize(attrs = {})
         @uid = attrs['fileUid'] || attrs['uid'] || attrs[:uid]
@@ -190,6 +203,8 @@ module KeeperSecretsManager
         @size = attrs['size'] || attrs[:size]
         @data = attrs['data'] || attrs[:data]
         @url = attrs['url'] || attrs[:url]
+        @thumbnail_url = attrs['thumbnailUrl'] || attrs['thumbnail_url'] || attrs[:thumbnail_url]
+        @last_modified = attrs['lastModified'] || attrs['last_modified'] || attrs[:last_modified]
       end
 
       def to_h
@@ -205,7 +220,7 @@ module KeeperSecretsManager
 
     # Response wrapper
     class SecretsManagerResponse
-      attr_accessor :records, :folders, :app_data, :warnings, :errors, :just_bound
+      attr_accessor :records, :folders, :app_data, :warnings, :errors, :just_bound, :expires_on
 
       def initialize(attrs = {})
         @records = attrs[:records] || []
@@ -214,16 +229,18 @@ module KeeperSecretsManager
         @warnings = attrs[:warnings] || []
         @errors = attrs[:errors] || []
         @just_bound = attrs[:just_bound] || false
+        @expires_on = attrs[:expires_on]
       end
     end
 
     # Query options
     class QueryOptions
-      attr_accessor :records_filter, :folders_filter
+      attr_accessor :records_filter, :folders_filter, :request_links
 
-      def initialize(records: nil, folders: nil)
+      def initialize(records: nil, folders: nil, request_links: nil)
         @records_filter = records
         @folders_filter = folders
+        @request_links = request_links
       end
     end
 
@@ -234,6 +251,16 @@ module KeeperSecretsManager
       def initialize(folder_uid: nil, subfolder_uid: nil)
         @folder_uid = folder_uid
         @subfolder_uid = subfolder_uid
+      end
+    end
+
+    # Update options
+    class UpdateOptions
+      attr_accessor :transaction_type, :links_to_remove
+
+      def initialize(transaction_type: 'general', links_to_remove: nil)
+        @transaction_type = transaction_type
+        @links_to_remove = links_to_remove || []
       end
     end
   end
