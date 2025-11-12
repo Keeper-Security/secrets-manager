@@ -63,6 +63,11 @@ jobs:
           ruby-version: '3.3'
           working-directory: ./sdk/ruby
 
+      - name: Install dependencies
+        run: |
+          gem install bundler
+          bundle install
+
       - name: Detect Ruby SDK version
         id: detect-version
         run: |
@@ -74,19 +79,6 @@ jobs:
             echo "Could not detect version, using default: ${VERSION}"
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-      - name: Build gem
-        run: |
-          echo "Building gem..."
-          gem build keeper_secrets_manager.gemspec
-
-          # Verify gem was created
-          GEM_FILE=$(ls keeper_secrets_manager-*.gem)
-          echo "Built gem: ${GEM_FILE}"
-
-          # Display gem contents for verification
-          echo "Gem contents:"
-          gem spec ${GEM_FILE}
 
       - name: Install Syft and Manifest CLI
         run: |
@@ -103,13 +95,28 @@ jobs:
           PROJECT_VERSION: ${{ steps.detect-version.outputs.version }}
         run: |
           export PATH="/tmp/bin:$PATH"
-
-          # Find the built gem file
-          GEM_FILE=$(ls keeper_secrets_manager-*.gem)
-          echo "Scanning gem file: ${GEM_FILE}"
-
-          echo "Generating SBOM from built gem with Manifest CLI..."
-          /tmp/bin/manifest sbom "${GEM_FILE}" \
+          
+          echo "Creating Syft configuration for Ruby scanning..."
+          cat > syft-config.yaml << 'EOF'
+          package:
+            search:
+              scope: all-layers
+            cataloger:
+              enabled: true
+              java:
+                enabled: false
+              python:
+                enabled: false
+              nodejs:
+                enabled: false
+              ruby:
+                enabled: true
+                search-unindexed-archives: true
+                search-indexed-archives: true
+          EOF
+          
+          echo "Generating SBOM with Manifest CLI..."
+          /tmp/bin/manifest sbom . \
             --generator=syft \
             --name=keeper-secrets-manager-ruby-sdk \
             --version=${PROJECT_VERSION} \
@@ -117,17 +124,10 @@ jobs:
             --file=ruby-sdk-sbom.json \
             --api-key=${MANIFEST_TOKEN} \
             --publish=true \
-            --asset-label=application,sbom-generated,ruby-gem,secrets-manager
-
+            --asset-label=application,sbom-generated,ruby-gem,secrets-manager \
+            --generator-config=syft-config.yaml
+          
           echo "SBOM generated and uploaded successfully: ruby-sdk-sbom.json"
-
-          # Display SBOM summary for verification
-          echo "SBOM Summary:"
-          if [ -f ruby-sdk-sbom.json ]; then
-            echo "Total packages: $(jq '.packages | length' ruby-sdk-sbom.json)"
-            echo "Package names:"
-            jq -r '.packages[] | .name' ruby-sdk-sbom.json | sort | uniq
-          fi
 
       - name: Archive SBOM
         uses: actions/upload-artifact@v4
