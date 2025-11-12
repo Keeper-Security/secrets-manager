@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal">
+
+        <!-- Title -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="KSM Minimal POC"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Proof that SDK works on Android!"
+            android:textSize="14sp"
+            android:layout_marginBottom="24dp"
+            android:gravity="center" />
+
+        <!-- Token Input -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter One-Time Token:"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <EditText
+            android:id="@+id/tokenInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="US:YOUR_TOKEN_HERE"
+            android:inputType="textMultiLine|textPassword"
+            android:minLines="2"
+            android:maxLines="4"
+            android:padding="12dp"
+            android:background="@android:drawable/edit_text"
+            android:layout_marginBottom="8dp" />
+
+        <CheckBox
+            android:id="@+id/viewTokenCheckbox"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="View Token"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Initialize Button -->
+        <Button
+            android:id="@+id/initButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="1️⃣ Initialize"
+            android:textSize="16sp"
+            android:padding="16dp"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Load Secrets Button -->
+        <Button
+            android:id="@+id/loadButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="2️⃣ Load Secrets"
+            android:textSize="16sp"
+            android:padding="16dp"
+            android:layout_marginBottom="8dp"
+            android:enabled="false" />
+
+        <!-- Clear Secrets Button -->
+        <Button
+            android:id="@+id/clearButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="3️⃣ Clear Secrets"
+            android:textSize="16sp"
+            android:padding="16dp"
+            android:layout_marginBottom="24dp"
+            android:enabled="false" />
+
+        <!-- Status Text -->
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="👆 Enter token and tap Initialize"
+            android:textSize="16sp"
+            android:padding="16dp"
+            android:background="#E3F2FD"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Results Text -->
+        <TextView
+            android:id="@+id/resultsText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:padding="16dp"
+            android:background="#F5F5F5"
+            android:visibility="visible" />
+
+    </LinearLayout>
+
+</ScrollView>
