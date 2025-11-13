@@ -35,8 +35,7 @@
   - `download_thumbnail` method for downloading file thumbnails
   - `expires_on` field to SecretsManagerResponse
 
-### Improved
-- Documentation: Corrected gem name formatting in root README (use `keeper_secrets_manager` not `keeper-secrets-manager`)
+### Changed
 - Documentation: Added Ruby SDK to root repository SDK comparison table
 - Added 3 RSpec integration test files (79 new test examples)
 - **Mock Infrastructure:** Implemented proper AES-256-GCM encryption in `mock_helper.rb`
@@ -104,3 +103,5 @@
 ### Notes
 - Version 17.0.0 to align with other Keeper SDKs
 - No runtime dependencies (base32 is optional)
+
+[17.1.1]: https://github.com/Keeper-Security/secrets-manager/compare/ruby-sdk-v17.1.0...ruby-sdk-v17.1.1
