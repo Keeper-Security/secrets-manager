@@ -1,6 +1,6 @@
 # Changelog
 
-## [17.1.1] - 2025-11-07
+## [17.1.1] - 2025-11-12
 
 ### Fixed
 - KSM-685: `CreateOptions.subfolder_uid` parameter is now correctly sent to API when creating records
@@ -8,12 +8,22 @@
   - API response caching now works for both `get_secret` and `get_folders` endpoints
   - Added `Cache` class for file-based encrypted cache storage
   - Removed unused `@cache` and `@cache_expiry` instance variables from `SecretsManager`
+- Fixed example files to use correct SDK APIs:
+  - `09_totp.rb`: Corrected class name from `Totp` to `TOTP` and method from `generate()` to `generate_code()`
+  - `01_quick_start.rb`: Fixed field access to use dynamic getter (`secret.login`) instead of hash access
+  - `10_custom_caching.rb`: Updated to use `Utils.bytes_to_base64` instead of `Base64.strict_encode64`
+- Fixed badly anchored regular expression in `test/integration/test_totp.rb` that could cause false positives in test validation
 
 ### Added
+- `KeeperSecretsManager.from_config(config_base64, options = {})` - Convenience method for initializing from base64 config string
+  - Complements existing `from_token()` and `from_file()` convenience methods
+  - Simplifies initialization from environment variables containing base64 config (e.g., `ENV['KSM_CONFIG']`)
+  - Provides parity with .NET SDK's `GetVaultConfigFromConfigString()` pattern
 - `KeeperSecretsManager::CachingPostFunction` - Built-in disaster recovery caching
 - `KeeperSecretsManager::Cache` - File-based cache management (save, load, clear)
 - Cache file location configurable via `KSM_CACHE_DIR` environment variable
 - Comprehensive unit tests for caching functionality (17 new tests)
+- Development console script (`bin/console`) for interactive SDK exploration using Pry REPL
 - KSM-687: Missing DTO fields for complete SDK parity with other ksm sdks
   - `links` field to KeeperRecord for linked records support
   - `is_editable` field to KeeperRecord to check edit permissions
@@ -26,7 +36,9 @@
   - `expires_on` field to SecretsManagerResponse
 
 ### Improved
-- Added 3 RSpec integration test files
+- Documentation: Corrected gem name formatting in root README (use `keeper_secrets_manager` not `keeper-secrets-manager`)
+- Documentation: Added Ruby SDK to root repository SDK comparison table
+- Added 3 RSpec integration test files (79 new test examples)
 - **Mock Infrastructure:** Implemented proper AES-256-GCM encryption in `mock_helper.rb`
   - Records now use proper AES-GCM encryption (was Base64 only)
   - Folders use correct AES-CBC encryption for data
