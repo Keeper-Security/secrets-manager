@@ -37,7 +37,7 @@ begin
   secret = secrets_manager.get_secret_by_uid('RECORD_UID')
   puts "\nSecret details:"
   puts "  Title: #{secret.title}"
-  puts "  Login: #{secret.fields['login']}"
+  puts "  Login: #{secret.login}"
 rescue StandardError => e
   puts "Error: #{e.message}"
 end

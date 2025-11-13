@@ -13,7 +13,6 @@ require 'json'
 require 'time'
 require 'net/http'
 require 'uri'
-require 'base64'
 
 puts '=== Custom Caching and HTTP Handling Examples ==='
 
@@ -27,8 +26,8 @@ def make_http_request(url, transmission_key, encrypted_payload, verify_ssl)
   request = Net::HTTP::Post.new(uri)
   request['Content-Type'] = 'application/octet-stream'
   request['PublicKeyId'] = transmission_key.public_key_id.to_s
-  request['TransmissionKey'] = Base64.strict_encode64(transmission_key.encrypted_key)
-  request['Authorization'] = "Signature #{Base64.strict_encode64(encrypted_payload.signature)}"
+  request['TransmissionKey'] = KeeperSecretsManager::Utils.bytes_to_base64(transmission_key.encrypted_key)
+  request['Authorization'] = "Signature #{KeeperSecretsManager::Utils.bytes_to_base64(encrypted_payload.signature)}"
   request.body = encrypted_payload.encrypted_payload
 
   http = Net::HTTP.new(uri.host, uri.port)

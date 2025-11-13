@@ -15,7 +15,7 @@ puts '=== TOTP (2FA) Example ==='
 
 begin
   # Check if TOTP is available
-  unless defined?(KeeperSecretsManager::Totp)
+  unless defined?(KeeperSecretsManager::TOTP)
     puts "\nTOTP functionality requires the 'base32' gem."
     puts 'Install it with: gem install base32'
     puts "\nWithout TOTP, you can still:"
@@ -57,7 +57,7 @@ begin
       seed = totp_field['value'].first
 
       # Generate current code
-      code = KeeperSecretsManager::Totp.generate(seed)
+      code = KeeperSecretsManager::TOTP.generate_code(seed)
       puts "  #{record.title}: #{code}"
 
       # Show time remaining
