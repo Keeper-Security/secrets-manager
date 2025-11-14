@@ -20,6 +20,61 @@ puts '=== Custom Caching and HTTP Handling Examples ==='
 config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
 storage = KeeperSecretsManager::Storage::InMemoryStorage.new(config)
 
+# ============================================================================
+# Example 0: Built-in Disaster Recovery Caching (New in v17.2.0)
+# ============================================================================
+puts "\n0. Built-in CachingPostFunction (Recommended for Production):"
+puts "   Use the built-in disaster recovery caching for production apps"
+puts
+
+begin
+  # For production use, initialize from file with caching enabled
+  # sm = KeeperSecretsManager.from_file('keeper_config.json',
+  #                                     custom_post_function: KeeperSecretsManager::CachingPostFunction)
+
+  # For this example, we use InMemoryStorage to demonstrate the concept
+  sm = KeeperSecretsManager.new(
+    config: storage,
+    verify_ssl_certs: false,
+    custom_post_function: KeeperSecretsManager::CachingPostFunction
+  )
+
+  # First call - caches response to disk (ksm_cache.bin)
+  secrets = sm.get_secrets
+  puts "✓ Retrieved #{secrets.length} secrets (cached for disaster recovery)"
+
+  # Check if cache exists
+  if KeeperSecretsManager::Cache.cache_exists?
+    cache_path = KeeperSecretsManager::Cache.cache_file_path
+    cache_size = File.size(cache_path)
+    puts "  Cache saved: #{cache_path} (#{cache_size} bytes)"
+  end
+
+  # Customize cache location (optional)
+  puts "\n  To customize cache location, set environment variable:"
+  puts "    export KSM_CACHE_DIR='/var/cache/keeper'"
+
+  # Cache management
+  puts "\n  Cache Management:"
+  puts "    - KeeperSecretsManager::Cache.cache_exists?  # Check if cache exists"
+  puts "    - KeeperSecretsManager::Cache.cache_file_path # Get cache file path"
+  puts "    - KeeperSecretsManager::Cache.clear_cache     # Clear cache"
+
+  puts "\n  How it works:"
+  puts "    - Network requests are cached to disk automatically"
+  puts "    - On network failure, cached data is used automatically"
+  puts "    - Always tries network first (disaster recovery fallback)"
+  puts "    - Cache is encrypted for security"
+
+rescue => e
+  puts "✗ Error: #{e.message}"
+end
+
+puts "\n" + "="*80
+puts "The examples below show custom caching patterns for advanced use cases"
+puts "For most applications, use the built-in CachingPostFunction shown above"
+puts "="*80
+
 # Helper method to make HTTP requests (reusable across examples)
 def make_http_request(url, transmission_key, encrypted_payload, verify_ssl)
   uri = URI(url)
