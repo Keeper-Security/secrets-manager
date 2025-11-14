@@ -827,9 +827,7 @@ This function returns `Ok(())` if the mode is set successfully, or an `io::Error
 if an error occurs.
 
 */
-pub fn set_config_mode(
-    file: &str,
-) -> Result<(), io::Error> {
+pub fn set_config_mode(file: &str) -> Result<(), io::Error> {
     // Check if we should skip setting the mode
     if let Ok(skip_mode) = env::var("KSM_CONFIG_SKIP_MODE") {
         if skip_mode.to_lowercase() == "true" {
@@ -860,7 +858,6 @@ pub fn set_config_mode(
         ];
 
         for command in commands {
-
             let output = Command::new("cmd").args(&["/C", &command]).output()?;
 
             match output.status.code() {
