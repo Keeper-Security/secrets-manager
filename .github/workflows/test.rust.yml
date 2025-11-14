@@ -44,31 +44,9 @@ jobs:
         run: |
           cargo clippy --all-features -- -D warnings
 
-      - name: Run lib and integration tests
+      - name: Run all tests
         run: |
-          cargo test --all-features --lib
-          cargo test --all-features --test folder_operations_tests
-          cargo test --all-features --test file_operations_tests
-          cargo test --all-features --test error_handling_tests
-          cargo test --all-features --test regional_hostname_tests
-          cargo test --all-features --test create_secret_test
-          cargo test --all-features --test crypto_tests
-          cargo test --all-features --test delete_secret_tests
-          cargo test --all-features --test feature_validation_tests
-          cargo test --all-features --test get_secrets_tests
-          cargo test --all-features --test integration_tests
-          cargo test --all-features --test notation_tests
-          cargo test --all-features --test payload_test
-          cargo test --all-features --test totp_test
-          cargo test --all-features --test update_secret_tests
-
-      - name: Run caching tests (serial execution required)
-        run: |
-          cargo test --all-features --test caching_tests -- --test-threads=1
-
-      - name: Run permission tests (serial execution required)
-        run: |
-          cargo test --all-features --lib -- --ignored --test-threads=1
+          cargo test --all-features
 
       - name: Build release
         run: |

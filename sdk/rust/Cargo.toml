@@ -15,10 +15,6 @@ categories = ["cryptography", "api-bindings"]
 name = "keeper_secrets_manager_core"
 path = "src/lib.rs"
 
-[features]
-default = ["sequential_tests"]
-sequential_tests = []
-
 [dependencies]
 aes = "0.8"
 aes-gcm = "0.10"
@@ -56,6 +52,7 @@ winapi = { version = "0.3" ,features = ["securitybaseapi","winbase","winerror","
 
 [dev-dependencies]
 tempfile = "3.20"
+serial_test = "3.0"
 
 # Manual integration test examples
 [[example]]
