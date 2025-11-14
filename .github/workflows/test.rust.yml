@@ -66,6 +66,10 @@ jobs:
         run: |
           cargo test --all-features --test caching_tests -- --test-threads=1
 
+      - name: Run permission tests (serial execution required)
+        run: |
+          cargo test --all-features --lib -- --ignored --test-threads=1
+
       - name: Build release
         run: |
           cargo build --release
