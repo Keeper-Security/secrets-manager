@@ -24,9 +24,9 @@ pub enum ConfigKeys {
     #[serde(rename = "clientId")]
     KeyClientId,
     #[serde(rename = "clientKey")]
-    KeyClientKey, // The key that is used to identify the client before public key. This is token.   
+    KeyClientKey, // The key that is used to identify the client before public key. This is token.
     #[serde(rename = "appKey")]
-    KeyAppKey,    // The application key with which all secrets are encrypted
+    KeyAppKey, // The application key with which all secrets are encrypted
     #[serde(rename = "appOwnerPublicKey")]
     KeyOwnerPublicKey, // The application owner public key, to create records
     #[serde(rename = "privateKey")]
@@ -129,16 +129,16 @@ impl ConfigKeys {
     /// ```
     pub fn get_enum(value: &str) -> Option<Self> {
         match value {
-            "url"  => Some(ConfigKeys::KeyUrl),
-            "clientId"  => Some(ConfigKeys::KeyClientId),
-            "clientKey"  => Some(ConfigKeys::KeyClientKey),
+            "url" => Some(ConfigKeys::KeyUrl),
+            "clientId" => Some(ConfigKeys::KeyClientId),
+            "clientKey" => Some(ConfigKeys::KeyClientKey),
             "appKey" => Some(ConfigKeys::KeyAppKey),
             "appOwnerPublicKey" => Some(ConfigKeys::KeyOwnerPublicKey),
             "privateKey" => Some(ConfigKeys::KeyPrivateKey),
-            "serverPublicKeyId"  => Some(ConfigKeys::KeyServerPublicKeyId),
-            "bat"  => Some(ConfigKeys::KeyBindingToken),
-            "bindingKey"  => Some(ConfigKeys::KeyBindingKey),
-            "hostname"  => Some(ConfigKeys::KeyHostname),
+            "serverPublicKeyId" => Some(ConfigKeys::KeyServerPublicKeyId),
+            "bat" => Some(ConfigKeys::KeyBindingToken),
+            "bindingKey" => Some(ConfigKeys::KeyBindingKey),
+            "hostname" => Some(ConfigKeys::KeyHostname),
             _ => None,
         }
     }

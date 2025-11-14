@@ -11,55 +11,12 @@
 //
 
 use lazy_static::lazy_static;
-use log::error;
-use std::process::Command;
 
 const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
-const RUST_VERSION_PREFIX: &str = "mp";
+const RUST_VERSION_PREFIX: &str = "mr";
 
-pub fn get_client_version(hardcode: bool) -> String {
-    let mut version = SDK_VERSION.to_string();
-
-    if !hardcode {
-        // Attempt to get the version from the Cargo.toml metadata
-        let output = Command::new("cargo")
-            .arg("metadata")
-            .arg("--no-deps")
-            .output();
-
-        match output {
-            Ok(output) => {
-                if let Ok(metadata) = String::from_utf8(output.stdout) {
-                    if let Some(ksm_version) = metadata
-                        .lines()
-                        .find(|line| line.contains("keeper-secrets-manager-core"))
-                    {
-                        let version_part = ksm_version
-                            .split('=')
-                            .nth(1)
-                            .unwrap_or("")
-                            .trim_matches('"')
-                            .trim();
-                        let version_parts: Vec<&str> = version_part.split('.').collect();
-
-                        if version_parts.len() >= 3 {
-                            let version_minor = version_parts[1];
-                            let version_revision = version_parts[2]
-                                .chars()
-                                .take_while(|c| c.is_ascii_digit())
-                                .collect::<String>();
-                            version = format!("{}.{}", version_minor, version_revision);
-                        }
-                    }
-                }
-            }
-            Err(_) => {
-                error!("Cargo needs to be installed for running this sdk")
-            }
-        }
-    }
-
-    version
+pub fn get_client_version(_hardcode: bool) -> String {
+    SDK_VERSION.to_string()
 }
 
 lazy_static! {
