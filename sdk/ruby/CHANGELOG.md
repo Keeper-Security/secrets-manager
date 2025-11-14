@@ -1,6 +1,6 @@
 # Changelog
 
-## [17.1.1] - 2025-11-12
+## [17.2.0] - 2025-11-14
 
 ### Fixed
 - KSM-685: `CreateOptions.subfolder_uid` parameter is now correctly sent to API when creating records
@@ -104,4 +104,4 @@
 - Version 17.0.0 to align with other Keeper SDKs
 - No runtime dependencies (base32 is optional)
 
-[17.1.1]: https://github.com/Keeper-Security/secrets-manager/compare/ruby-sdk-v17.1.0...ruby-sdk-v17.1.1
+[17.2.0]: https://github.com/Keeper-Security/secrets-manager/compare/ruby-sdk-v17.1.0...ruby-sdk-v17.2.0
