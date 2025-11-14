@@ -272,13 +272,199 @@ use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_
         let token = "<Your One time token>".to_string();
         let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
 
-        let client_options = ClientOptions::new_client_options(token, file_name); 
+        let client_options = ClientOptions::new_client_options(token, file_name);
 
         println!("Delete Secrets --------------------------------------------------------------");
         let mut secrets_manager_3 = SecretsManager::new(client_options)?;
         let uids  = vec!["<secret uid>".to_string()];
         let secrets_records_3 = secrets_manager_3.delete_secret(uids.clone())?;
 
+
+        Ok(())
+    }
+
+```
+
+* updating secret records
+
+```rust
+use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage, enums::StandardFieldTypeEnum};
+
+    fn main()-> Result<(), KSMRError>{
+        let token = "<Your One time token>".to_string();
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
+
+        let client_options = ClientOptions::new_client_options(token, file_name);
+
+        let mut secrets_manager = SecretsManager::new(client_options)?;
+
+        // Get a record to update
+        let mut secrets = secrets_manager.get_secrets(vec!["<secret uid>".to_string()])?;
+        let mut record = secrets.into_iter().next().unwrap();
+
+        // Modify the password field
+        record.set_standard_field_value_mut(StandardFieldTypeEnum::PASSWORD.get_type(), "NewPassword123!".into())?;
+
+        // Update the record
+        secrets_manager.update_secret(record)?;
+
+        println!("Record updated successfully!");
+        Ok(())
+    }
+
+```
+
+* password rotation with transactions
+
+```rust
+use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage,
+    enums::StandardFieldTypeEnum, dto::payload::UpdateTransactionType};
+
+    fn main()-> Result<(), KSMRError>{
+        let token = "<Your One time token>".to_string();
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
+
+        let client_options = ClientOptions::new_client_options(token, file_name);
+
+        let mut secrets_manager = SecretsManager::new(client_options)?;
+
+        // Get a record to rotate
+        let mut secrets = secrets_manager.get_secrets(vec!["<secret uid>".to_string()])?;
+        let mut record = secrets.into_iter().next().unwrap();
+        let record_uid = record.uid.clone();
+
+        // Update password for rotation
+        record.set_standard_field_value_mut(StandardFieldTypeEnum::PASSWORD.get_type(), "NewRotatedPassword123!".into())?;
+
+        // Start rotation transaction
+        secrets_manager.update_secret_with_transaction(record, UpdateTransactionType::Rotation)?;
+
+        // Test the new password in your application...
+        // If successful, commit the transaction:
+        secrets_manager.complete_transaction(record_uid.clone(), false)?;
+
+        // Or rollback if testing failed:
+        // secrets_manager.complete_transaction(record_uid, true)?;
+
+        println!("Password rotation completed successfully!");
+        Ok(())
+    }
+
+```
+
+* updating secret with options (remove file links)
+
+```rust
+use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage,
+    dto::payload::{UpdateTransactionType, UpdateOptions}};
+
+    fn main()-> Result<(), KSMRError>{
+        let token = "<Your One time token>".to_string();
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
+
+        let client_options = ClientOptions::new_client_options(token, file_name);
+
+        let mut secrets_manager = SecretsManager::new(client_options)?;
+
+        // Get a record to update
+        let mut secrets = secrets_manager.get_secrets(vec!["<secret uid>".to_string()])?;
+        let mut record = secrets.into_iter().next().unwrap();
+
+        // Modify fields as needed...
+
+        // Update with options - remove file links and use general transaction
+        let update_options = UpdateOptions::new(
+            UpdateTransactionType::General,
+            vec!["file-uid-to-remove".to_string()]
+        );
+
+        secrets_manager.update_secret_with_options(record, update_options)?;
+
+        println!("Record updated and file links removed!");
+        Ok(())
+    }
+
+```
+
+* searching for secrets by title
+
+```rust
+use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage};
+
+    fn main()-> Result<(), KSMRError>{
+        let token = "<Your One time token>".to_string();
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
+
+        let client_options = ClientOptions::new_client_options(token, file_name);
+
+        let mut secrets_manager = SecretsManager::new(client_options)?;
+
+        // Get all secrets with a specific title
+        let matching_secrets = secrets_manager.get_secrets_by_title("Production Database")?;
+        println!("Found {} matching secrets", matching_secrets.len());
+
+        // Get first secret with a specific title
+        if let Some(secret) = secrets_manager.get_secret_by_title("Production Database")? {
+            println!("Found secret: {}", secret.uid);
+        }
+
+        Ok(())
+    }
+
+```
+
+* using disaster recovery caching
+
+```rust
+use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError,
+    storage::FileKeyValueStorage, caching};
+
+    fn main()-> Result<(), KSMRError>{
+        let token = "<Your One time token>".to_string();
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
+
+        let mut client_options = ClientOptions::new_client_options(token, file_name);
+
+        // Enable caching for disaster recovery (falls back to cached data on network failure)
+        client_options.set_custom_post_function(caching::caching_post_function);
+
+        let mut secrets_manager = SecretsManager::new(client_options)?;
+
+        // First call saves to cache (KSM_CACHE_DIR/ksm_cache.bin)
+        let secrets = secrets_manager.get_secrets(Vec::new())?;
+
+        // Subsequent calls use cache as fallback if network fails
+        println!("Retrieved {} secrets (with cache fallback)", secrets.len());
+
+        Ok(())
+    }
+
+```
+
+* downloading file thumbnails
+
+```rust
+use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage};
+
+    fn main()-> Result<(), KSMRError>{
+        let token = "<Your One time token>".to_string();
+        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
+
+        let client_options = ClientOptions::new_client_options(token, file_name);
+
+        let mut secrets_manager = SecretsManager::new(client_options)?;
+
+        let secrets = secrets_manager.get_secrets(Vec::new())?;
+
+        for secret in secrets {
+            for mut file in secret.files {
+                // Download thumbnail if available
+                if let Some(thumbnail_data) = file.get_thumbnail_data()? {
+                    std::fs::write(format!("{}_thumb.jpg", file.name), thumbnail_data)?;
+                    println!("Downloaded thumbnail for {}", file.name);
+                }
+            }
+        }
 
         Ok(())
     }
