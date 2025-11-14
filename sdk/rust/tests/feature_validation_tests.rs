@@ -22,9 +22,9 @@ mod feature_validation_tests {
     use keeper_secrets_manager_core::custom_error::KSMRError;
     use keeper_secrets_manager_core::dto::payload::{UpdateOptions, UpdateTransactionType};
     use keeper_secrets_manager_core::dto::{
-        EncryptedPayload, KeeperFile, KsmHttpResponse, QueryOptions, TransmissionKey,
+        EncryptedPayload, KsmHttpResponse, QueryOptions, TransmissionKey,
     };
-    use keeper_secrets_manager_core::enums::{KvStoreType, StandardFieldTypeEnum};
+    use keeper_secrets_manager_core::enums::KvStoreType;
     use keeper_secrets_manager_core::storage::{InMemoryKeyValueStorage, KeyValueStorage};
     use serde_json::json;
     use std::collections::HashMap;
@@ -175,6 +175,7 @@ mod feature_validation_tests {
         }
 
         // Mock that returns our test records
+        #[allow(dead_code)]
         fn mock_get_all(
             _url: String,
             transmission_key: TransmissionKey,
@@ -252,7 +253,7 @@ mod feature_validation_tests {
     #[test]
     fn test_keeper_file_url_fields() {
         // Test that KeeperFile has url and thumbnail_url fields
-        let file_dict: HashMap<String, serde_json::Value> = [
+        let _file_dict: HashMap<String, serde_json::Value> = [
             ("fileUid".to_string(), json!("file-123")),
             ("url".to_string(), json!("https://example.com/file")),
             (
@@ -334,7 +335,6 @@ mod feature_validation_tests {
     #[test]
     fn test_caching_post_function_fallback() {
         use keeper_secrets_manager_core::caching;
-        use std::cell::RefCell;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
         // Clear cache first
@@ -350,9 +350,9 @@ mod feature_validation_tests {
 
         // Mock that fails after first call
         fn failing_mock(
-            url: String,
+            _url: String,
             transmission_key: TransmissionKey,
-            encrypted_payload: EncryptedPayload,
+            _encrypted_payload: EncryptedPayload,
         ) -> Result<KsmHttpResponse, KSMRError> {
             let count = CALL_COUNT.with(|c| c.fetch_add(1, Ordering::SeqCst));
 
@@ -565,7 +565,6 @@ mod feature_validation_tests {
         // This ensures all new types and methods are properly exported and accessible
 
         use keeper_secrets_manager_core::caching;
-        use keeper_secrets_manager_core::core::ClientOptions;
         use keeper_secrets_manager_core::dto::payload::{UpdateOptions, UpdateTransactionType};
         use keeper_secrets_manager_core::dto::QueryOptions;
 

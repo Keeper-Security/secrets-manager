@@ -21,6 +21,7 @@ mod caching_tests {
     use keeper_secrets_manager_core::caching::{
         cache_exists, clear_cache, get_cache_file_path, get_cached_data, save_cache,
     };
+    use serial_test::serial;
     use std::env;
     use std::fs;
     use std::path::PathBuf;
@@ -53,6 +54,7 @@ mod caching_tests {
 
     /// Test: Save and retrieve cache data
     #[test]
+    #[serial]
     fn test_save_and_get_cache() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -74,6 +76,7 @@ mod caching_tests {
 
     /// Test: Cache exists check
     #[test]
+    #[serial]
     fn test_cache_exists() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -94,6 +97,7 @@ mod caching_tests {
 
     /// Test: Clear cache
     #[test]
+    #[serial]
     fn test_clear_cache() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -114,6 +118,7 @@ mod caching_tests {
 
     /// Test: Clear cache when no cache exists
     #[test]
+    #[serial]
     fn test_clear_cache_when_not_exists() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -131,6 +136,7 @@ mod caching_tests {
 
     /// Test: Get cached data when no cache exists
     #[test]
+    #[serial]
     fn test_get_cached_data_not_exists() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -144,6 +150,7 @@ mod caching_tests {
 
     /// Test: Save empty data to cache
     #[test]
+    #[serial]
     fn test_save_empty_cache() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -162,6 +169,7 @@ mod caching_tests {
 
     /// Test: Save large data to cache
     #[test]
+    #[serial]
     fn test_save_large_cache() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -181,6 +189,7 @@ mod caching_tests {
 
     /// Test: Cache overwrite
     #[test]
+    #[serial]
     fn test_cache_overwrite() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -208,6 +217,7 @@ mod caching_tests {
 
     /// Test: Cache file path respects KSM_CACHE_DIR environment variable
     #[test]
+    #[serial]
     fn test_cache_file_path_custom_dir() {
         let custom_dir = "/custom/cache/dir";
         env::set_var("KSM_CACHE_DIR", custom_dir);
@@ -221,6 +231,7 @@ mod caching_tests {
 
     /// Test: Cache file path uses default directory when env var not set
     #[test]
+    #[serial]
     fn test_cache_file_path_default_dir() {
         env::remove_var("KSM_CACHE_DIR");
 
@@ -234,6 +245,7 @@ mod caching_tests {
 
     /// Test: Binary data roundtrip through cache
     #[test]
+    #[serial]
     fn test_cache_binary_data_roundtrip() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -253,6 +265,7 @@ mod caching_tests {
 
     /// Test: Cache data integrity with transmission key prefix
     #[test]
+    #[serial]
     fn test_cache_transmission_key_format() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -279,6 +292,7 @@ mod caching_tests {
 
     /// Test: Multiple save operations (stress test)
     #[test]
+    #[serial]
     fn test_cache_multiple_saves() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -298,6 +312,7 @@ mod caching_tests {
 
     /// Test: Cache data with minimum size (transmission key only)
     #[test]
+    #[serial]
     fn test_cache_minimum_size() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -315,6 +330,7 @@ mod caching_tests {
 
     /// Test: Cache data with realistic size
     #[test]
+    #[serial]
     fn test_cache_realistic_size() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -337,6 +353,7 @@ mod caching_tests {
 
     /// Test: Cache survives multiple clear operations
     #[test]
+    #[serial]
     fn test_cache_multiple_clears() {
         let (cache_dir, test_dir) = setup_test_cache();
         env::set_var("KSM_CACHE_DIR", &cache_dir);
@@ -358,6 +375,7 @@ mod caching_tests {
 
     /// Test: Cache file path format
     #[test]
+    #[serial]
     fn test_cache_file_path_format() {
         env::set_var("KSM_CACHE_DIR", "/tmp/test");
 
