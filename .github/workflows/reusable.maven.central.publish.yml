@@ -40,16 +40,104 @@ jobs:
 
   generate-and-upload-sbom:
     needs: get-version
-    uses: ./.github/workflows/reusable.sbom.workflow.yml
-    with:
-      working-directory: ${{ inputs.working-directory }}
-      project-name: ${{ inputs.project-name }}
-      project-type: java
-      project-version: ${{ needs.get-version.outputs.version }}
-      sbom-format: spdx-json
-      additional-labels: java,sdk,maven,security
-    secrets:
-      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java ${{ inputs.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: wrapper
+
+      - name: Build project and copy dependencies
+        run: |
+          echo "Building project to resolve dependencies..."
+          ./gradlew build -x test --no-daemon --refresh-dependencies
+
+          echo "Copying runtime dependencies for SBOM scanning..."
+          ./gradlew copyDependencies
+
+          echo "Dependencies collected:"
+          ls -la build/sbom-deps/ || echo "Warning: sbom-deps directory not created"
+
+          echo "Excluding fatJar from SBOM (test artifact only):"
+          find build/libs -name "*.jar" -type f ! -name "*-fat.jar" || true
+
+      - name: Install SBOM tools
+        run: |
+          echo "Installing Syft v1.18.1..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
+
+          echo "Installing Manifest CLI v0.18.3..."
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b . v0.18.3
+          chmod +x ./manifest
+
+          echo "Verifying installations..."
+          syft version
+          ./manifest --version
+
+      - name: Generate and publish SBOM
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+        run: |
+          echo "Creating Syft configuration for Java/Kotlin scanning..."
+          cat > syft-config.yaml << 'EOF'
+          package:
+            search:
+              scope: all-layers
+              unindexed-archives: true
+              indexed-archives: true
+            cataloger:
+              enabled: true
+              java:
+                enabled: true
+                search-unindexed-archives: true
+                search-indexed-archives: true
+                resolve-dependencies: true
+                use-network: false
+                max-parent-recursive-depth: 10
+              # Disable non-Java catalogers
+              ruby:
+                enabled: false
+              python:
+                enabled: false
+              nodejs:
+                enabled: false
+              dotnet:
+                enabled: false
+              golang:
+                enabled: false
+          EOF
+
+          echo "Generating SBOM with Manifest CLI..."
+          ./manifest sbom build/sbom-deps \
+            --generator=syft \
+            --generator-config=syft-config.yaml \
+            --name=${{ inputs.project-name }} \
+            --version=${{ needs.get-version.outputs.version }} \
+            --output=spdx-json \
+            --file=sbom.json \
+            --api-key=${MANIFEST_TOKEN} \
+            --publish=true \
+            --asset-label=application,sbom-generated,java,sdk,maven,security
+
+      - name: Archive SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ inputs.project-name }}-${{ needs.get-version.outputs.version }}
+          path: ${{ inputs.working-directory }}/sbom.json
+          retention-days: 90
 
   publish-to-maven-central:
     needs: [get-version, generate-and-upload-sbom]

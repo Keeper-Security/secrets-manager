@@ -5,14 +5,14 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 group = "com.keepersecurity.secrets-manager"
 
 // During publishing, If version ends with '-SNAPSHOT' then it will be published to Maven snapshot repository
-version = "17.1.1"
+version = "17.1.2"
 
 plugins {
     `java-library`
-    kotlin("jvm") version "2.2.0"
-    kotlin("plugin.serialization") version "2.2.0"
+    kotlin("jvm") version "2.2.10"
+    kotlin("plugin.serialization") version "2.2.10"
     `maven-publish`
-    id("org.jreleaser") version "1.18.0"
+    id("org.jreleaser") version "1.20.0"
 }
 
 java {
@@ -40,18 +40,18 @@ repositories {
 
 dependencies {
     // Align versions of all Kotlin components
-    implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.2.0"))
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:2.2.10"))
 
     // Use the Kotlin JDK 8 standard library.
-    api("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.0")
+    api("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.10")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    implementation("org.jetbrains.kotlin:kotlin-reflect:2.2.0")
+    implementation("org.jetbrains.kotlin:kotlin-reflect:2.2.10")
 
     // Use the Kotlin test library.
-    testImplementation("org.jetbrains.kotlin:kotlin-test:2.2.0")
+    testImplementation("org.jetbrains.kotlin:kotlin-test:2.2.10")
 
     // Use the Kotlin JUnit integration.
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.2.0")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.2.10")
 
     testImplementation("org.bouncycastle:bc-fips:2.1.1")
 //    testImplementation("org.bouncycastle:bcprov-jdk15on:1.70")
@@ -66,6 +66,24 @@ tasks.jar {
     }
 }
 
+// NOTE: fatJar is for used for testing (not published to Maven Central)
+tasks.register<Jar>("fatJar") {
+    archiveClassifier.set("fat")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    manifest {
+        attributes(
+            "Implementation-Title" to "Keeper Secrets Manager Client Library",
+            "Implementation-Version" to archiveVersion
+        )
+    }
+
+    from(sourceSets.main.get().output)
+    from(configurations.runtimeClasspath.get().map {
+        if (it.isDirectory) it else zipTree(it)
+    })
+    //with(tasks.jar.get() as CopySpec)
+}
 
 java {
     withJavadocJar()

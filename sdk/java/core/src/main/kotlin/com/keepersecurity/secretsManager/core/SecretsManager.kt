@@ -19,7 +19,7 @@ import java.util.*
 import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj17.1.1"
+const val KEEPER_CLIENT_VERSION = "mj17.1.2"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -1134,24 +1134,36 @@ private fun fetchAndDecryptSecrets(
     val records: MutableList<KeeperRecord> = mutableListOf()
     if (response.records != null) {
         response.records.forEach {
-            val recordKey = decrypt(it.recordKey, appKey)
-            val decryptedRecord = decryptRecord(it, recordKey, options)
-            if (decryptedRecord != null) {
-                records.add(decryptedRecord)
+            try {
+                val recordKey = decrypt(it.recordKey, appKey)
+                val decryptedRecord = decryptRecord(it, recordKey, options)
+                if (decryptedRecord != null) {
+                    records.add(decryptedRecord)
+                }
+            } catch (e: Exception) {
+                System.err.println("Record ${it.recordUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
             }
         }
     }
     if (response.folders != null) {
         response.folders.forEach { folder ->
-            val folderKey = decrypt(folder.folderKey, appKey)
-            folder.records!!.forEach { record ->
-                val recordKey = decrypt(record.recordKey, folderKey)
-                val decryptedRecord = decryptRecord(record, recordKey, options)
-                if (decryptedRecord != null) {
-                    decryptedRecord.folderUid = folder.folderUid
-                    decryptedRecord.folderKey = folderKey
-                    records.add(decryptedRecord)
+            try {
+                val folderKey = decrypt(folder.folderKey, appKey)
+                folder.records!!.forEach { record ->
+                    try {
+                        val recordKey = decrypt(record.recordKey, folderKey)
+                        val decryptedRecord = decryptRecord(record, recordKey, options)
+                        if (decryptedRecord != null) {
+                            decryptedRecord.folderUid = folder.folderUid
+                            decryptedRecord.folderKey = folderKey
+                            records.add(decryptedRecord)
+                        }
+                    } catch (e: Exception) {
+                        System.err.println("Record ${record.recordUid} in folder ${folder.folderUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                    }
                 }
+            } catch (e: Exception) {
+                System.err.println("Folder ${folder.folderUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
             }
         }
     }
@@ -1175,17 +1187,21 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
 
     if (record.files != null) {
         record.files.forEach {
-            val fileKey = decrypt(it.fileKey, recordKey)
-            val decryptedFile = decrypt(it.data, fileKey)
-            files.add(
-                KeeperFile(
-                    fileKey,
-                    it.fileUid,
-                    Json.decodeFromString(bytesToString(decryptedFile)),
-                    it.url,
-                    it.thumbnailUrl
+            try {
+                val fileKey = decrypt(it.fileKey, recordKey)
+                val decryptedFile = decrypt(it.data, fileKey)
+                files.add(
+                    KeeperFile(
+                        fileKey,
+                        it.fileUid,
+                        Json.decodeFromString(bytesToString(decryptedFile)),
+                        it.url,
+                        it.thumbnailUrl
+                    )
                 )
-            )
+            } catch (e: Exception) {
+                System.err.println("File ${it.fileUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+            }
         }
     }
 
