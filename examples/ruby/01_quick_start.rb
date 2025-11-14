@@ -25,19 +25,24 @@ rescue StandardError => e
   puts 'Make sure to set KSM_TOKEN environment variable or replace with your token'
 end
 
-# Method 2: Using base64 configuration (for repeated use)
-# After first connection, save your config for reuse
+# Method 2: Using saved configuration file (recommended for repeated use)
+# After first connection with token, config is saved to keeper_config.json
 begin
-  config_base64 = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG_STRING'
+  # Initialize from saved configuration file
+  secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
 
-  # Initialize with saved configuration
-  secrets_manager = KeeperSecretsManager.from_config(config_base64)
+  # Get all secrets
+  secrets = secrets_manager.get_secrets
+  puts "\nRetrieved #{secrets.length} secrets from saved config"
 
   # Get specific secret by UID
-  secret = secrets_manager.get_secret_by_uid('RECORD_UID')
-  puts "\nSecret details:"
-  puts "  Title: #{secret.title}"
-  puts "  Login: #{secret.login}"
+  if secrets.any?
+    secret = secrets.first
+    puts "\nSecret details:"
+    puts "  Title: #{secret.title}"
+    puts "  Login: #{secret.login}" if secret.login
+  end
 rescue StandardError => e
   puts "Error: #{e.message}"
+  puts 'Make sure keeper_config.json exists (run with token first)'
 end

@@ -5,9 +5,8 @@
 require 'keeper_secrets_manager'
 require 'tempfile'
 
-# Initialize
-config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
-secrets_manager = KeeperSecretsManager.from_config(config)
+# Initialize from saved configuration file
+secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
 
 puts '=== File Operations Example ==='
 
@@ -46,6 +45,36 @@ if records_with_files.any?
 
   rescue StandardError => e
     puts "✗ Download failed: #{e.message}"
+  end
+end
+
+# 2.5. Download file thumbnails (new in v17.2.0)
+if records_with_files.any?
+  puts "\n2.5. Downloading file thumbnails..."
+  record = records_with_files.first
+
+  record.files.each do |file|
+    # Check if thumbnail is available
+    if file['thumbnailUrl'] || file['thumbnail_url']
+      puts "  Downloading thumbnail for: #{file['name']}"
+
+      begin
+        thumbnail = secrets_manager.download_thumbnail(file)
+
+        # Save thumbnail to disk
+        thumb_filename = "thumb_#{file['name']}"
+        File.write(thumb_filename, thumbnail['data'])
+
+        puts "  ✓ Saved: #{thumb_filename} (#{thumbnail['size']} bytes, #{thumbnail['type']})"
+
+        # Clean up
+        File.delete(thumb_filename) if File.exist?(thumb_filename)
+      rescue StandardError => e
+        puts "  ✗ Thumbnail download failed: #{e.message}"
+      end
+    else
+      puts "  No thumbnail available for: #{file['name']}"
+    end
   end
 end
 
