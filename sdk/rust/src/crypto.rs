@@ -11,9 +11,6 @@
 //
 
 pub struct CryptoUtils;
-use std::error::Error;
-use std::vec;
-use cipher::{BlockEncrypt, BlockDecrypt};
 use crate::custom_error::KSMRError;
 use crate::utils;
 use aes::Aes256;
@@ -22,9 +19,10 @@ use aes_gcm::KeyInit;
 use aes_gcm::{self, AeadCore, Aes256Gcm};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, prelude::BASE64_URL_SAFE, Engine as _};
 use block_padding::generic_array::GenericArray;
-use num_bigint::BigUint;
+use cipher::{BlockDecrypt, BlockEncrypt};
 use ecdsa::signature::Signer;
 use ecdsa::signature::Verifier;
+use num_bigint::BigUint;
 use p256::elliptic_curve::rand_core::OsRng;
 use p256::pkcs8::EncodePrivateKey;
 use p256::SecretKey;
@@ -35,6 +33,8 @@ use p256::{
 };
 use rand::{Rng, RngCore};
 use sha2::Digest;
+use std::error::Error;
+use std::vec;
 
 // types declared here
 
@@ -76,7 +76,7 @@ const AES_256_KEY_SIZE: usize = 32;
 /// This function does not panic, but it assumes that `block_size_var` is greater than zero.
 pub fn pad_data(data: &[u8], block_size_var: usize) -> Vec<u8> {
     // Calculate the padding length
-    let pad_len = if data.is_empty() || (data.len() % block_size_var == 0) {
+    let pad_len = if data.is_empty() || data.len().is_multiple_of(block_size_var) {
         block_size_var
     } else {
         block_size_var - (data.len() % block_size_var)
@@ -259,7 +259,7 @@ impl CryptoUtils {
         }
 
         // Check if the length is a multiple of the block size
-        if data_len % BLOCK_SIZE != 0 {
+        if !data_len.is_multiple_of(BLOCK_SIZE) {
             return Err(KSMRError::CryptoError("Invalid data length".to_string()));
         }
 
@@ -698,7 +698,6 @@ impl CryptoUtils {
             .map_err(|_| KSMRError::CryptoError("Failed to create SigningKey from bytes".into()))
     }
 
-
     #[allow(clippy::needless_doctest_main)]
     /// Derives the public key from a given ECC private key.
     ///
@@ -748,7 +747,6 @@ impl CryptoUtils {
 
         pub_key_bytes
     }
-
 
     #[allow(clippy::needless_doctest_main)]
     /// Generates a new ECC private key.
@@ -887,8 +885,6 @@ impl CryptoUtils {
             ))),
         }
     }
-
-
 
     #[allow(clippy::needless_doctest_main)]
     /// Generates a new ephemeral ECC signing key using the SECP256R1 curve.
@@ -1280,9 +1276,11 @@ impl CryptoUtils {
         // Extract the IV and ciphertext
         let iv = &data[..16]; // First 16 bytes are the IV
         let ciphertext = &data[16..]; // Remaining bytes are the encrypted data
-        // Validate ciphertext length
-        if ciphertext.len() % BLOCK_SIZE != 0 {
-            return Err(KSMRError::CryptoError("Data is probably not encoded".to_string()));
+                                      // Validate ciphertext length
+        if !ciphertext.len().is_multiple_of(BLOCK_SIZE) {
+            return Err(KSMRError::CryptoError(
+                "Data is probably not encoded".to_string(),
+            ));
         }
         let cipher = Aes256::new(GenericArray::from_slice(key));
         let mut plaintext = Vec::with_capacity(ciphertext.len());
@@ -1292,10 +1290,10 @@ impl CryptoUtils {
             cipher.decrypt_block(&mut block_arr);
             // XOR decrypted block with previous ciphertext block (or IV)
             let decrypted_block: Vec<u8> = block_arr
-            .iter()
-            .zip(&previous_block)
-            .map(|(b, p)| b ^ p)
-            .collect();
+                .iter()
+                .zip(&previous_block)
+                .map(|(b, p)| b ^ p)
+                .collect();
             plaintext.extend_from_slice(&decrypted_block);
             previous_block = block.to_vec();
         }
