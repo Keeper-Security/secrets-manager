@@ -83,12 +83,12 @@ mod regional_hostname_tests {
     #[test]
     fn test_all_regional_hostnames_unique() {
         let hostnames = vec![
-            "keepersecurity.com",              // US
-            "keepersecurity.eu",               // EU
-            "keepersecurity.com.au",           // AU
-            "govcloud.keepersecurity.us",      // GOV
-            "keepersecurity.jp",               // JP
-            "keepersecurity.ca",               // CA
+            "keepersecurity.com",         // US
+            "keepersecurity.eu",          // EU
+            "keepersecurity.com.au",      // AU
+            "govcloud.keepersecurity.us", // GOV
+            "keepersecurity.jp",          // JP
+            "keepersecurity.ca",          // CA
         ];
 
         // Convert to set to check uniqueness

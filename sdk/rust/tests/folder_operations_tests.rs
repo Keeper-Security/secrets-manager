@@ -50,23 +50,12 @@ mod folder_operations_tests {
 
         mock_manager
             .expect_create_folder()
-            .with(
-                always(),
-                eq("Test Folder".to_string()),
-                always(),
-            )
+            .with(always(), eq("Test Folder".to_string()), always())
             .times(1)
             .returning(|_, _, _| Ok("NEW_FOLDER_UID_123".to_string()));
 
-        let create_options = CreateOptions::new(
-            "PARENT_FOLDER_UID".to_string(),
-            None,
-        );
-        let result = mock_manager.create_folder(
-            create_options,
-            "Test Folder".to_string(),
-            vec![],
-        );
+        let create_options = CreateOptions::new("PARENT_FOLDER_UID".to_string(), None);
+        let result = mock_manager.create_folder(create_options, "Test Folder".to_string(), vec![]);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "NEW_FOLDER_UID_123");
@@ -79,11 +68,7 @@ mod folder_operations_tests {
 
         mock_manager
             .expect_create_folder()
-            .with(
-                always(),
-                eq("".to_string()),
-                always(),
-            )
+            .with(always(), eq("".to_string()), always())
             .times(1)
             .returning(|_, _, _| {
                 Err(KSMRError::CustomError(
@@ -91,15 +76,8 @@ mod folder_operations_tests {
                 ))
             });
 
-        let create_options = CreateOptions::new(
-            "PARENT_FOLDER_UID".to_string(),
-            None,
-        );
-        let result = mock_manager.create_folder(
-            create_options,
-            "".to_string(),
-            vec![],
-        );
+        let create_options = CreateOptions::new("PARENT_FOLDER_UID".to_string(), None);
+        let result = mock_manager.create_folder(create_options, "".to_string(), vec![]);
 
         assert!(result.is_err());
         if let Err(KSMRError::CustomError(msg)) = result {
@@ -116,23 +94,13 @@ mod folder_operations_tests {
 
         mock_manager
             .expect_create_folder()
-            .with(
-                always(),
-                eq("Nested Folder".to_string()),
-                always(),
-            )
+            .with(always(), eq("Nested Folder".to_string()), always())
             .times(1)
             .returning(|_, _, _| Ok("NESTED_FOLDER_UID_456".to_string()));
 
-        let create_options = CreateOptions::new(
-            "PARENT_FOLDER_UID_123".to_string(),
-            None,
-        );
-        let result = mock_manager.create_folder(
-            create_options,
-            "Nested Folder".to_string(),
-            vec![],
-        );
+        let create_options = CreateOptions::new("PARENT_FOLDER_UID_123".to_string(), None);
+        let result =
+            mock_manager.create_folder(create_options, "Nested Folder".to_string(), vec![]);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "NESTED_FOLDER_UID_456");
@@ -145,23 +113,12 @@ mod folder_operations_tests {
 
         mock_manager
             .expect_create_folder()
-            .with(
-                always(),
-                eq("Root Folder".to_string()),
-                always(),
-            )
+            .with(always(), eq("Root Folder".to_string()), always())
             .times(1)
             .returning(|_, _, _| Ok("ROOT_FOLDER_UID_789".to_string()));
 
-        let create_options = CreateOptions::new(
-            "ROOT_FOLDER_UID".to_string(),
-            None,
-        );
-        let result = mock_manager.create_folder(
-            create_options,
-            "Root Folder".to_string(),
-            vec![],
-        );
+        let create_options = CreateOptions::new("ROOT_FOLDER_UID".to_string(), None);
+        let result = mock_manager.create_folder(create_options, "Root Folder".to_string(), vec![]);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "ROOT_FOLDER_UID_789");
@@ -226,11 +183,7 @@ mod folder_operations_tests {
                 eq("New Name".to_string()),
             )
             .times(1)
-            .returning(|_, _| {
-                Err(KSMRError::CustomError(
-                    "Folder not found".to_string(),
-                ))
-            });
+            .returning(|_, _| Err(KSMRError::CustomError("Folder not found".to_string())));
 
         let result =
             mock_manager.update_folder("NONEXISTENT_UID".to_string(), "New Name".to_string());
@@ -308,10 +261,7 @@ mod folder_operations_tests {
         assert!(result.is_ok());
         let deleted = result.unwrap();
         assert_eq!(deleted.len(), 1);
-        assert_eq!(
-            deleted[0].get("status").unwrap(),
-            &json!("force_deleted")
-        );
+        assert_eq!(deleted[0].get("status").unwrap(), &json!("force_deleted"));
     }
 
     /// Test: Delete multiple folders
@@ -357,11 +307,7 @@ mod folder_operations_tests {
             .expect_delete_folder()
             .with(eq(vec!["NONEXISTENT_UID".to_string()]), eq(false))
             .times(1)
-            .returning(|_, _| {
-                Err(KSMRError::CustomError(
-                    "Folder not found".to_string(),
-                ))
-            });
+            .returning(|_, _| Err(KSMRError::CustomError("Folder not found".to_string())));
 
         let result = mock_manager.delete_folder(vec!["NONEXISTENT_UID".to_string()], false);
 
@@ -420,10 +366,7 @@ mod folder_operations_tests {
         assert!(result.is_ok());
         let deleted = result.unwrap();
         assert_eq!(deleted.len(), 1);
-        assert_eq!(
-            deleted[0].get("records_deleted").unwrap(),
-            &json!(5)
-        );
+        assert_eq!(deleted[0].get("records_deleted").unwrap(), &json!(5));
     }
 
     /// Test: Delete empty folder list (should fail)
@@ -459,18 +402,11 @@ mod folder_operations_tests {
         let unicode_name = "文件夹名称 フォルダ名 مجلد اسم".to_string();
         mock_manager
             .expect_create_folder()
-            .with(
-                always(),
-                eq(unicode_name.clone()),
-                always(),
-            )
+            .with(always(), eq(unicode_name.clone()), always())
             .times(1)
             .returning(|_, _, _| Ok("UNICODE_FOLDER_UID".to_string()));
 
-        let create_options = CreateOptions::new(
-            "ROOT_FOLDER_UID".to_string(),
-            None,
-        );
+        let create_options = CreateOptions::new("ROOT_FOLDER_UID".to_string(), None);
         let result = mock_manager.create_folder(create_options, unicode_name, vec![]);
 
         assert!(result.is_ok());
@@ -485,18 +421,11 @@ mod folder_operations_tests {
         let long_name = "a".repeat(1000);
         mock_manager
             .expect_create_folder()
-            .with(
-                always(),
-                eq(long_name.clone()),
-                always(),
-            )
+            .with(always(), eq(long_name.clone()), always())
             .times(1)
             .returning(|_, _, _| Ok("LONG_NAME_FOLDER_UID".to_string()));
 
-        let create_options = CreateOptions::new(
-            "ROOT_FOLDER_UID".to_string(),
-            None,
-        );
+        let create_options = CreateOptions::new("ROOT_FOLDER_UID".to_string(), None);
         let result = mock_manager.create_folder(create_options, long_name, vec![]);
 
         assert!(result.is_ok());
