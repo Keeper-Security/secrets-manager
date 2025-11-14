@@ -304,6 +304,23 @@ module KeeperSecretsManager
         true
       end
 
+      # Complete transaction - commit or rollback
+      # Used after update_secret with transaction_type to finalize PAM rotation
+      def complete_transaction(record_uid, rollback: false)
+        @logger.debug("Completing transaction for record #{record_uid}, rollback: #{rollback}")
+
+        # Prepare payload
+        payload = prepare_complete_transaction_payload(record_uid)
+
+        # Route to different endpoints based on rollback parameter
+        endpoint = rollback ? 'rollback_secret_update' : 'finalize_secret_update'
+
+        # Send request
+        post_query(endpoint, payload)
+
+        true
+      end
+
       # Delete secrets
       def delete_secret(record_uids)
         record_uids = [record_uids] if record_uids.is_a?(String)
@@ -1366,6 +1383,14 @@ module KeeperSecretsManager
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.record_uids = record_uids
+        payload
+      end
+
+      def prepare_complete_transaction_payload(record_uid)
+        payload = Dto::CompleteTransactionPayload.new
+        payload.client_version = KeeperGlobals.client_version
+        payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
+        payload.record_uid = record_uid
         payload
       end
 
