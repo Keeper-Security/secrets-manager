@@ -12,7 +12,6 @@
 
 #[cfg(test)]
 mod update_secret_tests {
-    use keeper_secrets_manager_core::custom_error::KSMRError;
     use keeper_secrets_manager_core::dto::payload::UpdateTransactionType;
     use keeper_secrets_manager_core::dto::Record;
     use keeper_secrets_manager_core::enums::StandardFieldTypeEnum;
