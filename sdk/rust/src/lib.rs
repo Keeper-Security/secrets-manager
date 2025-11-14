@@ -11,6 +11,7 @@
 //
 
 pub mod cache;
+pub mod caching;
 pub mod config_keys;
 pub mod constants;
 pub mod core;
