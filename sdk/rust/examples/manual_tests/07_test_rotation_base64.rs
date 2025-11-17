@@ -36,7 +36,7 @@ fn main() -> Result<(), KSMRError> {
 
     // Get fresh copy
     let record_uid = editable.uid.clone();
-    let mut secrets = secrets_manager.get_secrets(vec![record_uid.clone()])?;
+    let secrets = secrets_manager.get_secrets(vec![record_uid.clone()])?;
     let mut record = secrets.into_iter().next().unwrap();
 
     // Show current password
@@ -73,7 +73,7 @@ fn main() -> Result<(), KSMRError> {
     }
 
     // Get fresh copy for second test
-    let mut secrets = secrets_manager.get_secrets(vec![record_uid.clone()])?;
+    let secrets = secrets_manager.get_secrets(vec![record_uid.clone()])?;
     let mut record = secrets.into_iter().next().unwrap();
 
     let test_password2 = format!("GeneralTest_{}", chrono::Utc::now().timestamp());

@@ -40,7 +40,7 @@ fn main() -> Result<(), KSMRError> {
     println!("UID: {}", editable_secret.uid);
 
     // Get the record again (fresh copy for update)
-    let mut secrets = secrets_manager.get_secrets(vec![editable_secret.uid.clone()])?;
+    let secrets = secrets_manager.get_secrets(vec![editable_secret.uid.clone()])?;
     let mut record = secrets.into_iter().next().unwrap();
 
     // Show current password (if login record)
@@ -65,7 +65,7 @@ fn main() -> Result<(), KSMRError> {
 
     // Verify the update by fetching again
     println!("\nVerifying update...");
-    let mut updated_secrets = secrets_manager.get_secrets(vec![editable_secret.uid.clone()])?;
+    let updated_secrets = secrets_manager.get_secrets(vec![editable_secret.uid.clone()])?;
     let updated_record = updated_secrets.into_iter().next().unwrap();
 
     if let Ok(updated_password) = updated_record.get_standard_field_value("password", true) {
