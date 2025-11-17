@@ -24,3 +24,56 @@ For more information see our official documentation page https://docs.keeper.io/
 - Fixed `create_folder` encryption and parent_uid handling
 
 For full version history, see [CHANGELOG.md](CHANGELOG.md)
+
+# Quick Start
+
+## Installation
+
+```bash
+gem install keeper_secrets_manager
+```
+
+## Basic Usage
+
+```ruby
+require 'keeper_secrets_manager'
+
+# Initialize from config file
+secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
+
+# Get all secrets
+records = secrets_manager.get_secrets
+
+# Access secret fields
+record = records.first
+puts "Password: #{record.password}"
+```
+
+## Proxy Support
+
+For enterprise environments behind HTTP proxies:
+
+```ruby
+# Method 1: Explicit proxy_url parameter
+secrets_manager = KeeperSecretsManager.from_file(
+  'keeper_config.json',
+  proxy_url: 'http://proxy.company.com:8080'
+)
+
+# Method 2: Authenticated proxy
+secrets_manager = KeeperSecretsManager.from_file(
+  'keeper_config.json',
+  proxy_url: 'http://username:password@proxy.company.com:8080'
+)
+
+# Method 3: HTTPS_PROXY environment variable (recommended)
+# export HTTPS_PROXY=http://proxy.company.com:8080
+secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
+# Proxy auto-detected from environment
+```
+
+See `examples/ruby/12_proxy_usage.rb` for complete examples.
+
+# Documentation
+
+For complete documentation, see: https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/ruby-sdk

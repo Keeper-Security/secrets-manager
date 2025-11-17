@@ -39,9 +39,15 @@ module KeeperSecretsManager
         @verify_ssl_certs = options.fetch(:verify_ssl_certs, true)
         @custom_post_function = options[:custom_post_function]
 
+        # Set up proxy configuration
+        # Priority: explicit proxy_url parameter > HTTPS_PROXY env var > no proxy
+        @proxy_url = options[:proxy_url] || ENV['HTTPS_PROXY'] || ENV['https_proxy']
+
         # Set up logging
         @logger = options[:logger] || Logger.new(STDOUT)
         @logger.level = options[:log_level] || Logger::WARN
+
+        @logger.debug("Proxy configuration: #{@proxy_url ? @proxy_url : 'none'}") if @proxy_url
 
         # Handle configuration
         config = options[:config]
@@ -661,7 +667,7 @@ module KeeperSecretsManager
 
         request = Net::HTTP::Get.new(uri)
 
-        http = Net::HTTP.new(uri.host, uri.port)
+        http = create_http_client(uri)
         configure_http_ssl(http)
 
         response = http.request(request)
@@ -1179,6 +1185,33 @@ module KeeperSecretsManager
         )
       end
 
+      # Create Net::HTTP instance with proxy support
+      # Configures proxy if @proxy_url is set
+      def create_http_client(uri)
+        if @proxy_url
+          # Parse proxy URL
+          proxy_uri = URI(@proxy_url)
+
+          # Create HTTP client with proxy
+          http = Net::HTTP.new(
+            uri.host,
+            uri.port,
+            proxy_uri.host,
+            proxy_uri.port,
+            proxy_uri.user,
+            proxy_uri.password
+          )
+
+          @logger.debug("Using HTTP proxy: #{proxy_uri.host}:#{proxy_uri.port}")
+          @logger.debug("Proxy authentication: #{proxy_uri.user ? 'yes' : 'no'}")
+        else
+          # Create HTTP client without proxy
+          http = Net::HTTP.new(uri.host, uri.port)
+        end
+
+        http
+      end
+
       # Configure SSL for HTTP connection
       # Sets up certificate store and verification mode
       def configure_http_ssl(http)
@@ -1226,7 +1259,7 @@ module KeeperSecretsManager
         request['Content-Length'] = encrypted_payload.encrypted_payload.bytesize.to_s
         request.body = encrypted_payload.encrypted_payload
 
-        http = Net::HTTP.new(uri.host, uri.port)
+        http = create_http_client(uri)
         configure_http_ssl(http)
 
         response = http.request(request)
@@ -1476,7 +1509,7 @@ module KeeperSecretsManager
         request.body = body.join
         request['Content-Type'] = "multipart/form-data; boundary=#{boundary}"
 
-        http = Net::HTTP.new(uri.host, uri.port)
+        http = create_http_client(uri)
         configure_http_ssl(http)
 
         response = http.request(request)
