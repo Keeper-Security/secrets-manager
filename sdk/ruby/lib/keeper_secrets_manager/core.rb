@@ -344,6 +344,16 @@ module KeeperSecretsManager
         parser.parse(notation_uri)
       end
 
+      # Get notation value without raising exceptions (convenience method)
+      # Returns empty array if notation is invalid or record not found
+      def try_get_notation(notation_uri)
+        parser = Notation::Parser.new(self)
+        parser.parse(notation_uri)
+      rescue NotationError, RecordNotFoundError, StandardError => e
+        @logger.debug("try_get_notation failed for '#{notation_uri}': #{e.message}")
+        []
+      end
+
       # Create folder
       def create_folder(folder_name, parent_uid: nil)
         raise ArgumentError, 'parent_uid is required to create a folder' unless parent_uid
@@ -568,6 +578,27 @@ module KeeperSecretsManager
         )
 
         file_uid
+      end
+
+      # Upload file from disk path (convenience method)
+      # Reads file from disk and uploads to specified record
+      def upload_file_from_path(owner_record_uid, file_path, file_title: nil)
+        raise ArgumentError, "File not found: #{file_path}" unless File.exist?(file_path)
+        raise ArgumentError, "Path is a directory: #{file_path}" if File.directory?(file_path)
+
+        # Read file data
+        file_data = File.binread(file_path)
+
+        # Extract filename from path
+        file_name = File.basename(file_path)
+
+        # Use file_title if provided, otherwise use filename
+        file_title ||= file_name
+
+        @logger.debug("Uploading file from path: #{file_path} (#{file_data.bytesize} bytes)")
+
+        # Delegate to existing upload_file method
+        upload_file(owner_record_uid, file_data, file_name, file_title)
       end
 
       # Download file from record's file data
