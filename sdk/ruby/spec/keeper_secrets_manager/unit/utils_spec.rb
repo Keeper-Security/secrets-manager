@@ -262,15 +262,339 @@ RSpec.describe KeeperSecretsManager::Utils do
     end
   end
 
-  describe 'other utility methods' do
+  describe 'string and bytes conversion' do
+    describe '.string_to_bytes' do
+      it 'converts string to bytes' do
+        result = described_class.string_to_bytes('hello')
+        expect(result).to be_a(String)
+        expect(result.encoding).to eq(Encoding::BINARY)
+      end
+
+      it 'handles UTF-8 strings' do
+        result = described_class.string_to_bytes('hello 世界')
+        expect(result.encoding).to eq(Encoding::BINARY)
+      end
+    end
+
+    describe '.bytes_to_string' do
+      it 'converts bytes to UTF-8 string' do
+        bytes = 'hello'.b
+        result = described_class.bytes_to_string(bytes)
+        expect(result).to eq('hello')
+        expect(result.encoding).to eq(Encoding::UTF_8)
+      end
+
+      it 'forces UTF-8 encoding' do
+        bytes = 'test'.b
+        result = described_class.bytes_to_string(bytes)
+        expect(result.encoding).to eq(Encoding::UTF_8)
+      end
+    end
+  end
+
+  describe 'JSON operations' do
+    describe '.dict_to_json' do
+      it 'converts hash to JSON string' do
+        hash = { 'name' => 'test', 'value' => 123 }
+        result = described_class.dict_to_json(hash)
+        expect(result).to be_a(String)
+        expect(result).to include('"name":"test"')
+      end
+
+      it 'handles nested hashes' do
+        hash = { 'outer' => { 'inner' => 'value' } }
+        result = described_class.dict_to_json(hash)
+        expect(result).to include('"outer"')
+        expect(result).to include('"inner"')
+      end
+
+      it 'handles arrays' do
+        hash = { 'items' => [1, 2, 3] }
+        result = described_class.dict_to_json(hash)
+        expect(result).to include('[1,2,3]')
+      end
+    end
+
+    describe '.json_to_dict' do
+      it 'parses JSON string to hash' do
+        json = '{"name":"test","value":123}'
+        result = described_class.json_to_dict(json)
+        expect(result).to eq({ 'name' => 'test', 'value' => 123 })
+      end
+
+      it 'handles nested JSON' do
+        json = '{"outer":{"inner":"value"}}'
+        result = described_class.json_to_dict(json)
+        expect(result).to eq({ 'outer' => { 'inner' => 'value' } })
+      end
+
+      it 'raises Error for invalid JSON' do
+        expect do
+          described_class.json_to_dict('invalid json')
+        end.to raise_error(KeeperSecretsManager::Error, /Invalid JSON/)
+      end
+
+      it 'raises Error for malformed JSON' do
+        expect do
+          described_class.json_to_dict('{"incomplete":')
+        end.to raise_error(KeeperSecretsManager::Error, /Invalid JSON/)
+      end
+    end
+  end
+
+  describe 'Base64 operations' do
+    describe '.bytes_to_base64' do
+      it 'encodes bytes to base64' do
+        bytes = 'hello'
+        result = described_class.bytes_to_base64(bytes)
+        expect(result).to eq('aGVsbG8=')
+      end
+
+      it 'uses strict encoding' do
+        bytes = "\x00\x01\x02"
+        result = described_class.bytes_to_base64(bytes)
+        expect(result).to be_a(String)
+        expect(result.length).to be > 0
+      end
+    end
+
+    describe '.base64_to_bytes' do
+      it 'decodes base64 to bytes' do
+        base64 = 'aGVsbG8='
+        result = described_class.base64_to_bytes(base64)
+        expect(result).to eq('hello')
+      end
+
+      it 'raises Error for invalid base64' do
+        expect do
+          described_class.base64_to_bytes('not valid base64!')
+        end.to raise_error(KeeperSecretsManager::Error, /Invalid base64/)
+      end
+
+      it 'raises Error for malformed base64' do
+        expect do
+          described_class.base64_to_bytes('aGVs===')
+        end.to raise_error(KeeperSecretsManager::Error, /Invalid base64/)
+      end
+    end
+
+    describe '.url_safe_str_to_bytes' do
+      it 'decodes URL-safe base64 without padding' do
+        # 'hello' in URL-safe base64 without padding
+        url_safe = 'aGVsbG8'
+        result = described_class.url_safe_str_to_bytes(url_safe)
+        expect(result).to eq('hello')
+      end
+
+      it 'adds padding automatically' do
+        # Test with various padding needs (valid base64 strings)
+        # 'hello' -> 'aGVsbG8', 'hell' -> 'aGVsbA', 'hel' -> 'aGVs'
+        tests = {
+          'aGVsbG8' => 'hello',
+          'aGVsbA' => 'hell',
+          'aGVs' => 'hel'
+        }
+        tests.each do |encoded, expected|
+          result = described_class.url_safe_str_to_bytes(encoded)
+          expect(result).to eq(expected)
+        end
+      end
+
+      it 'handles URL-safe characters' do
+        # URL-safe base64 uses - and _ instead of + and /
+        result = described_class.url_safe_str_to_bytes('_-_-')
+        expect(result).to be_a(String)
+      end
+    end
+
+    describe '.bytes_to_url_safe_str' do
+      it 'encodes bytes to URL-safe base64 without padding' do
+        bytes = 'hello'
+        result = described_class.bytes_to_url_safe_str(bytes)
+        expect(result).to eq('aGVsbG8')
+        expect(result).not_to include('=')
+      end
+
+      it 'uses URL-safe characters' do
+        bytes = "\xFF\xFF"
+        result = described_class.bytes_to_url_safe_str(bytes)
+        expect(result).not_to include('+')
+        expect(result).not_to include('/')
+      end
+    end
+  end
+
+  describe 'random generation' do
+    describe '.generate_random_bytes' do
+      it 'generates random bytes of specified length' do
+        bytes = described_class.generate_random_bytes(16)
+        expect(bytes.length).to eq(16)
+      end
+
+      it 'generates different bytes each time' do
+        bytes1 = described_class.generate_random_bytes(16)
+        bytes2 = described_class.generate_random_bytes(16)
+        expect(bytes1).not_to eq(bytes2)
+      end
+
+      it 'generates cryptographically secure random bytes' do
+        bytes = described_class.generate_random_bytes(32)
+        expect(bytes).to be_a(String)
+        expect(bytes.encoding).to eq(Encoding::BINARY)
+      end
+    end
+
     describe '.generate_uid' do
       it 'generates a UID' do
         uid = described_class.generate_uid
         expect(uid).to be_a(String)
         expect(uid.length).to be > 0
       end
+
+      it 'generates URL-safe UID without padding' do
+        uid = described_class.generate_uid
+        expect(uid).not_to include('=')
+        expect(uid).not_to include('+')
+        expect(uid).not_to include('/')
+      end
+
+      it 'generates different UIDs each time' do
+        uid1 = described_class.generate_uid
+        uid2 = described_class.generate_uid
+        expect(uid1).not_to eq(uid2)
+      end
     end
 
+    describe '.generate_uid_bytes' do
+      it 'generates 16 random bytes' do
+        bytes = described_class.generate_uid_bytes
+        expect(bytes.length).to eq(16)
+      end
+
+      it 'generates different bytes each time' do
+        bytes1 = described_class.generate_uid_bytes
+        bytes2 = described_class.generate_uid_bytes
+        expect(bytes1).not_to eq(bytes2)
+      end
+    end
+  end
+
+  describe 'time operations' do
+    describe '.now_milliseconds' do
+      it 'returns current time in milliseconds' do
+        result = described_class.now_milliseconds
+        expect(result).to be_a(Integer)
+        expect(result).to be > 1_600_000_000_000 # After 2020
+      end
+
+      it 'returns different values over time' do
+        time1 = described_class.now_milliseconds
+        sleep(0.01)
+        time2 = described_class.now_milliseconds
+        expect(time2).to be >= time1
+      end
+    end
+  end
+
+  describe 'type conversion' do
+    describe '.strtobool' do
+      it 'returns true for boolean true' do
+        expect(described_class.strtobool(true)).to be true
+      end
+
+      it 'returns false for boolean false' do
+        expect(described_class.strtobool(false)).to be false
+      end
+
+      it 'converts "true" to true' do
+        expect(described_class.strtobool('true')).to be true
+      end
+
+      it 'converts "1" to true' do
+        expect(described_class.strtobool('1')).to be true
+      end
+
+      it 'converts "yes" to true' do
+        expect(described_class.strtobool('yes')).to be true
+      end
+
+      it 'converts "y" to true' do
+        expect(described_class.strtobool('y')).to be true
+      end
+
+      it 'converts "on" to true' do
+        expect(described_class.strtobool('on')).to be true
+      end
+
+      it 'converts "false" to false' do
+        expect(described_class.strtobool('false')).to be false
+      end
+
+      it 'converts "0" to false' do
+        expect(described_class.strtobool('0')).to be false
+      end
+
+      it 'converts "no" to false' do
+        expect(described_class.strtobool('no')).to be false
+      end
+
+      it 'converts "n" to false' do
+        expect(described_class.strtobool('n')).to be false
+      end
+
+      it 'converts "off" to false' do
+        expect(described_class.strtobool('off')).to be false
+      end
+
+      it 'converts empty string to false' do
+        expect(described_class.strtobool('')).to be false
+      end
+
+      it 'handles uppercase strings' do
+        expect(described_class.strtobool('TRUE')).to be true
+        expect(described_class.strtobool('FALSE')).to be false
+      end
+
+      it 'handles whitespace' do
+        expect(described_class.strtobool('  true  ')).to be true
+        expect(described_class.strtobool('  false  ')).to be false
+      end
+
+      it 'raises error for invalid value' do
+        expect do
+          described_class.strtobool('maybe')
+        end.to raise_error(ArgumentError, /Invalid boolean value/)
+      end
+    end
+
+    describe '.to_int' do
+      it 'converts string to integer' do
+        expect(described_class.to_int('123')).to eq(123)
+      end
+
+      it 'converts negative string to integer' do
+        expect(described_class.to_int('-456')).to eq(-456)
+      end
+
+      it 'returns default for invalid string' do
+        expect(described_class.to_int('not a number', 0)).to eq(0)
+      end
+
+      it 'returns nil default when no default specified' do
+        expect(described_class.to_int('invalid')).to be_nil
+      end
+
+      it 'converts integer to integer' do
+        expect(described_class.to_int(789)).to eq(789)
+      end
+
+      it 'returns default for nil' do
+        expect(described_class.to_int(nil, 42)).to eq(42)
+      end
+    end
+  end
+
+  describe 'string operations' do
     describe '.blank?' do
       it 'returns true for nil' do
         expect(described_class.blank?(nil)).to be true
@@ -286,6 +610,283 @@ RSpec.describe KeeperSecretsManager::Utils do
 
       it 'returns false for non-empty string' do
         expect(described_class.blank?('test')).to be false
+      end
+
+      it 'returns false for string with content and whitespace' do
+        expect(described_class.blank?('  test  ')).to be false
+      end
+    end
+
+    describe '.camel_to_snake' do
+      it 'converts camelCase to snake_case' do
+        expect(described_class.camel_to_snake('camelCase')).to eq('camel_case')
+      end
+
+      it 'converts PascalCase to snake_case' do
+        expect(described_class.camel_to_snake('PascalCase')).to eq('pascal_case')
+      end
+
+      it 'handles consecutive capitals' do
+        expect(described_class.camel_to_snake('HTTPResponse')).to eq('http_response')
+      end
+
+      it 'handles already snake_case' do
+        expect(described_class.camel_to_snake('already_snake')).to eq('already_snake')
+      end
+
+      it 'handles single word' do
+        expect(described_class.camel_to_snake('word')).to eq('word')
+      end
+    end
+
+    describe '.snake_to_camel' do
+      it 'converts snake_case to camelCase' do
+        expect(described_class.snake_to_camel('snake_case')).to eq('snakeCase')
+      end
+
+      it 'converts to PascalCase when capitalize_first is true' do
+        expect(described_class.snake_to_camel('snake_case', true)).to eq('SnakeCase')
+      end
+
+      it 'handles single word' do
+        expect(described_class.snake_to_camel('word')).to eq('word')
+      end
+
+      it 'handles multiple underscores' do
+        expect(described_class.snake_to_camel('one_two_three')).to eq('oneTwoThree')
+      end
+
+      it 'handles already camelCase' do
+        expect(described_class.snake_to_camel('alreadyCamel')).to eq('alreadyCamel')
+      end
+    end
+  end
+
+  describe 'hash operations' do
+    describe '.deep_merge' do
+      it 'merges simple hashes' do
+        hash1 = { 'a' => 1, 'b' => 2 }
+        hash2 = { 'c' => 3 }
+        result = described_class.deep_merge(hash1, hash2)
+        expect(result).to eq({ 'a' => 1, 'b' => 2, 'c' => 3 })
+      end
+
+      it 'overwrites values for same keys' do
+        hash1 = { 'a' => 1 }
+        hash2 = { 'a' => 2 }
+        result = described_class.deep_merge(hash1, hash2)
+        expect(result).to eq({ 'a' => 2 })
+      end
+
+      it 'recursively merges nested hashes' do
+        hash1 = { 'outer' => { 'inner1' => 1 } }
+        hash2 = { 'outer' => { 'inner2' => 2 } }
+        result = described_class.deep_merge(hash1, hash2)
+        expect(result).to eq({ 'outer' => { 'inner1' => 1, 'inner2' => 2 } })
+      end
+
+      it 'overwrites nested values' do
+        hash1 = { 'outer' => { 'inner' => 1 } }
+        hash2 = { 'outer' => { 'inner' => 2 } }
+        result = described_class.deep_merge(hash1, hash2)
+        expect(result).to eq({ 'outer' => { 'inner' => 2 } })
+      end
+
+      it 'handles non-hash values' do
+        hash1 = { 'a' => [1, 2] }
+        hash2 = { 'a' => [3, 4] }
+        result = described_class.deep_merge(hash1, hash2)
+        expect(result).to eq({ 'a' => [3, 4] })
+      end
+    end
+  end
+
+  describe 'URL operations' do
+    describe '.url_join' do
+      it 'joins URL parts' do
+        result = described_class.url_join('https://example.com', 'api', 'v1')
+        expect(result).to eq('https://example.com/api/v1')
+      end
+
+      it 'removes leading slashes' do
+        result = described_class.url_join('https://example.com/', '/api', '/v1')
+        expect(result).to eq('https://example.com/api/v1')
+      end
+
+      it 'removes trailing slashes' do
+        result = described_class.url_join('https://example.com/', 'api/', 'v1/')
+        expect(result).to eq('https://example.com/api/v1')
+      end
+
+      it 'handles empty parts' do
+        result = described_class.url_join('https://example.com', '', 'api')
+        expect(result).to eq('https://example.com/api')
+      end
+
+      it 'handles single part' do
+        result = described_class.url_join('https://example.com')
+        expect(result).to eq('https://example.com')
+      end
+    end
+
+    describe '.get_server_url' do
+      it 'builds HTTPS URL by default' do
+        result = described_class.get_server_url('example.com')
+        expect(result).to eq('https://example.com')
+      end
+
+      it 'builds HTTP URL when use_ssl is false' do
+        result = described_class.get_server_url('example.com', false)
+        expect(result).to eq('http://example.com')
+      end
+
+      it 'removes existing protocol' do
+        result = described_class.get_server_url('https://example.com')
+        expect(result).to eq('https://example.com')
+      end
+
+      it 'removes http protocol and replaces with https' do
+        result = described_class.get_server_url('http://example.com')
+        expect(result).to eq('https://example.com')
+      end
+
+      it 'returns nil for blank hostname' do
+        expect(described_class.get_server_url('')).to be_nil
+        expect(described_class.get_server_url(nil)).to be_nil
+      end
+    end
+
+    describe '.extract_region' do
+      it 'extracts region from token with prefix' do
+        result = described_class.extract_region('US:token_data')
+        expect(result).to eq('US')
+      end
+
+      it 'extracts region from hostname' do
+        result = described_class.extract_region('keepersecurity.eu')
+        expect(result).to eq('EU')
+      end
+
+      it 'returns US as default for unknown hostname' do
+        result = described_class.extract_region('unknown.com')
+        expect(result).to eq('US')
+      end
+
+      it 'handles nil input' do
+        result = described_class.extract_region(nil)
+        expect(result).to eq('US')
+      end
+
+      it 'recognizes region from hostname with region' do
+        # Test with a hostname that actually matches a known server
+        result = described_class.extract_region('test.keepersecurity.eu')
+        expect(result).to eq('EU')
+      end
+    end
+  end
+
+  describe 'validation' do
+    describe '.valid_uid?' do
+      it 'returns true for valid UID' do
+        # Generate a valid UID
+        uid = described_class.generate_uid
+        expect(described_class.valid_uid?(uid)).to be true
+      end
+
+      it 'returns false for nil' do
+        expect(described_class.valid_uid?(nil)).to be false
+      end
+
+      it 'returns false for empty string' do
+        expect(described_class.valid_uid?('')).to be false
+      end
+
+      it 'returns false for invalid base64' do
+        expect(described_class.valid_uid?('not-valid!')).to be false
+      end
+
+      it 'returns false for wrong length' do
+        # 8 bytes instead of 16
+        short_uid = described_class.bytes_to_url_safe_str(described_class.generate_random_bytes(8))
+        expect(described_class.valid_uid?(short_uid)).to be false
+      end
+    end
+  end
+
+  describe 'retry logic' do
+    describe '.retry_with_backoff' do
+      it 'returns result on first success' do
+        call_count = 0
+        result = described_class.retry_with_backoff do
+          call_count += 1
+          'success'
+        end
+
+        expect(result).to eq('success')
+        expect(call_count).to eq(1)
+      end
+
+      it 'retries on failure' do
+        call_count = 0
+        result = described_class.retry_with_backoff(max_attempts: 3, base_delay: 0.01) do
+          call_count += 1
+          raise StandardError, 'fail' if call_count < 3
+
+          'success'
+        end
+
+        expect(result).to eq('success')
+        expect(call_count).to eq(3)
+      end
+
+      it 'raises error after max attempts' do
+        call_count = 0
+        expect do
+          described_class.retry_with_backoff(max_attempts: 3, base_delay: 0.01) do
+            call_count += 1
+            raise StandardError, 'always fail'
+          end
+        end.to raise_error(StandardError, 'always fail')
+
+        expect(call_count).to eq(3)
+      end
+
+      it 'uses exponential backoff' do
+        call_count = 0
+        start_time = Time.now
+
+        begin
+          described_class.retry_with_backoff(max_attempts: 3, base_delay: 0.1, max_delay: 1) do
+            call_count += 1
+            raise StandardError, 'fail'
+          end
+        rescue StandardError
+          # Expected
+        end
+
+        elapsed = Time.now - start_time
+        # Should have delayed at least 0.1 + 0.2 = 0.3 seconds
+        expect(elapsed).to be >= 0.3
+        expect(call_count).to eq(3)
+      end
+
+      it 'respects max_delay' do
+        call_count = 0
+        start_time = Time.now
+
+        begin
+          described_class.retry_with_backoff(max_attempts: 4, base_delay: 1, max_delay: 0.2) do
+            call_count += 1
+            raise StandardError, 'fail'
+          end
+        rescue StandardError
+          # Expected
+        end
+
+        elapsed = Time.now - start_time
+        # Delays should be capped at max_delay (0.2, 0.2, 0.2)
+        expect(elapsed).to be < 1.0 # Much less than uncapped exponential backoff
+        expect(call_count).to eq(4)
       end
     end
   end
