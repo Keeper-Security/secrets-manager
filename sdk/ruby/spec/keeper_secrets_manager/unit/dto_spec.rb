@@ -621,4 +621,83 @@ RSpec.describe KeeperSecretsManager::Dto do
       expect(parsed['clientId']).to eq('test-client')
     end
   end
+
+  describe KeeperSecretsManager::Dto::QueryOptions do
+    it 'creates with default values' do
+      options = described_class.new
+
+      expect(options.records_filter).to be_nil
+      expect(options.folders_filter).to be_nil
+      expect(options.request_links).to be_nil
+    end
+
+    it 'accepts records filter' do
+      options = described_class.new(records: ['uid1', 'uid2', 'uid3'])
+
+      expect(options.records_filter).to eq(['uid1', 'uid2', 'uid3'])
+      expect(options.folders_filter).to be_nil
+      expect(options.request_links).to be_nil
+    end
+
+    it 'accepts folders filter' do
+      options = described_class.new(folders: ['folder1', 'folder2'])
+
+      expect(options.records_filter).to be_nil
+      expect(options.folders_filter).to eq(['folder1', 'folder2'])
+      expect(options.request_links).to be_nil
+    end
+
+    it 'accepts request_links parameter' do
+      options = described_class.new(request_links: true)
+
+      expect(options.records_filter).to be_nil
+      expect(options.folders_filter).to be_nil
+      expect(options.request_links).to be true
+    end
+
+    it 'accepts all parameters together' do
+      options = described_class.new(
+        records: ['uid1', 'uid2'],
+        folders: ['folder1'],
+        request_links: true
+      )
+
+      expect(options.records_filter).to eq(['uid1', 'uid2'])
+      expect(options.folders_filter).to eq(['folder1'])
+      expect(options.request_links).to be true
+    end
+
+    it 'allows modifying filters after creation' do
+      options = described_class.new
+
+      options.records_filter = ['new_uid']
+      options.folders_filter = ['new_folder']
+      options.request_links = true
+
+      expect(options.records_filter).to eq(['new_uid'])
+      expect(options.folders_filter).to eq(['new_folder'])
+      expect(options.request_links).to be true
+    end
+
+    it 'handles nil filters' do
+      options = described_class.new(records: nil, folders: nil, request_links: nil)
+
+      expect(options.records_filter).to be_nil
+      expect(options.folders_filter).to be_nil
+      expect(options.request_links).to be_nil
+    end
+
+    it 'handles empty array filters' do
+      options = described_class.new(records: [], folders: [])
+
+      expect(options.records_filter).to eq([])
+      expect(options.folders_filter).to eq([])
+    end
+
+    it 'accepts false for request_links' do
+      options = described_class.new(request_links: false)
+
+      expect(options.request_links).to be false
+    end
+  end
 end
