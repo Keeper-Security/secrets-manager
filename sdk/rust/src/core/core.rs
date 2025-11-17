@@ -1382,6 +1382,68 @@ impl SecretsManager {
         Ok(matching.into_iter().next())
     }
 
+    /// Downloads a file by searching for a record by title and then finding the file by name.
+    ///
+    /// This is a convenience method that combines `get_secret_by_title()` and file download.
+    ///
+    /// # Arguments
+    ///
+    /// * `record_title` - The exact title of the record containing the file
+    /// * `file_name` - The name of the file to download
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(Vec<u8>))` - File data if both record and file are found
+    /// * `Ok(None)` - If record or file is not found
+    /// * `Err(KSMRError)` - If an error occurs during retrieval or download
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use keeper_secrets_manager_core::core::{ClientOptions, SecretsManager};
+    /// # use keeper_secrets_manager_core::storage::FileKeyValueStorage;
+    /// # use keeper_secrets_manager_core::custom_error::KSMRError;
+    /// # fn main() -> Result<(), KSMRError> {
+    /// # let config = FileKeyValueStorage::new_config_storage("config.json".to_string())?;
+    /// # let client_options = ClientOptions::new_client_options(config);
+    /// # let mut secrets_manager = SecretsManager::new(client_options)?;
+    /// if let Some(file_data) = secrets_manager.download_file_by_title("Production DB", "credentials.json")? {
+    ///     std::fs::write("credentials.json", file_data)?;
+    ///     println!("File downloaded successfully");
+    /// } else {
+    ///     println!("Record or file not found");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn download_file_by_title(
+        &mut self,
+        record_title: &str,
+        file_name: &str,
+    ) -> Result<Option<Vec<u8>>, KSMRError> {
+        // Find record by title
+        let record = match self.get_secret_by_title(record_title)? {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+
+        // Get fresh copy with files
+        let secrets = self.get_secrets(vec![record.uid])?;
+        let mut record = match secrets.into_iter().next() {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+
+        // Find file by name
+        let file = match record.files.iter_mut().find(|f| f.name == file_name) {
+            Some(f) => f,
+            None => return Ok(None),
+        };
+
+        // Download file data
+        file.get_file_data()
+    }
+
     pub fn delete_secret(&mut self, record_uid: Vec<String>) -> Result<String, KSMRError> {
         let config_clone = self.config.clone();
         let delete_payload = Self::delete_payload(config_clone, record_uid)?;
@@ -1731,11 +1793,11 @@ impl SecretsManager {
             links_to_remove = options.links_to_remove.clone();
 
             // Filter fileRef field values - remove specified link UIDs from record data
-            // This matches Ruby SDK behavior (see core.rb:1343-1350)
+            // This matches JavaScript SDK behavior (see keeper.ts:304-312)
             if !links_to_remove.is_empty() {
                 if let Some(Value::Array(fields)) = record_dict.get_mut("fields") {
-                    // Find fileRef field
-                    for field in fields {
+                    // Find and filter fileRef field values
+                    for field in fields.iter_mut() {
                         if let Some(field_obj) = field.as_object_mut() {
                             if field_obj.get("type").and_then(|v| v.as_str()) == Some("fileRef") {
                                 // Filter the value array to remove link UIDs
@@ -1757,6 +1819,18 @@ impl SecretsManager {
                             }
                         }
                     }
+
+                    // Remove entire fileRef field if value array is now empty (matches JS SDK)
+                    fields.retain(|field| {
+                        if let Some(field_obj) = field.as_object() {
+                            if field_obj.get("type").and_then(|v| v.as_str()) == Some("fileRef") {
+                                if let Some(Value::Array(values)) = field_obj.get("value") {
+                                    return !values.is_empty();
+                                }
+                            }
+                        }
+                        true
+                    });
                 }
             }
         }
