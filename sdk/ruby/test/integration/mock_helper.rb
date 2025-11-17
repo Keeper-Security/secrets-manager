@@ -81,6 +81,10 @@ module MockHelper
                  mock_update_secret_response(payload_data)
                when 'delete_secret'
                  mock_delete_secret_response(payload_data)
+               when 'finalize_secret_update'
+                 mock_finalize_transaction_response(payload_data)
+               when 'rollback_secret_update'
+                 mock_rollback_transaction_response(payload_data)
                when 'query_server_public_keys'
                  return mock_server_public_keys_response # Don't encrypt this response
                else
@@ -259,6 +263,26 @@ module MockHelper
       'recordUids' => payload_data['recordUids'] || [],
       'warnings' => mock_mode? ? ['Running in mock mode - records not actually deleted'] : []
     }
+
+    KeeperSecretsManager::Dto::KSMHttpResponse.new(
+      status_code: 200,
+      data: response.to_json
+    )
+  end
+
+  def self.mock_finalize_transaction_response(payload_data)
+    # Transaction endpoints return empty success response (like Python SDK)
+    response = {}
+
+    KeeperSecretsManager::Dto::KSMHttpResponse.new(
+      status_code: 200,
+      data: response.to_json
+    )
+  end
+
+  def self.mock_rollback_transaction_response(payload_data)
+    # Transaction endpoints return empty success response (like Python SDK)
+    response = {}
 
     KeeperSecretsManager::Dto::KSMHttpResponse.new(
       status_code: 200,
