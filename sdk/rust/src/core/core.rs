@@ -1428,7 +1428,7 @@ impl SecretsManager {
         };
 
         // Get fresh copy with files
-        let mut secrets = self.get_secrets(vec![record.uid])?;
+        let secrets = self.get_secrets(vec![record.uid])?;
         let mut record = match secrets.into_iter().next() {
             Some(r) => r,
             None => return Ok(None),

@@ -47,12 +47,12 @@ pub enum KSMRError {
     TOTPError(String),
     NotationError(String),
     // v17.1.0: Additional error types for better error handling
-    RecordNotFoundError(String),      // Specific error when record doesn't exist
-    FieldNotFoundError(String),       // When a field doesn't exist in a record
-    AuthenticationError(String),      // Authentication/authorization failures
-    InvalidTokenError(String),        // Invalid or expired one-time token
-    TransactionError(String),         // Transaction operation failures (commit/rollback)
-    ConfigurationError(String),       // Configuration validation errors
+    RecordNotFoundError(String), // Specific error when record doesn't exist
+    FieldNotFoundError(String),  // When a field doesn't exist in a record
+    AuthenticationError(String), // Authentication/authorization failures
+    InvalidTokenError(String),   // Invalid or expired one-time token
+    TransactionError(String),    // Transaction operation failures (commit/rollback)
+    ConfigurationError(String),  // Configuration validation errors
 }
 
 impl fmt::Display for KSMRError {
@@ -113,7 +113,9 @@ impl fmt::Display for KSMRError {
             // v17.1.0: New error types
             KSMRError::RecordNotFoundError(string) => write!(f, "Record not found: {}", string),
             KSMRError::FieldNotFoundError(string) => write!(f, "Field not found: {}", string),
-            KSMRError::AuthenticationError(string) => write!(f, "Authentication failed: {}", string),
+            KSMRError::AuthenticationError(string) => {
+                write!(f, "Authentication failed: {}", string)
+            }
             KSMRError::InvalidTokenError(string) => write!(f, "Invalid token: {}", string),
             KSMRError::TransactionError(string) => write!(f, "Transaction error: {}", string),
             KSMRError::ConfigurationError(string) => write!(f, "Configuration error: {}", string),
@@ -176,12 +178,22 @@ impl PartialEq for KSMRError {
             (KSMRError::TOTPError(msg1), KSMRError::TOTPError(msg2)) => msg1 == msg2,
             (KSMRError::NotationError(msg1), KSMRError::NotationError(msg2)) => msg1 == msg2,
             // v17.1.0: New error types
-            (KSMRError::RecordNotFoundError(msg1), KSMRError::RecordNotFoundError(msg2)) => msg1 == msg2,
-            (KSMRError::FieldNotFoundError(msg1), KSMRError::FieldNotFoundError(msg2)) => msg1 == msg2,
-            (KSMRError::AuthenticationError(msg1), KSMRError::AuthenticationError(msg2)) => msg1 == msg2,
-            (KSMRError::InvalidTokenError(msg1), KSMRError::InvalidTokenError(msg2)) => msg1 == msg2,
+            (KSMRError::RecordNotFoundError(msg1), KSMRError::RecordNotFoundError(msg2)) => {
+                msg1 == msg2
+            }
+            (KSMRError::FieldNotFoundError(msg1), KSMRError::FieldNotFoundError(msg2)) => {
+                msg1 == msg2
+            }
+            (KSMRError::AuthenticationError(msg1), KSMRError::AuthenticationError(msg2)) => {
+                msg1 == msg2
+            }
+            (KSMRError::InvalidTokenError(msg1), KSMRError::InvalidTokenError(msg2)) => {
+                msg1 == msg2
+            }
             (KSMRError::TransactionError(msg1), KSMRError::TransactionError(msg2)) => msg1 == msg2,
-            (KSMRError::ConfigurationError(msg1), KSMRError::ConfigurationError(msg2)) => msg1 == msg2,
+            (KSMRError::ConfigurationError(msg1), KSMRError::ConfigurationError(msg2)) => {
+                msg1 == msg2
+            }
             _ => false,
         }
     }

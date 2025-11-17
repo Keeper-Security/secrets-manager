@@ -157,7 +157,10 @@ mod tests {
         let totp = utils::get_totp_code(url).unwrap();
 
         let code = totp.get_code();
-        assert!(code.chars().all(|c| c.is_ascii_digit()), "TOTP code should be all digits");
+        assert!(
+            code.chars().all(|c| c.is_ascii_digit()),
+            "TOTP code should be all digits"
+        );
     }
 
     #[test]
@@ -200,7 +203,8 @@ mod tests {
     // URL encoding tests
     #[test]
     fn test_totp_url_with_encoded_chars() {
-        let url = "otpauth://totp/My%20App:user%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=My%20App";
+        let url =
+            "otpauth://totp/My%20App:user%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=My%20App";
         let totp = utils::get_totp_code(url).unwrap();
 
         assert_eq!(totp.get_code().len(), 6);
@@ -234,7 +238,11 @@ mod tests {
 
         // Different algorithms should produce different codes
         // (though theoretically they could collide, it's extremely unlikely)
-        let codes = vec![totp_sha1.get_code(), totp_sha256.get_code(), totp_sha512.get_code()];
+        let codes = vec![
+            totp_sha1.get_code(),
+            totp_sha256.get_code(),
+            totp_sha512.get_code(),
+        ];
 
         // At least one should be different (likely all three are different)
         assert!(
