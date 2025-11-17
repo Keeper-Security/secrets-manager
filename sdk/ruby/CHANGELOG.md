@@ -24,7 +24,7 @@
 - Cache file location configurable via `KSM_CACHE_DIR` environment variable
 - Comprehensive unit tests for caching functionality (17 new tests)
 - Development console script (`bin/console`) for interactive SDK exploration using Pry REPL
-- KSM-687: Missing DTO fields for complete SDK parity with other ksm sdks
+- KSM-687: Complete SDK parity with other KSM SDKs - DTO fields and PAM transaction support
   - `links` field to KeeperRecord for linked records support
   - `is_editable` field to KeeperRecord to check edit permissions
   - `inner_folder_uid` field to KeeperRecord for folder location tracking
@@ -34,19 +34,37 @@
   - `request_links` option to QueryOptions for fetching linked records
   - `download_thumbnail` method for downloading file thumbnails
   - `expires_on` field to SecretsManagerResponse
+  - `complete_transaction(record_uid, rollback: false)` method for PAM rotation workflows
+  - `CompleteTransactionPayload` DTO class for transaction completion
+- KSM-692: HTTP proxy support for enterprise environments
+  - `proxy_url` initialization parameter for explicit proxy configuration
+  - HTTPS_PROXY environment variable support (automatic detection)
+  - https_proxy (lowercase) environment variable support
+  - Authenticated proxy support (username:password in URL)
+  - Proxy applies to all HTTP operations (API calls, file downloads, file uploads)
+- KSM-694: Convenience methods for improved developer experience
+  - `upload_file_from_path(owner_record_uid, file_path, file_title: nil)` - Upload files directly from disk
+  - `try_get_notation(notation_uri)` - Error-safe notation access (returns empty array on error)
 
 ### Changed
 - Documentation: Added Ruby SDK to root repository SDK comparison table
-- Added 3 RSpec integration test files (79 new test examples)
+- **Test Coverage Improvements:**
+  - Added 5 new integration test files (test_pam_rotation.rb, test_proxy.rb, test_pam_linked_records.rb, test_caching.rb)
+  - Added 27 unit tests for new features (CompleteTransactionPayload, QueryOptions, proxy configuration, convenience methods)
+  - Enhanced test_file_operations.rb with thumbnail download and file link removal tests
+  - Total test suite: 302 examples, 0 failures
 - **Mock Infrastructure:** Implemented proper AES-256-GCM encryption in `mock_helper.rb`
   - Records now use proper AES-GCM encryption (was Base64 only)
   - Folders use correct AES-CBC encryption for data
   - Added transmission key encryption/decryption
+  - Added mock endpoints for transaction completion (finalize_secret_update, rollback_secret_update)
   - Enabled complete offline testing without config.base64
-- **Manual Test Scripts:** Fixed previously commented/skipped tests
-  - `test_totp.rb` - Enabled tests for SHA256/SHA512 algorithms and custom periods (60s, 90s)
-  - `test_file_operations.rb` - Enabled multiple file upload, metadata retrieval, and deletion tests
-  - `test_offline_mock.rb` - Now runs completely offline with proper encryption
+- **Example Files:**
+  - Added `11_pam_linked_records.rb` - PAM resources with linked credentials and transaction workflow
+  - Added `12_proxy_usage.rb` - HTTP proxy configuration examples
+  - Updated `06_files.rb` - Added upload_file_from_path convenience method example
+  - Updated `08_notation.rb` - Added try_get_notation error-safe notation example
+  - Removed emojis from all example files for professional appearance
 - **Dependencies:** Added base32 gem to test dependencies for TOTP support
 
 ## [17.1.0] - 2025-01-06
