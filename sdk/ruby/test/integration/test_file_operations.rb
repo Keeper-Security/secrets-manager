@@ -43,6 +43,7 @@ class FileOperationsTests
     test_multiple_files
     test_file_metadata
     test_thumbnail_download
+    test_file_link_removal
     test_file_deletion
     cleanup_test_records
     puts "\n[PASS] All file operations tests completed"
@@ -266,8 +267,61 @@ class FileOperationsTests
     end
   end
 
+  def test_file_link_removal
+    puts "\n7. Testing File Link Removal with UpdateOptions (v17.2.0)..."
+
+    if @file_record_uid && @uploaded_file_uid
+      begin
+        # Get record with files
+        records = @sm.get_secrets([@file_record_uid])
+        record = records.first
+
+        if record.files && record.files.any?
+          file_count_before = record.files.length
+          puts "   [OK] Record has #{file_count_before} file(s) before removal"
+
+          # Remove a specific file using UpdateOptions.links_to_remove
+          update_options = KeeperSecretsManager::Dto::UpdateOptions.new(
+            links_to_remove: [@uploaded_file_uid]
+          )
+
+          puts "   [OK] Removing file link: #{@uploaded_file_uid}"
+          @sm.update_secret_with_options(record, update_options)
+
+          # Verify file was removed
+          updated_records = @sm.get_secrets([@file_record_uid])
+          updated_record = updated_records.first
+
+          file_count_after = updated_record.files ? updated_record.files.length : 0
+          puts "   [OK] Record has #{file_count_after} file(s) after removal"
+
+          if file_count_after < file_count_before
+            puts '   [OK] File link successfully removed'
+          else
+            puts '   [WARN] File count unchanged (may be eventual consistency)'
+          end
+
+          # Verify specific file is gone
+          file_still_exists = updated_record.files&.any? { |f| (f['fileUid'] || f[:fileUid]) == @uploaded_file_uid }
+          if !file_still_exists
+            puts '   [OK] Removed file no longer in fileRef field'
+          else
+            puts '   [WARN] File still present in record'
+          end
+        else
+          puts '   [WARN] No files to remove'
+        end
+      rescue StandardError => e
+        puts "   [FAIL] File link removal failed: #{e.message}"
+        puts "   #{e.class}: #{e.backtrace.first(3).join("\n   ")}"
+      end
+    else
+      puts '   [WARN] No file uploaded to test removal'
+    end
+  end
+
   def test_file_deletion
-    puts "\n7. Testing File Deletion..."
+    puts "\n8. Testing File Deletion..."
 
     # Note: Individual file deletion requires updating the record to remove files from the array
     # For testing purposes, we demonstrate file management by deleting the entire record
@@ -290,7 +344,7 @@ class FileOperationsTests
   end
 
   def cleanup_test_records
-    puts "\n8. Cleaning up test records..."
+    puts "\n9. Cleaning up test records..."
 
     if @file_record_uid
       begin
