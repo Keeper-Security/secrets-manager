@@ -92,9 +92,52 @@ rescue StandardError
 end
 puts "  Processed: #{result}"
 
+# 8. Error-safe notation access (NEW in v17.2.0)
+puts "\n8. Error-safe notation with try_get_notation:"
+begin
+  # try_get_notation never raises exceptions - returns empty array on error
+  secrets = secrets_manager.get_secrets
+  uid = secrets.first&.uid
+
+  if uid
+    # Valid notation - returns value
+    password = secrets_manager.try_get_notation("keeper://#{uid}/field/password")
+    puts "  [OK] Valid notation returned value (#{password.class})"
+
+    # Invalid notation - returns empty array instead of raising exception
+    invalid = secrets_manager.try_get_notation('keeper://INVALID_UID/field/password')
+    puts "  [OK] Invalid notation returned: #{invalid.inspect}"
+    puts '       (No exception raised - safe for optional fields)'
+  end
+rescue StandardError => e
+  puts "  [FAIL] #{e.message}"
+end
+
+# 9. Use case: Configuration with fallbacks
+puts "\n9. Safe configuration access with fallbacks:"
+begin
+  secrets = secrets_manager.get_secrets
+  uid = secrets.first&.uid
+
+  if uid
+    # Get values with fallbacks (no error handling needed)
+    host = secrets_manager.try_get_notation("keeper://#{uid}/field/host[hostName]").first || 'localhost'
+    port = secrets_manager.try_get_notation("keeper://#{uid}/custom_field/Port").first || '5432'
+    env = secrets_manager.try_get_notation("keeper://#{uid}/custom_field/Environment").first || 'development'
+
+    puts "  Database Host: #{host}"
+    puts "  Database Port: #{port}"
+    puts "  Environment: #{env}"
+    puts '  [OK] Fallback values used when fields missing'
+  end
+rescue StandardError => e
+  puts "  [FAIL] #{e.message}"
+end
+
 puts "\n=== Notation Tips ==="
 puts '- Use UIDs for exact matching (no ambiguity)'
 puts '- Titles are easier to read but must be unique'
 puts '- Notation is great for configuration files'
-puts "- Returns nil if field doesn't exist"
-puts '- Throws exception if record not found'
+puts "- get_notation() returns nil if field doesn't exist"
+puts '- get_notation() throws exception if record not found'
+puts '- try_get_notation() returns [] on any error (safe for optional fields)'
