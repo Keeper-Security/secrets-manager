@@ -2,9 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
 ## [17.1.0] - 2025-11-12
 
 ### Added
@@ -125,6 +122,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`KeeperFile.get_url()`** - Enhanced to check url field first
   - Tries `self.url` field before falling back to `f` HashMap
   - Maintains backward compatibility
+- **File removal logic** - Enhanced to match JavaScript SDK pattern (core.rs:1761-1771)
+  - Filters `fileRef` field values when `links_to_remove` is specified
+  - Removes entire `fileRef` field when value array becomes empty
 
 ### Fixed
 - **env_logger dependency** - Added missing `env_logger = "0.11"` to Cargo.toml

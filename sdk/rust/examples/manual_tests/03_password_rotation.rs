@@ -39,7 +39,7 @@ fn main() -> Result<(), KSMRError> {
     let record_uid = editable_secret.uid.clone();
 
     // Get fresh copy
-    let mut secrets = secrets_manager.get_secrets(vec![record_uid.clone()])?;
+    let secrets = secrets_manager.get_secrets(vec![record_uid.clone()])?;
     let mut record = secrets.into_iter().next().unwrap();
 
     // Show current password
@@ -84,7 +84,7 @@ fn main() -> Result<(), KSMRError> {
 
     // Verify final state
     println!("\nVerifying final state...");
-    let mut final_secrets = secrets_manager.get_secrets(vec![record_uid])?;
+    let final_secrets = secrets_manager.get_secrets(vec![record_uid])?;
     let final_record = final_secrets.into_iter().next().unwrap();
 
     if let Ok(final_password) = final_record.get_standard_field_value("password", true) {

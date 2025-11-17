@@ -44,7 +44,7 @@ fn main() -> Result<(), KSMRError> {
 
     // Get fresh copy for update
     let record_uid = secret_with_files.uid.clone();
-    let mut secrets = secrets_manager.get_secrets(vec![record_uid.clone()])?;
+    let secrets = secrets_manager.get_secrets(vec![record_uid.clone()])?;
     let record = secrets.into_iter().next().unwrap();
 
     if record.files.is_empty() {
@@ -81,7 +81,7 @@ fn main() -> Result<(), KSMRError> {
 
     // Verify the file was removed
     println!("\nVerifying file removal...");
-    let mut updated_secrets = secrets_manager.get_secrets(vec![record_uid])?;
+    let updated_secrets = secrets_manager.get_secrets(vec![record_uid])?;
     let updated_record = updated_secrets.into_iter().next().unwrap();
 
     println!("Files after: {}", updated_record.files.len());
