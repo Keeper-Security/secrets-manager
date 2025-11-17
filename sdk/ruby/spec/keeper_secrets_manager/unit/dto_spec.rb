@@ -585,4 +585,40 @@ RSpec.describe KeeperSecretsManager::Dto do
       expect(hash['requestLinks']).to be true
     end
   end
+
+  describe KeeperSecretsManager::Dto::CompleteTransactionPayload do
+    it 'creates payload with record_uid' do
+      payload = described_class.new
+      payload.record_uid = 'test-record-uid'
+
+      expect(payload.record_uid).to eq('test-record-uid')
+    end
+
+    it 'includes record_uid in JSON output' do
+      payload = described_class.new
+      payload.client_version = 'ruby17.2.0'
+      payload.client_id = 'test-client-id'
+      payload.record_uid = 'test-record-uid'
+
+      hash = payload.to_h
+      expect(hash).to have_key('recordUid')
+      expect(hash['recordUid']).to eq('test-record-uid')
+      expect(hash['clientVersion']).to eq('ruby17.2.0')
+      expect(hash['clientId']).to eq('test-client-id')
+    end
+
+    it 'converts to proper JSON format' do
+      payload = described_class.new
+      payload.client_version = 'ruby17.2.0'
+      payload.client_id = 'test-client'
+      payload.record_uid = 'uid-123'
+
+      json = payload.to_json
+      parsed = JSON.parse(json)
+
+      expect(parsed['recordUid']).to eq('uid-123')
+      expect(parsed['clientVersion']).to eq('ruby17.2.0')
+      expect(parsed['clientId']).to eq('test-client')
+    end
+  end
 end
