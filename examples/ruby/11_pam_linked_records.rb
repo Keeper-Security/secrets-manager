@@ -149,7 +149,56 @@ puts "   - Show which credentials are linked to which resources"
 puts "   - Identify orphaned credentials"
 puts "   - Track credential usage across resources"
 
-# 6. Link Path Reference
+# 6. PAM Rotation Transaction Workflow
+puts "\n=== PAM Rotation Transaction Workflow ==="
+puts "\nUse transactions for safe password rotation with rollback capability:"
+
+# Example: Rotate password with transaction support
+if pam_machine && pam_machine.links && !pam_machine.links.empty?
+  admin_link = pam_machine.links.find { |link| link['path'] == 'admin' }
+
+  if admin_link
+    puts "\nDemonstrating transaction workflow:"
+    puts "1. Retrieve admin credential"
+    admin_uid = admin_link['recordUid']
+    admin_records = secrets_manager.get_secrets([admin_uid])
+    admin_credential = admin_records.first
+
+    puts "   Current admin user: #{admin_credential.login}"
+
+    # NOTE: This is a demonstration - actual rotation would update the password
+    puts "\n2. Start rotation transaction"
+    puts "   admin_credential.password = 'NewSecurePassword123!'"
+    puts "   update_options = KeeperSecretsManager::Dto::UpdateOptions.new(transaction_type: 'rotation')"
+    puts "   secrets_manager.update_secret_with_options(admin_credential, update_options)"
+
+    puts "\n3. Perform rotation on remote system"
+    puts "   success = rotate_ssh_password_on_server('NewSecurePassword123!')"
+
+    puts "\n4. Complete transaction based on result"
+    puts "   if success"
+    puts "     # Commit the password change"
+    puts "     secrets_manager.complete_transaction(admin_credential.uid, rollback: false)"
+    puts "     puts 'Password rotation committed'"
+    puts "   else"
+    puts "     # Rollback the password change"
+    puts "     secrets_manager.complete_transaction(admin_credential.uid, rollback: true)"
+    puts "     puts 'Password rotation rolled back'"
+    puts "   end"
+
+    puts "\nTransaction Benefits:"
+    puts "  - Safe rollback if remote rotation fails"
+    puts "  - Atomic password updates across systems"
+    puts "  - Audit trail of rotation attempts"
+    puts "  - Prevents vault/system password mismatches"
+  else
+    puts "\n(No admin credentials linked - transaction demo skipped)"
+  end
+else
+  puts "\n(No PAM machine with linked credentials found - transaction demo skipped)"
+end
+
+# 7. Link Path Reference
 puts "\n=== Link Path Reference ==="
 puts "\nCommon link paths:"
 puts "  'admin'  - Administrative credentials (full access)"
