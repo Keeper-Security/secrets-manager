@@ -6,6 +6,9 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.*
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.nio.file.attribute.PosixFilePermission
 import java.util.*
 import kotlin.collections.HashMap
 
@@ -13,6 +16,19 @@ fun saveCachedValue(data: ByteArray) {
     val fos = FileOutputStream("cache.dat")
     fos.write(data)
     fos.close()
+
+    // Set secure permissions (0600) on Unix systems
+    try {
+        if (System.getProperty("os.name").startsWith("Windows").not()) {
+            val permissions = setOf(
+                PosixFilePermission.OWNER_READ,
+                PosixFilePermission.OWNER_WRITE
+            )
+            Files.setPosixFilePermissions(Paths.get("cache.dat"), permissions)
+        }
+    } catch (e: Exception) {
+        // Permissions setting failed but file was created
+    }
 }
 
 fun getCachedValue(): ByteArray {
@@ -120,8 +136,24 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         config.serverPublicKeyId = storage.getString(KEY_SERVER_PUBIC_KEY_ID)
         val json = prettyJson.encodeToString(config)
         val outputStream = BufferedWriter(FileWriter(file))
-        outputStream.write(json)
-        outputStream.close()
+        try {
+            outputStream.write(json)
+        } finally {
+            outputStream.close()
+        }
+
+        // Set secure permissions (0600) on Unix systems
+        try {
+            if (System.getProperty("os.name").startsWith("Windows").not()) {
+                val permissions = setOf(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE
+                )
+                Files.setPosixFilePermissions(file.toPath(), permissions)
+            }
+        } catch (e: Exception) {
+            // Permissions setting failed but file was created
+        }
     }
 
     override fun getString(key: String): String? {
