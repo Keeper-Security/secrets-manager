@@ -156,11 +156,12 @@ class FileKeyValueStorage(KeyValueStorage):
     def create_config_file_if_missing(self):
         if not os.path.exists(self.default_config_file_location):
 
-            f = open(self.default_config_file_location, "w+")
-            f.write(json.dumps({}))
-            f.close()
+            # Create file with secure permissions (0600) atomically
+            fd = os.open(self.default_config_file_location, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'w') as f:
+                f.write(json.dumps({}))
 
-            # Make sure the new config file has the correct mode.
+            # Ensure permissions are correct (defensive)
             set_config_mode(self.default_config_file_location)
 
     def is_empty(self):
