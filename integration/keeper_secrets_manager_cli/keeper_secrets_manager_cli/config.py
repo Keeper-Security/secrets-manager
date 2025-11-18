@@ -221,12 +221,13 @@ class Config:
             for profile in self._profiles:
                 config[profile] = self._profiles[profile].to_dict()
 
-            with open(self.ini_file, 'w') as fh:
+            # Create file with secure permissions (0600) atomically
+            fd = os.open(self.ini_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'w') as fh:
                 config.write(fh)
-                fh.close()
 
-            # If the file exists, don't change the permissions.
-            if file_exists is False:
+            # If the file already existed, ensure permissions are correct
+            if file_exists is True:
                 set_config_mode(self.ini_file, logger=self.logger)
 
     def to_dict(self):
