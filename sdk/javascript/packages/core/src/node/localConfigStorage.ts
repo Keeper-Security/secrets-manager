@@ -21,7 +21,13 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
         if (!configName) {
             return
         }
-        fs.writeFileSync(configName, JSON.stringify(storageData, null, 2))
+        // Create file with secure permissions (0600)
+        const fd = fs.openSync(configName, 'w', 0o600)
+        try {
+            fs.writeSync(fd, JSON.stringify(storageData, null, 2))
+        } finally {
+            fs.closeSync(fd)
+        }
     }
 
     return {
@@ -53,7 +59,13 @@ export const cachingPostFunction = async (url: string, transmissionKey: Transmis
             Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
         })
         if (response.statusCode == 200) {
-            fs.writeFileSync('cache.dat', Buffer.concat([transmissionKey.key, response.data]))
+            // Create cache file with secure permissions (0600)
+            const cacheFd = fs.openSync('cache.dat', 'w', 0o600)
+            try {
+                fs.writeSync(cacheFd, Buffer.concat([transmissionKey.key, response.data]))
+            } finally {
+                fs.closeSync(cacheFd)
+            }
         }
         return response
     } catch (e) {
