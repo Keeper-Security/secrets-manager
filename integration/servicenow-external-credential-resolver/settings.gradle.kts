@@ -1,7 +1,7 @@
 rootProject.name = "keeper-external-credentials"
 
 plugins {
-    id("org.gradle.toolchains.foojay-resolver") version "0.8.0"
+    id("org.gradle.toolchains.foojay-resolver") version "0.10.0"
 }
 
 @Suppress("UnstableApiUsage")
