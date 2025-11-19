@@ -31,8 +31,8 @@ class AnsibleTestFramework:
         return f"""[defaults]
 inventory=./inventory
 playbook_dir=./playbooks
-action_plugins={self.plugin_base_dir}/action_plugins
-lookup_plugins={self.plugin_base_dir}/lookup_plugins
+action_plugins={self.plugin_base_dir}/action
+lookup_plugins={self.plugin_base_dir}/lookup
 
 [inventory]
 enable_plugins=ini,host_list,script
@@ -102,8 +102,8 @@ enable_plugins=ini,host_list,script
                     from ansible import constants as C
                     C.ANSIBLE_HOME = self.base_dir
                     C.CONFIG_FILE = os.path.join(self.base_dir, "ansible.cfg")
-                    C.DEFAULT_ACTION_PLUGIN_PATH = os.path.join(self.plugin_base_dir, "action_plugins")
-                    C.DEFAULT_LOOKUP_PLUGIN_PATH = os.path.join(self.plugin_base_dir, "lookup_plugins")
+                    C.DEFAULT_ACTION_PLUGIN_PATH = os.path.join(self.plugin_base_dir, "action")
+                    C.DEFAULT_LOOKUP_PLUGIN_PATH = os.path.join(self.plugin_base_dir, "lookup")
 
                     # Are we running 3.8 or greater?
                     if sys.version_info[:2] >= (3, 8):
@@ -158,7 +158,6 @@ enable_plugins=ini,host_list,script
                 for status in statuses:
                     regex_str += f"\\s+{status}=(\\d+)"
                     results[status] = 0
-
                 match = re.search(regex_str, stdout_text, re.MULTILINE)
                 if match is not None:
                     index = 1

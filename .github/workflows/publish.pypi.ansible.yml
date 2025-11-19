@@ -3,8 +3,39 @@ on:
   workflow_dispatch:
 
 jobs:
+
+  get-version-for-sbom:
+    runs-on: ubuntu-latest
+    outputs:
+      ansible-version: ${{ steps.extract-ansible-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Extract Ansible Package version
+        id: extract-ansible-version
+        working-directory: ./integration/keeper_secrets_manager_ansible
+        run: |
+          VERSION=$(python3 setup.py --version 2>/dev/null || grep -Po 'version\s*=\s*["\x27]\K[^\x27"]*' setup.py)
+          echo "Ansible Package Version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+  generate-ansible-sbom:
+    name: Generate and Upload SBOM
+    needs: get-version-for-sbom
+    uses: ./.github/workflows/reusable.sbom.workflow.yml
+    with:
+      working-directory: ./integration/keeper_secrets_manager_ansible
+      project-name: keeper-secrets-manager-ansible
+      project-type: python
+      project-version: ${{ needs.get-version-for-sbom.outputs.ansible-version }}
+      sbom-format: spdx-json
+      additional-labels: ksm,ansible,python,security
+    secrets:
+      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+
   publish-pypi:
-    name: Publish KSM Ansible Pulugin to PyPI
+    name: Publish KSM Ansible Plugin to PyPI
+    needs: generate-ansible-sbom
     environment: prod
     runs-on: ubuntu-latest
     timeout-minutes: 10 # To keep builds from running too long

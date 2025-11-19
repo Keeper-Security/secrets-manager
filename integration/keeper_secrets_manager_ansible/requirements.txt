@@ -1,4 +1,4 @@
-ansible
+ansible-core>=2.12.0
 importlib_metadata
-keeper-secrets-manager-core>=16.6.6
+keeper-secrets-manager-core>=17.0.0
 keeper-secrets-manager-helper>=1.0.5
