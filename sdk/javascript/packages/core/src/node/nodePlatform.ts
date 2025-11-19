@@ -5,13 +5,19 @@ import {
     createCipheriv,
     createDecipheriv,
     createECDH,
-    createHash, createHmac,
-    createPrivateKey,
+    createHash,
+    createHmac,
     createSign,
     generateKeyPair,
     randomBytes
 } from 'crypto'
 import * as https from "https";
+
+let customProxyAgent: https.Agent | undefined;
+
+const setCustomProxyAgent = (proxyAgent: https.Agent) => {
+    customProxyAgent = proxyAgent
+}
 
 const bytesToBase64 = (data: Uint8Array): string => Buffer.from(data).toString('base64')
 
@@ -139,8 +145,9 @@ const _decryptCBC = (data: Uint8Array, key: Uint8Array): Uint8Array => {
 }
 
 const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean, useCBC?: boolean): Promise<void> => {
+    const cbcDecrypt = unwrappingKeyId === "appKey" ? false : useCBC
     const unwrappingKey = await loadKey(unwrappingKeyId, storage)
-    const unwrappedKey = await _decrypt(key, unwrappingKey, useCBC)
+    const unwrappedKey = await _decrypt(key, unwrappingKey, cbcDecrypt)
     keyCache[keyId] = unwrappedKey
     if (memoryOnly) {
         return
@@ -196,7 +203,8 @@ const get = (
         headers: {
             'User-Agent': `Node/${process.version}`,
             ...headers
-        }
+        },
+        agent: getProxyAgent()
     }, (res) => {
         fetchData(res, resolve)
     })
@@ -211,7 +219,8 @@ const post = (
     allowUnverifiedCertificate?: boolean
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
     const options: RequestOptions = {
-        rejectUnauthorized: !allowUnverifiedCertificate
+        rejectUnauthorized: !allowUnverifiedCertificate,
+        agent: getProxyAgent()
     }
     const post = request(url, {
         method: 'post',
@@ -241,7 +250,8 @@ const fileUpload = (
         method: "post",
         headers: {
             'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        }
+        },
+        agent: getProxyAgent()
     });
     post.on('response', function (res: any) {
         resolve({
@@ -279,7 +289,7 @@ const getHmacDigest = async (algorithm: string, secret: Uint8Array, message: Uin
     let digest = new Uint8Array()
     const algo = algorithm.toUpperCase().trim()
     if (['SHA1', 'SHA256', 'SHA512'].includes(algo))
-        digest = createHmac(algo, secret).update(message).digest()
+        digest = createHmac(algo, secret).update(message).digest() as Uint8Array<ArrayBuffer>
 
     return Promise.resolve(digest)
 }
@@ -291,7 +301,7 @@ const getRandomNumber = async (n: number): Promise<number> => {
     let values = new Uint32Array(1)
     do {
         const randomBytes = getRandomBytes(4)
-        values = new Uint32Array(randomBytes.buffer)
+        values = new Uint32Array(randomBytes.buffer as ArrayBuffer)
     } while (values[0] > limit)
     return Promise.resolve(values[0] % n)
 }
@@ -301,6 +311,10 @@ const getRandomCharacterInCharset = async (charset: string): Promise<string> => 
     const count = charset.length
     const pos = await getRandomNumber(count)
     return Promise.resolve(charset[pos])
+}
+
+const getProxyAgent = (): https.Agent | undefined => {
+    return customProxyAgent || undefined
 }
 
 export const nodePlatform: Platform = {
@@ -327,5 +341,6 @@ export const nodePlatform: Platform = {
     hasKeysCached: hasKeysCached,
     getHmacDigest: getHmacDigest,
     getRandomNumber: getRandomNumber,
-    getRandomCharacterInCharset: getRandomCharacterInCharset
+    getRandomCharacterInCharset: getRandomCharacterInCharset,
+    setCustomProxyAgent: setCustomProxyAgent
 }
