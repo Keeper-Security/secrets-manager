@@ -64,6 +64,7 @@ mod get_notation_tests {
             folder_uid: "folder_uid1".to_string(),
             folder_key_bytes: Some(vec![4, 5, 6]),
             inner_folder_uid: None,
+            links: vec![],
         }
     }
 

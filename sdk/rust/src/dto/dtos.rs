@@ -48,6 +48,7 @@ pub struct Record {
     pub folder_uid: String,
     pub folder_key_bytes: Option<Vec<u8>>,
     pub inner_folder_uid: Option<String>,
+    pub links: Vec<HashMap<String, Value>>, // GraphSync linked records (v16.7.0+)
 }
 
 impl Record {
@@ -144,6 +145,23 @@ impl Record {
             None
         };
 
+        // Parse links array (GraphSync linked records)
+        let links = record_dict
+            .get("links")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|link| {
+                        link.as_object().map(|obj| {
+                            obj.iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect::<HashMap<String, Value>>()
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Ok(Self {
             uid,
             title,
@@ -161,6 +179,7 @@ impl Record {
                 .map(|s| s.to_string()),
             record_key_bytes,
             folder_key_bytes: None,
+            links,
         })
     }
 
@@ -941,6 +960,8 @@ pub struct KeeperFile {
     pub name: String,
     last_modified: i64,
     size: i64,
+    pub url: Option<String>,           // Download URL (v16.7.0+)
+    pub thumbnail_url: Option<String>, // Thumbnail URL (v16.7.0+)
 
     f: HashMap<String, Value>,
     record_key_bytes: Vec<u8>,
@@ -959,6 +980,8 @@ impl KeeperFile {
             name: self.name.clone(),
             last_modified: self.last_modified,
             size: self.size,
+            url: self.url.clone(),
+            thumbnail_url: self.thumbnail_url.clone(),
             f: self.f.clone(),
             record_key_bytes: self.record_key_bytes.clone(),
         }
@@ -1069,6 +1092,11 @@ impl KeeperFile {
 
     /// Retrieves the URL from the `f` HashMap, if available.
     pub fn get_url(&self) -> Result<String, KSMRError> {
+        // Try url field first (if populated from API), then fall back to f HashMap
+        if let Some(url) = &self.url {
+            return Ok(url.clone());
+        }
+
         let file_url = self
             .f
             .get("url") // Look for the "url" key in the HashMap
@@ -1078,10 +1106,76 @@ impl KeeperFile {
         Ok(file_url)
     }
 
+    /// Downloads and decrypts the file thumbnail.
+    ///
+    /// # Returns
+    /// * `Result<Option<Vec<u8>>, KSMRError>` - Decrypted thumbnail data, or None if no thumbnail available
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// # use keeper_secrets_manager_core::dto::KeeperFile;
+    /// # use keeper_secrets_manager_core::custom_error::KSMRError;
+    /// # fn example(file: &mut KeeperFile) -> Result<(), KSMRError> {
+    /// if let Some(thumbnail_data) = file.get_thumbnail_data()? {
+    ///     // Save thumbnail to disk
+    ///     std::fs::write("thumbnail.jpg", thumbnail_data)?;
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_thumbnail_data(&mut self) -> Result<Option<Vec<u8>>, KSMRError> {
+        // Check if thumbnail URL is available
+        let thumbnail_url = if let Some(url) = &self.thumbnail_url {
+            url.clone()
+        } else if let Some(url) = self.f.get("thumbnailUrl").and_then(|v| v.as_str()) {
+            url.to_string()
+        } else {
+            return Ok(None); // No thumbnail available
+        };
+
+        // Decrypt the file key
+        let file_key = self.decrypt_file_key()?;
+
+        // Fetch the thumbnail data from the URL
+        let mut response = get(&thumbnail_url)
+            .map_err(|e| KSMRError::FileError(format!("Failed to fetch thumbnail: {}", e)))?;
+
+        // Ensure the HTTP request was successful
+        if !response.status().is_success() {
+            return Err(KSMRError::HTTPError(format!(
+                "HTTP request failed with status: {}",
+                response.status()
+            )));
+        }
+
+        // Read the response body
+        let mut encrypted_thumbnail = Vec::new();
+        response
+            .read_to_end(&mut encrypted_thumbnail)
+            .map_err(|e| KSMRError::IOError(format!("Failed to read thumbnail: {}", e)))?;
+
+        // Decrypt the thumbnail data
+        let decrypted_thumbnail = CryptoUtils::decrypt_aes(&encrypted_thumbnail, &file_key)
+            .map_err(|e| KSMRError::CryptoError(format!("Failed to decrypt thumbnail: {}", e)))?;
+
+        Ok(Some(decrypted_thumbnail))
+    }
+
     pub fn new_from_json(
         file_dict: HashMap<String, Value>,
         record_key_bytes: Vec<u8>,
     ) -> Result<Self, KSMRError> {
+        // Extract url and thumbnailUrl from file_dict before creating struct
+        let url = file_dict
+            .get("url")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let thumbnail_url = file_dict
+            .get("thumbnailUrl")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         let mut file = KeeperFile {
             file_key: String::new(),
             metadata_dict: HashMap::new(),
@@ -1092,6 +1186,8 @@ impl KeeperFile {
             name: String::new(),
             last_modified: 0,
             size: 0,
+            url,
+            thumbnail_url,
             f: file_dict.clone(),
             record_key_bytes,
         };
