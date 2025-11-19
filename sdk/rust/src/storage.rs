@@ -239,9 +239,12 @@ impl KeyValueStorage for FileKeyValueStorage {
                 let mut file = OpenOptions::new()
                     .write(true)
                     .create(true)
+                    .truncate(true)
                     .mode(0o600)
                     .open(config_path)
-                    .map_err(|e| KSMRError::FileCreationError(config_path.display().to_string(), e))?;
+                    .map_err(|e| {
+                        KSMRError::FileCreationError(config_path.display().to_string(), e)
+                    })?;
 
                 // Attempt to write an empty JSON object to the file
                 let empty_json_string = b"{}";
@@ -252,8 +255,9 @@ impl KeyValueStorage for FileKeyValueStorage {
             // On Windows, use default file creation (no POSIX permissions)
             #[cfg(not(unix))]
             {
-                let mut file = File::create(config_path)
-                    .map_err(|e| KSMRError::FileCreationError(config_path.display().to_string(), e))?;
+                let mut file = File::create(config_path).map_err(|e| {
+                    KSMRError::FileCreationError(config_path.display().to_string(), e)
+                })?;
 
                 // Attempt to write an empty JSON object to the file
                 let empty_json_string = b"{}";
