@@ -239,6 +239,7 @@ impl KeyValueStorage for FileKeyValueStorage {
                 let mut file = OpenOptions::new()
                     .write(true)
                     .create(true)
+                    .truncate(true)
                     .mode(0o600)
                     .open(config_path)
                     .map_err(|e| {

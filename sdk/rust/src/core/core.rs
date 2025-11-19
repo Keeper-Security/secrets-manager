@@ -1408,7 +1408,7 @@ impl SecretsManager {
     /// # let client_options = ClientOptions::new_client_options(config);
     /// # let mut secrets_manager = SecretsManager::new(client_options)?;
     /// if let Some(file_data) = secrets_manager.download_file_by_title("Production DB", "credentials.json")? {
-    ///     std::fs::write("credentials.json", file_data)?;
+    ///     std::fs::write("credentials.json", file_data).expect("Failed to write file");
     ///     println!("File downloaded successfully");
     /// } else {
     ///     println!("Record or file not found");
