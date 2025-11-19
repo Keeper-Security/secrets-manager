@@ -119,6 +119,12 @@ configuration file or even a playbook.
 
 # Changes
 
+## 1.2.6
+* KSM-672: KSMCache class initializes cache file path before env vars are set. Closes ([issue #675](https://github.com/Keeper-Security/secrets-manager/issues/675))
+
+## 1.2.5
+* Updated plugin structure to support Ansible VS code extension ([Ansible VS Code extension](https://marketplace.visualstudio.com/items?itemName=redhat.ansible))
+
 ## 1.2.4
 * Updated pinned KSM SDK version to 16.6.6.
 
