@@ -1,12 +1,23 @@
 import unittest
-from keeper_secrets_manager_helper.v3.field_type import *
-from keeper_secrets_manager_helper.v3.enum import CountryEnum, AccountTypeEnum
+from keeper_secrets_manager_helper.v3.enum import AccountTypeEnum, CountryEnum
+from keeper_secrets_manager_helper.v3.field_type import (
+    Address, AddressRef, BankAccount, BankAccounts, BirthDate,
+    CardRef, Checkbox, DatabaseType, Date, DirectoryType, Email,
+    ExpirationDate, FileRef, HiddenField, Host, KeyPair,
+    LicenseNumber, Login, Multiline, Name, OneTimeCode,
+    OneTimePassword, PamHostname, PamResources, Passkey,
+    Password, PasswordComplexity, PaymentCard, PaymentCards,
+    Phone, Phones, PinCode, RecordRef, Schedule, Script,
+    SecureNote, SecurityQuestions, Text, Url
+)
 
 
 class FieldTypeTest(unittest.TestCase):
 
     def _check_dict(self, field_type, value=None, label=None, extra_params=None, check_value=True):
-        field_dict = field_type.to_dict()
+        field_dict: dict = field_type.to_dict()
+        self.assertIsNotNone(field_dict)
+        self.assertIsInstance(field_dict, dict)
         self.assertEqual(field_type.name, field_dict.get("type"), "type is not correct")
         if check_value is True:
             if isinstance(value, dict) is True:
@@ -55,7 +66,6 @@ class FieldTypeTest(unittest.TestCase):
         self._check_dict(e, value="smith@localhost")
 
     def test_phone(self):
-
         # Set Phone via attributes
         p = Phone()
         p.number = "5555551234"
@@ -82,7 +92,7 @@ class FieldTypeTest(unittest.TestCase):
         try:
             Phone({"number": "1234567890", "type": "Bad"})
             raise Exception("Should have failed due to bad Enum")
-        except ValueError as _:
+        except ValueError:
             pass
         except Exception as err:
             self.fail(str(err))
@@ -197,7 +207,7 @@ class FieldTypeTest(unittest.TestCase):
             ft.cardExpirationDate = "BAD"
             ft.to_dict()
             raise Exception("Should have failed due to bad cardExpirationDate format")
-        except ValueError as _:
+        except ValueError:
             pass
         except Exception as err:
             self.fail(str(err))
@@ -274,7 +284,7 @@ class FieldTypeTest(unittest.TestCase):
             b.accountNumber = "ABCDE"
             b.to_dict()
             raise Exception("Should have failed due to bad enum for account type")
-        except ValueError as _:
+        except ValueError:
             pass
         except Exception as err:
             self.fail(str(err))

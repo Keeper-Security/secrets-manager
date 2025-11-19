@@ -1,5 +1,13 @@
 ---
-version: 1
+version: 3
+images:
+  base_image:
+    name: docker.io/redhat/ubi9:latest
+
 dependencies:
+  ansible_core:
+    package_pip: ansible-core
+  ansible_runner:
+    package_pip: ansible-runner
   galaxy: requirements.yml
   python: requirements.txt
