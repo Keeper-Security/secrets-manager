@@ -1,0 +1,13 @@
+{
+  "name": "hello-secret",
+  "version": "1.0.0",
+  "description": "Secrets Manager custom caching function usage sample for Node",
+  "license": "ISC",
+  "type": "commonjs",
+  "scripts": {
+    "run": "node hello.js"
+  },
+  "dependencies": {
+    "@keeper-security/secrets-manager-core": "17.3.0"
+  }
+}

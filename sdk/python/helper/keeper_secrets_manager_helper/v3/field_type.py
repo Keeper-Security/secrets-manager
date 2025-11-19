@@ -278,12 +278,15 @@ class FieldType:
         return self.__class__.name
 
     @staticmethod
-    def is_value_valid(value, schema, field_class):
+    def is_value_valid(value, schema, field_class, is_child: bool = False):
         validator = schema.get("validate")
         value_type = schema.get("value_type")
 
         # The field value contains a dictionary of values.
         if value_type is dict:
+            # sub-schema dicts return None instead of {}
+            if value is None and is_child:
+                value = {}  # to check if anything is "required"
             if type(value) is not dict:
                 raise ValueError("The value is not a dictionary.")
             dict_schema = schema.get("schema")
@@ -292,7 +295,7 @@ class FieldType:
                 if info.get("required", False) is True and (value.get(key) is None or value.get(key) == ""):
                     raise ValueError(f"The value key '{key}' is missing and it is required.")
 
-                FieldType.is_value_valid(value.get(key), dict_schema.get(key), field_class)
+                FieldType.is_value_valid(value.get(key), dict_schema.get(key), field_class, is_child=True)
 
         # The field value has an enumeration. Make sure the value is a valid value of the enumeration.
         elif value is not None and issubclass(value_type, BaseEnum):
@@ -319,7 +322,7 @@ class FieldType:
             self.is_value_valid(item, schema, self.__class__.__name__)
         return True
 
-    def build_value(self, schema, value=None, is_child:bool=False):
+    def build_value(self, schema, value=None, is_child: bool = False):
 
         value_type = schema.get("value_type")
 
@@ -352,6 +355,10 @@ class FieldType:
 
                 if dict_value is not None:
                     value_dict[key] = dict_value
+
+            # sub-schema empty dict should return None (instead of {})
+            if is_child and not value_dict:
+                value_dict = None
 
             return value_dict
 
@@ -392,7 +399,8 @@ class FieldType:
         # If the value is a dictionary, there is no value in self.value
         # since the value comes from the attributes. We need to fake values,
         # so set it one item of None. It won't be used, but a for loop will need it.
-        if schema.get("value_type") is dict:
+        is_dict = schema.get("value_type") is dict
+        if is_dict:
             values = [None]
 
         # Build add the values.
@@ -400,6 +408,11 @@ class FieldType:
             new_value = self.build_value(schema, item)
             self.is_value_valid(new_value, schema, self.__class__.__name__)
             new_values.append(new_value)
+
+        # sub-schema dicts preserve the empty dict value (for validation)
+        # but when parent/root is empty dict it means empty value
+        if is_dict and new_values == [{}]:
+            new_values = []
 
         field_dict["value"] = new_values
 
@@ -764,16 +777,17 @@ class Passkey(FieldType):
     schema = {
         "value_type": dict,
         "schema": {
-            "privateKey": {"value_type": dict, "desc": "Private EC Key.",
-            "schema": {
-                "crv": {"value_type": str},
-                "d": {"value_type": str},
-                "ext": {"value_type": bool},
-                "key_ops": {"value_type": list},
-                "kty": {"value_type": str},
-                "x": {"value_type": str},
-                "y": {"value_type": str}
-            }},
+            "privateKey": {"value_type": dict, "desc": "Private EC Key (crv, d, ext, key_ops, kty, x, y)",
+                           "schema": {
+                                "crv": {"value_type": str},
+                                "d": {"value_type": str},
+                                "ext": {"value_type": bool},
+                                "key_ops": {"value_type": list},
+                                "kty": {"value_type": str},
+                                "x": {"value_type": str},
+                                "y": {"value_type": str}
+                                }
+                           },
             "credentialId": {"value_type": str, "desc": "Credential Id"},
             "signCount": {"value_type": int, "desc": "Sign Count"},
             "userId": {"value_type": str, "desc": "User Id"},

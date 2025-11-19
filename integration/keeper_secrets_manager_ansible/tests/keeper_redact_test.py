@@ -1,5 +1,5 @@
 import unittest
-from keeper_secrets_manager_ansible.plugins.callback_plugins.keeper_redact import CallbackModule
+from keeper_secrets_manager_ansible.plugins.callback.keeper_redact import CallbackModule
 
 
 class KeeperRedactTest(unittest.TestCase):
