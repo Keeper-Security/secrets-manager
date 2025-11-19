@@ -1,0 +1,30 @@
+require 'bundler/gem_tasks'
+require 'rspec/core/rake_task'
+
+RSpec::Core::RakeTask.new(:spec)
+
+task default: :spec
+
+desc 'Run unit tests only'
+RSpec::Core::RakeTask.new(:unit) do |t|
+  t.pattern = 'spec/**/unit/*_spec.rb'
+end
+
+desc 'Run integration tests only'
+RSpec::Core::RakeTask.new(:integration) do |t|
+  t.pattern = 'spec/**/integration/*_spec.rb'
+end
+
+desc 'Run all tests with coverage'
+task :coverage do
+  ENV['COVERAGE'] = 'true'
+  Rake::Task['spec'].invoke
+end
+
+desc 'Run RuboCop'
+task :rubocop do
+  sh 'bundle exec rubocop'
+end
+
+desc 'Run all quality checks'
+task ci: %i[rubocop spec]

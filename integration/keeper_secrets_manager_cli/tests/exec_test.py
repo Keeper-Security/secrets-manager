@@ -1,7 +1,7 @@
 import os
 import unittest
 from unittest.mock import patch
-from click.testing import CliRunner
+from conftest import CliRunner
 import tempfile
 import re
 

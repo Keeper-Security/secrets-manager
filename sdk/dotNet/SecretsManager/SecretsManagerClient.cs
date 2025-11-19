@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -13,7 +12,7 @@ using System.Threading.Tasks;
 namespace SecretsManager
 {
     using GetRandomBytesFunction = Func<int, byte[]>;
-    using QueryFunction = Func<string, TransmissionKey, EncryptedPayload, Task<KeeperHttpResponse>>;
+    using QueryFunction = Func<string, TransmissionKey, EncryptedPayload, string, Task<KeeperHttpResponse>>;
 
     public interface IKeyValueStorage
     {
@@ -29,12 +28,13 @@ namespace SecretsManager
         public bool AllowUnverifiedCertificate { get; }
         public IKeyValueStorage Storage { get; }
         public QueryFunction QueryFunction { get; }
-
-        public SecretsManagerOptions(IKeyValueStorage storage, QueryFunction queryFunction = null, bool allowUnverifiedCertificate = false)
+        public string ProxyUrl { get; }
+        public SecretsManagerOptions(IKeyValueStorage storage, QueryFunction queryFunction = null, bool allowUnverifiedCertificate = false, string proxyUrl = null)
         {
             Storage = storage;
             QueryFunction = queryFunction;
             AllowUnverifiedCertificate = allowUnverifiedCertificate;
+            ProxyUrl = proxyUrl;
         }
     }
 
@@ -42,11 +42,13 @@ namespace SecretsManager
     {
         public string[] RecordsFilter { get; }
         public string[] FoldersFilter { get; }
+        public bool? RequestLinks { get; }
 
-        public QueryOptions(string[] recordsFilter = null, string[] foldersFilter = null)
+        public QueryOptions(string[] recordsFilter = null, string[] foldersFilter = null, bool? requestLinks = null)
         {
             RecordsFilter = recordsFilter;
             FoldersFilter = foldersFilter;
+            RequestLinks = requestLinks;
         }
     }
 
@@ -113,17 +115,29 @@ namespace SecretsManager
         public string publicKey { get; }
         public string[] requestedRecords { get; }
         public string[] requestedFolders { get; }
+        public bool? requestLinks { get; }
 
-        public GetPayload(string clientVersion, string clientId, string publicKey, string[] requestedRecords, string[] requestedFolders)
+        public GetPayload(string clientVersion, string clientId, string publicKey, string[] requestedRecords, string[] requestedFolders, bool? requestLinks = null)
         {
             this.clientVersion = clientVersion;
             this.clientId = clientId;
             this.publicKey = publicKey;
             this.requestedRecords = requestedRecords;
             this.requestedFolders = requestedFolders;
+            this.requestLinks = requestLinks;
         }
     }
 
+    public class UpdateOptions
+    {
+        public UpdateTransactionType? TransactionType { get; }
+        public List<string> LinksToRemove { get; }
+        public UpdateOptions(UpdateTransactionType? transactionType = null, List<string> linksToRemove = null)
+        {
+            this.TransactionType = transactionType;
+            this.LinksToRemove = linksToRemove;
+        }
+    }
     public enum UpdateTransactionType {
         General,
         Rotation
@@ -137,8 +151,9 @@ namespace SecretsManager
         public string data { get; }
         public long revision { get; }
         public string transactionType { get; }
+        public string[] links2Remove { get; }
 
-        public UpdatePayload(string clientVersion, string clientId, string recordUid, string data, long revision, UpdateTransactionType? transactionType = null)
+        public UpdatePayload(string clientVersion, string clientId, string recordUid, string data, long revision, UpdateTransactionType? transactionType = null, string[] links2Remove = null)
         {
             this.clientVersion = clientVersion;
             this.clientId = clientId;
@@ -146,10 +161,9 @@ namespace SecretsManager
             this.data = data;
             this.revision = revision;
             if (transactionType.HasValue)
-            {
                 this.transactionType = transactionType.Value.ToString().ToLower();
-            }
-
+            if ((links2Remove?.Length ?? 0) > 0)
+                this.links2Remove = links2Remove;
         }
     }
 
@@ -268,12 +282,14 @@ namespace SecretsManager
         public string fileRecordData { get; }
         public string ownerRecordUid { get; }
         public string ownerRecordData { get; }
+        public long ownerRecordRevision { get; }
         public string linkKey { get; }
         public int fileSize { get; }
 
         public FileUploadPayload(string clientVersion, string clientId,
             string fileRecordUid, string fileRecordKey, string fileRecordData,
-            string ownerRecordUid, string ownerRecordData, string linkKey, int fileSize)
+            string ownerRecordUid, string ownerRecordData, long ownerRecordRevision,
+            string linkKey, int fileSize)
         {
             this.clientVersion = clientVersion;
             this.clientId = clientId;
@@ -282,6 +298,7 @@ namespace SecretsManager
             this.fileRecordData = fileRecordData;
             this.ownerRecordUid = ownerRecordUid;
             this.ownerRecordData = ownerRecordData;
+            this.ownerRecordRevision = ownerRecordRevision;
             this.linkKey = linkKey;
             this.fileSize = fileSize;
         }
@@ -314,6 +331,20 @@ namespace SecretsManager
         public SecretsManagerResponseRecord[] records { get; set; }
     }
 
+    public class KeeperRecordLink
+    {
+        public string recordUid { get; }
+        public string data { get; }
+        public string path { get; }
+
+        public KeeperRecordLink(string recordUid, string data = null, string path = null)
+        {
+            this.recordUid = recordUid;
+            this.data = data;
+            this.path = path;
+        }
+    }
+
     public class SecretsManagerResponseRecord
     {
         public string recordUid { get; set; }
@@ -323,6 +354,7 @@ namespace SecretsManager
         public bool isEditable { get; set; }
         public SecretsManagerResponseFile[] files { get; set; }
         public string innerFolderUid { get; set; }
+        public KeeperRecordLink[] links { get; set; }
     }
 
     public class SecretsManagerResponseFile
@@ -357,7 +389,7 @@ namespace SecretsManager
 
     public class KeeperRecord
     {
-        public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, byte[] folderKey, string innerFolderUid, KeeperRecordData data, long revision, KeeperFile[] files)
+        public KeeperRecord(byte[] recordKey, string recordUid, string folderUid, byte[] folderKey, string innerFolderUid, KeeperRecordData data, long revision, KeeperFile[] files, KeeperRecordLink[] links)
         {
             RecordKey = recordKey;
             RecordUid = recordUid;
@@ -367,6 +399,7 @@ namespace SecretsManager
             Data = data;
             Revision = revision;
             Files = files;
+            Links = links ?? new KeeperRecordLink[0];
         }
 
         public byte[] RecordKey { get; }
@@ -377,6 +410,7 @@ namespace SecretsManager
         public KeeperRecordData Data { get; }
         public long Revision { get; }
         public KeeperFile[] Files { get; }
+        public KeeperRecordLink[] Links { get; }
 
         public object FieldValue(string fieldType)
         {
@@ -795,7 +829,12 @@ namespace SecretsManager
 
         public static async Task UpdateSecret(SecretsManagerOptions options, KeeperRecord record, UpdateTransactionType? transactionType = null)
         {
-            var payload = PrepareUpdatePayload(options.Storage, record, transactionType);
+            await UpdateSecretWithOptions(options, record, new UpdateOptions(transactionType, null));
+        }
+
+        public static async Task UpdateSecretWithOptions(SecretsManagerOptions options, KeeperRecord record, UpdateOptions? updateOptions = null)
+        {
+            var payload = PrepareUpdatePayload(options.Storage, record, updateOptions);
             await PostQuery(options, "update_secret", payload);
         }
 
@@ -882,7 +921,7 @@ namespace SecretsManager
             var (payload, encryptedFileData) = PrepareFileUploadPayload(options.Storage, ownerRecord, file);
             var responseData = await PostQuery(options, "add_file", payload);
             var response = JsonUtils.ParseJson<SecretsManagerAddFileResponse>(responseData);
-            await UploadFile(response.url, response.parameters, response.successStatusCode, encryptedFileData);
+            await UploadFile(response.url, response.parameters, response.successStatusCode, encryptedFileData, options.ProxyUrl);
             return payload.fileRecordUid;
         }
 
@@ -910,10 +949,11 @@ namespace SecretsManager
             return CryptoUtils.Decrypt(StreamToBytes(responseStream), file.FileKey);
         }
 
-        private static async Task UploadFile(string url, string parameters, int successStatusCode, byte[] fileData)
+        private static async Task UploadFile(string url, string parameters, int successStatusCode, byte[] fileData, string proxyUrl = null)
         {
             var request = (HttpWebRequest)WebRequest.Create(url);
             request.Method = "POST";
+            ApplyProxyUrl(request, proxyUrl);
             var boundary = "----------" + DateTime.Now.Ticks.ToString("x");
             var boundaryBytes = Encoding.ASCII.GetBytes("\r\n--" + boundary);
             request.ContentType = "multipart/form-data; boundary=" + boundary;
@@ -1000,9 +1040,16 @@ namespace SecretsManager
             {
                 foreach (var record in response.records)
                 {
-                    var recordKey = CryptoUtils.Decrypt(record.recordKey, appKey);
-                    var decryptedRecord = DecryptRecord(record, recordKey);
-                    records.Add(decryptedRecord);
+                    try
+                    {
+                        var recordKey = CryptoUtils.Decrypt(record.recordKey, appKey);
+                        var decryptedRecord = DecryptRecord(record, recordKey);
+                        records.Add(decryptedRecord);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"Record {record.recordUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
+                    }
                 }
             }
 
@@ -1010,12 +1057,26 @@ namespace SecretsManager
             {
                 foreach (var folder in response.folders)
                 {
-                    var folderKey = CryptoUtils.Decrypt(folder.folderKey, appKey);
-                    foreach (var record in folder.records)
+                    try
                     {
-                        var recordKey = CryptoUtils.Decrypt(record.recordKey, folderKey);
-                        var decryptedRecord = DecryptRecord(record, recordKey, folder.folderUid, folderKey);
-                        records.Add(decryptedRecord);
+                        var folderKey = CryptoUtils.Decrypt(folder.folderKey, appKey);
+                        foreach (var record in folder.records)
+                        {
+                            try
+                            {
+                                var recordKey = CryptoUtils.Decrypt(record.recordKey, folderKey);
+                                var decryptedRecord = DecryptRecord(record, recordKey, folder.folderUid, folderKey);
+                                records.Add(decryptedRecord);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.Error.WriteLine($"Record {record.recordUid} in folder {folder.folderUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"Folder {folder.folderUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
                     }
                 }
             }
@@ -1039,14 +1100,21 @@ namespace SecretsManager
             {
                 foreach (var file in record.files)
                 {
-                    var fileKey = CryptoUtils.Decrypt(file.fileKey, recordKey);
-                    var decryptedFile = CryptoUtils.Decrypt(file.data, fileKey);
-                    files.Add(new KeeperFile(fileKey, file.fileUid, JsonUtils.ParseJson<KeeperFileData>(decryptedFile), file.url, file.thumbnailUrl));
+                    try
+                    {
+                        var fileKey = CryptoUtils.Decrypt(file.fileKey, recordKey);
+                        var decryptedFile = CryptoUtils.Decrypt(file.data, fileKey);
+                        files.Add(new KeeperFile(fileKey, file.fileUid, JsonUtils.ParseJson<KeeperFileData>(decryptedFile), file.url, file.thumbnailUrl));
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"File {file.fileUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
+                    }
                 }
             }
 
             var recordData = JsonUtils.ParseJson<KeeperRecordData>(decryptedRecord);
-            return new KeeperRecord(recordKey, record.recordUid, folderUid, folderKey, record.innerFolderUid, recordData, record.revision, files.ToArray());
+            return new KeeperRecord(recordKey, record.recordUid, folderUid, folderKey, record.innerFolderUid, recordData, record.revision, files.ToArray(), record.links);
         }
 
         private static async Task<KeeperFolder[]> FetchAndDecryptFolders(SecretsManagerOptions options)
@@ -1127,15 +1195,39 @@ namespace SecretsManager
                 publicKey = CryptoUtils.BytesToBase64(CryptoUtils.ExportPublicKey(privateKeyBytes));
             }
 
-            return new GetPayload(GetClientVersion(), clientId, publicKey, queryOptions?.RecordsFilter, queryOptions?.FoldersFilter);
+            return new GetPayload(GetClientVersion(), clientId, publicKey, queryOptions?.RecordsFilter, queryOptions?.FoldersFilter, queryOptions?.RequestLinks);
         }
 
-        private static UpdatePayload PrepareUpdatePayload(IKeyValueStorage storage, KeeperRecord record, UpdateTransactionType? transactionType = null)
+        private static UpdatePayload PrepareUpdatePayload(IKeyValueStorage storage, KeeperRecord record, UpdateOptions updateOptions = null)
         {
             var clientId = storage.GetString(KeyClientId);
             if (clientId == null)
             {
                 throw new Exception("Client Id is missing from the configuration");
+            }
+
+            var linksToRemove = updateOptions?.LinksToRemove ?? new List<string>(0);
+            if (linksToRemove.Count > 0)
+            {
+                var fileRef = record.Data.fields.FirstOrDefault(x => x.type == "fileRef");
+
+                // Cast<string> won't work with JsonValueKind.String
+                //var fileRefs = fileRef?.value?.Cast<string>().ToList() ?? new List<string>(0);
+                var fobj = fileRef?.value ?? new object[0];
+                var frefs = new List<string>(fobj.Length);
+                foreach (var obj in fobj)
+                {
+                    if (obj is JsonElement elem && elem.ValueKind == JsonValueKind.String)
+                        frefs.Add(elem.GetString()); // JsonElement.ToString: hello -> "\"hello\""
+                    else
+                        frefs.Add(obj.ToString());
+                }
+                if (frefs.Count > 0)
+                {
+                    int removed = frefs.RemoveAll(item => linksToRemove.Contains(item));
+                    if (removed > 0)
+                        fileRef.value = new List<object>(frefs).ToArray();
+                }
             }
 
             var recordBytes = JsonUtils.SerializeJson(record.Data);
@@ -1146,7 +1238,8 @@ namespace SecretsManager
                 record.RecordUid,
                 CryptoUtils.WebSafe64FromBytes(encryptedRecord),
                 record.Revision,
-                transactionType);
+                updateOptions?.TransactionType,
+                updateOptions?.LinksToRemove?.ToArray());
             return payload;
         }
 
@@ -1298,6 +1391,7 @@ namespace SecretsManager
                 CryptoUtils.WebSafe64FromBytes(encryptedFileRecord),
                 ownerRecord.RecordUid,
                 CryptoUtils.WebSafe64FromBytes(encryptedOwnerRecord),
+                ownerRecord.Revision,
                 CryptoUtils.BytesToBase64(encryptedLinkKey),
                 encryptedFileData.Length);
             return Tuple.Create(fileUploadPayload, encryptedFileData);
@@ -1365,11 +1459,11 @@ namespace SecretsManager
             return new EncryptedPayload(encryptedPayload, signature);
         }
 
-        public static async Task<KeeperHttpResponse> CachingPostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload)
+        public static async Task<KeeperHttpResponse> CachingPostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload, string proxyUrl = null)
         {
             try
             {
-                var response = await PostFunction(url, transmissionKey, payload, false);
+                var response = await PostFunction(url, transmissionKey, payload, false, proxyUrl);
                 if (!response.IsError)
                 {
                     CacheStorage.SaveCachedValue(transmissionKey.Key.Concat(response.Data).ToArray());
@@ -1394,13 +1488,15 @@ namespace SecretsManager
             return memoryStream.ToArray();
         }
 
-        public static async Task<KeeperHttpResponse> PostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload, bool allowUnverifiedCertificate)
+        public static async Task<KeeperHttpResponse> PostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload, bool allowUnverifiedCertificate, string proxyUrl = null)
         {
             var request = (HttpWebRequest)WebRequest.Create(url);
             if (allowUnverifiedCertificate)
             {
                 request.ServerCertificateValidationCallback += (_, _, _, _) => true;
             }
+
+            ApplyProxyUrl(request, proxyUrl);
 
             request.ContentType = "application/octet-stream";
             request.Headers["PublicKeyId"] = transmissionKey.PublicKeyId.ToString();
@@ -1448,8 +1544,8 @@ namespace SecretsManager
                 var transmissionKey = GenerateTransmissionKey(options.Storage);
                 var encryptedPayload = EncryptAndSignPayload(options.Storage, transmissionKey, payload);
                 var response = options.QueryFunction == null
-                    ? await PostFunction(url, transmissionKey, encryptedPayload, options.AllowUnverifiedCertificate)
-                    : await options.QueryFunction(url, transmissionKey, encryptedPayload);
+                    ? await PostFunction(url, transmissionKey, encryptedPayload, options.AllowUnverifiedCertificate, options.ProxyUrl)
+                    : await options.QueryFunction(url, transmissionKey, encryptedPayload, options.ProxyUrl);
                 if (response.IsError)
                 {
                     try
@@ -1472,6 +1568,25 @@ namespace SecretsManager
                 return response.Data.Length == 0
                     ? response.Data
                     : CryptoUtils.Decrypt(response.Data, transmissionKey.Key);
+            }
+        }
+
+        private static void ApplyProxyUrl(HttpWebRequest request, string proxyUrl)
+        {
+            if (!string.IsNullOrEmpty(proxyUrl))
+            {
+                request.Proxy = new WebProxy(proxyUrl);
+
+                // Check if proxyUrl contains credentials (e.g., http://user:pass@host:port)
+                var uri = new Uri(proxyUrl);
+                if (!string.IsNullOrEmpty(uri.UserInfo))
+                {
+                    var userInfo = uri.UserInfo.Split(':');
+                    if (userInfo.Length == 2)
+                    {
+                        request.Proxy.Credentials = new NetworkCredential(userInfo[0], userInfo[1]);
+                    }
+                }
             }
         }
     }

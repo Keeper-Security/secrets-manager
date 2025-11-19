@@ -1,0 +1,23 @@
+# Example YAML configuration with Keeper notation
+database:
+  host: localhost
+  port: 5432
+  username: dbadmin
+  password: keeper://MyDatabaseCreds/field/password
+
+api:
+  base_url: https://api.example.com
+  key: keeper://ApiCredentials/field/custom_field[ApiKey]
+  secret: keeper://ApiCredentials/field/custom_field[ApiSecret]
+
+email:
+  smtp:
+    host: smtp.gmail.com
+    port: 587
+    username: keeper://EmailServiceCreds/field/username
+    password: keeper://EmailServiceCreds/field/password
+
+logging:
+  level: info
+  file: logs/app.log
+  rotate_key: keeper://LogFiles/field/custom_field[RotationKey]

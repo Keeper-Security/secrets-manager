@@ -24,8 +24,8 @@ import ansible
 
 def _config():
     plugins = os.path.join(os.path.dirname(__file__), "plugins")
-    action_plugin_dir = os.path.join(plugins, "action_plugins")
-    lookup_plugin_dir = os.path.join(plugins, "lookup_plugins")
+    action_plugin_dir = os.path.join(plugins, "action")
+    lookup_plugin_dir = os.path.join(plugins, "lookup")
 
     # Cleaver way of detecting if stdout is being piped into a file or not. If we are piping into a
     # file, then don't show the stderr message.

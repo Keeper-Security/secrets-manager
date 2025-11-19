@@ -10,10 +10,18 @@
 # Contact: ops@keepersecurity.com
 #
 
+import difflib
+import os
+import sys
+import traceback
+import typing as t
+import importlib_metadata
 import click
+import keeper_secrets_manager_core
 from click_help_colors import HelpColorsGroup, HelpColorsCommand
 from click_repl import repl, exit as repl_exit
 from colorama import Fore, Style, init
+from update_checker import UpdateChecker
 from . import KeeperCli
 from .exception import KsmCliException
 from .exec import Exec
@@ -23,14 +31,7 @@ from .sync import Sync
 from .profile import Profile
 from .init import Init
 from .config import Config
-import sys
-import os
-import keeper_secrets_manager_core
-import traceback
-import importlib_metadata
-import difflib
-import typing as t
-from update_checker import UpdateChecker
+from .interpolate import Interpolate
 
 
 global_config = Config()
@@ -60,6 +61,7 @@ class AliasedGroup(HelpColorsGroup):
         "totp",
         "download",
         "upload",
+        "delete-attachment",
         "get",
         "list",
         "notation",
@@ -75,7 +77,8 @@ class AliasedGroup(HelpColorsGroup):
         "record",
         "file",
         "cache",
-        "record-type-dir"
+        "record-type-dir",
+        "interpolate"
     ]
 
     alias_commands = {
@@ -95,7 +98,7 @@ class AliasedGroup(HelpColorsGroup):
         "exit": "quit",
         "pass": "password",
         "q": "quit",
-        "help": "--help"
+        "?": "help"
     }
 
     def get_command(self, ctx, cmd_name):
@@ -261,23 +264,28 @@ class Mutex(click.Option):
 
         super(Mutex, self).__init__(*args, **kwargs)
 
+
     def handle_parse_result(self, ctx, opts, args):
         # ('option','value') - option present with the specified value assigned
         # ('option',) - option present with or without any value
-        current_opt:bool = self.name in opts
-        for mutex_opt in self.not_required_if:
-            if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
-                if current_opt:
-                    opt = str(mutex_opt) if len(mutex_opt) > 1 else f"'{str(mutex_opt[0])}'"
-                    raise click.UsageError("Illegal usage: '" + str(self.name) + "' is mutually exclusive with " + opt + ".")
-                else:
-                    self.prompt = None
-        for mutex_opt in self.required_if:
-            if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
-                if not current_opt:
-                    raise click.UsageError("Illegal usage: '" + str(self.name) + "' is required with " + str(mutex_opt) + ".")
-                else:
-                    self.prompt = None
+        if not KsmCliException.in_a_shell:
+            # NB! shell completion hints cause premature eval/validation
+            # and crashes with mutually required options on unfinished command
+            # ex. Error: option1 is required with option2
+            current_opt: bool = self.name in opts
+            for mutex_opt in self.not_required_if:
+                if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
+                    if current_opt:
+                        opt = str(mutex_opt) if len(mutex_opt) > 1 else f"'{str(mutex_opt[0])}'"
+                        raise click.UsageError("Illegal usage: '" + str(self.name) + "' is mutually exclusive with " + opt + ".")
+                    else:
+                        self.prompt = None
+            for mutex_opt in self.required_if:
+                if mutex_opt and mutex_opt[0] in opts and (len(mutex_opt) == 1 or opts.get(mutex_opt[0], str(mutex_opt[1])+'_') == mutex_opt[1]):
+                    if not current_opt:
+                        raise click.UsageError("Illegal usage: '" + str(self.name) + "' is required with " + str(mutex_opt) + ".")
+                    else:
+                        self.prompt = None
         return super(Mutex, self).handle_parse_result(ctx, opts, args)
 
 
@@ -344,8 +352,26 @@ def profile_command():
 def profile_init_command(ctx, token, hostname, ini_file, profile_name, token_arg):
     """Initialize a profile"""
 
+    # Command line --token option overrides all other options
     if token is None and len(token_arg) > 0:
         token = token_arg[0]
+    if token is None:
+        token = os.environ.get("KSM_CLI_TOKEN", None)
+        # KSM_TOKEN is for use by KSM SDKs and may be used
+        # by CLI but only when using CLI within a container
+        # to use auto-created profile which conflicts with
+        # any non-default setup (INI file) then it requires
+        # all 5-6 env vars to be provided
+        # https://docs.keeper.io/en/keeperpam/secrets-manager/secrets-manager-command-line-interface#create-a-local-client-device
+        # Use only --token option or KSM_CLI_TOKEN to initialize CLI
+        sdk_token = os.environ.get("KSM_TOKEN", None)
+        if token and sdk_token:
+            print("NOTE: Both KSM_CLI_TOKEN and KSM_TOKEN env vars are set! "
+                  "KSM CLI gives preference to --token option (if present) "
+                  "then KSM_CLI_TOKEN so after consuming the token you should "
+                  "unset KSM_TOKEN (or both env vars - they are one-time use) "
+                  "or risk getting errors while trying to use second token on "
+                  "an already initialized config.")
     if token is None:
         raise KsmCliException("A one time access token is required either as a command parameter or an argument.")
 
@@ -819,6 +845,25 @@ def secret_download_command(ctx, uid, name, file_uid, file_output, create_folder
 
 
 @click.command(
+    name='delete-attachment',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('--uid', '-u', required=True, type=str, help="UID of the secret.")
+@click.option('--file', '-f', required=True, type=str, multiple=True, help="Name or UID of the file to delete.")
+@click.pass_context
+def secret_delete_attachment_command(ctx, uid, file):
+    """Delete file attachment(s) from a secret record"""
+    if uid.strip() == '' or len(file) == 0:
+        raise KsmCliException("Both --uid and --file params must be provided and non-empty.")
+
+    ctx.obj["secret"].delete_attachment(
+        uid=uid,
+        file=file
+    )
+
+
+@click.command(
     name='totp',
     cls=HelpColorsCommand,
     help_options_color='blue'
@@ -1072,6 +1117,7 @@ secret_command.add_command(secret_delete_command)
 secret_command.add_command(secret_add_command)
 secret_command.add_command(secret_upload_command)
 secret_command.add_command(secret_download_command)
+secret_command.add_command(secret_delete_attachment_command)
 secret_command.add_command(secret_totp_command)
 secret_command.add_command(secret_password_command)
 secret_command.add_command(secret_template_command)
@@ -1093,6 +1139,55 @@ def exec_command(ctx, capture_output, inline, cmd):
     """Wrap an application and replace env variables"""
     ex = Exec(cli=ctx.obj["cli"])
     ex.execute(cmd=cmd, capture_output=capture_output, inline=inline)
+
+
+# INTERPOLATE COMMAND
+
+
+@click.command(
+    name='interpolate',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('-o', '--output-file', help='Write to file instead of stdout')
+@click.option('-w', '--in-place', is_flag=True, help='Edit files in place')
+@click.option('-b', '--backup-suffix', default='.bak', help='Backup suffix when using -w (default: .bak)')
+@click.option('-n', '--dry-run', is_flag=True, help='Show what would be replaced')
+@click.option('-v', '--verbose', is_flag=True, help='Verbose output')
+@click.option('-C', '--continue', is_flag=True, help='Continue on errors')
+@click.option('--validate', is_flag=True, help='Ensure all notations resolved')
+@click.option('--allow-unsafe-for-eval', is_flag=True,
+              help='[RISKY] Allow secrets with shell metacharacters (dangerous with eval/source)')
+@click.argument('input_file', type=click.Path(exists=True), required=False, nargs=-1)
+@click.pass_context
+def interpolate_command(ctx, output_file, in_place, backup_suffix, dry_run, verbose, input_file, **kwargs):
+    """Replace Keeper notation in files with secret values
+
+    SECURITY WARNING: Never use 'eval' or 'source' with interpolate output unless
+    you fully trust all users with Keeper write access. Malicious users could inject
+    arbitrary commands via newlines or shell metacharacters in secret values.
+
+    Safe usage:
+      ksm interpolate secrets.env -o /tmp/secrets.env
+      source /tmp/secrets.env && rm /tmp/secrets.env
+
+    Unsafe usage (requires --allow-unsafe-for-eval):
+      eval "$(ksm interpolate secrets.env --allow-unsafe-for-eval)"
+    """
+    interp = Interpolate(cli=ctx.obj["cli"])
+    # Pass the 'continue' parameter using its full name since it's a Python keyword
+    continue_on_error = kwargs.get('continue', False)
+    interp.interpolate(
+        input_file=input_file,
+        output_file=output_file,
+        in_place=in_place,
+        backup_suffix=backup_suffix,
+        dry_run=dry_run,
+        verbose=verbose,
+        continue_on_error=continue_on_error,
+        validate=kwargs.get('validate', False),
+        allow_unsafe_for_eval=kwargs.get('allow_unsafe_for_eval', False)
+    )
 
 
 # CONFIG COMMAND
@@ -1335,6 +1430,17 @@ def quit_command():
     repl_exit()
 
 
+@click.command(
+    name='help',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.pass_context
+def help_command(ctx):
+    """Show help"""
+    print(ctx.parent.get_help())
+
+
 # SYNC COMMAND
 @click.command(
     name='sync',
@@ -1342,19 +1448,47 @@ def quit_command():
     help_options_color='blue'
 )
 @click.option('--credentials', '-c', type=str, metavar="UID", help="Keeper record with credentials to access destination key/value store.",
-    cls=Mutex,
-    # not_required_if=[('type','json')],
-    required_if=[('type', 'azure'), ('type', 'aws'), ('type', 'gcp')]
-)
-@click.option('--type', '-t', type=click.Choice(['aws', 'azure', 'gcp', 'json']), default='json', help="Type of the target key/value storage (aws, azure, gcp, json).", show_default=True)
+              cls=Mutex,
+              # not_required_if=[('type','json')],
+              required_if=[('type', 'azure'), ('type', 'aws'), ('type', 'gcp')]
+              )
+@click.option('--type', '-t', 'sync_type', type=click.Choice(['aws', 'azure', 'gcp', 'json']), default='json', help="Type of the target key/value storage (aws, azure, gcp, json).", show_default=True)
 @click.option('--dry-run', '-n', is_flag=True, help='Perform a trial run with no changes made.')
 @click.option('--preserve-missing', '-p', is_flag=True, help='Preserve destination value when source value is deleted.')
-@click.option('--map', '-m', nargs=2, type=(str, str), multiple=True, required=True, metavar="<KEY NOTATION>...", help='Map destination key names to values using notation URI.')
+@click.option('--map', '-m', 'maps', nargs=2, type=(str, str), multiple=True, metavar="<KEY NOTATION>...", help='Map destination key names to values using notation URI.')
+@click.option('--record', '-r', 'records', type=str, multiple=True, metavar="<TITLE_OR_UID>...", help='Record title or UID to sync (only for type=aws).')
+@click.option('--folder', '-f', 'folders', type=str, multiple=True, metavar="<FOLDER>...", help='Folder UID, path, or title to sync all records from (only for type=aws).')
+@click.option('--folder-recursive', '-fr', 'folders_recursive', type=str, multiple=True, metavar="<FOLDER>...", help='Folder UID, path, or title to sync all records from recursively (only for type=aws).')
+@click.option('--raw-json', '-rj', is_flag=True, help='Store full JSON in KMS secret (only for type=aws).')
 @click.pass_context
-def sync_command(ctx, credentials, type, dry_run, preserve_missing, map):
+def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, records, folders, folders_recursive, raw_json):
     """Sync selected keys from Keeper vault to secure cloud based key value store"""
+
+    # Validation for AWS only options (unless type=json)
+    if sync_type != 'json':
+        if records and sync_type != 'aws':
+            raise KsmCliException("--record/-r option is only supported with type=aws")
+
+        if folders and sync_type != 'aws':
+            raise KsmCliException("--folder/-f option is only supported with type=aws")
+
+        if folders_recursive and sync_type != 'aws':
+            raise KsmCliException("--folder-recursive/-fr option is only supported with type=aws")
+
+        if raw_json and sync_type != 'aws':
+            print(Fore.YELLOW + "Warning: --raw-json/-rj flag is only supported with type=aws, ignoring..." + Style.RESET_ALL, file=sys.stderr)
+            raw_json = False
+
+    # Validate that required options are provided based on type
+    if sync_type == 'aws' or sync_type == 'json':
+        if not (maps or records or folders or folders_recursive):
+            raise KsmCliException(f"For type={sync_type}, at least one of --map/-m, --record/-r, --folder/-f, or --folder-recursive/-fr must be provided")
+    else:
+        if not maps:
+            raise KsmCliException(f"For type={sync_type}, --map/-m must be provided")
+
     sync = Sync(cli=ctx.obj["cli"])
-    sync.sync_values(type=type, credentials=credentials, dry_run=dry_run, preserve_missing=preserve_missing, map=map)
+    sync.sync_values(sync_type=sync_type, credentials=credentials, dry_run=dry_run, preserve_missing=preserve_missing, maps=maps, records=records, folders=folders, folders_recursive=folders_recursive, raw_json=raw_json)
 
 
 # TOP LEVEL COMMANDS
@@ -1363,11 +1497,13 @@ cli.add_command(sync_command)
 cli.add_command(folder_command)
 cli.add_command(secret_command)
 cli.add_command(exec_command)
+cli.add_command(interpolate_command)
 cli.add_command(config_command)
 cli.add_command(init_command)
 cli.add_command(version_command)
 cli.add_command(shell_command)
 cli.add_command(quit_command)
+cli.add_command(help_command)
 
 
 def main():

@@ -1,13 +1,68 @@
-name: Publish to PyPI (Python SDK)
+name: Publish to PyPI (Python SDK & Helper)
 on:
   workflow_dispatch:
 
 jobs:
-  publish-pypi:
+  # Extract versions for both SDK and Helper
+  get-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      sdk-version: ${{ steps.extract-sdk-version.outputs.version }}
+      helper-version: ${{ steps.extract-helper-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Extract SDK version
+        id: extract-sdk-version
+        working-directory: ./sdk/python/core
+        run: |
+          VERSION=$(python3 setup.py --version 2>/dev/null || grep -Po 'version\s*=\s*["\x27]\K[^\x27"]*' setup.py)
+          echo "SDK Version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Extract Helper version
+        id: extract-helper-version
+        working-directory: ./sdk/python/helper
+        run: |
+          VERSION=$(python3 setup.py --version 2>/dev/null || grep -Po 'version\s*=\s*["\x27]\K[^\x27"]*' setup.py)
+          echo "Helper Version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+  # Generate and upload SBOM for SDK
+  generate-sdk-sbom:
+    needs: get-versions
+    uses: ./.github/workflows/reusable.sbom.workflow.yml
+    with:
+      working-directory: ./sdk/python/core
+      project-name: keeper-secrets-manager-python
+      project-type: python
+      project-version: ${{ needs.get-versions.outputs.sdk-version }}
+      sbom-format: spdx-json
+      additional-labels: ksm,sdk,python,security
+    secrets:
+      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+
+  # Generate and upload SBOM for Helper
+  generate-helper-sbom:
+    needs: get-versions
+    uses: ./.github/workflows/reusable.sbom.workflow.yml
+    with:
+      working-directory: ./sdk/python/helper
+      project-name: keeper-secrets-manager-helper
+      project-type: python
+      project-version: ${{ needs.get-versions.outputs.helper-version }}
+      sbom-format: spdx-json
+      additional-labels: ksm,helper,python,security
+    secrets:
+      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+
+  # Publish SDK to PyPI
+  publish-sdk:
     name: Publish KSM Python SDK to PyPI
+    needs: [generate-sdk-sbom]
     environment: prod
     runs-on: ubuntu-latest
-    timeout-minutes: 10 # To keep builds from running too long
+    timeout-minutes: 10
 
     defaults:
       run:
@@ -16,7 +71,6 @@ jobs:
     steps:
       - name: Get the source code
         uses: actions/checkout@v3
-
 
       - name: Set up Python 3.9
         uses: actions/setup-python@v4
@@ -36,7 +90,50 @@ jobs:
           python3 -m pip install --upgrade setuptools pip wheel twine
           python3 -m pip install -r requirements.txt
 
-      - name: Build and Publish
+      - name: Build and Publish SDK
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ steps.ksmsecrets.outputs.PYPI_API_TOKEN }}
+        run: |
+          python3 setup.py build
+          python3 setup.py sdist
+          python3 -m twine upload --verbose dist/*
+
+  # Publish Helper to PyPI
+  publish-helper:
+    name: Publish KSM SDK Helper to PyPI
+    needs: [publish-sdk, generate-helper-sbom]  # Depends on SDK being published first
+    environment: prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: ./sdk/python/helper
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.9
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_PYPI_PUBLISHER_PYPI_SDK_CONFIG }}
+          secrets: |
+            -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade setuptools pip wheel twine
+          python3 -m pip install -r requirements.txt
+
+      - name: Build and Publish Helper
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ steps.ksmsecrets.outputs.PYPI_API_TOKEN }}
