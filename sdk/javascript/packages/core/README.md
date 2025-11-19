@@ -4,8 +4,18 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
-## 17.0.1
-- Bump dependencies
+## 17.3.0
+- KSM-534 - Added proxy support
+- KSM-575 - Resolve DOM Clobbering CVE-2024-43788
+- KSM-657 - Added custom caching example
+- KSM-661 - Handle broken records, files, and folders
+- KSM-669 - Crypto issues when using getFolders() on Cloudflare workers with JS SDK
+
+## 17.2.0
+- KSM-581: Added GraphSync library to read GraphSync links
+
+## 17.1.0
+- KSM-588: Enhance JS SDK to enable editing of external shares
 
 ## 17.0.0
 - KSM-574 - Replace Node.js Buffer with Browser-Compatible Alternative
