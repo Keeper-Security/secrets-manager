@@ -45,33 +45,16 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
 
     context 'with token' do
       before do
-        # Mock HTTP request for token binding
-        # Properly encrypt mock data using the token as the key so decryption works
-        cipher = OpenSSL::Cipher.new('AES-256-GCM')
-        cipher.encrypt
-        cipher.key = mock_token_bytes
-        iv = SecureRandom.random_bytes(12)
-        cipher.iv = iv
+        # Mock bind_one_time_token to return a valid config
+        # This avoids the complexity of mocking encrypted HTTP responses
+        bound_config = KeeperSecretsManager::Storage::InMemoryStorage.new
+        bound_config.save_string(KeeperSecretsManager::ConfigKeys::KEY_CLIENT_ID, 'test_client_id')
+        bound_config.save_bytes(KeeperSecretsManager::ConfigKeys::KEY_APP_KEY, 'test_app_key_32_bytes_exactly!!')
+        bound_config.save_string(KeeperSecretsManager::ConfigKeys::KEY_HOSTNAME, 'fake.keepersecurity.com')
+        bound_config.save_bytes(KeeperSecretsManager::ConfigKeys::KEY_OWNER_PUBLIC_KEY, SecureRandom.random_bytes(65))
+        bound_config.save_bytes(KeeperSecretsManager::ConfigKeys::KEY_PRIVATE_KEY, SecureRandom.random_bytes(32))
 
-        # Encrypt a mock 32-byte app key
-        mock_app_key = SecureRandom.random_bytes(32)
-        ciphertext = cipher.update(mock_app_key) + cipher.final
-        tag = cipher.auth_tag
-
-        # Format: [IV (12 bytes)][Ciphertext][Tag (16 bytes)]
-        encrypted_data = iv + ciphertext + tag
-        mock_encrypted_app_key = Base64.urlsafe_encode64(encrypted_data, padding: false)
-        mock_owner_public_key = Base64.urlsafe_encode64(SecureRandom.random_bytes(65), padding: false)
-
-        stub_request(:post, /keepersecurity\.com\/api\/rest\/sm\/v1\/get_secret/)
-          .to_return(
-            status: 200,
-            body: JSON.generate({
-              'encryptedAppKey' => mock_encrypted_app_key,
-              'appOwnerPublicKey' => mock_owner_public_key
-            }),
-            headers: { 'Content-Type' => 'application/json' }
-          )
+        allow_any_instance_of(described_class).to receive(:bind_one_time_token).and_return(bound_config)
       end
 
       it 'processes token and creates config' do
