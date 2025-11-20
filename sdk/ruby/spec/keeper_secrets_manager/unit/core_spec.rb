@@ -1,7 +1,8 @@
 require 'spec_helper'
 
 RSpec.describe KeeperSecretsManager::Core::SecretsManager do
-  let(:mock_token) { 'US:fake_token_base64' }
+  # Valid URL-safe base64 token (32 bytes encoded)
+  let(:mock_token) { 'US:' + Base64.urlsafe_encode64(SecureRandom.random_bytes(32), padding: false) }
   let(:mock_config) do
     config = KeeperSecretsManager::Storage::InMemoryStorage.new
     config.save_string(KeeperSecretsManager::ConfigKeys::KEY_CLIENT_ID, 'test_client_id')
@@ -44,12 +45,16 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
     context 'with token' do
       before do
         # Mock HTTP request for token binding
+        # Need valid base64-encoded data (32 bytes for AES-256 key + 16 bytes GCM tag = 48 bytes encrypted)
+        mock_encrypted_app_key = Base64.urlsafe_encode64(SecureRandom.random_bytes(48), padding: false)
+        mock_owner_public_key = Base64.urlsafe_encode64(SecureRandom.random_bytes(65), padding: false)
+
         stub_request(:post, /keepersecurity\.com\/api\/rest\/sm\/v1\/get_secret/)
           .to_return(
             status: 200,
             body: JSON.generate({
-              'encryptedAppKey' => 'encrypted_key_base64',
-              'appOwnerPublicKey' => 'owner_key_base64'
+              'encryptedAppKey' => mock_encrypted_app_key,
+              'appOwnerPublicKey' => mock_owner_public_key
             }),
             headers: { 'Content-Type' => 'application/json' }
           )
