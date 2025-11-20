@@ -50,14 +50,17 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
         cipher = OpenSSL::Cipher.new('AES-256-GCM')
         cipher.encrypt
         cipher.key = mock_token_bytes
-        cipher.iv = SecureRandom.random_bytes(12)
+        iv = SecureRandom.random_bytes(12)
+        cipher.iv = iv
 
         # Encrypt a mock 32-byte app key
         mock_app_key = SecureRandom.random_bytes(32)
-        encrypted = cipher.update(mock_app_key) + cipher.final
-        encrypted_with_tag = encrypted + cipher.auth_tag
+        ciphertext = cipher.update(mock_app_key) + cipher.final
+        tag = cipher.auth_tag
 
-        mock_encrypted_app_key = Base64.urlsafe_encode64(encrypted_with_tag, padding: false)
+        # Format: [IV (12 bytes)][Ciphertext][Tag (16 bytes)]
+        encrypted_data = iv + ciphertext + tag
+        mock_encrypted_app_key = Base64.urlsafe_encode64(encrypted_data, padding: false)
         mock_owner_public_key = Base64.urlsafe_encode64(SecureRandom.random_bytes(65), padding: false)
 
         stub_request(:post, /keepersecurity\.com\/api\/rest\/sm\/v1\/get_secret/)
