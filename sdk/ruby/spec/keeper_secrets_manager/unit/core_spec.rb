@@ -1,8 +1,9 @@
 require 'spec_helper'
 
 RSpec.describe KeeperSecretsManager::Core::SecretsManager do
-  # Valid URL-safe base64 token (32 bytes encoded)
-  let(:mock_token) { 'US:' + Base64.urlsafe_encode64(SecureRandom.random_bytes(32), padding: false) }
+  # Use fixed token bytes so we can encrypt mock data with it
+  let(:mock_token_bytes) { 'test_token_key_32_bytes_long!!!!' } # Exactly 32 bytes
+  let(:mock_token) { 'US:' + Base64.urlsafe_encode64(mock_token_bytes, padding: false) }
   let(:mock_config) do
     config = KeeperSecretsManager::Storage::InMemoryStorage.new
     config.save_string(KeeperSecretsManager::ConfigKeys::KEY_CLIENT_ID, 'test_client_id')
@@ -45,8 +46,18 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
     context 'with token' do
       before do
         # Mock HTTP request for token binding
-        # Need valid base64-encoded data (32 bytes for AES-256 key + 16 bytes GCM tag = 48 bytes encrypted)
-        mock_encrypted_app_key = Base64.urlsafe_encode64(SecureRandom.random_bytes(48), padding: false)
+        # Properly encrypt mock data using the token as the key so decryption works
+        cipher = OpenSSL::Cipher.new('AES-256-GCM')
+        cipher.encrypt
+        cipher.key = mock_token_bytes
+        cipher.iv = SecureRandom.random_bytes(12)
+
+        # Encrypt a mock 32-byte app key
+        mock_app_key = SecureRandom.random_bytes(32)
+        encrypted = cipher.update(mock_app_key) + cipher.final
+        encrypted_with_tag = encrypted + cipher.auth_tag
+
+        mock_encrypted_app_key = Base64.urlsafe_encode64(encrypted_with_tag, padding: false)
         mock_owner_public_key = Base64.urlsafe_encode64(SecureRandom.random_bytes(65), padding: false)
 
         stub_request(:post, /keepersecurity\.com\/api\/rest\/sm\/v1\/get_secret/)
