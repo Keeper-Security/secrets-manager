@@ -1,3 +1,2 @@
-package-lock.json
 yarn.lock
 dist/*.d.ts
