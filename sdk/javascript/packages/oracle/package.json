@@ -37,7 +37,7 @@
     "typescript-eslint": "^8.22.0"
   },
   "dependencies": {
-    "@keeper-security/secrets-manager-core": "^17.0.0",
+    "@keeper-security/secrets-manager-core": "^17.3.0",
     "crc-32": "^1.2.2",
     "oci-keymanagement": "^2.102.2",
     "oci-vault": "^2.103.0",
