@@ -7,6 +7,7 @@
     "scripts": {
         "prebuild": "rimraf dist",
         "build": "tsc",
+        "test": "jest",
         "link-local": "yarn link",
         "lint": "eslint 'src/**/*.ts'"
     },
@@ -20,13 +21,20 @@
         "@azure/keyvault-keys": "^4.9.0"
     },
     "devDependencies": {
+        "@babel/core": "^7.28.4",
+        "@babel/preset-env": "^7.28.3",
+        "@babel/preset-typescript": "^7.27.1",
         "@eslint/js": "^9.19.0",
+        "@types/jest": "^30.0.0",
         "@types/node": "^22.12.0",
         "@typescript-eslint/eslint-plugin": "^8.22.0",
         "@typescript-eslint/parser": "^8.22.0",
+        "babel-jest": "^30.2.0",
         "eslint": "^9.19.0",
         "globals": "^15.14.0",
+        "jest": "^30.2.0",
         "rimraf": "^6.0.1",
+        "ts-jest": "^29.4.4",
         "typescript": "^5.7.3",
         "typescript-eslint": "^8.22.0"
     }
