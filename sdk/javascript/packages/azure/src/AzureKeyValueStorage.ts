@@ -79,7 +79,7 @@ export class AzureKeyValueStorage implements KeyValueStorage {
                 this.azureCredentials = new DefaultAzureCredential();
             }
         }
-        this.logger.debug("initializing crypto client with key id", this.keyId);
+        this.logger.debug(`initializing crypto client with key id ${this.keyId}`);
         this.cryptoClient = new CryptographyClient(this.keyId, this.azureCredentials);
 
         this.lastSavedConfigHash = "";
