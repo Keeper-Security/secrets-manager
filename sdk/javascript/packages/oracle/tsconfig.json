@@ -1,0 +1,21 @@
+{
+	"compilerOptions": {
+		"module": "commonjs",
+		"noImplicitAny": false,
+		"strict": true,
+		"target": "ES6",
+		"rootDir": "src",
+		"outDir": "dist",
+		"sourceMap": true,
+		"baseUrl": "./",
+		"declaration": true,
+		"declarationMap": true,
+		"emitDeclarationOnly": false,
+	},
+	"include": [
+		"src/**/*",
+	],
+	"exclude": [
+		"node_modules"
+	]
+}
