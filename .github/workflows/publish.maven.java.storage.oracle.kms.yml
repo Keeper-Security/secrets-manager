@@ -1,0 +1,13 @@
+name: Publish to Maven (Java Storage Oracle KMS)
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    uses: ./.github/workflows/reusable.maven.central.publish.yml
+    with:
+      working-directory: ./sdk/java/storage/keeper_secrets_manager_storage_oracle_kms
+      project-name: keeper-secrets-manager-storage-oracle-kms
+      project-title: Keeper Secrets Manager Oracle KMS Storage
+      java-version: '8'
+    secrets: inherit

@@ -1,0 +1,13 @@
+name: Publish to Maven (Java Storage AWS KMS)
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    uses: ./.github/workflows/reusable.maven.central.publish.yml
+    with:
+      working-directory: ./sdk/java/storage/keeper_secrets_manager_storage_aws_kms
+      project-name: keeper-secrets-manager-storage-aws-kms
+      project-title: Keeper Secrets Manager AWS KMS Storage
+      java-version: '8'
+    secrets: inherit
