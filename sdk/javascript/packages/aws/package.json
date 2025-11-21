@@ -1,6 +1,6 @@
 {
   "name": "@keeper-security/secrets-manager-aws",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Keeper Secrets Manager AWS storage. This module enables secure storage of Keeper configuration using AWS Key Management Service (KMS).",
   "main": "dist/index.js",
   "repository": "https://github.com/Keeper-Security/secrets-manager",
