@@ -1,4 +1,4 @@
-package com.keepersecurity.secretmanager.azurekv;
+package com.keepersecurity.secretsManager.storage.azure;
 
 /**
 #  _  __

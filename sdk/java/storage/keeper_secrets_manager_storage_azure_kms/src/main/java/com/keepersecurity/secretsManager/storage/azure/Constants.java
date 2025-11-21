@@ -1,4 +1,4 @@
-package com.keepersecurity.secretmanager.azurekv;
+package com.keepersecurity.secretsManager.storage.azure;
 
 /**
  * The {@code Constants} class defines a set of constant values used throughout

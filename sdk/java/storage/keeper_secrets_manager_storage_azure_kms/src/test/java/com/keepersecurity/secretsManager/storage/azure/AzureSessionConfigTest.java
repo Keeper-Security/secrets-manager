@@ -1,4 +1,4 @@
-package com.keepersecurity.secretmanager.azurekv;
+package com.keepersecurity.secretsManager.storage.azure;
 
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
