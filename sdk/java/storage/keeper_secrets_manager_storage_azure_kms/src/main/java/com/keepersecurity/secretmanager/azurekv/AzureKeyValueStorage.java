@@ -180,7 +180,7 @@ public class AzureKeyValueStorage implements KeyValueStorage {
 			lastSavedConfigHash = calculateMd5(decryptedContent);
 			configMap = JsonUtils.convertToMap(decryptedContent);
 		} else {
-			String configJson = Files.readString(Paths.get(configFileLocation));
+			String configJson = new String(Files.readAllBytes(Paths.get(configFileLocation)), java.nio.charset.StandardCharsets.UTF_8);
 			lastSavedConfigHash = calculateMd5(configJson);
 			configMap = JsonUtils.convertToMap(configJson);
 			saveConfig(configMap);
@@ -196,7 +196,7 @@ public class AzureKeyValueStorage implements KeyValueStorage {
 		try {
 			if (JsonUtils.isValidJsonFile(configFileLocation)) {
 				Path path = Paths.get(configFileLocation);
-				save(Files.readString(path), updatedConfig);
+				save(new String(Files.readAllBytes(path), java.nio.charset.StandardCharsets.UTF_8), updatedConfig);
 			} else {
 				String decryptedContent = decryptBuffer(readEncryptedJsonFile());
 				save(decryptedContent, updatedConfig);
