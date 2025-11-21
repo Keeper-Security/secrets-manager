@@ -37,7 +37,7 @@
   },
   "dependencies": {
     "@google-cloud/kms": "^4.5.0",
-    "@keeper-security/secrets-manager-core": "^17.0.0",
+    "@keeper-security/secrets-manager-core": "^17.3.0",
     "axios": "^1.8.4",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0"
