@@ -92,5 +92,8 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Build package
+        run: npm run build
+
       - name: Publish package
         run: npm publish
