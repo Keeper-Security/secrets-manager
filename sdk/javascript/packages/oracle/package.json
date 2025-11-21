@@ -1,0 +1,35 @@
+{
+  "name": "@keeper-security/secrets-manager-oracle-kv",
+  "version": "0.1.0",
+  "description": "Keeper Secrets Manager oracle kv storage. This module enables secure storage of Keeper configuration using Oracle Key Vault Management Service (KMS).",
+  "main": "dist/index.js",
+  "repository": "https://github.com/Keeper-Security/secrets-manager",
+  "license": "ISC",
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "link-local": "yarn link",
+    "build": "tsc",
+    "lint": "eslint 'src/**/*.ts'",
+    "clean": "rimraf dist node_modules package-lock.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.12.0",
+    "@types/node-fetch": "^2.6.7",
+    "@typescript-eslint/eslint-plugin": "^8.22.0",
+    "@typescript-eslint/parser": "^8.22.0",
+    "eslint": "^9.19.0",
+    "fast-crc32c": "^2.0.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.22.0"
+  },
+  "dependencies": {
+    "@keeper-security/secrets-manager-core": "^17.0.0",
+    "crc-32": "^1.2.2",
+    "oci-keymanagement": "^2.102.2",
+    "oci-vault": "^2.103.0",
+    "node-fetch": "^2.6.5",  
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0"
+  }
+}
