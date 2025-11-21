@@ -148,7 +148,7 @@ public class OracleKeyValueStorage implements KeyValueStorage {
 			configMap = JsonUtil.convertToMap(decryptedContent);
 		} else {
 			logger.debug("KSM Config file is plain json.");
-			String configJson = Files.readString(Paths.get(configFileLocation));
+			String configJson = new String(Files.readAllBytes(Paths.get(configFileLocation)), java.nio.charset.StandardCharsets.UTF_8);
 			lastSavedConfigHash = calculateMd5(configJson);
 			configMap = JsonUtil.convertToMap(configJson);
 			saveConfig(configMap);
@@ -159,8 +159,8 @@ public class OracleKeyValueStorage implements KeyValueStorage {
 		try {
 			if (JsonUtil.isValidJsonFile(configFileLocation)) {
 				Path path = Paths.get(configFileLocation);
-				save(Files.readString(path), updatedConfig);
-			} else {
+				save(new String(Files.readAllBytes(path), java.nio.charset.StandardCharsets.UTF_8), updatedConfig);
+			} else{
 				String decryptedContent = decryptBuffer(readEncryptedJsonFile());
 				save(decryptedContent, updatedConfig);
 			}
