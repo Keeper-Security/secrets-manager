@@ -1,4 +1,4 @@
-package com.keepersecurity.secretmanager.aws.kms;
+package com.keepersecurity.secretsManager.storage.aws;
 
 import java.io.FileReader;
 import java.io.IOException;

@@ -1,4 +1,4 @@
-package com.keepersecurity.secretmanager.aws.kms;
+package com.keepersecurity.secretsManager.storage.aws;
 
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;

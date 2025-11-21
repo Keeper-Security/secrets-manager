@@ -1,4 +1,4 @@
-package com.keepersecurity.secretmanager.aws.kms;
+package com.keepersecurity.secretsManager.storage.aws;
 
 /**
  * The {@code Constants} class contains a collection of constant values used for
