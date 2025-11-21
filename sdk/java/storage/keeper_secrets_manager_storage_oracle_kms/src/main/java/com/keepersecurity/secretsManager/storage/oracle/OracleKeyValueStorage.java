@@ -1,4 +1,4 @@
-package com.keepersecurity.secretmanager.oracle.kv;
+package com.keepersecurity.secretsManager.storage.oracle;
 
 /*
 *  _  __

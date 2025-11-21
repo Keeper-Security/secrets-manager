@@ -1,4 +1,4 @@
-package com.keepersecurity.secretmanager.oracle.kv;
+package com.keepersecurity.secretsManager.storage.oracle;
 
 /**
  * The {@code Constants} class contains a collection of constant values used for
