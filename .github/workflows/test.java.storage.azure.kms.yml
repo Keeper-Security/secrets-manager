@@ -1,0 +1,39 @@
+name: Test-Java-Storage-Azure-KMS
+
+on:
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'sdk/java/storage/keeper_secrets_manager_storage_azure_kms/**'
+  push:
+    branches: [ master ]
+    paths:
+      - 'sdk/java/storage/keeper_secrets_manager_storage_azure_kms/**'
+  workflow_dispatch:
+
+jobs:
+  test-java-storage-azure-kms:
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      matrix:
+        java-version: [ '8', '11', '17' ]
+    name: Test Azure KMS Storage with Java ${{ matrix.java-version }}
+    defaults:
+      run:
+        working-directory: ./sdk/java/storage/keeper_secrets_manager_storage_azure_kms
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Java ${{ matrix.java-version }}
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'zulu'
+        java-version: ${{ matrix.java-version }}
+
+    - name: Setup, Build and Test
+      uses: gradle/gradle-build-action@v2
+      with:
+        gradle-version: 8.9
+        arguments: build test
+        build-root-directory: ./sdk/java/storage/keeper_secrets_manager_storage_azure_kms
