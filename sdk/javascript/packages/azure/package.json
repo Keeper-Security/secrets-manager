@@ -20,7 +20,7 @@
     "license": "ISC",
     "dependencies": {
         "@keeper-security/secrets-manager-core": "^17.3.0",
-        "pino": "^9.6.0",
+        "pino": "^10.1.0",
         "pino-pretty": "^13.0.0",
         "@azure/identity": "^4.6.0",
         "@azure/keyvault-keys": "^4.9.0"
