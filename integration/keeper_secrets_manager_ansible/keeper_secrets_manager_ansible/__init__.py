@@ -14,7 +14,6 @@ from ansible.utils.display import Display
 from ansible.errors import AnsibleError
 from ansible.module_utils.basic import missing_required_lib
 from ansible.module_utils.common.text.converters import jsonify
-from distutils.util import strtobool
 import os
 import sys
 import re
@@ -37,7 +36,7 @@ else:
     from keeper_secrets_manager_core import SecretsManager
     from keeper_secrets_manager_core.core import KSMCache
     from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
-    from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password
+    from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password, strtobool
 
     # If keeper_secrets_manager_core is installed, then these will be installed. They are deps.
     from cryptography.fernet import Fernet
@@ -175,6 +174,8 @@ class KeeperAnsible:
                 cache_dir_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CACHE_DIR)
                 if task_vars.get(cache_dir_key) is not None and os.environ.get(KeeperAnsible.ENV_CACHE_DIR) is None:
                     os.environ[KeeperAnsible.ENV_CACHE_DIR] = task_vars.get(cache_dir_key)
+                    # Update the cache file path after setting the environment variable
+                    KSMCache.kms_cache_file_name = os.path.join(os.environ.get(KeeperAnsible.ENV_CACHE_DIR, ""), 'ksm_cache.bin')
 
                 display.vvv("Keeper Secrets Manager is using DR file cache. Cache directory is {}.".format(
                     os.environ.get(KeeperAnsible.ENV_CACHE_DIR)

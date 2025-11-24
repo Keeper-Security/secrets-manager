@@ -26,22 +26,25 @@ jobs:
           fetch-tags: true
 
       - name: Validate Release Tag
+        env:
+          TAG: ${{ github.event.inputs.tagname }}
         run: |
-          TAG="${{ github.event.inputs.tagname }}"
           git check-ref-format "tags/${TAG}" && echo "Valid release tag ${TAG}" || echo "Invalid release tag ${TAG}"
           git check-ref-format "tags/${TAG}"
 
       - name: Check if new release tag already exists
+        env:
+          TAG: ${{ github.event.inputs.tagname }}
         run: |
           git fetch --tags --quiet
-          TAG="${{ github.event.inputs.tagname }}"
           git show-ref --tags --verify --quiet "refs/tags/${TAG}" && echo "The new release tag already exists" || echo "The new release tag does not exist"
           ! git show-ref --tags --verify --quiet "refs/tags/${TAG}"
 
       - name: Check if version is included in the new release tag
+        env:
+          TAG: ${{ github.event.inputs.tagname }}
         if: ${{ false }} # disable for now
         run: |
-          TAG="${{ github.event.inputs.tagname }}"
           GRADLE_CFG=./build.gradle.kts
           BUILD_VERSION=`fgrep version $GRADLE_CFG | sed -r 's/^version\s+//g' | sed 's/"//g'`
           if [[ "$TAG" == *"-$BUILD_VERSION"* ]]; then
