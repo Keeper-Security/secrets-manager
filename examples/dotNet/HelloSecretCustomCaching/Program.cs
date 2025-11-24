@@ -32,12 +32,12 @@ namespace HelloSecretCustomCaching
             }
         }
 
-        private static async Task<KeeperHttpResponse> CachingPostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload)
+        private static async Task<KeeperHttpResponse> CachingPostFunction(string url, TransmissionKey transmissionKey, EncryptedPayload payload, string proxyUrl = null)
         {
             try
             {
                 var allowUnverifiedCertificate = false;
-                var response = await SecretsManagerClient.PostFunction(url, transmissionKey, payload, allowUnverifiedCertificate);
+                var response = await SecretsManagerClient.PostFunction(url, transmissionKey, payload, allowUnverifiedCertificate, proxyUrl);
                 if (!response.IsError)
                 {
                     CacheStorage.SaveCachedValue(transmissionKey.Key.Concat(response.Data).ToArray());
