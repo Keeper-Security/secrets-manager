@@ -42,7 +42,7 @@
     "oci-keymanagement": "^2.102.2",
     "oci-vault": "^2.103.0",
     "node-fetch": "^2.6.5",  
-    "pino": "^9.6.0",
+    "pino": "^10.1.0",
     "pino-pretty": "^13.0.0"
   }
 }
