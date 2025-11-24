@@ -1,6 +1,9 @@
 name: Publish AWS Storage to NPM
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'release/storage/javascript/aws-kms/**'
 
 jobs:
   generate-sbom:
