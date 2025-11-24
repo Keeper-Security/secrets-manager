@@ -1,6 +1,9 @@
 name: Publish GCP Storage to NPM
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'release/storage/javascript/gcp-kms/**'
 
 jobs:
   generate-sbom:
