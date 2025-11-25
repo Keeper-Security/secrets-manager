@@ -1,9 +1,6 @@
 name: Publish to Maven (Java Storage Oracle KMS)
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - 'release/storage/java/oracle-kms/**'
 
 jobs:
   publish:
