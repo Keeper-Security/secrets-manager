@@ -55,7 +55,7 @@ jobs:
           echo "Generating SBOM with Manifest CLI..."
           /tmp/bin/manifest sbom "${JAVASCRIPT_SDK_DIR}/packages/oracle" \
             --generator=syft \
-            --name=keeper-secrets-manager-oracle-storage \
+            --name=keeper-secrets-manager-javascript-storage-oracle-kms \
             --version=${VERSION} \
             --output=spdx-json \
             --file=oracle-storage-sbom.json \
