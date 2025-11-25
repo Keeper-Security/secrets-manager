@@ -80,6 +80,11 @@ tasks.jar {
     }
 }
 
+tasks.register<Copy>("copyDependencies") {
+    from(configurations.runtimeClasspath)
+    into(layout.buildDirectory.dir("sbom-deps"))
+}
+
 publishing {
     publications {
         create<MavenPublication>("mavenJava") {
