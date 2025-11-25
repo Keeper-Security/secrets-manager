@@ -1,9 +1,6 @@
 name: Publish to Maven (Java Storage AWS KMS)
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - 'release/storage/java/aws-kms/**'
 
 jobs:
   publish:
