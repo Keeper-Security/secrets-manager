@@ -42,9 +42,9 @@ dependencies {
     // Core Keeper Secrets Manager dependency
     implementation("com.keepersecurity.secrets-manager:core:17.1.1")
 
-    // AWS KMS dependencies
-    implementation("software.amazon.awssdk:kms:2.20.28")
-    implementation("software.amazon.awssdk:auth:2.20.28")
+    // AWS KMS dependencies (2.29.0 includes Netty 4.1.100+ fixing CVE-2023-44487)
+    implementation("software.amazon.awssdk:kms:2.29.0")
+    implementation("software.amazon.awssdk:auth:2.29.0")
 
     // JSON processing
     implementation("com.google.code.gson:gson:2.12.1")
