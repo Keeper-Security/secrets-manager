@@ -1,9 +1,6 @@
 name: Publish to Maven (Java Storage Azure KMS)
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - 'release/storage/java/azure-kms/**'
 
 jobs:
   publish:
