@@ -58,7 +58,7 @@ dependencies {
     }
 
     // BouncyCastle for cryptography
-    implementation("org.bouncycastle:bc-fips:1.0.2.4")
+    implementation("org.bouncycastle:bc-fips:2.1.1")
 
     // Test dependencies
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
