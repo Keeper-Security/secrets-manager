@@ -55,7 +55,7 @@ jobs:
           echo "Generating SBOM with Manifest CLI..."
           /tmp/bin/manifest sbom "${JAVASCRIPT_SDK_DIR}/packages/azure" \
             --generator=syft \
-            --name=keeper-secrets-manager-azure-storage \
+            --name=keeper-secrets-manager-javascript-storage-azure-kms \
             --version=${VERSION} \
             --output=spdx-json \
             --file=azure-storage-sbom.json \
