@@ -7,7 +7,7 @@ jobs:
     uses: ./.github/workflows/reusable.maven.central.publish.yml
     with:
       working-directory: ./sdk/java/storage/keeper_secrets_manager_storage_oracle_kms
-      project-name: keeper-secrets-manager-storage-oracle-kms
+      project-name: keeper-secrets-manager-java-storage-oracle-kms
       project-title: Keeper Secrets Manager Oracle KMS Storage
       java-version: '8'
     secrets: inherit
