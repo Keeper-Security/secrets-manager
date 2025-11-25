@@ -55,7 +55,7 @@ jobs:
           echo "Generating SBOM with Manifest CLI..."
           /tmp/bin/manifest sbom "${JAVASCRIPT_SDK_DIR}/packages/gcp" \
             --generator=syft \
-            --name=keeper-secrets-manager-gcp-storage \
+            --name=keeper-secrets-manager-javascript-storage-gcp-kms \
             --version=${VERSION} \
             --output=spdx-json \
             --file=gcp-storage-sbom.json \
