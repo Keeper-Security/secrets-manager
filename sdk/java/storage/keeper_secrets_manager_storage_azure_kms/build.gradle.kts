@@ -42,9 +42,9 @@ dependencies {
     // Core Keeper Secrets Manager dependency
     implementation("com.keepersecurity.secrets-manager:core:17.1.1")
 
-    // Azure Key Vault dependencies
-    implementation("com.azure:azure-identity:1.15.0")
-    implementation("com.azure:azure-security-keyvault-keys:4.9.2")
+    // Azure Key Vault dependencies (upgraded for security fixes)
+    implementation("com.azure:azure-identity:1.18.1")
+    implementation("com.azure:azure-security-keyvault-keys:4.10.4")
 
     // JSON processing
     implementation("com.google.code.gson:gson:2.12.1")
