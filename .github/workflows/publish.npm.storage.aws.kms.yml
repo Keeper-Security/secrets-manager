@@ -55,7 +55,7 @@ jobs:
           echo "Generating SBOM with Manifest CLI..."
           /tmp/bin/manifest sbom "${JAVASCRIPT_SDK_DIR}/packages/aws" \
             --generator=syft \
-            --name=keeper-secrets-manager-aws-storage \
+            --name=keeper-secrets-manager-javascript-storage-aws-kms \
             --version=${VERSION} \
             --output=spdx-json \
             --file=aws-storage-sbom.json \
