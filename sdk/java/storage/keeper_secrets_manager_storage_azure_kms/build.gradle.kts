@@ -75,13 +75,18 @@ tasks.jar {
     manifest {
         attributes(
             "Implementation-Title" to "Keeper Secrets Manager Azure KMS Storage",
-            "Implementation-Version" to archiveVersion
+            "Implementation-Version" to archiveVersion,
+            "Implementation-Vendor" to "Keeper Security Inc.",
+            "Bundle-License" to "MIT",
+            "Bundle-Vendor" to "Keeper Security Inc."
         )
     }
 }
 
 tasks.register<Copy>("copyDependencies") {
+    dependsOn(tasks.jar)
     from(configurations.runtimeClasspath)
+    from(tasks.jar)
     into(layout.buildDirectory.dir("sbom-deps"))
 }
 
