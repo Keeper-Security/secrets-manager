@@ -4,33 +4,33 @@
         <TargetFrameworks>net9.0</TargetFrameworks>
         <LangVersion>9</LangVersion>
         <Company>Keeper Security Inc.</Company>
-        <Product>SecretsManager .Net SDK GCP Key vault Integration</Product>
+        <Product>SecretsManager .Net SDK GCP Key Management Integration</Product>
         <AssemblyVersion>1.0.0</AssemblyVersion>
         <FileVersion>1.0.0</FileVersion>
         <PackageVersion>1.0.0</PackageVersion>
         <NeutralLanguage>en-US</NeutralLanguage>
         <PackageId>Keeper.SecretsManager.GCPKeyManagement</PackageId>
-        <Authors></Authors>
-        <Description>Keeper Secrets Manager .Net Client GCP Key vault support</Description>
-        <PackageProjectUrl>https://github.com/Keeper-Security/secrets-manager/sdk/dotNet/Integrations/GCPKeyManagement</PackageProjectUrl>
+        <Authors>Keeper Security</Authors>
+        <Description>Keeper Secrets Manager .Net Client GCP Cloud KMS support</Description>
+        <PackageProjectUrl>https://github.com/Keeper-Security/secrets-manager</PackageProjectUrl>
         <RepositoryUrl>https://github.com/Keeper-Security/secrets-manager</RepositoryUrl>
         <RepositoryType>GitHub</RepositoryType>
-        <PackageTags>keeper secrets manager passwords</PackageTags>
-        <Copyright>© 2024 Keeper Security, Inc.</Copyright>
-        <License>https://raw.githubusercontent.com/Keeper-Security/secrets-manager/master/LICENSE?token=AACNMRVMD5L3PYT3C5MTNF3BEAFZY</License>
+        <PackageTags>keeper secrets manager passwords gcp google cloud kms</PackageTags>
+        <Copyright>© 2025 Keeper Security, Inc.</Copyright>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <RootNamespace>GCPKeyManagement</RootNamespace>
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
+      <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.1" />
       <PackageReference Include="Google.Api.Gax.Grpc.Gcp" Version="3.7.0" />
       <PackageReference Include="Google.Cloud.Kms.V1" Version="3.16.0" />
-      <PackageReference Include="Keeper.SecretsManager" Version="16.6.7" />
-      <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.2" />
-      <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.2" />
-      <PackageReference Include="System.Text.Json" Version="9.0.2" />
-      <PackageReference Include="System.Text.Encodings.Web" Version="9.0.2" />
+      <PackageReference Include="Keeper.SecretsManager" Version="17.0.0" />
+      <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.7" />
+      <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.7" />
+      <PackageReference Include="System.Text.Json" Version="9.0.7" />
+      <PackageReference Include="System.Text.Encodings.Web" Version="9.0.7" />
     </ItemGroup>
 
     <PropertyGroup>
