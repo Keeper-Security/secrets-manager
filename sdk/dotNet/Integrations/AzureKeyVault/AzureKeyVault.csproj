@@ -10,14 +10,14 @@
         <PackageVersion>1.0.0</PackageVersion>
         <NeutralLanguage>en-US</NeutralLanguage>
         <PackageId>Keeper.SecretsManager.AzureKeyVault</PackageId>
-        <Authors></Authors>
-        <Description>Keeper Secrets Manager .Net Client Azure key vault support</Description>
-        <PackageProjectUrl>https://github.com/Keeper-Security/secrets-manager/sdk/dotNet/Integrations/AzureKeyVault</PackageProjectUrl>
+        <Authors>Keeper Security</Authors>
+        <Description>Keeper Secrets Manager .Net Client Azure Key Vault support</Description>
+        <PackageProjectUrl>https://github.com/Keeper-Security/secrets-manager</PackageProjectUrl>
         <RepositoryUrl>https://github.com/Keeper-Security/secrets-manager</RepositoryUrl>
         <RepositoryType>GitHub</RepositoryType>
-        <PackageTags>keeper secrets manager passwords</PackageTags>
-        <Copyright>© 2024 Keeper Security, Inc.</Copyright>
-        <License>https://raw.githubusercontent.com/Keeper-Security/secrets-manager/master/LICENSE?token=AACNMRVMD5L3PYT3C5MTNF3BEAFZY</License>
+        <PackageTags>keeper secrets manager passwords azure keyvault kms</PackageTags>
+        <Copyright>© 2025 Keeper Security, Inc.</Copyright>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <RootNamespace>AzureKeyVault</RootNamespace>
     </PropertyGroup>
@@ -25,12 +25,12 @@
     <ItemGroup>
       <PackageReference Include="Azure.Identity" Version="1.13.2" />
       <PackageReference Include="Azure.Security.KeyVault.Keys" Version="4.7.0" />
-      <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
-      <PackageReference Include="Keeper.SecretsManager" Version="16.6.7" />
-      <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.2" />
-      <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.2" />
-      <PackageReference Include="System.Text.Json" Version="9.0.2" />
-      <PackageReference Include="System.Text.Encodings.Web" Version="9.0.2" />
+      <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.1" />
+      <PackageReference Include="Keeper.SecretsManager" Version="17.0.0" />
+      <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.7" />
+      <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.7" />
+      <PackageReference Include="System.Text.Json" Version="9.0.7" />
+      <PackageReference Include="System.Text.Encodings.Web" Version="9.0.7" />
     </ItemGroup>
 
     <PropertyGroup>
