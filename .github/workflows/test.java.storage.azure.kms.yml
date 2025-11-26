@@ -23,17 +23,18 @@ jobs:
       run:
         working-directory: ./sdk/java/storage/keeper_secrets_manager_storage_azure_kms
     steps:
-    - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Setup Java ${{ matrix.java-version }}
-      uses: actions/setup-java@v3
-      with:
-        distribution: 'zulu'
-        java-version: ${{ matrix.java-version }}
+      - name: Setup Java ${{ matrix.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: ${{ matrix.java-version }}
 
-    - name: Setup, Build and Test
-      uses: gradle/gradle-build-action@v2
-      with:
-        gradle-version: 8.9
-        arguments: build test
-        build-root-directory: ./sdk/java/storage/keeper_secrets_manager_storage_azure_kms
+      - name: Setup, Build and Test
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+          arguments: build test
+          build-root-directory: ./sdk/java/storage/keeper_secrets_manager_storage_azure_kms
