@@ -8,9 +8,6 @@ on:
         required: false
         default: 'true'
         type: boolean
-  push:
-    branches:
-      - 'release/storage/dotnet/aws-kms/**'
 
 jobs:
   get-version:
