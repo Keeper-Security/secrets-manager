@@ -20,6 +20,11 @@ on:
         required: false
         type: string
         default: '11'
+      publish:
+        description: 'Publish to Maven Central (false for build only)'
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   get-version:
@@ -141,6 +146,7 @@ jobs:
 
   publish-to-maven-central:
     needs: [get-version, generate-and-upload-sbom]
+    if: ${{ inputs.publish }}
     environment: prod
     runs-on: ubuntu-latest
 
