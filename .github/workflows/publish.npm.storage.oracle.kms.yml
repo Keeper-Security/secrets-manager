@@ -1,6 +1,12 @@
 name: Publish Oracle Storage to NPM
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to NPM (uncheck to build only)'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   generate-sbom:
@@ -70,6 +76,7 @@ jobs:
 
   publish-npm:
     needs: generate-sbom
+    if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
 
