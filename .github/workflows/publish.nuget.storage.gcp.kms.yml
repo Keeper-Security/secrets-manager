@@ -8,6 +8,9 @@ on:
         required: false
         default: 'true'
         type: boolean
+  push:
+    branches:
+      - 'release/storage/dotnet/gcp-kms/**'
 
 jobs:
   get-version:
