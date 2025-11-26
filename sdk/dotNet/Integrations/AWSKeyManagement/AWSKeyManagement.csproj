@@ -1,0 +1,43 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>net9.0</TargetFrameworks>
+        <LangVersion>9</LangVersion>
+        <Company>Keeper Security Inc.</Company>
+        <Product>SecretsManager .Net SDK AWS Key Management Integration</Product>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
+        <FileVersion>1.0.0</FileVersion>
+        <PackageVersion>1.0.0</PackageVersion>
+        <NeutralLanguage>en-US</NeutralLanguage>
+        <PackageId>Keeper.SecretsManager.AWSKeyManagement</PackageId>
+        <Authors></Authors>
+        <Description>Keeper Secrets Manager .Net Client AWS Key Management support</Description>
+        <!-- <PackageProjectUrl>https://github.com/Keeper-Security/secrets-manager</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/Keeper-Security/secrets-manager</RepositoryUrl> -->
+        <!-- <RepositoryType>GitHub</RepositoryType> -->
+        <PackageTags>keeper secrets manager passwords</PackageTags>
+        <Copyright>© 2024 Keeper Security, Inc.</Copyright>
+        <License>https://raw.githubusercontent.com/Keeper-Security/secrets-manager/master/LICENSE?token=AACNMRVMD5L3PYT3C5MTNF3BEAFZY</License>
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <RootNamespace>AWSKeyManagement</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="AWSSDK.KeyManagementService" Version="3.7.400.109" />
+      <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
+      <PackageReference Include="Keeper.SecretsManager" Version="16.6.7" />
+      <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.2" />
+      <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.2" />
+      <PackageReference Include="System.Text.Json" Version="9.0.2" />
+      <PackageReference Include="System.Text.Encodings.Web" Version="9.0.2" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <AssemblyName>AWSKeyValueStorage</AssemblyName>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(SignKSM)'=='True'">
+        <SignAssembly>True</SignAssembly>
+        <AssemblyOriginatorKeyFile>sgKSM.snk</AssemblyOriginatorKeyFile>
+    </PropertyGroup>
+</Project>
