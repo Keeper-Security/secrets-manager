@@ -1,6 +1,12 @@
 name: Publish to Maven (Java Storage AWS KMS)
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to Maven Central (uncheck to build only)'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   publish:
@@ -10,4 +16,5 @@ jobs:
       project-name: keeper-secrets-manager-java-storage-aws-kms
       project-title: Keeper Secrets Manager AWS KMS Storage
       java-version: '8'
+      publish: ${{ github.event.inputs.publish == 'true' }}
     secrets: inherit
