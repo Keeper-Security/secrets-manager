@@ -1,0 +1,36 @@
+name: Test .NET Storage - GCP KMS
+
+on:
+  push:
+    branches:
+      - 'release/storage/dotnet/gcp-kms/**'
+    paths:
+      - 'sdk/dotNet/Integrations/GCPKeyManagement/**'
+      - '.github/workflows/test.dotnet.storage.gcp.kms.yml'
+  pull_request:
+    branches:
+      - 'release/storage/dotnet/gcp-kms/**'
+    paths:
+      - 'sdk/dotNet/Integrations/GCPKeyManagement/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./sdk/dotNet/Integrations/GCPKeyManagement
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore

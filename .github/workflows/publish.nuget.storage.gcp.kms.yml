@@ -1,0 +1,123 @@
+name: Publish NuGet - .NET Storage GCP KMS
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to NuGet (uncheck to build only)'
+        required: false
+        default: 'true'
+        type: boolean
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: extract-version
+        working-directory: ./sdk/dotNet/Integrations/GCPKeyManagement
+        run: |
+          VERSION=$(dotnet msbuild GCPKeyManagement.csproj -getProperty:PackageVersion)
+          echo "Version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+  generate-sbom:
+    needs: get-version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./sdk/dotNet/Integrations/GCPKeyManagement
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore and build
+        run: |
+          dotnet restore
+          dotnet build --configuration Release --no-restore
+
+      - name: Generate and publish SBOM
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.18.3
+
+          manifest sbom . \
+            --generator=syft \
+            --name=keeper-secrets-manager-storage-gcp-kms-dotnet \
+            --version=${{ needs.get-version.outputs.version }} \
+            --output=spdx-json \
+            --file=sbom.json \
+            --api-key=${MANIFEST_TOKEN} \
+            --publish=true \
+            --asset-label=application,sbom-generated,dotnet,ksm,storage,gcp-kms
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-keeper-secrets-manager-storage-gcp-kms-dotnet-${{ needs.get-version.outputs.version }}
+          path: ./sdk/dotNet/Integrations/GCPKeyManagement/sbom.json
+          retention-days: 90
+
+  build:
+    needs: generate-sbom
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./sdk/dotNet/Integrations/GCPKeyManagement
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Upload NuGet package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package-${{ github.run_number }}
+          path: ./sdk/dotNet/Integrations/GCPKeyManagement/bin/Release/*.nupkg
+
+  publish:
+    environment: prod
+    needs: build
+    if: ${{ github.event.inputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download NuGet package
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-package-${{ github.run_number }}
+          path: ./packages
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
+          secrets: |
+            Sq4nnb5HXXNp1l6KryXynw/field/password > NUGET_AUTH_TOKEN
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Publish to NuGet
+        run: dotnet nuget push ./packages/*.nupkg --api-key ${{ steps.ksmsecrets.outputs.NUGET_AUTH_TOKEN }} --source https://api.nuget.org/v3/index.json
