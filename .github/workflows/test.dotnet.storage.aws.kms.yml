@@ -1,0 +1,36 @@
+name: Test .NET Storage - AWS KMS
+
+on:
+  push:
+    branches:
+      - 'release/storage/dotnet/aws-kms/**'
+    paths:
+      - 'sdk/dotNet/Integrations/AWSKeyManagement/**'
+      - '.github/workflows/test.dotnet.storage.aws.kms.yml'
+  pull_request:
+    branches:
+      - 'release/storage/dotnet/aws-kms/**'
+    paths:
+      - 'sdk/dotNet/Integrations/AWSKeyManagement/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./sdk/dotNet/Integrations/AWSKeyManagement
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
