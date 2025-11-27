@@ -35,13 +35,14 @@ module KeeperSecretsManager
 
     # Get secrets payload
     class GetPayload < BasePayload
-      attr_accessor :public_key, :requested_records, :requested_folders, :file_uids
+      attr_accessor :public_key, :requested_records, :requested_folders, :file_uids, :request_links
 
       def initialize
         super()
         @requested_records = nil
         @requested_folders = nil
         @file_uids = nil
+        @request_links = nil
       end
     end
 
@@ -57,7 +58,7 @@ module KeeperSecretsManager
 
     # Update record payload
     class UpdatePayload < BasePayload
-      attr_accessor :record_uid, :data, :revision, :transaction_type
+      attr_accessor :record_uid, :data, :revision, :transaction_type, :links2_remove
 
       def initialize
         super()
