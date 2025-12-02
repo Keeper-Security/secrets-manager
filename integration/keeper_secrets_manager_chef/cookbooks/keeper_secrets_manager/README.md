@@ -1,6 +1,6 @@
 # Keeper Secrets Manager Cookbook
 
-[![Cookbook Version](https://img.shields.io/badge/cookbook-v0.1.0-blue)](https://github.com/Keeper-Security/secrets-manager/tree/master/integration/keeper_secrets_manager_chef)
+[![Cookbook Version](https://img.shields.io/badge/cookbook-v1.0.0-blue)](https://github.com/Keeper-Security/secrets-manager/tree/master/integration/keeper_secrets_manager_chef)
 [![Chef](https://img.shields.io/badge/chef-%3E%3D16.0-orange)](https://www.chef.io/)
 [![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-red)](LICENSE)
 
@@ -285,5 +285,5 @@ This module is licensed under the Apache License, Version 2.0.
 
 ---
 
-**Version:** 0.1.0  
+**Version:** 1.0.0
 **Last Updated:** 2025
