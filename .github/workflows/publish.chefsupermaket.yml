@@ -1,6 +1,12 @@
 name: Publish to Chef Supermarket
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to Chef Supermarket (uncheck to build only)'
+        required: false
+        default: 'true'
+        type: boolean
 
 jobs:
   get-version:
@@ -24,22 +30,86 @@ jobs:
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
   
 
-  generate-and-upload-sbom:
+  generate-sbom:
+    name: Generate SBOM
     needs: get-version
-    uses: ./.github/workflows/reusable.sbom.workflow.yml
-    with:
-      working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
-      project-name: keeper-secrets-manager-chef
-      project-type: ruby
-      project-version: ${{ needs.get-version.outputs.version }}
-      sbom-format: spdx-json
-      additional-labels: application,sbom-generated,ruby,chef
-    secrets:
-      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2.4'
+          working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
+
+      - name: Install Syft and Manifest CLI
+        run: |
+          echo "Installing Syft v1.18.1..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /tmp/bin v1.18.1
+          export PATH="/tmp/bin:$PATH"
+
+          echo "Installing Manifest CLI v0.18.3..."
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /tmp/bin v0.18.3
+
+      - name: Generate and publish SBOM
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+          PROJECT_VERSION: ${{ needs.get-version.outputs.version }}
+        run: |
+          export PATH="/tmp/bin:$PATH"
+
+          echo "Creating Syft configuration for Ruby scanning..."
+          cat > syft-config.yaml << 'EOF'
+          package:
+            search:
+              scope: all-layers
+            cataloger:
+              enabled: true
+              java:
+                enabled: false
+              python:
+                enabled: false
+              nodejs:
+                enabled: false
+              ruby:
+                enabled: true
+                search-unindexed-archives: true
+                search-indexed-archives: true
+          EOF
+
+          echo "Generating SBOM with Manifest CLI..."
+          /tmp/bin/manifest sbom . \
+            --generator=syft \
+            --name=keeper-secrets-manager-chef \
+            --version=${PROJECT_VERSION} \
+            --output=spdx-json \
+            --file=chef-sbom.json \
+            --api-key=${MANIFEST_TOKEN} \
+            --publish=true \
+            --asset-label=application,sbom-generated,ruby,chef \
+            --generator-config=syft-config.yaml
+
+          echo "SBOM generated and uploaded successfully: chef-sbom.json"
+
+      - name: Archive SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-chef-${{ needs.get-version.outputs.version }}
+          path: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager/chef-sbom.json
+          retention-days: 90
 
 
   publish-chef-supermarket:
-    needs: generate-and-upload-sbom
+    needs: [get-version, generate-sbom]
+    if: ${{ github.event.inputs.publish == 'true' }}
     runs-on: ubuntu-latest
     environment: prod
     timeout-minutes: 20
