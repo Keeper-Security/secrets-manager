@@ -10,18 +10,7 @@ import kotlin.reflect.full.memberProperties
 
 @ExperimentalSerializationApi
 fun getValue(secrets: KeeperSecrets, notation: String): String {
-    val parsedNotation = parseNotation(notation, true) // prefix, record, selector, footer
-    if (parsedNotation.size < 3) {
-        throw Exception("Invalid notation $notation")
-    }
-
-    val selector = parsedNotation[2].text?.first ?: // type|title|notes or file|field|custom_field
-        throw Exception("Invalid notation $notation")
-    val recordToken = parsedNotation[1].text?.first ?: // UID or Title
-        throw Exception("Invalid notation $notation")
-    val record = secrets.records.find { (it.recordUid == recordToken) || (it.data.title == recordToken) } ?:
-        throw Exception("Record '$recordToken' not found")
-
+    val (record, parsedNotation, selector, recordToken) = getRecord(secrets, notation)
     val parameter = parsedNotation[2].parameter?.first
     val index1 = parsedNotation[2].index1?.first
     val index2 = parsedNotation[2].index2?.first
@@ -99,9 +88,10 @@ fun getValue(secrets: KeeperSecrets, notation: String): String {
 }
 
 fun getFile(secrets: KeeperSecrets, notation: String): KeeperFile {
-    val (record, queryParts) = getRecord(secrets, notation)
-    if (queryParts[1] == "file") {
-        val fileId = queryParts[2]
+    val (record, parsedNotation, selector) = getRecord(secrets, notation)
+
+    if (selector == "file") {
+        val fileId = parsedNotation[2].parameter?.first
         return record.files?.find { x -> x.data.name == fileId || x.data.title == fileId || x.fileUid == fileId }
             ?: throw Exception("File $fileId not found in the record ${record.recordUid}")
     } else {
@@ -109,23 +99,22 @@ fun getFile(secrets: KeeperSecrets, notation: String): KeeperFile {
     }
 }
 
-private data class RecordAndNotation(val record: KeeperRecord, val queryParts: List<String>)
+private data class RecordAndNotation(val record: KeeperRecord, val queryParts: List<NotationSection>, val selector: String, val recordToken: String)
 
 private fun getRecord(secrets: KeeperSecrets, notation: String): RecordAndNotation {
-    var query = notation
-    val schemaNotation = query.split("://")
-    if (schemaNotation.size > 1) {
-        if (schemaNotation[0] != "keeper") {
-            throw Exception("Invalid notation schema: ${schemaNotation[0]}")
-        }
-        query = query.slice(9 until query.length)
+    val parsedNotation = parseNotation(notation, true) // prefix, record, selector, footer
+    if (parsedNotation.size < 3) {
+        throw Exception("Invalid notation $notation")
     }
-    val queryParts = query.split('/')
-    if (queryParts.size < 3) {
-        throw Exception("invalid notation $notation")
-    }
-    val record = secrets.getRecordByUid(queryParts[0]) ?: throw Error("Record ${queryParts[0]} not found")
-    return RecordAndNotation(record, queryParts)
+
+    val selector = parsedNotation[2].text?.first ?: // type|title|notes or file|field|custom_field
+        throw Exception("Invalid notation $notation")
+    val recordToken = parsedNotation[1].text?.first ?: // UID or Title
+        throw Exception("Invalid notation $notation")
+    val record = secrets.records.find { (it.recordUid == recordToken) || (it.data.title == recordToken) } ?:
+        throw Exception("Record '$recordToken' not found")
+
+    return RecordAndNotation(record, parsedNotation, selector, recordToken)
 }
 
 internal fun fieldType(field: KeeperRecordField): String {
