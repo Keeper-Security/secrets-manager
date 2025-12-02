@@ -133,7 +133,32 @@ jobs:
         with:
           keeper-secret-config: ${{ secrets.KSM_CHEF_SUPERMARKET_CONFIG }}
           secrets: |
-            ${{ secrets.CHEF_SUPERMARKET_RECORD_UID }}/field/password > CHEF_SUPERMARKET_API_KEY
+            b9vSxs5Dn-yJTPYr7Yvfmg/field/login > CHEF_USER
+            b9vSxs5Dn-yJTPYr7Yvfmg/file/keepersecurity.pem > file:keepersecurity.pem
+            b9vSxs5Dn-yJTPYr7Yvfmg/custom_field/server_url > CHEF_SERVER_URL
+
+      - name: Configure knife authentication
+        run: |
+          mkdir -p ~/.chef
+
+          # Move the client key from workspace to ~/.chef
+          mv "${{ github.workspace }}/keepersecurity.pem" ~/.chef/client.pem
+          chmod 600 ~/.chef/client.pem
+
+          # Verify key file exists and has correct permissions
+          ls -la ~/.chef/client.pem
+          echo "Client key file created with permissions: $(stat -f '%A' ~/.chef/client.pem)"
+
+          # Create knife config
+          cat > ~/.chef/config.rb << EOF
+          node_name '${{ steps.ksmsecrets.outputs.CHEF_USER }}'
+          client_key File.expand_path('~/.chef/client.pem')
+          chef_server_url '${{ steps.ksmsecrets.outputs.CHEF_SERVER_URL }}'
+          cookbook_path [File.expand_path('.')]
+          EOF
+
+          echo "Knife configuration created:"
+          cat ~/.chef/config.rb
 
       - name: Get current version and validate
         id: version
@@ -177,15 +202,20 @@ jobs:
 
       - name: Publish to Chef Supermarket
         env:
-          CHEF_SUPERMARKET_API_KEY: ${{ steps.ksmsecrets.outputs.CHEF_SUPERMARKET_API_KEY }}
           VERSION: ${{ steps.version.outputs.current_version }}
         run: |
           echo "Publishing to Chef Supermarket..."
+          echo "Using knife configuration from ~/.chef/config.rb"
+
+          # Verify knife configuration
+          knife ssl check || echo "Warning: SSL check failed, but continuing..."
+
+          # Share cookbook to Supermarket
           knife supermarket share keeper_secrets_manager "Utilities" \
             --supermarket-site https://supermarket.chef.io \
-            --cookbook-path . \
-          
-          echo "Successfully published to Chef Supermarket!"
+            --cookbook-path .
+
+          echo "Successfully published version $VERSION to Chef Supermarket!"
 
       - name: Create release summary
         env:
