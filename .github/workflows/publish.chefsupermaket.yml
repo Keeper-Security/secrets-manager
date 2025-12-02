@@ -1,0 +1,133 @@
+name: Publish to Chef Supermarket
+on:
+  workflow_dispatch:
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract version from metadata.rb
+        id: extract-version
+        working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
+        run: |
+          echo "Detecting Chef cookbook version..."
+          if [ -f "metadata.rb" ]; then
+            VERSION=$(grep "version" "metadata.rb" | awk '{print $2}' | tr -d "'\"")
+            echo "Detected version: ${VERSION}"
+          else
+            VERSION="1.0.0"
+            echo "Could not detect version, using default: ${VERSION}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+  
+
+  generate-and-upload-sbom:
+    needs: get-version
+    uses: ./.github/workflows/reusable.sbom.workflow.yml
+    with:
+      working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
+      project-name: keeper-secrets-manager-chef
+      project-type: ruby
+      project-version: ${{ needs.get-version.outputs.version }}
+      sbom-format: spdx-json
+      additional-labels: application,sbom-generated,ruby,chef
+    secrets:
+      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+
+
+  publish-chef-supermarket:
+    needs: generate-and-upload-sbom
+    runs-on: ubuntu-latest
+    environment: prod
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2.4'
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_CHEF_SUPERMARKET_CONFIG }}
+          secrets: |
+            ${{ secrets.CHEF_SUPERMARKET_RECORD_UID }}/field/password > CHEF_SUPERMARKET_API_KEY
+
+      - name: Get current version and validate
+        id: version
+        run: |
+          if [[ -f "metadata.rb" ]]; then
+            VERSION=$(grep "version" metadata.rb | awk '{print $2}' | tr -d "'\"")
+            echo "current_version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Current version: $VERSION"
+          else
+            echo "Error: metadata.rb not found"
+            exit 1
+          fi
+
+      - name: Check if version already exists on Chef Supermarket
+        env:
+          VERSION: ${{ steps.version.outputs.current_version }}
+        run: |
+          echo "Checking if version $VERSION exists on Supermarket..."
+          RESULT=$(curl -s "https://supermarket.chef.io/api/v1/cookbooks/keeper_secrets_manager/versions/${VERSION}")
+          if echo "$RESULT" | grep -q '"version"'; then
+            echo "Error: Version $VERSION already exists on Chef Supermarket!"
+            exit 1
+          fi
+          echo "Version $VERSION is available for publishing"
+
+      - name: Install Chef Workstation
+        run: |
+          echo "Installing Chef Workstation..."
+          curl https://omnitruck.chef.io/install.sh | sudo bash -s -- -P chef-workstation
+          chef --version
+
+      - name: Run linting (Cookstyle)
+        run: |
+          echo "Running cookstyle..."
+          cookstyle || exit 1
+
+      - name: Run ChefSpec tests
+        run: |
+          echo "Running ChefSpec tests..."
+          rspec || exit 1
+
+      - name: Publish to Chef Supermarket
+        env:
+          CHEF_SUPERMARKET_API_KEY: ${{ steps.ksmsecrets.outputs.CHEF_SUPERMARKET_API_KEY }}
+          VERSION: ${{ steps.version.outputs.current_version }}
+        run: |
+          echo "Publishing to Chef Supermarket..."
+          knife supermarket share keeper_secrets_manager "Utilities" \
+            --supermarket-site https://supermarket.chef.io \
+            --cookbook-path . \
+          
+          echo "Successfully published to Chef Supermarket!"
+
+      - name: Create release summary
+        env:
+          VERSION: ${{ steps.version.outputs.current_version }}
+        run: |
+          echo "## Chef Cookbook Published Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**Cookbook:** keeper_secrets_manager" >> $GITHUB_STEP_SUMMARY
+          echo "**Supermarket URL:** https://supermarket.chef.io/cookbooks/keeper_secrets_manager" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Cookstyle: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- ChefSpec Tests: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Cookbook Build: Successful" >> $GITHUB_STEP_SUMMARY
+          echo "- Supermarket Publish: Successful" >> $GITHUB_STEP_SUMMARY
