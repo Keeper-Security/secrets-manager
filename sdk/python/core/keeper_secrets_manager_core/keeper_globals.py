@@ -19,7 +19,7 @@ def get_client_version(hardcode=False):
     """Get the version of the client
 
     The version # comes from metadata. In a unit test, there is metadata, so the version will
-    be the defined major and 0.0 (ie 17.0.0.).
+    be the defined major and 0.0 (ie 17.1.0.).
 
     If installed, the method can get the real version number. For the client version number
     we use the defined major and minor and revision numbers of the module version.
@@ -31,7 +31,9 @@ def get_client_version(hardcode=False):
     """
     # Get the version of the keeper secrets manager core
     version_major = "17"
-    version = "{}.0.0".format(version_major)
+    version_minor_default = "1"
+    version_revision_default = "0"
+    version = "{}.{}.{}".format(version_major, version_minor_default, version_revision_default)
 
     # Allow the default version to be hard coded. If not build the client version from the module
     # version.

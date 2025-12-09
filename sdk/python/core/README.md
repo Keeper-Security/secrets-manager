@@ -4,6 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.1.0
+* Added an explicit dependency on `urllib3` to align with upstream requirements.
+
 ## 17.0.0
 * KSM-566 - Added parsing for KSM tokens with prefix
 * KSM-631 - Added links2Remove parameter for files removal
