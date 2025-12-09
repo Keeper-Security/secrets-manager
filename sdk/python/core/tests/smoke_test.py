@@ -202,4 +202,4 @@ class SmokeTest(unittest.TestCase):
             self.assertEqual("17.2.24", client_version, "did not get the correct client version from 0.2.24")
 
         client_version = get_client_version(hardcode=True)
-        self.assertEqual("17.0.0", client_version, "did not get the correct client version for hardcoded")
+        self.assertEqual("17.1.0", client_version, "did not get the correct client version for hardcoded")
