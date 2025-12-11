@@ -158,7 +158,14 @@ action_class do
   def upgrade_pip
     Chef::Log.info('Upgrading pip to latest version')
 
-    pip_upgrade_cmd = pip_command('install --upgrade pip')
+    if platform_family?('windows')
+      # On Windows, use python -m pip to avoid file locking issues
+      python_cmd = python_command('-m pip install --upgrade pip')
+      user_flag = new_resource.user_install ? '--user' : ''
+      pip_upgrade_cmd = "#{python_cmd} #{user_flag}".strip
+    else
+      pip_upgrade_cmd = pip_command('install --upgrade pip')
+    end
 
     execute 'upgrade_pip' do
       command pip_upgrade_cmd
@@ -256,14 +263,11 @@ action_class do
   # --- Encrypted Data Bag Loader ---
   def load_keeper_config
     begin
-      # keeper_config = data_bag_item('keeper', 'keeper_config', IO.read('/etc/chef/encrypted_data_bag_secret'))
-      # keeper_config['config_json'] || keeper_config['token']
-
-      secret = Chef::EncryptedDataBagItem.load_secret('/etc/chef/encrypted_data_bag_secret')
-      keeper_config = data_bag_item('keeper', 'keeper_config', secret)
+      # Chef automatically uses encrypted_data_bag_secret from config
+      keeper_config = data_bag_item('keeper', 'keeper_config')
       keeper_config['config_json'] || keeper_config['token']
-    rescue Net::HTTPClientException, Chef::Exceptions::InvalidDataBagPath, Errno::ENOENT
-      Chef::Log.warn('No Encrypted Data Bag or environment variable found for KEEPER_CONFIG!')
+    rescue Net::HTTPClientException, Chef::Exceptions::InvalidDataBagPath, Errno::ENOENT, Chef::Exceptions::SecretNotFound
+      Chef::Log.warn('No Encrypted Data Bag found, falling back to KEEPER_CONFIG environment variable')
       ENV['KEEPER_CONFIG']
     end
   end
@@ -271,31 +275,73 @@ action_class do
   private
 
   def pip_command(args)
-    pip_cmd = which('pip3') || which('pip') || python_command('-m pip')
+    pip_cmd = which('pip3') || which('pip')
     user_flag = new_resource.user_install ? '--user' : ''
 
-    if platform_family?('windows') && new_resource.user_install
-      "#{pip_cmd} #{args} #{user_flag}".strip
+    if pip_cmd
+      # pip executable found, use it directly
+      if platform_family?('windows')
+        # Quote paths on Windows to handle spaces
+        "\"#{pip_cmd}\" #{args} #{user_flag}".strip
+      else
+        "sudo #{pip_cmd} #{args}".strip
+      end
     else
-      "sudo #{pip_cmd} #{args}".strip
+      # Fallback to python -m pip (pip not in PATH but Python is available)
+      pip_cmd = python_command('-m pip')
+      "#{pip_cmd} #{args} #{user_flag}".strip
     end
   end
 
   def pip_show_command(package)
     pip_cmd = which('pip3') || which('pip')
-    "#{pip_cmd} show #{package}"
+    if pip_cmd
+      if platform_family?('windows')
+        # Quote paths on Windows to handle spaces
+        "\"#{pip_cmd}\" show #{package}"
+      else
+        "#{pip_cmd} show #{package}"
+      end
+    else
+      # Fallback to python -m pip (pip not in PATH but Python is available)
+      pip_cmd = python_command('-m pip show')
+      "#{pip_cmd} #{package}"
+    end
   end
 
   def python_command(args = '')
     cmd = which('python3') || which('python')
     raise 'Python not found' unless cmd
-    "#{cmd} #{args}".strip
+    if platform_family?('windows')
+      # Quote paths on Windows to handle spaces
+      "\"#{cmd}\" #{args}".strip
+    else
+      "#{cmd} #{args}".strip
+    end
   end
 
   def which(command)
     if platform_family?('windows')
       result = shell_out("where #{command}")
-      result.exitstatus == 0 ? result.stdout.strip.split("\n").first : nil
+      if result.exitstatus == 0
+        paths = result.stdout.strip.split("\n")
+        # Filter out Windows Store stubs
+        real_path = paths.find { |p| !p.include?('WindowsApps') }
+        return real_path if real_path
+      end
+
+      # Check common installation locations only for Python commands
+      if command == 'python3' || command == 'python'
+        common_paths = [
+          'C:\Program Files\Python313\python.exe',
+          'C:\Program Files\Python312\python.exe',
+          "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python313\\python.exe",
+          "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python312\\python.exe",
+        ]
+        found = common_paths.find { |p| ::File.exist?(p) }
+        return found if found
+      end
+      nil
     else
       result = shell_out("which #{command}")
       result.exitstatus == 0 ? result.stdout.strip : nil
