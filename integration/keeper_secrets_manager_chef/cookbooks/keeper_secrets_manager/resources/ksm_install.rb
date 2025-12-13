@@ -164,7 +164,12 @@ action_class do
       user_flag = new_resource.user_install ? '--user' : ''
       pip_upgrade_cmd = "#{python_cmd} #{user_flag}".strip
     else
-      pip_upgrade_cmd = pip_command('install --upgrade pip')
+      # For macOS, we need --break-system-packages even with --user when upgrading pip
+      if platform_family?('mac_os_x') && new_resource.user_install
+        pip_upgrade_cmd = pip_command('install --upgrade pip --break-system-packages')
+      else
+        pip_upgrade_cmd = pip_command('install --upgrade pip')
+      end
     end
 
     execute 'upgrade_pip' do
@@ -277,6 +282,8 @@ action_class do
   def pip_command(args)
     pip_cmd = which('pip3') || which('pip')
     user_flag = new_resource.user_install ? '--user' : ''
+    # On macOS, we need --break-system-packages even with --user
+    macos_flag = platform_family?('mac_os_x') && new_resource.user_install ? '--break-system-packages' : ''
 
     if pip_cmd
       # pip executable found, use it directly
@@ -284,12 +291,19 @@ action_class do
         # Quote paths on Windows to handle spaces
         "\"#{pip_cmd}\" #{args} #{user_flag}".strip
       else
-        "sudo #{pip_cmd} #{args}".strip
+        # On macOS/Linux: skip sudo if user_install is true OR if running as root
+        if new_resource.user_install
+          "#{pip_cmd} #{args} #{user_flag} #{macos_flag}".strip
+        elsif Process.uid == 0  # Running as root (uid 0)
+          "#{pip_cmd} #{args}".strip
+        else
+          "sudo #{pip_cmd} #{args}".strip
+        end
       end
     else
       # Fallback to python -m pip (pip not in PATH but Python is available)
       pip_cmd = python_command('-m pip')
-      "#{pip_cmd} #{args} #{user_flag}".strip
+      "#{pip_cmd} #{args} #{user_flag} #{macos_flag}".strip
     end
   end
 
