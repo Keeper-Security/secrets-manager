@@ -51,6 +51,7 @@ class KeeperFieldType(Enum):
     FIELD = "field"
     CUSTOM_FIELD = "custom_field"
     FILE = "file"
+    NOTES = "notes"
 
     @staticmethod
     def get_enum(value):
@@ -67,7 +68,7 @@ class KeeperAnsible:
     KEY_PREFIX = "keeper"
     KEY_CONFIG_FILE_SUFFIX = "config_file"
     KEY_CONFIG_BASE64 = "config"
-    ALLOWED_FIELDS = ["field", "custom_field", "file"]
+    ALLOWED_FIELDS = ["field", "custom_field", "file", "notes"]
     TOKEN_ENV = "KSM_TOKEN"
     TOKEN_KEY = "token"
     HOSTNAME_KEY = "hostname"
@@ -627,6 +628,9 @@ class KeeperAnsible:
             record.custom_field(key, value)
         elif field_type == KeeperFieldType.FILE:
             raise AnsibleError("Cannot save a file from the ansible playbook/role to Keeper.")
+        elif field_type == KeeperFieldType.NOTES:
+            record.dict["notes"] = key
+            record._update()
         else:
             raise AnsibleError("Cannot set_value. The field type ENUM of {} is invalid.".format(field_type))
 
