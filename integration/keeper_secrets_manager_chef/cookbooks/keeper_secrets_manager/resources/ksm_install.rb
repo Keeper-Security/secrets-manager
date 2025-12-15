@@ -147,10 +147,66 @@ action_class do
         only_if 'which brew'
       end
     when 'windows'
-      chocolatey_package 'python3' do
-        action :install
-        not_if 'where python || where python3'
-        only_if 'where choco'
+      # Windows: prefer existing Python, then Chocolatey, then official installer fallback
+      if which('python') || which('python3')
+        Chef::Log.info('Python already installed on Windows')
+      elsif which('choco')
+        execute 'install_python_choco' do
+          # Use choco non-interactively and limit output so Chef doesn't hang on interactive prompts
+          command 'choco install python -y --no-progress --limit-output'
+          timeout 3600
+          not_if { which('python') || which('python3') }
+        end
+        # The logic to discover and set PATH for Choco-installed python should follow here
+        @discovered_python = find_python_executable
+        if @discovered_python
+          python_dir = ::File.dirname(@discovered_python)
+          ENV['PATH'] = "#{python_dir};#{ENV['PATH']}"
+          node.run_state['ksm_python'] = @discovered_python
+          Chef::Log.info("Installed Python via Chocolatey and added #{python_dir} to PATH.")
+        else
+          Chef::Log.warn('Python installed via Chocolatey but executable could not be located in this run.')
+        end
+      else
+        target_version = '3.11.7'  # Specify desired Python version here
+
+        # Define the installer URL for a known architecture
+        installer_url = "https://www.python.org/ftp/python/#{target_version}/python-#{target_version}-amd64.exe"
+        
+        Chef::Log.warn("Choco unavailable. Falling back to installing Python #{target_version} using `windows_package`.")
+
+        windows_package 'Python Installer' do
+          # The package name is what you will see in 'Add or Remove Programs'
+          package_name "Python #{target_version} (64-bit)" 
+          source installer_url
+          # The installer arguments for a silent, all-user install that updates the PATH
+          installer_type :custom
+          options "/quiet InstallAllUsers=1 PrependPath=1 Include_pip=1"
+          # Only run if python isn't already found
+          not_if { which('python') || which('python3') } 
+          
+          # Use a ruby_block to find and update the PATH immediately after installation
+          notifies :run, 'ruby_block[discover_installed_python]', :immediate
+        end
+
+        # Block to discover and register the newly installed Python in run_state
+        find_python_block = proc do
+            @discovered_python = find_python_executable
+            if @discovered_python
+              python_dir = ::File.dirname(@discovered_python)
+              # Update ENV['PATH'] for subsequent resources in this Chef run
+              ENV['PATH'] = "#{python_dir};#{ENV['PATH']}"
+              node.run_state['ksm_python'] = @discovered_python
+              Chef::Log.info("Installed Python via windows_package and added #{python_dir} to PATH.")
+            else
+              Chef::Log.warn('Python installed, but the executable could not be located immediately.')
+            end
+          end
+
+        ruby_block 'discover_installed_python' do
+          action :nothing # This block is only triggered by the windows_package notification
+          block &find_python_block
+        end
       end
     end
   end
@@ -324,10 +380,11 @@ action_class do
   end
 
   def python_command(args = '')
-    cmd = which('python3') || which('python')
+    # Prefer any previously discovered Python executable (set by find_python_executable)
+    @discovered_python ||= find_python_executable
+    cmd = @discovered_python || which('python3') || which('python')
     raise 'Python not found' unless cmd
     if platform_family?('windows')
-      # Quote paths on Windows to handle spaces
       "\"#{cmd}\" #{args}".strip
     else
       "#{cmd} #{args}".strip
@@ -336,31 +393,84 @@ action_class do
 
   def which(command)
     if platform_family?('windows')
+      # Use `where` to get candidates, but validate each candidate by running `--version`.
       result = shell_out("where #{command}")
       if result.exitstatus == 0
-        paths = result.stdout.strip.split("\n")
-        # Filter out Windows Store stubs
-        real_path = paths.find { |p| !p.include?('WindowsApps') }
-        return real_path if real_path
+        candidates = result.stdout.split(/\r?\n/).map(&:strip)
+        candidates.each do |p|
+          next unless ::File.exist?(p)
+          # Skip App Execution Aliases / Microsoft Store shims which live under ...WindowsApps...
+          next if p.downcase.include?('windowsapps')
+          begin
+            ver = shell_out("\"#{p}\" --version")
+            return p if ver.exitstatus == 0
+          rescue
+            next
+          end
+        end
       end
 
-      # Check common installation locations only for Python commands
-      if command == 'python3' || command == 'python'
+      # fallback: check common installation locations and validate them
+      if %w(python python3 pip pip3).include?(command)
         common_paths = [
-          'C:\Program Files\Python313\python.exe',
-          'C:\Program Files\Python312\python.exe',
-          "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python313\\python.exe",
-          "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python312\\python.exe",
+          'C:\\Program Files\\Python\\Python39\\python.exe',
+          'C:\\Program Files\\Python\\Python310\\python.exe',
+          'C:\\Program Files\\Python\\Python311\\python.exe',
+          "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python39\\python.exe",
+          "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python310\\python.exe",
+          "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python311\\python.exe"
         ]
-        found = common_paths.find { |p| ::File.exist?(p) }
-        return found if found
+        common_paths.each do |p|
+          next unless p && ::File.exist?(p)
+          begin
+            ver = shell_out("\"#{p}\" --version")
+            return p if ver.exitstatus == 0
+          rescue
+            next
+          end
+        end
       end
+
       nil
     else
       result = shell_out("which #{command}")
       result.exitstatus == 0 ? result.stdout.strip : nil
     end
   rescue
+    nil
+  end
+
+  # Find a real python executable on Windows (avoid Windows Store shims) and validate it.
+  def find_python_executable
+    # Prefer any validated `where`/common candidates first
+    return which('python3') if which('python3')
+    return which('python') if which('python')
+
+    candidates = []
+    # Chocolatey typical locations
+    candidates.concat(Dir.glob('C:/ProgramData/chocolatey/bin/python*.exe'))
+    candidates.concat(Dir.glob('C:/ProgramData/chocolatey/lib/python*/**/python.exe'))
+    # Other common installer locations
+    candidates.concat(Dir.glob('C:/Program Files/Python*/python.exe'))
+    candidates.concat(Dir.glob("#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python*\\python.exe")) if ENV['LOCALAPPDATA']
+    candidates.concat(Dir.glob('C:/tools/**/python.exe'))
+    candidates.concat(Dir.glob('C:/Python*/python.exe'))
+
+    # Deduplicate and validate candidates (skip WindowsApps shims)
+    candidates.map! { |p| p && p.strip }.compact!
+    candidates.uniq!
+
+    candidates.each do |p|
+      next unless ::File.exist?(p)
+      next if p.downcase.include?('windowsapps')
+      begin
+        out = shell_out("\"#{p}\" --version")
+        return p if out.exitstatus == 0
+      rescue
+        next
+      end
+    end
+
     nil
   end
 end

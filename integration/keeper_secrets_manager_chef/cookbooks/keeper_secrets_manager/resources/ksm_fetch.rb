@@ -36,7 +36,9 @@ end
 
 action_class do
   def run_keeper_script
-    python_cmd = which_python
+    # Prefer python discovered during install (persisted into run_state),
+    # then validated candidate (Windows only), then fallback
+    python_cmd = node.run_state['ksm_python'] || (platform_family?('windows') ? find_valid_python : nil) || which_python
     script_path = new_resource.deploy_path
 
     if platform_family?('windows')
@@ -75,14 +77,19 @@ action_class do
 
   def which_python
     if platform_family?('windows')
+      # Prefer the validated python from find_valid_python (skips WindowsApps shims)
+      valid = find_valid_python
+      return valid if valid
+
+      # Fallback: try simple where/query and common locations
       %w(python3 python).each do |cmd|
         result = shell_out("where #{cmd}")
         next unless result.exitstatus == 0
-        paths = result.stdout.strip.split("\n")
-        real_path = paths.find { |p| !p.include?('WindowsApps') }
+        paths = result.stdout.strip.split(/\r?\n/)
+        real_path = paths.find { |p| !p.downcase.include?('windowsapps') && ::File.exist?(p) }
         return real_path if real_path
       end
-      # Check common installation locations
+
       common_paths = [
         'C:\Program Files\Python313\python.exe',
         'C:\Program Files\Python312\python.exe',
@@ -113,5 +120,27 @@ action_class do
       Chef::Log.warn('No Encrypted Data Bag found, falling back to KEEPER_CONFIG environment variable')
       ENV['KEEPER_CONFIG']
     end
+  end
+
+  # helper: find a real python executable on Windows (avoid WindowsApps shims)
+  def find_valid_python
+    # Only run this on Windows
+    return nil unless platform_family?('windows')
+    begin
+      %w(python3 python).each do |c|
+        res = shell_out("where #{c}")
+        next unless res.exitstatus == 0
+        candidates = res.stdout.split(/\r?\n/).map(&:strip)
+        candidates.each do |p|
+          next unless ::File.exist?(p)
+          next if p.downcase.include?('windowsapps')
+          v = shell_out("\"#{p}\" --version")
+          return p if v.exitstatus == 0
+        end
+      end
+    rescue
+      nil
+    end
+    nil
   end
 end

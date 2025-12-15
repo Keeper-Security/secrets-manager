@@ -1,4 +1,41 @@
 require 'spec_helper'
+require 'chefspec'
+require 'chefspec/solo_runner'
+
+describe 'keeper_secrets_manager::fetch (ksm_fetch resource)' do
+  let(:runner) { ChefSpec::SoloRunner.new(platform: 'windows', version: '2019') }
+
+  before do
+    # Generic fallback for any shell_out calls not explicitly stubbed
+    shellout_not_found = double('shell_out', run_command: nil, error!: nil, stdout: '', exitstatus: 1)
+    allow_any_instance_of(Chef::Provider).to receive(:shell_out).and_return(shellout_not_found)
+  end
+
+  let(:chef_run) do
+    # Simulate that installer persisted a discovered python in run_state
+    runner.node.run_state['ksm_python'] = 'C:\\Python\\python.exe'
+    runner.converge('keeper_secrets_manager::fetch')
+  end
+
+  context 'on Windows' do
+    it 'converges the fetch recipe and declares a ksm_fetch resource' do
+      expect { chef_run }.to_not raise_error
+      expect(chef_run.run_context.resource_collection.select { |r| r.resource_name == :ksm_fetch }.length).to be > 0
+    end
+  end
+
+  context 'on Linux' do
+    let(:runner) { ChefSpec::SoloRunner.new(platform: 'ubuntu', version: '22.04') }
+    let(:chef_run) do
+      runner.converge('keeper_secrets_manager::fetch')
+    end
+
+    it 'converges the fetch recipe and declares a ksm_fetch resource' do
+      expect { chef_run }.to_not raise_error
+      expect(chef_run.run_context.resource_collection.select { |r| r.resource_name == :ksm_fetch }.length).to be > 0
+    end
+  end
+end
 
 describe 'ksm_fetch resource' do
   step_into :ksm_fetch
@@ -9,12 +46,12 @@ describe 'ksm_fetch resource' do
   end
 
   before do
+    # Generic fallback for any shell_out calls not explicitly stubbed
+    shellout_not_found = double('shell_out', run_command: nil, error!: nil, stdout: '', exitstatus: 1)
+    allow_any_instance_of(Chef::Provider).to receive(:shell_out).and_return(shellout_not_found)
+
     allow(::File).to receive(:exist?).and_call_original
     allow(::File).to receive(:exist?).with('/custom/input.json').and_return(true)
-
-    # stub_data_bag_item('keeper', 'keeper_config').and_return({
-    #   'config_json' => '{"token":"test-token"}'
-    # })
 
     allow_any_instance_of(Chef::Provider).to receive(:shell_out).with('which python3').and_return(shellout_double_python3)
     allow_any_instance_of(Chef::Provider).to receive(:shell_out).with('which python').and_return(shellout_double_python3)
@@ -208,6 +245,9 @@ describe 'ksm_fetch resource on Windows' do
   end
 
   before do
+    # Generic fallback for any shell_out calls not explicitly stubbed
+    allow_any_instance_of(Chef::Provider).to receive(:shell_out).and_return(shellout_not_found)
+
     allow(::File).to receive(:exist?).and_call_original
     allow(::File).to receive(:exist?).with(real_python_path).and_return(true)
     allow(::File).to receive(:exist?).with(python_with_spaces).and_return(true)
