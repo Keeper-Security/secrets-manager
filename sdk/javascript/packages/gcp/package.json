@@ -4,11 +4,17 @@
   "description": "Keeper Secrets Manager GCP storage",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
     "README.md"
   ],
-  "repository": "https://github.com/Keeper-Security/secrets-manager",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Keeper-Security/secrets-manager.git"
+  },
   "license": "MIT",
   "scripts": {
     "prebuild": "rimraf dist",
