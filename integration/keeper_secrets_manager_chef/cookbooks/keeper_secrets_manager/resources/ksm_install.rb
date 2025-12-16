@@ -51,8 +51,18 @@ end
 # Actions
 action :install do
   install_prerequisites
-  upgrade_pip
-  install_keeper_packages
+
+  # Re-check whether Python is available in this run
+  python_available = !!(node.run_state['ksm_python'] || find_python_executable || which('python3') || which('python'))
+
+  if python_available
+    upgrade_pip
+    install_keeper_packages
+  else
+    Chef::Log.warn('Python not found after prerequisites step. Skipping pip upgrade and package installation for this run. Re-run chef-solo (or open a new shell) to complete installation once PATH is available.')
+  end
+
+  # Always create directories and install script artifacts even if Python isn't yet runnable
   create_directories if new_resource.install_script
   install_scripts if new_resource.install_script
 
@@ -69,7 +79,8 @@ action :install do
     Chef::Log.warn('No Keeper config found in encrypted data bag or environment variable. Skipping config file creation.')
   end
 
-  verify_installation
+  # Only attempt verification if Python is available
+  verify_installation if python_available
 end
 
 action :remove do
@@ -150,62 +161,68 @@ action_class do
       # Windows: prefer existing Python, then Chocolatey, then official installer fallback
       if which('python') || which('python3')
         Chef::Log.info('Python already installed on Windows')
-      elsif which('choco')
-        execute 'install_python_choco' do
-          # Use choco non-interactively and limit output so Chef doesn't hang on interactive prompts
-          command 'choco install python -y --no-progress --limit-output'
-          timeout 3600
-          not_if { which('python') || which('python3') }
-        end
-        # The logic to discover and set PATH for Choco-installed python should follow here
-        @discovered_python = find_python_executable
-        if @discovered_python
-          python_dir = ::File.dirname(@discovered_python)
-          ENV['PATH'] = "#{python_dir};#{ENV['PATH']}"
-          node.run_state['ksm_python'] = @discovered_python
-          Chef::Log.info("Installed Python via Chocolatey and added #{python_dir} to PATH.")
-        else
-          Chef::Log.warn('Python installed via Chocolatey but executable could not be located in this run.')
-        end
       else
-        target_version = '3.11.7'  # Specify desired Python version here
+        target_version = '3.11.7' # Specify desired Python version here
 
-        # Define the installer URL for a known architecture
-        installer_url = "https://www.python.org/ftp/python/#{target_version}/python-#{target_version}-amd64.exe"
-        
+        # Detect Windows CPU architecture and choose correct installer suffix
+        arch = begin
+                 # prefer PROCESSOR_ARCHITEW6432 on WOW64 processes
+                 proc_arch = ENV['PROCESSOR_ARCHITEW6432'] || ENV['PROCESSOR_ARCHITECTURE'] || ''
+                 proc_arch = proc_arch.downcase
+                 proc_arch
+               rescue
+                 ''
+               end
+
+        suffix = case arch
+                 when /arm64/i
+                   '-arm64.exe'
+                 when /amd64|x86_64|x64/i
+                   '-amd64.exe'
+                 when /x86|i386|32/i
+                   '.exe' # upstream 32-bit installer usually has no arch suffix
+                 else
+                   # fallback: prefer amd64 on modern systems, but log a warning
+                   Chef::Log.warn("Unknown Windows processor architecture '#{arch}', defaulting to amd64 installer")
+                   '-amd64.exe'
+                 end
+
+        # Build installer URL using chosen suffix
+        installer_url = "https://www.python.org/ftp/python/#{target_version}/python-#{target_version}#{suffix}"
+
         Chef::Log.warn("Choco unavailable. Falling back to installing Python #{target_version} using `windows_package`.")
 
         windows_package 'Python Installer' do
           # The package name is what you will see in 'Add or Remove Programs'
-          package_name "Python #{target_version} (64-bit)" 
+          package_name "Python #{target_version} (64-bit)"
           source installer_url
           # The installer arguments for a silent, all-user install that updates the PATH
           installer_type :custom
-          options "/quiet InstallAllUsers=1 PrependPath=1 Include_pip=1"
+          options '/quiet InstallAllUsers=1 PrependPath=1 Include_pip=1'
           # Only run if python isn't already found
-          not_if { which('python') || which('python3') } 
-          
+          not_if { which('python') || which('python3') }
+
           # Use a ruby_block to find and update the PATH immediately after installation
-          notifies :run, 'ruby_block[discover_installed_python]', :immediate
+          notifies :run, 'ruby_block[discover_installed_python]', :immediately
         end
 
         # Block to discover and register the newly installed Python in run_state
         find_python_block = proc do
-            @discovered_python = find_python_executable
-            if @discovered_python
-              python_dir = ::File.dirname(@discovered_python)
-              # Update ENV['PATH'] for subsequent resources in this Chef run
-              ENV['PATH'] = "#{python_dir};#{ENV['PATH']}"
-              node.run_state['ksm_python'] = @discovered_python
-              Chef::Log.info("Installed Python via windows_package and added #{python_dir} to PATH.")
-            else
-              Chef::Log.warn('Python installed, but the executable could not be located immediately.')
-            end
+          @discovered_python = find_python_executable
+          if @discovered_python
+            python_dir = ::File.dirname(@discovered_python)
+            # Update ENV['PATH'] for subsequent resources in this Chef run
+            ENV['PATH'] = "#{python_dir};#{ENV['PATH']}"
+            node.run_state['ksm_python'] = @discovered_python
+            Chef::Log.info("Installed Python via windows_package and added #{python_dir} to PATH.")
+          else
+            Chef::Log.warn('Python installed, but the executable could not be located immediately.')
           end
+        end
 
         ruby_block 'discover_installed_python' do
           action :nothing # This block is only triggered by the windows_package notification
-          block &find_python_block
+          block(&find_python_block)
         end
       end
     end
@@ -219,13 +236,11 @@ action_class do
       python_cmd = python_command('-m pip install --upgrade pip')
       user_flag = new_resource.user_install ? '--user' : ''
       pip_upgrade_cmd = "#{python_cmd} #{user_flag}".strip
-    else
+    elsif platform_family?('mac_os_x') && new_resource.user_install
       # For macOS, we need --break-system-packages even with --user when upgrading pip
-      if platform_family?('mac_os_x') && new_resource.user_install
-        pip_upgrade_cmd = pip_command('install --upgrade pip --break-system-packages')
-      else
-        pip_upgrade_cmd = pip_command('install --upgrade pip')
-      end
+      pip_upgrade_cmd = pip_command('install --upgrade pip --break-system-packages')
+    else
+      pip_upgrade_cmd = pip_command('install --upgrade pip')
     end
 
     execute 'upgrade_pip' do
@@ -346,15 +361,13 @@ action_class do
       if platform_family?('windows')
         # Quote paths on Windows to handle spaces
         "\"#{pip_cmd}\" #{args} #{user_flag}".strip
-      else
+      elsif new_resource.user_install
         # On macOS/Linux: skip sudo if user_install is true OR if running as root
-        if new_resource.user_install
-          "#{pip_cmd} #{args} #{user_flag} #{macos_flag}".strip
-        elsif Process.uid == 0  # Running as root (uid 0)
-          "#{pip_cmd} #{args}".strip
-        else
-          "sudo #{pip_cmd} #{args}".strip
-        end
+        "#{pip_cmd} #{args} #{user_flag} #{macos_flag}".strip
+      elsif Process.uid == 0 # Running as root (uid 0)
+        "#{pip_cmd} #{args}".strip
+      else
+        "sudo #{pip_cmd} #{args}".strip
       end
     else
       # Fallback to python -m pip (pip not in PATH but Python is available)
@@ -418,7 +431,7 @@ action_class do
           'C:\\Program Files\\Python\\Python311\\python.exe',
           "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python39\\python.exe",
           "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python310\\python.exe",
-          "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python311\\python.exe"
+          "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python311\\python.exe",
         ]
         common_paths.each do |p|
           next unless p && ::File.exist?(p)

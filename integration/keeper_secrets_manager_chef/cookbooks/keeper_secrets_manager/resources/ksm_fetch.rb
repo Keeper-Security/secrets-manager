@@ -125,7 +125,7 @@ action_class do
   # helper: find a real python executable on Windows (avoid WindowsApps shims)
   def find_valid_python
     # Only run this on Windows
-    return nil unless platform_family?('windows')
+    return unless platform_family?('windows')
     begin
       %w(python3 python).each do |c|
         res = shell_out("where #{c}")

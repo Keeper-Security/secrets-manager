@@ -65,11 +65,18 @@ Before creating encrypted data bags, you need to create a shared **secret file**
 Run the following commands:
 
 ```bash
+# MacOS/Linux: 
 # Create directory for Chef secrets if it doesn't exist
 sudo mkdir -p /etc/chef
 
 # Generate a base64-encoded secret and store it securely
 openssl rand -base64 512 | sudo tee /etc/chef/encrypted_data_bag_secret > /dev/null
+
+# Windows: Generate a base64-encoded secret and store it securely
+New-Item -ItemType Directory -Path C:\chef -Force
+$bytes = New-Object 'System.Byte[]' 512
+[System.Security.Cryptography.RNGCryptoServiceProvider]::Create().GetBytes($bytes)
+[Convert]::ToBase64String($bytes) | Out-File -FilePath 'C:\chef\encrypted_data_bag_secret' -Encoding ASCII -Force
 
 
 #### Configuring Encrypted Data Bags

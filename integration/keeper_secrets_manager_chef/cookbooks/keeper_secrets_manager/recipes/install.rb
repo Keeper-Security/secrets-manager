@@ -6,7 +6,7 @@
 
 # Install Keeper Python SDK with sensible defaults
 ksm_install 'keeper_secrets_manager' do
-  user_install node['platform_family'] == 'mac_os_x' ? true : false
+  user_install platform_family?('mac_os_x')
   action :install
 end
 

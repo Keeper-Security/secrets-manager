@@ -1,4 +1,4 @@
-# 
+#
 # Cookbook:: keeper_secrets_manager
 # Recipe:: fetch
 #
@@ -8,10 +8,20 @@ directory ::File.dirname(target) do
   recursive true
   action :create
 end
+
+# Determine group based on platform
+file_group = if platform_family?('mac_os_x')
+               'wheel'
+             elsif platform_family?('windows')
+               nil
+             else
+               'root'
+             end
+
 cookbook_file target do
   source 'input.json' # looks in files/default/input.json
   owner 'root' unless platform_family?('windows')
-  group platform_family?('mac_os_x') ? 'wheel' : (platform_family?('windows') ? nil : 'root')
+  group file_group
   mode '0644'
   sensitive true
   action :create
