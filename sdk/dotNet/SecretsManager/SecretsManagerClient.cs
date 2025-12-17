@@ -465,6 +465,19 @@ namespace SecretsManager
         }
     }
 
+    internal class KeeperRecordComparer : IEqualityComparer<KeeperRecord>
+    {
+        public bool Equals(KeeperRecord x, KeeperRecord y)
+        {
+            return x.RecordUid == y.RecordUid;
+        }
+
+        public int GetHashCode(KeeperRecord obj)
+        {
+            return obj.RecordUid?.GetHashCode() ?? 0;
+        }
+    }
+
     public class KeeperFolder
     {
         public KeeperFolder(byte[] folderKey, string folderUid, string parentUid, string name)
@@ -687,8 +700,10 @@ namespace SecretsManager
             {
                 var secrets = await GetSecrets(options, new string[] { recordToken });
                 records = secrets?.Records;
-                if ((records?.Count() ?? 0) > 1)
-                    throw new Exception($"Notation error - found multiple records with same UID '{recordToken}'");
+
+                // OK: multiple records matching same UID - shortcuts/linked records
+                //if ((records?.Count() ?? 0) > 1)
+                //    throw new Exception($"Notation error - found multiple records with same UID '{recordToken}'");
             }
 
             // If RecordUID is not found - pull all records and search by title
@@ -697,6 +712,10 @@ namespace SecretsManager
                 var secrets = await GetSecrets(options);
                 records = (secrets?.Records != null ? secrets.Records.Where(x => recordToken.Equals(x?.Data?.title)).ToArray() : null);
             }
+
+            // remove duplicate UIDs - these can only be shortcuts/linked records both shared to same KSM App
+            if ((records?.Count() ?? 0) > 1)
+                records = records.Distinct(new KeeperRecordComparer()).ToArray();
 
             if ((records?.Count() ?? 0) > 1)
                 throw new Exception($"Notation error - multiple records match record '{recordToken}'");
