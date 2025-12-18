@@ -44,6 +44,10 @@ module KeeperSecretsManager
           records = all_records.select { |r| r.title == record_token }
         end
 
+        # Remove duplicate UIDs - shortcuts/linked records both shared to same KSM App
+        records = records.uniq { |r| r.uid } if records.size > 1
+
+        # Now check for genuine ambiguity (different records with same title)
         raise NotationError, "Multiple records match '#{record_token}'" if records.size > 1
         raise NotationError, "No records match '#{record_token}'" if records.empty?
 
