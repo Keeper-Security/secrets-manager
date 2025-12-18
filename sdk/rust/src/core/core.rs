@@ -2924,11 +2924,17 @@ impl SecretsManager {
         if re.is_match(&record_token) {
             let re_array = vec![record_token.clone()];
             records = self.get_secrets(re_array)?;
+            // Remove duplicate UIDs - shortcuts/linked records both shared to same KSM App
             if records.len() > 1 {
-                return Err(KSMRError::NotationError(format!(
-                    "found more than one record with same uid/title: {}",
-                    record_token
-                )));
+                let mut seen_uids = std::collections::HashSet::new();
+                records.retain(|record| {
+                    if seen_uids.contains(&record.uid) {
+                        false
+                    } else {
+                        seen_uids.insert(record.uid.clone());
+                        true
+                    }
+                });
             }
         }
         if records.is_empty() {
