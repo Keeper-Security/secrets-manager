@@ -839,8 +839,15 @@ export const getNotationResults = async (options: SecretManagerOptions, notation
     if (/^[A-Za-z0-9_-]{22}$/.test(recordToken)) {
         const secrets = await getSecrets(options, [recordToken])
         records = secrets.records
-        if (records.length > 1)
-            throw new Error(`Notation error - found multiple records with same UID '${recordToken}'`)
+        // Remove duplicate UIDs - shortcuts/linked records both shared to same KSM App
+        if (records.length > 1) {
+            const seen = new Set<string>()
+            records = records.filter(r => {
+                if (seen.has(r.recordUid)) return false
+                seen.add(r.recordUid)
+                return true
+            })
+        }
     }
 
     // If RecordUID is not found - pull all records and search by title
