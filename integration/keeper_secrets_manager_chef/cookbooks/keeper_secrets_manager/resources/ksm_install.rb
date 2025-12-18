@@ -51,8 +51,18 @@ end
 # Actions
 action :install do
   install_prerequisites
-  upgrade_pip
-  install_keeper_packages
+
+  # Re-check whether Python is available in this run
+  python_available = !!(node.run_state['ksm_python'] || find_python_executable || which('python3') || which('python'))
+
+  if python_available
+    upgrade_pip
+    install_keeper_packages
+  else
+    Chef::Log.warn('Python not found after prerequisites step. Skipping pip upgrade and package installation for this run. Re-run chef-solo (or open a new shell) to complete installation once PATH is available.')
+  end
+
+  # Always create directories and install script artifacts even if Python isn't yet runnable
   create_directories if new_resource.install_script
   install_scripts if new_resource.install_script
 
@@ -69,7 +79,8 @@ action :install do
     Chef::Log.warn('No Keeper config found in encrypted data bag or environment variable. Skipping config file creation.')
   end
 
-  verify_installation
+  # Only attempt verification if Python is available
+  verify_installation if python_available
 end
 
 action :remove do
@@ -147,10 +158,72 @@ action_class do
         only_if 'which brew'
       end
     when 'windows'
-      chocolatey_package 'python3' do
-        action :install
-        not_if 'where python || where python3'
-        only_if 'where choco'
+      # Windows: prefer existing Python, then Chocolatey, then official installer fallback
+      if which('python') || which('python3')
+        Chef::Log.info('Python already installed on Windows')
+      else
+        target_version = '3.11.7' # Specify desired Python version here
+
+        # Detect Windows CPU architecture and choose correct installer suffix
+        arch = begin
+                 # prefer PROCESSOR_ARCHITEW6432 on WOW64 processes
+                 proc_arch = ENV['PROCESSOR_ARCHITEW6432'] || ENV['PROCESSOR_ARCHITECTURE'] || ''
+                 proc_arch = proc_arch.downcase
+                 proc_arch
+               rescue
+                 ''
+               end
+
+        suffix = case arch
+                 when /arm64/i
+                   '-arm64.exe'
+                 when /amd64|x86_64|x64/i
+                   '-amd64.exe'
+                 when /x86|i386|32/i
+                   '.exe' # upstream 32-bit installer usually has no arch suffix
+                 else
+                   # fallback: prefer amd64 on modern systems, but log a warning
+                   Chef::Log.warn("Unknown Windows processor architecture '#{arch}', defaulting to amd64 installer")
+                   '-amd64.exe'
+                 end
+
+        # Build installer URL using chosen suffix
+        installer_url = "https://www.python.org/ftp/python/#{target_version}/python-#{target_version}#{suffix}"
+
+        Chef::Log.warn("Choco unavailable. Falling back to installing Python #{target_version} using `windows_package`.")
+
+        windows_package 'Python Installer' do
+          # The package name is what you will see in 'Add or Remove Programs'
+          package_name "Python #{target_version} (64-bit)"
+          source installer_url
+          # The installer arguments for a silent, all-user install that updates the PATH
+          installer_type :custom
+          options '/quiet InstallAllUsers=1 PrependPath=1 Include_pip=1'
+          # Only run if python isn't already found
+          not_if { which('python') || which('python3') }
+
+          # Use a ruby_block to find and update the PATH immediately after installation
+          notifies :run, 'ruby_block[discover_installed_python]', :immediately
+        end
+
+        # Block to discover and register the newly installed Python in run_state
+        find_python_block = proc do
+          @discovered_python = find_python_executable
+          if @discovered_python
+            python_dir = ::File.dirname(@discovered_python)
+            # Update ENV['PATH'] for subsequent resources in this Chef run
+            ENV['PATH'] = "#{python_dir};#{ENV['PATH']}"
+            node.run_state['ksm_python'] = @discovered_python
+            Chef::Log.info("Installed Python via windows_package and added #{python_dir} to PATH.")
+          else
+            Chef::Log.warn('Python installed, but the executable could not be located immediately.')
+          end
+        end
+
+        ruby_block 'discover_installed_python' do
+          action :nothing # This block is only triggered by the windows_package notification
+          block(&find_python_block)
+        end
       end
     end
   end
@@ -158,7 +231,17 @@ action_class do
   def upgrade_pip
     Chef::Log.info('Upgrading pip to latest version')
 
-    pip_upgrade_cmd = pip_command('install --upgrade pip')
+    if platform_family?('windows')
+      # On Windows, use python -m pip to avoid file locking issues
+      python_cmd = python_command('-m pip install --upgrade pip')
+      user_flag = new_resource.user_install ? '--user' : ''
+      pip_upgrade_cmd = "#{python_cmd} #{user_flag}".strip
+    elsif platform_family?('mac_os_x') && new_resource.user_install
+      # For macOS, we need --break-system-packages even with --user when upgrading pip
+      pip_upgrade_cmd = pip_command('install --upgrade pip --break-system-packages')
+    else
+      pip_upgrade_cmd = pip_command('install --upgrade pip')
+    end
 
     execute 'upgrade_pip' do
       command pip_upgrade_cmd
@@ -256,14 +339,11 @@ action_class do
   # --- Encrypted Data Bag Loader ---
   def load_keeper_config
     begin
-      # keeper_config = data_bag_item('keeper', 'keeper_config', IO.read('/etc/chef/encrypted_data_bag_secret'))
-      # keeper_config['config_json'] || keeper_config['token']
-
-      secret = Chef::EncryptedDataBagItem.load_secret('/etc/chef/encrypted_data_bag_secret')
-      keeper_config = data_bag_item('keeper', 'keeper_config', secret)
+      # Chef automatically uses encrypted_data_bag_secret from config
+      keeper_config = data_bag_item('keeper', 'keeper_config')
       keeper_config['config_json'] || keeper_config['token']
-    rescue Net::HTTPClientException, Chef::Exceptions::InvalidDataBagPath, Errno::ENOENT
-      Chef::Log.warn('No Encrypted Data Bag or environment variable found for KEEPER_CONFIG!')
+    rescue Net::HTTPClientException, Chef::Exceptions::InvalidDataBagPath, Errno::ENOENT, Chef::Exceptions::SecretNotFound
+      Chef::Log.warn('No Encrypted Data Bag found, falling back to KEEPER_CONFIG environment variable')
       ENV['KEEPER_CONFIG']
     end
   end
@@ -271,36 +351,139 @@ action_class do
   private
 
   def pip_command(args)
-    pip_cmd = which('pip3') || which('pip') || python_command('-m pip')
+    pip_cmd = which('pip3') || which('pip')
     user_flag = new_resource.user_install ? '--user' : ''
+    # On macOS, we need --break-system-packages even with --user
+    macos_flag = platform_family?('mac_os_x') && new_resource.user_install ? '--break-system-packages' : ''
 
-    if platform_family?('windows') && new_resource.user_install
-      "#{pip_cmd} #{args} #{user_flag}".strip
+    if pip_cmd
+      # pip executable found, use it directly
+      if platform_family?('windows')
+        # Quote paths on Windows to handle spaces
+        "\"#{pip_cmd}\" #{args} #{user_flag}".strip
+      elsif new_resource.user_install
+        # On macOS/Linux: skip sudo if user_install is true OR if running as root
+        "#{pip_cmd} #{args} #{user_flag} #{macos_flag}".strip
+      elsif Process.uid == 0 # Running as root (uid 0)
+        "#{pip_cmd} #{args}".strip
+      else
+        "sudo #{pip_cmd} #{args}".strip
+      end
     else
-      "sudo #{pip_cmd} #{args}".strip
+      # Fallback to python -m pip (pip not in PATH but Python is available)
+      pip_cmd = python_command('-m pip')
+      "#{pip_cmd} #{args} #{user_flag} #{macos_flag}".strip
     end
   end
 
   def pip_show_command(package)
     pip_cmd = which('pip3') || which('pip')
-    "#{pip_cmd} show #{package}"
+    if pip_cmd
+      if platform_family?('windows')
+        # Quote paths on Windows to handle spaces
+        "\"#{pip_cmd}\" show #{package}"
+      else
+        "#{pip_cmd} show #{package}"
+      end
+    else
+      # Fallback to python -m pip (pip not in PATH but Python is available)
+      pip_cmd = python_command('-m pip show')
+      "#{pip_cmd} #{package}"
+    end
   end
 
   def python_command(args = '')
-    cmd = which('python3') || which('python')
+    # Prefer any previously discovered Python executable (set by find_python_executable)
+    @discovered_python ||= find_python_executable
+    cmd = @discovered_python || which('python3') || which('python')
     raise 'Python not found' unless cmd
-    "#{cmd} #{args}".strip
+    if platform_family?('windows')
+      "\"#{cmd}\" #{args}".strip
+    else
+      "#{cmd} #{args}".strip
+    end
   end
 
   def which(command)
     if platform_family?('windows')
+      # Use `where` to get candidates, but validate each candidate by running `--version`.
       result = shell_out("where #{command}")
-      result.exitstatus == 0 ? result.stdout.strip.split("\n").first : nil
+      if result.exitstatus == 0
+        candidates = result.stdout.split(/\r?\n/).map(&:strip)
+        candidates.each do |p|
+          next unless ::File.exist?(p)
+          # Skip App Execution Aliases / Microsoft Store shims which live under ...WindowsApps...
+          next if p.downcase.include?('windowsapps')
+          begin
+            ver = shell_out("\"#{p}\" --version")
+            return p if ver.exitstatus == 0
+          rescue
+            next
+          end
+        end
+      end
+
+      # fallback: check common installation locations and validate them
+      if %w(python python3 pip pip3).include?(command)
+        common_paths = [
+          'C:\\Program Files\\Python\\Python39\\python.exe',
+          'C:\\Program Files\\Python\\Python310\\python.exe',
+          'C:\\Program Files\\Python\\Python311\\python.exe',
+          "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python39\\python.exe",
+          "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python310\\python.exe",
+          "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python311\\python.exe",
+        ]
+        common_paths.each do |p|
+          next unless p && ::File.exist?(p)
+          begin
+            ver = shell_out("\"#{p}\" --version")
+            return p if ver.exitstatus == 0
+          rescue
+            next
+          end
+        end
+      end
+
+      nil
     else
       result = shell_out("which #{command}")
       result.exitstatus == 0 ? result.stdout.strip : nil
     end
   rescue
+    nil
+  end
+
+  # Find a real python executable on Windows (avoid Windows Store shims) and validate it.
+  def find_python_executable
+    # Prefer any validated `where`/common candidates first
+    return which('python3') if which('python3')
+    return which('python') if which('python')
+
+    candidates = []
+    # Chocolatey typical locations
+    candidates.concat(Dir.glob('C:/ProgramData/chocolatey/bin/python*.exe'))
+    candidates.concat(Dir.glob('C:/ProgramData/chocolatey/lib/python*/**/python.exe'))
+    # Other common installer locations
+    candidates.concat(Dir.glob('C:/Program Files/Python*/python.exe'))
+    candidates.concat(Dir.glob("#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python*\\python.exe")) if ENV['LOCALAPPDATA']
+    candidates.concat(Dir.glob('C:/tools/**/python.exe'))
+    candidates.concat(Dir.glob('C:/Python*/python.exe'))
+
+    # Deduplicate and validate candidates (skip WindowsApps shims)
+    candidates.map! { |p| p && p.strip }.compact!
+    candidates.uniq!
+
+    candidates.each do |p|
+      next unless ::File.exist?(p)
+      next if p.downcase.include?('windowsapps')
+      begin
+        out = shell_out("\"#{p}\" --version")
+        return p if out.exitstatus == 0
+      rescue
+        next
+      end
+    end
+
     nil
   end
 end

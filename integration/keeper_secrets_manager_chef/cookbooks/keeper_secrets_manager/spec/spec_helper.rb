@@ -6,9 +6,8 @@ RSpec.configure do |config|
     allow(File).to receive(:exist?).and_call_original
     allow(File).to receive(:read).and_call_original
 
-    # Stub only the Chef secret file
-    allow(File).to receive(:exist?).with('/etc/chef/encrypted_data_bag_secret').and_return(true)
-    allow(File).to receive(:read).with('/etc/chef/encrypted_data_bag_secret').and_return('fake-secret')
+    # NOTE: Chef automatically handles encrypted_data_bag_secret path on all platforms
+    # No need to stub the hardcoded path since we removed it from the code
 
     # Stub encrypted data bag load to return a predictable fake
     allow(Chef::EncryptedDataBagItem).to receive(:load_secret).and_return('fake-secret')
