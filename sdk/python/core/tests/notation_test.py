@@ -506,3 +506,47 @@ class NotationTest(unittest.TestCase):
                 os.unlink(fh.name)
             except OSError:
                 pass
+
+    def test_duplicate_uid_notation(self):
+        """ Test notation with duplicate UIDs (shortcuts/linked records)
+
+        When a KSM application has access to both an original record and its shortcut,
+        the same UID appears multiple times but should not be treated as ambiguous.
+        """
+
+        try:
+            with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+                fh.write(MockConfig.make_json())
+                fh.seek(0)
+                secrets_manager = SecretsManager(config=FileKeyValueStorage(config_file_location=fh.name))
+
+                # Create response with duplicate UID (simulating original + shortcut)
+                res = mock.Response()
+
+                # Add same record twice with same UID (shortcut scenario)
+                record = res.add_record(title="Test Record", record_type="login")
+                record.field("login", "testuser")
+                record.field("password", "testpass")
+                test_uid = record.uid
+
+                # Add the same record again with same UID (simulating shortcut)
+                record2 = res.add_record(title="Test Record Shortcut", record_type="login", uid=test_uid)
+                record2.field("login", "testuser")
+                record2.field("password", "testpass")
+
+                res_queue = mock.ResponseQueue(client=secrets_manager)
+                res_queue.add_response(res)
+                res_queue.add_response(res)
+
+                # Should not raise error, should deduplicate and return value
+                value = secrets_manager.get_notation(f"keeper://{test_uid}/field/login")
+                self.assertEqual("testuser", value, "did not handle duplicate UID correctly")
+
+                value = secrets_manager.get_notation(f"keeper://{test_uid}/field/password")
+                self.assertEqual("testpass", value, "did not handle duplicate UID correctly")
+
+        finally:
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass
