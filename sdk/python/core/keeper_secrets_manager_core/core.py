@@ -1249,8 +1249,15 @@ class SecretsManager:
         if re.fullmatch(r"^[A-Za-z0-9_-]{22}$", record_token):
             secrets = self.get_secrets([record_token])
             records = secrets if isinstance(secrets, list) else []
+            # Remove duplicate UIDs - shortcuts/linked records both shared to same KSM App
             if len(records) > 1:
-                raise ValueError(f"Notation error - found multiple records with same UID '{record_token}'")
+                seen_uids = set()
+                unique_records = []
+                for record in records:
+                    if record.uid not in seen_uids:
+                        seen_uids.add(record.uid)
+                        unique_records.append(record)
+                records = unique_records
 
         # If RecordUID is not found - pull all records and search by title
         if len(records) < 1:
@@ -1563,8 +1570,15 @@ class SecretsManager:
         if re.fullmatch(r"^[A-Za-z0-9_-]{22}$", record_token):
             secrets = self.get_secrets([record_token])
             records = secrets if isinstance(secrets, list) else []
+            # Remove duplicate UIDs - shortcuts/linked records both shared to same KSM App
             if len(records) > 1:
-                raise ValueError(f"Notation error - found multiple records with same UID '{record_token}'")
+                seen_uids = set()
+                unique_records = []
+                for record in records:
+                    if record.uid not in seen_uids:
+                        seen_uids.add(record.uid)
+                        unique_records.append(record)
+                records = unique_records
 
         # If RecordUID is not found - pull all records and search by title
         if len(records) < 1:
