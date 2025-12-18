@@ -873,8 +873,10 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
     if (recordToken.matches(Regex("""^[A-Za-z0-9_-]{22}$"""))) {
         val secrets = getSecrets(options, listOf<String>(recordToken))
         records = secrets.records
-        if (records.size > 1)
-            throw Exception("Notation error - found multiple records with same UID '$recordToken'")
+        // Remove duplicate UIDs - shortcuts/linked records both shared to same KSM App
+        if (records.size > 1) {
+            records = records.distinctBy { it.recordUid }
+        }
     }
 
     // If RecordUID is not found - pull all records and search by title
