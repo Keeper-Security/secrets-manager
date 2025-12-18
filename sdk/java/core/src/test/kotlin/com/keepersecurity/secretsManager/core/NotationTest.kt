@@ -169,4 +169,50 @@ internal class NotationTest {
         assertEquals("0", res[2].index1!!.first)
         assertEquals("middle", res[2].index2!!.first)
     }
+
+    @Test
+    fun handlesDuplicateUIDs() {
+        // When a KSM application has access to both an original record and its shortcut,
+        // the same UID appears multiple times but should not be treated as ambiguous
+        val duplicateUID = "ABC123XYZ123456789AB"
+
+        val secretsWithDuplicates = KeeperSecrets(
+            AppData("", ""),
+            listOf(
+                KeeperRecord(
+                    ByteArray(0), duplicateUID,
+                    data = KeeperRecordData(
+                        "Original Record",
+                        "login",
+                        mutableListOf(
+                            Login(value = mutableListOf("testuser")),
+                            Password(value = mutableListOf("testpass"))
+                        ),
+                        mutableListOf()
+                    ),
+                    revision = 0
+                ),
+                KeeperRecord(
+                    ByteArray(0), duplicateUID,  // Same UID (shortcut scenario)
+                    data = KeeperRecordData(
+                        "Shortcut Record",
+                        "login",
+                        mutableListOf(
+                            Login(value = mutableListOf("testuser")),
+                            Password(value = mutableListOf("testpass"))
+                        ),
+                        mutableListOf()
+                    ),
+                    revision = 0
+                )
+            )
+        )
+
+        // Should not throw error, should deduplicate and return value
+        var value = getValue(secretsWithDuplicates, "keeper://${duplicateUID}/field/login")
+        assertEquals("testuser", value)
+
+        value = getValue(secretsWithDuplicates, "keeper://${duplicateUID}/field/password")
+        assertEquals("testpass", value)
+    }
 }
