@@ -13,3 +13,4 @@ pyyaml
 update-checker
 psutil
 boto3
+keyring
