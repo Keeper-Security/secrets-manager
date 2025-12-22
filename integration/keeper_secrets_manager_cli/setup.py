@@ -22,7 +22,8 @@ install_requires = [
     'pyyaml',
     'update-checker',
     'psutil',
-    'boto3'
+    'boto3',
+    'keyring'
 ]
 
 # Version set in the keeper_secrets_manager_cli.version file.
