@@ -780,10 +780,8 @@ impl SecretsManager {
                 // Try to get as number first (which is what server actually sends)
                 if let Some(key_id_num) = key_id_val.as_u64() {
                     Some(key_id_num.to_string())
-                } else if let Some(key_id_str) = key_id_val.as_str() {
-                    Some(key_id_str.to_string())
                 } else {
-                    None
+                    key_id_val.as_str().map(|key_id_str| key_id_str.to_string())
                 }
             } else {
                 None
@@ -1305,8 +1303,8 @@ impl SecretsManager {
             secrets_manager_response = self.fetch_and_decrypt_secrets(query_options_clone)?;
         }
 
-        if secrets_manager_response.warnings.is_some() {
-            warn!("{}", secrets_manager_response.warnings.as_ref().unwrap());
+        if let Some(warnings) = &secrets_manager_response.warnings {
+            warn!("{}", warnings);
         }
 
         Ok(secrets_manager_response)
