@@ -31,6 +31,7 @@ from .sync import Sync
 from .profile import Profile
 from .init import Init
 from .config import Config
+from .interpolate import Interpolate
 
 
 global_config = Config()
@@ -76,7 +77,8 @@ class AliasedGroup(HelpColorsGroup):
         "record",
         "file",
         "cache",
-        "record-type-dir"
+        "record-type-dir",
+        "interpolate"
     ]
 
     alias_commands = {
@@ -1139,6 +1141,55 @@ def exec_command(ctx, capture_output, inline, cmd):
     ex.execute(cmd=cmd, capture_output=capture_output, inline=inline)
 
 
+# INTERPOLATE COMMAND
+
+
+@click.command(
+    name='interpolate',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.option('-o', '--output-file', help='Write to file instead of stdout')
+@click.option('-w', '--in-place', is_flag=True, help='Edit files in place')
+@click.option('-b', '--backup-suffix', default='.bak', help='Backup suffix when using -w (default: .bak)')
+@click.option('-n', '--dry-run', is_flag=True, help='Show what would be replaced')
+@click.option('-v', '--verbose', is_flag=True, help='Verbose output')
+@click.option('-C', '--continue', is_flag=True, help='Continue on errors')
+@click.option('--validate', is_flag=True, help='Ensure all notations resolved')
+@click.option('--allow-unsafe-for-eval', is_flag=True,
+              help='[RISKY] Allow secrets with shell metacharacters (dangerous with eval/source)')
+@click.argument('input_file', type=click.Path(exists=True), required=False, nargs=-1)
+@click.pass_context
+def interpolate_command(ctx, output_file, in_place, backup_suffix, dry_run, verbose, input_file, **kwargs):
+    """Replace Keeper notation in files with secret values
+
+    SECURITY WARNING: Never use 'eval' or 'source' with interpolate output unless
+    you fully trust all users with Keeper write access. Malicious users could inject
+    arbitrary commands via newlines or shell metacharacters in secret values.
+
+    Safe usage:
+      ksm interpolate secrets.env -o /tmp/secrets.env
+      source /tmp/secrets.env && rm /tmp/secrets.env
+
+    Unsafe usage (requires --allow-unsafe-for-eval):
+      eval "$(ksm interpolate secrets.env --allow-unsafe-for-eval)"
+    """
+    interp = Interpolate(cli=ctx.obj["cli"])
+    # Pass the 'continue' parameter using its full name since it's a Python keyword
+    continue_on_error = kwargs.get('continue', False)
+    interp.interpolate(
+        input_file=input_file,
+        output_file=output_file,
+        in_place=in_place,
+        backup_suffix=backup_suffix,
+        dry_run=dry_run,
+        verbose=verbose,
+        continue_on_error=continue_on_error,
+        validate=kwargs.get('validate', False),
+        allow_unsafe_for_eval=kwargs.get('allow_unsafe_for_eval', False)
+    )
+
+
 # CONFIG COMMAND
 @click.group(
     name='config',
@@ -1401,15 +1452,43 @@ def help_command(ctx):
               # not_required_if=[('type','json')],
               required_if=[('type', 'azure'), ('type', 'aws'), ('type', 'gcp')]
               )
-@click.option('--type', '-t', type=click.Choice(['aws', 'azure', 'gcp', 'json']), default='json', help="Type of the target key/value storage (aws, azure, gcp, json).", show_default=True)
+@click.option('--type', '-t', 'sync_type', type=click.Choice(['aws', 'azure', 'gcp', 'json']), default='json', help="Type of the target key/value storage (aws, azure, gcp, json).", show_default=True)
 @click.option('--dry-run', '-n', is_flag=True, help='Perform a trial run with no changes made.')
 @click.option('--preserve-missing', '-p', is_flag=True, help='Preserve destination value when source value is deleted.')
-@click.option('--map', '-m', nargs=2, type=(str, str), multiple=True, required=True, metavar="<KEY NOTATION>...", help='Map destination key names to values using notation URI.')
+@click.option('--map', '-m', 'maps', nargs=2, type=(str, str), multiple=True, metavar="<KEY NOTATION>...", help='Map destination key names to values using notation URI.')
+@click.option('--record', '-r', 'records', type=str, multiple=True, metavar="<TITLE_OR_UID>...", help='Record title or UID to sync (only for type=aws).')
+@click.option('--folder', '-f', 'folders', type=str, multiple=True, metavar="<FOLDER>...", help='Folder UID, path, or title to sync all records from (only for type=aws).')
+@click.option('--folder-recursive', '-fr', 'folders_recursive', type=str, multiple=True, metavar="<FOLDER>...", help='Folder UID, path, or title to sync all records from recursively (only for type=aws).')
+@click.option('--raw-json', '-rj', is_flag=True, help='Store full JSON in KMS secret (only for type=aws).')
 @click.pass_context
-def sync_command(ctx, credentials, type, dry_run, preserve_missing, map):
+def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, records, folders, folders_recursive, raw_json):
     """Sync selected keys from Keeper vault to secure cloud based key value store"""
+
+    # Validation for AWS only options (unless type=json)
+    if sync_type != 'json':
+        if records and sync_type != 'aws':
+            raise KsmCliException("--record/-r option is only supported with type=aws")
+
+        if folders and sync_type != 'aws':
+            raise KsmCliException("--folder/-f option is only supported with type=aws")
+
+        if folders_recursive and sync_type != 'aws':
+            raise KsmCliException("--folder-recursive/-fr option is only supported with type=aws")
+
+        if raw_json and sync_type != 'aws':
+            print(Fore.YELLOW + "Warning: --raw-json/-rj flag is only supported with type=aws, ignoring..." + Style.RESET_ALL, file=sys.stderr)
+            raw_json = False
+
+    # Validate that required options are provided based on type
+    if sync_type == 'aws' or sync_type == 'json':
+        if not (maps or records or folders or folders_recursive):
+            raise KsmCliException(f"For type={sync_type}, at least one of --map/-m, --record/-r, --folder/-f, or --folder-recursive/-fr must be provided")
+    else:
+        if not maps:
+            raise KsmCliException(f"For type={sync_type}, --map/-m must be provided")
+
     sync = Sync(cli=ctx.obj["cli"])
-    sync.sync_values(type=type, credentials=credentials, dry_run=dry_run, preserve_missing=preserve_missing, map=map)
+    sync.sync_values(sync_type=sync_type, credentials=credentials, dry_run=dry_run, preserve_missing=preserve_missing, maps=maps, records=records, folders=folders, folders_recursive=folders_recursive, raw_json=raw_json)
 
 
 # TOP LEVEL COMMANDS
@@ -1418,6 +1497,7 @@ cli.add_command(sync_command)
 cli.add_command(folder_command)
 cli.add_command(secret_command)
 cli.add_command(exec_command)
+cli.add_command(interpolate_command)
 cli.add_command(config_command)
 cli.add_command(init_command)
 cli.add_command(version_command)
