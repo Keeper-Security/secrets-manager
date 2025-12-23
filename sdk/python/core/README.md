@@ -2,10 +2,14 @@
 
 For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/python-sdk
 
+**Python Requirements**: Python 3.9 or higher
+
 # Change Log
 
 ## 17.1.0
-* Added an explicit dependency on `urllib3` to align with upstream requirements.
+* **BREAKING**: Raised minimum Python version from 3.6 to 3.9
+* **Security**: Added explicit dependency on `urllib3>=2.6.0` to fix CVE-2025-66418 and CVE-2025-66471 (HIGH severity)
+* Removed Python 3.6, 3.7, and 3.8 support (all are end-of-life)
 
 ## 17.0.0
 * KSM-566 - Added parsing for KSM tokens with prefix
