@@ -343,13 +343,13 @@ class Profile:
                 keyring_storage.save_common_config(common_config)
                 
                 if os_name == "darwin":
-                    print(f"✓ Added profile {profile_name} to macOS Keychain", file=sys.stderr)
+                    print(f"Added profile {profile_name} to macOS Keychain", file=sys.stderr)
                     print("  No keeper.ini file will be created - credentials stored securely in Keychain", file=sys.stderr)
                 elif os_name == "windows":
-                    print(f"✓ Added profile {profile_name} to Windows Credential Manager", file=sys.stderr)
+                    print(f"Added profile {profile_name} to Windows Credential Manager", file=sys.stderr)
                     print("  No keeper.ini file will be created - credentials stored securely", file=sys.stderr)
                 else:
-                    print(f"✓ Added profile {profile_name} to system keyring", file=sys.stderr)
+                    print(f"Added profile {profile_name} to system keyring", file=sys.stderr)
                     print("  No keeper.ini file will be created - credentials stored securely", file=sys.stderr)
             except KsmCliException:
                 raise
@@ -387,7 +387,7 @@ class Profile:
 
             config.save()
 
-            print("✓ Added profile {} to INI config file located at {}".format(profile_name, ini_file), file=sys.stderr)
+            print("Added profile {} to INI config file located at {}".format(profile_name, ini_file), file=sys.stderr)
 
     @staticmethod
     def from_aws_ec2instance(secret: str, fallback=False, ini_file=None, profile_name=None, launched_from_app=False):
