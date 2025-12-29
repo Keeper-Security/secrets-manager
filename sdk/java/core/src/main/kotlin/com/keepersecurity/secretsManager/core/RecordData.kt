@@ -620,7 +620,13 @@ data class PamRbiConnection @JvmOverloads constructor(
     val allowedResourceUrlPatterns: String? = null,
     val httpCredentialsUid: String? = null,
     val autofillConfiguration: String? = null,
-    val ignoreInitialSslCert: Boolean? = null
+    val ignoreInitialSslCert: Boolean? = null,
+    val disableAudio: Boolean? = null,
+    val disableCopy: Boolean? = null,
+    val disablePaste: Boolean? = null,
+    val audioChannels: Int? = null,
+    val audioBps: Int? = null,
+    val audioSampleRate: Int? = null
 )
 @Serializable
 data class PamRemoteBrowserSetting @JvmOverloads constructor(
@@ -678,14 +684,27 @@ data class PamSettingsConnection @JvmOverloads constructor(
     val disableCsvExport: Boolean? = null,
     val disableCsvImport: Boolean? = null,
 
-    // SSH/Connection verification
+    // SSH/Terminal settings
     val hostKey: String? = null,
     val command: String? = null,
     val fontSize: String? = null,
+    val fontName: String? = null,
+    val scrollback: Int? = null,
+    val backspace: String? = null,
+    val terminalType: String? = null,
+    val clipboardEncoding: String? = null,
+    val locale: String? = null,
+    val timezone: String? = null,
+    val serverAliveInterval: Int? = null,
 
-    // VNC/Proxy settings
+    // VNC settings
     val destHost: String? = null,
     val destPort: String? = null,
+    val enableAudio: Boolean? = null,
+    val audioServername: String? = null,
+    val swapRedBlue: Boolean? = null,
+    val cursor: String? = null,
+    val forceLossless: Boolean? = null,
 
     // RDP specific settings
     val disableAuth: Boolean? = null,
@@ -696,6 +715,31 @@ data class PamSettingsConnection @JvmOverloads constructor(
     val enableWallpaper: Boolean? = null,
     val enableFullWindowDrag: Boolean? = null,
     val sftp: SFTPConnection? = null,
+    val initialProgram: String? = null,
+    val normalizeClipboard: String? = null,
+    val clientName: String? = null,
+    val serverLayout: String? = null,
+    val enableTouch: Boolean? = null,
+    val console: Boolean? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    val dpi: Int? = null,
+    val colorDepth: Int? = null,
+    val readOnly: Boolean? = null,
+    val consoleAudio: Boolean? = null,
+    val enableAudioInput: Boolean? = null,
+    val enablePrinting: Boolean? = null,
+    val enableTheming: Boolean? = null,
+    val enableFontSmoothing: Boolean? = null,
+    val enableDesktopComposition: Boolean? = null,
+    val enableMenuAnimations: Boolean? = null,
+    val disableBitmapCaching: Boolean? = null,
+    val disableOffscreenCaching: Boolean? = null,
+    val disableGlyphCaching: Boolean? = null,
+    val remoteApp: String? = null,
+    val remoteAppDir: String? = null,
+    val remoteAppArgs: String? = null,
+    val redirectedPrinterName: String? = null,
 
     // Telnet specific fields
     val usernameRegex: String? = null,
@@ -709,14 +753,17 @@ data class PamSettingsConnection @JvmOverloads constructor(
     val pod: String? = null,
     val container: String? = null,
     val clientCert: String? = null,
-    val clientKey: String? = null
+    val clientKey: String? = null,
+    val useSSL: Boolean? = null
 )
 
 @Serializable
 @SerialName("portForward")
 data class PamSettingsPortForward @JvmOverloads constructor(
     val reusePort: Boolean? = null,
-    val port: String? = null
+    val port: String? = null,
+    val useSpecifiedLocalPort: Boolean? = null,
+    val localPort: String? = null
 )
 @Serializable
 data class PamSetting @JvmOverloads constructor(
