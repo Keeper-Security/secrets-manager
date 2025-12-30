@@ -46,6 +46,25 @@ public class App {
 //          String password = getValue(secrets, "RECORD_UID/field/password");
 //          System.out.println(password);
 
+            // example: access PAM resources (if record has PAM fields)
+//          for (KeeperRecord record : secrets.getRecords()) {
+//              try {
+//                  PamResources pamField = record.getData().getField(PamResources.class);
+//                  if (pamField != null) {
+//                      System.out.println("Found PAM resource in record: " + record.getTitle());
+//                      for (PamResource resource : pamField.getValue()) {
+//                          System.out.println("  Controller UID: " + resource.getControllerUid());
+//                          System.out.println("  Folder UID: " + resource.getFolderUid());
+//                          if (resource.getResourceRef() != null) {
+//                              System.out.println("  Resource References: " + String.join(", ", resource.getResourceRef()));
+//                          }
+//                      }
+//                  }
+//              } catch (Exception pamException) {
+//                  // Record doesn't have PAM fields - skip
+//              }
+//          }
+
             // download the file from the 3rd record
             KeeperFile file = secrets.getRecords().get(2).getFileByName("acme.cer");
             if (file != null) {
