@@ -75,9 +75,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: wrapper
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Build project and copy dependencies
         run: |
@@ -192,9 +190,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: wrapper
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v3
