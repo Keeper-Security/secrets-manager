@@ -19,10 +19,11 @@ from .table import Table, ColumnAlign
 from .export import Export
 from .config import Config
 from .common import find_ksm_path
-from colorama import Fore
+from colorama import Fore, Style
 import sys
 import json
 import base64
+import logging
 
 
 class Profile:
@@ -35,6 +36,7 @@ class Profile:
         self.cli = cli
         self.ini_file = None
         self.has_profiles = False
+        self.logger = logging.getLogger(__name__)
 
         if config is not None:
             self._config = config
@@ -82,15 +84,23 @@ class Profile:
                 if self.use_keyring:
                     try:
                         self._load_from_keyring()
-                    except Exception:
-                        pass
+                    except KsmCliException as e:
+                        self.logger.warning("Could not load from keyring: %s", e)
+                        print(Fore.YELLOW + "Warning: Failed to load profiles from keyring: {}".format(e) + Style.RESET_ALL, file=sys.stderr)
+                    except Exception as e:
+                        self.logger.debug("Unexpected keyring error: %s", e, exc_info=True)
+                        print(Fore.YELLOW + "Warning: Keyring access failed (see debug logs)" + Style.RESET_ALL, file=sys.stderr)
             elif KeyringConfigStorage.is_available():
                 self.use_keyring = True
                 self.keyring_storage = KeyringConfigStorage()
                 try:
                     self._load_from_keyring()
-                except Exception:
-                    pass
+                except KsmCliException as e:
+                    self.logger.warning("Could not load from keyring: %s", e)
+                    print(Fore.YELLOW + "Warning: Failed to load profiles from keyring: {}".format(e) + Style.RESET_ALL, file=sys.stderr)
+                except Exception as e:
+                    self.logger.debug("Unexpected keyring error: %s", e, exc_info=True)
+                    print(Fore.YELLOW + "Warning: Keyring access failed (see debug logs)" + Style.RESET_ALL, file=sys.stderr)
             else:
                 # No storage available
                 self.use_keyring = False
@@ -201,8 +211,10 @@ class Profile:
             self._config._profiles = {}
             try:
                 self._load_from_keyring()
-            except Exception:
-                pass
+            except KsmCliException as e:
+                self.logger.warning("Could not load from keyring: %s", e)
+            except Exception as e:
+                self.logger.debug("Unexpected keyring error: %s", e, exc_info=True)
         
         self.has_profiles = len(self._config.profile_list()) > 0
 
@@ -242,8 +254,15 @@ class Profile:
         from . import KeeperCli
         from .keyring_config import KeyringConfigStorage
 
-        # Determine storage: use file if --config specified, otherwise keyring
-        use_keyring = not use_config_file and KeyringConfigStorage.is_available()
+        logger = logging.getLogger(__name__)
+
+        keyring_available = KeyringConfigStorage.is_available()
+        use_keyring = not use_config_file and keyring_available
+
+        if not use_keyring and not use_config_file:
+            use_config_file = True  # Fall back to file storage
+            if not keyring_available:
+                logger.debug("Keyring not available, falling back to INI file storage")
 
         # If the ini is not set, default the file in the current directory.
         if ini_file is None and use_config_file:
@@ -256,7 +275,7 @@ class Profile:
             raise KsmCliException("The profile '{}' is a reserved profile name. Cannot not init profile.".format(
                 profile_name))
 
-        # Only create Config object if using file storage
+        # Create Config object for file storage
         config = None
         created_ini = False
         
@@ -387,12 +406,21 @@ class Profile:
 
             config.save()
 
+            # Set file permissions to owner-only (0600)
+            if ini_file and os.path.exists(ini_file):
+                try:
+                    os.chmod(ini_file, 0o600)
+                    print(f"Set keeper.ini permissions to 0600 (owner-only access)", file=sys.stderr)
+                except Exception as e:
+                    logger.warning("Could not set file permissions: %s", e)
+
             print("Added profile {} to INI config file located at {}".format(profile_name, ini_file), file=sys.stderr)
 
     @staticmethod
     def from_aws_ec2instance(secret: str, fallback=False, ini_file=None, profile_name=None, launched_from_app=False):
         from keeper_secrets_manager_storage.storage_aws_secret import AwsConfigProvider
 
+        logger = logging.getLogger(__name__)
         ini_file = ini_file or Config.get_default_ini_file(launched_from_app)
 
         profile_name = profile_name or os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
@@ -431,12 +459,22 @@ class Profile:
             config.config.active_profile = profile_name
 
         config.save()
+
+        # Set file permissions to owner-only (0600)
+        if ini_file and os.path.exists(ini_file):
+            try:
+                os.chmod(ini_file, 0o600)
+                print("Set keeper.ini permissions to 0600 (owner-only access)", file=sys.stderr)
+            except Exception as e:
+                logger.warning("Could not set file permissions: %s", e)
+
         print(f"Added profile {profile_name} to INI config file located at {ini_file}", file=sys.stderr)
 
     @staticmethod
     def from_aws_profile(secret: str, fallback=False, aws_profile: str = "", ini_file=None, profile_name=None, launched_from_app=False):
         from keeper_secrets_manager_storage.storage_aws_secret import AwsConfigProvider
 
+        logger = logging.getLogger(__name__)
         ini_file = ini_file or Config.get_default_ini_file(launched_from_app)
 
         profile_name = profile_name or os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
@@ -479,6 +517,15 @@ class Profile:
             config.config.active_profile = profile_name
 
         config.save()
+
+        # Set file permissions to owner-only (0600)
+        if ini_file and os.path.exists(ini_file):
+            try:
+                os.chmod(ini_file, 0o600)
+                print("Set keeper.ini permissions to 0600 (owner-only access)", file=sys.stderr)
+            except Exception as e:
+                logger.warning("Could not set file permissions: %s", e)
+
         print(f"Added profile {profile_name} to INI config file located at {ini_file}", file=sys.stderr)
 
     @staticmethod
@@ -489,6 +536,7 @@ class Profile:
                         ini_file=None, profile_name=None, launched_from_app=False):
         from keeper_secrets_manager_storage.storage_aws_secret import AwsConfigProvider
 
+        logger = logging.getLogger(__name__)
         ini_file = ini_file or Config.get_default_ini_file(launched_from_app)
 
         profile_name = profile_name or os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
@@ -530,6 +578,15 @@ class Profile:
             config.config.active_profile = profile_name
 
         config.save()
+
+        # Set file permissions to owner-only (0600)
+        if ini_file and os.path.exists(ini_file):
+            try:
+                os.chmod(ini_file, 0o600)
+                print("Set keeper.ini permissions to 0600 (owner-only access)", file=sys.stderr)
+            except Exception as e:
+                logger.warning("Could not set file permissions: %s", e)
+
         print(f"Added profile {profile_name} to INI config file located at {ini_file}", file=sys.stderr)
 
     def list_profiles(self, output='text', use_color=None):
@@ -613,6 +670,7 @@ class Profile:
         This file could be a JSON or a Keeper ini file.
         """
 
+        logger = logging.getLogger(__name__)
         config_data = base64.urlsafe_b64decode(config_base64.encode())
 
         # Check if the data is JSON
@@ -651,6 +709,14 @@ class Profile:
             with open(file, "w") as fh:
                 fh.write(config_data.decode())
                 fh.close()
+
+        # Set file permissions to owner-only (0600)
+        if file and os.path.exists(file):
+            try:
+                os.chmod(file, 0o600)
+                print("Set keeper.ini permissions to 0600 (owner-only access)", file=sys.stderr)
+            except Exception as e:
+                logger.warning("Could not set file permissions: %s", e)
 
         print("Imported config saved to profile {} at {}.".format(profile_name, file), file=sys.stderr)
 
