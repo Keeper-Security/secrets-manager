@@ -66,7 +66,8 @@ class ProfileTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(res)
 
-        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available', return_value=False):
             mock_client.return_value = secrets_manager
 
             # Create a keeper.ini with the default profile
@@ -229,10 +230,11 @@ color = True
             self.delete_me.append(tf_name)
             tf.close()
 
-            result = runner.invoke(cli, [
-                '-o', tf_name,
-                'profile', 'list', '--json'], catch_exceptions=False)
-            self.assertEqual(0, result.exit_code, "did not get a success on list")
+            with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available', return_value=False):
+                result = runner.invoke(cli, [
+                    '-o', tf_name,
+                    'profile', 'list', '--json'], catch_exceptions=False)
+                self.assertEqual(0, result.exit_code, "did not get a success on list")
 
             with open(tf_name, "r") as fh:
                 profile_data = json.load(fh)
@@ -291,10 +293,11 @@ color = True
             if os.path.exists(Config.default_ini_file) is True:
                 os.unlink(Config.default_ini_file)
 
-            result = runner.invoke(cli, [
-                '-o', tf_name,
-                'profile', 'list', '--json'], catch_exceptions=False)
-            self.assertEqual(0, result.exit_code, "did not get a success on list")
+            with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available', return_value=False):
+                result = runner.invoke(cli, [
+                    '-o', tf_name,
+                    'profile', 'list', '--json'], catch_exceptions=False)
+                self.assertEqual(0, result.exit_code, "did not get a success on list")
 
             with open(tf_name, "r") as fh:
                 profile_data = json.load(fh)

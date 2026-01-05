@@ -22,9 +22,12 @@ install_requires = [
     'pyyaml',
     'update-checker',
     'psutil',
-    'boto3',
-    'keyring'
+    'boto3'
 ]
+
+extras_require = {
+    'keyring': ['keyring']
+}
 
 # Version set in the keeper_secrets_manager_cli.version file.
 setup(
@@ -41,6 +44,7 @@ setup(
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
+    extras_require=extras_require,
     python_requires='>=3.7',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
