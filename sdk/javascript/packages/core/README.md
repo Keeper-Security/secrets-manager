@@ -6,6 +6,7 @@ For more information see our official documentation page https://docs.keeper.io/
 
 ## 17.3.1
 - KSM-669 - Crypto issues when using getFolders() on Cloudflare workers with JS SDK
+- KSM-739 - Added transmission public key #18 for Gov Cloud Dev support
 
 ## 17.3.0
 - KSM-534 - Added proxy support
