@@ -3,6 +3,11 @@
 
 # Change Log
 
+## 17.0.1
+
+* KSM-724 - Fixed duplicate UID issue with GetNotation when record shortcuts exist (resolves #881)
+* KSM-674 - Fixed parsing of lastModified file data field
+
 ## 17.0.0
 
 * KSM-535 - Added proxy support
