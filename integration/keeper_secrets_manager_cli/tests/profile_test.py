@@ -146,32 +146,34 @@ color = True
 
         runner = CliRunner()
 
-        # Test INI import
-        base64_config = base64.urlsafe_b64encode(ini_config.encode())
-        self.assertFalse(os.path.exists("keeper.ini"), "an ini config file already exists")
+        # Disable keyring to force INI file usage for import/export tests
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available', return_value=False):
+            # Test INI import
+            base64_config = base64.urlsafe_b64encode(ini_config.encode())
+            self.assertFalse(os.path.exists("keeper.ini"), "an ini config file already exists")
 
-        result = runner.invoke(cli, ['profile', 'import', base64_config.decode()], catch_exceptions=False)
-        self.assertEqual(0, result.exit_code, "did not get a success on list")
-        self.assertTrue(os.path.exists("keeper.ini"), "the ini config doesn't exists")
-        with open("keeper.ini", "r") as fh:
-            file_config = fh.read()
-            fh.close()
-            os.chmod("keeper.ini", 0o0600)
-            self.assertEqual(ini_config, file_config, "config on disk and defined above are not the same.")
+            result = runner.invoke(cli, ['profile', 'import', base64_config.decode()], catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "did not get a success on list")
+            self.assertTrue(os.path.exists("keeper.ini"), "the ini config doesn't exists")
+            with open("keeper.ini", "r") as fh:
+                file_config = fh.read()
+                fh.close()
+                os.chmod("keeper.ini", 0o0600)
+                self.assertEqual(ini_config, file_config, "config on disk and defined above are not the same.")
 
-        # Test INI export. Get the 'Another' profile
+            # Test INI export. Get the 'Another' profile
 
-        result = runner.invoke(cli, ['profile', 'export', "Another"], catch_exceptions=False)
-        print(result.output)
-        self.assertEqual(0, result.exit_code, "did not get a success on list")
-        config_data = result.output
+            result = runner.invoke(cli, ['profile', 'export', "Another"], catch_exceptions=False)
+            print(result.output)
+            self.assertEqual(0, result.exit_code, "did not get a success on list")
+            config_data = result.output
 
-        try:
-            config = base64.urlsafe_b64decode(config_data).decode()
-            self.assertRegex(config, r'A_XXXXX_CI', 'did not find the Another client id')
-            self.assertFalse(re.search(r'D_XXXXX_CI', config, re.MULTILINE), 'found the default client id')
-        except Exception as err:
-            self.fail("Could not base64 decode the config: {}".format(err))
+            try:
+                config = base64.urlsafe_b64decode(config_data).decode()
+                self.assertRegex(config, r'A_XXXXX_CI', 'did not find the Another client id')
+                self.assertFalse(re.search(r'D_XXXXX_CI', config, re.MULTILINE), 'found the default client id')
+            except Exception as err:
+                self.fail("Could not base64 decode the config: {}".format(err))
 
     def test_config_json_import_export(self):
 
@@ -179,37 +181,39 @@ color = True
 
         runner = CliRunner()
 
-        # Test INI import
-        base64_config = base64.urlsafe_b64encode(json.dumps(json_config).encode())
+        # Disable keyring to force INI file usage for import/export tests
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available', return_value=False):
+            # Test INI import
+            base64_config = base64.urlsafe_b64encode(json.dumps(json_config).encode())
 
-        self.assertFalse(os.path.exists("keeper.ini"), "an ini config file already exists")
+            self.assertFalse(os.path.exists("keeper.ini"), "an ini config file already exists")
 
-        result = runner.invoke(cli, ['profile', 'import', base64_config.decode()], catch_exceptions=False)
-        self.assertEqual(0, result.exit_code, "did not get a success on list")
-        self.assertTrue(os.path.exists("keeper.ini"), "the ini config doesn't exists")
-        with open("keeper.ini", "r") as fh:
-            file_config = fh.read()
-            fh.close()
-            assert json_config["clientId"] in file_config, "did not find the client id"
-            assert json_config["privateKey"] in file_config, "blah"
+            result = runner.invoke(cli, ['profile', 'import', base64_config.decode()], catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "did not get a success on list")
+            self.assertTrue(os.path.exists("keeper.ini"), "the ini config doesn't exists")
+            with open("keeper.ini", "r") as fh:
+                file_config = fh.read()
+                fh.close()
+                assert json_config["clientId"] in file_config, "did not find the client id"
+                assert json_config["privateKey"] in file_config, "blah"
 
-        config = configparser.ConfigParser(allow_no_value=True)
-        config.read("keeper.ini")
-        self.assertEqual(json_config["clientId"], config["_default"].get("clientid"),  "client keys match")
+            config = configparser.ConfigParser(allow_no_value=True)
+            config.read("keeper.ini")
+            self.assertEqual(json_config["clientId"], config["_default"].get("clientid"),  "client keys match")
 
-        result = runner.invoke(cli, ['profile', 'export', '--file-format=json'],
-                               catch_exceptions=False)
-        print(result.output)
-        self.assertEqual(0, result.exit_code, "did not get a success on list")
-        config_data = result.output
+            result = runner.invoke(cli, ['profile', 'export', '--file-format=json'],
+                                   catch_exceptions=False)
+            print(result.output)
+            self.assertEqual(0, result.exit_code, "did not get a success on list")
+            config_data = result.output
 
-        try:
-            test_config = base64.urlsafe_b64decode(config_data).decode()
-            config = json.loads(test_config)
-            self.assertEqual(json_config["hostname"], config["hostname"], "host name is not the same")
+            try:
+                test_config = base64.urlsafe_b64decode(config_data).decode()
+                config = json.loads(test_config)
+                self.assertEqual(json_config["hostname"], config["hostname"], "host name is not the same")
 
-        except Exception as err:
-            self.fail("Could not base64/json decode the config: {}".format(err))
+            except Exception as err:
+                self.fail("Could not base64/json decode the config: {}".format(err))
 
     def test_auto_config(self):
 
