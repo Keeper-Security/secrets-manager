@@ -318,8 +318,8 @@ class KeyringStoragePriorityTest(unittest.TestCase):
         os.environ.pop("KSM_TOKEN", None)
         os.chdir(self.orig_dir)
 
-    def test_ini_file_takes_priority_over_keyring(self):
-        """Test that keeper.ini takes priority over keyring."""
+    def test_keyring_takes_priority_over_ini_file(self):
+        """Test that keyring takes priority over keeper.ini when keyring is available."""
         from keeper_secrets_manager_cli.profile import Profile
         
         # Create keeper.ini with required _config section
@@ -341,8 +341,8 @@ active_profile = _default
         
         profile = Profile(cli=mock_cli)
         
-        # Should NOT use keyring when INI file exists
-        self.assertFalse(profile.use_keyring)
+        # Keyring should take priority when available (INI file is for export purposes)
+        self.assertTrue(profile.use_keyring)
 
     def test_keyring_used_when_no_ini_file(self):
         """Test that keyring is used when no keeper.ini exists."""
