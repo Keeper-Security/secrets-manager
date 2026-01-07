@@ -19,52 +19,214 @@ from .table import Table, ColumnAlign
 from .export import Export
 from .config import Config
 from .common import find_ksm_path
-from colorama import Fore
+from colorama import Fore, Style
 import sys
 import json
 import base64
+import logging
 
 
 class Profile:
 
     default_profile = os.environ.get("KSM_CLI_PROFILE", "_default")
 
-    def __init__(self, cli, ini_file=None, config=None):
+    def __init__(self, cli, ini_file=None, config=None, use_keyring=None):
+        from .keyring_config import KeyringConfigStorage
 
         self.cli = cli
         self.ini_file = None
         self.has_profiles = False
+        self.logger = logging.getLogger(__name__)
 
         if config is not None:
             self._config = config
         else:
             self._config = Config()
 
+        # If ini_file is explicitly specified, use it
         if ini_file is not None:
+            self.use_keyring = False
+            self.keyring_storage = None
             self._config = Config(ini_file=ini_file)
             self._config.load()
             self.ini_file = self._config
-        # Else try to find it
+        # Check environment variables first
+        elif os.environ.get("KSM_CONFIG") is not None:
+            self.use_keyring = False
+            self.keyring_storage = None
+            self._config.clear()
+            self._config.set_profile_using_base64(Profile.default_profile, os.environ.get("KSM_CONFIG"))
+        elif os.environ.get("KSM_CONFIG_BASE64_1") is not None:
+            self.use_keyring = False
+            self.keyring_storage = None
+            self._auto_config_from_env_var(self._config)
+        elif os.environ.get("KSM_TOKEN") is not None:
+            self.use_keyring = False
+            self.keyring_storage = None
+            Profile.init(
+                token=os.environ.get("KSM_TOKEN"),
+                server=os.environ.get("KSM_HOSTNAME", "US"),
+                ini_file=ini_file,
+                launched_from_app=self._config.launched_from_app
+            )
         else:
-            if os.environ.get("KSM_CONFIG") is not None:
-                self._config.clear()
-                self._config.set_profile_using_base64(Profile.default_profile, os.environ.get("KSM_CONFIG"))
-            elif os.environ.get("KSM_CONFIG_BASE64_1") is not None:
-                self._auto_config_from_env_var(self._config)
-            elif os.environ.get("KSM_TOKEN") is not None:
-                Profile.init(
-                    token=os.environ.get("KSM_TOKEN"),
-                    server=os.environ.get("KSM_HOSTNAME", "US"),
-                    ini_file=ini_file,
-                    launched_from_app=self._config.launched_from_app
-                )
+            if use_keyring is not None:
+                self.use_keyring = use_keyring
+                self.keyring_storage = KeyringConfigStorage() if self.use_keyring else None
+                if self.use_keyring:
+                    try:
+                        self._load_from_keyring()
+                    except KsmCliException as e:
+                        self.logger.warning("Could not load from keyring: %s", e)
+                        print(Fore.YELLOW + "Warning: Failed to load profiles from keyring: {}".format(e) + Style.RESET_ALL, file=sys.stderr)
+                    except Exception as e:
+                        self.logger.debug("Unexpected keyring error: %s", e, exc_info=True)
+                        print(Fore.YELLOW + "Warning: Keyring access failed (see debug logs)" + Style.RESET_ALL, file=sys.stderr)
+                else:
+                    found_ini_file = self._find_ini_file()
+                    if found_ini_file is not None:
+                        self._config = Config(ini_file=found_ini_file)
+                        self._config.load()
+                        self.ini_file = self._config
+            elif KeyringConfigStorage.is_available():
+                self.use_keyring = True
+                self.keyring_storage = KeyringConfigStorage()
+                try:
+                    self._load_from_keyring()
+                except KsmCliException as e:
+                    self.logger.warning("Could not load from keyring: %s", e)
+                    print(Fore.YELLOW + "Warning: Failed to load profiles from keyring: {}".format(e) + Style.RESET_ALL, file=sys.stderr)
+                except Exception as e:
+                    self.logger.debug("Unexpected keyring error: %s", e, exc_info=True)
+                    print(Fore.YELLOW + "Warning: Keyring access failed (see debug logs)" + Style.RESET_ALL, file=sys.stderr)
             else:
-                ini_file = find_ksm_path(Config.default_ini_file)
-                if ini_file is not None:
-                    self._config.ini_file = ini_file
-                    self._config.has_config_file = True
+                found_ini_file = self._find_ini_file()
+                if found_ini_file is not None:
+                    self.use_keyring = False
+                    self.keyring_storage = None
+                    self._config = Config(ini_file=found_ini_file)
                     self._config.load()
+                    self.ini_file = self._config
+                else:
+                    self.use_keyring = False
+                    self.keyring_storage = None
 
+        self.has_profiles = len(self._config.profile_list()) > 0
+    
+    def _find_ini_file(self):
+        """Find keeper.ini file in current directory or standard locations."""
+        if os.path.exists("keeper.ini"):
+            return os.path.abspath("keeper.ini")
+        
+        # Check current working directory with absolute path
+        cwd_ini = os.path.join(os.getcwd(), "keeper.ini")
+        if os.path.exists(cwd_ini):
+            return cwd_ini
+        
+        # Check standard locations
+        found = find_ksm_path(Config.default_ini_file)
+        if found is not None:
+            return found
+        
+        return None
+    
+    def _load_from_keyring(self):
+        """Load configuration from keyring storage."""
+        if not self.keyring_storage:
+            return
+        
+        # Load common config
+        common_config = self.keyring_storage.load_common_config()
+        if common_config:
+            self._config.config.active_profile = common_config.get("active_profile")
+            if "color" in common_config:
+                self._config.config.color = common_config.get("color")
+            if "cache" in common_config:
+                self._config.config.cache = common_config.get("cache")
+            if "record_type_dir" in common_config:
+                self._config.config.record_type_dir = common_config.get("record_type_dir")
+            if "editor" in common_config:
+                self._config.config.editor = common_config.get("editor")
+            if "editor_use_blocking" in common_config:
+                self._config.config.editor_use_blocking = common_config.get("editor_use_blocking")
+            if "editor_process_name" in common_config:
+                self._config.config.editor_process_name = common_config.get("editor_process_name")
+        
+        # Load all profiles
+        profile_names = self.keyring_storage.list_profiles()
+        for profile_name in profile_names:
+            profile_data = self.keyring_storage.load_profile(profile_name)
+            if profile_data:
+                self._config.set_profile(profile_name,
+                                       client_id=profile_data.get("clientId"),
+                                       private_key=profile_data.get("privateKey"),
+                                       app_key=profile_data.get("appKey"),
+                                       hostname=profile_data.get("hostname"),
+                                       app_owner_public_key=profile_data.get("appOwnerPublicKey"),
+                                       server_public_key_id=profile_data.get("serverPublicKeyId"))
+    
+    def _save_common_to_keyring(self):
+        """Helper to save common config to keyring."""
+        if self.use_keyring and self.keyring_storage:
+            common_data = {
+                "active_profile": self._config.config.active_profile,
+                "color": self._config.config.color,
+                "cache": self._config.config.cache,
+            }
+            if self._config.config.record_type_dir:
+                common_data["record_type_dir"] = self._config.config.record_type_dir
+            if self._config.config.editor:
+                common_data["editor"] = self._config.config.editor
+                common_data["editor_use_blocking"] = self._config.config.editor_use_blocking
+                common_data["editor_process_name"] = self._config.config.editor_process_name
+            
+            # Get existing profiles list
+            existing = self.keyring_storage.load_common_config() or {}
+            if "profiles" in existing:
+                common_data["profiles"] = existing["profiles"]
+            
+            self.keyring_storage.save_common_config(common_data)
+    
+    def _reload_config(self):
+        """Reload configuration from storage (keyring or file).
+        
+        Uses dynamic detection: checks for INI file first, then keyring.
+        """
+        from .keyring_config import KeyringConfigStorage
+        
+        if self.use_keyring and self.keyring_storage:
+            self._config._profiles = {}
+            try:
+                self._load_from_keyring()
+            except KsmCliException as e:
+                self.logger.warning("Could not load from keyring: %s", e)
+            except Exception as e:
+                self.logger.debug("Unexpected keyring error: %s", e, exc_info=True)
+        elif self.ini_file is not None:
+            self._config._profiles = {}
+            self._config.load()
+        else:
+            ini_file = self._find_ini_file()
+            
+            if ini_file is not None:
+                self.use_keyring = False
+                self.keyring_storage = None
+                self._config.ini_file = ini_file
+                self._config.has_config_file = True
+                self._config._profiles = {}
+                self._config.load()
+            elif KeyringConfigStorage.is_available():
+                # Try keyring as fallback
+                self.use_keyring = True
+                self.keyring_storage = KeyringConfigStorage()
+                self._config._profiles = {}
+                try:
+                    self._load_from_keyring()
+                except KsmCliException as e:
+                    self.logger.warning("Could not load from keyring: %s", e)
+                except Exception as e:
+                    self.logger.debug("Unexpected keyring error: %s", e, exc_info=True)
+        
         self.has_profiles = len(self._config.profile_list()) > 0
 
     @staticmethod
@@ -98,12 +260,26 @@ class Profile:
         return self._config.config
 
     @staticmethod
-    def init(token, ini_file=None, server=None, profile_name=None, launched_from_app=False):
+    def init(token, ini_file=None, server=None, profile_name=None, launched_from_app=False, use_config_file=False):
 
         from . import KeeperCli
+        from .keyring_config import KeyringConfigStorage
 
-        # If the ini is not set, default the file in the current directory.
-        if ini_file is None:
+        logger = logging.getLogger(__name__)
+
+        keyring_available = KeyringConfigStorage.is_available()
+        
+        export_to_ini = ini_file is not None and keyring_available
+        use_keyring = keyring_available and not use_config_file
+        
+        if not keyring_available and ini_file is not None:
+            use_config_file = True
+        
+        if not use_keyring and not use_config_file and ini_file is None:
+            logger.debug("Keyring not available, falling back to INI file storage")
+            print(Fore.YELLOW + "Warning: Keyring not available, using keeper.ini file instead" + Style.RESET_ALL, file=sys.stderr)
+            print(Fore.YELLOW + "Warning: For better security, install: pip install keeper-secrets-manager-cli[keyring]" + Style.RESET_ALL, file=sys.stderr)
+            use_config_file = True
             ini_file = Config.get_default_ini_file(launched_from_app)
 
         if profile_name is None:
@@ -113,14 +289,14 @@ class Profile:
             raise KsmCliException("The profile '{}' is a reserved profile name. Cannot not init profile.".format(
                 profile_name))
 
-        config = Config(ini_file=ini_file)
-
-        if os.path.exists(ini_file) is True:
-            config.load()
-
-        # We want to flag if we create a INI file. If there is an error, remove it so it
-        # doesn't get picked up if we try again.
+        # Create Config object for file storage
+        config = None
         created_ini = False
+        
+        if use_config_file:
+            config = Config(ini_file=ini_file)
+            if os.path.exists(ini_file) is True:
+                config.load()
 
         # if the token has a ":" in it, the region code/server is concat'd to the token. Split them.
         if ":" in token:
@@ -138,35 +314,124 @@ class Profile:
             client.get_secrets(["AAAAAAAAAAAAAAAAAAAAAA"])
         except (KeeperError, KeeperAccessDenied) as err:
             # If we just create the INI file and there was an error. Remove it.
-            if created_ini is True:
+            if created_ini is True and ini_file:
                 os.unlink(ini_file)
             raise KsmCliException("Could not init the profile: {}".format(err.message))
         except Exception as err:
-            if created_ini is True:
+            if created_ini is True and ini_file:
                 os.unlink(ini_file)
             raise KsmCliException("Could not init the profile: {}".format(err))
 
         config_storage = client.config
 
-        config.set_profile(profile_name,
-                           client_id=config_storage.get(ConfigKeys.KEY_CLIENT_ID),
-                           private_key=config_storage.get(ConfigKeys.KEY_PRIVATE_KEY),
-                           app_key=config_storage.get(ConfigKeys.KEY_APP_KEY),
-                           hostname=config_storage.get(ConfigKeys.KEY_HOSTNAME),
-                           app_owner_public_key=config_storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
-                           server_public_key_id=config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID))
+        import platform
+        os_name = platform.system().lower()
+        
+        # Helper to get secure storage name based on OS
+        def get_secure_storage_name():
+            if os_name == "darwin":
+                return "macOS Keychain"
+            elif os_name == "windows":
+                return "Windows Credential Manager"
+            else:
+                return "system keyring"
 
-        if config.config.active_profile is None:
-            config.config.active_profile = profile_name
+        if use_keyring:
+           
+            try:
+                keyring_storage = KeyringConfigStorage()
+                profile_data = {
+                    "clientId": config_storage.get(ConfigKeys.KEY_CLIENT_ID),
+                    "privateKey": config_storage.get(ConfigKeys.KEY_PRIVATE_KEY),
+                    "appKey": config_storage.get(ConfigKeys.KEY_APP_KEY),
+                    "hostname": config_storage.get(ConfigKeys.KEY_HOSTNAME),
+                    "appOwnerPublicKey": config_storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
+                    "serverPublicKeyId": config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID)
+                }
+                keyring_storage.save_profile(profile_name, profile_data)
+                keyring_storage.add_profile_to_list(profile_name)
+                
+                common_config = keyring_storage.load_common_config() or {}
+                if common_config.get("active_profile") is None:
+                    common_config["active_profile"] = profile_name
+                    keyring_storage.save_common_config(common_config)
+                
+                if os_name == "darwin":
+                    print(f"Added profile {profile_name} to macOS Keychain", file=sys.stderr)
+                elif os_name == "windows":
+                    print(f"Added profile {profile_name} to Windows Credential Manager", file=sys.stderr)
+                else:
+                    print(f"Added profile {profile_name} to system keyring", file=sys.stderr)
+            except KsmCliException:
+                raise
+            except Exception as e:
+                raise KsmCliException("Failed to save profile to keyring: {}".format(e))
+        
+        if export_to_ini:
+            config = Config(ini_file=ini_file)
+            if os.path.exists(ini_file):
+                config.load()
+            
+            config.set_profile(profile_name,
+                               client_id=config_storage.get(ConfigKeys.KEY_CLIENT_ID),
+                               private_key=config_storage.get(ConfigKeys.KEY_PRIVATE_KEY),
+                               app_key=config_storage.get(ConfigKeys.KEY_APP_KEY),
+                               hostname=config_storage.get(ConfigKeys.KEY_HOSTNAME),
+                               app_owner_public_key=config_storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
+                               server_public_key_id=config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID))
 
-        config.save()
+            if config.config.active_profile is None:
+                config.config.active_profile = profile_name
 
-        print("Added profile {} to INI config file located at {}".format(profile_name, ini_file), file=sys.stderr)
+            config.save()
+
+            try:
+                os.chmod(ini_file, 0o600)
+                print(f"Set keeper.ini permissions to 0600 (owner-only access)", file=sys.stderr)
+            except Exception as e:
+                logger.warning("Could not set file permissions: %s", e)
+
+            if use_keyring:
+                print(f"Exported profile {profile_name} to INI file at {ini_file} (for Docker/CI-CD use)", file=sys.stderr)
+                print(f"  Active profile will continue to use {get_secure_storage_name()}", file=sys.stderr)
+            else:
+                print("Added profile {} to INI config file located at {}".format(profile_name, ini_file), file=sys.stderr)
+        
+        elif use_config_file:
+            if ini_file is None:
+                ini_file = Config.get_default_ini_file(launched_from_app)
+            
+            config = Config(ini_file=ini_file)
+            if os.path.exists(ini_file):
+                config.load()
+            
+            config.set_profile(profile_name,
+                               client_id=config_storage.get(ConfigKeys.KEY_CLIENT_ID),
+                               private_key=config_storage.get(ConfigKeys.KEY_PRIVATE_KEY),
+                               app_key=config_storage.get(ConfigKeys.KEY_APP_KEY),
+                               hostname=config_storage.get(ConfigKeys.KEY_HOSTNAME),
+                               app_owner_public_key=config_storage.get(ConfigKeys.KEY_OWNER_PUBLIC_KEY),
+                               server_public_key_id=config_storage.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID))
+
+            if config.config.active_profile is None:
+                config.config.active_profile = profile_name
+
+            config.save()
+
+            # Set file permissions to owner-only (0600)
+            try:
+                os.chmod(ini_file, 0o600)
+                print(f"Set keeper.ini permissions to 0600 (owner-only access)", file=sys.stderr)
+            except Exception as e:
+                logger.warning("Could not set file permissions: %s", e)
+
+            print("Added profile {} to INI config file located at {}".format(profile_name, ini_file), file=sys.stderr)
 
     @staticmethod
     def from_aws_ec2instance(secret: str, fallback=False, ini_file=None, profile_name=None, launched_from_app=False):
         from keeper_secrets_manager_storage.storage_aws_secret import AwsConfigProvider
 
+        logger = logging.getLogger(__name__)
         ini_file = ini_file or Config.get_default_ini_file(launched_from_app)
 
         profile_name = profile_name or os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
@@ -205,12 +470,22 @@ class Profile:
             config.config.active_profile = profile_name
 
         config.save()
+
+        # Set file permissions to owner-only (0600)
+        if ini_file and os.path.exists(ini_file):
+            try:
+                os.chmod(ini_file, 0o600)
+                print("Set keeper.ini permissions to 0600 (owner-only access)", file=sys.stderr)
+            except Exception as e:
+                logger.warning("Could not set file permissions: %s", e)
+
         print(f"Added profile {profile_name} to INI config file located at {ini_file}", file=sys.stderr)
 
     @staticmethod
     def from_aws_profile(secret: str, fallback=False, aws_profile: str = "", ini_file=None, profile_name=None, launched_from_app=False):
         from keeper_secrets_manager_storage.storage_aws_secret import AwsConfigProvider
 
+        logger = logging.getLogger(__name__)
         ini_file = ini_file or Config.get_default_ini_file(launched_from_app)
 
         profile_name = profile_name or os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
@@ -253,6 +528,15 @@ class Profile:
             config.config.active_profile = profile_name
 
         config.save()
+
+        # Set file permissions to owner-only (0600)
+        if ini_file and os.path.exists(ini_file):
+            try:
+                os.chmod(ini_file, 0o600)
+                print("Set keeper.ini permissions to 0600 (owner-only access)", file=sys.stderr)
+            except Exception as e:
+                logger.warning("Could not set file permissions: %s", e)
+
         print(f"Added profile {profile_name} to INI config file located at {ini_file}", file=sys.stderr)
 
     @staticmethod
@@ -263,6 +547,7 @@ class Profile:
                         ini_file=None, profile_name=None, launched_from_app=False):
         from keeper_secrets_manager_storage.storage_aws_secret import AwsConfigProvider
 
+        logger = logging.getLogger(__name__)
         ini_file = ini_file or Config.get_default_ini_file(launched_from_app)
 
         profile_name = profile_name or os.environ.get("KSM_CLI_PROFILE", Profile.default_profile)
@@ -304,9 +589,21 @@ class Profile:
             config.config.active_profile = profile_name
 
         config.save()
+
+        # Set file permissions to owner-only (0600)
+        if ini_file and os.path.exists(ini_file):
+            try:
+                os.chmod(ini_file, 0o600)
+                print("Set keeper.ini permissions to 0600 (owner-only access)", file=sys.stderr)
+            except Exception as e:
+                logger.warning("Could not set file permissions: %s", e)
+
         print(f"Added profile {profile_name} to INI config file located at {ini_file}", file=sys.stderr)
 
     def list_profiles(self, output='text', use_color=None):
+        
+        # Reload config to get latest profiles
+        self._reload_config()
 
         if use_color is None:
             use_color = self.cli.use_color
@@ -337,12 +634,20 @@ class Profile:
             raise KsmCliException("Cannot get list of profiles. {}".format(err))
 
     def set_active(self, profile_name):
+        
+        # Reload to get latest profiles
+        self._reload_config()
 
         if self._config.get_profile(profile_name) is None:
             raise KsmCliException("Profile {} does not exists.".format(profile_name))
 
         self._config.config.active_profile = profile_name
-        self._config.save()
+        
+        # Save to appropriate storage
+        if self.use_keyring and self.keyring_storage:
+            self._save_common_to_keyring()
+        else:
+            self._config.save()
 
         print("{} is now the active profile.".format(profile_name), file=sys.stderr)
 
@@ -376,6 +681,7 @@ class Profile:
         This file could be a JSON or a Keeper ini file.
         """
 
+        logger = logging.getLogger(__name__)
         config_data = base64.urlsafe_b64decode(config_base64.encode())
 
         # Check if the data is JSON
@@ -415,19 +721,35 @@ class Profile:
                 fh.write(config_data.decode())
                 fh.close()
 
+        # Set file permissions to owner-only (0600)
+        if file and os.path.exists(file):
+            try:
+                os.chmod(file, 0o600)
+                print("Set keeper.ini permissions to 0600 (owner-only access)", file=sys.stderr)
+            except Exception as e:
+                logger.warning("Could not set file permissions: %s", e)
+
         print("Imported config saved to profile {} at {}.".format(profile_name, file), file=sys.stderr)
 
     def set_color(self, on_off):
         common_config = self._config.config
         common_config.color = str(on_off)
         self.cli.use_color = on_off
-        self._config.save()
+        
+        if self.use_keyring and self.keyring_storage:
+            self._save_common_to_keyring()
+        else:
+            self._config.save()
 
     def set_cache(self, on_off):
         common_config = self._config.config
         common_config.cache = str(on_off)
         self.cli.use_cache = on_off
-        self._config.save()
+        
+        if self.use_keyring and self.keyring_storage:
+            self._save_common_to_keyring()
+        else:
+            self._config.save()
 
     def set_record_type_dir(self, directory):
         common_config = self._config.config
@@ -438,7 +760,11 @@ class Profile:
                 raise FileNotFoundError(f"Cannot find the directory 'directory' for record type schemas.")
             common_config.record_type_dir = str(directory)
         self.cli.record_type_dir = directory
-        self._config.save()
+        
+        if self.use_keyring and self.keyring_storage:
+            self._save_common_to_keyring()
+        else:
+            self._config.save()
 
     def set_editor(self, editor, use_blocking=None, process_name=None):
         common_config = self._config.config
@@ -454,7 +780,11 @@ class Profile:
                 common_config.editor_process_name = process_name
         self.cli.editor = editor
         self.cli.editor_use_blocking = use_blocking
-        self._config.save()
+        
+        if self.use_keyring and self.keyring_storage:
+            self._save_common_to_keyring()
+        else:
+            self._config.save()
 
     def show_config(self):
 
