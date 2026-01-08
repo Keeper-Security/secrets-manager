@@ -9,6 +9,7 @@ For more information see our official documentation page https://docs.keeper.io/
 ## 17.1.0
 * **BREAKING**: Raised minimum Python version from 3.6 to 3.9
 * **Security**: Added explicit dependency on `urllib3>=2.6.0` to fix CVE-2025-66418 and CVE-2025-66471 (HIGH severity)
+* KSM-740 - Added transmission public key #18 for Gov Cloud Dev support
 * Removed Python 3.6, 3.7, and 3.8 support (all are end-of-life)
 
 ## 17.0.0
