@@ -11,8 +11,8 @@ install_requires = [
     'pip>=24.3.1',
     'keeper-secrets-manager-core>=17.0.0',
     'keeper-secrets-manager-helper>=1.0.6',
-    'keeper-secrets-manager-storage>=1.0.2',
-    'prompt-toolkit~=2.0',
+    'keeper-secrets-manager-storage>=1.0.3',
+    'prompt-toolkit>=3.0',
     'jsonpath-rw-ext',
     'colorama',
     'importlib_metadata',
@@ -22,7 +22,7 @@ install_requires = [
     'pyyaml',
     'update-checker',
     'psutil',
-    'boto3'
+    'boto3>=1.20.0'
 ]
 
 extras_require = {
@@ -32,7 +32,7 @@ extras_require = {
 # Version set in the keeper_secrets_manager_cli.version file.
 setup(
     name="keeper-secrets-manager-cli",
-    version="1.2.0",
+    version="1.3.0",
     description="Command line tool for Keeper Secrets Manager",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -45,7 +45,7 @@ setup(
     zip_safe=False,
     install_requires=install_requires,
     extras_require=extras_require,
-    python_requires='>=3.7',
+    python_requires='>=3.9',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
         "Documentation": "https://app.gitbook.com/"
@@ -59,8 +59,6 @@ setup(
         "Operating System :: OS Independent",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
