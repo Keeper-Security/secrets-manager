@@ -4,10 +4,15 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
-## 17.1.1 - 2025-11-12
+## 17.2.0 - 2025-11-14
 - KSM-685 - Fixed `CreateOptions.subfolder_uid` parameter API transmission
 - KSM-686 - Implemented disaster recovery caching with `CachingPostFunction`
 - KSM-687 - Added missing DTO fields for complete SDK parity (links, is_editable, inner_folder_uid, thumbnail_url, last_modified, expires_on)
+- KSM-692 - Added HTTP proxy support for enterprise environments
+- KSM-694 - Added convenience methods (`upload_file_from_path`, `try_get_notation`)
+- KSM-696 - Fixed file permissions for Ruby SDK config files
+- KSM-697 - Comprehensive unit test coverage improvements (+358 tests, 63.3% coverage)
+- KSM-743 - Added transmission public key #18 for Gov Cloud Dev environment support
 - Added `from_config()` convenience method for base64 config initialization
 - Added `update_secret_with_options()` method for removing file links
 - Added `download_thumbnail()` method for file thumbnails
