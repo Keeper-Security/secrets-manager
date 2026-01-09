@@ -12,6 +12,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - KSM-694 - Added convenience methods (`upload_file_from_path`, `try_get_notation`)
 - KSM-696 - Fixed file permissions for Ruby SDK config files
 - KSM-697 - Comprehensive unit test coverage improvements (+358 tests, 63.3% coverage)
+- KSM-734 - Fixed notation lookup to handle duplicate UIDs from record shortcuts
 - KSM-743 - Added transmission public key #18 for Gov Cloud Dev environment support
 - Added `from_config()` convenience method for base64 config initialization
 - Added `update_secret_with_options()` method for removing file links

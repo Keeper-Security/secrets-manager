@@ -8,6 +8,11 @@
   - API response caching now works for both `get_secret` and `get_folders` endpoints
   - Added `Cache` class for file-based encrypted cache storage
   - Removed unused `@cache` and `@cache_expiry` instance variables from `SecretsManager`
+- KSM-734: Fixed notation lookup to handle duplicate UIDs from record shortcuts
+  - When a KSM application has access to both an original record and its shortcut, the same UID appears multiple times
+  - Added deduplication logic using `uniq { |r| r.uid }` before ambiguity check
+  - Preserves genuine ambiguity detection for different records with the same title
+  - Added unit test for duplicate UID handling
 - Fixed example files to use correct SDK APIs:
   - `09_totp.rb`: Corrected class name from `Totp` to `TOTP` and method from `generate()` to `generate_code()`
   - `01_quick_start.rb`: Fixed field access to use dynamic getter (`secret.login`) instead of hash access
