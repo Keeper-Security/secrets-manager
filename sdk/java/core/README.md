@@ -4,6 +4,14 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.1.4
+- KSM-733 - Fix notation error with duplicate UIDs from shortcuts
+  - When an application has access to both an original record and its shortcut, the same UID appears multiple times in getSecrets() response
+  - Now deduplicates by UID to keep only the first occurrence
+  - Title-based lookups still correctly detect genuine ambiguity (multiple records with same title)
+- KSM-742 - Add transmission public key #18 for Gov Cloud Dev support
+- chore - Upgrade gradle-build-action to setup-gradle@v4
+
 ## 17.1.3
 - KSM-738 - Add missing PAM connection settings fields (61 new fields for VAUL-7662)
   - PamRbiConnection: Add audio/clipboard controls (disableAudio, disableCopy, disablePaste, audioChannels, audioBps, audioSampleRate)
