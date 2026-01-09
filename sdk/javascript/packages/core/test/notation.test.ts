@@ -161,3 +161,51 @@ test('NotationParser', () => {
     expect(res[2].index1?.[0]).toBe("0")
     expect(res[2].index2?.[0]).toBe("middle")
 })
+
+test('getValue handles duplicate UIDs (shortcuts/linked records)', () => {
+    // When a KSM application has access to both an original record and its shortcut,
+    // the same UID appears multiple times but should not be treated as ambiguous
+    const duplicateUID = 'ABC123XYZ123456789AB'
+
+    const secretsWithDuplicates: KeeperSecrets = {
+        appData: {
+            title: "",
+            type: ""
+        },
+        records: [
+            {
+                recordUid: duplicateUID,
+                revision: 0,
+                data: {
+                    title: 'Original Record',
+                    type: 'login',
+                    fields: [
+                        {type: 'login', value: ['testuser']},
+                        {type: 'password', value: ['testpass']}
+                    ],
+                    custom: []
+                }
+            },
+            {
+                recordUid: duplicateUID,  // Same UID (shortcut scenario)
+                revision: 0,
+                data: {
+                    title: 'Shortcut Record',
+                    type: 'login',
+                    fields: [
+                        {type: 'login', value: ['testuser']},
+                        {type: 'password', value: ['testpass']}
+                    ],
+                    custom: []
+                }
+            }
+        ]
+    }
+
+    // Should not throw error, should deduplicate and return value
+    let value = getValue(secretsWithDuplicates, `keeper://${duplicateUID}/field/login`)
+    expect(value).toBe('testuser')
+
+    value = getValue(secretsWithDuplicates, `keeper://${duplicateUID}/field/password`)
+    expect(value).toBe('testpass')
+})
