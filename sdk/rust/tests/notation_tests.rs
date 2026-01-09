@@ -180,7 +180,7 @@ mod get_notation_tests {
         // Simulate the deduplication logic
         let mut records_with_duplicates = vec![
             ("ABC123XYZ123456789AB", "Original Record"),
-            ("ABC123XYZ123456789AB", "Shortcut Record"),  // Same UID
+            ("ABC123XYZ123456789AB", "Shortcut Record"), // Same UID
             ("XYZ789ABC123456789CD", "Other Record"),
         ];
 

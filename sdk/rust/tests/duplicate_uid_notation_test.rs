@@ -162,7 +162,11 @@ mod duplicate_uid_deduplication_tests {
             });
         }
 
-        assert_eq!(records.len(), 1, "Expected only 1 record after deduplication");
+        assert_eq!(
+            records.len(),
+            1,
+            "Expected only 1 record after deduplication"
+        );
         assert_eq!(
             records[0].title, "First Occurrence",
             "Expected first occurrence to be kept"

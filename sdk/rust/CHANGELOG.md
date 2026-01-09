@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [17.1.0] - 2025-11-12
+## [17.1.0]
 
 ### Added
 
@@ -80,6 +80,10 @@ All notable changes to this project will be documented in this file.
   - `make_http_request()` - Standalone HTTP request function
   - Automatic fallback to cached data on network failure
   - Matches pattern from Python, JavaScript, Java, Ruby, and .NET SDKs
+- **Transmission Public Key #18** - Gov Cloud Dev environment support
+  - Added public key #18 to `KEEPER_PUBLIC_KEYS` in `src/constants.rs`
+  - Enables secure communication with Keeper Gov Cloud Dev servers
+  - Required for signature verification in government cloud deployments
 
 #### Testing
 - **`tests/update_secret_tests.rs`** (362 lines) - 14 unit tests
@@ -127,6 +131,18 @@ All notable changes to this project will be documented in this file.
   - Removes entire `fileRef` field when value array becomes empty
 
 ### Fixed
+- **KSM-735**: Notation lookup with record shortcuts (duplicate UID bug)
+  - Fixed notation queries returning incorrect record when vault contains shortcuts
+  - Shortcuts create duplicate UIDs in secrets array (shortcut + original record)
+  - Implemented stable deduplication: prioritizes non-shortcut records
+  - Added 314 lines of comprehensive unit tests for all duplicate UID scenarios
+  - Ensures `get_notation()` consistently returns data from correct record
+- **KSM-639**: Key rotation bug - Handle `key_id` as both number and string in server responses
+  - Server returns `key_id` as number but SDK expected string
+  - Now correctly parses both formats for compatibility
+  - Prevents key rotation failures
+- **KSM-700**: File permissions for config files (secure 0600 on Unix)
+- Resolved Clippy warnings for Rust beta compatibility
 - **env_logger dependency** - Added missing `env_logger = "0.11"` to Cargo.toml
   - Fixes compilation error in `main.rs`
   - Allows binary target to compile successfully
