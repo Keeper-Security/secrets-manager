@@ -332,6 +332,7 @@ class Record:
         self.is_editable = False
         self.files = {}
         self.revision = kwargs.get("revision", 1)
+        self.folder_uid = kwargs.get("folder_uid")  # Support for folderUid field
 
         self._fields = []
         self._custom_fields = []
@@ -447,6 +448,10 @@ class Record:
             "isEditable": self.is_editable,
             "files": files
         }
+
+        # Include folderUid if set (for records in shared folders)
+        if self.folder_uid is not None:
+            data["folderUid"] = self.folder_uid
 
         return data
     
