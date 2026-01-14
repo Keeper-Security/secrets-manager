@@ -15,7 +15,6 @@ namespace SecretsManager.Test
         [Test]
         public void DecryptionKeySelection_RecordWithFolderUid_UsesFolderKey()
         {
-            // Regression test for KSM-746
             // This test documents the expected behavior:
             // When a record has folderUid set and the folder exists in the response,
             // the SDK should use the folder key to decrypt the recordKey
@@ -65,14 +64,13 @@ namespace SecretsManager.Test
         public void ResponseStructure_FolderUidProperty_ExistsOnRecord()
         {
             // Verify that SecretsManagerResponseRecord has folderUid property
-            // (This was added as part of the KSM-746 fix)
 
             var record = new SecretsManagerResponseRecord
             {
                 recordUid = "test123",
                 recordKey = "encrypted_key",
                 data = "encrypted_data",
-                folderUid = "folder456", // New property added for KSM-746
+                folderUid = "folder456",
                 revision = 1,
                 isEditable = true
             };
