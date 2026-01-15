@@ -12,6 +12,7 @@ For more information see our official documentation page https://docs.keeper.io/
 * **Security**: Added version-specific urllib3 dependency to address CVE-2025-66418 and CVE-2025-66471 (HIGH severity)
   - Python 3.10+: Uses urllib3>=2.6.0 (latest security fixes)
   - Python 3.6-3.9: Uses urllib3>=1.26.0,<1.27 (compatible with boto3/AWS storage)
+* **Security**: KSM-695 - Fixed file permissions for client-config.json (created with 0600 permissions)
 * **Deprecation Notice**: Python 3.6, 3.7, 3.8, and 3.9 (all EOL) will be unsupported in v17.2.0 (~Feb 16, 2026)
 * KSM-740 - Added transmission public key #18 for Gov Cloud Dev support
 * KSM-747 - Fixed record key decryption for shared folder records
