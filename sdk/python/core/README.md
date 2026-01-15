@@ -4,8 +4,6 @@ For more information see our official documentation page https://docs.keeper.io/
 
 **Python Requirements**: Python 3.6 or higher
 
-**⚠️ DEPRECATION NOTICE**: Python 3.6, 3.7, 3.8, and 3.9 are end-of-life. Support for these versions will be removed in v17.2.0 (planned for ~February 16, 2026). Please plan to upgrade to Python 3.10+ before that date.
-
 # Change Log
 
 ## 17.1.0
@@ -13,12 +11,12 @@ For more information see our official documentation page https://docs.keeper.io/
   - Python 3.10+: Uses urllib3>=2.6.0 (latest security fixes)
   - Python 3.6-3.9: Uses urllib3>=1.26.0,<1.27 (compatible with boto3/AWS storage)
 * **Security**: KSM-695 - Fixed file permissions for client-config.json (created with 0600 permissions)
-* **Deprecation Notice**: Python 3.6, 3.7, 3.8, and 3.9 (all EOL) will be unsupported in v17.2.0 (~Feb 16, 2026)
 * KSM-740 - Added transmission public key #18 for Gov Cloud Dev support
 * KSM-747 - Fixed record key decryption for shared folder records
 * KSM-732 - Fixed notation lookup when record shortcuts exist (duplicate UID handling)
-* KSM-628 - Added GraphSync links
+* KSM-628 - Added GraphSync links support
 * Storage package now explicitly requires boto3>=1.20.0 (fixes ImportError with IMDSFetcher)
+* Improved test coverage: All 18 transmission keys now validated, added GraphSync links test
 
 ## 17.0.0
 * KSM-566 - Added parsing for KSM tokens with prefix

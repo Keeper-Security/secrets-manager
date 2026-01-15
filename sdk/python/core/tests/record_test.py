@@ -343,3 +343,60 @@ class RecordTest(unittest.TestCase):
                 os.unlink(fh.name)
             except OSError:
                 pass
+
+    def test_record_graphsync_links(self):
+        """Test that records include links field from GraphSync"""
+
+        try:
+            with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+                fh.write(MockConfig.make_json())
+                fh.seek(0)
+                secrets_manager = SecretsManager(
+                    config=FileKeyValueStorage(config_file_location=fh.name)
+                )
+
+                res = mock.Response()
+
+                # Create linked record first
+                linked_record = res.add_record(title="Linked Record", record_type='login')
+                linked_record.field("login", "linkeduser")
+
+                # Create main record with links
+                links_data = [
+                    {"recordUid": linked_record.uid, "data": None, "path": None},
+                    {"recordUid": "someOtherUid", "data": "base64encodeddata", "path": "/some/path"}
+                ]
+                main_record = res.add_record(
+                    title="Main Record",
+                    record_type='login',
+                    links=links_data
+                )
+                main_record.field("login", "mainuser")
+                main_record.field("password", "mainpass")
+
+                res_queue = mock.ResponseQueue(client=secrets_manager)
+                res_queue.add_response(res)
+
+                records = secrets_manager.get_secrets()
+
+                # Find the main record
+                main_rec = next((r for r in records if r.title == "Main Record"), None)
+                self.assertIsNotNone(main_rec, "Main record not found")
+
+                # Verify links field exists and is populated
+                self.assertIsNotNone(main_rec.links, "links field is None")
+                self.assertEqual(2, len(main_rec.links), "expected 2 links")
+
+                # Verify link structure
+                self.assertEqual(linked_record.uid, main_rec.links[0]['recordUid'])
+                self.assertIsNone(main_rec.links[0].get('data'))
+                self.assertIsNone(main_rec.links[0].get('path'))
+
+                self.assertEqual("someOtherUid", main_rec.links[1]['recordUid'])
+                self.assertEqual("base64encodeddata", main_rec.links[1].get('data'))
+                self.assertEqual("/some/path", main_rec.links[1].get('path'))
+        finally:
+            try:
+                os.unlink(fh.name)
+            except OSError:
+                pass
