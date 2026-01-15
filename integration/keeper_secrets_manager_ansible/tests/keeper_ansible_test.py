@@ -171,16 +171,24 @@ class KeeperAnsibleTest(unittest.TestCase):
             mock_system.return_value = "Windows"
 
             # We are testing this on Linux. So the path separator is going to be : instead of ;
-            os.environ["PSModulePath"] = r"...\modules:...\Modules:....\Modules"
+            original_psmodulepath = os.environ.get("PSModulePath")
+            try:
+                os.environ["PSModulePath"] = r"...\modules:...\Modules:....\Modules"
 
-            stdout = io.StringIO()
-            with redirect_stdout(stdout):
-                main(["--config"])
-            content = stdout.getvalue()
-            self.assertRegex(content, r'\$env:ANSIBLE_ACTION_PLUGINS',
-                             'did not find PS ANSIBLE_ACTION_PLUGINS')
-            self.assertRegex(content, r'\$env:ANSIBLE_LOOKUP_PLUGINS',
-                             'did not find PS ANSIBLE_LOOKUP_PLUGINS')
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    main(["--config"])
+                content = stdout.getvalue()
+                self.assertRegex(content, r'\$env:ANSIBLE_ACTION_PLUGINS',
+                                 'did not find PS ANSIBLE_ACTION_PLUGINS')
+                self.assertRegex(content, r'\$env:ANSIBLE_LOOKUP_PLUGINS',
+                                 'did not find PS ANSIBLE_LOOKUP_PLUGINS')
+            finally:
+                # Clean up PSModulePath to avoid affecting subsequent tests
+                if original_psmodulepath is None:
+                    os.environ.pop("PSModulePath", None)
+                else:
+                    os.environ["PSModulePath"] = original_psmodulepath
 
     def test_password_complexity(self):
 
