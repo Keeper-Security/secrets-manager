@@ -3,8 +3,14 @@
 
 package com.keepersecurity.secretsManager.core
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 
 @Serializable
 data class KeeperRecordData @JvmOverloads constructor(
@@ -15,7 +21,7 @@ data class KeeperRecordData @JvmOverloads constructor(
     var notes: String? = null
 ) {
     inline fun <reified T> getField(): T? {
-        return (fields + custom).find { x -> x is T } as T
+        return (fields + (custom ?: listOf())).find { x -> x is T } as? T
     }
 
     fun getField(clazz: Class<out KeeperRecordField>): KeeperRecordField? {
@@ -28,12 +34,29 @@ sealed class KeeperRecordField {
     abstract val label: String?
 }
 
+object FlexibleLongSerializer : KSerializer<Long> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("FlexibleLong", PrimitiveKind.LONG)
+
+    override fun serialize(encoder: Encoder, value: Long) {
+        encoder.encodeLong(value)
+    }
+
+    override fun deserialize(decoder: Decoder): Long {
+        return try {
+            decoder.decodeLong()
+        } catch (e: Exception) {
+            decoder.decodeDouble().toLong()
+        }
+    }
+}
+
 @Serializable
 data class KeeperFileData(
     val title: String,
     val name: String,
     val type: String? = null,
     val size: Long,
+    @Serializable(with = FlexibleLongSerializer::class)
     val lastModified: Long
 )
 
@@ -346,6 +369,8 @@ data class KeyPairs @JvmOverloads constructor(
 data class Host @JvmOverloads constructor(
     val hostName: String? = null,
     val port: String? = null,
+    val allowSupplyUser: Boolean? = null,
+    val allowSupplyHost: Boolean? = null,
 )
 
 @Serializable
@@ -402,6 +427,7 @@ data class PamResource @JvmOverloads constructor(
     val controllerUid: String? = null,
     val folderUid: String? = null,
     val resourceRef: MutableList<String>? = null,
+    val adminCredentialRef: String? = null,
     val allowedSettings: AllowedSettings? = null
 )
 
@@ -588,6 +614,7 @@ data class AppFillers @JvmOverloads constructor(
 data class PamRbiConnection @JvmOverloads constructor(
     val protocol: String? = null,
     val userRecords: MutableList<String>? = null,
+    val recordingIncludeKeys: Boolean? = null,
     val allowUrlManipulation: Boolean? = null,
     val allowedUrlPatterns: String? = null,
     val allowedResourceUrlPatterns: String? = null,
@@ -632,6 +659,9 @@ data class PamSettingsConnection @JvmOverloads constructor(
     val protocol: String? = null,
     val userRecords: MutableList<String>? = null,
     val port: String? = null,
+    val allowSupplyUser: Boolean? = null,
+    val allowSupplyHost: Boolean? = null,
+    val recordingIncludeKeys: Boolean? = null,
 
     // Common display and security settings
     val colorScheme: String? = null,
@@ -650,6 +680,8 @@ data class PamSettingsConnection @JvmOverloads constructor(
 
     // SSH/Connection verification
     val hostKey: String? = null,
+    val command: String? = null,
+    val fontSize: String? = null,
 
     // VNC/Proxy settings
     val destHost: String? = null,
@@ -661,6 +693,8 @@ data class PamSettingsConnection @JvmOverloads constructor(
     val preconnectionId: String? = null,
     val preconnectionBlob: String? = null,
     val disableAudio: Boolean? = null,
+    val enableWallpaper: Boolean? = null,
+    val enableFullWindowDrag: Boolean? = null,
     val sftp: SFTPConnection? = null,
 
     // Telnet specific fields
@@ -687,7 +721,8 @@ data class PamSettingsPortForward @JvmOverloads constructor(
 @Serializable
 data class PamSetting @JvmOverloads constructor(
     val connection: PamSettingsConnection? = null,
-    val portForward: PamSettingsPortForward? = null
+    val portForward: PamSettingsPortForward? = null,
+    val allowSupplyHost: Boolean? = null
 )
 
 @Serializable

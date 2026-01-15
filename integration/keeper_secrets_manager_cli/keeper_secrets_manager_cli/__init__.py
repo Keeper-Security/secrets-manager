@@ -17,7 +17,7 @@ from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_cli.common import find_ksm_path
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_helper.record_type import RecordType
-from distutils.util import strtobool
+from keeper_secrets_manager_core.utils import strtobool
 from .exception import KsmCliException
 from .profile import Profile
 from .config import Config

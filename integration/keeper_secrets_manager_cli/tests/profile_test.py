@@ -2,7 +2,7 @@ import base64
 import os
 import unittest
 from unittest.mock import patch
-from click.testing import CliRunner
+from conftest import CliRunner
 from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core import mock

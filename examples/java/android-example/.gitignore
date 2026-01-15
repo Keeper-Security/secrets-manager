@@ -1,0 +1,27 @@
+# Built application files
+*.apk
+*.aab
+*.dex
+*.class
+
+# Gradle files
+.gradle/
+build/
+local.properties
+
+# Android Studio
+*.iml
+.idea/
+captures/
+.externalNativeBuild
+
+# Keystore files
+*.jks
+*.keystore
+
+# macOS
+.DS_Store
+
+# Secrets - NEVER commit tokens!
+*.token
+secrets.properties
