@@ -3,9 +3,10 @@
 
 # Change Log
 
-## 17.0.1
+## 17.1.0
 
 * KSM-741 - Added transmission public key #18 for Gov Cloud Dev support
+* KSM-746 - Fixed record key decryption for shared folder records
 * KSM-724 - Fixed duplicate UID issue with GetNotation when record shortcuts exist (resolves #881)
 * KSM-674 - Fixed parsing of lastModified file data field
 
