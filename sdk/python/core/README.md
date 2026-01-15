@@ -2,18 +2,22 @@
 
 For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/python-sdk
 
-**Python Requirements**: Python 3.9 or higher
+**Python Requirements**: Python 3.6 or higher
+
+**⚠️ DEPRECATION NOTICE**: Python 3.6, 3.7, 3.8, and 3.9 are end-of-life. Support for these versions will be removed in v17.2.0 (planned for ~February 16, 2026). Please plan to upgrade to Python 3.10+ before that date.
 
 # Change Log
 
 ## 17.1.0
-* **BREAKING**: Raised minimum Python version from 3.6 to 3.9
-* **Security**: Added explicit dependency on `urllib3>=2.6.0` to fix CVE-2025-66418 and CVE-2025-66471 (HIGH severity)
+* **Security**: Added version-specific urllib3 dependency to address CVE-2025-66418 and CVE-2025-66471 (HIGH severity)
+  - Python 3.10+: Uses urllib3>=2.6.0 (latest security fixes)
+  - Python 3.6-3.9: Uses urllib3>=1.26.0,<1.27 (compatible with boto3/AWS storage)
+* **Deprecation Notice**: Python 3.6, 3.7, 3.8, and 3.9 (all EOL) will be unsupported in v17.2.0 (~Feb 16, 2026)
 * KSM-740 - Added transmission public key #18 for Gov Cloud Dev support
 * KSM-747 - Fixed record key decryption for shared folder records
 * KSM-732 - Fixed notation lookup when record shortcuts exist (duplicate UID handling)
 * KSM-628 - Added GraphSync links
-* Removed Python 3.6, 3.7, and 3.8 support (all are end-of-life)
+* Storage package now explicitly requires boto3>=1.20.0 (fixes ImportError with IMDSFetcher)
 
 ## 17.0.0
 * KSM-566 - Added parsing for KSM tokens with prefix
