@@ -14,7 +14,8 @@ install_requires = [
     'requests',
     'cryptography>=39.0.1',
     'importlib_metadata',
-    'urllib3>=2.6.0',
+    'urllib3>=2.6.0; python_version >= "3.10"',
+    'urllib3>=1.26.0,<1.27; python_version < "3.10"',
 ]
 
 setup(
@@ -31,7 +32,7 @@ setup(
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
-    python_requires='>=3.9',
+    python_requires='>=3.6',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
         "Documentation": "https://github.com/Keeper-Security/secrets-manager",
@@ -44,6 +45,9 @@ setup(
         "Operating System :: OS Independent",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
