@@ -8,6 +8,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - KSM-669 - Crypto issues when using getFolders() on Cloudflare workers with JS SDK
 - KSM-731 - Fix notation lookup with record shortcuts (handles duplicate UIDs from shortcuts)
 - KSM-739 - Added transmission public key #18 for Gov Cloud Dev support
+- Security: Updated transitive dependencies (glob 10.5.0, js-yaml 3.14.2)
 
 ## 17.3.0
 - KSM-534 - Added proxy support
