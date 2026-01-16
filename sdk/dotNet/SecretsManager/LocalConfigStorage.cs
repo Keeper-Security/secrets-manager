@@ -1,9 +1,12 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Security;
+using System.Security.AccessControl;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 
@@ -152,6 +155,51 @@ namespace SecretsManager
 
             writer.WriteEndObject();
             writer.Flush();
+            stream.Close();
+
+            // Set secure permissions after file creation
+            SetSecurePermissions(fileName);
+        }
+
+        internal static void SetSecurePermissions(string filePath)
+        {
+            try
+            {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ||
+                    RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                {
+                    // Unix: Use chmod to set 0600 permissions
+                    var chmod = Process.Start("chmod", $"600 \"{filePath}\"");
+                    chmod?.WaitForExit();
+                }
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    // Windows: Remove inherited permissions and restrict to current user
+                    var fileInfo = new FileInfo(filePath);
+                    var fileSecurity = fileInfo.GetAccessControl();
+                    fileSecurity.SetAccessRuleProtection(true, false);
+
+                    // Remove all existing rules
+                    foreach (FileSystemAccessRule rule in fileSecurity.GetAccessRules(true, false, typeof(System.Security.Principal.NTAccount)))
+                    {
+                        fileSecurity.RemoveAccessRule(rule);
+                    }
+
+                    // Add rule for current user only
+                    var currentUser = System.Security.Principal.WindowsIdentity.GetCurrent().User;
+                    fileSecurity.AddAccessRule(new FileSystemAccessRule(
+                        currentUser,
+                        FileSystemRights.FullControl,
+                        AccessControlType.Allow));
+
+                    fileInfo.SetAccessControl(fileSecurity);
+                }
+            }
+            catch
+            {
+                // Permissions setting failed but file was created
+                // Continue operation - file permissions may be acceptable
+            }
         }
 
         public string GetString(string key)
@@ -188,6 +236,8 @@ namespace SecretsManager
         public static void SaveCachedValue(byte[] data)
         {
             File.WriteAllBytes("cache.dat", data);
+            // Set secure permissions on cache file
+            LocalConfigStorage.SetSecurePermissions("cache.dat");
         }
 
         public static byte[] GetCachedValue()
