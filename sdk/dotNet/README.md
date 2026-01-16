@@ -8,6 +8,7 @@
 * KSM-741 - Added transmission public key #18 for Gov Cloud Dev support
 * KSM-746 - Fixed record key decryption for shared folder records
 * KSM-724 - Fixed duplicate UID issue with GetNotation when record shortcuts exist (resolves #881)
+* KSM-698 - Fixed file permissions for client-config.json and cache.dat (secure 600 permissions on Unix/macOS, restricted ACLs on Windows)
 * KSM-674 - Fixed parsing of lastModified file data field
 
 ## 17.0.0
