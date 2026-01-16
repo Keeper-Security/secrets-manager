@@ -4,7 +4,7 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
-## 17.3.1
+## 17.4.0
 - KSM-669 - Crypto issues when using getFolders() on Cloudflare workers with JS SDK
 - KSM-697 - Fix file permissions for config files (write with 0600 permissions for security)
 - KSM-731 - Fix notation lookup with record shortcuts (handles duplicate UIDs from shortcuts)
