@@ -6,6 +6,11 @@ here = os.path.abspath(os.path.dirname(__file__))
 
 os.chdir(here)
 
+# Import version from single source of truth
+version = {}
+with open(os.path.join(here, 'keeper_secrets_manager_core', '_version.py'), 'r') as f:
+    exec(f.read(), version)
+
 # Get the long description from the README.md file
 with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
@@ -20,7 +25,7 @@ install_requires = [
 
 setup(
     name="keeper-secrets-manager-core",
-    version="17.1.0",
+    version=version['__version__'],
     description="Keeper Secrets Manager for Python 3",
     long_description=long_description,
     long_description_content_type="text/markdown",
