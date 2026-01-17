@@ -11,6 +11,10 @@ For more information see our official documentation page https://docs.keeper.io/
   - Python 3.10+: Uses urllib3>=2.6.0 (latest security fixes)
   - Python 3.6-3.9: Uses urllib3>=1.26.0,<1.27 (compatible with boto3/AWS storage)
 * **Security**: KSM-695 - Fixed file permissions for client-config.json (created with 0600 permissions)
+* KSM-749 - Fixed client version detection to prevent stale .dist-info metadata causing "invalid client version id" errors
+  - Introduced single source of truth for version via _version.py
+  - Client version now prioritizes package __version__ attribute over importlib_metadata
+  - Fixes issue where package upgrades left stale metadata causing backend authentication failures
 * KSM-740 - Added transmission public key #18 for Gov Cloud Dev support
 * KSM-747 - Fixed record key decryption for shared folder records
 * KSM-732 - Fixed notation lookup when record shortcuts exist (duplicate UID handling)
