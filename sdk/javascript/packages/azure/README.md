@@ -122,17 +122,17 @@ azure_keyvault_example_custom.ts
 
 ## decrypt config
 
-To decrypt the config file and save it again in plaintext, you can call the `decryptConfig` method on the `OciKeyValueStorage` instance.
+To decrypt the config file and save it again in plaintext, you can call the `decryptConfig` method on the `AzureKeyValueStorage` instance.
 Note: this will compromise the security of the config file.
 ```
-    const storage = await new OciKeyValueStorage(keyId, keyVersionId, config_path, ociSessionConfig).init();
+    const storage = await new AzureKeyValueStorage(keyId, config_path, azureSessionConfig).init();
     await storage.decryptConfig(true); // Saves to file
     const decryptedConfig = await storage.decryptConfig(true); // returns the decrypted config
 ```
 
 
 ## Logging
-We support logging for the Oracle Key Vault integration. Supported log levels are as follows
+We support logging for the Azure Key Vault integration. Supported log levels are as follows
 * trace
 * debug
 * info

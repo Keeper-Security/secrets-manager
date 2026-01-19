@@ -1,8 +1,0 @@
-[0001] ERROR [31mcould not determine source: errors occurred attempting to resolve 'sdk/javascript/packages/azure':
-  - snap: snap file "sdk/javascript/packages/azure" does not exist
-  - docker: pull failed: Error response from daemon: pull access denied for sdk/javascript/packages/azure, repository does not exist or may require 'docker login': denied: requested access to the resource is denied
-  - podman: podman not available: no host address
-  - containerd: containerd not available: no grpc connection or services is available: unavailable
-  - oci-registry: failed to get image descriptor from registry: GET https://index.docker.io/v2/sdk/javascript/packages/azure/manifests/latest: UNAUTHORIZED: authentication required; [map[Action:pull Class: Name:sdk/javascript/packages/azure Type:repository]]
-  - snap: no snap found with name 'sdk/javascript/packages/azure'
-  - additionally, the following providers failed with file does not exist: docker-archive, oci-archive, oci-dir, singularity, oci-dir, local-file, local-directory[0m
