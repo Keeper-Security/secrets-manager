@@ -353,7 +353,6 @@ namespace SecretsManager
         public long revision { get; set; }
         public bool isEditable { get; set; }
         public SecretsManagerResponseFile[] files { get; set; }
-        public string folderUid { get; set; }
         public string innerFolderUid { get; set; }
         public KeeperRecordLink[] links { get; set; }
     }
@@ -1062,24 +1061,8 @@ namespace SecretsManager
                 {
                     try
                     {
-                        // Use folder key if record belongs to a folder, otherwise use app key
-                        byte[] decryptionKey = appKey;
-                        string recordFolderUid = null;
-                        byte[] recordFolderKey = null;
-
-                        if (!string.IsNullOrEmpty(record.folderUid) && response.folders != null)
-                        {
-                            var folder = response.folders.FirstOrDefault(f => f.folderUid == record.folderUid);
-                            if (folder != null && !string.IsNullOrEmpty(folder.folderKey))
-                            {
-                                decryptionKey = CryptoUtils.Decrypt(folder.folderKey, appKey);
-                                recordFolderUid = folder.folderUid;
-                                recordFolderKey = decryptionKey;
-                            }
-                        }
-
-                        var recordKey = CryptoUtils.Decrypt(record.recordKey, decryptionKey);
-                        var decryptedRecord = DecryptRecord(record, recordKey, recordFolderUid, recordFolderKey);
+                        var recordKey = CryptoUtils.Decrypt(record.recordKey, appKey);
+                        var decryptedRecord = DecryptRecord(record, recordKey);
                         records.Add(decryptedRecord);
                     }
                     catch (Exception ex)
