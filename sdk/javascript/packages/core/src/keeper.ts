@@ -172,7 +172,6 @@ type SecretsManagerResponseRecord = {
     revision: number
     files: SecretsManagerResponseFile[]
     innerFolderUid: string
-    folderUid?: string
     links?: KeeperRecordLink[]
 }
 
@@ -608,17 +607,7 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
         for (const record of response.records) {
             try {
                 if (record.recordKey) {
-                    // Check if record belongs to a folder and use folder key for decryption
-                    let decryptionKeyId = KEY_APP_KEY
-                    if (record.folderUid && response.folders) {
-                        const folder = response.folders.find(f => f.folderUid === record.folderUid)
-                        if (folder?.folderKey) {
-                            // Unwrap folder key first, then use it for record key
-                            await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
-                            decryptionKeyId = folder.folderUid
-                        }
-                    }
-                    await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, decryptionKeyId, storage, true)
+                    await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, KEY_APP_KEY, storage, true)
                 }
                 const decryptedRecord = await decryptRecord(record, storage)
                 records.push(decryptedRecord)
