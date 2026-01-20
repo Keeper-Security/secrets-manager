@@ -814,18 +814,7 @@ class SecretsManager:
         if records_resp:
             for r in records_resp:
                 try:
-                    # Check if record belongs to a folder and use folder key for decryption
-                    decryption_key = secret_key  # Default to app key
-                    record_folder_uid = r.get('folderUid')
-
-                    if record_folder_uid and folders_resp:
-                        folder_data = next((f for f in folders_resp if f.get('folderUid') == record_folder_uid), None)
-                        if folder_data and folder_data.get('folderKey'):
-                            folder_key_enc = folder_data.get('folderKey')
-                            folder_key = CryptoUtils.decrypt_aes(utils.base64_to_bytes(folder_key_enc), secret_key)
-                            decryption_key = folder_key
-
-                    record = Record(r, decryption_key)
+                    record = Record(r, secret_key)
                     record.links = r.get('links') or []
                     records.append(record)
                 except Exception as err:
