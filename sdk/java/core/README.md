@@ -5,6 +5,12 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 17.1.4
+- **SECURITY (KSM-699)** - Fix file permissions for config.json and cache.dat
+  - Config and cache files now created with 0600 permissions (owner read/write only)
+  - Fixes vulnerability where sensitive data was world-readable
+  - Existing config files retain permissions until SDK modifies them
+  - New files created with owner-only permissions (0600 on Unix, equivalent on Windows)
+  - Multi-user workflows sharing config files will need to manage permissions manually
 - KSM-733 - Fix notation error with duplicate UIDs from shortcuts
   - When an application has access to both an original record and its shortcut, the same UID appears multiple times in getSecrets() response
   - Now deduplicates by UID to keep only the first occurrence
