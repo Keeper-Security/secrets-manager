@@ -1,6 +1,12 @@
 name: Publish to NPM
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to NPM (uncheck to build only)'
+        required: false
+        default: 'true'
+        type: boolean
 
 jobs:
   generate-sbom:
@@ -40,12 +46,12 @@ jobs:
         env:
           MANIFEST_API_KEY: ${{ secrets.MANIFEST_TOKEN }}
         run: |
-          JAVASCRIPT_SDK_DIR="./sdk/javascript"
+          JAVASCRIPT_SDK_DIR="./sdk/javascript/packages/core"
 
           # Get version from package.json
           echo "Detecting JavaScript SDK version..."
-          if [ -f "${JAVASCRIPT_SDK_DIR}/packages/core/package.json" ]; then
-            VERSION=$(grep -o '"version": "[^"]*"' "${JAVASCRIPT_SDK_DIR}/packages/core/package.json" | cut -d'"' -f4)
+          if [ -f "${JAVASCRIPT_SDK_DIR}/package.json" ]; then
+            VERSION=$(grep -o '"version": "[^"]*"' "${JAVASCRIPT_SDK_DIR}/package.json" | cut -d'"' -f4)
             echo "Detected version: ${VERSION}"
           else
             VERSION="1.0.0"
@@ -68,8 +74,50 @@ jobs:
           echo "---------- SBOM Preview (first 20 lines) ----------"
           head -n 20 js-sdk-sbom.json
 
-  publish-npm:
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-keeper-secrets-manager-js-sdk-${{ github.run_number }}
+          path: js-sdk-sbom.json
+          retention-days: 90
+
+  build-npm:
     needs: generate-sbom
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./sdk/javascript/packages/core
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build package
+        run: npm run prepublishOnly
+
+      - name: Upload NPM package
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package-${{ github.run_number }}
+          path: |
+            ${{ github.workspace }}/sdk/javascript/packages/core/dist/
+            ${{ github.workspace }}/sdk/javascript/packages/core/package.json
+
+  publish-npm:
+    needs: build-npm
+    if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
 
@@ -81,6 +129,17 @@ jobs:
       - name: Get the source code
         uses: actions/checkout@v3
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Download built package
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-package-${{ github.run_number }}
+          path: ./sdk/javascript/packages/core
+
       - name: Retrieve secrets from KSM
         id: ksmsecrets
         uses: Keeper-Security/ksm-action@master
@@ -88,9 +147,6 @@ jobs:
           keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
           secrets: |
             NScQiZwrHJFCPv1gL8TX6Q/field/password > env:NPM_TOKEN
-
-      - name: Install dependencies
-        run: npm install
 
       - name: Publish package
         run: npm publish
