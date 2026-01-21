@@ -1,6 +1,6 @@
 import typescript from "rollup-plugin-typescript2"
 import pkg from './package.json'
-import sourcemaps from "rollup-plugin-sourcemaps";
+import sourcemaps from "rollup-plugin-sourcemaps2";
 import versionInjector from "rollup-plugin-version-injector";
 
 export default [
