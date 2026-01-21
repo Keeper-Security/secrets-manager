@@ -159,12 +159,20 @@ class KeeperAnsibleTest(unittest.TestCase):
         with patch('platform.system') as mock_system:
             mock_system.return_value = "Windows"
 
-            stdout = io.StringIO()
-            with redirect_stdout(stdout):
-                main(["--config"])
-            content = stdout.getvalue()
-            self.assertRegex(content, r'set ANSIBLE_ACTION_PLUGINS', 'did not find cmd ANSIBLE_ACTION_PLUGINS')
-            self.assertRegex(content, r'set ANSIBLE_LOOKUP_PLUGINS', 'did not find cmd ANSIBLE_LOOKUP_PLUGINS')
+            # Unset PSModulePath to test cmd.exe syntax (not PowerShell)
+            # GitHub Actions runners now set PSModulePath by default, which would trigger PowerShell mode
+            original_psmodulepath = os.environ.pop('PSModulePath', None)
+            try:
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    main(["--config"])
+                content = stdout.getvalue()
+                self.assertRegex(content, r'set ANSIBLE_ACTION_PLUGINS', 'did not find cmd ANSIBLE_ACTION_PLUGINS')
+                self.assertRegex(content, r'set ANSIBLE_LOOKUP_PLUGINS', 'did not find cmd ANSIBLE_LOOKUP_PLUGINS')
+            finally:
+                # Restore PSModulePath if it was set
+                if original_psmodulepath is not None:
+                    os.environ['PSModulePath'] = original_psmodulepath
 
         # Test Windows. Powershell!
         with patch('platform.system') as mock_system:
