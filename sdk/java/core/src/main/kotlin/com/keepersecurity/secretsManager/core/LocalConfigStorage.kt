@@ -6,13 +6,30 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.*
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.PosixFilePermissions
 import java.util.*
 import kotlin.collections.HashMap
 
 fun saveCachedValue(data: ByteArray) {
-    val fos = FileOutputStream("cache.dat")
+    val file = File("cache.dat")
+    val fos = FileOutputStream(file)
     fos.write(data)
     fos.close()
+
+    // Set file permissions to 0600 (owner read/write only)
+    try {
+        val perms = PosixFilePermissions.fromString("rw-------")
+        Files.setPosixFilePermissions(file.toPath(), perms)
+    } catch (e: UnsupportedOperationException) {
+        // Windows or file system doesn't support POSIX permissions
+        // File.setReadable/setWritable provides basic protection
+        file.setReadable(false, false)  // Remove all read permissions
+        file.setWritable(false, false)  // Remove all write permissions
+        file.setReadable(true, true)     // Owner read only
+        file.setWritable(true, true)     // Owner write only
+    }
 }
 
 fun getCachedValue(): ByteArray {
@@ -122,6 +139,19 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         val outputStream = BufferedWriter(FileWriter(file))
         outputStream.write(json)
         outputStream.close()
+
+        // Set file permissions to 0600 (owner read/write only)
+        try {
+            val perms = PosixFilePermissions.fromString("rw-------")
+            Files.setPosixFilePermissions(file.toPath(), perms)
+        } catch (e: UnsupportedOperationException) {
+            // Windows or file system doesn't support POSIX permissions
+            // File.setReadable/setWritable provides basic protection
+            file.setReadable(false, false)  // Remove all read permissions
+            file.setWritable(false, false)  // Remove all write permissions
+            file.setReadable(true, true)     // Owner read only
+            file.setWritable(true, true)     // Owner write only
+        }
     }
 
     override fun getString(key: String): String? {
