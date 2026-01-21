@@ -7,10 +7,10 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change History
 
 ## 1.3.0
-- **BREAKING**: Raised minimum Python version from 3.7 to 3.9
 - **Fix**: Updated prompt-toolkit from ~=2.0 to >=3.0 (fixes boto3 dependency resolution)
 - **Fix**: Pinned boto3>=1.20.0 to ensure IMDSFetcher support for AWS integrations
 - Updated keeper-secrets-manager-storage to >=1.0.3 (now declares boto3 dependency)
+- **Note**: Python versions that have reached end-of-life will be deprecated in a future release. We are researching the deprecation timeline and will provide migration guidance soon.
 
 ## 1.2.0
 - KSM-649 Added AWS KMS JSON support for sync command
