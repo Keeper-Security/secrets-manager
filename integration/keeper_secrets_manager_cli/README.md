@@ -7,6 +7,9 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change History
 
 ## 1.3.0
+- **Security**: KSM-761 - Fixed CVE-2026-23949 (jaraco.context path traversal) in SBOM generation workflow
+  - Upgraded jaraco.context to >= 6.1.0 in SBOM build environment
+  - Build-time dependency only, does not affect runtime or published packages
 - **Fix**: Updated prompt-toolkit from ~=2.0 to >=3.0 (fixes boto3 dependency resolution)
 - **Fix**: Pinned boto3>=1.20.0 to ensure IMDSFetcher support for AWS integrations
 - Updated keeper-secrets-manager-storage to >=1.0.3 (now declares boto3 dependency)
