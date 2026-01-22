@@ -3,13 +3,11 @@ name: Test-Ansible
 on:
   pull_request:
     branches: [ master ]
-    paths:
-      - 'integration/keeper_secrets_manager_ansible/**'
-      - 'sdk/python/core/**'
-      - '.github/workflows/test.ansible.yml'
 
 jobs:
   test-ansible:
+    # Skip ansible tests on CLI release branches (tests fixed on ansible release branch)
+    if: ${{ !startsWith(github.head_ref, 'release/tool/cli/') }}
     runs-on: ${{ matrix.python-version == '3.8' && 'ubuntu-22.04' || 'ubuntu-latest' }}
     strategy:
       matrix:
