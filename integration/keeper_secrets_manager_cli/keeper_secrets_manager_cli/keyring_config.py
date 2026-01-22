@@ -187,7 +187,7 @@ class KeyringUtilityStorage(KeyValueStorage):
 
             if is_json(contents):
                 self.config = json.loads(contents)
-                self.config_hash = hashlib.md5(
+                self.config_hash = hashlib.sha256(
                     json.dumps(self.config, indent=4, sort_keys=True).encode()
                 ).hexdigest()
             else:
@@ -200,7 +200,7 @@ class KeyringUtilityStorage(KeyValueStorage):
     def __save_config(self, updated_config: dict = None, force: bool = False):
         if updated_config:
             config = json.dumps(updated_config, indent=4, sort_keys=True)
-            hash_value = hashlib.md5(config.encode()).hexdigest()
+            hash_value = hashlib.sha256(config.encode()).hexdigest()
 
             if hash_value != self.config_hash or force:
                 try:
