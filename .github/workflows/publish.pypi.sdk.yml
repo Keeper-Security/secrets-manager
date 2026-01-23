@@ -87,7 +87,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python3 -m pip install --upgrade setuptools pip wheel twine
+          python3 -m pip install --upgrade setuptools pip twine
+          python3 -m pip install 'wheel>=0.46.3'  # CVE-2026-24049: ensure patched version
           python3 -m pip install -r requirements.txt
 
       - name: Build and Publish SDK
@@ -130,7 +131,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python3 -m pip install --upgrade setuptools pip wheel twine
+          python3 -m pip install --upgrade setuptools pip twine
+          python3 -m pip install 'wheel>=0.46.3'  # CVE-2026-24049: ensure patched version
           python3 -m pip install -r requirements.txt
 
       - name: Build and Publish Helper
