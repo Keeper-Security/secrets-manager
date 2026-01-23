@@ -20,9 +20,9 @@ For more information see our official documentation page https://docs.keeper.io/
   - Fixes issue where package upgrades left stale metadata causing backend authentication failures
 * KSM-740 - Added transmission public key #18 for Gov Cloud Dev support
 * KSM-732 - Fixed notation lookup when record shortcuts exist (duplicate UID handling)
+* KSM-650 - Improved error messages for malformed configuration files
 * KSM-628 - Added GraphSync links support
 * Storage package now explicitly requires boto3>=1.20.0 (fixes ImportError with IMDSFetcher)
-* Improved test coverage: All 18 transmission keys now validated, added GraphSync links test
 
 ## 17.0.0
 * KSM-566 - Added parsing for KSM tokens with prefix
