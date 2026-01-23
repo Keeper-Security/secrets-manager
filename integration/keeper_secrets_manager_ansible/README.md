@@ -19,6 +19,14 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Changes
 
+## 1.2.7
+* **Security**: KSM-762 - Fixed CVE-2026-23949 (jaraco.context path traversal) in SBOM generation workflow
+  - Upgraded jaraco.context to >= 6.1.0 in SBOM build environment
+  - Build-time dependency only, does not affect runtime or published packages
+* KSM-714: Added notes field update support
+  - Added `NOTES` to `KeeperFieldType` enum
+  - Users can now update record notes via `keeper_set` tasks with `field_type: notes`
+
 ## 1.2.6
 * KSM-672: KSMCache class initializes cache file path before env vars are set. Closes ([issue #675](https://github.com/Keeper-Security/secrets-manager/issues/675))
 
