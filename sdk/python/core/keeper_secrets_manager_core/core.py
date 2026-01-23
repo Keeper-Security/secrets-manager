@@ -634,13 +634,14 @@ class SecretsManager:
         return ksm_rs
 
     @staticmethod
-    def __upload_file_function(url, upload_parameters, encrypted_file_data, proxy_url=None):
+    def __upload_file_function(url, upload_parameters, encrypted_file_data, verify_ssl_certs=True, proxy_url=None):
         """Upload file to the server"""
         files = {'file': encrypted_file_data}
 
         rs = requests.post(url,
                            data=upload_parameters,
                            files=files,
+                           verify=verify_ssl_certs,
                            proxies=SecretsManager.__get_proxies(proxy_url)
                            )
 
@@ -1094,7 +1095,7 @@ class SecretsManager:
         parameters_dict = json_to_dict(parameters_json_str)
 
         self.logger.debug(f"Uploading file data: upload url=[{upload_url}], file name: [{file.Name}], encrypted file size: [{len(encrypted_file_data)}]")
-        upload_result = SecretsManager.__upload_file_function(upload_url, parameters_dict, encrypted_file_data, proxy_url=self.proxy_url)
+        upload_result = SecretsManager.__upload_file_function(upload_url, parameters_dict, encrypted_file_data, verify_ssl_certs=self.verify_ssl_certs, proxy_url=self.proxy_url)
 
         self.logger.debug(f"Finished uploading file data. Status code: {upload_result.get('statusCode')}, response data: {upload_result.get('data')}")
 
@@ -1280,7 +1281,7 @@ class SecretsManager:
             if len(files) < 1:
                 raise ValueError(f"Notation error - Record {record_token} has no files matching the search criteria '{parameter}'")
             if isinstance(files[0], KeeperFile):
-                return files[0].get_file_data()
+                return files[0].get_file_data(verify_ssl_certs=self.verify_ssl_certs, proxy_url=self.proxy_url)
             else:
                 raise ValueError(f"Notation error - Record {record_token} has corrupted KeeperFile data.")
         elif selector.lower() in ("field", "custom_field"):
@@ -1604,7 +1605,7 @@ class SecretsManager:
             if len(files) < 1:
                 raise ValueError(f"Notation error - Record {record_token} has no files matching the search criteria '{parameter}'")
             if isinstance(files[0], KeeperFile):
-                contents = files[0].get_file_data()
+                contents = files[0].get_file_data(verify_ssl_certs=self.verify_ssl_certs, proxy_url=self.proxy_url)
                 text = CryptoUtils.bytes_to_url_safe_str(contents)
                 result.append(text)
             else:

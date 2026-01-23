@@ -160,3 +160,77 @@ class ProxyTest(unittest.TestCase):
                 self.assertEqual(e.args[0], f"proxy_url: {MOCK_PROXY_URL}")
             finally:
                 self.assertEqual(MOCK_PROXY_URL, recorded_proxy_url)
+
+    def test_verify_ssl_certs_passed_to_upload_file(self):
+        """Test that verify_ssl_certs is passed to the requests.post in upload_file function (KSM-763)"""
+        recorded_verify_ssl = None
+        recorded_proxy_url = None
+
+        def mocked_post(*_args, **kwargs):
+            nonlocal recorded_verify_ssl, recorded_proxy_url
+            recorded_verify_ssl = kwargs.get("verify")
+            recorded_proxy_url = kwargs.get("proxies", {}).get("https") if kwargs.get("proxies") else None
+            raise Exception(f"verify_ssl_certs: {recorded_verify_ssl}, proxy_url: {recorded_proxy_url}")
+
+        with patch("requests.post", mocked_post):
+            with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+                fh.write(MockConfig.make_json())
+                fh.seek(0)
+                secrets_manager = SecretsManager(
+                    config=FileKeyValueStorage(config_file_location=fh.name),
+                    proxy_url=MOCK_PROXY_URL,
+                    verify_ssl_certs=False  # Disable SSL verification
+                )
+
+            # Create a temporary test.txt file before passing
+            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".txt") as test_file:
+                test_file.write("dummy content")
+                test_file_path = test_file.name
+
+            owner_record = mock.Record(uid="ipasPiqV0Lw1shtYK68_mg", record_key_bytes=b"zK{uUgw/~^x35QVu")
+            try:
+                secrets_manager.upload_file_path(
+                    owner_record=owner_record,
+                    file_path=test_file_path,
+                )
+            except Exception as e:
+                self.assertIn("verify_ssl_certs: False", e.args[0])
+                self.assertIn(f"proxy_url: {MOCK_PROXY_URL}", e.args[0])
+            finally:
+                os.unlink(test_file_path)
+
+            self.assertEqual(False, recorded_verify_ssl)
+            self.assertEqual(MOCK_PROXY_URL, recorded_proxy_url)
+
+    def test_verify_ssl_certs_passed_to_file_download(self):
+        """Test that verify_ssl_certs and proxy_url are passed to requests.get in KeeperFile.get_file_data() (KSM-763)"""
+        recorded_verify_ssl = None
+        recorded_proxy_url = None
+
+        def mocked_get(*_args, **kwargs):
+            nonlocal recorded_verify_ssl, recorded_proxy_url
+            recorded_verify_ssl = kwargs.get("verify")
+            recorded_proxy_url = kwargs.get("proxies", {}).get("https") if kwargs.get("proxies") else None
+            # Return properly encrypted content
+            from keeper_secrets_manager_core.crypto import CryptoUtils
+            file_key = b'\x01' * 32
+            encrypted_data = CryptoUtils.encrypt_aes(b'test file content', file_key)
+            class MockResponse:
+                content = encrypted_data
+            return MockResponse()
+
+        from keeper_secrets_manager_core.dto.dtos import KeeperFile
+        from unittest.mock import MagicMock
+
+        # Create a minimal mock KeeperFile
+        keeper_file = MagicMock(spec=KeeperFile)
+        keeper_file.file_data = None
+        keeper_file.f = {'url': 'https://files.example.com/test'}
+        keeper_file._KeeperFile__decrypt_file_key = MagicMock(return_value=b'\x01' * 32)
+        keeper_file.get_file_data = KeeperFile.get_file_data.__get__(keeper_file, KeeperFile)
+
+        with patch("requests.get", mocked_get):
+            keeper_file.get_file_data(verify_ssl_certs=False, proxy_url=MOCK_PROXY_URL)
+
+            self.assertEqual(False, recorded_verify_ssl)
+            self.assertEqual(MOCK_PROXY_URL, recorded_proxy_url)
