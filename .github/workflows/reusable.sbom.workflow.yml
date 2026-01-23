@@ -448,7 +448,8 @@ jobs:
             python3 -m venv scan-venv
             
             echo "Upgrading pip and installing build tools..."
-            ./scan-venv/bin/pip install --upgrade pip setuptools wheel
+            ./scan-venv/bin/pip install --upgrade pip setuptools
+            ./scan-venv/bin/pip install 'wheel>=0.46.3'  # CVE-2026-24049: ensure patched version
 
             echo "Upgrading jaraco.context to fix CVE-2026-23949..."
             ./scan-venv/bin/pip install --upgrade "jaraco.context>=6.1.0"

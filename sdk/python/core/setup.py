@@ -17,7 +17,7 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
 
 install_requires = [
     'requests',
-    'cryptography>=39.0.1',
+    'cryptography>=39.0.1,!=44.0.0',  # CVE-2026-23949: exclude vulnerable version (remove when dropping Python 3.6)
     'importlib_metadata',
     'urllib3>=2.6.0; python_version >= "3.10"',
     'urllib3>=1.26.0,<1.27; python_version < "3.10"',
