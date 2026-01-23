@@ -47,19 +47,6 @@ jobs:
         run: |
           python3 setup.py build install
 
-      ########## KSM Python Storage (from source)
-
-      - name: Install SDK Storage dependencies
-        working-directory: ./sdk/python/storage/keeper_secrets_manager_storages
-        run: |
-          python3 -m pip install -r requirements.txt
-          python3 -m pip install -e .
-
-      - name: Install SDK Storage for integrations
-        working-directory: ./sdk/python/storage/keeper_secrets_manager_storages
-        run: |
-          python3 setup.py build install
-
       ########## CLI
 
       - name: Install CLI dependencies
