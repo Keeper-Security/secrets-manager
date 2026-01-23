@@ -449,7 +449,10 @@ jobs:
             
             echo "Upgrading pip and installing build tools..."
             ./scan-venv/bin/pip install --upgrade pip setuptools wheel
-            
+
+            echo "Upgrading jaraco.context to fix CVE-2026-23949..."
+            ./scan-venv/bin/pip install --upgrade "jaraco.context>=6.1.0"
+
             echo "Installing package and all dependencies..."
             ./scan-venv/bin/pip install .
             
