@@ -23,6 +23,7 @@ from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.keeper_globals import logger_name
 from keeper_secrets_manager_core.utils import ENCODING, json_to_dict, set_config_mode, check_config_mode
 
+
 class KeyValueStorage:
     """ Interface for the key value storage"""
 
