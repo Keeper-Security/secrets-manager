@@ -8,13 +8,12 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 install_requires = [
-    'keeper-secrets-manager-core>=16.3.5',
-    'boto3>=1.20.0'  # Required for AWS storage provider (IMDSFetcher support)
+    'keeper-secrets-manager-core>=16.3.5'
 ]
 
 setup(
     name="keeper-secrets-manager-storage",
-    version="1.0.3",
+    version="1.0.2",
     description="Keeper Secrets Manager SDK helper for managing configurations key-value storage.",
     long_description=long_description,
     long_description_content_type="text/markdown",
