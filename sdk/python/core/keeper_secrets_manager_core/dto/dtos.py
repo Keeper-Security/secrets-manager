@@ -373,7 +373,7 @@ class KeeperFile:
 
         return self.meta_dict
 
-    def get_file_data(self):
+    def get_file_data(self, verify_ssl_certs=True, proxy_url=None):
         """
         Return decrypted raw file data
         """
@@ -381,7 +381,8 @@ class KeeperFile:
             file_key = self.__decrypt_file_key()
             file_url = self.f.get('url')
 
-            rs = requests.get(file_url)
+            proxies = {"https": proxy_url} if proxy_url else None
+            rs = requests.get(file_url, verify=verify_ssl_certs, proxies=proxies)
 
             file_encrypted_data = rs.content
 
@@ -389,7 +390,7 @@ class KeeperFile:
 
         return self.file_data
 
-    def save_file(self, path, create_folders=False):
+    def save_file(self, path, create_folders=False, verify_ssl_certs=True, proxy_url=None):
         """
         Save decrypted file data to the provided path
         """
@@ -397,7 +398,7 @@ class KeeperFile:
         if create_folders:
             os.makedirs(os.path.dirname(path), exist_ok=True)
 
-        file_data = self.get_file_data()
+        file_data = self.get_file_data(verify_ssl_certs=verify_ssl_certs, proxy_url=proxy_url)
 
         dir_path = os.path.dirname(os.path.abspath(path))
 
