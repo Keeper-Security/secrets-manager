@@ -4,7 +4,7 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
-## 17.1.4
+## 17.2.0
 - **SECURITY (KSM-699)** - Fix file permissions for config.json and cache.dat
   - Config and cache files now created with 0600 permissions (owner read/write only)
   - Fixes vulnerability where sensitive data was world-readable
