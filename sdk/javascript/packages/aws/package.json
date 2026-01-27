@@ -40,8 +40,8 @@
     "typescript-eslint": "^8.22.0"
   },
   "dependencies": {
+    "@aws-sdk/client-kms": "^3.975.0",
     "@keeper-security/secrets-manager-core": "^17.3.0",
-    "@aws-sdk/client-kms": "^3.758.0",
     "pino": "^10.1.0",
     "pino-pretty": "^13.0.0"
   }
