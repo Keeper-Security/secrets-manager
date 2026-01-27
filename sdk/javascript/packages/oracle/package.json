@@ -45,9 +45,9 @@
   "dependencies": {
     "@keeper-security/secrets-manager-core": "^17.3.0",
     "crc-32": "^1.2.2",
-    "oci-keymanagement": "^2.102.2",
+    "node-fetch": "^2.6.5",
+    "oci-keymanagement": "^2.124.0",
     "oci-vault": "^2.103.0",
-    "node-fetch": "^2.6.5",  
     "pino": "^10.1.0",
     "pino-pretty": "^13.0.0"
   }
