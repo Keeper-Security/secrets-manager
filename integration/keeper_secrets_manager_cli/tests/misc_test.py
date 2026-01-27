@@ -50,7 +50,8 @@ class MiscTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(res)
 
-        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available', return_value=False):
             mock_client.return_value = secrets_manager
 
             # Create a keeper.ini with the default profile
@@ -102,7 +103,8 @@ class MiscTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(res)
 
-        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available', return_value=False):
             mock_client.return_value = secrets_manager
 
             # Create a keeper.ini with the default profile
@@ -147,7 +149,8 @@ class MiscTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(res)
 
-        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available', return_value=False):
             mock_client.return_value = secrets_manager
 
             # Create a keeper.ini with the default profile

@@ -386,7 +386,8 @@ def profile_init_command(ctx, token, hostname, ini_file, profile_name, token_arg
         server=hostname,
         ini_file=ini_file,
         profile_name=profile_name,
-        launched_from_app=global_config.launched_from_app
+        launched_from_app=global_config.launched_from_app,
+        use_config_file=ini_file is not None
     )
 
 

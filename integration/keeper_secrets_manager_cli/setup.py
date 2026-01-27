@@ -9,10 +9,10 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 
 install_requires = [
     'pip>=24.3.1',
-    'keeper-secrets-manager-core>=17.0.0',
+    'keeper-secrets-manager-core>=17.1.0',
     'keeper-secrets-manager-helper>=1.0.6',
     'keeper-secrets-manager-storage>=1.0.2',
-    'prompt-toolkit~=2.0',
+    'prompt-toolkit>=3.0',
     'jsonpath-rw-ext',
     'colorama',
     'importlib_metadata',
@@ -22,13 +22,17 @@ install_requires = [
     'pyyaml',
     'update-checker',
     'psutil',
-    'boto3'
+    'boto3>=1.20.0'
 ]
+
+extras_require = {
+    'keyring': ['keyring']
+}
 
 # Version set in the keeper_secrets_manager_cli.version file.
 setup(
     name="keeper-secrets-manager-cli",
-    version="1.2.0",
+    version="1.3.0",
     description="Command line tool for Keeper Secrets Manager",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -40,6 +44,7 @@ setup(
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
+    extras_require=extras_require,
     python_requires='>=3.7',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
