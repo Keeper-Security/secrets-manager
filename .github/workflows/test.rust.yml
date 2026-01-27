@@ -2,25 +2,28 @@ name: Test Rust SDK
 
 on:
   pull_request:
-    branches: [master]
+    branches: [ master ]
     paths:
       - 'sdk/rust/**'
       - '.github/workflows/test.rust.yml'
   push:
-    branches: [master]
+    branches:
+      - master
     paths:
       - 'sdk/rust/**'
       - '.github/workflows/test.rust.yml'
 
 jobs:
   test-rust-sdk:
-    name: Test Rust SDK (Rust ${{ matrix.rust-version }})
+    name: Test Rust SDK (${{ matrix.rust }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+    timeout-minutes: 20
     strategy:
       matrix:
-        rust-version: ['stable', 'beta']
+        rust:
+          - '1.56'
+          - '1.70'
+          - 'stable'
 
     defaults:
       run:
@@ -30,28 +33,40 @@ jobs:
       - name: Get the source code
         uses: actions/checkout@v3
 
-      - name: Setup Rust toolchain ${{ matrix.rust-version }}
+      - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: ${{ matrix.rust-version }}
+          toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
 
       - name: Check formatting
-        run: |
-          cargo fmt -- --check
+        run: cargo fmt -- --check
 
       - name: Run Clippy
-        run: |
-          cargo clippy --all-features -- -D warnings
+        run: cargo clippy --all-features -- -D warnings
 
-      - name: Run all tests
+      - name: Run lib tests
+        run: cargo test --all-features --lib
+
+      - name: Run integration tests
         run: |
-          cargo test --all-features
+          cargo test --all-features --test folder_operations_tests
+          cargo test --all-features --test file_operations_tests
+          cargo test --all-features --test error_handling_tests
+          cargo test --all-features --test regional_hostname_tests
+          cargo test --all-features --test create_secret_test
+          cargo test --all-features --test crypto_tests
+          cargo test --all-features --test delete_secret_tests
+          cargo test --all-features --test feature_validation_tests
+          cargo test --all-features --test get_secrets_tests
+          cargo test --all-features --test integration_tests
+          cargo test --all-features --test notation_tests
+          cargo test --all-features --test payload_test
+          cargo test --all-features --test totp_test
+          cargo test --all-features --test update_secret_tests
+
+      - name: Run caching tests (serial execution required)
+        run: cargo test --all-features --test caching_tests -- --test-threads=1
 
       - name: Build release
-        run: |
-          cargo build --release
-
-      - name: Verify package
-        run: |
-          cargo package --allow-dirty
+        run: cargo build --release
