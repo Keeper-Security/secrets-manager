@@ -42,7 +42,7 @@
     "typescript-eslint": "^8.22.0"
   },
   "dependencies": {
-    "@google-cloud/kms": "^4.5.0",
+    "@google-cloud/kms": "^5.2.1",
     "@keeper-security/secrets-manager-core": "^17.3.0",
     "axios": "^1.8.4",
     "pino": "^10.1.0",
