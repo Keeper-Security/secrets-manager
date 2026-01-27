@@ -15,6 +15,15 @@ jobs:
       - name: Get the source code
         uses: actions/checkout@v3
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install package dependencies
+        run: npm install
+        working-directory: ./sdk/javascript/packages/azure
+
       - name: Install Syft
         run: |
           echo "Installing Syft v1.18.1..."
