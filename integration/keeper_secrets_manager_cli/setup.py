@@ -9,7 +9,7 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 
 install_requires = [
     'pip>=24.3.1',
-    'keeper-secrets-manager-core>=17.0.0',
+    'keeper-secrets-manager-core>=17.1.0',
     'keeper-secrets-manager-helper>=1.0.6',
     'keeper-secrets-manager-storage>=1.0.2',
     'prompt-toolkit>=3.0',
