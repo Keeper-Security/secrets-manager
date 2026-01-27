@@ -5,9 +5,15 @@ on:
 
 jobs:
   test-rust-sdk:
-    name: Test Rust SDK
+    name: Test Rust SDK (${{ matrix.rust }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      matrix:
+        rust:
+          - '1.56'  # Minimum (Edition 2021 requirement)
+          - '1.70'  # Stable from 2023
+          - 'stable'  # Latest stable
 
     defaults:
       run:
@@ -20,7 +26,7 @@ jobs:
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
 
       - name: Check formatting
