@@ -110,6 +110,12 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+#### Minimum Rust Version
+- **Rust 1.87 or later** now required (enforced via `rust-version = "1.87"` in Cargo.toml)
+  - Required for Edition 2024 dependencies and `is_multiple_of()` stabilization
+  - Security patches necessitate newer Rust version
+  - Previous minimum was Rust 1.56 (Edition 2021 requirement)
+
 #### Refactored Internal Methods
 - **`prepare_update_secret_payload()`** - Now delegates to `prepare_update_secret_payload_with_options()`
   - Maintains backward compatibility
@@ -129,6 +135,14 @@ All notable changes to this project will be documented in this file.
 - **File removal logic** - Enhanced to match JavaScript SDK pattern (core.rs:1761-1771)
   - Filters `fileRef` field values when `links_to_remove` is specified
   - Removes entire `fileRef` field when value array becomes empty
+
+### Security
+- **openssl**: Updated from 0.10.68 to 0.10.75
+  - Fixes RUSTSEC-2025-0022 (CVE-2025-3416): Use-After-Free in `Md::fetch` and `Cipher::fetch`
+  - Severity: MEDIUM
+- **ring**: Updated from 0.17.8 to 0.17.14
+  - Fixes RUSTSEC-2025-0009 (CVE-2025-4432): AES panic vulnerability
+  - Severity: MEDIUM
 
 ### Fixed
 - **KSM-735**: Notation lookup with record shortcuts (duplicate UID bug)

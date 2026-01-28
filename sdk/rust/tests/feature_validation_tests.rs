@@ -307,6 +307,11 @@ mod feature_validation_tests {
     fn test_caching_module_exists() {
         // Verify caching module is accessible
         use keeper_secrets_manager_core::caching;
+        use std::env;
+
+        // Use temp directory for CI reliability
+        let temp_dir = env::temp_dir();
+        env::set_var("KSM_CACHE_DIR", temp_dir.to_str().unwrap());
 
         // Test cache operations
         let cache_path = caching::get_cache_file_path();
@@ -314,22 +319,25 @@ mod feature_validation_tests {
 
         // Clear any existing cache
         let _ = caching::clear_cache();
-        assert!(!caching::cache_exists());
+        assert!(
+            !caching::cache_exists(),
+            "Cache should not exist after clearing"
+        );
 
         // Save test data
         let test_data = b"test cache data for validation";
-        caching::save_cache(test_data).ok();
+        caching::save_cache(test_data).expect("Failed to save cache data");
 
         // Verify cache exists
-        assert!(caching::cache_exists());
+        assert!(caching::cache_exists(), "Cache should exist after saving");
 
         // Load and verify
-        if let Some(loaded) = caching::get_cached_data() {
-            assert_eq!(loaded, test_data);
-        }
+        let loaded = caching::get_cached_data().expect("Failed to retrieve cached data");
+        assert_eq!(loaded, test_data, "Cached data should match original");
 
         // Clean up
-        caching::clear_cache().ok();
+        caching::clear_cache().expect("Failed to clear cache");
+        env::remove_var("KSM_CACHE_DIR");
     }
 
     #[test]

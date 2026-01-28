@@ -81,6 +81,10 @@ pub fn save_cache(data: &[u8]) -> Result<(), KSMRError> {
     file.write_all(data)
         .map_err(|e| KSMRError::CacheSaveError(format!("Failed to write cache: {}", e)))?;
 
+    // Explicitly sync to disk to ensure file is visible immediately (important for tests)
+    file.sync_all()
+        .map_err(|e| KSMRError::CacheSaveError(format!("Failed to sync cache: {}", e)))?;
+
     debug!("Cache saved to {:?}", cache_path);
     Ok(())
 }
