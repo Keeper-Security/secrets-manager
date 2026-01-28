@@ -3,6 +3,7 @@ name = "keeper-secrets-manager-core"
 version = "17.1.0"
 authors = ["Keeper Security <sm@keepersecurity.com>"]
 edition = "2021"
+rust-version = "1.87"
 description = "Rust SDK for Keeper Secrets Manager"
 license = "MIT"
 repository = "https://github.com/Keeper-Security/secrets-manager"
