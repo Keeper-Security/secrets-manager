@@ -11,8 +11,7 @@ jobs:
     strategy:
       matrix:
         rust:
-          - '1.56'  # Minimum (Edition 2021 requirement)
-          - '1.70'  # Stable from 2023
+          - '1.87'  # Minimum (Edition 2024 + is_multiple_of support)
           - 'stable'  # Latest stable
 
     defaults:
