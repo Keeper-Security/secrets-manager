@@ -13,7 +13,10 @@
 use crate::config_keys::ConfigKeys;
 use crate::custom_error::KSMRError;
 use crate::enums::KvStoreType;
-use base64::{engine::general_purpose::{STANDARD, STANDARD_NO_PAD}, Engine as _};
+use base64::{
+    engine::general_purpose::{STANDARD, STANDARD_NO_PAD},
+    Engine as _,
+};
 use serde_json::{self};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
@@ -227,13 +230,40 @@ impl KeyValueStorage for FileKeyValueStorage {
         // Check if the configuration file exists, if not, create it.
         let config_path = Path::new(&self.config_file_location);
         if !config_path.exists() {
-            let mut file = File::create(config_path)
-                .map_err(|e| KSMRError::FileCreationError(config_path.display().to_string(), e))?;
+            // Create file with secure permissions (0600) on Unix
+            #[cfg(unix)]
+            {
+                use std::fs::OpenOptions;
+                use std::os::unix::fs::OpenOptionsExt;
 
-            // Attempt to write an empty JSON object to the file
-            let empty_json_string = b"{}";
-            file.write_all(empty_json_string)
-                .map_err(|e| KSMRError::FileWriteError(config_path.display().to_string(), e))?;
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .mode(0o600)
+                    .open(config_path)
+                    .map_err(|e| {
+                        KSMRError::FileCreationError(config_path.display().to_string(), e)
+                    })?;
+
+                // Attempt to write an empty JSON object to the file
+                let empty_json_string = b"{}";
+                file.write_all(empty_json_string)
+                    .map_err(|e| KSMRError::FileWriteError(config_path.display().to_string(), e))?;
+            }
+
+            // On Windows, use default file creation (no POSIX permissions)
+            #[cfg(not(unix))]
+            {
+                let mut file = File::create(config_path).map_err(|e| {
+                    KSMRError::FileCreationError(config_path.display().to_string(), e)
+                })?;
+
+                // Attempt to write an empty JSON object to the file
+                let empty_json_string = b"{}";
+                file.write_all(empty_json_string)
+                    .map_err(|e| KSMRError::FileWriteError(config_path.display().to_string(), e))?;
+            }
         }
 
         Ok(())

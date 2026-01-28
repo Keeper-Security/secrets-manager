@@ -1,0 +1,34 @@
+[package]
+name = "keeper-rust-examples"
+version = "1.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+keeper-secrets-manager-core = "17.1.0"
+serde_json = "1.0"
+chrono = "0.4"
+
+[[bin]]
+name = "01_quick_start"
+path = "01_quick_start.rs"
+
+[[bin]]
+name = "02_retrieve_secrets"
+path = "02_retrieve_secrets.rs"
+
+[[bin]]
+name = "03_update_secrets"
+path = "03_update_secrets.rs"
+
+[[bin]]
+name = "04_password_rotation"
+path = "04_password_rotation.rs"
+
+[[bin]]
+name = "05_files"
+path = "05_files.rs"
+
+[[bin]]
+name = "06_caching"
+path = "06_caching.rs"

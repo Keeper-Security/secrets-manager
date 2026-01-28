@@ -645,17 +645,15 @@ mod get_windows_user_sid_and_name_tests {
 #[cfg(test)]
 mod set_config_mode_tests {
     use crate::utils::set_config_mode;
+    use serial_test::serial;
     use std::env;
-    #[cfg(target_os = "windows")]
-    use std::fs::Permissions;
     use std::fs::{self, File};
     #[cfg(target_os = "windows")]
     use std::io;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_os = "windows")]
     #[test]
     fn test_set_config_mode_windows_skip_mode() {
@@ -670,8 +668,7 @@ mod set_config_mode_tests {
         env::remove_var("KSM_CONFIG_SKIP_MODE");
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_os = "windows")]
     #[test]
     fn test_set_config_mode_windows_with_icacls() {
@@ -695,8 +692,7 @@ mod set_config_mode_tests {
         assert!(result.is_ok());
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_family = "unix")]
     #[test]
     fn test_set_config_mode_unix() {
@@ -721,8 +717,7 @@ mod set_config_mode_tests {
         fs::remove_file(file_path).expect("Failed to delete test file");
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_set_config_mode_env_skip() {
@@ -749,6 +744,7 @@ mod set_config_mode_tests {
 mod check_config_mode_tests {
     use crate::utils::check_config_mode;
     use crate::utils::ConfigError;
+    use serial_test::serial;
     use std::env;
     use std::fs;
     // #[cfg(target_os = "windows")]
@@ -791,8 +787,7 @@ mod check_config_mode_tests {
     }
 
     #[test]
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_os = "windows")]
     fn test_check_config_mode_windows_no_file() {
         // Test for a non-existent file on Windows
@@ -807,8 +802,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_os = "windows")]
     #[test]
     fn test_check_config_mode_windows_permission_denied() {
@@ -824,8 +818,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_os = "windows")]
     #[test]
     fn test_check_config_mode_windows_too_open_permissions() {
@@ -844,8 +837,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_os = "windows")]
     #[test]
     fn test_check_config_mode_windows_proper_permissions() {
@@ -859,8 +851,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[test]
     fn test_check_config_mode_unix_no_file() {
         // Test for a non-existent file on Unix
@@ -874,8 +865,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[test]
     fn test_check_config_mode_unix_permission_denied() {
         // Test for a file that exists but is permission denied
@@ -890,8 +880,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[test]
     fn test_check_config_mode_unix_too_open_permissions() {
         // Create a temporary file and set too open permissions
@@ -909,8 +898,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[test]
     fn test_check_config_mode_unix_proper_permissions() {
         // Test with a file that has proper permissions
@@ -924,8 +912,7 @@ mod check_config_mode_tests {
     }
 
     #[test]
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     fn test_check_config_mode_skip_mode_check() {
         // Test to skip mode check via environment variable
         env::set_var("KSM_CONFIG_SKIP_MODE", "TRUE");
@@ -940,8 +927,7 @@ mod check_config_mode_tests {
     }
 
     #[test]
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     fn test_check_config_mode_skip_warning() {
         // Test skipping warning
         let path = create_temp_file_with_permissions("content", 0o600);

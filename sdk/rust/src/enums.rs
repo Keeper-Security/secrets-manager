@@ -16,8 +16,8 @@ use crate::{
     storage::{FileKeyValueStorage, InMemoryKeyValueStorage, KeyValueStorage},
 };
 use serde_json::Value;
-use std::fmt;
 use std::collections::HashMap;
+use std::fmt;
 
 pub enum KvStoreType {
     File(FileKeyValueStorage),
