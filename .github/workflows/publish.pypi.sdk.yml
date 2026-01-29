@@ -82,7 +82,7 @@ jobs:
         run: |
           VERSION="${{ needs.get-versions.outputs.sdk-version }}"
           echo "Checking if keeper-secrets-manager-core version $VERSION exists on PyPI..."
-          if pip index versions keeper-secrets-manager-core 2>/dev/null | grep -q "Available versions: .*$VERSION"; then
+          if pip index versions keeper-secrets-manager-core 2>/dev/null | grep -qE "\b$VERSION\b"; then
             echo "Version $VERSION already exists on PyPI"
             echo "exists=true" >> $GITHUB_OUTPUT
           else
@@ -147,7 +147,7 @@ jobs:
         run: |
           VERSION="${{ needs.get-versions.outputs.helper-version }}"
           echo "Checking if keeper-secrets-manager-helper version $VERSION exists on PyPI..."
-          if pip index versions keeper-secrets-manager-helper 2>/dev/null | grep -q "Available versions: .*$VERSION"; then
+          if pip index versions keeper-secrets-manager-helper 2>/dev/null | grep -qE "\b$VERSION\b"; then
             echo "Version $VERSION already exists on PyPI"
             echo "exists=true" >> $GITHUB_OUTPUT
           else
