@@ -1,0 +1,47 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Interactive console for Keeper Secrets Manager Ruby SDK development
+
+require 'bundler/setup'
+require 'pry'
+
+# Load the SDK from local source
+require_relative '../lib/keeper_secrets_manager'
+
+# Load environment variables if .env exists
+begin
+  require 'dotenv/load'
+  puts "✓ Loaded environment variables from .env"
+rescue LoadError
+  # dotenv not available, skip
+end
+
+# Helper message
+puts "Keeper Secrets Manager Ruby SDK Console"
+puts "=" * 60
+puts "SDK loaded from: #{File.expand_path('../lib/keeper_secrets_manager.rb', __dir__)}"
+puts "Version: #{KeeperSecretsManager::VERSION}"
+puts
+
+if ENV['KSM_CONFIG']
+  puts "Quick start:"
+  puts "  storage = KeeperSecretsManager::Storage::InMemoryStorage.new(ENV['KSM_CONFIG'])"
+  puts "  sm = KeeperSecretsManager.new(config: storage)"
+  puts "  secrets = sm.get_secrets"
+  puts
+  puts "With caching:"
+  puts "  sm = KeeperSecretsManager.new(config: storage, custom_post_function: KeeperSecretsManager::CachingPostFunction)"
+  puts
+else
+  puts "No KSM_CONFIG found in environment"
+  puts "Set it in .env or export it before running"
+  puts
+end
+
+puts "Type 'ls KeeperSecretsManager' to explore the SDK"
+puts "=" * 60
+puts
+
+# Start Pry REPL
+Pry.start

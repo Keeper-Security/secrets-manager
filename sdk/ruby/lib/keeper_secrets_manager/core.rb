@@ -39,9 +39,15 @@ module KeeperSecretsManager
         @verify_ssl_certs = options.fetch(:verify_ssl_certs, true)
         @custom_post_function = options[:custom_post_function]
 
+        # Set up proxy configuration
+        # Priority: explicit proxy_url parameter > HTTPS_PROXY env var > no proxy
+        @proxy_url = options[:proxy_url] || ENV['HTTPS_PROXY'] || ENV['https_proxy']
+
         # Set up logging
         @logger = options[:logger] || Logger.new(STDOUT)
         @logger.level = options[:log_level] || Logger::WARN
+
+        @logger.debug("Proxy configuration: #{@proxy_url ? @proxy_url : 'none'}") if @proxy_url
 
         # Handle configuration
         config = options[:config]
@@ -81,9 +87,6 @@ module KeeperSecretsManager
           @hostname = @config.get_string(ConfigKeys::KEY_HOSTNAME) || KeeperGlobals::DEFAULT_SERVER
         end
 
-        # Cache configuration
-        @cache = {}
-        @cache_expiry = {}
       end
 
       # Get secrets with optional filtering
@@ -243,7 +246,8 @@ module KeeperSecretsManager
           record_key: record_key,
           folder_uid: options.folder_uid,
           folder_key: folder_key,
-          data: encrypted_data
+          data: encrypted_data,
+          subfolder_uid: options.subfolder_uid
         )
 
         # Send request
@@ -253,8 +257,8 @@ module KeeperSecretsManager
         record_uid
       end
 
-      # Update existing secret
-      def update_secret(record, transaction_type: 'general')
+      # Update existing secret with UpdateOptions
+      def update_secret_with_options(record, update_options = nil)
         # Handle both record object and hash
         if record.is_a?(Dto::KeeperRecord)
           record_uid = record.uid
@@ -274,50 +278,23 @@ module KeeperSecretsManager
         record_key = existing.record_key
         raise Error, "Record key not available for #{record_uid}" unless record_key
 
-        # Record key is already raw bytes (stored during decryption)
-        # No conversion needed - use directly for encryption
-
-        # Debug: Log record data before encryption
-        @logger&.debug("update_secret: record_uid=#{record_uid}")
-        @logger&.debug("update_secret: record_data keys=#{record_data.keys.inspect}")
-        @logger&.debug("update_secret: record_data=#{record_data.inspect[0..200]}...")
-        @logger&.debug("update_secret: record_key present=#{!record_key.nil?}, length=#{record_key&.bytesize}")
-
-        # Encrypt record data with record key (same as create_secret)
-        json_data = Utils.dict_to_json(record_data)
-        @logger&.debug("update_secret: json_data length=#{json_data.bytesize}")
-        @logger&.debug("update_secret: json_data=#{json_data[0..200]}...")
-
-        encrypted_data = Crypto.encrypt_aes_gcm(json_data, record_key)
-        @logger&.debug("update_secret: encrypted_data length=#{encrypted_data.bytesize}")
-        @logger&.debug("update_secret: encrypted_data (base64)=#{Base64.strict_encode64(encrypted_data)[0..50]}...")
-
-        # Prepare payload
+        # Prepare payload (handles UpdateOptions internally)
         payload = prepare_update_payload(
           record_uid: record_uid,
-          data: encrypted_data,
+          record_data: record_data,
+          record_key: record_key,
           revision: existing.revision,
-          transaction_type: transaction_type
+          update_options: update_options
         )
 
-        @logger&.debug("update_secret: payload revision=#{existing.revision}")
-        @logger&.debug("update_secret: payload transaction_type=#{transaction_type}")
-
         # Send request
-        @logger&.debug("update_secret: sending post_query to update_secret endpoint")
-        response = post_query('update_secret', payload)
-        @logger&.debug("update_secret: response received")
-        @logger&.debug("update_secret: response class=#{response.class}")
-        @logger&.debug("update_secret: response=#{response.inspect[0..500]}...")
+        post_query('update_secret', payload)
+      end
 
-        # Always finalize the update (required for changes to persist)
-        # This applies to both 'general' and 'rotation' transaction types
-        complete_payload = Dto::CompleteTransactionPayload.new
-        complete_payload.client_version = KeeperGlobals.client_version
-        complete_payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
-        complete_payload.record_uid = record_uid
-
-        post_query('finalize_secret_update', complete_payload)
+      # Update existing secret (convenience wrapper)
+      def update_secret(record, transaction_type: 'general')
+        update_options = Dto::UpdateOptions.new(transaction_type: transaction_type)
+        update_secret_with_options(record, update_options)
 
         # Update local record's revision to reflect server state
         # Since the server doesn't return the new revision in the response,
@@ -329,6 +306,23 @@ module KeeperSecretsManager
             @logger&.debug("update_secret: updated local revision to #{record.revision}")
           end
         end
+
+        true
+      end
+
+      # Complete transaction - commit or rollback
+      # Used after update_secret with transaction_type to finalize PAM rotation
+      def complete_transaction(record_uid, rollback: false)
+        @logger.debug("Completing transaction for record #{record_uid}, rollback: #{rollback}")
+
+        # Prepare payload
+        payload = prepare_complete_transaction_payload(record_uid)
+
+        # Route to different endpoints based on rollback parameter
+        endpoint = rollback ? 'rollback_secret_update' : 'finalize_secret_update'
+
+        # Send request
+        post_query(endpoint, payload)
 
         true
       end
@@ -348,6 +342,16 @@ module KeeperSecretsManager
       def get_notation(notation_uri)
         parser = Notation::Parser.new(self)
         parser.parse(notation_uri)
+      end
+
+      # Get notation value without raising exceptions (convenience method)
+      # Returns empty array if notation is invalid or record not found
+      def try_get_notation(notation_uri)
+        parser = Notation::Parser.new(self)
+        parser.parse(notation_uri)
+      rescue NotationError, RecordNotFoundError, StandardError => e
+        @logger.debug("try_get_notation failed for '#{notation_uri}': #{e.message}")
+        []
       end
 
       # Create folder
@@ -576,6 +580,27 @@ module KeeperSecretsManager
         file_uid
       end
 
+      # Upload file from disk path (convenience method)
+      # Reads file from disk and uploads to specified record
+      def upload_file_from_path(owner_record_uid, file_path, file_title: nil)
+        raise ArgumentError, "File not found: #{file_path}" unless File.exist?(file_path)
+        raise ArgumentError, "Path is a directory: #{file_path}" if File.directory?(file_path)
+
+        # Read file data
+        file_data = File.binread(file_path)
+
+        # Extract filename from path
+        file_name = File.basename(file_path)
+
+        # Use file_title if provided, otherwise use filename
+        file_title ||= file_name
+
+        @logger.debug("Uploading file from path: #{file_path} (#{file_data.bytesize} bytes)")
+
+        # Delegate to existing upload_file method
+        upload_file(owner_record_uid, file_data, file_name, file_title)
+      end
+
       # Download file from record's file data
       def download_file(file_data)
         # Extract file metadata (already decrypted)
@@ -601,6 +626,35 @@ module KeeperSecretsManager
           'type' => file_data['type'],
           'size' => file_data['size'] || decrypted_content.bytesize,
           'data' => decrypted_content
+        }
+      end
+
+      # Download file thumbnail
+      def download_thumbnail(file_data)
+        # Extract thumbnail metadata
+        file_uid = file_data['fileUid'] || file_data['uid'] || (file_data.respond_to?(:uid) ? file_data.uid : nil)
+        thumbnail_url = file_data['thumbnailUrl'] || file_data['thumbnail_url'] || (file_data.respond_to?(:thumbnail_url) ? file_data.thumbnail_url : nil)
+
+        raise ArgumentError, 'File UID is required' unless file_uid
+        raise Error, "No thumbnail URL available for file #{file_uid}" unless thumbnail_url
+
+        # The file key should already be decrypted (base64 encoded)
+        file_key_str = file_data['fileKey'] || file_data['file_key']
+        raise Error, "File key not available for #{file_uid}" unless file_key_str
+
+        file_key = Utils.base64_to_bytes(file_key_str)
+
+        # Download the encrypted thumbnail content
+        encrypted_content = download_encrypted_file(thumbnail_url)
+
+        # Decrypt the thumbnail content with the file key
+        decrypted_content = Crypto.decrypt_aes_gcm(encrypted_content, file_key)
+
+        # Return thumbnail data
+        {
+          'file_uid' => file_uid,
+          'data' => decrypted_content,
+          'size' => decrypted_content.bytesize
         }
       end
 
@@ -644,7 +698,7 @@ module KeeperSecretsManager
 
         request = Net::HTTP::Get.new(uri)
 
-        http = Net::HTTP.new(uri.host, uri.port)
+        http = create_http_client(uri)
         configure_http_ssl(http)
 
         response = http.request(request)
@@ -878,9 +932,13 @@ module KeeperSecretsManager
         # Create record object
         record = Dto::KeeperRecord.new(
           'recordUid' => record_uid,
+          'folderUid' => encrypted_record['folderUid'],
+          'innerFolderUid' => encrypted_record['innerFolderUid'],
+          'isEditable' => encrypted_record['isEditable'],
           'data' => data,
           'revision' => encrypted_record['revision'],
-          'files' => decrypted_files
+          'files' => decrypted_files,
+          'links' => encrypted_record['links'] || []
         )
 
         # Store record key for later use (e.g., file downloads)
@@ -1026,19 +1084,21 @@ module KeeperSecretsManager
         if query_options
           payload.requested_records = query_options.records_filter
           payload.requested_folders = query_options.folders_filter
+          payload.request_links = query_options.request_links if query_options.request_links
         end
 
         payload
       end
 
       # Prepare create payload
-      def prepare_create_payload(record_uid:, record_key:, folder_uid:, folder_key:, data:)
+      def prepare_create_payload(record_uid:, record_key:, folder_uid:, folder_key:, data:, subfolder_uid: nil)
         payload = Dto::CreatePayload.new
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.record_uid = record_uid
         payload.record_key = Utils.bytes_to_base64(record_key)
         payload.folder_uid = folder_uid
+        payload.sub_folder_uid = subfolder_uid
         payload.data = Utils.bytes_to_base64(data)
 
         # Encrypt the record key with the folder key
@@ -1067,7 +1127,9 @@ module KeeperSecretsManager
           encrypted_payload = encrypt_and_sign_payload(config, transmission_key, payload)
 
           # Make request
-          response = if @custom_post_function && path == 'get_secret'
+          # Use custom post function for read-only operations (get_secret, get_folders)
+          # This enables caching for disaster recovery
+          response = if @custom_post_function && (path == 'get_secret' || path == 'get_folders')
                        @custom_post_function.call(url, transmission_key, encrypted_payload, @verify_ssl_certs)
                      else
                        post_function(url, transmission_key, encrypted_payload)
@@ -1154,6 +1216,33 @@ module KeeperSecretsManager
         )
       end
 
+      # Create Net::HTTP instance with proxy support
+      # Configures proxy if @proxy_url is set
+      def create_http_client(uri)
+        if @proxy_url
+          # Parse proxy URL
+          proxy_uri = URI(@proxy_url)
+
+          # Create HTTP client with proxy
+          http = Net::HTTP.new(
+            uri.host,
+            uri.port,
+            proxy_uri.host,
+            proxy_uri.port,
+            proxy_uri.user,
+            proxy_uri.password
+          )
+
+          @logger.debug("Using HTTP proxy: #{proxy_uri.host}:#{proxy_uri.port}")
+          @logger.debug("Proxy authentication: #{proxy_uri.user ? 'yes' : 'no'}")
+        else
+          # Create HTTP client without proxy
+          http = Net::HTTP.new(uri.host, uri.port)
+        end
+
+        http
+      end
+
       # Configure SSL for HTTP connection
       # Sets up certificate store and verification mode
       def configure_http_ssl(http)
@@ -1201,7 +1290,7 @@ module KeeperSecretsManager
         request['Content-Length'] = encrypted_payload.encrypted_payload.bytesize.to_s
         request.body = encrypted_payload.encrypted_payload
 
-        http = Net::HTTP.new(uri.host, uri.port)
+        http = create_http_client(uri)
         configure_http_ssl(http)
 
         response = http.request(request)
@@ -1316,14 +1405,40 @@ module KeeperSecretsManager
       end
 
       # Other helper methods...
-      def prepare_update_payload(record_uid:, data:, revision:, transaction_type:)
+      def prepare_update_payload(record_uid:, record_data:, record_key:, revision:, update_options: nil)
         payload = Dto::UpdatePayload.new
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.record_uid = record_uid
-        payload.data = Utils.bytes_to_base64(data)
         payload.revision = revision
+
+        # Handle UpdateOptions
+        transaction_type = 'general'
+        if update_options
+          transaction_type = update_options.transaction_type if update_options.transaction_type
+
+          # Handle links_to_remove
+          if update_options.links_to_remove && !update_options.links_to_remove.empty?
+            payload.links2_remove = update_options.links_to_remove
+
+            # Filter fileRef field values - remove specified link UIDs from record data
+            # This modifies the data hash before encryption (matches Python SDK behavior)
+            fileref_field = record_data['fields']&.find { |f| f['type'] == 'fileRef' }
+            if fileref_field && fileref_field['value'].is_a?(Array)
+              original_values = fileref_field['value']
+              filtered_values = original_values.reject { |uid| update_options.links_to_remove.include?(uid) }
+              fileref_field['value'] = filtered_values if filtered_values.length != original_values.length
+            end
+          end
+        end
+
         payload.transaction_type = transaction_type
+
+        # Encrypt record data
+        json_data = Utils.dict_to_json(record_data)
+        encrypted_data = Crypto.encrypt_aes_gcm(json_data, record_key)
+        payload.data = Utils.bytes_to_base64(encrypted_data)
+
         payload
       end
 
@@ -1332,6 +1447,14 @@ module KeeperSecretsManager
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.record_uids = record_uids
+        payload
+      end
+
+      def prepare_complete_transaction_payload(record_uid)
+        payload = Dto::CompleteTransactionPayload.new
+        payload.client_version = KeeperGlobals.client_version
+        payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
+        payload.record_uid = record_uid
         payload
       end
 
@@ -1417,7 +1540,7 @@ module KeeperSecretsManager
         request.body = body.join
         request['Content-Type'] = "multipart/form-data; boundary=#{boundary}"
 
-        http = Net::HTTP.new(uri.host, uri.port)
+        http = create_http_client(uri)
         configure_http_ssl(http)
 
         response = http.request(request)
