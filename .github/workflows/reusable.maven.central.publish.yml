@@ -29,14 +29,33 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     outputs:
       version: ${{ steps.extract-version.outputs.version }}
+      artifact-id: ${{ steps.extract-version.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v3
-      - name: Extract version from build.gradle.kts
+      - name: Extract version and artifact ID from Gradle
         id: extract-version
         run: |
           VERSION=$(grep -Po 'version\s*=\s*"\K[^"]*' build.gradle.kts || echo "0.0.0-unknown")
           echo "Version retrieved: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # Extract artifactId from settings.gradle.kts (rootProject.name)
+          if [ -f "settings.gradle.kts" ]; then
+            ARTIFACT_ID=$(grep -Po 'rootProject\.name\s*=\s*"\K[^"]*' settings.gradle.kts || echo "")
+          fi
+
+          # Fallback to settings.gradle if settings.gradle.kts doesn't exist
+          if [ -z "$ARTIFACT_ID" ] && [ -f "settings.gradle" ]; then
+            ARTIFACT_ID=$(grep -Po "rootProject\.name\s*=\s*['\"]\\K[^'\"]*" settings.gradle || echo "")
+          fi
+
+          # Final fallback to project-name input
+          if [ -z "$ARTIFACT_ID" ]; then
+            ARTIFACT_ID="${{ inputs.project-name }}"
+          fi
+
+          echo "Artifact ID retrieved: $ARTIFACT_ID"
+          echo "artifact-id=$ARTIFACT_ID" >> $GITHUB_OUTPUT
 
   generate-and-upload-sbom:
     needs: get-version
@@ -56,9 +75,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: wrapper
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Build project and copy dependencies
         run: |
@@ -173,9 +190,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: wrapper
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v3
@@ -195,6 +210,125 @@ jobs:
           JRELEASER_GPG_PUBLIC_KEY: /tmp/public-key.asc
           JRELEASER_MAVENCENTRAL_USERNAME: ${{ env.JRELEASER_MAVENCENTRAL_USERNAME }}
           JRELEASER_MAVENCENTRAL_PASSWORD: ${{ env.JRELEASER_MAVENCENTRAL_PASSWORD }}
+
+      - name: Verify publication via Central Portal API
+        run: |
+          GROUP_ID="com.keepersecurity.secrets-manager"
+          ARTIFACT_ID="${{ needs.get-version.outputs.artifact-id }}"
+          VERSION="${{ needs.get-version.outputs.version }}"
+          GROUP_PATH="${GROUP_ID//./\/}"
+
+          echo "Verifying publication for: ${GROUP_ID}:${ARTIFACT_ID}:${VERSION}"
+
+          # Check if JReleaser output.properties exists and contains deployment ID
+          JRELEASER_OUTPUT="build/jreleaser/output.properties"
+
+          if [ -f "$JRELEASER_OUTPUT" ]; then
+            echo "Reading JReleaser output properties..."
+            cat "$JRELEASER_OUTPUT"
+
+            # Extract deployment ID (supports both formats: deploy.maven.mavenCentral.*.deploymentId or deployMavenCentral*DeploymentId)
+            DEPLOYMENT_ID=$(grep -E "(deploy\.maven\.mavenCentral.*deploymentId|deployMavenCentral.*DeploymentId)" "$JRELEASER_OUTPUT" | cut -d'=' -f2 | tr -d '[:space:]')
+
+            if [ -n "$DEPLOYMENT_ID" ]; then
+              echo "Found deployment ID: $DEPLOYMENT_ID"
+              echo "Checking deployment status via Central Portal API..."
+
+              # Create Bearer token from username:password
+              AUTH_TOKEN=$(printf "%s:%s" "${{ env.JRELEASER_MAVENCENTRAL_USERNAME }}" "${{ env.JRELEASER_MAVENCENTRAL_PASSWORD }}" | base64)
+
+              # Poll Portal API for deployment status (max 20 attempts, 30 seconds each = 10 minutes)
+              MAX_RETRIES=20
+              RETRY_COUNT=0
+
+              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+
+                # Call Portal API status endpoint
+                RESPONSE=$(curl -s -w "\n%{http_code}" \
+                  -H "Authorization: Bearer ${AUTH_TOKEN}" \
+                  "https://central.sonatype.com/api/v1/publisher/status?id=${DEPLOYMENT_ID}")
+
+                HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+                BODY=$(echo "$RESPONSE" | sed '$d')
+
+                if [ "$HTTP_CODE" == "200" ]; then
+                  # Extract deploymentState from JSON response
+                  DEPLOYMENT_STATE=$(echo "$BODY" | grep -o '"deploymentState":"[^"]*"' | cut -d'"' -f4)
+
+                  echo "Attempt $RETRY_COUNT/$MAX_RETRIES: Deployment state is '$DEPLOYMENT_STATE'"
+
+                  if [ "$DEPLOYMENT_STATE" == "PUBLISHED" ]; then
+                    echo ""
+                    echo "SUCCESS: Artifact published to Maven Central via Portal API"
+                    echo "Portal: https://central.sonatype.com/artifact/${GROUP_ID}/${ARTIFACT_ID}/${VERSION}"
+                    echo "Repository: https://repo1.maven.org/maven2/${GROUP_PATH}/${ARTIFACT_ID}/${VERSION}/"
+                    exit 0
+                  elif [ "$DEPLOYMENT_STATE" == "FAILED" ]; then
+                    echo "ERROR: Deployment failed"
+                    echo "$BODY"
+                    exit 1
+                  fi
+
+                  # States: PENDING, VALIDATING, VALIDATED, PUBLISHING
+                  if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                    echo "Waiting 30 seconds before next check..."
+                    sleep 30
+                  fi
+                else
+                  echo "WARNING: Portal API returned HTTP $HTTP_CODE"
+                  if [ "$HTTP_CODE" = "500" ]; then
+                    echo "Note: HTTP 500 may indicate deployment is already completed/archived"
+                  fi
+                  echo "$BODY"
+                  break
+                fi
+              done
+
+              echo ""
+              echo "Deployment not PUBLISHED after $MAX_RETRIES attempts (state: $DEPLOYMENT_STATE)"
+              echo "This may be normal - falling back to direct Maven Central check..."
+            else
+              echo "WARNING: No deployment ID found in JReleaser output"
+              echo "Falling back to direct Maven Central check..."
+            fi
+          else
+            echo "WARNING: JReleaser output.properties not found at: $JRELEASER_OUTPUT"
+            echo "Falling back to direct Maven Central check..."
+          fi
+
+          echo ""
+          echo "Checking Maven Central repository directly..."
+          MAVEN_CENTRAL_URL="https://repo1.maven.org/maven2/${GROUP_PATH}/${ARTIFACT_ID}/${VERSION}/${ARTIFACT_ID}-${VERSION}.pom"
+          echo "URL: ${MAVEN_CENTRAL_URL}"
+
+          # Check repo1.maven.org with retries (max 10 attempts, 30 seconds each = 5 minutes)
+          MAX_RETRIES=10
+          RETRY_COUNT=0
+
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${MAVEN_CENTRAL_URL}")
+
+            if [ "$HTTP_STATUS" == "200" ]; then
+              echo ""
+              echo "SUCCESS: Artifact confirmed on Maven Central repository"
+              echo "Portal: https://central.sonatype.com/artifact/${GROUP_ID}/${ARTIFACT_ID}/${VERSION}"
+              echo "Repository: https://repo1.maven.org/maven2/${GROUP_PATH}/${ARTIFACT_ID}/${VERSION}/"
+              exit 0
+            fi
+
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              echo "Attempt $RETRY_COUNT/$MAX_RETRIES: Not available yet (HTTP $HTTP_STATUS). Waiting 30 seconds..."
+              sleep 30
+            fi
+          done
+
+          echo ""
+          echo "WARNING: Artifact not confirmed after all checks"
+          echo "This may be normal - Maven Central sync can take up to 2 hours"
+          echo "Manual verification: ${MAVEN_CENTRAL_URL}"
+          exit 0
 
       - name: Upload JReleaser logs on failure
         if: failure()

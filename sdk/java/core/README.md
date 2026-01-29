@@ -4,6 +4,13 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.1.3
+- KSM-738 - Add missing PAM connection settings fields (61 new fields for VAUL-7662)
+  - PamRbiConnection: Add audio/clipboard controls (disableAudio, disableCopy, disablePaste, audioChannels, audioBps, audioSampleRate)
+  - PamSettingsConnection: Add protocol-specific fields (SSH/Terminal, VNC, RDP, Kubernetes)
+  - PamSettingsPortForward: Add local port configuration (useSpecifiedLocalPort, localPort)
+- feat - Add automated Maven Central verification workflow
+
 ## 17.1.2
 - KSM-651 - Add retrieve file by name to Notation.getFile()
 - KSM-654 - Add fatJar gradle task

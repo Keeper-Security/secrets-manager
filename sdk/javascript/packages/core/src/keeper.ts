@@ -32,7 +32,8 @@ export const initialize = (pkgVersion?: string) => {
         'BJFF8j-dH7pDEw_U347w2CBM6xYM8Dk5fPPAktjib-opOqzvvbsER-WDHM4ONCSBf9O_obAHzCyygxmtpktDuiE',
         'BDKyWBvLbyZ-jMueORl3JwJnnEpCiZdN7yUvT0vOyjwpPBCDf6zfL4RWzvSkhAAFnwOni_1tQSl8dfXHbXqXsQ8',
         'BDXyZZnrl0tc2jdC5I61JjwkjK2kr7uet9tZjt8StTiJTAQQmnVOYBgbtP08PWDbecxnHghx3kJ8QXq1XE68y8c',
-        'BFX68cb97m9_sweGdOVavFM3j5ot6gveg6xT4BtGahfGhKib-zdZyO9pwvv1cBda9ahkSzo1BQ4NVXp9qRyqVGU'
+        'BFX68cb97m9_sweGdOVavFM3j5ot6gveg6xT4BtGahfGhKib-zdZyO9pwvv1cBda9ahkSzo1BQ4NVXp9qRyqVGU',
+        'BNhngQqTT1bPKxGuB6FhbPTAeNVFl8PKGGSGo5W06xWIReutm6ix6JPivqnbvkydY-1uDQTr-5e6t70G01Bb5JA'
     ].reduce((keys, key) => {
         keys[keyNumber++] = webSafe64ToBytes(key)
         return keys
@@ -838,8 +839,15 @@ export const getNotationResults = async (options: SecretManagerOptions, notation
     if (/^[A-Za-z0-9_-]{22}$/.test(recordToken)) {
         const secrets = await getSecrets(options, [recordToken])
         records = secrets.records
-        if (records.length > 1)
-            throw new Error(`Notation error - found multiple records with same UID '${recordToken}'`)
+        // Remove duplicate UIDs - shortcuts/linked records both shared to same KSM App
+        if (records.length > 1) {
+            const seen = new Set<string>()
+            records = records.filter(r => {
+                if (seen.has(r.recordUid)) return false
+                seen.add(r.recordUid)
+                return true
+            })
+        }
     }
 
     // If RecordUID is not found - pull all records and search by title
