@@ -465,6 +465,19 @@ namespace SecretsManager
         }
     }
 
+    internal class KeeperRecordComparer : IEqualityComparer<KeeperRecord>
+    {
+        public bool Equals(KeeperRecord x, KeeperRecord y)
+        {
+            return x.RecordUid == y.RecordUid;
+        }
+
+        public int GetHashCode(KeeperRecord obj)
+        {
+            return obj.RecordUid?.GetHashCode() ?? 0;
+        }
+    }
+
     public class KeeperFolder
     {
         public KeeperFolder(byte[] folderKey, string folderUid, string parentUid, string name)
@@ -687,8 +700,10 @@ namespace SecretsManager
             {
                 var secrets = await GetSecrets(options, new string[] { recordToken });
                 records = secrets?.Records;
-                if ((records?.Count() ?? 0) > 1)
-                    throw new Exception($"Notation error - found multiple records with same UID '{recordToken}'");
+
+                // OK: multiple records matching same UID - shortcuts/linked records
+                //if ((records?.Count() ?? 0) > 1)
+                //    throw new Exception($"Notation error - found multiple records with same UID '{recordToken}'");
             }
 
             // If RecordUID is not found - pull all records and search by title
@@ -697,6 +712,10 @@ namespace SecretsManager
                 var secrets = await GetSecrets(options);
                 records = (secrets?.Records != null ? secrets.Records.Where(x => recordToken.Equals(x?.Data?.title)).ToArray() : null);
             }
+
+            // remove duplicate UIDs - these can only be shortcuts/linked records both shared to same KSM App
+            if ((records?.Count() ?? 0) > 1)
+                records = records.Distinct(new KeeperRecordComparer()).ToArray();
 
             if ((records?.Count() ?? 0) > 1)
                 throw new Exception($"Notation error - multiple records match record '{recordToken}'");
@@ -1418,7 +1437,8 @@ namespace SecretsManager
                     "BJFF8j-dH7pDEw_U347w2CBM6xYM8Dk5fPPAktjib-opOqzvvbsER-WDHM4ONCSBf9O_obAHzCyygxmtpktDuiE",
                     "BDKyWBvLbyZ-jMueORl3JwJnnEpCiZdN7yUvT0vOyjwpPBCDf6zfL4RWzvSkhAAFnwOni_1tQSl8dfXHbXqXsQ8",
                     "BDXyZZnrl0tc2jdC5I61JjwkjK2kr7uet9tZjt8StTiJTAQQmnVOYBgbtP08PWDbecxnHghx3kJ8QXq1XE68y8c",
-                    "BFX68cb97m9_sweGdOVavFM3j5ot6gveg6xT4BtGahfGhKib-zdZyO9pwvv1cBda9ahkSzo1BQ4NVXp9qRyqVGU"
+                    "BFX68cb97m9_sweGdOVavFM3j5ot6gveg6xT4BtGahfGhKib-zdZyO9pwvv1cBda9ahkSzo1BQ4NVXp9qRyqVGU",
+                    "BNhngQqTT1bPKxGuB6FhbPTAeNVFl8PKGGSGo5W06xWIReutm6ix6JPivqnbvkydY-1uDQTr-5e6t70G01Bb5JA"
                 }
                 .ToDictionary(_ => keyId++, CryptoUtils.WebSafe64ToBytes);
         }

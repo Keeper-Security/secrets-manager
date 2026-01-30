@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace SecretsManager
@@ -24,12 +25,37 @@ namespace SecretsManager
         public object complexity { get; set; }
     }
 
+    public class FlexibleLongConverter : JsonConverter<long>
+    {
+        public override long Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.Number)
+            {
+                if (reader.TryGetInt64(out long longValue))
+                {
+                    return longValue;
+                }
+                else if (reader.TryGetDouble(out double doubleValue))
+                {
+                    return (long)doubleValue;
+                }
+            }
+            throw new JsonException($"Unable to convert to long.");
+        }
+
+        public override void Write(Utf8JsonWriter writer, long value, JsonSerializerOptions options)
+        {
+            writer.WriteNumberValue(value);
+        }
+    }
+
     public class KeeperFileData
     {
         public string title { get; set; }
         public string name { get; set; }
         public string type { get; set; }
         public long size { get; set; }
+        [JsonConverter(typeof(FlexibleLongConverter))]
         public long lastModified { get; set; }
     }
 
