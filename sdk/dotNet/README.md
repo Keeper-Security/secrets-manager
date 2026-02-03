@@ -3,6 +3,10 @@
 
 # Change Log
 
+## 17.1.1
+
+* KSM-767 - Fixed PowerShell 7.5.4 compatibility by downgrading System.Text.Json from 10.0.1 to 9.0.9
+
 ## 17.1.0
 
 * KSM-741 - Added transmission public key #18 for Gov Cloud Dev support
