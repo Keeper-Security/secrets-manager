@@ -1,0 +1,70 @@
+name: Test-DotNet-PowerShell
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "sdk/dotNet/**"
+      - ".github/workflows/test.dotnet.powershell.yml"
+
+jobs:
+  test-powershell-module:
+    name: Test PowerShell Module (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    defaults:
+      run:
+        working-directory: ./sdk/dotNet
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Display PowerShell version
+        shell: pwsh
+        run: |
+          Write-Host "PowerShell Version: $($PSVersionTable.PSVersion)"
+          Write-Host ".NET Version: $([System.Runtime.InteropServices.RuntimeInformation]::FrameworkDescription)"
+
+      - name: Install dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Run C# unit tests
+        run: dotnet test --configuration Release --no-build --verbosity minimal
+
+      - name: Install PowerShell SecretManagement module
+        shell: pwsh
+        run: |
+          Write-Host "Installing Microsoft.PowerShell.SecretManagement..." -ForegroundColor Cyan
+          Install-Module -Name Microsoft.PowerShell.SecretManagement -Force -Scope CurrentUser -Repository PSGallery
+          Get-Module -Name Microsoft.PowerShell.SecretManagement -ListAvailable
+
+      - name: Build PowerShell module package
+        shell: pwsh
+        run: |
+          Write-Host "Building PowerShell module package..." -ForegroundColor Cyan
+          & ./SecretManagement.Keeper/build.ps1 -Package
+
+      - name: Run PowerShell integration tests
+        shell: pwsh
+        run: |
+          Write-Host "Running PowerShell integration tests..." -ForegroundColor Cyan
+          & ./SecretManagement.Keeper/Tests/Integration.Tests.ps1
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "PowerShell integration tests failed"
+            exit 1
+          }

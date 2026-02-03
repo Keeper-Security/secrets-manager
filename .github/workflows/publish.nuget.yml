@@ -25,9 +25,48 @@ jobs:
           echo "SDK Version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+  check-version:
+    needs: get-version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if NuGet package version exists
+        run: |
+          VERSION="${{ needs.get-version.outputs.sdk-version }}"
+          echo "Checking if Keeper.SecretsManager $VERSION exists on NuGet..."
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://api.nuget.org/v3-flatcontainer/keeper.secretsmanager/$VERSION/keeper.secretsmanager.nuspec")
+
+          if [ "$STATUS" = "200" ]; then
+            echo "ERROR: Version $VERSION already exists on NuGet"
+            echo "Update PackageVersion in sdk/dotNet/SecretsManager/SecretsManager.csproj"
+            exit 1
+          else
+            echo "Version $VERSION is available (NuGet returned HTTP $STATUS)"
+          fi
+
+      - name: Check if PowerShell Gallery version exists
+        shell: pwsh
+        run: |
+          $version = "${{ needs.get-version.outputs.sdk-version }}"
+          Write-Host "Checking if SecretManagement.Keeper $version exists on PowerShell Gallery..."
+
+          try {
+            $module = Find-Module -Name SecretManagement.Keeper -RequiredVersion $version -ErrorAction Stop
+            Write-Host "ERROR: Version $version already exists on PowerShell Gallery"
+            Write-Host "Update ModuleVersion in sdk/dotNet/SecretManagement.Keeper/*.psd1 files"
+            exit 1
+          } catch {
+            if ($_.Exception.Message -match "No match was found") {
+              Write-Host "Version $version is available on PowerShell Gallery"
+            } else {
+              throw
+            }
+          }
+
   # Generate and upload SBOM for SDK
   generate-sdk-sbom:
-    needs: get-version
+    needs: check-version
     runs-on: ubuntu-latest
 
     defaults:
