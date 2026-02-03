@@ -45,16 +45,17 @@ rescue StandardError => e
   puts "✗ Error: #{e.message}"
 end
 
-# Method 3: Using configuration file
-puts "\n3. Using Configuration File:"
+# Method 3: Using configuration file (RECOMMENDED)
+puts "\n3. Using Configuration File (Recommended):"
 begin
-  # Save configuration to a file
-  config_file = 'keeper-config.json'
+  # This is the recommended approach for most applications
+  config_file = 'keeper_config.json'
 
-  # Initialize with file storage
+  # Initialize from file storage
   sm = KeeperSecretsManager.from_file(config_file)
 
   puts "✓ Connected using config file: #{config_file}"
+  puts "  (This is the recommended method after initial token binding)"
 rescue StandardError => e
   puts "✗ Error: #{e.message}"
 end
