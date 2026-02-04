@@ -8,12 +8,19 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 install_requires = [
-    'keeper-secrets-manager-core>=16.3.5'
+    'keeper-secrets-manager-core>=17.1.0'
 ]
+
+extras_require = {
+    'aws': [
+        'boto3>=1.20.0,<1.26 ; python_version<"3.7"',
+        'boto3>=1.20.0 ; python_version>="3.7"',
+    ],
+}
 
 setup(
     name="keeper-secrets-manager-storage",
-    version="1.0.2",
+    version="1.0.3",
     description="Keeper Secrets Manager SDK helper for managing configurations key-value storage.",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -27,6 +34,7 @@ setup(
     package_data={},
     include_package_data=True,
     install_requires=install_requires,
+    extras_require=extras_require,
     python_requires='>=3.6',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",

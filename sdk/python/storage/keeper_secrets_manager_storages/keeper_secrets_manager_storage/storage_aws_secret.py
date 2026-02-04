@@ -35,11 +35,12 @@ try:
     from botocore.exceptions import ClientError
     from botocore.session import get_session
     from botocore.utils import (InstanceMetadataFetcher, IMDSFetcher, IMDSRegionProvider)
+    HAS_BOTO3 = True
 except ImportError:
-    logger.error("Missing AWS SDK import dependencies."
-                 " To install missing packages run: \r\n"
-                 "pip3 install boto3\r\n")
-    raise Exception("Missing import dependencies: boto3")
+    HAS_BOTO3 = False
+    boto3 = None
+    logger.debug("boto3 not installed. AWS storage features unavailable. "
+                 "Install with: pip install keeper-secrets-manager-storage[aws]")
 
 
 class AwsConfigType(Enum):
@@ -92,6 +93,11 @@ class AwsConfigProvider(IConfigProvider):
         Parameters:
         aws_key (str): secret name/id or a full ARN
         """
+        if not HAS_BOTO3:
+            raise ImportError(
+                "boto3 is required for AWS storage. "
+                "Install with: pip install keeper-secrets-manager-storage[aws]"
+            )
 
         self._reset(aws_key)
 
@@ -391,6 +397,11 @@ class AwsSecretStorage(KeyValueStorage):
         fallback to default session set to True. To switch to a different
         configuration method use one of its helper methods.
         """
+        if not HAS_BOTO3:
+            raise ImportError(
+                "boto3 is required for AWS storage. "
+                "Install with: pip install keeper-secrets-manager-storage[aws]"
+            )
 
         if not aws_key:
             aws_key = os.getenv("KSM_AWS_SECRET", DEFAULT_AWS_KEY_NAME)
