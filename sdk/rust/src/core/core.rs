@@ -3045,8 +3045,16 @@ impl SecretsManager {
                 KSMRError::NotationError("Notation error - Missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel.".to_string())
             })?;
 
+                // Determine which array to search based on selector
+                // Standard fields are in "fields", custom fields are in "custom"
+                let field_source = if selector.to_lowercase() == "custom_field" {
+                    "custom"
+                } else {
+                    "fields"
+                };
+
                 // Find the field in the record
-                let fields_option = record.record_dict.get("fields");
+                let fields_option = record.record_dict.get(field_source);
                 let fields = match fields_option {
                     Some(val) if val.is_array() => val.as_array().unwrap(),
                     _ => &Vec::new(),
