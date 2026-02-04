@@ -145,6 +145,13 @@ All notable changes to this project will be documented in this file.
   - Severity: MEDIUM
 
 ### Fixed
+- **KSM-769**: Custom field notation selector bug
+  - Fixed `custom_field` notation selector always searching in wrong array
+  - Rust SDK was searching in "fields" array for both `field` and `custom_field` selectors
+  - Custom fields are stored in "custom" array, not "fields" array
+  - Now correctly routes `custom_field` selector to "custom" array
+  - Aligns with Python, JavaScript, Java, and .NET SDK implementations
+  - Added integration tests with proper Keeper record structure to prevent regression
 - **KSM-735**: Notation lookup with record shortcuts (duplicate UID bug)
   - Fixed notation queries returning incorrect record when vault contains shortcuts
   - Shortcuts create duplicate UIDs in secrets array (shortcut + original record)
