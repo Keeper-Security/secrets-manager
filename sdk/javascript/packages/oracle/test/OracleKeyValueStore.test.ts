@@ -36,7 +36,9 @@ jest.mock('fs', () => ({
         writeFile: jest.fn(),
         mkdir: jest.fn(),
         access: jest.fn(),
-    }
+    },
+    existsSync: jest.fn().mockReturnValue(false),
+    readFileSync: jest.fn().mockReturnValue(''),
 }));
 
 import { OciKeyValueStorage } from '../src/OracleKeyValueStore';
