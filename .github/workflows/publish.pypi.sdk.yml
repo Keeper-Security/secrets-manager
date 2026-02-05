@@ -59,7 +59,7 @@ jobs:
   # Publish SDK to PyPI
   publish-sdk:
     name: Publish KSM Python SDK to PyPI
-    needs: [generate-sdk-sbom]
+    needs: [generate-sdk-sbom, get-versions]
     environment: prod
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -77,7 +77,21 @@ jobs:
         with:
           python-version: 3.9
 
+      - name: Check if SDK version exists on PyPI
+        id: check-sdk-version
+        run: |
+          VERSION="${{ needs.get-versions.outputs.sdk-version }}"
+          echo "Checking if keeper-secrets-manager-core version $VERSION exists on PyPI..."
+          if pip index versions keeper-secrets-manager-core 2>/dev/null | grep -qE "\b$VERSION\b"; then
+            echo "Version $VERSION already exists on PyPI"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Version $VERSION does not exist on PyPI"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Retrieve secrets from KSM
+        if: steps.check-sdk-version.outputs.exists == 'false'
         id: ksmsecrets
         uses: Keeper-Security/ksm-action@master
         with:
@@ -86,11 +100,14 @@ jobs:
             -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN
 
       - name: Install dependencies
+        if: steps.check-sdk-version.outputs.exists == 'false'
         run: |
-          python3 -m pip install --upgrade setuptools pip wheel twine
+          python3 -m pip install --upgrade setuptools pip twine
+          python3 -m pip install 'wheel>=0.46.3'  # CVE-2026-24049: ensure patched version
           python3 -m pip install -r requirements.txt
 
       - name: Build and Publish SDK
+        if: steps.check-sdk-version.outputs.exists == 'false'
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ steps.ksmsecrets.outputs.PYPI_API_TOKEN }}
@@ -99,10 +116,15 @@ jobs:
           python3 setup.py sdist
           python3 -m twine upload --verbose dist/*
 
+      - name: Skip SDK publishing (already exists)
+        if: steps.check-sdk-version.outputs.exists == 'true'
+        run: |
+          echo "::notice::Skipping SDK publishing - version ${{ needs.get-versions.outputs.sdk-version }} already exists on PyPI"
+
   # Publish Helper to PyPI
   publish-helper:
     name: Publish KSM SDK Helper to PyPI
-    needs: [publish-sdk, generate-helper-sbom]  # Depends on SDK being published first
+    needs: [publish-sdk, generate-helper-sbom, get-versions]  # Depends on SDK being published first
     environment: prod
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -120,7 +142,21 @@ jobs:
         with:
           python-version: 3.9
 
+      - name: Check if Helper version exists on PyPI
+        id: check-helper-version
+        run: |
+          VERSION="${{ needs.get-versions.outputs.helper-version }}"
+          echo "Checking if keeper-secrets-manager-helper version $VERSION exists on PyPI..."
+          if pip index versions keeper-secrets-manager-helper 2>/dev/null | grep -qE "\b$VERSION\b"; then
+            echo "Version $VERSION already exists on PyPI"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Version $VERSION does not exist on PyPI"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Retrieve secrets from KSM
+        if: steps.check-helper-version.outputs.exists == 'false'
         id: ksmsecrets
         uses: Keeper-Security/ksm-action@master
         with:
@@ -129,11 +165,14 @@ jobs:
             -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN
 
       - name: Install dependencies
+        if: steps.check-helper-version.outputs.exists == 'false'
         run: |
-          python3 -m pip install --upgrade setuptools pip wheel twine
+          python3 -m pip install --upgrade setuptools pip twine
+          python3 -m pip install 'wheel>=0.46.3'  # CVE-2026-24049: ensure patched version
           python3 -m pip install -r requirements.txt
 
       - name: Build and Publish Helper
+        if: steps.check-helper-version.outputs.exists == 'false'
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ steps.ksmsecrets.outputs.PYPI_API_TOKEN }}
@@ -141,3 +180,8 @@ jobs:
           python3 setup.py build
           python3 setup.py sdist
           python3 -m twine upload --verbose dist/*
+
+      - name: Skip Helper publishing (already exists)
+        if: steps.check-helper-version.outputs.exists == 'true'
+        run: |
+          echo "::notice::Skipping Helper publishing - version ${{ needs.get-versions.outputs.helper-version }} already exists on PyPI"

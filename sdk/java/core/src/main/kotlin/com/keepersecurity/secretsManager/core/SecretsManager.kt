@@ -19,7 +19,7 @@ import java.util.*
 import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj17.1.2"
+const val KEEPER_CLIENT_VERSION = "mj17.2.0"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -873,8 +873,10 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
     if (recordToken.matches(Regex("""^[A-Za-z0-9_-]{22}$"""))) {
         val secrets = getSecrets(options, listOf<String>(recordToken))
         records = secrets.records
-        if (records.size > 1)
-            throw Exception("Notation error - found multiple records with same UID '$recordToken'")
+        // Remove duplicate UIDs - shortcuts/linked records both shared to same KSM App
+        if (records.size > 1) {
+            records = records.distinctBy { it.recordUid }
+        }
     }
 
     // If RecordUID is not found - pull all records and search by title
@@ -1581,7 +1583,8 @@ private val keeperPublicKeys = listOf(
     "BJFF8j-dH7pDEw_U347w2CBM6xYM8Dk5fPPAktjib-opOqzvvbsER-WDHM4ONCSBf9O_obAHzCyygxmtpktDuiE",
     "BDKyWBvLbyZ-jMueORl3JwJnnEpCiZdN7yUvT0vOyjwpPBCDf6zfL4RWzvSkhAAFnwOni_1tQSl8dfXHbXqXsQ8",
     "BDXyZZnrl0tc2jdC5I61JjwkjK2kr7uet9tZjt8StTiJTAQQmnVOYBgbtP08PWDbecxnHghx3kJ8QXq1XE68y8c",
-    "BFX68cb97m9_sweGdOVavFM3j5ot6gveg6xT4BtGahfGhKib-zdZyO9pwvv1cBda9ahkSzo1BQ4NVXp9qRyqVGU"
+    "BFX68cb97m9_sweGdOVavFM3j5ot6gveg6xT4BtGahfGhKib-zdZyO9pwvv1cBda9ahkSzo1BQ4NVXp9qRyqVGU",
+    "BNhngQqTT1bPKxGuB6FhbPTAeNVFl8PKGGSGo5W06xWIReutm6ix6JPivqnbvkydY-1uDQTr-5e6t70G01Bb5JA"
 ).associateBy({ keyId++ }, { webSafe64ToBytes(it) })
 
 private fun generateTransmissionKey(storage: KeyValueStorage): TransmissionKey {

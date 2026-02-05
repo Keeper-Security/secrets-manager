@@ -2,7 +2,29 @@
 
 For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/python-sdk
 
+**Python Requirements**: Python 3.6 or higher
+
 # Change Log
+
+## 17.1.0
+* **Security**: KSM-760 - Fixed CVE-2026-23949 (jaraco.context path traversal) in SBOM generation workflow
+  - Upgraded jaraco.context to >= 6.1.0 in SBOM build environment
+  - Build-time dependency only, does not affect runtime or published packages
+* **Security**: Added version-specific urllib3 dependency to address CVE-2025-66418 and CVE-2025-66471 (HIGH severity)
+  - Python 3.10+: Uses urllib3>=2.6.0 (latest security fixes)
+  - Python 3.6-3.9: Uses urllib3>=1.26.0,<1.27 (compatible with boto3/AWS storage)
+* **Security**: KSM-695 - Fixed file permissions for client-config.json (created with 0600 permissions)
+* KSM-763 - Fixed file upload/download operations failing when using proxy with verify_ssl_certs=False
+  - Added verify_ssl_certs and proxy_url parameters to file upload/download functions
+  - Previously these settings were ignored, causing SSL verification errors when using proxies
+* KSM-749 - Fixed client version detection to prevent stale .dist-info metadata causing "invalid client version id" errors
+  - Introduced single source of truth for version via _version.py
+  - Client version now prioritizes package __version__ attribute over importlib_metadata
+  - Fixes issue where package upgrades left stale metadata causing backend authentication failures
+* KSM-740 - Added transmission public key #18 for Gov Cloud Dev support
+* KSM-732 - Fixed notation lookup when record shortcuts exist (duplicate UID handling)
+* KSM-650 - Improved error messages for malformed configuration files
+* KSM-628 - Added GraphSync links support
 
 ## 17.0.0
 * KSM-566 - Added parsing for KSM tokens with prefix

@@ -10,6 +10,7 @@
 # Contact: sm@keepersecurity.com
 
 import base64
+import binascii
 import datetime
 import hashlib
 import hmac
@@ -28,6 +29,7 @@ import subprocess
 import stat
 
 from keeper_secrets_manager_core.keeper_globals import logger_name
+from keeper_secrets_manager_core import exceptions
 
 ALLOWED_WINDOWS_CONFIG_ADMINS = [b'Administrators', b'SYSTEM']
 ENCODING = 'UTF-8'
@@ -77,7 +79,25 @@ def bytes_to_base64(b):
 
 
 def base64_to_bytes(s):
-    return base64.urlsafe_b64decode(s)
+    """Decode a URL-safe base64 string to bytes.
+
+    Args:
+        s: Base64-encoded string to decode
+
+    Returns:
+        Decoded bytes
+
+    Raises:
+        KeeperError: If the base64 string is malformed or has incorrect padding
+    """
+    try:
+        return base64.urlsafe_b64decode(s)
+    except binascii.Error as e:
+        raise exceptions.KeeperError(
+            f"Failed to decode base64 data: {str(e)}. "
+            "This may indicate a malformed or corrupted value in your configuration. "
+            "Please verify your configuration file is valid and has not been truncated."
+        )
 
 
 def base64_to_string(b64s):

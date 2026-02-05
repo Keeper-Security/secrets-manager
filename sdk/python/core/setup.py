@@ -6,19 +6,26 @@ here = os.path.abspath(os.path.dirname(__file__))
 
 os.chdir(here)
 
+# Import version from single source of truth
+version = {}
+with open(os.path.join(here, 'keeper_secrets_manager_core', '_version.py'), 'r') as f:
+    exec(f.read(), version)
+
 # Get the long description from the README.md file
 with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
 install_requires = [
     'requests',
-    'cryptography>=39.0.1',
-    'importlib_metadata'
+    'cryptography>=39.0.1,!=44.0.0',  # CVE-2026-23949: exclude vulnerable version (remove when dropping Python 3.6)
+    'importlib_metadata',
+    'urllib3>=2.6.0; python_version >= "3.10"',
+    'urllib3>=1.26.0,<1.27; python_version < "3.10"',
 ]
 
 setup(
     name="keeper-secrets-manager-core",
-    version="17.0.0",
+    version=version['__version__'],
     description="Keeper Secrets Manager for Python 3",
     long_description=long_description,
     long_description_content_type="text/markdown",

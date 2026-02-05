@@ -23,6 +23,7 @@ from cryptography.hazmat.primitives.padding import PKCS7
 from cryptography.hazmat.primitives.serialization import load_der_private_key
 
 from . import utils
+from . import exceptions
 
 _CRYPTO_BACKEND = default_backend()
 
@@ -246,22 +247,64 @@ class CryptoUtils:
 
     @staticmethod
     def der_base64_private_key_to_private_key(private_key_der_base64):
+        """Convert a base64-encoded DER private key to a private key object.
 
-        if isinstance(private_key_der_base64, str):
-            private_key_der_base64 = utils.base64_to_bytes(private_key_der_base64)
+        Args:
+            private_key_der_base64: Base64-encoded DER private key (string or bytes)
 
-        return load_der_private_key(private_key_der_base64, password=None)
+        Returns:
+            Private key object
+
+        Raises:
+            KeeperError: If the private key is malformed or cannot be decoded
+        """
+        try:
+            if isinstance(private_key_der_base64, str):
+                private_key_der_base64 = utils.base64_to_bytes(private_key_der_base64)
+
+            return load_der_private_key(private_key_der_base64, password=None)
+        except exceptions.KeeperError:
+            # Re-raise KeeperError with more specific context about private key
+            raise exceptions.KeeperError(
+                "Error parsing private key from configuration. "
+                "Please check that your configuration file is valid and the privateKey field is not corrupted or truncated."
+            )
+        except Exception as e:
+            # Catch any other errors from load_der_private_key
+            raise exceptions.KeeperError(
+                f"Error loading private key: {str(e)}. "
+                "Please verify your configuration file contains a valid private key."
+            )
 
     @staticmethod
     def extract_public_key_bytes(private_key_der_base64):
+        """Extract public key bytes from a private key.
 
-        if isinstance(private_key_der_base64, str):
-            private_key_der_base64 = utils.base64_to_bytes(private_key_der_base64)
+        Args:
+            private_key_der_base64: Base64-encoded DER private key (string or bytes)
 
-        ec_private_key = CryptoUtils.der_base64_private_key_to_private_key(private_key_der_base64)
-        pub_key = ec_private_key.public_key()
-        pub_key_bytes = pub_key.public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
-        return pub_key_bytes
+        Returns:
+            Public key bytes
+
+        Raises:
+            KeeperError: If the private key is malformed or cannot be decoded
+        """
+        try:
+            if isinstance(private_key_der_base64, str):
+                private_key_der_base64 = utils.base64_to_bytes(private_key_der_base64)
+
+            ec_private_key = CryptoUtils.der_base64_private_key_to_private_key(private_key_der_base64)
+            pub_key = ec_private_key.public_key()
+            pub_key_bytes = pub_key.public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+            return pub_key_bytes
+        except exceptions.KeeperError:
+            # Re-raise with context preserved
+            raise
+        except Exception as e:
+            raise exceptions.KeeperError(
+                f"Error extracting public key from private key: {str(e)}. "
+                "Please verify your configuration file contains a valid private key."
+            )
 
     @staticmethod
     def sign(data, private_key):

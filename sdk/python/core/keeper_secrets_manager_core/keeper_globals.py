@@ -18,24 +18,39 @@ logger_name = 'ksm'
 def get_client_version(hardcode=False):
     """Get the version of the client
 
-    The version # comes from metadata. In a unit test, there is metadata, so the version will
-    be the defined major and 0.0 (ie 17.0.0.).
+    Primary source: Package __version__ attribute from _version.py (single source of truth)
+    Fallback: importlib_metadata (for edge cases with broken installs)
+    Default: Hardcoded version for unit tests or when both fail
 
-    If installed, the method can get the real version number. For the client version number
-    we use the defined major and minor and revision numbers of the module version.
+    The client version uses the major.minor.revision format (e.g., 17.1.0).
+    We remove any alpha characters from the revision since Python allows that (e.g., 17.1.0a0 -> 17.1.0).
 
-    For example, module version of 0.1.23 would create a client version would be 16.1.23.
-
-    We also need to remove any alpha characters from the revision since Python allows that.
-
+    This fixes KSM-749: Previous implementation relied solely on importlib_metadata which could
+    pick up stale .dist-info directories from previous installations, causing "invalid client
+    version id" errors from the backend.
     """
-    # Get the version of the keeper secrets manager core
+    # Default version for hardcode mode or when all detection methods fail
     version_major = "17"
-    version = "{}.0.0".format(version_major)
+    version_minor_default = "1"
+    version_revision_default = "0"
+    version = "{}.{}.{}".format(version_major, version_minor_default, version_revision_default)
 
-    # Allow the default version to be hard coded. If not build the client version from the module
-    # version.
+    # Allow the default version to be hard coded
     if hardcode is False:
+        # Primary: Try to get version from package __version__ attribute (single source of truth)
+        try:
+            from keeper_secrets_manager_core._version import __version__
+            version_parts = __version__.split(".")
+            if len(version_parts) >= 3:
+                version_minor = version_parts[1]
+                version_revision = re.search(r'^\d+', version_parts[2]).group()
+                version = "{}.{}.{}".format(version_major, version_minor, version_revision)
+                return version
+        except (ImportError, AttributeError, IndexError, ValueError):
+            # If __version__ isn't available, fall back to importlib_metadata
+            pass
+
+        # Fallback: Try importlib_metadata (for edge cases with broken installs)
         try:
             ksm_version = importlib_metadata.version("keeper-secrets-manager-core")
             version_parts = ksm_version.split(".")
@@ -72,7 +87,8 @@ keeper_public_keys = {
     '14': 'BJFF8j-dH7pDEw_U347w2CBM6xYM8Dk5fPPAktjib-opOqzvvbsER-WDHM4ONCSBf9O_obAHzCyygxmtpktDuiE',
     '15': 'BDKyWBvLbyZ-jMueORl3JwJnnEpCiZdN7yUvT0vOyjwpPBCDf6zfL4RWzvSkhAAFnwOni_1tQSl8dfXHbXqXsQ8',
     '16': 'BDXyZZnrl0tc2jdC5I61JjwkjK2kr7uet9tZjt8StTiJTAQQmnVOYBgbtP08PWDbecxnHghx3kJ8QXq1XE68y8c',
-    '17': 'BFX68cb97m9_sweGdOVavFM3j5ot6gveg6xT4BtGahfGhKib-zdZyO9pwvv1cBda9ahkSzo1BQ4NVXp9qRyqVGU'
+    '17': 'BFX68cb97m9_sweGdOVavFM3j5ot6gveg6xT4BtGahfGhKib-zdZyO9pwvv1cBda9ahkSzo1BQ4NVXp9qRyqVGU',
+    '18': 'BNhngQqTT1bPKxGuB6FhbPTAeNVFl8PKGGSGo5W06xWIReutm6ix6JPivqnbvkydY-1uDQTr-5e6t70G01Bb5JA'
 }
 
 keeper_servers = {

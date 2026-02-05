@@ -335,6 +335,7 @@ class Record:
 
         self._fields = []
         self._custom_fields = []
+        self.links = kwargs.get("links", [])  # Support for GraphSync links
 
         self.has_bad_encryption = kwargs.get("has_bad_encryption")
 
@@ -447,6 +448,10 @@ class Record:
             "isEditable": self.is_editable,
             "files": files
         }
+
+        # Include links if set (for GraphSync linked records)
+        if self.links:
+            data["links"] = self.links
 
         return data
     

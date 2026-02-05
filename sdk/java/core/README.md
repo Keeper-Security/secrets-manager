@@ -4,6 +4,27 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.2.0
+- **SECURITY (KSM-699)** - Fix file permissions for config.json and cache.dat
+  - Config and cache files now created with 0600 permissions (owner read/write only)
+  - Fixes vulnerability where sensitive data was world-readable
+  - Existing config files retain permissions until SDK modifies them
+  - New files created with owner-only permissions (0600 on Unix, equivalent on Windows)
+  - Multi-user workflows sharing config files will need to manage permissions manually
+- KSM-733 - Fix notation error with duplicate UIDs from shortcuts
+  - When an application has access to both an original record and its shortcut, the same UID appears multiple times in getSecrets() response
+  - Now deduplicates by UID to keep only the first occurrence
+  - Title-based lookups still correctly detect genuine ambiguity (multiple records with same title)
+- KSM-742 - Add transmission public key #18 for Gov Cloud Dev support
+- chore - Upgrade gradle-build-action to setup-gradle@v4
+
+## 17.1.3
+- KSM-738 - Add missing PAM connection settings fields (61 new fields for VAUL-7662)
+  - PamRbiConnection: Add audio/clipboard controls (disableAudio, disableCopy, disablePaste, audioChannels, audioBps, audioSampleRate)
+  - PamSettingsConnection: Add protocol-specific fields (SSH/Terminal, VNC, RDP, Kubernetes)
+  - PamSettingsPortForward: Add local port configuration (useSpecifiedLocalPort, localPort)
+- feat - Add automated Maven Central verification workflow
+
 ## 17.1.2
 - KSM-651 - Add retrieve file by name to Notation.getFile()
 - KSM-654 - Add fatJar gradle task
