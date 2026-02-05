@@ -63,6 +63,14 @@ options:
     - The file name of the file that contains the value.
     type: str
     required: no
+  notes:
+    description:
+    - Set to yes to retrieve the notes field from the record.
+    - The notes field contains text notes attached to the record.
+    type: bool
+    default: no
+    required: no
+    version_added: '1.3.0'
   allow_array:
     description:
     - Allow array of values instead of taking the first value.
@@ -116,6 +124,11 @@ EXAMPLES = r'''
     uid: XXX
     custom_field: Custom Label
   register: my_custom_value
+- name: Get notes field
+  keeper_get:
+    uid: XXX
+    notes: yes
+  register: my_notes_value
 '''
 
 RETURN = r'''
