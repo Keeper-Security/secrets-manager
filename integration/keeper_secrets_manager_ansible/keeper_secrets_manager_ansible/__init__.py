@@ -543,6 +543,13 @@ class KeeperAnsible:
                 display.vvvvvv(f"found the file: {key}")
             else:
                 display.vvvvvv(f"cannot find the file: {key}")
+        elif field_type == KeeperFieldType.NOTES:
+            notes_value = record.dict.get('notes')
+            if notes_value is not None:
+                values = [notes_value]
+                display.vvvvvv(f"found notes field")
+            else:
+                display.vvvvvv(f"notes field is empty or not present")
         else:
             raise AnsibleError("Cannot get_value. The field type ENUM of {} is invalid.".format(field_type))
 
@@ -660,10 +667,10 @@ class KeeperAnsible:
                 field_key = args.get(key)
 
         if len(field_type) == 0:
-            raise AnsibleError("Either field, custom_field or file needs to set to a non-blank value for keeper_copy.")
+            raise AnsibleError("Either field, custom_field, file, or notes needs to set to a non-blank value for keeper_copy.")
         if len(field_type) > 1:
             raise AnsibleError("Found multiple field types. Only one of the following key can be set: field, "
-                               "custom_field or file.")
+                               "custom_field, file, or notes.")
 
         return KeeperFieldType.get_enum(field_type[0]), field_key
 

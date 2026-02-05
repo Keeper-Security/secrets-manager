@@ -21,11 +21,15 @@ For more information see our official documentation page https://docs.keeper.io/
 
 ## 1.3.0
 * **Security**: KSM-762 - Fixed CVE-2026-23949 (jaraco.context path traversal) in SBOM generation workflow
-  - Upgraded jaraco.context to >= 6.1.0 in SBOM build environment
+  - Upgraded jaraco.context to >= 6.1.0 in SBOM generation workflow
   - Build-time dependency only, does not affect runtime or published packages
 * KSM-714: Added notes field update support
   - Added `NOTES` to `KeeperFieldType` enum
   - Users can now update record notes via `keeper_set` tasks with `field_type: notes`
+* KSM-768: Added notes field retrieval support
+  - Added `notes` parameter to `keeper_get` action (boolean, default: no)
+  - Users can now retrieve record notes via `keeper_get` tasks with `notes: yes`
+  - Example: `keeper_get: uid: "XXX" notes: yes`
 * **Dependency Update**: Updated Python SDK requirement to v17.1.0
   - Ensures compatibility with security fixes and latest features
 

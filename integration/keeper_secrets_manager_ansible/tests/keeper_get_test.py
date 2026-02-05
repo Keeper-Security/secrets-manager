@@ -48,3 +48,29 @@ class KeeperGetTest(unittest.TestCase):
             self.assertEqual(result["failed"], 0, "failed was not 0")
             self.assertEqual(result["changed"], 0, "0 things didn't change")
             self.assertRegex(out, r'MYPASSWORD', "Did not find the password in the stdout")
+
+    def test_keeper_get_notes(self):
+        """Test retrieving notes field from a record"""
+
+        # Create a mock response with a record containing notes
+        notes_response = Response()
+        notes_record = Record(title="Record With Notes", record_type="login")
+        notes_record.field("password", "TESTPASSWORD")
+        notes_record.notes = "These are my secret notes"
+        notes_response.add_record(record=notes_record)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            a = AnsibleTestFramework(
+                playbook="keeper_get_notes.yml",
+                vars={
+                    "tmp_dir": temp_dir,
+                    "uid": notes_record.uid,
+                    "title": notes_record.title
+                },
+                mock_responses=[notes_response]
+            )
+            result, out, err = a.run()
+            self.assertEqual(result["ok"], 2, "2 things didn't happen")
+            self.assertEqual(result["failed"], 0, "failed was not 0")
+            self.assertEqual(result["changed"], 0, "0 things didn't change")
+            self.assertRegex(out, r'NOTES: These are my secret notes', "Did not find the notes in the stdout")
