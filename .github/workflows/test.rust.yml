@@ -16,6 +16,8 @@ on:
 jobs:
   test-rust-sdk:
     name: Test Rust SDK (${{ matrix.rust }})
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
