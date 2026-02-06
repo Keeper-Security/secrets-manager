@@ -74,3 +74,30 @@ class KeeperGetTest(unittest.TestCase):
             self.assertEqual(result["failed"], 0, "failed was not 0")
             self.assertEqual(result["changed"], 0, "0 things didn't change")
             self.assertRegex(out, r'NOTES: These are my secret notes', "Did not find the notes in the stdout")
+
+    def test_keeper_get_notes_empty(self):
+        """Test retrieving notes field from a record with empty notes - should fail gracefully"""
+
+        # Create a mock response with a record WITHOUT notes
+        empty_notes_response = Response()
+        empty_notes_record = Record(title="Record Without Notes", record_type="login")
+        empty_notes_record.field("password", "TESTPASSWORD")
+        # Explicitly do NOT set notes_record.notes
+        empty_notes_response.add_record(record=empty_notes_record)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            a = AnsibleTestFramework(
+                playbook="keeper_get_notes_empty.yml",
+                vars={
+                    "tmp_dir": temp_dir,
+                    "uid": empty_notes_record.uid,
+                },
+                mock_responses=[empty_notes_response]
+            )
+            result, out, err = a.run()
+
+            # Verify the error message does NOT say "Cannot find key True"
+            self.assertNotIn("Cannot find key True", err,
+                           "Should not show 'Cannot find key True' error")
+            self.assertNotIn("Cannot find key True", out,
+                           "Should not show 'Cannot find key True' error")

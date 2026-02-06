@@ -664,7 +664,8 @@ class KeeperAnsible:
         for key in KeeperAnsible.ALLOWED_FIELDS:
             if args.get(key) is not None:
                 field_type.append(key)
-                field_key = args.get(key)
+                # Notes is a singleton field (no lookup needed), others use the value as a lookup key
+                field_key = None if key == "notes" else args.get(key)
 
         if len(field_type) == 0:
             raise AnsibleError("Either field, custom_field, file, or notes needs to set to a non-blank value for keeper_copy.")
