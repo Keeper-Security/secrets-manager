@@ -34,6 +34,15 @@ For more information see our official documentation page https://docs.keeper.io/
   - Fixed error "Cannot find key True" when using `notes: yes` with empty notes field
   - Notes field is now properly handled as singleton field (no lookup key required)
   - Added edge case test for missing notes field
+* KSM-771: Fixed bug in `keeper_copy` with notes parameter
+  - Fixed error "Unsupported parameters for copy module: notes" when using `keeper_copy` with `notes: yes`
+  - Added cleanup of `notes` parameter before delegating to Ansible's built-in copy module
+  - Added test for copying notes field to files
+* KSM-772: Fixed bug in `keeper_set` with notes parameter
+  - Fixed notes field being set to `None` instead of the provided value when using `keeper_set` with `notes: yes`
+  - Changed `set_value()` method to use `value` parameter instead of `key` (which is None for singleton notes field)
+  - Prevents silent data loss of existing notes content
+  - Added test for setting notes field values
 * **Dependency Update**: Updated Python SDK requirement to v17.1.0
   - Ensures compatibility with security fixes and latest features
 
