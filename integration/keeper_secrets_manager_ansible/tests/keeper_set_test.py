@@ -49,3 +49,37 @@ class KeeperGetTest(unittest.TestCase):
             self.assertEqual(result["failed"], 0, "failed was not 0")
             self.assertEqual(result["changed"], 0, "0 things didn't change")
             assert '"updated": true' in out
+
+    def test_keeper_set_notes(self):
+        """Test setting notes field value using keeper_set with notes: yes parameter"""
+
+        # Create a mock response with a record that has initial notes
+        notes_response = Response()
+        notes_record = Record(title="Record With Notes", record_type="login")
+        notes_record.field("password", "TESTPASSWORD")
+        notes_record.notes = "Initial notes content"
+        notes_response.add_record(record=notes_record)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            a = AnsibleTestFramework(
+                playbook="keeper_set_notes.yml",
+                vars={
+                    "tmp_dir": temp_dir,
+                    "uid": notes_record.uid,
+                    "new_notes": "Updated notes content"
+                },
+                mock_responses=[notes_response, notes_response]
+            )
+            result, out, err = a.run()
+
+            # Verify all tasks succeeded
+            self.assertEqual(result["failed"], 0, "Task should not fail")
+            self.assertEqual(result["ok"], 4, "4 tasks should succeed")
+
+            # Verify the set operation reported success
+            self.assertIn('"updated": true', out,
+                         "Set operation should report updated: true")
+
+            # Verify the new notes value appears in output
+            self.assertIn("Updated notes content", out,
+                         "Retrieved notes should match the value we set")

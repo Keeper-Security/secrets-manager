@@ -636,7 +636,7 @@ class KeeperAnsible:
         elif field_type == KeeperFieldType.FILE:
             raise AnsibleError("Cannot save a file from the ansible playbook/role to Keeper.")
         elif field_type == KeeperFieldType.NOTES:
-            record.dict["notes"] = key
+            record.dict["notes"] = value
             record._update()
         else:
             raise AnsibleError("Cannot set_value. The field type ENUM of {} is invalid.".format(field_type))
