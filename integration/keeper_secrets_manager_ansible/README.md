@@ -30,6 +30,10 @@ For more information see our official documentation page https://docs.keeper.io/
   - Added `notes` parameter to `keeper_get` action (boolean, default: no)
   - Users can now retrieve record notes via `keeper_get` tasks with `notes: yes`
   - Example: `keeper_get: uid: "XXX" notes: yes`
+* KSM-770: Fixed bug in `keeper_get` with notes parameter
+  - Fixed error "Cannot find key True" when using `notes: yes` with empty notes field
+  - Notes field is now properly handled as singleton field (no lookup key required)
+  - Added edge case test for missing notes field
 * **Dependency Update**: Updated Python SDK requirement to v17.1.0
   - Ensures compatibility with security fixes and latest features
 
