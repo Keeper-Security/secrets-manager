@@ -284,6 +284,7 @@ class ActionModule(ActionBase):
         self._task.args.pop("file", None)
         self._task.args.pop("custom_field", None)
         self._task.args.pop("notation", None)
+        self._task.args.pop("notes", None)
 
         # Add the file content
         self._task.args["content"] = value
