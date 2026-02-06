@@ -64,6 +64,15 @@ options:
     - The file name of the file that contains the value.
     type: str
     required: no
+  notes:
+    description:
+    - Set to yes to copy the notes field from the record.
+    - The notes field contains text notes attached to the record.
+    - Notes is a singleton field (only one per record), so it uses a boolean flag instead of a field name.
+    type: bool
+    default: no
+    required: no
+    version_added: '1.3.0'
   notation:
     description:
     - The Keeper notation to access record that contains the value.
@@ -170,6 +179,12 @@ EXAMPLES = r'''
     mode: "0600"
     owner: root
     group: root
+- name: Copy record notes to file
+  keeper_copy:
+    uid: XXX
+    notes: yes
+    dest: /tmp/record_notes.txt
+    mode: "0600"
 - name: Copy SSH Keys
   keeper_copy:
     notation: "XXX/field/keyPair[{{ item.notation_key }}]"
@@ -284,6 +299,7 @@ class ActionModule(ActionBase):
         self._task.args.pop("file", None)
         self._task.args.pop("custom_field", None)
         self._task.args.pop("notation", None)
+        self._task.args.pop("notes", None)
 
         # Add the file content
         self._task.args["content"] = value

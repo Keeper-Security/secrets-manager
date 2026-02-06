@@ -1,0 +1,29 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Copy Notes
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: "Copy notes to file by UID"
+      keeper_copy:
+        uid: "{{ uid }}"
+        notes: yes
+        dest: "{{ tmp_dir }}/notes.txt"
+        mode: '0600'
+
+    - name: "Verify notes file was created"
+      stat:
+        path: "{{ tmp_dir }}/notes.txt"
+      register: notes_file
+
+    - name: "Read notes file contents"
+      command: cat "{{ tmp_dir }}/notes.txt"
+      register: notes_content
+      when: notes_file.stat.exists
+
+    - name: "Print notes contents"
+      debug:
+        msg: "NOTES: {{ notes_content.stdout }}"
+        verbosity: 0
+      when: notes_file.stat.exists

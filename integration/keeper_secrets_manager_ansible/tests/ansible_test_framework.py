@@ -60,6 +60,9 @@ enable_plugins=ini,host_list,script
             for response in self.mock_responses:
                 queue.add_response(response)
 
+            # Set the custom post function so SDK uses mock responses
+            secrets_manager.custom_post_function = queue.post_method
+
             with patch('keeper_secrets_manager_ansible.KeeperAnsible.get_client') as mock_client:
                 mock_client.return_value = secrets_manager
 
@@ -90,7 +93,7 @@ enable_plugins=ini,host_list,script
                 print(f"Command - {' '.join(args)}")
 
                 print(f"Ansible Directory - {self.base_dir}")
-                print(f"Python Path - {os.environ['PYTHONPATH']}")
+                print(f"Python Path - {os.environ.get('PYTHONPATH', 'Not set')}")
                 print()
 
                 os.chdir(self.base_dir)
@@ -120,8 +123,11 @@ enable_plugins=ini,host_list,script
                     sys.stdout = redirected_output
                     sys.stderr = redirected_error
 
-                    # playbook_main(args)
-                    playbook.main(args)
+                    # Set sys.argv instead of passing args (Ansible 2.20+ compatibility)
+                    old_argv = sys.argv
+                    sys.argv = args
+                    playbook.main()
+                    sys.argv = old_argv
 
                 except SystemExit as err:
                     if int(str(err)) != 0:
@@ -158,7 +164,12 @@ enable_plugins=ini,host_list,script
                 for status in statuses:
                     regex_str += f"\\s+{status}=(\\d+)"
                     results[status] = 0
+
+                # Try stdout first, then stderr (Ansible 2.20+ outputs to stderr)
                 match = re.search(regex_str, stdout_text, re.MULTILINE)
+                if match is None:
+                    match = re.search(regex_str, stderr_text, re.MULTILINE)
+
                 if match is not None:
                     index = 1
                     for status in statuses:
@@ -170,7 +181,9 @@ enable_plugins=ini,host_list,script
         except Exception as err:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
-            print(err)
+            print(f"EXCEPTION CAUGHT: {err}")
+            import traceback
+            traceback.print_exc()
         finally:
             os.chdir(orig_wor_dir)
             sys.stdout = old_stdout

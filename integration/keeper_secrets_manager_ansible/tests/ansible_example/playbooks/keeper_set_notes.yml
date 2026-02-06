@@ -1,0 +1,29 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Set Notes
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: "Set notes value"
+      keeper_set:
+        uid: "{{ uid }}"
+        notes: yes
+        value: "{{ new_notes }}"
+      register: set_result
+
+    - name: "Verify update reported"
+      debug:
+        msg: "Set result: {{ set_result }}"
+        verbosity: 0
+
+    - name: "Get notes value back"
+      keeper_get:
+        uid: "{{ uid }}"
+        notes: yes
+      register: get_result
+
+    - name: "Print retrieved notes"
+      debug:
+        msg: "Retrieved Notes: {{ get_result.value }}"
+        verbosity: 0
