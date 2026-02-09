@@ -339,7 +339,10 @@ mod feature_validation_tests {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
-        assert!(cache_found, "Cache should exist after saving (checked 10 times over 100ms)");
+        assert!(
+            cache_found,
+            "Cache should exist after saving (checked 10 times over 100ms)"
+        );
 
         // Load and verify
         let loaded = caching::get_cached_data().expect("Failed to retrieve cached data");
