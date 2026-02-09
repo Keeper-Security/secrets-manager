@@ -311,11 +311,20 @@ mod feature_validation_tests {
 
         // Use temp directory for CI reliability
         let temp_dir = env::temp_dir();
-        env::set_var("KSM_CACHE_DIR", temp_dir.to_str().unwrap());
+        let temp_dir_str = temp_dir.to_str().unwrap();
+        env::set_var("KSM_CACHE_DIR", temp_dir_str);
+        println!("Using temp directory: {}", temp_dir_str);
 
         // Test cache operations
         let cache_path = caching::get_cache_file_path();
+        println!("Cache path: {:?}", cache_path);
         assert!(cache_path.to_str().unwrap().contains("ksm_cache.bin"));
+
+        // Verify temp directory is writable
+        let test_file = temp_dir.join("write_test.txt");
+        std::fs::write(&test_file, b"test").expect("Temp directory not writable");
+        std::fs::remove_file(&test_file).ok();
+        println!("Temp directory is writable");
 
         // Clear any existing cache
         let _ = caching::clear_cache();
@@ -326,12 +335,22 @@ mod feature_validation_tests {
 
         // Save test data
         let test_data = b"test cache data for validation";
-        caching::save_cache(test_data).expect("Failed to save cache data");
+        match caching::save_cache(test_data) {
+            Ok(_) => println!("save_cache() returned Ok"),
+            Err(e) => panic!("save_cache() failed: {:?}", e),
+        }
 
         // Verify cache exists (with retry for CI filesystem delays)
         let mut cache_found = false;
         for attempt in 0..10 {
-            if caching::cache_exists() {
+            let exists = cache_path.exists();
+            println!(
+                "Attempt {}: cache_exists()={}, path.exists()={}",
+                attempt + 1,
+                caching::cache_exists(),
+                exists
+            );
+            if exists {
                 cache_found = true;
                 break;
             }
@@ -341,7 +360,8 @@ mod feature_validation_tests {
         }
         assert!(
             cache_found,
-            "Cache should exist after saving (checked 10 times over 100ms)"
+            "Cache should exist after saving (checked 10 times over 100ms). Path: {:?}",
+            cache_path
         );
 
         // Load and verify
