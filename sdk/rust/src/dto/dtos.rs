@@ -633,7 +633,10 @@ impl Record {
                         decrypted_data = json_to_dict(&record_data_json).unwrap();
                     }
                     Err(err) => {
-                        error!("Error decrypting record data: {}", err);
+                        error!(
+                            "Error decrypting record data: {} - Record UID: {}",
+                            err, record.uid
+                        );
                     }
                 }
             }
@@ -1399,7 +1402,11 @@ impl Folder {
                         }
                     }
                     Err(err) => {
-                        log::error!("Error decrypting folder key: {:?}", err);
+                        log::error!(
+                            "Error decrypting folder key: {:?} - Folder UID: {}",
+                            err,
+                            folder.uid
+                        );
                     }
                 }
             }
