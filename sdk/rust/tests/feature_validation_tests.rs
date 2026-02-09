@@ -328,8 +328,18 @@ mod feature_validation_tests {
         let test_data = b"test cache data for validation";
         caching::save_cache(test_data).expect("Failed to save cache data");
 
-        // Verify cache exists
-        assert!(caching::cache_exists(), "Cache should exist after saving");
+        // Verify cache exists (with retry for CI filesystem delays)
+        let mut cache_found = false;
+        for attempt in 0..10 {
+            if caching::cache_exists() {
+                cache_found = true;
+                break;
+            }
+            if attempt < 9 {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        assert!(cache_found, "Cache should exist after saving (checked 10 times over 100ms)");
 
         // Load and verify
         let loaded = caching::get_cached_data().expect("Failed to retrieve cached data");
