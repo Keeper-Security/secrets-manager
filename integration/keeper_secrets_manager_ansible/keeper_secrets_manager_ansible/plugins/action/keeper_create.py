@@ -94,11 +94,22 @@ options:
     - The title of the record.
     type: str
     required: yes
-  note:
+  notes:
     description:
     - Attach a note to the record.
     type: str
     required: no
+  version:
+    description:
+    - The record schema version to use.
+    - Defaults to v3 (recommended).
+    type: str
+    required: no
+    default: v3
+    choices:
+      - v2
+      - v3
+    version_added: '1.1.2'
   fields:
     description:
     - The label, or type, of the standard field in record that contains the value.
@@ -195,7 +206,7 @@ EXAMPLES = r'''
     share_folder_uid: XXX
     record_type: login
     title: My Title
-    note: This record was created from Ansible
+    notes: This record was created from Ansible
     generate_password: True
     fields:
       - type: login
@@ -282,7 +293,7 @@ class ActionModule(ActionBase):
             record = Record(version=version).create_from_field_list(
                 record_type=record_type,
                 title=title,
-                notes=self._task.args.get("note"),
+                notes=self._task.args.get("notes"),
                 fields=fields,
                 password_generate=self._task.args.get("generate_password"),
                 password_complexity=password_complexity

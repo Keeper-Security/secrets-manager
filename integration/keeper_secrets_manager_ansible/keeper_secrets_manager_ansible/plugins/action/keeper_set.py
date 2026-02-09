@@ -63,11 +63,18 @@ options:
     - The file name of the file that contains the value.
     type: str
     required: no
+  notes:
+    description:
+    - Set to update the notes field in the record.
+    - The notes field contains text notes attached to the record.
+    type: str
+    required: no
+    version_added: '1.3.0'
   value:
     description:
     - The Keeper notation to access record that contains the value.
     - Use notation when you want a specific value.
-    - 
+    -
     - See https://docs.keeper.io/secrets-manager/secrets-manager/about/keeper-notation for more information/
     type: str
     required: no
