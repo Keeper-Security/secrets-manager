@@ -309,22 +309,21 @@ mod feature_validation_tests {
         use keeper_secrets_manager_core::caching;
         use std::env;
 
-        // Use temp directory for CI reliability
-        let temp_dir = env::temp_dir();
-        let temp_dir_str = temp_dir.to_str().unwrap();
+        // Use unique temp subdirectory to avoid conflicts with parallel tests
+        let unique_dir = env::temp_dir().join(format!(
+            "ksm_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&unique_dir).expect("Failed to create test directory");
+        let temp_dir_str = unique_dir.to_str().unwrap();
         env::set_var("KSM_CACHE_DIR", temp_dir_str);
-        println!("Using temp directory: {}", temp_dir_str);
 
         // Test cache operations
         let cache_path = caching::get_cache_file_path();
-        println!("Cache path: {:?}", cache_path);
         assert!(cache_path.to_str().unwrap().contains("ksm_cache.bin"));
-
-        // Verify temp directory is writable
-        let test_file = temp_dir.join("write_test.txt");
-        std::fs::write(&test_file, b"test").expect("Temp directory not writable");
-        std::fs::remove_file(&test_file).ok();
-        println!("Temp directory is writable");
 
         // Clear any existing cache
         let _ = caching::clear_cache();
@@ -335,34 +334,10 @@ mod feature_validation_tests {
 
         // Save test data
         let test_data = b"test cache data for validation";
-        match caching::save_cache(test_data) {
-            Ok(_) => println!("save_cache() returned Ok"),
-            Err(e) => panic!("save_cache() failed: {:?}", e),
-        }
+        caching::save_cache(test_data).expect("Failed to save cache data");
 
-        // Verify cache exists (with retry for CI filesystem delays)
-        let mut cache_found = false;
-        for attempt in 0..10 {
-            let exists = cache_path.exists();
-            println!(
-                "Attempt {}: cache_exists()={}, path.exists()={}",
-                attempt + 1,
-                caching::cache_exists(),
-                exists
-            );
-            if exists {
-                cache_found = true;
-                break;
-            }
-            if attempt < 9 {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-        }
-        assert!(
-            cache_found,
-            "Cache should exist after saving (checked 10 times over 100ms). Path: {:?}",
-            cache_path
-        );
+        // Verify cache exists
+        assert!(caching::cache_exists(), "Cache should exist after saving");
 
         // Load and verify
         let loaded = caching::get_cached_data().expect("Failed to retrieve cached data");
@@ -371,6 +346,7 @@ mod feature_validation_tests {
         // Clean up
         caching::clear_cache().expect("Failed to clear cache");
         env::remove_var("KSM_CACHE_DIR");
+        std::fs::remove_dir_all(&unique_dir).ok(); // Clean up test directory
     }
 
     #[test]
