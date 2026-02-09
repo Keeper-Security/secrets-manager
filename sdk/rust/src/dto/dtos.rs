@@ -595,6 +595,11 @@ impl Record {
     ) -> Result<Self, KSMRError> {
         let mut record = Record::default();
 
+        // Record UID - Extract early for error logging
+        if let Some(uid) = record_dict.get("recordUid").and_then(|v| v.as_str()) {
+            record.uid = uid.trim().to_string();
+        }
+
         // Record Key
         if let Some(record_key_str) = record_dict
             .get("recordKey")
@@ -633,7 +638,10 @@ impl Record {
                         decrypted_data = json_to_dict(&record_data_json).unwrap();
                     }
                     Err(err) => {
-                        error!("Error decrypting record data: {}", err);
+                        error!(
+                            "Error decrypting record data: {} - Record UID: {}",
+                            err, record.uid
+                        );
                     }
                 }
             }
@@ -679,11 +687,6 @@ impl Record {
                 record.folder_uid = uid.clone();
                 record.folder_key_bytes = Some(secret_key.to_vec());
             }
-        }
-
-        // Record UID
-        if let Some(uid) = record_dict.get("recordUid").and_then(|v| v.as_str()) {
-            record.uid = uid.trim().to_string();
         }
 
         // Inner Folder UID
@@ -1399,7 +1402,11 @@ impl Folder {
                         }
                     }
                     Err(err) => {
-                        log::error!("Error decrypting folder key: {:?}", err);
+                        log::error!(
+                            "Error decrypting folder key: {:?} - Folder UID: {}",
+                            err,
+                            folder.uid
+                        );
                     }
                 }
             }

@@ -309,9 +309,17 @@ mod feature_validation_tests {
         use keeper_secrets_manager_core::caching;
         use std::env;
 
-        // Use temp directory for CI reliability
-        let temp_dir = env::temp_dir();
-        env::set_var("KSM_CACHE_DIR", temp_dir.to_str().unwrap());
+        // Use unique temp subdirectory to avoid conflicts with parallel tests
+        let unique_dir = env::temp_dir().join(format!(
+            "ksm_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&unique_dir).expect("Failed to create test directory");
+        let temp_dir_str = unique_dir.to_str().unwrap();
+        env::set_var("KSM_CACHE_DIR", temp_dir_str);
 
         // Test cache operations
         let cache_path = caching::get_cache_file_path();
@@ -338,6 +346,7 @@ mod feature_validation_tests {
         // Clean up
         caching::clear_cache().expect("Failed to clear cache");
         env::remove_var("KSM_CACHE_DIR");
+        std::fs::remove_dir_all(&unique_dir).ok(); // Clean up test directory
     }
 
     #[test]

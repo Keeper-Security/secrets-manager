@@ -167,6 +167,11 @@ All notable changes to this project will be documented in this file.
 - **env_logger dependency** - Added missing `env_logger = "0.11"` to Cargo.toml
   - Fixes compilation error in `main.rs`
   - Allows binary target to compile successfully
+- **KSM-774**: Missing UID logging in bad encryption error handling
+  - Added record UID to "Error decrypting record data" message
+  - Added folder UID to "Error decrypting folder key" message
+  - Matches existing pattern from record key decryption error
+  - Improves debugging when encryption issues occur
 
 ### Links
 
