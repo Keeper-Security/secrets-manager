@@ -510,4 +510,130 @@ mod error_handling_tests {
             );
         }
     }
+
+    /// Test: Corrupt record with bad record key is filtered out (KSM-775)
+    /// Verifies that records with corrupt encryption return errors instead of
+    /// appearing in results with blank data
+    #[test]
+    fn test_corrupt_record_key_filtered_out() {
+        use keeper_secrets_manager_core::dto::Record;
+        use serde_json::json;
+        use std::collections::HashMap;
+
+        // Create a record dict with a valid UID but corrupt encrypted record key
+        let mut record_dict = HashMap::new();
+        record_dict.insert("recordUid".to_string(), json!("test-uid-corrupt-key"));
+
+        // Valid base64 but wrong encryption - too short for valid AES encrypted data
+        // This will pass base64 decoding but fail AES decryption
+        let corrupt_key_bytes = vec![1u8, 2, 3, 4, 5]; // Too short for valid encrypted key
+        let corrupt_key_b64 = utils::bytes_to_base64(&corrupt_key_bytes);
+        record_dict.insert("recordKey".to_string(), json!(corrupt_key_b64));
+
+        // Add valid encrypted data field (won't be reached due to key failure)
+        record_dict.insert("data".to_string(), json!("dmFsaWRfZGF0YQ=="));
+
+        let secret_key = utils::generate_random_bytes(32);
+
+        // Attempt to create record from corrupt data
+        let result = Record::new_from_json(record_dict, &secret_key, None);
+
+        // Should return error, not Ok with blank data
+        assert!(
+            result.is_err(),
+            "Expected error for corrupt record key, got Ok with blank data"
+        );
+
+        // Verify it's a CryptoError
+        if let Err(KSMRError::CryptoError(msg)) = result {
+            assert!(
+                msg.contains("Error decrypting record key"),
+                "Error message should mention record key decryption"
+            );
+            assert!(
+                msg.contains("test-uid-corrupt-key"),
+                "Error message should include record UID"
+            );
+        } else {
+            panic!("Expected CryptoError, got different error type");
+        }
+    }
+
+    /// Test: Corrupt record with bad record data is filtered out (KSM-775)
+    /// Verifies that records with corrupt data encryption return errors
+    #[test]
+    fn test_corrupt_record_data_filtered_out() {
+        use keeper_secrets_manager_core::dto::Record;
+        use serde_json::json;
+        use std::collections::HashMap;
+
+        // Create a record dict with a valid UID and valid (unencrypted) record key
+        let mut record_dict = HashMap::new();
+        record_dict.insert("recordUid".to_string(), json!("test-uid-corrupt-data"));
+
+        // Don't include recordKey - will use secret_key directly (Single Record Share pattern)
+        // This skips record key decryption and goes straight to data decryption
+
+        // Corrupt encrypted data - too short for valid AES encrypted data
+        let corrupt_data = vec![1u8, 2, 3, 4, 5]; // Too short
+        let corrupt_data_b64 = utils::bytes_to_base64(&corrupt_data);
+        record_dict.insert("data".to_string(), json!(corrupt_data_b64));
+
+        let secret_key = utils::generate_random_bytes(32);
+
+        // Attempt to create record from corrupt data
+        let result = Record::new_from_json(record_dict, &secret_key, None);
+
+        // Should return error, not Ok with empty record_dict/title
+        assert!(
+            result.is_err(),
+            "Expected error for corrupt record data, got Ok with blank data"
+        );
+
+        // Verify it's a CryptoError
+        if let Err(KSMRError::CryptoError(msg)) = result {
+            assert!(
+                msg.contains("Error decrypting record data"),
+                "Error message should mention record data decryption"
+            );
+            assert!(
+                msg.contains("test-uid-corrupt-data"),
+                "Error message should include record UID"
+            );
+        } else {
+            panic!("Expected CryptoError, got different error type");
+        }
+    }
+
+    /// Test: Valid record without encryption still works (positive control for KSM-775)
+    /// Ensures the fix doesn't break records that don't require decryption
+    /// Full positive control is provided by existing get_secrets integration tests
+    #[test]
+    fn test_valid_record_without_encryption_still_works() {
+        use keeper_secrets_manager_core::dto::Record;
+        use serde_json::json;
+        use std::collections::HashMap;
+
+        // Create a minimal valid record without encrypted data
+        // This tests that the fix doesn't break the Record::new_from_json flow
+        let mut record_dict = HashMap::new();
+        record_dict.insert("recordUid".to_string(), json!("test-uid-valid"));
+        record_dict.insert("recordKey".to_string(), json!("")); // Empty record key
+        // No "data" field - will result in empty decrypted_data, but record should still be created
+
+        let secret_key = utils::generate_random_bytes(32);
+
+        // Should successfully create record (even with empty data)
+        let result = Record::new_from_json(record_dict, &secret_key, None);
+
+        assert!(
+            result.is_ok(),
+            "Valid record structure should not return error"
+        );
+
+        let record = result.unwrap();
+        assert_eq!(record.uid, "test-uid-valid");
+        // Title will be empty since there's no data, but record is created successfully
+        // This confirms the fix only affects records with actual decryption failures
+    }
 }

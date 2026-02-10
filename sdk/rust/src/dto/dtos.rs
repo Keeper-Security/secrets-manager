@@ -613,10 +613,12 @@ impl Record {
                         record.record_key_bytes = record_key_bytes;
                     }
                     Err(err) => {
-                        error!(
+                        let error_msg = format!(
                             "Error decrypting record key: {} - Record UID: {}",
                             err, record.uid
                         );
+                        error!("{}", error_msg);
+                        return Err(KSMRError::CryptoError(error_msg));
                     }
                 }
             }
@@ -638,10 +640,12 @@ impl Record {
                         decrypted_data = json_to_dict(&record_data_json).unwrap();
                     }
                     Err(err) => {
-                        error!(
+                        let error_msg = format!(
                             "Error decrypting record data: {} - Record UID: {}",
                             err, record.uid
                         );
+                        error!("{}", error_msg);
+                        return Err(KSMRError::CryptoError(error_msg));
                     }
                 }
             }
