@@ -79,7 +79,6 @@ All notable changes to this project will be documented in this file.
   - `get_cache_file_path()` - Cache location from `KSM_CACHE_DIR` env var
   - `make_http_request()` - Standalone HTTP request function
   - Automatic fallback to cached data on network failure
-  - Matches pattern from Python, JavaScript, Java, Ruby, and .NET SDKs
 - **Transmission Public Key #18** - Gov Cloud Dev environment support
   - Added public key #18 to `KEEPER_PUBLIC_KEYS` in `src/constants.rs`
   - Enables secure communication with Keeper Gov Cloud Dev servers
@@ -132,7 +131,7 @@ All notable changes to this project will be documented in this file.
 - **`KeeperFile.get_url()`** - Enhanced to check url field first
   - Tries `self.url` field before falling back to `f` HashMap
   - Maintains backward compatibility
-- **File removal logic** - Enhanced to match JavaScript SDK pattern (core.rs:1761-1771)
+- **File removal logic** - Enhanced link removal support (core.rs:1761-1771)
   - Filters `fileRef` field values when `links_to_remove` is specified
   - Removes entire `fileRef` field when value array becomes empty
 
@@ -150,7 +149,6 @@ All notable changes to this project will be documented in this file.
   - Rust SDK was searching in "fields" array for both `field` and `custom_field` selectors
   - Custom fields are stored in "custom" array, not "fields" array
   - Now correctly routes `custom_field` selector to "custom" array
-  - Aligns with Python, JavaScript, Java, and .NET SDK implementations
   - Added integration tests with proper Keeper record structure to prevent regression
 - **KSM-735**: Notation lookup with record shortcuts (duplicate UID bug)
   - Fixed notation queries returning incorrect record when vault contains shortcuts
@@ -172,6 +170,10 @@ All notable changes to this project will be documented in this file.
   - Added folder UID to "Error decrypting folder key" message
   - Matches existing pattern from record key decryption error
   - Improves debugging when encryption issues occur
+- **KSM-775**: Corrupt records with bad encryption returned blank data instead of being filtered
+  - Fixed `Record::new_from_json()` to return `CryptoError` on decryption failures
+  - Corrupt records now filtered out of results (not included with blank title/empty fields)
+  - Error messages logged with record UID for debugging
 
 ### Links
 
