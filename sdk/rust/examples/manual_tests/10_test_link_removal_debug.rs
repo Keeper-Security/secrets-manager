@@ -40,7 +40,7 @@ fn main() -> Result<(), KSMRError> {
     let file_uid = record.files.first().unwrap().uid.clone();
     println!("\nRemoving file UID: {}", file_uid);
 
-    let update_options = UpdateOptions::new(UpdateTransactionType::General, vec![file_uid.clone()]);
+    let update_options = UpdateOptions::new(UpdateTransactionType::None, vec![file_uid.clone()]);
 
     secrets_manager.update_secret_with_options(record, update_options)?;
     println!("✅ Update succeeded");
