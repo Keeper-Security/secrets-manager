@@ -619,7 +619,7 @@ mod error_handling_tests {
         let mut record_dict = HashMap::new();
         record_dict.insert("recordUid".to_string(), json!("test-uid-valid"));
         record_dict.insert("recordKey".to_string(), json!("")); // Empty record key
-        // No "data" field - will result in empty decrypted_data, but record should still be created
+                                                                // No "data" field - will result in empty decrypted_data, but record should still be created
 
         let secret_key = utils::generate_random_bytes(32);
 
