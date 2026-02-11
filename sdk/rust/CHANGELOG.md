@@ -174,6 +174,11 @@ All notable changes to this project will be documented in this file.
   - Fixed `Record::new_from_json()` to return `CryptoError` on decryption failures
   - Corrupt records now filtered out of results (not included with blank title/empty fields)
   - Error messages logged with record UID for debugging
+- **KSM-776**: File removal via `links2Remove` ignored when `UpdateTransactionType::General` specified
+  - Backend ignores `links2Remove` parameter when `transactionType: "general"` is set
+  - SDK now auto-overrides to `UpdateTransactionType::None` when `links_to_remove` is not empty
+  - Ensures file removal works correctly regardless of transaction type specified by caller
+  - Prevents silent failures where API returns 200 OK but files remain in vault
 
 ### Links
 
