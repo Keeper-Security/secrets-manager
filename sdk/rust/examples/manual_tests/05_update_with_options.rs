@@ -16,13 +16,18 @@ use keeper_secrets_manager_core::{
     core::{ClientOptions, SecretsManager},
     custom_error::KSMRError,
     dto::payload::{UpdateOptions, UpdateTransactionType},
-    storage::FileKeyValueStorage,
+    storage::InMemoryKeyValueStorage,
 };
 
 fn main() -> Result<(), KSMRError> {
+    env_logger::init();
+
     println!("=== Manual Integration Test 5: Update with Options ===\n");
 
-    let config = FileKeyValueStorage::new_config_storage("test_config.json".to_string())?;
+    let config_base64 =
+        std::fs::read_to_string("plans/config.base64").expect("Failed to read config");
+
+    let config = InMemoryKeyValueStorage::new_config_storage(Some(config_base64))?;
     let client_options = ClientOptions::new_client_options(config);
     let mut secrets_manager = SecretsManager::new(client_options)?;
 
@@ -51,7 +56,7 @@ fn main() -> Result<(), KSMRError> {
         println!("\n⚠️ No files to remove. Skipping link removal test.");
         println!("Testing update_secret_with_options() with empty links_to_remove...");
 
-        let update_options = UpdateOptions::new(UpdateTransactionType::General, vec![]);
+        let update_options = UpdateOptions::new(UpdateTransactionType::None, vec![]);
         secrets_manager.update_secret_with_options(record, update_options)?;
 
         println!("✅ update_secret_with_options() works with empty links_to_remove");
@@ -70,7 +75,7 @@ fn main() -> Result<(), KSMRError> {
 
     // Create update options with link removal
     let update_options = UpdateOptions::new(
-        UpdateTransactionType::General,
+        UpdateTransactionType::None, // Use None (not General) to enable links2Remove processing
         vec![file_uid_to_remove.clone()],
     );
 

@@ -11,6 +11,7 @@
 //
 
 use crate::custom_error::KSMRError;
+use log::debug;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 
@@ -294,7 +295,13 @@ impl UpdatePayload {
     }
 
     pub fn set_links_to_remove(&mut self, links: Vec<String>) {
+        debug!(
+            "set_links_to_remove called with {} links: {:?}",
+            links.len(),
+            links
+        );
         self.links2_remove = if links.is_empty() { None } else { Some(links) };
+        debug!("  -> links2_remove is now: {:?}", self.links2_remove);
     }
 }
 

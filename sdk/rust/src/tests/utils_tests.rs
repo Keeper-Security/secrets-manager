@@ -773,7 +773,7 @@ mod check_config_mode_tests {
         {
             let mut permissions = fs::metadata(&path).unwrap().permissions();
             permissions.set_mode(_mode);
-            fs::set_permissions(&path, permissions).expect("Unable to set permissions");
+            fs::set_permissions(path, permissions).expect("Unable to set permissions");
 
             // // Adjust ownership (Unix only)
             // Command::new("chown")
@@ -977,7 +977,7 @@ mod generate_password_tests {
         let options = PasswordOptions::new().length(32).digits(4);
         let password = generate_password_with_options(options).unwrap();
         assert_eq!(password.len(), 32);
-        assert!(password.chars().filter(|c| c.is_digit(10)).count() >= 4);
+        assert!(password.chars().filter(|c| c.is_ascii_digit()).count() >= 4);
     }
 
     #[test]
@@ -1006,7 +1006,7 @@ mod generate_password_tests {
         assert_eq!(password.len(), 32);
         assert!(password.chars().filter(|c| c.is_lowercase()).count() >= 4);
         assert!(password.chars().filter(|c| c.is_uppercase()).count() >= 4);
-        assert!(password.chars().filter(|c| c.is_digit(10)).count() >= 4);
+        assert!(password.chars().filter(|c| c.is_ascii_digit()).count() >= 4);
         assert!(
             password
                 .chars()
@@ -1027,9 +1027,10 @@ mod generate_password_tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
-            KSMRError::PasswordCreationError(format!(
+            KSMRError::PasswordCreationError(
                 "The specified character counts (35) exceed the total password length (20)!"
-            ))
+                    .to_string()
+            )
         );
     }
 
@@ -1059,7 +1060,7 @@ mod generate_password_tests {
         assert_eq!(password.len(), 32);
         assert!(password.chars().any(|c| c.is_lowercase()
             || c.is_uppercase()
-            || c.is_digit(10)
+            || c.is_ascii_digit()
             || "!@#$%^&*()-_=+[]{};:,.<>?/|".contains(c)));
     }
 }
