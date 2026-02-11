@@ -662,6 +662,10 @@ impl SecretsManager {
         let payload_json_str = payload
             .to_json()
             .map_err(|err| KSMRError::SerializationError(err.to_string()))?;
+
+        // Debug logging to verify payload content
+        debug!("Payload JSON before encryption: {}", payload_json_str);
+
         let payload_bytes = string_to_bytes(&payload_json_str);
 
         let encrypted_payload =
@@ -1317,7 +1321,13 @@ impl SecretsManager {
         let secrets_manager_response =
             self.get_secrets_full_response_with_options(query_options)?;
 
-        let records = secrets_manager_response.records;
+        let mut records = secrets_manager_response.records;
+
+        // Consolidate fileRef fields in all records (fixes legacy bug where multiple separate fields were created)
+        for record in &mut records {
+            record.consolidate_file_refs();
+        }
+
         Ok(records)
     }
 
@@ -1333,7 +1343,14 @@ impl SecretsManager {
 
     pub fn get_secrets(&mut self, uid_array: Vec<String>) -> Result<Vec<Record>, KSMRError> {
         let secrets_manager_response = self.get_secrets_full_response(uid_array)?;
-        Ok(secrets_manager_response.records)
+        let mut records = secrets_manager_response.records;
+
+        // Consolidate fileRef fields in all records (fixes legacy bug where multiple separate fields were created)
+        for record in &mut records {
+            record.consolidate_file_refs();
+        }
+
+        Ok(records)
     }
 
     /// Retrieves all secrets matching a specific title.
@@ -1803,6 +1820,45 @@ impl SecretsManager {
         let mut links_to_remove = vec![];
         let mut transaction_type_option = UpdateTransactionType::None;
 
+        // CONSOLIDATE multiple fileRef fields into one BEFORE any operations
+        // This fixes the bug where upload_file() created separate fileRef fields
+        if let Some(Value::Array(fields)) = record_dict.get_mut("fields") {
+            let mut all_file_uids: Vec<Value> = Vec::new();
+            let mut first_fileref_index: Option<usize> = None;
+
+            // Collect all file UIDs from all fileRef fields
+            for (idx, field) in fields.iter().enumerate() {
+                if let Some(field_obj) = field.as_object() {
+                    if field_obj.get("type").and_then(|v| v.as_str()) == Some("fileRef") {
+                        if first_fileref_index.is_none() {
+                            first_fileref_index = Some(idx);
+                        }
+                        if let Some(Value::Array(values)) = field_obj.get("value") {
+                            all_file_uids.extend(values.clone());
+                        }
+                    }
+                }
+            }
+
+            // Remove all fileRef fields
+            fields.retain(|field| field.get("type").and_then(|v| v.as_str()) != Some("fileRef"));
+
+            // Add back a single consolidated fileRef field (if there were any file UIDs)
+            if !all_file_uids.is_empty() {
+                let mut consolidated_field = serde_json::Map::new();
+                consolidated_field.insert("type".to_string(), Value::String("fileRef".to_string()));
+                consolidated_field.insert("value".to_string(), Value::Array(all_file_uids));
+
+                // Insert at the original position of the first fileRef field
+                if let Some(idx) = first_fileref_index {
+                    fields.insert(idx, Value::Object(consolidated_field));
+                } else {
+                    fields.push(Value::Object(consolidated_field));
+                }
+                debug!("Consolidated multiple fileRef fields into one");
+            }
+        }
+
         if let Some(options) = &update_options {
             transaction_type_option = options.transaction_type.clone();
             links_to_remove = options.links_to_remove.clone();
@@ -1811,25 +1867,17 @@ impl SecretsManager {
             // This matches JavaScript SDK behavior (see keeper.ts:304-312)
             if !links_to_remove.is_empty() {
                 if let Some(Value::Array(fields)) = record_dict.get_mut("fields") {
-                    // Find and filter fileRef field values
+                    // Find and filter fileRef field values (should be only one field now after consolidation)
                     for field in fields.iter_mut() {
                         if let Some(field_obj) = field.as_object_mut() {
                             if field_obj.get("type").and_then(|v| v.as_str()) == Some("fileRef") {
                                 // Filter the value array to remove link UIDs
                                 if let Some(Value::Array(values)) = field_obj.get_mut("value") {
-                                    let original_len = values.len();
                                     values.retain(|v| {
                                         !v.as_str()
                                             .map(|uid| links_to_remove.contains(&uid.to_string()))
                                             .unwrap_or(false)
                                     });
-
-                                    if values.len() != original_len {
-                                        debug!(
-                                            "Filtered {} file UIDs from fileRef field",
-                                            original_len - values.len()
-                                        );
-                                    }
                                 }
                             }
                         }
@@ -1868,9 +1916,16 @@ impl SecretsManager {
             stringified_encrypted_data,
         );
 
+        // Auto-override: If links_to_remove is not empty and transaction_type is General,
+        // force it to None to work around backend quirk where General ignores links2Remove.
+        let mut final_transaction_type = transaction_type_option;
+        if !links_to_remove.is_empty() && final_transaction_type == UpdateTransactionType::General {
+            final_transaction_type = UpdateTransactionType::None;
+        }
+
         // Set transaction type and links to remove in payload
-        if transaction_type_option != UpdateTransactionType::None {
-            payload.set_transaction_type(transaction_type_option);
+        if final_transaction_type != UpdateTransactionType::None {
+            payload.set_transaction_type(final_transaction_type);
         }
 
         if !links_to_remove.is_empty() {
@@ -2027,7 +2082,16 @@ impl SecretsManager {
             Some(update_options),
         )?;
 
-        let _result = self.post_query("update_secret".to_string(), &payload)?;
+        let result = self.post_query("update_secret".to_string(), &payload)?;
+
+        // Log the response to see if there's any error message
+        if !result.is_empty() {
+            let response_str = String::from_utf8_lossy(&result);
+            debug!("API Response: {}", response_str);
+        } else {
+            debug!("API Response is empty (success)");
+        }
+
         Ok(())
     }
 
@@ -2300,17 +2364,30 @@ impl SecretsManager {
             file_ref_obj.insert("value".to_string(), Value::Array(record_uid_value_str_arr));
             owner_record.insert_field("fields", file_ref_obj)?;
         } else {
-            let existing_file_refs = owner_record
-                .get_standard_field_value(StandardFieldTypeEnum::FILEREF.get_type(), false)?;
-            let mut existing_file_refs_array = existing_file_refs.as_array().unwrap()[0]
-                .as_array()
-                .unwrap()
-                .clone();
-            existing_file_refs_array.push(Value::String(file_record_uid_string.clone()));
-            owner_record.set_standard_field_value_mut(
-                StandardFieldTypeEnum::FILEREF.get_type(),
-                serde_json::Value::Array(existing_file_refs_array),
-            )?;
+            // FileRef field exists - append to the FIRST fileRef field's value array
+            // This matches Python/JavaScript SDK behavior
+            debug!("FileRef field exists - appending to first fileRef field");
+
+            // Get mutable reference to the FIRST fileRef field
+            let field =
+                owner_record.get_standard_field_mut(StandardFieldTypeEnum::FILEREF.get_type())?;
+
+            // Get the value array (may be empty)
+            let field_obj = field.as_object_mut().ok_or_else(|| {
+                KSMRError::RecordDataError("FileRef field is not an object".to_string())
+            })?;
+
+            let value_array = field_obj.get_mut("value").ok_or_else(|| {
+                KSMRError::RecordDataError("FileRef field has no value key".to_string())
+            })?;
+
+            let arr = value_array.as_array_mut().ok_or_else(|| {
+                KSMRError::RecordDataError("FileRef value is not an array".to_string())
+            })?;
+
+            debug!("FileRef field before append: {} UIDs", arr.len());
+            arr.push(Value::String(file_record_uid_string.clone()));
+            debug!("FileRef field after append: {} UIDs", arr.len());
         }
 
         let owner_record_raw_json = utils::dict_to_json(&owner_record.record_dict.clone())?;

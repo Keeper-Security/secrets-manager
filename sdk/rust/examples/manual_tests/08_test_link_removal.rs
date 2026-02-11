@@ -49,7 +49,7 @@ fn main() -> Result<(), KSMRError> {
     println!("\nRemoving file: {} (UID: {})", file_name, file_uid);
 
     // Test update_with_options for link removal
-    let update_options = UpdateOptions::new(UpdateTransactionType::General, vec![file_uid.clone()]);
+    let update_options = UpdateOptions::new(UpdateTransactionType::None, vec![file_uid.clone()]);
 
     println!("Calling update_secret_with_options...");
     match secrets_manager.update_secret_with_options(record, update_options) {

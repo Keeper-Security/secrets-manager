@@ -771,7 +771,7 @@ impl Record {
                     Some(item_of_value) => match item_of_value.is_array() {
                         true => match item_of_value.as_array() {
                             Some(arr) => match arr.len() {
-                                0 => return false,
+                                0 => continue, // Skip empty fields, continue checking
                                 _ => return true,
                             },
                             None => return false,
@@ -815,6 +815,73 @@ impl Record {
             )));
         }
         Ok(())
+    }
+
+    /// Consolidate multiple fileRef fields into one (fixes legacy bug where upload_file created separate fields)
+    pub fn consolidate_file_refs(&mut self) {
+        use log::debug;
+
+        if let Some(Value::Array(fields)) = self.record_dict.get_mut("fields") {
+            let mut all_file_uids: Vec<Value> = Vec::new();
+            let mut first_fileref_index: Option<usize> = None;
+
+            // Collect all file UIDs from all fileRef fields
+            for (idx, field) in fields.iter().enumerate() {
+                if let Some(field_obj) = field.as_object() {
+                    if field_obj.get("type").and_then(|v| v.as_str()) == Some("fileRef") {
+                        if first_fileref_index.is_none() {
+                            first_fileref_index = Some(idx);
+                        }
+                        if let Some(Value::Array(values)) = field_obj.get("value") {
+                            all_file_uids.extend(values.clone());
+                        }
+                    }
+                }
+            }
+
+            // If there's more than one fileRef field, consolidate
+            let fileref_count = fields
+                .iter()
+                .filter(|f| f.get("type").and_then(|v| v.as_str()) == Some("fileRef"))
+                .count();
+
+            if fileref_count > 1 {
+                debug!(
+                    "Record '{}': Consolidating {} fileRef fields into one (total {} file UIDs)",
+                    self.title,
+                    fileref_count,
+                    all_file_uids.len()
+                );
+
+                // Remove all fileRef fields
+                fields
+                    .retain(|field| field.get("type").and_then(|v| v.as_str()) != Some("fileRef"));
+
+                // Add back a single consolidated fileRef field
+                if !all_file_uids.is_empty() {
+                    let mut consolidated_field = serde_json::Map::new();
+                    consolidated_field
+                        .insert("type".to_string(), Value::String("fileRef".to_string()));
+                    consolidated_field
+                        .insert("value".to_string(), Value::Array(all_file_uids.clone()));
+
+                    // Insert at the original position of the first fileRef field
+                    if let Some(idx) = first_fileref_index {
+                        fields.insert(idx, Value::Object(consolidated_field));
+                    } else {
+                        fields.push(Value::Object(consolidated_field));
+                    }
+
+                    debug!("Record '{}': Consolidation complete - now has 1 fileRef field with {} UIDs",
+                           self.title, all_file_uids.len());
+                }
+
+                // Update raw_json to reflect the changes
+                if let Ok(json_str) = serde_json::to_string(&self.record_dict) {
+                    self.raw_json = json_str;
+                }
+            }
+        }
     }
 
     pub fn print(&self) {
