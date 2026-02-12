@@ -580,6 +580,7 @@ impl SecretsManager {
                 .set_optional_field("records_filter", query_options_data.get_records_filter());
             get_payload
                 .set_optional_field("folders_filter", query_options_data.get_folders_filter());
+            get_payload.request_links = query_options_data.request_links;
         }
         Ok(get_payload)
     }

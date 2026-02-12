@@ -129,7 +129,7 @@ pub struct GetPayload {
     public_key: Option<String>,
     requested_records: Option<Vec<String>>,
     requested_folders: Option<Vec<String>>,
-    request_links: Option<bool>, // Request linked records (v16.7.0+)
+    pub request_links: Option<bool>, // Request linked records (v16.7.0+)
 }
 
 impl GetPayload {
