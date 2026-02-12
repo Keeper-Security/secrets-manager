@@ -20,6 +20,9 @@ For more information see our official documentation page https://docs.keeper.io/
 # Changes
 
 ## 1.3.0
+* KSM-781: Fixed Jinja2 templating for `keeper_config_file` and `keeper_cache_dir` variables
+  - Variables like `{{ playbook_dir }}/keeper-config.yml` are now resolved before use
+  - Lookup plugins (no action_module) are unaffected
 * **Security**: KSM-762 - Fixed CVE-2026-23949 (jaraco.context path traversal) in SBOM generation workflow
   - Upgraded jaraco.context to >= 6.1.0 in SBOM generation workflow
   - Build-time dependency only, does not affect runtime or published packages

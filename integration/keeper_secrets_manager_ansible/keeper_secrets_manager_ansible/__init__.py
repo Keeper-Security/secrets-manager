@@ -161,7 +161,7 @@ class KeeperAnsible:
             ssl_certs_skip = task_vars.get(keeper_ssl_verify_skip, False)
 
             # If the config location is defined, or a file exists at the default location.
-            self.config_file = task_vars.get(keeper_config_file_key)
+            self.config_file = self._template_value(task_vars.get(keeper_config_file_key))
             if self.config_file is None:
                 self.config_file = FileKeyValueStorage.default_config_file_location
 
@@ -173,8 +173,9 @@ class KeeperAnsible:
 
                 # We are using the cache, what directory should the cache file be stored in.
                 cache_dir_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CACHE_DIR)
-                if task_vars.get(cache_dir_key) is not None and os.environ.get(KeeperAnsible.ENV_CACHE_DIR) is None:
-                    os.environ[KeeperAnsible.ENV_CACHE_DIR] = task_vars.get(cache_dir_key)
+                cache_dir_val = self._template_value(task_vars.get(cache_dir_key))
+                if cache_dir_val is not None and os.environ.get(KeeperAnsible.ENV_CACHE_DIR) is None:
+                    os.environ[KeeperAnsible.ENV_CACHE_DIR] = cache_dir_val
                     # Update the cache file path after setting the environment variable
                     KSMCache.kms_cache_file_name = os.path.join(os.environ.get(KeeperAnsible.ENV_CACHE_DIR, ""), 'ksm_cache.bin')
 
@@ -279,6 +280,12 @@ class KeeperAnsible:
 
         except Exception as err:
             raise AnsibleError("Keeper Ansible error: {}".format(err))
+
+    def _template_value(self, value):
+        """Resolve Jinja2 expressions in a task_vars value using Ansible's templar."""
+        if value is not None and self.action_module is not None and hasattr(self.action_module, '_templar'):
+            value = self.action_module._templar.template(value)
+        return value
 
     def get_encryption_key(self):
 
