@@ -43,6 +43,12 @@ For more information see our official documentation page https://docs.keeper.io/
   - Changed `set_value()` method to use `value` parameter instead of `key` (which is None for singleton notes field)
   - Prevents silent data loss of existing notes content
   - Added test for setting notes field values
+* KSM-773: Standardized `notes` parameter name across all actions (`keeper_create`, `keeper_set`, `keeper_copy`)
+  - Renamed `note` to `notes` for consistency across all actions
+* KSM-780: Fixed backward compatibility for `note` parameter in `keeper_create`
+  - The `note` (singular) parameter is now accepted as a deprecated alias for `notes`
+  - Playbooks using the old `note:` parameter will continue to work with a deprecation warning
+  - The `note` alias will be removed in version 2.0.0
 * **Dependency Update**: Updated Python SDK requirement to v17.1.0
   - Ensures compatibility with security fixes and latest features
 

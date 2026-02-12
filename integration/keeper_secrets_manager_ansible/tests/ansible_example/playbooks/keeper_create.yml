@@ -15,7 +15,7 @@
         # Filter out all the lower case letters for out test.
         filter_characters: "abcdefghijklmnopqrstuvwxyz"
       title: "My New Record"
-      note: "This is my note"
+      notes: "This is my note"
       fields:
         - type: login
           value: "johndoe@localhost"

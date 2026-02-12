@@ -83,11 +83,13 @@ options:
     - The title of the record.
     type: str
     required: yes
-  note:
+  notes:
     description:
     - Attach a note to the record.
+    - C(note) (singular) is accepted as a deprecated alias.
     type: str
     required: no
+    aliases: [ note ]
   fields:
     description:
     - The label, or type, of the standard field in record that contains the value.
@@ -184,7 +186,7 @@ EXAMPLES = r'''
     share_folder_uid: XXX
     record_type: login
     title: My Title
-    note: This record was created from Ansible
+    notes: This record was created from Ansible
     generate_password: True
     fields:
       - type: login
