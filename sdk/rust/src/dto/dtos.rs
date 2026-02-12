@@ -733,6 +733,20 @@ impl Record {
             record.files = _files;
         }
 
+        // Parse links from server response envelope (GraphSync linked records)
+        if let Some(Value::Array(links_array)) = record_dict.get("links") {
+            record.links = links_array
+                .iter()
+                .filter_map(|link| {
+                    link.as_object().map(|obj| {
+                        obj.iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect::<HashMap<String, Value>>()
+                    })
+                })
+                .collect();
+        }
+
         Ok(record)
     }
 

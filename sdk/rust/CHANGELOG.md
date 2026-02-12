@@ -99,7 +99,7 @@ All notable changes to this project will be documented in this file.
   - Error scenario tests
   - URL and endpoint validation tests
   - Sequential update tests
-- **`tests/feature_validation_tests.rs`** (317 lines) - 15 validation tests
+- **`tests/feature_validation_tests.rs`** - 17 validation tests
   - UpdateOptions struct validation
   - DTO field validation (links, is_editable, inner_folder_uid)
   - QueryOptions.request_links validation
@@ -174,6 +174,11 @@ All notable changes to this project will be documented in this file.
   - Fixed `Record::new_from_json()` to return `CryptoError` on decryption failures
   - Corrupt records now filtered out of results (not included with blank title/empty fields)
   - Error messages logged with record UID for debugging
+- **KSM-779**: GraphSync `Record.links` always empty when fetching with `request_links=true`
+  - Fixed `request_links` field on `GetPayload` not being public, blocking assignment from `core.rs`
+  - Fixed `prepare_get_payload()` not transferring `request_links` from `QueryOptions` to `GetPayload`
+  - Fixed `Record::new_from_json()` not parsing `links` array from server response envelope
+  - All three bugs together prevented GraphSync linked records from working end-to-end
 - **KSM-776**: File removal via `links2Remove` ignored when `UpdateTransactionType::General` specified
   - Backend ignores `links2Remove` parameter when `transactionType: "general"` is set
   - SDK now auto-overrides to `UpdateTransactionType::None` when `links_to_remove` is not empty

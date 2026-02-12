@@ -591,6 +591,111 @@ mod feature_validation_tests {
     }
 
     #[test]
+    fn test_new_from_json_parses_links_from_server_response() {
+        use keeper_secrets_manager_core::crypto::CryptoUtils;
+        use keeper_secrets_manager_core::dto::Record;
+        use keeper_secrets_manager_core::utils::bytes_to_base64;
+
+        // Generate a 32-byte record key and a 32-byte folder/secret key
+        let secret_key = keeper_secrets_manager_core::utils::generate_random_bytes(32);
+        let record_key = keeper_secrets_manager_core::utils::generate_random_bytes(32);
+
+        // Encrypt the record key with the secret key (AES-GCM)
+        let encrypted_record_key =
+            CryptoUtils::encrypt_aes_gcm(&record_key, &secret_key, None)
+                .expect("encrypt record key");
+        let record_key_b64 = bytes_to_base64(&encrypted_record_key);
+
+        // Build decrypted record data JSON and encrypt it with the record key
+        let record_data = json!({
+            "title": "Linked Record Test",
+            "type": "login",
+            "fields": [
+                {"type": "login", "value": ["user@example.com"]},
+                {"type": "password", "value": ["secret123"]}
+            ],
+            "custom": []
+        });
+        let record_data_bytes = record_data.to_string().into_bytes();
+        let encrypted_data =
+            CryptoUtils::encrypt_aes_gcm(&record_data_bytes, &record_key, None)
+                .expect("encrypt record data");
+        let data_b64 = bytes_to_base64(&encrypted_data);
+
+        // Build mock server response with links array
+        let mut server_response: HashMap<String, serde_json::Value> = HashMap::new();
+        server_response.insert("recordUid".to_string(), json!("rec-uid-001"));
+        server_response.insert("recordKey".to_string(), json!(record_key_b64));
+        server_response.insert("data".to_string(), json!(data_b64));
+        server_response.insert("revision".to_string(), json!(5));
+        server_response.insert("isEditable".to_string(), json!(true));
+        server_response.insert(
+            "links".to_string(),
+            json!([
+                {"recordUid": "linked-uid-1", "data": "enc-data-1", "recordKey": "enc-key-1"},
+                {"recordUid": "linked-uid-2", "data": "enc-data-2", "recordKey": "enc-key-2"},
+                {"recordUid": "linked-uid-3", "data": "enc-data-3"}
+            ]),
+        );
+
+        let record = Record::new_from_json(server_response, &secret_key, Some("folder-001".to_string()))
+            .expect("new_from_json should succeed");
+
+        // Verify links were parsed from server response
+        assert_eq!(record.links.len(), 3, "Should have 3 linked records");
+        assert_eq!(
+            record.links[0].get("recordUid").and_then(|v| v.as_str()),
+            Some("linked-uid-1")
+        );
+        assert_eq!(
+            record.links[1].get("recordUid").and_then(|v| v.as_str()),
+            Some("linked-uid-2")
+        );
+        assert_eq!(
+            record.links[2].get("recordUid").and_then(|v| v.as_str()),
+            Some("linked-uid-3")
+        );
+
+        // Verify other fields still parsed correctly
+        assert_eq!(record.uid, "rec-uid-001");
+        assert_eq!(record.title, "Linked Record Test");
+        assert_eq!(record.revision, Some(5));
+        assert!(record.is_editable);
+    }
+
+    #[test]
+    fn test_new_from_json_empty_links() {
+        use keeper_secrets_manager_core::crypto::CryptoUtils;
+        use keeper_secrets_manager_core::dto::Record;
+        use keeper_secrets_manager_core::utils::bytes_to_base64;
+
+        let secret_key = keeper_secrets_manager_core::utils::generate_random_bytes(32);
+        let record_key = keeper_secrets_manager_core::utils::generate_random_bytes(32);
+
+        let encrypted_record_key =
+            CryptoUtils::encrypt_aes_gcm(&record_key, &secret_key, None)
+                .expect("encrypt record key");
+        let record_key_b64 = bytes_to_base64(&encrypted_record_key);
+
+        let record_data = json!({"title": "No Links", "type": "login", "fields": [], "custom": []});
+        let encrypted_data =
+            CryptoUtils::encrypt_aes_gcm(&record_data.to_string().into_bytes(), &record_key, None)
+                .expect("encrypt");
+        let data_b64 = bytes_to_base64(&encrypted_data);
+
+        // Server response WITHOUT links key (no request_links=true)
+        let mut server_response: HashMap<String, serde_json::Value> = HashMap::new();
+        server_response.insert("recordUid".to_string(), json!("rec-no-links"));
+        server_response.insert("recordKey".to_string(), json!(record_key_b64));
+        server_response.insert("data".to_string(), json!(data_b64));
+
+        let record = Record::new_from_json(server_response, &secret_key, None)
+            .expect("new_from_json should succeed");
+
+        assert!(record.links.is_empty(), "Links should be empty when not in response");
+    }
+
+    #[test]
     fn test_all_new_features_compile() {
         // Comprehensive compilation test for all new features
         // This ensures all new types and methods are properly exported and accessible
