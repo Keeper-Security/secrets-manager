@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [17.1.0]
 
+### Fixed
+- **Password generation with exact character counts** - Negative values in `PasswordOptions` now correctly specify exact character counts (e.g., `.lowercase(-8)` generates exactly 8 lowercase characters) (KSM-782)
+  - Fixed `generate_password_with_options()` to use `abs()` values instead of clamping to 0 with `.max(0)`
+  - Exact mode (negative values) calculates password length as sum of absolute values, ignoring the length parameter
+  - Extra character pool now correctly excludes character types with negative (exact) values
+  - Added warnings when user's length parameter is overridden in exact mode
+
 ### Added
 
 #### Core API Methods
