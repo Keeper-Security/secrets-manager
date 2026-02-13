@@ -186,6 +186,11 @@ All notable changes to this project will be documented in this file.
   - Fixed `prepare_get_payload()` not transferring `request_links` from `QueryOptions` to `GetPayload`
   - Fixed `Record::new_from_json()` not parsing `links` array from server response envelope
   - All three bugs together prevented GraphSync linked records from working end-to-end
+- **KSM-783**: SDK panics when initialized with empty JSON config (`{}`) and no token
+  - Fixed `load_secret_key()` to use `if let Some(key)` instead of `.unwrap()` on `config.get(KeyClientKey)`
+  - Empty config now returns proper `Err` instead of panicking with `None.unwrap()`
+  - Hardened all `.unwrap()` calls on `config.get()`/`config.set()` in the initialization path to use `map_err()?`
+  - Prevents panics with `FileKeyValueStorage` on I/O errors during initialization
 - **KSM-776**: File removal via `links2Remove` ignored when `UpdateTransactionType::General` specified
   - Backend ignores `links2Remove` parameter when `transactionType: "general"` is set
   - SDK now auto-overrides to `UpdateTransactionType::None` when `links_to_remove` is not empty

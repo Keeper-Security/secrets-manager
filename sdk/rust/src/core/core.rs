@@ -267,40 +267,59 @@ impl SecretsManager {
         if !secrets_manager.token.is_empty() {
             config
                 .set(ConfigKeys::KeyClientKey, secrets_manager.token.clone())
-                .unwrap();
+                .map_err(|e| {
+                    KSMRError::SecretManagerCreationError(format!(
+                        "Error setting client key in config: {}",
+                        e
+                    ))
+                })?;
         }
         if !secrets_manager.hostname.is_empty() {
             config
                 .set(ConfigKeys::KeyHostname, secrets_manager.hostname.clone())
-                .unwrap();
+                .map_err(|e| {
+                    KSMRError::SecretManagerCreationError(format!(
+                        "Error setting hostname in config: {}",
+                        e
+                    ))
+                })?;
         }
 
         info!("Initializing SecretsManager and values are set");
 
-        if config.get(ConfigKeys::KeyServerPublicKeyId).is_ok() {
-            let server_public_key_id: Option<String> =
-                config.get(ConfigKeys::KeyServerPublicKeyId).unwrap();
-            let keeper_public_keys = get_keeper_public_keys();
-            if server_public_key_id.is_none() {
-                debug!("Setting public key id to the default: {}", DEFAULT_KEY_ID);
+        let server_public_key_id: Option<String> =
+            config.get(ConfigKeys::KeyServerPublicKeyId).map_err(|e| {
+                KSMRError::SecretManagerCreationError(format!(
+                    "Failed to retrieve the server public key id from config: {}",
+                    e
+                ))
+            })?;
+        let keeper_public_keys = get_keeper_public_keys();
+        if server_public_key_id.is_none() {
+            debug!("Setting public key id to the default: {}", DEFAULT_KEY_ID);
+            config
+                .set(ConfigKeys::KeyServerPublicKeyId, DEFAULT_KEY_ID.to_string())
+                .map_err(|e| {
+                    KSMRError::SecretManagerCreationError(format!(
+                        "Error setting server public key id in config: {}",
+                        e
+                    ))
+                })?;
+        } else if let Some(key_id) = &server_public_key_id {
+            if !keeper_public_keys.contains_key(key_id.as_str()) {
+                debug!(
+                    "Public key id {} does not exists, set to default : {}",
+                    key_id, DEFAULT_KEY_ID
+                );
                 config
                     .set(ConfigKeys::KeyServerPublicKeyId, DEFAULT_KEY_ID.to_string())
-                    .unwrap();
-            } else if let Some(key_id) = &server_public_key_id {
-                if !keeper_public_keys.contains_key(key_id.as_str()) {
-                    debug!(
-                        "Public key id {} does not exists, set to default : {}",
-                        key_id, DEFAULT_KEY_ID
-                    );
-                    config
-                        .set(ConfigKeys::KeyServerPublicKeyId, DEFAULT_KEY_ID.to_string())
-                        .unwrap();
-                }
+                    .map_err(|e| {
+                        KSMRError::SecretManagerCreationError(format!(
+                            "Error setting server public key id in config: {}",
+                            e
+                        ))
+                    })?;
             }
-        } else {
-            return Err(KSMRError::SecretManagerCreationError(
-                "Failed to retrieve the server public key id from config".to_owned(),
-            ));
         }
         secrets_manager.config = config.clone();
 
@@ -352,7 +371,12 @@ impl SecretsManager {
                 match client_id {
                     Some(client_id) => {
                         if token_client_id == client_id {
-                            let app_key = self.config.get(ConfigKeys::KeyAppKey).unwrap();
+                            let app_key = self.config.get(ConfigKeys::KeyAppKey).map_err(|e| {
+                                KSMRError::SecretManagerCreationError(format!(
+                                    "Error getting app key from config: {}",
+                                    e
+                                ))
+                            })?;
                             if app_key.is_some() {
                                 unbound_token = false;
                                 warn!("the storage is already initiated with the same token",);
@@ -373,7 +397,13 @@ impl SecretsManager {
         if !(client_id_empty_state || unbound_token) {
             debug!("Already bound to the token");
 
-            if self.config.get(ConfigKeys::KeyClientKey).unwrap().is_none() {
+            let client_key = self.config.get(ConfigKeys::KeyClientKey).map_err(|e| {
+                KSMRError::SecretManagerCreationError(format!(
+                    "Error getting client key from config: {}",
+                    e
+                ))
+            })?;
+            if client_key.is_none() {
                 let _ = self.config.delete(ConfigKeys::KeyClientKey).map_err(|er| {
                     KSMRError::SecretManagerCreationError(format!(
                         "Error deleting client key: {}",
@@ -434,7 +464,13 @@ impl SecretsManager {
                     ))
                 })?;
 
-            if self.config.get(ConfigKeys::KeyClientId).unwrap().is_none() {
+            let client_id_check = self.config.get(ConfigKeys::KeyClientId).map_err(|e| {
+                KSMRError::SecretManagerCreationError(format!(
+                    "Error getting client id from config: {}",
+                    e
+                ))
+            })?;
+            if client_id_check.is_none() {
                 self.config.delete(ConfigKeys::KeyAppKey).map_err(|err| {
                     KSMRError::SecretManagerCreationError(format!(
                         "Error deleting app key: {}",
@@ -445,7 +481,12 @@ impl SecretsManager {
 
             self.config
                 .set(ConfigKeys::KeyClientId, existing_secret_key_hash.clone())
-                .unwrap();
+                .map_err(|e| {
+                    KSMRError::SecretManagerCreationError(format!(
+                        "Error setting client id in config: {}",
+                        e
+                    ))
+                })?;
 
             let private_key = self.config.get(ConfigKeys::KeyPrivateKey).map_err(|err| {
                 KSMRError::SecretManagerCreationError(format!(
@@ -509,8 +550,10 @@ impl SecretsManager {
 
         if current_secret_key.is_empty() {
             let config_secret_key = self.config.get(ConfigKeys::KeyClientKey)?;
-            current_secret_key = config_secret_key.unwrap().clone();
-            info!("Secret key found in configuration file");
+            if let Some(key) = config_secret_key {
+                current_secret_key = key.clone();
+                info!("Secret key found in configuration file");
+            }
         }
 
         Ok(current_secret_key)
