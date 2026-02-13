@@ -148,8 +148,11 @@ jobs:
     needs: [test-rust-sdk, generate-sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    # CRITICAL: Required for OIDC trusted publishing
     permissions:
-      contents: read
+      id-token: write  # To obtain signed ID token from GitHub OIDC provider
+      contents: read   # To checkout repository code
 
     defaults:
       run:
@@ -164,21 +167,28 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Retrieve secrets from KSM
-        id: ksmsecrets
-        uses: Keeper-Security/ksm-action@master
-        with:
-          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
-          secrets: |
-            <CRATES_IO_RECORD_UID>/custom_field/CRATES_IO_TOKEN > CRATES_IO_TOKEN
+      - name: Authenticate with crates.io via OIDC
+        uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+        # This action exchanges GitHub OIDC token for crates.io temporary token
+        # No configuration needed - reads repository context automatically
 
       - name: Build and verify package
         run: |
           cargo package --allow-dirty
           cargo publish --dry-run
-
-      - name: Publish to crates.io
         env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.ksmsecrets.outputs.CRATES_IO_TOKEN }}
-        run: |
-          cargo publish --token ${CARGO_REGISTRY_TOKEN}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - name: Publish to crates.io (DRY RUN - testing authentication)
+        run: cargo publish --dry-run
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        # ⚠️ DRY RUN MODE ENABLED ⚠️
+        # This verifies OIDC authentication works without actually publishing.
+        #
+        # TO ENABLE REAL PUBLISHING (after successful dry run):
+        # 1. Change this step to: cargo publish --no-verify
+        # 2. Update step name to "Publish to crates.io"
+        # 3. Remove the dry-run comment block
+        # 4. Commit, push, and manually trigger workflow for real publish
