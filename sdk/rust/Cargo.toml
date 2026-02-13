@@ -30,7 +30,6 @@ hex = "0.4"
 hmac = "0.12"
 log = "0.4"
 lazy_static = "1.5"
-mockall = "0.13"
 p256 = { version = "0.13", features = ["ecdh"] }
 rand = "0.8"
 regex = "1.11"
@@ -52,6 +51,7 @@ url = "2.5"
 winapi = { version = "0.3" ,features = ["securitybaseapi","winbase","winerror","errhandlingapi","winnt"]}
 
 [dev-dependencies]
+mockall = "0.13"
 tempfile = "3.20"
 serial_test = "3.0"
 
@@ -94,4 +94,8 @@ path = "examples/manual_tests/09_check_fileref.rs"
 
 [[example]]
 name = "10_test_link_removal_debug"
-path = "examples/manual_tests/10_test_link_removal_debug.rs" 
+path = "examples/manual_tests/10_test_link_removal_debug.rs"
+
+[[example]]
+name = "12_upload_and_remove_file"
+path = "examples/manual_tests/12_upload_and_remove_file.rs" 
