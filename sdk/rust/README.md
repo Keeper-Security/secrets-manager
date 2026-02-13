@@ -643,7 +643,7 @@ See `examples/manual_tests/` for comprehensive runnable examples:
 | `08_test_link_removal.rs` | File link removal |
 | `09_check_fileref.rs` | File reference validation |
 | `10_test_link_removal_debug.rs` | Debug link removal |
-| `12_upload_and_remove_file.rs` | File upload and removal |
+| `11_upload_and_remove_file.rs` | File upload and removal |
 
 Run examples:
 ```bash

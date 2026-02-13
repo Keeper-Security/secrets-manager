@@ -97,5 +97,5 @@ name = "10_test_link_removal_debug"
 path = "examples/manual_tests/10_test_link_removal_debug.rs"
 
 [[example]]
-name = "12_upload_and_remove_file"
-path = "examples/manual_tests/12_upload_and_remove_file.rs" 
+name = "11_upload_and_remove_file"
+path = "examples/manual_tests/11_upload_and_remove_file.rs" 

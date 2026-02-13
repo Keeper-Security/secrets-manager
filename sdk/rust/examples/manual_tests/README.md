@@ -166,9 +166,9 @@ cargo run --example 10_test_link_removal_debug
 
 ---
 
-### Test 12: Upload and Remove File
+### Test 11: Upload and Remove File
 ```bash
-cargo run --example 12_upload_and_remove_file
+cargo run --example 11_upload_and_remove_file
 ```
 
 **Validates:**
@@ -178,8 +178,6 @@ cargo run --example 12_upload_and_remove_file
 - End-to-end file lifecycle
 
 **Requires:** Test file to upload (create a sample file first)
-
-**Note:** Example 11 intentionally skipped (reserved for future use)
 
 ---
 
