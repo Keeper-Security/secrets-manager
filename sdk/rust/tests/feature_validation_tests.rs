@@ -337,19 +337,23 @@ mod feature_validation_tests {
         caching::save_cache(test_data).expect("Failed to save cache data");
 
         // Verify cache exists (with retry for CI filesystem delays)
+        // Use exponential backoff: 10ms, 20ms, 40ms, 80ms, 100ms (capped), 100ms...
+        // Total timeout: ~650ms to handle slow CI filesystem sync
         let mut cache_found = false;
+        let mut backoff_ms = 10u64;
         for attempt in 0..10 {
             if caching::cache_exists() {
                 cache_found = true;
                 break;
             }
             if attempt < 9 {
-                std::thread::sleep(std::time::Duration::from_millis(10));
+                std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
+                backoff_ms = (backoff_ms * 2).min(100); // Exponential backoff, capped at 100ms
             }
         }
         assert!(
             cache_found,
-            "Cache should exist after saving (checked 10 times over 100ms). Path: {:?}",
+            "Cache should exist after saving (checked 10 times with exponential backoff up to ~650ms). Path: {:?}",
             cache_path
         );
 
