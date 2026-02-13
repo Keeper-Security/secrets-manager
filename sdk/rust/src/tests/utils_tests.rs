@@ -1063,4 +1063,103 @@ mod generate_password_tests {
             || c.is_ascii_digit()
             || "!@#$%^&*()-_=+[]{};:,.<>?/|".contains(c)));
     }
+
+    #[test]
+    fn test_generate_password_with_exact_counts() {
+        // Test exact character counts with negative values (KSM-782)
+        let options = PasswordOptions::new()
+            .lowercase(-8)
+            .uppercase(-8)
+            .digits(-6)
+            .special_characters(-4);
+        let password = generate_password_with_options(options).unwrap();
+
+        // Should be exactly 26 characters (8+8+6+4)
+        assert_eq!(password.len(), 26);
+
+        // Should have EXACTLY the specified counts
+        assert_eq!(password.chars().filter(|c| c.is_lowercase()).count(), 8);
+        assert_eq!(password.chars().filter(|c| c.is_uppercase()).count(), 8);
+        assert_eq!(password.chars().filter(|c| c.is_ascii_digit()).count(), 6);
+
+        let special_count = password
+            .chars()
+            .filter(|c| !c.is_lowercase() && !c.is_uppercase() && !c.is_ascii_digit())
+            .count();
+        assert_eq!(special_count, 4);
+    }
+
+    #[test]
+    fn test_generate_password_with_zero_exact_count() {
+        // Test zero value (also treated as exact count)
+        let options = PasswordOptions::new()
+            .lowercase(-10)
+            .uppercase(-10)
+            .digits(0) // Zero should be treated as exact 0
+            .special_characters(-6);
+        let password = generate_password_with_options(options).unwrap();
+
+        assert_eq!(password.len(), 26); // 10+10+0+6
+        assert_eq!(password.chars().filter(|c| c.is_ascii_digit()).count(), 0);
+    }
+
+    #[test]
+    fn test_generate_password_mixed_exact_and_minimum() {
+        // Test mixing negative (exact) and positive (minimum) values
+        let options = PasswordOptions::new()
+            .length(30)
+            .lowercase(-10) // EXACTLY 10
+            .uppercase(5); // AT LEAST 5
+        let password = generate_password_with_options(options).unwrap();
+
+        assert_eq!(password.len(), 30);
+        assert_eq!(password.chars().filter(|c| c.is_lowercase()).count(), 10);
+        assert!(password.chars().filter(|c| c.is_uppercase()).count() >= 5);
+    }
+
+    #[test]
+    fn test_generate_password_all_exact_counts() {
+        // Test when all counts are exact (all negative)
+        let options = PasswordOptions::new()
+            .lowercase(-12)
+            .uppercase(-8)
+            .digits(-5)
+            .special_characters(-7);
+        let password = generate_password_with_options(options).unwrap();
+
+        // Total should be sum of absolute values: 32
+        assert_eq!(password.len(), 32);
+        assert_eq!(password.chars().filter(|c| c.is_lowercase()).count(), 12);
+        assert_eq!(password.chars().filter(|c| c.is_uppercase()).count(), 8);
+        assert_eq!(password.chars().filter(|c| c.is_ascii_digit()).count(), 5);
+
+        let special_count = password
+            .chars()
+            .filter(|c| !c.is_lowercase() && !c.is_uppercase() && !c.is_ascii_digit())
+            .count();
+        assert_eq!(special_count, 7);
+    }
+
+    #[test]
+    fn test_generate_password_single_exact_count() {
+        // Test single exact count with others minimum
+        let options = PasswordOptions::new().length(25).lowercase(-10); // EXACTLY 10, others fill remaining 15
+        let password = generate_password_with_options(options).unwrap();
+
+        assert_eq!(password.len(), 25);
+        assert_eq!(password.chars().filter(|c| c.is_lowercase()).count(), 10);
+    }
+
+    #[test]
+    fn test_generate_password_exact_ignores_length_param() {
+        // Test that exact mode ignores length parameter (KSM-782)
+        let options = PasswordOptions::new()
+            .length(10) // Length param should be IGNORED
+            .lowercase(-20); // EXACTLY 20 lowercase
+        let password = generate_password_with_options(options).unwrap();
+
+        // Password should be 20 chars (sum of exact counts), NOT 10
+        assert_eq!(password.len(), 20);
+        assert_eq!(password.chars().filter(|c| c.is_lowercase()).count(), 20);
+    }
 }

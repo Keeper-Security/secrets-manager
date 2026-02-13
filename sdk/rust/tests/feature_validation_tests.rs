@@ -601,9 +601,8 @@ mod feature_validation_tests {
         let record_key = keeper_secrets_manager_core::utils::generate_random_bytes(32);
 
         // Encrypt the record key with the secret key (AES-GCM)
-        let encrypted_record_key =
-            CryptoUtils::encrypt_aes_gcm(&record_key, &secret_key, None)
-                .expect("encrypt record key");
+        let encrypted_record_key = CryptoUtils::encrypt_aes_gcm(&record_key, &secret_key, None)
+            .expect("encrypt record key");
         let record_key_b64 = bytes_to_base64(&encrypted_record_key);
 
         // Build decrypted record data JSON and encrypt it with the record key
@@ -617,9 +616,8 @@ mod feature_validation_tests {
             "custom": []
         });
         let record_data_bytes = record_data.to_string().into_bytes();
-        let encrypted_data =
-            CryptoUtils::encrypt_aes_gcm(&record_data_bytes, &record_key, None)
-                .expect("encrypt record data");
+        let encrypted_data = CryptoUtils::encrypt_aes_gcm(&record_data_bytes, &record_key, None)
+            .expect("encrypt record data");
         let data_b64 = bytes_to_base64(&encrypted_data);
 
         // Build mock server response with links array
@@ -638,8 +636,9 @@ mod feature_validation_tests {
             ]),
         );
 
-        let record = Record::new_from_json(server_response, &secret_key, Some("folder-001".to_string()))
-            .expect("new_from_json should succeed");
+        let record =
+            Record::new_from_json(server_response, &secret_key, Some("folder-001".to_string()))
+                .expect("new_from_json should succeed");
 
         // Verify links were parsed from server response
         assert_eq!(record.links.len(), 3, "Should have 3 linked records");
@@ -672,9 +671,8 @@ mod feature_validation_tests {
         let secret_key = keeper_secrets_manager_core::utils::generate_random_bytes(32);
         let record_key = keeper_secrets_manager_core::utils::generate_random_bytes(32);
 
-        let encrypted_record_key =
-            CryptoUtils::encrypt_aes_gcm(&record_key, &secret_key, None)
-                .expect("encrypt record key");
+        let encrypted_record_key = CryptoUtils::encrypt_aes_gcm(&record_key, &secret_key, None)
+            .expect("encrypt record key");
         let record_key_b64 = bytes_to_base64(&encrypted_record_key);
 
         let record_data = json!({"title": "No Links", "type": "login", "fields": [], "custom": []});
@@ -692,7 +690,10 @@ mod feature_validation_tests {
         let record = Record::new_from_json(server_response, &secret_key, None)
             .expect("new_from_json should succeed");
 
-        assert!(record.links.is_empty(), "Links should be empty when not in response");
+        assert!(
+            record.links.is_empty(),
+            "Links should be empty when not in response"
+        );
     }
 
     #[test]
