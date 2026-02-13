@@ -4,13 +4,6 @@ All notable changes to this project will be documented in this file.
 
 ## [17.1.0]
 
-### Fixed
-- **Password generation with exact character counts** - Negative values in `PasswordOptions` now correctly specify exact character counts (e.g., `.lowercase(-8)` generates exactly 8 lowercase characters) (KSM-782)
-  - Fixed `generate_password_with_options()` to use `abs()` values instead of clamping to 0 with `.max(0)`
-  - Exact mode (negative values) calculates password length as sum of absolute values, ignoring the length parameter
-  - Extra character pool now correctly excludes character types with negative (exact) values
-  - Added warnings when user's length parameter is overridden in exact mode
-
 ### Added
 
 #### Core API Methods
@@ -37,8 +30,15 @@ All notable changes to this project will be documented in this file.
 - **`get_secret_by_title(title)`** - Get first secret by title
   - Returns `Option<Record>` with first match
   - Returns `None` if no matches found
+- **`get_secrets_with_options(query_options)`** - Fetch secrets with advanced options
+  - Accepts `QueryOptions` for configuring request behavior
+  - Supports `request_links` for GraphSync linked record retrieval
 
 #### File Operations
+- **`download_file_by_title(records, title)`** - Download file by name instead of UID
+  - Searches all records for a file matching the given title
+  - Returns decrypted file data as `Vec<u8>`
+  - Convenience method for when file UID is not known
 - **`KeeperFile.get_thumbnail_data()`** - Download and decrypt file thumbnails
   - Returns `Option<Vec<u8>>` with decrypted thumbnail data
   - Returns `None` if thumbnail not available
@@ -151,6 +151,12 @@ All notable changes to this project will be documented in this file.
   - Severity: MEDIUM
 
 ### Fixed
+- **KSM-782**: Password generation with exact character counts not supported
+  - Negative values in `PasswordOptions` now correctly specify exact character counts (e.g., `.lowercase(-8)` generates exactly 8 lowercase characters)
+  - Fixed `generate_password_with_options()` to use `abs()` values instead of clamping to 0 with `.max(0)`
+  - Exact mode (negative values) calculates password length as sum of absolute values, ignoring the length parameter
+  - Extra character pool now correctly excludes character types with negative (exact) values
+  - Added warnings when user's length parameter is overridden in exact mode
 - **KSM-769**: Custom field notation selector bug
   - Fixed `custom_field` notation selector always searching in wrong array
   - Rust SDK was searching in "fields" array for both `field` and `custom_field` selectors
