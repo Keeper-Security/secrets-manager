@@ -94,11 +94,24 @@ options:
     - The title of the record.
     type: str
     required: yes
-  note:
+  notes:
     description:
     - Attach a note to the record.
+    - C(note) (singular) is accepted as a deprecated alias.
     type: str
     required: no
+    aliases: [ note ]
+  version:
+    description:
+    - The record schema version to use.
+    - Defaults to v3 (recommended).
+    type: str
+    required: no
+    default: v3
+    choices:
+      - v2
+      - v3
+    version_added: '1.1.2'
   fields:
     description:
     - The label, or type, of the standard field in record that contains the value.
@@ -195,7 +208,7 @@ EXAMPLES = r'''
     share_folder_uid: XXX
     record_type: login
     title: My Title
-    note: This record was created from Ansible
+    notes: This record was created from Ansible
     generate_password: True
     fields:
       - type: login
@@ -275,6 +288,17 @@ class ActionModule(ActionBase):
                 ))
                 keeper.stash_secret_value(str(field.get("value")))
 
+            notes = self._task.args.get("notes")
+            if notes is None:
+                notes = self._task.args.get("note")
+                if notes is not None:
+                    display.deprecated(
+                        "The 'note' parameter for keeper_create has been renamed to 'notes'. "
+                        "Please update your playbooks.",
+                        version="2.0.0",
+                        collection_name="keepersecurity.keeper_secrets_manager"
+                    )
+
             password_complexity = self._task.args.get("password_complexity")
             if password_complexity is not None:
                 password_complexity = keeper.password_complexity_translation(**password_complexity)
@@ -282,7 +306,7 @@ class ActionModule(ActionBase):
             record = Record(version=version).create_from_field_list(
                 record_type=record_type,
                 title=title,
-                notes=self._task.args.get("note"),
+                notes=notes,
                 fields=fields,
                 password_generate=self._task.args.get("generate_password"),
                 password_complexity=password_complexity

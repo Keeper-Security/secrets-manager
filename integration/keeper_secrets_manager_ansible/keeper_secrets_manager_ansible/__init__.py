@@ -51,6 +51,7 @@ class KeeperFieldType(Enum):
     FIELD = "field"
     CUSTOM_FIELD = "custom_field"
     FILE = "file"
+    NOTES = "notes"
 
     @staticmethod
     def get_enum(value):
@@ -67,7 +68,7 @@ class KeeperAnsible:
     KEY_PREFIX = "keeper"
     KEY_CONFIG_FILE_SUFFIX = "config_file"
     KEY_CONFIG_BASE64 = "config"
-    ALLOWED_FIELDS = ["field", "custom_field", "file"]
+    ALLOWED_FIELDS = ["field", "custom_field", "file", "notes"]
     TOKEN_ENV = "KSM_TOKEN"
     TOKEN_KEY = "token"
     HOSTNAME_KEY = "hostname"
@@ -160,7 +161,7 @@ class KeeperAnsible:
             ssl_certs_skip = task_vars.get(keeper_ssl_verify_skip, False)
 
             # If the config location is defined, or a file exists at the default location.
-            self.config_file = task_vars.get(keeper_config_file_key)
+            self.config_file = self._template_value(task_vars.get(keeper_config_file_key))
             if self.config_file is None:
                 self.config_file = FileKeyValueStorage.default_config_file_location
 
@@ -172,8 +173,9 @@ class KeeperAnsible:
 
                 # We are using the cache, what directory should the cache file be stored in.
                 cache_dir_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CACHE_DIR)
-                if task_vars.get(cache_dir_key) is not None and os.environ.get(KeeperAnsible.ENV_CACHE_DIR) is None:
-                    os.environ[KeeperAnsible.ENV_CACHE_DIR] = task_vars.get(cache_dir_key)
+                cache_dir_val = self._template_value(task_vars.get(cache_dir_key))
+                if cache_dir_val is not None and os.environ.get(KeeperAnsible.ENV_CACHE_DIR) is None:
+                    os.environ[KeeperAnsible.ENV_CACHE_DIR] = cache_dir_val
                     # Update the cache file path after setting the environment variable
                     KSMCache.kms_cache_file_name = os.path.join(os.environ.get(KeeperAnsible.ENV_CACHE_DIR, ""), 'ksm_cache.bin')
 
@@ -278,6 +280,12 @@ class KeeperAnsible:
 
         except Exception as err:
             raise AnsibleError("Keeper Ansible error: {}".format(err))
+
+    def _template_value(self, value):
+        """Resolve Jinja2 expressions in a task_vars value using Ansible's templar."""
+        if value is not None and self.action_module is not None and hasattr(self.action_module, '_templar'):
+            value = self.action_module._templar.template(value)
+        return value
 
     def get_encryption_key(self):
 
@@ -542,6 +550,13 @@ class KeeperAnsible:
                 display.vvvvvv(f"found the file: {key}")
             else:
                 display.vvvvvv(f"cannot find the file: {key}")
+        elif field_type == KeeperFieldType.NOTES:
+            notes_value = record.dict.get('notes')
+            if notes_value is not None:
+                values = [notes_value]
+                display.vvvvvv(f"found notes field")
+            else:
+                display.vvvvvv(f"notes field is empty or not present")
         else:
             raise AnsibleError("Cannot get_value. The field type ENUM of {} is invalid.".format(field_type))
 
@@ -627,6 +642,9 @@ class KeeperAnsible:
             record.custom_field(key, value)
         elif field_type == KeeperFieldType.FILE:
             raise AnsibleError("Cannot save a file from the ansible playbook/role to Keeper.")
+        elif field_type == KeeperFieldType.NOTES:
+            record.dict["notes"] = value
+            record._update()
         else:
             raise AnsibleError("Cannot set_value. The field type ENUM of {} is invalid.".format(field_type))
 
@@ -653,13 +671,14 @@ class KeeperAnsible:
         for key in KeeperAnsible.ALLOWED_FIELDS:
             if args.get(key) is not None:
                 field_type.append(key)
-                field_key = args.get(key)
+                # Notes is a singleton field (no lookup needed), others use the value as a lookup key
+                field_key = None if key == "notes" else args.get(key)
 
         if len(field_type) == 0:
-            raise AnsibleError("Either field, custom_field or file needs to set to a non-blank value for keeper_copy.")
+            raise AnsibleError("Either field, custom_field, file, or notes needs to set to a non-blank value for keeper_copy.")
         if len(field_type) > 1:
             raise AnsibleError("Found multiple field types. Only one of the following key can be set: field, "
-                               "custom_field or file.")
+                               "custom_field, file, or notes.")
 
         return KeeperFieldType.get_enum(field_type[0]), field_key
 

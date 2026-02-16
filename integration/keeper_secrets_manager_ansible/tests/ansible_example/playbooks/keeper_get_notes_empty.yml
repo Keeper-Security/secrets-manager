@@ -1,0 +1,18 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Get Notes (Empty/Missing)
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: "Get Notes By UID (Should Fail)"
+      keeper_get:
+        uid: "{{ uid }}"
+        notes: yes
+      register: "my_notes"
+      ignore_errors: yes
+
+    - name: "Verify Error Occurred"
+      fail:
+        msg: "Expected error when notes field is empty"
+      when: my_notes is not failed
