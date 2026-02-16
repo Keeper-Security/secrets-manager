@@ -2,15 +2,6 @@ name: Publish to Crates.io (Rust SDK)
 
 on:
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to use for publishing (prod requires approval, test for dry-run testing)'
-        required: true
-        default: 'prod'
-        type: choice
-        options:
-          - prod
-          - test
 
 jobs:
   test-rust-sdk:
@@ -152,17 +143,16 @@ jobs:
           path: ./sdk/rust/rust-sdk-sbom.json
           retention-days: 90
 
-  publish-crates:
-    name: Publish Rust SDK to crates.io
-    environment: ${{ inputs.environment }}
+  dry-run-publish:
+    name: Validate package (dry-run)
+    environment: test
     needs: [test-rust-sdk, generate-sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    # CRITICAL: Required for OIDC trusted publishing
     permissions:
-      id-token: write  # To obtain signed ID token from GitHub OIDC provider
-      contents: read   # To checkout repository code
+      id-token: write
+      contents: read
 
     defaults:
       run:
@@ -180,25 +170,43 @@ jobs:
       - name: Authenticate with crates.io via OIDC
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
-        # This action exchanges GitHub OIDC token for crates.io temporary token
-        # No configuration needed - reads repository context automatically
 
-      - name: Build and verify package
+      - name: Dry-run publish (validates package and authentication)
         run: |
           cargo package --allow-dirty
           cargo publish --dry-run
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
-      - name: Publish to crates.io (DRY RUN - testing authentication)
-        run: cargo publish --dry-run
+  publish-crates:
+    name: Publish Rust SDK to crates.io
+    environment: prod
+    needs: [dry-run-publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      id-token: write
+      contents: read
+
+    defaults:
+      run:
+        working-directory: ./sdk/rust
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v3
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Authenticate with crates.io via OIDC
+        uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
+      - name: Publish to crates.io
+        run: cargo publish --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-        # ⚠️ DRY RUN MODE ENABLED ⚠️
-        # This verifies OIDC authentication works without actually publishing.
-        #
-        # TO ENABLE REAL PUBLISHING (after successful dry run):
-        # 1. Change this step to: cargo publish --no-verify
-        # 2. Update step name to "Publish to crates.io"
-        # 3. Remove the dry-run comment block
-        # 4. Commit, push, and manually trigger workflow for real publish
