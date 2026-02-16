@@ -41,6 +41,7 @@
 //! # }
 //! ```
 
+use crate::crypto::CryptoUtils;
 use crate::custom_error::KSMRError;
 use crate::dto::{EncryptedPayload, KsmHttpResponse, TransmissionKey};
 use log::{debug, warn};
@@ -188,15 +189,32 @@ pub fn caching_post_function(
 
                     debug!("Using cached data ({} bytes)", cached_response_data.len());
 
-                    // Create a new transmission key with cached key
-                    let mut updated_transmission_key = transmission_key.clone();
-                    updated_transmission_key.key = cached_transmission_key;
+                    // Decrypt cached response with cached transmission key
+                    let decrypted_data = CryptoUtils::decrypt_aes(
+                        &cached_response_data,
+                        &cached_transmission_key,
+                    )
+                    .map_err(|e| {
+                        warn!("Failed to decrypt cached data: {}", e);
+                        KSMRError::CryptoError(format!("Cache decryption failed: {}", e))
+                    })?;
 
-                    // Return cached response as if it came from network
+                    // Re-encrypt with current transmission key so caller can decrypt it
+                    let re_encrypted_data = CryptoUtils::encrypt_aes_gcm(
+                        &decrypted_data,
+                        &transmission_key.key,
+                        None,
+                    )?;
+
+                    debug!(
+                        "Successfully decrypted cached data and re-encrypted with current transmission key"
+                    );
+
+                    // Return re-encrypted cached response
                     return Ok(KsmHttpResponse {
                         status_code: 200,
-                        data: cached_response_data,
-                        http_response: Some("Cached response".to_string()),
+                        data: re_encrypted_data,
+                        http_response: Some("Cached response (re-encrypted)".to_string()),
                     });
                 }
             }

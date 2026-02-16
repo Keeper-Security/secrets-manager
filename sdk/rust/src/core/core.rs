@@ -1015,7 +1015,14 @@ impl SecretsManager {
                     let cached_data = self.cache.get_cached_value().map_err(|e| KSMRError::SecretManagerCreationError(e.to_string()))?;
                     let cached_data_data_part = cached_data[32..].to_vec();
                     let cached_data_transmission_key = cached_data[0..32].to_vec();
-                    transmission_key.key = cached_data_transmission_key;
+
+                    // Reconstruct transmission key from cached bytes only
+                    // (ignore current request's transmission key - it's for a different encryption context)
+                    // Decryption only uses transmission_key.key (the 32-byte symmetric key)
+                    transmission_key.public_key_id = String::new();         // Not used for decryption
+                    transmission_key.key = cached_data_transmission_key;    // The actual 32-byte key from cache
+                    transmission_key.encrypted_key = Vec::new();            // Not used for decryption
+
                     let ksp = KsmHttpResponse{
                         data: cached_data_data_part,
                         status_code: 200,
