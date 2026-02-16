@@ -659,6 +659,9 @@ See `examples/manual_tests/README.md` for detailed setup instructions.
 - `KSM_CONFIG` - Base64-encoded JSON configuration (overrides file storage)
 - `KSM_CACHE_DIR` - Cache directory for disaster recovery caching (default: current directory)
 - `KSM_SKIP_VERIFY` - Skip SSL certificate verification (`true`/`false`)
+- `HTTP_PROXY` - HTTP proxy URL (automatically used if `proxy_url` not set)
+- `HTTPS_PROXY` - HTTPS proxy URL (automatically used if `proxy_url` not set)
+- `NO_PROXY` - Comma-separated list of hosts to exclude from proxying
 
 ### Client Options
 
@@ -674,6 +677,7 @@ let options = ClientOptions::new(
     Level::Info,                // log level
     Some("keepersecurity.com".to_string()),  // hostname override
     Some(false),                // insecure_skip_verify
+    Some("http://proxy.example.com:8080".to_string()), // proxy_url
     KSMCache::None              // cache
 );
 
@@ -681,6 +685,65 @@ let options = ClientOptions::new(
 let options = ClientOptions::new_client_options_with_token(token, config);
 let options = ClientOptions::new_client_options(config);
 ```
+
+### Proxy Configuration
+
+The Rust SDK supports HTTP/HTTPS proxy configuration for all network operations.
+
+#### Explicit Configuration
+
+```rust
+use keeper_secrets_manager_core::core::ClientOptions;
+use keeper_secrets_manager_core::enums::KvStoreType;
+use keeper_secrets_manager_core::storage::FileKeyValueStorage;
+
+// Create storage
+let storage = FileKeyValueStorage::new(None)?;
+let config = KvStoreType::File(storage);
+
+// Configure with proxy
+let options = ClientOptions::new(
+    token,
+    config,
+    Level::Info,
+    None,
+    None,
+    Some("http://proxy.example.com:8080".to_string()), // proxy_url
+    KSMCache::None,
+);
+
+let mut secrets_manager = SecretsManager::new(options)?;
+```
+
+#### Proxy with Authentication
+
+Include credentials in the proxy URL:
+
+```rust
+let proxy_url = "http://username:password@proxy.example.com:8080";
+
+let options = ClientOptions::new(
+    token,
+    config,
+    Level::Info,
+    None,
+    None,
+    Some(proxy_url.to_string()),
+    KSMCache::None,
+);
+```
+
+#### Environment Variable Fallback
+
+If `proxy_url` is not explicitly set (`None`), the SDK automatically respects standard HTTP proxy environment variables:
+
+```bash
+export HTTPS_PROXY=http://proxy.example.com:8080
+export HTTP_PROXY=http://proxy.example.com:8080
+export NO_PROXY=localhost,127.0.0.1
+```
+
+**Priority**: Explicit `proxy_url` parameter > Environment variables (`HTTPS_PROXY`/`HTTP_PROXY`)
 
 ## Dependencies
 

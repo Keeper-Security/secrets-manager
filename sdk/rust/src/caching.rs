@@ -131,8 +131,6 @@ pub fn cache_exists() -> bool {
 /// 1. On success: Saves the response to cache (transmission key + encrypted data)
 /// 2. On failure: Falls back to cached data if available
 ///
-/// This matches the pattern used in Python, JavaScript, Java, Ruby, and .NET SDKs.
-///
 /// # Arguments
 /// * `url` - The API endpoint URL
 /// * `transmission_key` - The transmission key for encryption
