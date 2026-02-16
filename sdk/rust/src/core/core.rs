@@ -71,6 +71,7 @@ pub struct ClientOptions {
     pub config: KvStoreType,
     pub log_level: Level,
     pub hostname: Option<String>,
+    pub proxy_url: Option<String>,
     cache: KSMCache,
     custom_post_function: Option<CustomPostFunction>,
 }
@@ -87,6 +88,7 @@ impl ClientOptions {
     /// * `log_level` - Logging level (Info, Debug, Warn, Error)
     /// * `hostname` - Optional Keeper server hostname override
     /// * `insecure_skip_verify` - Skip SSL certificate verification (not recommended)
+    /// * `proxy_url` - Optional HTTP/HTTPS proxy URL (supports authentication: `http://user:pass@host:port`)
     /// * `cache` - Cache configuration for performance optimization
     ///
     /// # Returns
@@ -98,6 +100,7 @@ impl ClientOptions {
         log_level: Level,
         hostname: Option<String>,
         insecure_skip_verify: Option<bool>,
+        proxy_url: Option<String>,
         cache: KSMCache,
     ) -> Self {
         Self {
@@ -106,6 +109,7 @@ impl ClientOptions {
             log_level,
             hostname,
             insecure_skip_verify,
+            proxy_url,
             cache,
             custom_post_function: None,
         }
@@ -118,6 +122,7 @@ impl ClientOptions {
             Level::Error,
             None,
             None,
+            None, // proxy_url
             cache::KSMCache::None,
         )
     }
@@ -130,6 +135,7 @@ impl ClientOptions {
             Level::Error,
             None,
             None,
+            None, // proxy_url
             cache::KSMCache::None,
         )
     }
@@ -187,6 +193,7 @@ pub struct SecretsManager {
     pub config: KvStoreType,
     pub log_level: Level,
     pub cache: KSMCache,
+    pub proxy_url: Option<String>,
     custom_post_function: Option<CustomPostFunction>,
 }
 
@@ -200,6 +207,7 @@ impl Clone for SecretsManager {
             config: self.config.clone(),
             log_level: self.log_level,
             cache: self.cache.clone(),
+            proxy_url: self.proxy_url.clone(),
             custom_post_function: self.custom_post_function,
         }
     }
@@ -245,6 +253,7 @@ impl SecretsManager {
             config: KvStoreType::None,
             log_level: Level::Info, // Default to Info if not provided
             cache: KSMCache::None,  // Default is no cache
+            proxy_url: client_options.proxy_url.clone(),
             custom_post_function: client_options.custom_post_function,
         };
 
@@ -685,6 +694,31 @@ impl SecretsManager {
         Ok(get_payload)
     }
 
+    /// Build a reqwest::Proxy from a proxy URL string.
+    /// Supports authentication via URL format: http://user:pass@host:port
+    fn build_proxy(proxy_url: &str) -> Result<reqwest::Proxy, KSMRError> {
+        use reqwest::Proxy;
+
+        // Parse URL to extract credentials if present
+        let url = reqwest::Url::parse(proxy_url).map_err(|e| {
+            KSMRError::ConfigurationError(format!("Invalid proxy URL '{}': {}", proxy_url, e))
+        })?;
+
+        // Create proxy for all protocols (HTTP and HTTPS)
+        let mut proxy = Proxy::all(proxy_url).map_err(|e| {
+            KSMRError::ConfigurationError(format!("Failed to configure proxy: {}", e))
+        })?;
+
+        // Extract and apply credentials if present in URL
+        if !url.username().is_empty() {
+            let username = url.username();
+            let password = url.password().unwrap_or("");
+            proxy = proxy.basic_auth(username, password);
+        }
+
+        Ok(proxy)
+    }
+
     pub fn post_function(
         self,
         url: String,
@@ -715,12 +749,19 @@ impl SecretsManager {
         })?;
         let public_key_for_header = transmission_key.public_key_id.to_string();
 
-        let client = reqwest::blocking::Client::builder()
-            .danger_accept_invalid_certs(verify_ssl_certificates)
-            .build()
-            .map_err(|err| {
-                KSMRError::SecretManagerCreationError(format!("error creating builder: {}", err))
-            })?;
+        // Build HTTP client with proxy support
+        let mut client_builder = reqwest::blocking::Client::builder()
+            .danger_accept_invalid_certs(verify_ssl_certificates);
+
+        // Apply proxy configuration if provided
+        if let Some(proxy_url) = &self.proxy_url {
+            let proxy = SecretsManager::build_proxy(proxy_url)?;
+            client_builder = client_builder.proxy(proxy);
+        }
+
+        let client = client_builder.build().map_err(|err| {
+            KSMRError::SecretManagerCreationError(format!("error creating HTTP client: {}", err))
+        })?;
 
         let request_builder = client
             .post(url)
