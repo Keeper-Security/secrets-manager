@@ -39,6 +39,7 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
+          cache-workspaces: sdk/rust
 
       - name: Check formatting
         run: cargo fmt -- --check
@@ -63,6 +64,7 @@ jobs:
           cargo test --all-features --test integration_tests
           cargo test --all-features --test notation_tests
           cargo test --all-features --test payload_test
+          cargo test --all-features --test proxy_test
           cargo test --all-features --test totp_test
           cargo test --all-features --test update_secret_tests
 

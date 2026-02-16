@@ -71,6 +71,15 @@ All notable changes to this project will be documented in this file.
   - Constructors: `new()`, `with_transaction_type()`, `with_links_removal()`, `default()`
 
 #### Infrastructure
+- **Proxy Support** - HTTP/HTTPS proxy configuration for corporate environments (KSM-584)
+  - `ClientOptions.proxy_url` field - Optional proxy URL parameter
+  - `SecretsManager.proxy_url` field - Stores proxy configuration
+  - `build_proxy()` helper - Parses proxy URL with credential extraction
+  - Supports authenticated proxies via URL format: `http://user:pass@host:port`
+  - Automatic fallback to `HTTP_PROXY`/`HTTPS_PROXY` environment variables
+  - Applied to all HTTP operations (API requests and file uploads)
+  - 8 automatic unit tests in `tests/proxy_test.rs`
+  - 3 manual E2E tests in `tests/proxy_integration_test.rs` (marked `#[ignore]`)
 - **Custom HTTP Injection** - Testing and mocking support
   - `CustomPostFunction` type for function pointers
   - `ClientOptions.custom_post_function` field
