@@ -2,6 +2,15 @@ name: Publish to Crates.io (Rust SDK)
 
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to use for publishing (prod requires approval, test for dry-run testing)'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - prod
+          - test
 
 jobs:
   test-rust-sdk:
@@ -145,7 +154,7 @@ jobs:
 
   publish-crates:
     name: Publish Rust SDK to crates.io
-    environment: prod
+    environment: ${{ inputs.environment }}
     needs: [test-rust-sdk, generate-sbom]
     runs-on: ubuntu-latest
     timeout-minutes: 15
