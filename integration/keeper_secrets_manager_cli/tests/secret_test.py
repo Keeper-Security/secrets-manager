@@ -321,7 +321,7 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
         queue.add_response(res)
 
-        def mock_download_get(_):
+        def mock_download_get(url, **kwargs):
             mock_res = Response()
             mock_res.status_code = 200
             mock_res.reason = "OK"
@@ -469,7 +469,7 @@ class SecretTest(unittest.TestCase):
             mocked_file_2.uid: mocked_file_2
         }
 
-        def mock_download_get(url):
+        def mock_download_get(url, **kwargs):
             uid = url.replace("http://localhost/", "")
             mock_res = Response()
             mock_res.status_code = 200

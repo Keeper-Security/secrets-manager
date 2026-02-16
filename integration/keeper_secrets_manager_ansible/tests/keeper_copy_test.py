@@ -24,7 +24,7 @@ lookup = {
 }
 
 
-def mock_download_get(url):
+def mock_download_get(url, **kwargs):
     mock_res = Response()
     mock_res.status_code = 200
     mock_res.reason = "OK"
@@ -78,3 +78,43 @@ class KeeperCopyTest(unittest.TestCase):
                 ls = os.listdir(temp_dir)
                 self.assertTrue("password" in ls, "did not find file password")
                 self.assertTrue("video.mp4" in ls, "did not find file video.mp4")
+
+    def test_keeper_copy_notes(self):
+        """Test copying notes field to a file using keeper_copy with notes: yes parameter"""
+
+        # Create a mock response with a record containing notes
+        notes_response = MockResponse()
+        notes_record = Record(title="Record With Notes", record_type="login")
+        notes_record.field("password", "TESTPASSWORD")
+        notes_record.notes = "These are my secret notes"
+        notes_response.add_record(record=notes_record)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            a = AnsibleTestFramework(
+                playbook="keeper_copy_notes.yml",
+                vars={
+                    "tmp_dir": temp_dir,
+                    "uid": notes_record.uid,
+                },
+                mock_responses=[notes_response]
+            )
+            result, out, err = a.run()
+
+            # Verify the task succeeded
+            self.assertEqual(result["failed"], 0, "Task should not fail")
+            self.assertEqual(result["ok"], 4, "4 tasks should succeed")
+            self.assertEqual(result["changed"], 2, "2 things should change (file copy + command)")
+
+            # Verify notes were copied to file
+            notes_file = os.path.join(temp_dir, "notes.txt")
+            self.assertTrue(os.path.exists(notes_file), "Notes file should exist")
+
+            # Verify file contents match the notes
+            with open(notes_file, 'r') as f:
+                content = f.read()
+            self.assertEqual(content, "These are my secret notes",
+                           "Notes content should match record notes")
+
+            # Verify the output contains the notes
+            self.assertRegex(out, r'NOTES: These are my secret notes',
+                           "Output should contain the notes content")

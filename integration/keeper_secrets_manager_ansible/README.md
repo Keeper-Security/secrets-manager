@@ -19,6 +19,42 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Changes
 
+## 1.3.0
+* KSM-781: Fixed Jinja2 templating for `keeper_config_file` and `keeper_cache_dir` variables
+  - Variables like `{{ playbook_dir }}/keeper-config.yml` are now resolved before use
+  - Lookup plugins (no action_module) are unaffected
+* **Security**: KSM-762 - Fixed CVE-2026-23949 (jaraco.context path traversal) in SBOM generation workflow
+  - Upgraded jaraco.context to >= 6.1.0 in SBOM generation workflow
+  - Build-time dependency only, does not affect runtime or published packages
+* KSM-714: Added notes field update support
+  - Added `NOTES` to `KeeperFieldType` enum
+  - Users can now update record notes via `keeper_set` tasks with `field_type: notes`
+* KSM-768: Added notes field retrieval support
+  - Added `notes` parameter to `keeper_get` action (boolean, default: no)
+  - Users can now retrieve record notes via `keeper_get` tasks with `notes: yes`
+  - Example: `keeper_get: uid: "XXX" notes: yes`
+* KSM-770: Fixed bug in `keeper_get` with notes parameter
+  - Fixed error "Cannot find key True" when using `notes: yes` with empty notes field
+  - Notes field is now properly handled as singleton field (no lookup key required)
+  - Added edge case test for missing notes field
+* KSM-771: Fixed bug in `keeper_copy` with notes parameter
+  - Fixed error "Unsupported parameters for copy module: notes" when using `keeper_copy` with `notes: yes`
+  - Added cleanup of `notes` parameter before delegating to Ansible's built-in copy module
+  - Added test for copying notes field to files
+* KSM-772: Fixed bug in `keeper_set` with notes parameter
+  - Fixed notes field being set to `None` instead of the provided value when using `keeper_set` with `notes: yes`
+  - Changed `set_value()` method to use `value` parameter instead of `key` (which is None for singleton notes field)
+  - Prevents silent data loss of existing notes content
+  - Added test for setting notes field values
+* KSM-773: Standardized `notes` parameter name across all actions (`keeper_create`, `keeper_set`, `keeper_copy`)
+  - Renamed `note` to `notes` for consistency across all actions
+* KSM-780: Fixed backward compatibility for `note` parameter in `keeper_create`
+  - The `note` (singular) parameter is now accepted as a deprecated alias for `notes`
+  - Playbooks using the old `note:` parameter will continue to work with a deprecation warning
+  - The `note` alias will be removed in version 2.0.0
+* **Dependency Update**: Updated Python SDK requirement to v17.1.0
+  - Ensures compatibility with security fixes and latest features
+
 ## 1.2.6
 * KSM-672: KSMCache class initializes cache file path before env vars are set. Closes ([issue #675](https://github.com/Keeper-Security/secrets-manager/issues/675))
 
