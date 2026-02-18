@@ -29,7 +29,7 @@ use crate::utils::{
 };
 use hmac::{Hmac, Mac};
 use log::Level;
-use reqwest::blocking::{multipart, Client};
+use reqwest::blocking::multipart;
 use reqwest::header::HeaderName;
 use sha2::Sha512;
 
@@ -37,10 +37,10 @@ use std::collections::HashMap;
 
 use crate::custom_error::KSMRError;
 use crate::dto::{
-    validate_payload, AppData, CreateFolderPayload, CreateOptions, CreatePayload,
-    DeleteFolderPayload, DeletePayload, EncryptedPayload, FileUploadPayload, Folder, GetPayload,
-    KsmHttpResponse, Payload, QueryOptions, Record, SecretsManagerResponse, TransmissionKey,
-    UpdateFolderPayload, UpdatePayload, UpdateTransactionType,
+    validate_payload, AppData, CompleteTransactionPayload, CreateFolderPayload, CreateOptions,
+    CreatePayload, DeleteFolderPayload, DeletePayload, EncryptedPayload, FileUploadPayload, Folder,
+    GetPayload, KsmHttpResponse, Payload, QueryOptions, Record, SecretsManagerResponse,
+    TransmissionKey, UpdateFolderPayload, UpdatePayload, UpdateTransactionType,
 };
 use crate::helpers::get_servers;
 use crate::keeper_globals::KEEPER_SECRETS_MANAGER_SDK_CLIENT_ID;
@@ -50,22 +50,57 @@ use regex::Regex;
 use reqwest::header;
 use serde_json::Value;
 
+/// Custom post function type for HTTP request injection (used for testing and mocking)
+///
+/// # Arguments
+/// * `url` - The URL to make the request to
+/// * `transmission_key` - The transmission key for encrypting the request
+/// * `encrypted_payload` - The encrypted payload to send
+///
+/// # Returns
+/// * `Result<KsmHttpResponse, KSMRError>` - The HTTP response or an error
+pub type CustomPostFunction = fn(
+    url: String,
+    transmission_key: TransmissionKey,
+    encrypted_payload: EncryptedPayload,
+) -> Result<KsmHttpResponse, KSMRError>;
+
 pub struct ClientOptions {
     pub token: String,
     pub insecure_skip_verify: Option<bool>,
     pub config: KvStoreType,
     pub log_level: Level,
     pub hostname: Option<String>,
+    pub proxy_url: Option<String>,
     cache: KSMCache,
+    custom_post_function: Option<CustomPostFunction>,
 }
 
 impl ClientOptions {
+    /// Creates a new `ClientOptions` with full control over all settings.
+    ///
+    /// For simpler initialization, consider using `new_client_options_with_token()` or `new_client_options()`.
+    ///
+    /// # Arguments
+    ///
+    /// * `token` - One-time token or empty string if using existing config
+    /// * `config` - Storage backend (File, InMemory, or None)
+    /// * `log_level` - Logging level (Info, Debug, Warn, Error)
+    /// * `hostname` - Optional Keeper server hostname override
+    /// * `insecure_skip_verify` - Skip SSL certificate verification (not recommended)
+    /// * `proxy_url` - Optional HTTP/HTTPS proxy URL (supports authentication: `http://user:pass@host:port`)
+    /// * `cache` - Cache configuration for performance optimization
+    ///
+    /// # Returns
+    ///
+    /// * `ClientOptions` - Configured options ready for `SecretsManager::new()`
     pub fn new(
         token: String,
         config: KvStoreType,
         log_level: Level,
         hostname: Option<String>,
         insecure_skip_verify: Option<bool>,
+        proxy_url: Option<String>,
         cache: KSMCache,
     ) -> Self {
         Self {
@@ -74,7 +109,9 @@ impl ClientOptions {
             log_level,
             hostname,
             insecure_skip_verify,
+            proxy_url,
             cache,
+            custom_post_function: None,
         }
     }
     /// This function is used to create client options when token is involved - for FileKeyValueStorage
@@ -85,6 +122,7 @@ impl ClientOptions {
             Level::Error,
             None,
             None,
+            None, // proxy_url
             cache::KSMCache::None,
         )
     }
@@ -97,14 +135,49 @@ impl ClientOptions {
             Level::Error,
             None,
             None,
+            None, // proxy_url
             cache::KSMCache::None,
         )
     }
 
+    /// Sets the cache configuration for performance optimization.
+    ///
+    /// # Arguments
+    ///
+    /// * `cache` - Cache type (File, Memory, or None)
     pub fn set_cache(&mut self, cache: KSMCache) {
         self.cache = cache;
     }
 
+    /// Set a custom post function for HTTP requests (primarily for testing and mocking)
+    ///
+    /// # Arguments
+    /// * `post_function` - The custom function to handle HTTP POST requests
+    ///
+    /// # Example
+    /// ```no_run,no_run
+    /// use keeper_secrets_manager_core::core::ClientOptions;
+    /// use keeper_secrets_manager_core::dto::{TransmissionKey, EncryptedPayload, KsmHttpResponse};
+    /// use keeper_secrets_manager_core::custom_error::KSMRError;
+    ///
+    /// fn my_mock_post(url: String, _tk: TransmissionKey, _payload: EncryptedPayload) -> Result<KsmHttpResponse, KSMRError> {
+    ///     Ok(KsmHttpResponse { status_code: 200, data: vec![], http_response: None })
+    /// }
+    ///
+    /// # fn main() {
+    /// let mut options = ClientOptions::new_client_options(keeper_secrets_manager_core::enums::KvStoreType::None);
+    /// options.set_custom_post_function(my_mock_post);
+    /// # }
+    /// ```
+    pub fn set_custom_post_function(&mut self, post_function: CustomPostFunction) {
+        self.custom_post_function = Some(post_function);
+    }
+
+    /// Sets the logging level for SDK operations.
+    ///
+    /// # Arguments
+    ///
+    /// * `log_level` - Logging level (Info, Debug, Warn, Error, Trace)
     pub fn set_log_level(&mut self, log_level: Level) {
         self.log_level = log_level;
     }
@@ -120,6 +193,8 @@ pub struct SecretsManager {
     pub config: KvStoreType,
     pub log_level: Level,
     pub cache: KSMCache,
+    pub proxy_url: Option<String>,
+    custom_post_function: Option<CustomPostFunction>,
 }
 
 impl Clone for SecretsManager {
@@ -132,11 +207,44 @@ impl Clone for SecretsManager {
             config: self.config.clone(),
             log_level: self.log_level,
             cache: self.cache.clone(),
+            proxy_url: self.proxy_url.clone(),
+            custom_post_function: self.custom_post_function,
         }
     }
 }
 
 impl SecretsManager {
+    /// Creates a new `SecretsManager` instance and initializes it with the provided configuration.
+    ///
+    /// This method performs token binding (if using a one-time token), sets up storage,
+    /// and validates the configuration. The SDK never panics - all errors are returned as `Result`.
+    ///
+    /// # Arguments
+    ///
+    /// * `client_options` - Configuration options including token, storage backend, hostname, and cache settings
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, KSMRError>` - Initialized `SecretsManager` instance or an error
+    ///
+    /// # Errors
+    ///
+    /// * `SecretManagerCreationError` - If initialization fails (invalid token, storage error, missing config)
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, enums::KvStoreType, storage::FileKeyValueStorage, custom_error::KSMRError};
+    ///
+    /// fn example() -> Result<(), KSMRError> {
+    ///     let storage = FileKeyValueStorage::new(Some("config.json".to_string()))?;
+    ///     let config = KvStoreType::File(storage);
+    ///     let token = "US:YOUR_TOKEN".to_string();
+    ///     let options = ClientOptions::new_client_options_with_token(token, config);
+    ///     let mut secrets_manager = SecretsManager::new(options)?;
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn new(client_options: ClientOptions) -> Result<Self, KSMRError> {
         let mut secrets_manager = SecretsManager {
             token: String::new(),
@@ -145,6 +253,8 @@ impl SecretsManager {
             config: KvStoreType::None,
             log_level: Level::Info, // Default to Info if not provided
             cache: KSMCache::None,  // Default is no cache
+            proxy_url: client_options.proxy_url.clone(),
+            custom_post_function: client_options.custom_post_function,
         };
 
         let mut config = client_options.config;
@@ -168,7 +278,7 @@ impl SecretsManager {
                     || client_options
                         .hostname
                         .as_ref()
-                        .map_or(true, String::is_empty)
+                        .is_none_or(String::is_empty)
                 {
                     return Err(KSMRError::SecretManagerCreationError(
                         "The hostname must be present in the token or provided as a parameter"
@@ -186,11 +296,11 @@ impl SecretsManager {
                 let token_host_key = token_parts[0].to_uppercase();
                 let keeper_servers = get_keeper_servers();
                 let token_host = keeper_servers.get(token_host_key.as_str());
-                if token_host.is_none() {
-                    secrets_manager.hostname = token_parts[0].to_string().to_owned();
+                secrets_manager.hostname = if let Some(host) = token_host {
+                    host.to_string()
                 } else {
-                    secrets_manager.hostname = token_host.as_ref().unwrap().to_string();
-                }
+                    token_parts[0].to_string().to_owned()
+                };
                 secrets_manager.token = token_parts[1].to_string();
             }
             if secrets_manager.token.is_empty() {
@@ -223,44 +333,59 @@ impl SecretsManager {
         if !secrets_manager.token.is_empty() {
             config
                 .set(ConfigKeys::KeyClientKey, secrets_manager.token.clone())
-                .unwrap();
+                .map_err(|e| {
+                    KSMRError::SecretManagerCreationError(format!(
+                        "Error setting client key in config: {}",
+                        e
+                    ))
+                })?;
         }
         if !secrets_manager.hostname.is_empty() {
             config
                 .set(ConfigKeys::KeyHostname, secrets_manager.hostname.clone())
-                .unwrap();
+                .map_err(|e| {
+                    KSMRError::SecretManagerCreationError(format!(
+                        "Error setting hostname in config: {}",
+                        e
+                    ))
+                })?;
         }
 
         info!("Initializing SecretsManager and values are set");
 
-        if config.get(ConfigKeys::KeyServerPublicKeyId).is_ok() {
-            let server_public_key_id: Option<String> =
-                config.get(ConfigKeys::KeyServerPublicKeyId).unwrap();
-            let keeper_public_keys = get_keeper_public_keys();
-            if server_public_key_id.is_none() {
-                debug!("Setting public key id to the default: {}", DEFAULT_KEY_ID);
-                config
-                    .set(ConfigKeys::KeyServerPublicKeyId, DEFAULT_KEY_ID.to_string())
-                    .unwrap();
-            } else if server_public_key_id.is_some()
-                && !keeper_public_keys.contains_key(server_public_key_id.unwrap().as_str())
-            {
+        let server_public_key_id: Option<String> =
+            config.get(ConfigKeys::KeyServerPublicKeyId).map_err(|e| {
+                KSMRError::SecretManagerCreationError(format!(
+                    "Failed to retrieve the server public key id from config: {}",
+                    e
+                ))
+            })?;
+        let keeper_public_keys = get_keeper_public_keys();
+        if server_public_key_id.is_none() {
+            debug!("Setting public key id to the default: {}", DEFAULT_KEY_ID);
+            config
+                .set(ConfigKeys::KeyServerPublicKeyId, DEFAULT_KEY_ID.to_string())
+                .map_err(|e| {
+                    KSMRError::SecretManagerCreationError(format!(
+                        "Error setting server public key id in config: {}",
+                        e
+                    ))
+                })?;
+        } else if let Some(key_id) = &server_public_key_id {
+            if !keeper_public_keys.contains_key(key_id.as_str()) {
                 debug!(
                     "Public key id {} does not exists, set to default : {}",
-                    config
-                        .get(ConfigKeys::KeyServerPublicKeyId)
-                        .unwrap()
-                        .unwrap(),
-                    DEFAULT_KEY_ID
+                    key_id, DEFAULT_KEY_ID
                 );
                 config
                     .set(ConfigKeys::KeyServerPublicKeyId, DEFAULT_KEY_ID.to_string())
-                    .unwrap();
+                    .map_err(|e| {
+                        KSMRError::SecretManagerCreationError(format!(
+                            "Error setting server public key id in config: {}",
+                            e
+                        ))
+                    })?;
             }
-        } else {
-            return Err(KSMRError::SecretManagerCreationError(
-                "Failed to retrieve the server public key id from config".to_owned(),
-            ));
         }
         secrets_manager.config = config.clone();
 
@@ -312,7 +437,12 @@ impl SecretsManager {
                 match client_id {
                     Some(client_id) => {
                         if token_client_id == client_id {
-                            let app_key = self.config.get(ConfigKeys::KeyAppKey).unwrap();
+                            let app_key = self.config.get(ConfigKeys::KeyAppKey).map_err(|e| {
+                                KSMRError::SecretManagerCreationError(format!(
+                                    "Error getting app key from config: {}",
+                                    e
+                                ))
+                            })?;
                             if app_key.is_some() {
                                 unbound_token = false;
                                 warn!("the storage is already initiated with the same token",);
@@ -333,7 +463,13 @@ impl SecretsManager {
         if !(client_id_empty_state || unbound_token) {
             debug!("Already bound to the token");
 
-            if self.config.get(ConfigKeys::KeyClientKey).unwrap().is_none() {
+            let client_key = self.config.get(ConfigKeys::KeyClientKey).map_err(|e| {
+                KSMRError::SecretManagerCreationError(format!(
+                    "Error getting client key from config: {}",
+                    e
+                ))
+            })?;
+            if client_key.is_none() {
                 let _ = self.config.delete(ConfigKeys::KeyClientKey).map_err(|er| {
                     KSMRError::SecretManagerCreationError(format!(
                         "Error deleting client key: {}",
@@ -394,7 +530,13 @@ impl SecretsManager {
                     ))
                 })?;
 
-            if self.config.get(ConfigKeys::KeyClientId).unwrap().is_none() {
+            let client_id_check = self.config.get(ConfigKeys::KeyClientId).map_err(|e| {
+                KSMRError::SecretManagerCreationError(format!(
+                    "Error getting client id from config: {}",
+                    e
+                ))
+            })?;
+            if client_id_check.is_none() {
                 self.config.delete(ConfigKeys::KeyAppKey).map_err(|err| {
                     KSMRError::SecretManagerCreationError(format!(
                         "Error deleting app key: {}",
@@ -405,7 +547,12 @@ impl SecretsManager {
 
             self.config
                 .set(ConfigKeys::KeyClientId, existing_secret_key_hash.clone())
-                .unwrap();
+                .map_err(|e| {
+                    KSMRError::SecretManagerCreationError(format!(
+                        "Error setting client id in config: {}",
+                        e
+                    ))
+                })?;
 
             let private_key = self.config.get(ConfigKeys::KeyPrivateKey).map_err(|err| {
                 KSMRError::SecretManagerCreationError(format!(
@@ -440,26 +587,39 @@ impl SecretsManager {
 
     pub fn load_secret_key(&self) -> Result<String, KSMRError> {
         let mut current_secret_key = "".to_string();
-        // implementation of load_secret_key method
-        let env_secret_key = env::var("KSM_TOKEN")
-            .ok()
-            .filter(|val| !val.is_empty())
-            .unwrap_or("".to_string());
 
-        if !env_secret_key.is_empty() {
-            current_secret_key = env_secret_key;
-            info!("Secret key found in environment variable");
+        // implementation of load_secret_key method
+        // First check if we already have a parsed token in self.token (without region prefix)
+        if !self.token.is_empty() {
+            current_secret_key = self.token.clone();
+            info!("Secret key found in SecretsManager token");
         }
 
-        if current_secret_key.is_empty() && !self.token.is_empty() {
-            current_secret_key = self.token.clone();
-            info!("Secret key found in config");
+        // Then check environment variable (parse it if it has region prefix)
+        if current_secret_key.is_empty() {
+            let env_secret_key = env::var("KSM_TOKEN")
+                .ok()
+                .filter(|val| !val.is_empty())
+                .unwrap_or("".to_string());
+
+            if !env_secret_key.is_empty() {
+                // Parse token to remove region prefix if present
+                let token_parts: Vec<&str> = env_secret_key.trim().split(':').collect();
+                current_secret_key = if token_parts.len() > 1 {
+                    token_parts[1].to_string()
+                } else {
+                    env_secret_key
+                };
+                info!("Secret key found in environment variable");
+            }
         }
 
         if current_secret_key.is_empty() {
             let config_secret_key = self.config.get(ConfigKeys::KeyClientKey)?;
-            current_secret_key = config_secret_key.unwrap().clone();
-            info!("Secret key found in configuration file");
+            if let Some(key) = config_secret_key {
+                current_secret_key = key.clone();
+                info!("Secret key found in configuration file");
+            }
         }
 
         Ok(current_secret_key)
@@ -524,14 +684,39 @@ impl SecretsManager {
 
         let mut get_payload =
             GetPayload::new(client_version, client_id, base_64_public_key, None, None);
-        if query_options.is_some() {
-            let query_options_data = query_options.unwrap();
+        if let Some(query_options_data) = query_options {
             get_payload
                 .set_optional_field("records_filter", query_options_data.get_records_filter());
             get_payload
                 .set_optional_field("folders_filter", query_options_data.get_folders_filter());
+            get_payload.request_links = query_options_data.request_links;
         }
         Ok(get_payload)
+    }
+
+    /// Build a reqwest::Proxy from a proxy URL string.
+    /// Supports authentication via URL format: http://user:pass@host:port
+    fn build_proxy(proxy_url: &str) -> Result<reqwest::Proxy, KSMRError> {
+        use reqwest::Proxy;
+
+        // Parse URL to extract credentials if present
+        let url = reqwest::Url::parse(proxy_url).map_err(|e| {
+            KSMRError::ConfigurationError(format!("Invalid proxy URL '{}': {}", proxy_url, e))
+        })?;
+
+        // Create proxy for all protocols (HTTP and HTTPS)
+        let mut proxy = Proxy::all(proxy_url).map_err(|e| {
+            KSMRError::ConfigurationError(format!("Failed to configure proxy: {}", e))
+        })?;
+
+        // Extract and apply credentials if present in URL
+        if !url.username().is_empty() {
+            let username = url.username();
+            let password = url.password().unwrap_or("");
+            proxy = proxy.basic_auth(username, password);
+        }
+
+        Ok(proxy)
     }
 
     pub fn post_function(
@@ -564,12 +749,19 @@ impl SecretsManager {
         })?;
         let public_key_for_header = transmission_key.public_key_id.to_string();
 
-        let client = reqwest::blocking::Client::builder()
-            .danger_accept_invalid_certs(verify_ssl_certificates)
-            .build()
-            .map_err(|err| {
-                KSMRError::SecretManagerCreationError(format!("error creating builder: {}", err))
-            })?;
+        // Build HTTP client with proxy support
+        let mut client_builder = reqwest::blocking::Client::builder()
+            .danger_accept_invalid_certs(verify_ssl_certificates);
+
+        // Apply proxy configuration if provided
+        if let Some(proxy_url) = &self.proxy_url {
+            let proxy = SecretsManager::build_proxy(proxy_url)?;
+            client_builder = client_builder.proxy(proxy);
+        }
+
+        let client = client_builder.build().map_err(|err| {
+            KSMRError::SecretManagerCreationError(format!("error creating HTTP client: {}", err))
+        })?;
 
         let request_builder = client
             .post(url)
@@ -612,6 +804,10 @@ impl SecretsManager {
         let payload_json_str = payload
             .to_json()
             .map_err(|err| KSMRError::SerializationError(err.to_string()))?;
+
+        // Debug logging to verify payload content
+        debug!("Payload JSON before encryption: {}", payload_json_str);
+
         let payload_bytes = string_to_bytes(&payload_json_str);
 
         let encrypted_payload =
@@ -724,22 +920,37 @@ impl SecretsManager {
                 }
             }
         } else if rc == "key" {
-            if let Some(key_id) = response_dict.get("key_id").and_then(|v| v.as_str()) {
+            // Server returns key_id as a number, not a string, so we need to handle both cases
+            let key_id_value = response_dict.get("key_id");
+            let key_id_str = if let Some(key_id_val) = key_id_value {
+                // Try to get as number first (which is what server actually sends)
+                if let Some(key_id_num) = key_id_val.as_u64() {
+                    Some(key_id_num.to_string())
+                } else {
+                    key_id_val.as_str().map(|key_id_str| key_id_str.to_string())
+                }
+            } else {
+                None
+            };
+
+            if let Some(key_id) = key_id_str {
                 info!("Server has requested we use public key {}", key_id);
                 let keeper_public_keys = get_keeper_public_keys();
                 if key_id.is_empty() {
                     msg = "The public key is blank from the server".to_string();
-                } else if keeper_public_keys.contains_key(key_id) {
+                } else if keeper_public_keys.contains_key(&key_id) {
                     let _ = self
                         .config
-                        .set(ConfigKeys::KeyServerPublicKeyId, key_id.to_string())
+                        .set(ConfigKeys::KeyServerPublicKeyId, key_id.clone())
                         .map_err(|err| KSMRError::StorageError(err.to_string()))?;
-                    info!("Server has requested we use public key {}", key_id);
+                    info!("Updated to use public key {}", key_id);
                     _retry = true;
                     return Ok(_retry);
                 } else {
                     msg = format!("The public key at {} does not exist in the SDK", key_id);
                 }
+            } else {
+                msg = "Server returned key error but no key_id was provided".to_string();
             }
         } else {
             let response_msg = response_dict
@@ -804,7 +1015,14 @@ impl SecretsManager {
                     let cached_data = self.cache.get_cached_value().map_err(|e| KSMRError::SecretManagerCreationError(e.to_string()))?;
                     let cached_data_data_part = cached_data[32..].to_vec();
                     let cached_data_transmission_key = cached_data[0..32].to_vec();
-                    transmission_key.key = cached_data_transmission_key;
+
+                    // Reconstruct transmission key from cached bytes only
+                    // (ignore current request's transmission key - it's for a different encryption context)
+                    // Decryption only uses transmission_key.key (the 32-byte symmetric key)
+                    transmission_key.public_key_id = String::new();         // Not used for decryption
+                    transmission_key.key = cached_data_transmission_key;    // The actual 32-byte key from cache
+                    transmission_key.encrypted_key = Vec::new();            // Not used for decryption
+
                     let ksp = KsmHttpResponse{
                         data: cached_data_data_part,
                         status_code: 200,
@@ -847,12 +1065,21 @@ impl SecretsManager {
             )
             .map_err(|e| KSMRError::SecretManagerCreationError(e.to_string()))?;
 
-            keeper_response = self.process_post_request(
-                url.clone(),
-                &mut transmission_key,
-                encrypted_payload_and_signature.clone(),
-                true,
-            )?;
+            // Use custom post function if provided (for testing/mocking), otherwise use default HTTP client
+            keeper_response = if let Some(custom_post_fn) = self.custom_post_function {
+                custom_post_fn(
+                    url.clone(),
+                    transmission_key.clone(),
+                    encrypted_payload_and_signature.clone(),
+                )?
+            } else {
+                self.process_post_request(
+                    url.clone(),
+                    &mut transmission_key,
+                    encrypted_payload_and_signature.clone(),
+                    true,
+                )?
+            };
 
             if keeper_response.status_code == 200 {
                 info!("Successfully Made API call to {}", path);
@@ -930,19 +1157,17 @@ impl SecretsManager {
             true => {
                 let warnings_option = decrypted_response_dict.get("warnings");
                 match warnings_option {
-                    Some(warnings) => match warnings {
-                        Value::Array(warnings_array) => {
-                            for warning in warnings_array {
-                                warn!(
-                                    "Warning shown while fetching secrets: `{}`",
-                                    warning.as_str().unwrap().to_string()
-                                );
-                            }
+                    Some(Value::Array(warnings_array)) => {
+                        for warning in warnings_array {
+                            warn!(
+                                "Warning shown while fetching secrets: `{}`",
+                                warning.as_str().unwrap().to_string()
+                            );
                         }
-                        _ => {
-                            info!("No warnings found when pulling secrets");
-                        }
-                    },
+                    }
+                    Some(_) => {
+                        info!("No warnings found when pulling secrets");
+                    }
                     None => {
                         info!("No warnings found when pulling secrets");
                     }
@@ -968,10 +1193,12 @@ impl SecretsManager {
                     .collect::<HashMap<String, Value>>();
                 let record_result =
                     Record::new_from_json(record_hashmap_parsed, &_secret_key, None);
-                if record_result.is_err() {
-                    log::error!("Error parsing record: {}", record);
-                } else {
-                    let unwrapped_record = record_result.unwrap();
+                if let Ok(mut unwrapped_record) = record_result {
+                    if let Some(proxy) = &self.proxy_url {
+                        for file in &mut unwrapped_record.files {
+                            file.proxy_url = Some(proxy.clone());
+                        }
+                    }
                     records_count += 1;
                     records.push(unwrapped_record);
                 }
@@ -989,13 +1216,18 @@ impl SecretsManager {
                     .collect::<HashMap<String, Value>>();
                 let folder_result: Option<Folder> =
                     Folder::new_from_json(folder_hashmap_parsed, &_secret_key);
-                if folder_result.is_none() {
-                    log::error!("Error parsing folder: {}", folder);
-                } else {
-                    let unwrapped_folder = folder_result.unwrap();
+                if let Some(unwrapped_folder) = folder_result {
                     shared_folders_count += 1;
-                    records_count += unwrapped_folder.records()?.len();
-                    records.extend(unwrapped_folder.records()?);
+                    let mut folder_records = unwrapped_folder.records()?;
+                    if let Some(proxy) = &self.proxy_url {
+                        for record in &mut folder_records {
+                            for file in &mut record.files {
+                                file.proxy_url = Some(proxy.clone());
+                            }
+                        }
+                    }
+                    records_count += folder_records.len();
+                    records.extend(folder_records);
                     shared_folders.push(unwrapped_folder);
                 }
             }
@@ -1220,6 +1452,16 @@ impl SecretsManager {
         }
     }
 
+    /// Retrieves all folders from the Keeper vault.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<KeeperFolder>, KSMRError>` - Vector of folders or an error
+    ///
+    /// # Errors
+    ///
+    /// * `HTTPError` - If the API request fails
+    /// * `CryptoError` - If folder decryption fails
     pub fn get_folders(self) -> Result<Vec<KeeperFolder>, KSMRError> {
         let folders = self.fetch_and_decrypt_folders()?;
         Ok(folders)
@@ -1237,13 +1479,37 @@ impl SecretsManager {
             secrets_manager_response = self.fetch_and_decrypt_secrets(query_options_clone)?;
         }
 
-        if secrets_manager_response.warnings.is_some() {
-            warn!("{}", secrets_manager_response.warnings.as_ref().unwrap());
+        if let Some(warnings) = &secrets_manager_response.warnings {
+            warn!("{}", warnings);
         }
 
         Ok(secrets_manager_response)
     }
 
+    /// Retrieves secrets from the vault with advanced query options.
+    ///
+    /// Supports filtering by record UIDs, folder UIDs, and requesting GraphSync linked records.
+    ///
+    /// # Arguments
+    ///
+    /// * `query_options` - Query configuration including filters and `request_links` for GraphSync
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<Record>, KSMRError>` - Vector of decrypted records or an error
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use keeper_secrets_manager_core::{core::SecretsManager, dto::payload::QueryOptions, custom_error::KSMRError};
+    ///
+    /// fn example(secrets_manager: &mut SecretsManager) -> Result<(), KSMRError> {
+    ///     // Request all secrets with linked records
+    ///     let query = QueryOptions::with_links(Vec::new(), Vec::new(), true);
+    ///     let secrets = secrets_manager.get_secrets_with_options(query)?;
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn get_secrets_with_options(
         &mut self,
         query_options: QueryOptions,
@@ -1251,10 +1517,27 @@ impl SecretsManager {
         let secrets_manager_response =
             self.get_secrets_full_response_with_options(query_options)?;
 
-        let records = secrets_manager_response.records;
+        let mut records = secrets_manager_response.records;
+
+        // Consolidate fileRef fields in all records (fixes legacy bug where multiple separate fields were created)
+        for record in &mut records {
+            record.consolidate_file_refs();
+        }
+
         Ok(records)
     }
 
+    /// Retrieves secrets with full response metadata including warnings and binding status.
+    ///
+    /// Similar to `get_secrets()` but returns the complete API response wrapper.
+    ///
+    /// # Arguments
+    ///
+    /// * `uid_array` - Vector of record UIDs to retrieve (empty vec = all secrets)
+    ///
+    /// # Returns
+    ///
+    /// * `Result<SecretsManagerResponse, KSMRError>` - Full response with records, warnings, and metadata
     pub fn get_secrets_full_response(
         &mut self,
         uid_array: Vec<String>,
@@ -1265,11 +1548,188 @@ impl SecretsManager {
         Ok(secrets_manager_response)
     }
 
+    /// Retrieves secrets from the Keeper vault.
+    ///
+    /// Fetches and decrypts the specified records, or all records if the UID array is empty.
+    ///
+    /// # Arguments
+    ///
+    /// * `uid_array` - Vector of record UIDs to retrieve (empty vec = all secrets)
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<Record>, KSMRError>` - Vector of decrypted records or an error
+    ///
+    /// # Errors
+    ///
+    /// * `HTTPError` - If the API request fails
+    /// * `CryptoError` - If record decryption fails
+    /// * `AuthenticationError` - If token/credentials are invalid
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use keeper_secrets_manager_core::{core::SecretsManager, custom_error::KSMRError};
+    ///
+    /// fn example(secrets_manager: &mut SecretsManager) -> Result<(), KSMRError> {
+    ///     // Get all secrets
+    ///     let secrets = secrets_manager.get_secrets(Vec::new())?;
+    ///
+    ///     // Get specific secrets
+    ///     let uids = vec!["UID1".to_string(), "UID2".to_string()];
+    ///     let secrets = secrets_manager.get_secrets(uids)?;
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn get_secrets(&mut self, uid_array: Vec<String>) -> Result<Vec<Record>, KSMRError> {
         let secrets_manager_response = self.get_secrets_full_response(uid_array)?;
-        Ok(secrets_manager_response.records)
+        let mut records = secrets_manager_response.records;
+
+        // Consolidate fileRef fields in all records (fixes legacy bug where multiple separate fields were created)
+        for record in &mut records {
+            record.consolidate_file_refs();
+        }
+
+        Ok(records)
     }
 
+    /// Retrieves all secrets matching a specific title.
+    ///
+    /// # Arguments
+    /// * `title` - The exact title to search for (case-sensitive)
+    ///
+    /// # Returns
+    /// * `Result<Vec<Record>, KSMRError>` - All records with matching title
+    ///
+    /// # Example
+    /// ```no_run,no_run
+    /// use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, storage::FileKeyValueStorage};
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let config = FileKeyValueStorage::new_config_storage("config.json".to_string())?;
+    /// let client_options = ClientOptions::new_client_options(config);
+    /// let mut secrets_manager = SecretsManager::new(client_options)?;
+    ///
+    /// // Get all secrets with title "Production DB"
+    /// let matching_records = secrets_manager.get_secrets_by_title("Production DB")?;
+    /// println!("Found {} matching records", matching_records.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_secrets_by_title(&mut self, title: &str) -> Result<Vec<Record>, KSMRError> {
+        let all_secrets = self.get_secrets(Vec::new())?;
+        let matching = all_secrets
+            .into_iter()
+            .filter(|record| record.title == title)
+            .collect();
+        Ok(matching)
+    }
+
+    /// Retrieves the first secret matching a specific title.
+    ///
+    /// # Arguments
+    /// * `title` - The exact title to search for (case-sensitive)
+    ///
+    /// # Returns
+    /// * `Result<Option<Record>, KSMRError>` - First matching record, or None if not found
+    ///
+    /// # Example
+    /// ```no_run,no_run
+    /// use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, storage::FileKeyValueStorage};
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let config = FileKeyValueStorage::new_config_storage("config.json".to_string())?;
+    /// let client_options = ClientOptions::new_client_options(config);
+    /// let mut secrets_manager = SecretsManager::new(client_options)?;
+    ///
+    /// // Get first secret with title "Production DB"
+    /// if let Some(record) = secrets_manager.get_secret_by_title("Production DB")? {
+    ///     println!("Found record: {}", record.uid);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_secret_by_title(&mut self, title: &str) -> Result<Option<Record>, KSMRError> {
+        let matching = self.get_secrets_by_title(title)?;
+        Ok(matching.into_iter().next())
+    }
+
+    /// Downloads a file by searching for a record by title and then finding the file by name.
+    ///
+    /// This is a convenience method that combines `get_secret_by_title()` and file download.
+    ///
+    /// # Arguments
+    ///
+    /// * `record_title` - The exact title of the record containing the file
+    /// * `file_name` - The name of the file to download
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(Vec<u8>))` - File data if both record and file are found
+    /// * `Ok(None)` - If record or file is not found
+    /// * `Err(KSMRError)` - If an error occurs during retrieval or download
+    ///
+    /// # Example
+    ///
+    /// ```no_run,no_run
+    /// # use keeper_secrets_manager_core::core::{ClientOptions, SecretsManager};
+    /// # use keeper_secrets_manager_core::storage::FileKeyValueStorage;
+    /// # use keeper_secrets_manager_core::custom_error::KSMRError;
+    /// # fn main() -> Result<(), KSMRError> {
+    /// # let config = FileKeyValueStorage::new_config_storage("config.json".to_string())?;
+    /// # let client_options = ClientOptions::new_client_options(config);
+    /// # let mut secrets_manager = SecretsManager::new(client_options)?;
+    /// if let Some(file_data) = secrets_manager.download_file_by_title("Production DB", "credentials.json")? {
+    ///     std::fs::write("credentials.json", file_data).expect("Failed to write file");
+    ///     println!("File downloaded successfully");
+    /// } else {
+    ///     println!("Record or file not found");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn download_file_by_title(
+        &mut self,
+        record_title: &str,
+        file_name: &str,
+    ) -> Result<Option<Vec<u8>>, KSMRError> {
+        // Find record by title
+        let record = match self.get_secret_by_title(record_title)? {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+
+        // Get fresh copy with files
+        let secrets = self.get_secrets(vec![record.uid])?;
+        let mut record = match secrets.into_iter().next() {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+
+        // Find file by name
+        let file = match record.files.iter_mut().find(|f| f.name == file_name) {
+            Some(f) => f,
+            None => return Ok(None),
+        };
+
+        // Download file data
+        file.get_file_data()
+    }
+
+    /// Deletes one or more secrets from the Keeper vault.
+    ///
+    /// # Arguments
+    ///
+    /// * `record_uid` - Vector of record UIDs to delete
+    ///
+    /// # Returns
+    ///
+    /// * `Result<String, KSMRError>` - JSON response from the server or an error
+    ///
+    /// # Errors
+    ///
+    /// * `HTTPError` - If the API request fails
+    /// * `AuthenticationError` - If credentials are invalid
     pub fn delete_secret(&mut self, record_uid: Vec<String>) -> Result<String, KSMRError> {
         let config_clone = self.config.clone();
         let delete_payload = Self::delete_payload(config_clone, record_uid)?;
@@ -1340,6 +1800,21 @@ impl SecretsManager {
         Ok(payload)
     }
 
+    /// Deletes one or more folders from the Keeper vault.
+    ///
+    /// # Arguments
+    ///
+    /// * `folder_uids` - Vector of folder UIDs to delete
+    /// * `force_delete` - If `true`, deletes folder even if it contains records; if `false`, only deletes empty folders
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<HashMap<String, Value>>, KSMRError>` - Server response for each folder deletion
+    ///
+    /// # Errors
+    ///
+    /// * `HTTPError` - If the API request fails
+    /// * Server error if `force_delete=false` and folder is not empty
     pub fn delete_folder(
         &mut self,
         folder_uids: Vec<String>,
@@ -1448,6 +1923,22 @@ impl SecretsManager {
         Ok(update_payload)
     }
 
+    /// Updates a folder's name in the Keeper vault.
+    ///
+    /// # Arguments
+    ///
+    /// * `folder_uid` - UID of the folder to update
+    /// * `folder_name` - New name for the folder
+    /// * `folders` - Current list of folders (typically from `get_folders()`)
+    ///
+    /// # Returns
+    ///
+    /// * `Result<String, KSMRError>` - Server response or an error
+    ///
+    /// # Errors
+    ///
+    /// * `HTTPError` - If the API request fails
+    /// * `CryptoError` - If encryption fails
     pub fn update_folder(
         &mut self,
         folder_uid: String,
@@ -1526,6 +2017,22 @@ impl SecretsManager {
         Ok(created_payload)
     }
 
+    /// Creates a new folder in the Keeper vault.
+    ///
+    /// # Arguments
+    ///
+    /// * `create_options` - Options specifying parent folder and optional subfolder
+    /// * `folder_name` - Name for the new folder
+    /// * `folders` - Current list of folders (typically from `get_folders()`)
+    ///
+    /// # Returns
+    ///
+    /// * `Result<String, KSMRError>` - UID of the created folder or an error
+    ///
+    /// # Errors
+    ///
+    /// * `HTTPError` - If the API request fails
+    /// * `CryptoError` - If encryption fails
     pub fn create_folder(
         &mut self,
         create_options: CreateOptions,
@@ -1566,30 +2073,6 @@ impl SecretsManager {
         Ok(payload.folder_uid)
     }
 
-    pub fn get_secret_by_title(&mut self, title: &str) -> Result<Option<Vec<Record>>, KSMRError> {
-        let retrieved_secrets = self.get_secrets(Vec::new())?;
-        let mut filtered_secrets = Vec::new();
-        for secret in retrieved_secrets {
-            if secret.title == title {
-                filtered_secrets.push(secret);
-            }
-        }
-        match filtered_secrets.len() {
-            0 => {
-                println!("No secrets found with title: {}", title);
-                Ok(None)
-            }
-            _ => {
-                println!(
-                    "Secrets found with title {} are {} in number",
-                    title,
-                    filtered_secrets.len()
-                );
-                Ok(Some(filtered_secrets))
-            }
-        }
-    }
-
     fn delete_payload(
         storage: KvStoreType,
         record_uid: Vec<String>,
@@ -1609,6 +2092,17 @@ impl SecretsManager {
         record: Record,
         transaction_type: Option<UpdateTransactionType>,
     ) -> Result<UpdatePayload, KSMRError> {
+        use crate::dto::UpdateOptions;
+        let update_options = transaction_type.map(UpdateOptions::with_transaction_type);
+
+        Self::prepare_update_secret_payload_with_options(storage, record, update_options)
+    }
+
+    fn prepare_update_secret_payload_with_options(
+        storage: KvStoreType,
+        record: Record,
+        update_options: Option<crate::dto::UpdateOptions>,
+    ) -> Result<UpdatePayload, KSMRError> {
         let record_uid = record.uid.clone();
         let revision = record.revision.unwrap_or_default();
         let client_id = match storage.get(ConfigKeys::KeyClientId)? {
@@ -1620,7 +2114,96 @@ impl SecretsManager {
             }
         };
 
-        let raw_json_bytes = utils::string_to_bytes(&record.raw_json);
+        // Parse record dict for potential modification
+        let mut record_dict = record.record_dict.clone();
+
+        // Apply UpdateOptions if provided
+        let mut links_to_remove = vec![];
+        let mut transaction_type_option = UpdateTransactionType::None;
+
+        // CONSOLIDATE multiple fileRef fields into one BEFORE any operations
+        // This fixes the bug where upload_file() created separate fileRef fields
+        if let Some(Value::Array(fields)) = record_dict.get_mut("fields") {
+            let mut all_file_uids: Vec<Value> = Vec::new();
+            let mut first_fileref_index: Option<usize> = None;
+
+            // Collect all file UIDs from all fileRef fields
+            for (idx, field) in fields.iter().enumerate() {
+                if let Some(field_obj) = field.as_object() {
+                    if field_obj.get("type").and_then(|v| v.as_str()) == Some("fileRef") {
+                        if first_fileref_index.is_none() {
+                            first_fileref_index = Some(idx);
+                        }
+                        if let Some(Value::Array(values)) = field_obj.get("value") {
+                            all_file_uids.extend(values.clone());
+                        }
+                    }
+                }
+            }
+
+            // Remove all fileRef fields
+            fields.retain(|field| field.get("type").and_then(|v| v.as_str()) != Some("fileRef"));
+
+            // Add back a single consolidated fileRef field (if there were any file UIDs)
+            if !all_file_uids.is_empty() {
+                let mut consolidated_field = serde_json::Map::new();
+                consolidated_field.insert("type".to_string(), Value::String("fileRef".to_string()));
+                consolidated_field.insert("value".to_string(), Value::Array(all_file_uids));
+
+                // Insert at the original position of the first fileRef field
+                if let Some(idx) = first_fileref_index {
+                    fields.insert(idx, Value::Object(consolidated_field));
+                } else {
+                    fields.push(Value::Object(consolidated_field));
+                }
+                debug!("Consolidated multiple fileRef fields into one");
+            }
+        }
+
+        if let Some(options) = &update_options {
+            transaction_type_option = options.transaction_type.clone();
+            links_to_remove = options.links_to_remove.clone();
+
+            // Filter fileRef field values - remove specified link UIDs from record data
+            // This matches JavaScript SDK behavior (see keeper.ts:304-312)
+            if !links_to_remove.is_empty() {
+                if let Some(Value::Array(fields)) = record_dict.get_mut("fields") {
+                    // Find and filter fileRef field values (should be only one field now after consolidation)
+                    for field in fields.iter_mut() {
+                        if let Some(field_obj) = field.as_object_mut() {
+                            if field_obj.get("type").and_then(|v| v.as_str()) == Some("fileRef") {
+                                // Filter the value array to remove link UIDs
+                                if let Some(Value::Array(values)) = field_obj.get_mut("value") {
+                                    values.retain(|v| {
+                                        !v.as_str()
+                                            .map(|uid| links_to_remove.contains(&uid.to_string()))
+                                            .unwrap_or(false)
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    // Remove entire fileRef field if value array is now empty (matches JS SDK)
+                    fields.retain(|field| {
+                        if let Some(field_obj) = field.as_object() {
+                            if field_obj.get("type").and_then(|v| v.as_str()) == Some("fileRef") {
+                                if let Some(Value::Array(values)) = field_obj.get("value") {
+                                    return !values.is_empty();
+                                }
+                            }
+                        }
+                        true
+                    });
+                }
+            }
+        }
+
+        // Serialize the potentially modified record dict
+        let record_json = serde_json::to_string(&record_dict)
+            .map_err(|e| KSMRError::SerializationError(e.to_string()))?;
+
+        let raw_json_bytes = utils::string_to_bytes(&record_json);
         let encrypted_raw_json_bytes =
             CryptoUtils::encrypt_aes_gcm(&raw_json_bytes, &record.record_key_bytes, None)?;
         let stringified_encrypted_data =
@@ -1634,16 +2217,37 @@ impl SecretsManager {
             stringified_encrypted_data,
         );
 
-        if transaction_type.is_some()
-            || (transaction_type.is_some()
-                && (transaction_type.clone().unwrap() != UpdateTransactionType::None))
-        {
-            payload.set_transaction_type(transaction_type.unwrap());
+        // Auto-override: If links_to_remove is not empty and transaction_type is General,
+        // force it to None to work around backend quirk where General ignores links2Remove.
+        let mut final_transaction_type = transaction_type_option;
+        if !links_to_remove.is_empty() && final_transaction_type == UpdateTransactionType::General {
+            final_transaction_type = UpdateTransactionType::None;
+        }
+
+        // Set transaction type and links to remove in payload
+        if final_transaction_type != UpdateTransactionType::None {
+            payload.set_transaction_type(final_transaction_type);
+        }
+
+        if !links_to_remove.is_empty() {
+            payload.set_links_to_remove(links_to_remove);
         }
 
         Ok(payload)
     }
 
+    /// Updates a secret record in the Keeper vault with optional transaction type.
+    ///
+    /// **Deprecated**: Use `update_secret()` or `update_secret_with_transaction()` instead.
+    ///
+    /// # Arguments
+    ///
+    /// * `record` - Modified record to save
+    /// * `transaction_type` - Optional transaction type for rotation workflows
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), KSMRError>` - Success or an error
     pub fn save(
         &mut self,
         record: Record,
@@ -1660,6 +2264,238 @@ impl SecretsManager {
         Ok(())
     }
 
+    /// Updates an existing secret record.
+    ///
+    /// # Arguments
+    /// * `record` - The Record object to update (with modified fields)
+    ///
+    /// # Returns
+    /// * `Result<(), KSMRError>` - Ok if successful, error otherwise
+    ///
+    /// # Example
+    /// ```no_run,no_run
+    /// use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, storage::FileKeyValueStorage, enums::StandardFieldTypeEnum};
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let config = FileKeyValueStorage::new_config_storage("config.json".to_string())?;
+    /// let client_options = ClientOptions::new_client_options(config);
+    /// let mut secrets_manager = SecretsManager::new(client_options)?;
+    ///
+    /// // Get a record
+    /// let mut secrets = secrets_manager.get_secrets(vec!["RECORD_UID".to_string()])?;
+    /// let mut record = secrets.into_iter().next().unwrap();
+    ///
+    /// // Modify the record
+    /// record.set_standard_field_value_mut(StandardFieldTypeEnum::PASSWORD.get_type(), "NewPassword123!".into())?;
+    ///
+    /// // Update the record
+    /// secrets_manager.update_secret(record)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn update_secret(&mut self, record: Record) -> Result<(), KSMRError> {
+        self.save(record, None)
+    }
+
+    /// Updates an existing secret record with a transaction type.
+    ///
+    /// Transaction types allow for special update workflows:
+    /// - `UpdateTransactionType::General` - Standard update
+    /// - `UpdateTransactionType::Rotation` - Password rotation workflow (requires completing via `complete_transaction`)
+    ///
+    /// # Arguments
+    /// * `record` - The Record object to update (with modified fields)
+    /// * `transaction_type` - The type of transaction (General or Rotation)
+    ///
+    /// # Returns
+    /// * `Result<(), KSMRError>` - Ok if successful, error otherwise
+    ///
+    /// # Example
+    /// ```no_run,no_run
+    /// use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, storage::FileKeyValueStorage,
+    ///     enums::StandardFieldTypeEnum, dto::payload::UpdateTransactionType};
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let config = FileKeyValueStorage::new_config_storage("config.json".to_string())?;
+    /// let client_options = ClientOptions::new_client_options(config);
+    /// let mut secrets_manager = SecretsManager::new(client_options)?;
+    ///
+    /// // Get a record
+    /// let mut secrets = secrets_manager.get_secrets(vec!["RECORD_UID".to_string()])?;
+    /// let mut record = secrets.into_iter().next().unwrap();
+    /// let record_uid = record.uid.clone();
+    ///
+    /// // Modify password for rotation
+    /// record.set_standard_field_value_mut(StandardFieldTypeEnum::PASSWORD.get_type(), "NewRotatedPassword123!".into())?;
+    ///
+    /// // Start rotation transaction
+    /// secrets_manager.update_secret_with_transaction(record, UpdateTransactionType::Rotation)?;
+    ///
+    /// // Complete the transaction (commit)
+    /// secrets_manager.complete_transaction(record_uid, false)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn update_secret_with_transaction(
+        &mut self,
+        record: Record,
+        transaction_type: UpdateTransactionType,
+    ) -> Result<(), KSMRError> {
+        self.save(record, Some(transaction_type))
+    }
+
+    /// Updates an existing secret record with advanced options.
+    ///
+    /// This method allows updating records with additional features:
+    /// - Transaction types (General or Rotation)
+    /// - Link removal (remove file links or record links)
+    ///
+    /// # Arguments
+    /// * `record` - The Record object to update (with modified fields)
+    /// * `update_options` - UpdateOptions with transaction_type and links_to_remove
+    ///
+    /// # Returns
+    /// * `Result<(), KSMRError>` - Ok if successful, error otherwise
+    ///
+    /// # Example
+    /// ```no_run,no_run
+    /// use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, storage::FileKeyValueStorage,
+    ///     enums::StandardFieldTypeEnum, dto::payload::{UpdateTransactionType, UpdateOptions}};
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let config = FileKeyValueStorage::new_config_storage("config.json".to_string())?;
+    /// let client_options = ClientOptions::new_client_options(config);
+    /// let mut secrets_manager = SecretsManager::new(client_options)?;
+    ///
+    /// // Get a record
+    /// let mut secrets = secrets_manager.get_secrets(vec!["RECORD_UID".to_string()])?;
+    /// let mut record = secrets.into_iter().next().unwrap();
+    ///
+    /// // Modify the record
+    /// record.set_standard_field_value_mut(StandardFieldTypeEnum::PASSWORD.get_type(), "NewPassword!".into())?;
+    ///
+    /// // Update with options (e.g., remove file links)
+    /// let update_options = UpdateOptions::new(
+    ///     UpdateTransactionType::General,
+    ///     vec!["file-uid-to-remove".to_string()]
+    /// );
+    /// secrets_manager.update_secret_with_options(record, update_options)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn update_secret_with_options(
+        &mut self,
+        record: Record,
+        update_options: crate::dto::UpdateOptions,
+    ) -> Result<(), KSMRError> {
+        info!("updating record with options: {}", record.title);
+        let payload = Self::prepare_update_secret_payload_with_options(
+            self.config.clone(),
+            record,
+            Some(update_options),
+        )?;
+
+        let result = self.post_query("update_secret".to_string(), &payload)?;
+
+        // Log the response to see if there's any error message
+        if !result.is_empty() {
+            let response_str = String::from_utf8_lossy(&result);
+            debug!("API Response: {}", response_str);
+        } else {
+            debug!("API Response is empty (success)");
+        }
+
+        Ok(())
+    }
+
+    /// Completes a transaction started by `update_secret_with_transaction`.
+    ///
+    /// This method finalizes or rolls back a transaction (typically used for password rotation workflows).
+    ///
+    /// # Arguments
+    /// * `record_uid` - The UID of the record with an active transaction
+    /// * `rollback` - If `true`, rolls back the transaction; if `false`, commits it
+    ///
+    /// # Returns
+    /// * `Result<(), KSMRError>` - Ok if successful, error otherwise
+    ///
+    /// # Example
+    /// ```no_run,no_run
+    /// use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, storage::FileKeyValueStorage,
+    ///     enums::StandardFieldTypeEnum, dto::payload::UpdateTransactionType};
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let config = FileKeyValueStorage::new_config_storage("config.json".to_string())?;
+    /// let client_options = ClientOptions::new_client_options(config);
+    /// let mut secrets_manager = SecretsManager::new(client_options)?;
+    ///
+    /// let record_uid = "RECORD_UID".to_string();
+    ///
+    /// // After starting a rotation transaction with update_secret_with_transaction...
+    ///
+    /// // Commit the transaction
+    /// secrets_manager.complete_transaction(record_uid.clone(), false)?;
+    ///
+    /// // OR rollback the transaction
+    /// // secrets_manager.complete_transaction(record_uid, true)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn complete_transaction(
+        &mut self,
+        record_uid: String,
+        rollback: bool,
+    ) -> Result<(), KSMRError> {
+        let endpoint = if rollback {
+            "rollback_secret_update"
+        } else {
+            "finalize_secret_update"
+        };
+
+        let payload = Self::prepare_complete_transaction_payload(self.config.clone(), record_uid)?;
+
+        let _result = self.post_query(endpoint.to_string(), &payload)?;
+        Ok(())
+    }
+
+    fn prepare_complete_transaction_payload(
+        storage: KvStoreType,
+        record_uid: String,
+    ) -> Result<CompleteTransactionPayload, KSMRError> {
+        let client_id = match storage.get(ConfigKeys::KeyClientId)? {
+            Some(client_id) => client_id,
+            None => {
+                return Err(KSMRError::CustomError(
+                    "client id not found in config".to_string(),
+                ))
+            }
+        };
+
+        let payload = CompleteTransactionPayload::new(
+            KEEPER_SECRETS_MANAGER_SDK_CLIENT_ID.to_string(),
+            client_id,
+            record_uid,
+        );
+
+        Ok(payload)
+    }
+
+    /// Uploads a file and attaches it to an existing secret record.
+    ///
+    /// # Arguments
+    ///
+    /// * `owner_record` - The record to attach the file to
+    /// * `file` - File upload data created with `KeeperFileUpload::get_file_for_upload()`
+    ///
+    /// # Returns
+    ///
+    /// * `Result<String, KSMRError>` - Server response or an error
+    ///
+    /// # Errors
+    ///
+    /// * `HTTPError` - If the upload fails
+    /// * `CryptoError` - If file encryption fails
+    /// * `FileError` - If the file cannot be read
     pub fn upload_file(
         &mut self,
         owner_record: Record,
@@ -1670,10 +2506,10 @@ impl SecretsManager {
             file.name, owner_record.uid
         );
         debug!(
-                "preparing upload payload. owner_record.uid=[{}], fine name: {}, file_size: {}",
-                owner_record.uid,
-                file.name,
-                file.data.len()
+            "preparing upload payload. owner_record.uid=[{}], fine name: {}, file_size: {}",
+            owner_record.uid,
+            file.name,
+            file.data.len()
         );
 
         let upload_payload =
@@ -1766,7 +2602,15 @@ impl SecretsManager {
         form = form.part("file", multipart::Part::bytes(encrypted_file_data));
 
         // Send the POST request with the multipart form
-        let client = Client::new();
+        let mut client_builder = reqwest::blocking::Client::builder()
+            .danger_accept_invalid_certs(!self.verify_ssl_certs);
+        if let Some(proxy_url) = &self.proxy_url {
+            let proxy = SecretsManager::build_proxy(proxy_url)?;
+            client_builder = client_builder.proxy(proxy);
+        }
+        let client = client_builder.build().map_err(|err| {
+            KSMRError::SecretManagerCreationError(format!("error creating HTTP client: {}", err))
+        })?;
         let response = client
             .post(url)
             .multipart(form)
@@ -1857,17 +2701,30 @@ impl SecretsManager {
             file_ref_obj.insert("value".to_string(), Value::Array(record_uid_value_str_arr));
             owner_record.insert_field("fields", file_ref_obj)?;
         } else {
-            let existing_file_refs = owner_record
-                .get_standard_field_value(StandardFieldTypeEnum::FILEREF.get_type(), false)?;
-            let mut existing_file_refs_array = existing_file_refs.as_array().unwrap()[0]
-                .as_array()
-                .unwrap()
-                .clone();
-            existing_file_refs_array.push(Value::String(file_record_uid_string.clone()));
-            owner_record.set_standard_field_value_mut(
-                StandardFieldTypeEnum::FILEREF.get_type(),
-                serde_json::Value::Array(existing_file_refs_array),
-            )?;
+            // FileRef field exists - append to the FIRST fileRef field's value array
+            // This matches Python/JavaScript SDK behavior
+            debug!("FileRef field exists - appending to first fileRef field");
+
+            // Get mutable reference to the FIRST fileRef field
+            let field =
+                owner_record.get_standard_field_mut(StandardFieldTypeEnum::FILEREF.get_type())?;
+
+            // Get the value array (may be empty)
+            let field_obj = field.as_object_mut().ok_or_else(|| {
+                KSMRError::RecordDataError("FileRef field is not an object".to_string())
+            })?;
+
+            let value_array = field_obj.get_mut("value").ok_or_else(|| {
+                KSMRError::RecordDataError("FileRef field has no value key".to_string())
+            })?;
+
+            let arr = value_array.as_array_mut().ok_or_else(|| {
+                KSMRError::RecordDataError("FileRef value is not an array".to_string())
+            })?;
+
+            debug!("FileRef field before append: {} UIDs", arr.len());
+            arr.push(Value::String(file_record_uid_string.clone()));
+            debug!("FileRef field after append: {} UIDs", arr.len());
         }
 
         let owner_record_raw_json = utils::dict_to_json(&owner_record.record_dict.clone())?;
@@ -1908,6 +2765,22 @@ impl SecretsManager {
         Ok(result)
     }
 
+    /// Creates a new secret record in the Keeper vault.
+    ///
+    /// # Arguments
+    ///
+    /// * `parent_folder_uid` - UID of the shared folder to create the record in
+    /// * `record_create_object` - Record data created with `RecordCreate::new()` and populated with fields
+    ///
+    /// # Returns
+    ///
+    /// * `Result<String, KSMRError>` - UID of the created record or an error
+    ///
+    /// # Errors
+    ///
+    /// * `HTTPError` - If the API request fails
+    /// * `CryptoError` - If encryption fails
+    /// * `SerializationError` - If record data is invalid
     pub fn create_secret(
         &mut self,
         parent_folder_uid: String,
@@ -2047,6 +2920,35 @@ impl SecretsManager {
         Ok(results)
     }
 
+    /// Retrieves a specific field value using Keeper notation syntax.
+    ///
+    /// Notation allows accessing fields without retrieving entire records.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - Keeper notation URI (e.g., `keeper://RECORD_UID/field/password`)
+    ///
+    /// # Returns
+    ///
+    /// * `Result<serde_json::Value, KSMRError>` - Field value as JSON or an error
+    ///
+    /// # Errors
+    ///
+    /// * `NotationError` - If the notation syntax is invalid
+    /// * `RecordNotFoundError` - If the record UID doesn't exist
+    /// * `FieldNotFoundError` - If the field doesn't exist
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use keeper_secrets_manager_core::{core::SecretsManager, custom_error::KSMRError};
+    ///
+    /// fn example(secrets_manager: &mut SecretsManager) -> Result<(), KSMRError> {
+    ///     let password = secrets_manager.get_notation("keeper://UID/field/password".to_string())?;
+    ///     let hostname = secrets_manager.get_notation("keeper://UID/field/host[hostName]".to_string())?;
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn get_notation(&mut self, url: String) -> Result<serde_json::Value, KSMRError> {
         let result = self._get_notation(url)?;
         match &result {
@@ -2496,11 +3398,17 @@ impl SecretsManager {
         if re.is_match(&record_token) {
             let re_array = vec![record_token.clone()];
             records = self.get_secrets(re_array)?;
+            // Remove duplicate UIDs - shortcuts/linked records both shared to same KSM App
             if records.len() > 1 {
-                return Err(KSMRError::NotationError(format!(
-                    "found more than one record with same uid/title: {}",
-                    record_token
-                )));
+                let mut seen_uids = std::collections::HashSet::new();
+                records.retain(|record| {
+                    if seen_uids.contains(&record.uid) {
+                        false
+                    } else {
+                        seen_uids.insert(record.uid.clone());
+                        true
+                    }
+                });
             }
         }
         if records.is_empty() {
@@ -2596,8 +3504,16 @@ impl SecretsManager {
                 KSMRError::NotationError("Notation error - Missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel.".to_string())
             })?;
 
+                // Determine which array to search based on selector
+                // Standard fields are in "fields", custom fields are in "custom"
+                let field_source = if selector.to_lowercase() == "custom_field" {
+                    "custom"
+                } else {
+                    "fields"
+                };
+
                 // Find the field in the record
-                let fields_option = record.record_dict.get("fields");
+                let fields_option = record.record_dict.get(field_source);
                 let fields = match fields_option {
                     Some(val) if val.is_array() => val.as_array().unwrap(),
                     _ => &Vec::new(),
@@ -2638,7 +3554,7 @@ impl SecretsManager {
                 let values: Vec<Value> = field
                     .get("value")
                     .and_then(|v| v.as_array().cloned())
-                    .unwrap_or_else(|| vec![]);
+                    .unwrap_or_default();
 
                 // Handle index1 (array index)
                 let idx = index1

@@ -11,6 +11,7 @@
 //
 
 use crate::custom_error::KSMRError;
+use log::debug;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 
@@ -128,6 +129,7 @@ pub struct GetPayload {
     public_key: Option<String>,
     requested_records: Option<Vec<String>>,
     requested_folders: Option<Vec<String>>,
+    pub request_links: Option<bool>, // Request linked records (v16.7.0+)
 }
 
 impl GetPayload {
@@ -144,6 +146,25 @@ impl GetPayload {
             public_key,
             requested_records,
             requested_folders,
+            request_links: None,
+        }
+    }
+
+    pub fn with_request_links(
+        client_version: String,
+        client_id: String,
+        public_key: Option<String>,
+        requested_records: Option<Vec<String>>,
+        requested_folders: Option<Vec<String>>,
+        request_links: Option<bool>,
+    ) -> GetPayload {
+        GetPayload {
+            client_version,
+            client_id,
+            public_key,
+            requested_records,
+            requested_folders,
+            request_links,
         }
     }
 
@@ -174,8 +195,10 @@ impl GetPayload {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
 pub enum UpdateTransactionType {
     #[default]
+    #[serde(rename = "")]
     None,
     General,
     Rotation,
@@ -220,6 +243,8 @@ pub struct UpdatePayload {
     pub data: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transaction_type: Option<UpdateTransactionType>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "links2Remove")]
+    pub links2_remove: Option<Vec<String>>, // Links to remove (file UIDs, record UIDs) - v16.7.0+
 }
 
 impl UpdatePayload {
@@ -237,6 +262,7 @@ impl UpdatePayload {
             revision,
             data,
             transaction_type: None,
+            links2_remove: None,
         }
     }
 
@@ -267,9 +293,70 @@ impl UpdatePayload {
             ))
         })
     }
+
+    pub fn set_links_to_remove(&mut self, links: Vec<String>) {
+        debug!(
+            "set_links_to_remove called with {} links: {:?}",
+            links.len(),
+            links
+        );
+        self.links2_remove = if links.is_empty() { None } else { Some(links) };
+        debug!("  -> links2_remove is now: {:?}", self.links2_remove);
+    }
+}
+
+/// Options for updating secrets with advanced features
+///
+/// # Fields
+/// * `transaction_type` - Type of transaction (General or Rotation)
+/// * `links_to_remove` - Array of link UIDs to remove (file links, record links)
+///
+/// # Example
+/// ```rust
+/// use keeper_secrets_manager_core::dto::payload::{UpdateOptions, UpdateTransactionType};
+///
+/// let options = UpdateOptions::new(UpdateTransactionType::Rotation, vec!["file-uid-123".to_string()]);
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct UpdateOptions {
+    pub transaction_type: UpdateTransactionType,
+    pub links_to_remove: Vec<String>,
+}
+
+impl UpdateOptions {
+    pub fn new(transaction_type: UpdateTransactionType, links_to_remove: Vec<String>) -> Self {
+        UpdateOptions {
+            transaction_type,
+            links_to_remove,
+        }
+    }
+
+    pub fn with_transaction_type(transaction_type: UpdateTransactionType) -> Self {
+        UpdateOptions {
+            transaction_type,
+            links_to_remove: vec![],
+        }
+    }
+
+    pub fn with_links_removal(links_to_remove: Vec<String>) -> Self {
+        UpdateOptions {
+            transaction_type: UpdateTransactionType::General,
+            links_to_remove,
+        }
+    }
+}
+
+impl Default for UpdateOptions {
+    fn default() -> Self {
+        UpdateOptions {
+            transaction_type: UpdateTransactionType::General,
+            links_to_remove: vec![],
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct CompleteTransactionPayload {
     pub client_version: String,
     pub client_id: String,
@@ -673,6 +760,7 @@ impl KsmHttpResponse {
 pub struct QueryOptions {
     pub records_filter: Vec<String>,
     pub folders_filter: Vec<String>,
+    pub request_links: Option<bool>, // Request linked records (GraphSync) - v16.7.0+
 }
 
 impl QueryOptions {
@@ -680,6 +768,19 @@ impl QueryOptions {
         QueryOptions {
             records_filter,
             folders_filter,
+            request_links: None,
+        }
+    }
+
+    pub fn with_links(
+        records_filter: Vec<String>,
+        folders_filter: Vec<String>,
+        request_links: bool,
+    ) -> Self {
+        QueryOptions {
+            records_filter,
+            folders_filter,
+            request_links: Some(request_links),
         }
     }
 

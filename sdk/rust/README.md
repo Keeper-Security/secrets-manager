@@ -1,640 +1,823 @@
-## Secrets Manager -  Rust
-This SDK helps you retrieve and manage your secrets from keeper.
+# Keeper Secrets Manager Rust SDK
 
-### How to get it to work locally
-To get it to work locally we need to have
-* Rust installed
-* cargo installed
-* rustc installed
+The Rust SDK for Keeper Secrets Manager provides type-safe, zero-knowledge access to secrets stored in Keeper's vault with comprehensive error handling.
 
-## Code usage samples
+## Features
 
-* this is for get_secrets functionality
+- **Type-Safe API**: Leverages Rust's type system for compile-time safety
+- **Never Panics**: All operations return `Result<T, KSMRError>` - no unwraps in library code
+- **Multiple Storage Options**: File-based, in-memory, and caching support
+- **Comprehensive Crypto**: AES-256-GCM, ECDH (P-256), ECDSA using industry-standard crates
+- **Notation Support**: Access specific fields using `keeper://` URI notation
+- **Password Rotation**: Transaction-based rotation with commit/rollback
+- **GraphSync Support**: Linked record retrieval for managing relationships
+- **Disaster Recovery Caching**: Automatic fallback to cached data on network failures
+- **Rust 1.87+**: Modern Rust with async runtime (reqwest)
 
-```rust
-    use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage};
+## Installation
 
+Add this to your `Cargo.toml`:
 
-    fn main()-> Result<(), KSMRError>{
-
-        let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
-
-        let client_options = ClientOptions::new_client_options(token, file_name); 
-
-        let mut secrets_manager = SecretsManager::new(client_options)?;
-
-        let secrets = secrets_manager.get_secrets(Vec::new())?;
-
-        for secret in secrets {
-            secret.print();
-            println!("---");
-        }
-        Ok(())
-    }
+```toml
+[dependencies]
+keeper-secrets-manager-core = "17.1.0"
 ```
 
-```rust
-    use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::InMemoryKeyValueStorage};
+## Quick Start
 
-
-    fn main()-> Result<(), KSMRError>{
-
-        let im_base64 = "my_base_64_string".to_string();
-        let config = InMemoryKeyValueStorage::new_config_storage(Some(im_base64))?;
-        let client_options = ClientOptions::new_client_options(config);
-        let mut secrets_manager = SecretsManager::new(client_options)?;
-        let secrets_manager_response = secrets_manager.get_secrets_full_response(Vec::new())?;
-        let records = secrets_manager_response.records;
-
-        println!("{}",records.len());
-
-        if !records.is_empty(){
-            println!("Records returned from KSM:");
-            for record in  records{
-                println!("UID: {}", record.uid);
-            }
-        }
-
-        if secrets_manager_response.warnings.is_some(){
-            let warnings = secrets_manager_response.warnings.unwrap();
-            println!("{}", warnings);
-        }
-        
-        Ok(())
-    }
-```
-
-
-```rust
-    use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::InMemoryKeyValueStorage};
-
-
-    fn main()-> Result<(), KSMRError>{
-
-        let im_base64 = "my_base_64_string".to_string();
-        let config = InMemoryKeyValueStorage::new_config_storage(Some(im_base64))?;
-        let client_options = ClientOptions::new_client_options(config);
-        let mut secrets_manager = SecretsManager::new(client_options)?;
-        let secrets_manager_response = secrets_manager.get_secrets_full_response(Vec::new())?;
-        let records = secrets_manager_response.records;
-
-        println!("{}",records.len());
-
-        if !records.is_empty(){
-            println!("Records returned from KSM:");
-            for record in  records{
-                println!("UID: {}", record.uid);
-            }
-        }
-
-        if secrets_manager_response.warnings.is_some(){
-            let warnings = secrets_manager_response.warnings.unwrap();
-            println!("{}", warnings);
-        }
-        
-        Ok(())
-    }
-```
-
-
-* Using Download file feature
-
-```rust
-    use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage};
-    fn main()-> Result<(), KSMRError>{
-
-        let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
-
-        let client_options = ClientOptions::new_client_options(token, file_name); 
-
-        let mut secrets_manager = SecretsManager::new(client_options)?;
-
-        let records_filter = Vec::new(); // add record filters of needed based on UID
-        let secrets = secrets_manager.get_secrets(records_filter)?;
-
-        for secret in secrets {
-            secret.download_file("file_name", "file_name_to_be_created_along_with_path")?; //secret.download("dummyy.txt","./dummy2.txt"); -> something like this
-            println!("---");
-        }
-        Ok(())
-    }
-
-```
-
-* using searching standard field in a record feature
-
-```rust
-    use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage,enums::StandardFieldTypeEnum};
-
-    fn main()-> Result<(), KSMRError>{
-        let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
-
-        let client_options = ClientOptions::new_client_options(token, file_name); 
-
-        let mut secrets_manager = SecretsManager::new(client_options)?;
-
-        let records_filter = Vec::new(); // add record filters of needed based on UID
-        let secrets = secrets_manager.get_secrets(records_filter)?;
-
-        for secret in secrets {
-            let standard_field = secret.get_standard_field_value(StandardFieldTypeEnum::CARDREF.get_type(),false)?;
-
-            let standard_field_2 = secret.get_standard_field_value("Pin Code",false)?;
-            println!("name : {}", standard_field);
-            println!("label : {}", standard_field_2);
-            println!("---");
-        }
-        Ok(())
-    }
-
-```
-
-* using searching Custom field in a record feature
-
-```rust
-    use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage};
-
-    fn main()-> Result<(), KSMRError>{
-        let token = "<Token>".to_string();
-        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
-
-        let client_options = ClientOptions::new_client_options(token, file_name); 
-
-        let mut secrets_manager = SecretsManager::new(client_options)?;
-
-        let mut records_filter = Vec::new(); // add record filters of needed based on UID
-        records_filter.push("<Record UID>".to_string());
-        let secrets = secrets_manager.get_secrets(records_filter)?;
-
-        for secret in secrets {
-            let standard_field = secret.get_custom_field_value("<Field1>>",false)?;
-
-            let standard_field_2 = secret.get_custom_field_value("<Field2>",true)?;
-            println!("multiple : {}", standard_field);
-            println!("single : {}", standard_field_2);
-            println!("---");
-        }
-        Ok(())
-    }
-```
-
-* using generate password feature
-
-```rust
-    use keeper_secrets_manager_core::{custom_error::KSMRError, utils::{generate_password_with_options, PasswordOptions}};
-
-    fn main()-> Result<(), KSMRError>{
-        let password_options = PasswordOptions::new();
-        let charset = "~".to_string();
-        let password_options = password_options.length(34).digits(5).lowercase(5).uppercase(7).special_characters(5).special_characterset(charset);
-
-        let password = generate_password_with_options(password_options)?;
-        println!("Password: {}", password);
-        Ok(())
-    }
-
-```
-
-* using get folders feature 
-
-```rust
-    use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage};
-
-    fn main()-> Result<(), KSMRError>{
-        let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
-
-        let client_options = ClientOptions::new_client_options(token, file_name); 
-
-        let secrets_manager = SecretsManager::new(client_options)?;
-
-        let secrets_folders = secrets_manager.get_folders()?;
-        println!("FOLDERS:--------------------------------------------------------------------------------------------------------------------------------------");
-        for secret in secrets_folders {
-            let secret_string =  secret.to_serialized_string();
-            println!("{}", secret_string);
-            println!("---");
-        }
-        Ok(())
-    }
-
-```
-
-* using update folder feature
-
-```rust
-use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage};
-
-    fn main()-> Result<(), KSMRError>{
-        let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
-
-        let client_options = ClientOptions::new_client_options(token, file_name); 
-
-        println!("Update Records ---------------------------------------------------------------------------------------------------------------------------------");
-            let mut secrets_manager_4 = SecretsManager::new(client_options)?;
-            let update_folder = secrets_manager_4.update_folder("<folder_uid>".to_string(),"dummy_updated_API_RUST".to_string(),Vec::new())?;
-            println!("{}",(serde_json::to_string_pretty(&update_folder)?));
-        Ok(())
-    }
-```
-
-* using delete folder feature
-
-```rust
-use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage};
-
-    fn main()-> Result<(), KSMRError>{
-        let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
-
-        let client_options = ClientOptions::new_client_options(token, file_name); 
-
-        let mut secrets_manager = SecretsManager::new(client_options)?;
-       println!("Delete Records ---------------------------------------------------------------------------------------------------------------------------------");
-        let delete_response = secrets_manager.delete_folder(vec!["<folder_uid>".to_string()],true)?;
-        println!("{}",(serde_json::to_string_pretty(&delete_response)?));
-
-
-        Ok(())
-    }
-```
-
-* using delete secret functionality
-
-```rust
-use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage};
-
-    fn main()-> Result<(), KSMRError>{
-        let token = "<Your One time token>".to_string();
-        let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
-
-        let client_options = ClientOptions::new_client_options(token, file_name); 
-
-        println!("Delete Secrets --------------------------------------------------------------");
-        let mut secrets_manager_3 = SecretsManager::new(client_options)?;
-        let uids  = vec!["<secret uid>".to_string()];
-        let secrets_records_3 = secrets_manager_3.delete_secret(uids.clone())?;
-
-
-        Ok(())
-    }
-
-```
-
-* using update record standard and custom fields
-
-```rust
-use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, enums::StandardFieldTypeEnum, storage::FileKeyValueStorage};
-use std::{collections::HashMap, fs::File, io::Write};
-use serde_json;
-
-fn main()-> Result<(), KSMRError>{
-    let token = "<token>".to_string();
-    let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
-    
-    let client_options = ClientOptions::new_client_options(token, file_name); 
-    
-    let mut secrets_manager = SecretsManager::new(client_options)?;
-
-    let mut uids = Vec::new();
-    uids.push("<secret uid>".to_string());
-    // get_secrets
-    let secrets_records = secrets_manager.get_secrets(uids.clone())?;
-    
-    for mut secret in secrets_records {
-        
-        let mut record_final_dict = HashMap::new();
-        
-        let standard_field = secret.get_standard_field_value(StandardFieldTypeEnum::EMAIL.get_type(),false)?;
-        
-        record_final_dict.insert("before_Standard_update", secret.record_dict.clone());
-        
-        let _standard_field_set = secret.set_standard_field_value_mut(StandardFieldTypeEnum::EMAIL.get_type(), "vfgatyth_changed_email_standard@email.com".into())?;
-
-        record_final_dict.insert("after_Standard_update", secret.record_dict.clone());
-
-        let custom_field = secret.get_custom_field_value(StandardFieldTypeEnum::EMAIL.get_type(),false)?;
-        
-        record_final_dict.insert("before_custom_update", secret.record_dict.clone());
-        
-        let _standard_field_set = secret.set_custom_field_value_mut(StandardFieldTypeEnum::EMAIL.get_type(), "vfgatyth_changed_email_custom@email.com".into())?;
-
-        record_final_dict.insert("after_custom_update", secret.record_dict.clone());
-        //save to file to check if updated as record object is very big
-        let created_String: String  = serde_json::to_string(&record_final_dict).map_err(|err|KSMRError::SerializationError(err.to_string()))?;
-        let mut file = File::create("setting_fields.json").unwrap();
-        file.write_all(created_String.as_bytes()).unwrap();
-    }
-    Ok(())
-}
-```
-
-* using getting totp code
-
-```rust
-use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, enums::StandardFieldTypeEnum, storage::FileKeyValueStorage};
-use std::{collections::HashMap, fs::File, io::Write};
-use serde_json;
-
-fn main()-> Result<(), KSMRError>{
-    let token = "<token>".to_string();
-    let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
-    
-    let client_options = ClientOptions::new_client_options(token, file_name); 
-    
-    let mut secrets_manager = SecretsManager::new(client_options)?;
-
-    let mut uids = Vec::new();
-    uids.push("<secret uid>".to_string());
-    // get_secrets
-    let secrets_records = secrets_manager.get_secrets(uids.clone())?;
-    
-    for mut secret in secrets_records {
-        let value = secret.get_standard_field_value(StandardFieldTypeEnum::ONETIMECODE.get_type(),false)?;
-        let url = utils::get_otp_url_from_value_obj(value)?;
-        let totp_code = utils::get_totp_code(&url)?;
-        println!("{}", totp_code.get_code());
-    }
-    Ok(())
-}
-```
-
-
-
-
-* How to upload file
-
-```rust
-use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage};
-
-fn main()-> Result<(), KSMRError>{
-    let token = "<Your One time token>".to_string();
-    let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
-
-    let client_options = ClientOptions::new_client_options(token, file_name); 
-
-    println!("Delete Secrets --------------------------------------------------------------");
-    let mut secrets_manager_3 = SecretsManager::new(client_options)?;
-    let uids  = vec!["<secret uid>".to_string()];
-    let secrets_records_3 = secrets_manager_3.get_secrets(uids.clone())?;
-    for secret in secret_records3{
-            let keeper_file = KeeperFileUpload::get_file_for_upload(
-        "./dummy2222.txt", Some("test1_file.txt"), None,None
-        )?;
-        let upload_status = secrets_manager.upload_file(secret, keeper_file)?;
-        println!("upload status: {}", upload_status);
-    }
-    Ok(())
-}
-```
-
-* How to create a record
-
-```rust
-fn test_record_create_normal() -> Result<(), KSMRError>{
-    use keeper_secrets_manager_core::{
-        core::{ClientOptions, SecretsManager},
-        storage::FileKeyValueStorage,
-        dto::{dtos::RecordCreate, field_structs::RecordField}
-    };
-    use serde_json::{self, json, Number, Value};
-
-    // setup secrets manager
-    let token = "<token_here>".to_string();
-    let config = FileKeyValueStorage::new_config_storage("test_demo.json".to_string())?;
-    let client_options = ClientOptions::new_client_options(token, config);
-    let mut secrets_manager = SecretsManager::new(client_options)?;
-
-    // This is how we create a Record
-    let mut created_record =  RecordCreate::new("login".to_string(), "Login Record RUST_LOG_TEST".to_string(), Some("Dummy Notes".to_string()));
-    
-    // This is how we create a single field 
-    let password_field = RecordField::new_record_field_with_options("password", Value::String(utils::generate_password()?), Some("Random password label".to_string()), false, true);
-
-    // This is one of the ways to create a value object from JSON String
-    let security_question_value = Value::from_str("{\"question\": \"What is the question?\", \"answer\": \"This is the answer!\"}")?;
-    
-    //This is one way to create all fields directly in a vector
-    let fields = vec![
-        RecordField::new_record_field("login",  Value::String("login@email.com".to_string()), Some("My Custom Login lbl".to_string())),
-
-        RecordField::new_record_field("login",  Value::String("login@email.com".to_string()), Some("My Label".to_string())),
-
-        password_field,
-        
-        RecordField::new_record_field("securityQuestion", security_question_value , Some("My Label".to_string())),
-
-        RecordField::new_record_field("multiline", Value::String("This\nIs a multiline\nnote".to_string()) , Some("My Multiline lbl".to_string())),
-
-        RecordField::new_record_field("secret", Value::String("SecretText".to_string()) , Some("My Hidden Field lbl".to_string())),
-
-        RecordField::new_record_field("pinCode", Value::String("1234567890".to_string()) , Some("My Pin Code Field Lbl".to_string())),
-
-        RecordField::new_record_field("addressRef", Value::String("some_UID".to_string()) , Some("My Address Reference".to_string())),
-
-        RecordField::new_record_field("phone", json!({"region": "US", "number": "510-444-3333"}) , Some("My Phone Number".to_string())),
-
-        RecordField::new_record_field("date", Value::Number(Number::from(1641934793000i64)) , Some("My date".to_string())),
-
-        RecordField::new_record_field("date", Value::String("September eleventh two thousand and eleven".to_string()) , Some("Bad day in history of humanity".to_string())),
-
-        RecordField::new_record_field("name", json!({"first": "Lincoln", "last": "Adams"}) , Some("His Name".to_string())),
-        ];
-
-    // Here we are adding fields object to standard fields 
-    created_record.fields = Some(fields);
-    
-    created_record.custom = Some(
-        vec![
-            RecordField::new_record_field("phone", json!({"region": "US", "number": "510-222-5555", "ext": "99887", "type": "Mobile"}) , Some("My Custom Phone Lbl".to_string())),
-        ]
-    );
-   
-    // Make the API call
-    let _ = secrets_manager.create_secret("Shared Folder UID".to_string(), created_record)?;
-
-    Ok(())
-}
-```
-
-* How to create a record
+### Initialize with One-Time Token
 
 ```rust
 use keeper_secrets_manager_core::{
     core::{ClientOptions, SecretsManager},
     custom_error::KSMRError,
-    dto::{
-        dtos::{RecordCreate},
-        field_structs::{self},
-    },
-    enums::{DefaultRecordType},
+    enums::KvStoreType,
     storage::FileKeyValueStorage,
-    utils::{self},
 };
-use log::error;
-use tracing::{info};
 
-fn main()-> Result<(), KSMRError>{
-    let token = "<Your One time token>".to_string();
-    let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
+fn main() -> Result<(), KSMRError> {
+    // Create file storage (saves config to keeper_config.json)
+    let storage = FileKeyValueStorage::new(Some("keeper_config.json".to_string()))?;
+    let config = KvStoreType::File(storage);
 
-    let client_options = ClientOptions::new_client_options(token, file_name); 
+    // Initialize with one-time token
+    let token = "US:ONE_TIME_TOKEN_HERE".to_string();
+    let options = ClientOptions::new_client_options_with_token(token, config);
+    let mut secrets_manager = SecretsManager::new(options)?;
 
-    println!("Create Secret\n--------------------------------------------------------------");
-    let mut secrets_manager_3 = SecretsManager::new(client_options)?;
-    let mut new_record = RecordCreate::new(
-        DefaultRecordType::Login.get_type().to_string(),
-        "sample create record".to_string(),
-        None,
-    );
-    let login_field = field_structs::Login::new(
-        "sample_email@metron.com".to_string(),
-        None,
-        Some(false),
-        Some(false),
-    );
-    new_record.append_standard_fields(login_field);
-    let password_field = field_structs::Password::new(
-        "Dummy_Password#123".to_string(),
-        None,
-        Some(true),
-        Some(false),
-        Some(true),
-        None,
-    )?;
-    new_record.append_standard_fields(password_field);
-    let created_record: Result<String, KSMRError> =
-        secrets_manager.create_secret("<folder_uid>".to_string(), new_record);
-    match created_record {
-        Ok(data) => {
-            info!("created_record uid: {}", data);
-            data
-        }
-        Err(err) => {
-            error!("Error creating record: {}", err);
-            return Err(err);
-        }
-    };
-
-    Ok(())
-}
-```
-
-Using Keeper Notation
-```rust
-use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage};
-
-fn main()-> Result<(), KSMRError>{
-    let token = "<Token>".to_string();
-
-    let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
-    
-    let client_options = ClientOptions::new_client_options(token, file_name); 
-    
-    let mut secrets_manager = SecretsManager::new(client_options)?;  
-    
-    let secrets_notation_result2 = secrets_manager.get_notation("<record_uid>/field/email[2]".to_string());
-    
-    match secrets_notation_result2 {
-        Ok(data) => {
-            info!("Secrets data from notation: {}", data);    
-        },
-        Err(err) => {
-            error!("Error getting secret: {}", err);
-            return Err(err);
-        }
-    };
-    Ok(())
-}
-```
-
-
-Using Caching functionality
-```rust
-use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, custom_error::KSMRError, storage::FileKeyValueStorage, cache::KSMRCache};
-fn main(){
-    let cache = KSMRCache::new_file_cache(Some("./cache.bin"))?;
-
-    let token = "<Token>".to_string();
-
-    let file_name = FileKeyValueStorage::new_config_storage("test.json".to_string())?;
-    
-    let mut client_options = ClientOptions::new_client_options_with_token(token, file_name);
-    client_options.set_cache(cache.into()); 
-    
-    let mut secrets_manager = SecretsManager::new(client_options)?;  
+    // Retrieve all secrets
     let secrets = secrets_manager.get_secrets(Vec::new())?;
+
     for secret in secrets {
-        info!("Secret: {}", secret);
-    };
-}
-```
-
-Using In Memory Storage for Creating a Folder
-```rust
-use keeper_secrets_manager_core::{core::{SecretsManager, ClientOptions}, enums::InMemoryKeyValueStorage, custom_error::KSMRError};
-
-fn main() -> Result<(), KSMRError> {
-    let base_64_string = "<YOUR_BASE64_STRING>".to_string();
-    let config = InMemoryKeyValueStorage::new_config_storage(Some(base_64_string))?;
-    let client_options = ClientOptions::new_client_options(config);
-    let secrets_manager = SecretsManager::new(client_options)?;
-
-    //Create Folder
-    let parent_folder_uid: String = "<PARENT_FOLDER_UID>".to_string();
-    let sub_folder_uid: Option<String> = Option::Some("<SUB_FOLDER_UID>".to_string());
-    let create_options: CreateOptions = CreateOptions::new(parent_folder_uid, sub_folder_uid);
-    let new_folder_name: String = "New Folder".to_string();
-    println!("Creating folder: {new_folder_name}");
-    let created_folder_name = new_folder_name.clone();
-    let result = secrets_manager.create_folder(create_options, new_folder_name, Vec::new())?;
-    println!("{result}");
-
-    Ok(())
-}
-```
-
-Using In Memory Storage for retrieving all folders
-```rust
-use keeper_secrets_manager_core::{core::{SecretsManager, ClientOptions}, enums::InMemoryKeyValueStorage, custom_error::KSMRError};
-
-fn main() -> Result<(), KSMRError> {
-    let base_64_string = "<YOUR_BASE64_STRING>".to_string();
-    let config = InMemoryKeyValueStorage::new_config_storage(Some(base_64_string))?;
-    let client_options = ClientOptions::new_client_options(config);
-    let secrets_manager = SecretsManager::new(client_options)?;
-
-    //Get all Folders
-    let result_folders = secrets_manager.get_folders();
-    let folders: Vec<KeeperFolder> = result_folders.unwrap();
-    for folder in folders{
-        let folder_uid = folder.folder_uid;
-        let name:String = folder.name;
-        let parent_uid = folder.parent_uid;
-        println!("\nfolder_uid: {folder_uid}\nfolder_name: {name}\nparent_uid: {parent_uid}");
+        println!("Title: {}", secret.title);
+        if let Ok(password) = secret.get_standard_field_value("password", true) {
+            println!("  Password: {}", password);
+        }
     }
 
     Ok(())
 }
 ```
 
-Using In Memory Storage for update folder
+### Initialize with Existing Configuration
+
 ```rust
-use keeper_secrets_manager_core::{core::{SecretsManager, ClientOptions}, enums::InMemoryKeyValueStorage, custom_error::KSMRError};
+use keeper_secrets_manager_core::{
+    core::{ClientOptions, SecretsManager},
+    custom_error::KSMRError,
+    enums::KvStoreType,
+    storage::InMemoryKeyValueStorage,
+};
 
 fn main() -> Result<(), KSMRError> {
-    let base_64_string = "<YOUR_BASE64_STRING>".to_string();
-    let config = InMemoryKeyValueStorage::new_config_storage(Some(base_64_string))?;
-    let client_options = ClientOptions::new_client_options(config);
-    let secrets_manager = SecretsManager::new(client_options)?;
+    // From base64 config string (useful for serverless/Docker)
+    let base64_config = std::env::var("KSM_CONFIG")
+        .expect("KSM_CONFIG environment variable required");
 
-    //Update folder name
-    secrets_manager.update_folder("<Folder_uid>".to_string(), "My folder".to_string(), Vec::new())?;
+    let storage = InMemoryKeyValueStorage::new(Some(base64_config))?;
+    let config = KvStoreType::InMemory(storage);
+
+    let options = ClientOptions::new_client_options(config);
+    let mut secrets_manager = SecretsManager::new(options)?;
+
+    let secrets = secrets_manager.get_secrets(Vec::new())?;
+    println!("Retrieved {} secrets", secrets.len());
 
     Ok(())
 }
 ```
+
+## Secret Retrieval
+
+### Get All Secrets
+
+```rust
+// Get all secrets
+let secrets = secrets_manager.get_secrets(Vec::new())?;
+
+// Get specific secrets by UID
+let uids = vec!["RECORD_UID_1".to_string(), "RECORD_UID_2".to_string()];
+let secrets = secrets_manager.get_secrets(uids)?;
+```
+
+### Search by Title
+
+```rust
+// Get all secrets matching title (case-sensitive)
+let matching = secrets_manager.get_secrets_by_title("Production Database")?;
+println!("Found {} matching secrets", matching.len());
+
+// Get first secret with title
+if let Some(secret) = secrets_manager.get_secret_by_title("Production Database")? {
+    println!("Found: UID {}", secret.uid);
+}
+```
+
+### Get Secrets with GraphSync Links
+
+```rust
+use keeper_secrets_manager_core::dto::payload::QueryOptions;
+
+// Request linked records
+let query = QueryOptions::with_links(
+    Vec::new(),  // all records
+    Vec::new(),  // all folders
+    true         // request_links
+);
+
+let secrets = secrets_manager.get_secrets_with_options(query)?;
+
+// Access linked records
+for secret in secrets {
+    if !secret.links.is_empty() {
+        println!("{} has {} linked records", secret.title, secret.links.len());
+    }
+}
+```
+
+## Accessing Field Values
+
+### Standard Fields
+
+```rust
+use keeper_secrets_manager_core::enums::StandardFieldTypeEnum;
+
+// Get single value (first occurrence)
+let login = secret.get_standard_field_value("login", true)?;
+let password = secret.get_standard_field_value("password", true)?;
+let url = secret.get_standard_field_value("url", true)?;
+
+// Get all values (returns array)
+let emails = secret.get_standard_field_value("email", false)?;
+
+// Using enum for type safety
+let login = secret.get_standard_field_value(
+    StandardFieldTypeEnum::LOGIN.get_type(),
+    true
+)?;
+```
+
+### Custom Fields
+
+```rust
+// Get custom field by label
+let environment = secret.get_custom_field_value("Environment", true)?;
+let api_key = secret.get_custom_field_value("API Key", true)?;
+```
+
+### Using Keeper Notation
+
+```rust
+// Access fields without retrieving full records
+let password = secrets_manager.get_notation(
+    "keeper://RECORD_UID/field/password".to_string()
+)?;
+
+// Access by title
+let api_key = secrets_manager.get_notation(
+    "keeper://Production API/custom_field/API Key".to_string()
+)?;
+
+// Access complex field properties
+let hostname = secrets_manager.get_notation(
+    "keeper://RECORD_UID/field/host[hostName]".to_string()
+)?;
+
+// Array indexing
+let first_email = secrets_manager.get_notation(
+    "keeper://RECORD_UID/field/email[0]".to_string()
+)?;
+```
+
+## Creating Secrets
+
+```rust
+use keeper_secrets_manager_core::{
+    dto::{dtos::RecordCreate, field_structs::{Login, Password}},
+    enums::DefaultRecordType,
+};
+
+fn main() -> Result<(), KSMRError> {
+    // ... initialize secrets_manager ...
+
+    // Create new login record
+    let mut new_record = RecordCreate::new(
+        DefaultRecordType::Login.get_type().to_string(),
+        "My Server Login".to_string(),
+        Some("Production server credentials".to_string()),
+    );
+
+    // Add login field
+    let login_field = Login::new(
+        "admin@example.com".to_string(),
+        None,    // required
+        Some(false),  // privacyScreen
+        Some(false),  // enforceGeneration
+    );
+    new_record.append_standard_fields(login_field);
+
+    // Add password field
+    let password_field = Password::new(
+        "SecurePassword123!".to_string(),
+        None,    // required
+        Some(true),   // privacyScreen
+        Some(false),  // enforceGeneration
+        Some(true),   // complexity
+        None,    // matchRegex
+    )?;
+    new_record.append_standard_fields(password_field);
+
+    // Create in Keeper vault
+    let folder_uid = "SHARED_FOLDER_UID".to_string();
+    let record_uid = secrets_manager.create_secret(folder_uid, new_record)?;
+
+    println!("Created secret with UID: {}", record_uid);
+    Ok(())
+}
+```
+
+## Updating Secrets
+
+### Basic Update
+
+```rust
+use keeper_secrets_manager_core::enums::StandardFieldTypeEnum;
+
+// Get secret to update
+let mut secrets = secrets_manager.get_secrets(vec!["RECORD_UID".to_string()])?;
+let mut record = secrets.into_iter().next()
+    .ok_or_else(|| KSMRError::RecordNotFoundError("Record not found".to_string()))?;
+
+// Modify password field
+record.set_standard_field_value_mut(
+    StandardFieldTypeEnum::PASSWORD.get_type(),
+    "NewPassword123!".into()
+)?;
+
+// Save changes
+secrets_manager.update_secret(record)?;
+println!("Secret updated successfully");
+```
+
+### Password Rotation with Transactions
+
+```rust
+use keeper_secrets_manager_core::{
+    custom_error::KSMRError,
+    dto::payload::UpdateTransactionType,
+};
+
+// Get secret to rotate
+let mut secrets = secrets_manager.get_secrets(vec!["RECORD_UID".to_string()])?;
+let mut record = secrets.into_iter().next()
+    .ok_or_else(|| KSMRError::RecordNotFoundError("Record not found".to_string()))?;
+let record_uid = record.uid.clone();
+
+// Update password
+record.set_standard_field_value_mut("password", "NewRotatedPassword123!".into())?;
+
+// Start rotation transaction
+secrets_manager.update_secret_with_transaction(record, UpdateTransactionType::Rotation)?;
+
+// Test the new password in your application...
+println!("Testing new password...");
+
+// Commit the transaction if successful
+secrets_manager.complete_transaction(record_uid.clone(), false)?;
+
+// Or rollback if testing failed:
+// secrets_manager.complete_transaction(record_uid, true)?;
+
+println!("Password rotation completed");
+```
+
+### Update with Link Removal
+
+```rust
+use keeper_secrets_manager_core::{
+    custom_error::KSMRError,
+    dto::payload::{UpdateOptions, UpdateTransactionType},
+};
+
+// Get secret
+let mut secrets = secrets_manager.get_secrets(vec!["RECORD_UID".to_string()])?;
+let mut record = secrets.into_iter().next()
+    .ok_or_else(|| KSMRError::RecordNotFoundError("Record not found".to_string()))?;
+
+// Modify fields as needed...
+
+// Remove file attachments
+let options = UpdateOptions::new(
+    UpdateTransactionType::General,
+    vec!["FILE_UID_TO_REMOVE".to_string()]
+);
+
+secrets_manager.update_secret_with_options(record, options)?;
+println!("Secret updated and file removed");
+```
+
+## File Operations
+
+### Download Files
+
+```rust
+// Download file from a secret
+for mut secret in secrets {
+    for file in &secret.files {
+        let file_uid = &file.file_uid;
+        secret.download_file(file_uid, &format!("./downloads/{}", file.name))?;
+        println!("Downloaded: {}", file.name);
+    }
+}
+```
+
+### Download File by Title
+
+```rust
+// Download file by name without knowing UID
+let secrets = secrets_manager.get_secrets(Vec::new())?;
+
+if let Some(file_data) = secrets_manager.download_file_by_title("Production Database", "backup.sql")? {
+    std::fs::write("./backup.sql", file_data)?;
+    println!("Downloaded backup.sql");
+} else {
+    println!("File not found");
+}
+```
+
+### Download Thumbnails
+
+```rust
+for secret in secrets {
+    for mut file in secret.files {
+        if let Some(thumbnail_data) = file.get_thumbnail_data()? {
+            let thumb_path = format!("./thumbnails/{}_thumb.jpg", file.name);
+            std::fs::write(&thumb_path, thumbnail_data)?;
+            println!("Downloaded thumbnail: {}", thumb_path);
+        }
+    }
+}
+```
+
+### Upload Files
+
+```rust
+use keeper_secrets_manager_core::{
+    custom_error::KSMRError,
+    dto::dtos::KeeperFileUpload,
+};
+
+// Get secret to attach file to
+let mut secrets = secrets_manager.get_secrets(vec!["RECORD_UID".to_string()])?;
+let secret = secrets.into_iter().next()
+    .ok_or_else(|| KSMRError::RecordNotFoundError("Record not found".to_string()))?;
+
+// Prepare file for upload
+let file_upload = KeeperFileUpload::get_file_for_upload(
+    "./document.pdf",           // file path
+    Some("document.pdf"),        // file name in vault
+    Some("Important Document"),  // file title
+    None                         // auto-detect MIME type
+)?;
+
+// Upload to secret
+let upload_status = secrets_manager.upload_file(secret, file_upload)?;
+println!("Upload status: {}", upload_status);
+```
+
+## Password Generation
+
+### Basic Password Generation
+
+```rust
+use keeper_secrets_manager_core::utils::generate_password;
+
+let password = generate_password()?;
+println!("Generated password: {}", password);  // 32 chars, mixed
+```
+
+### Custom Password Options
+
+```rust
+use keeper_secrets_manager_core::utils::{generate_password_with_options, PasswordOptions};
+
+let options = PasswordOptions::new()
+    .length(20)
+    .lowercase(5)      // At least 5 lowercase
+    .uppercase(5)      // At least 5 uppercase
+    .digits(3)         // At least 3 digits
+    .special_characters(2)  // At least 2 special chars
+    .special_characterset("!@#$%".to_string());
+
+let password = generate_password_with_options(options)?;
+println!("Generated: {}", password);
+```
+
+### Exact Character Counts
+
+Use negative values to specify exact counts instead of minimums:
+
+```rust
+let options = PasswordOptions::new()
+    .lowercase(-8)     // Exactly 8 lowercase
+    .uppercase(-8)     // Exactly 8 uppercase
+    .digits(-4)        // Exactly 4 digits
+    .special_characters(-4);  // Exactly 4 special chars
+// Total length = 8+8+4+4 = 24 (length parameter ignored)
+
+let password = generate_password_with_options(options)?;
+println!("Generated 24-char password with exact counts: {}", password);
+```
+
+## TOTP Code Generation
+
+```rust
+use keeper_secrets_manager_core::utils::get_totp_code;
+use keeper_secrets_manager_core::enums::StandardFieldTypeEnum;
+
+// Get secret with TOTP
+let mut secrets = secrets_manager.get_secrets(vec!["RECORD_UID".to_string()])?;
+let secret = secrets.into_iter().next().unwrap();
+
+// Get TOTP URL from field
+let totp_value = secret.get_standard_field_value(
+    StandardFieldTypeEnum::ONETIMECODE.get_type(),
+    true
+)?;
+
+// Extract URL and generate code
+if let serde_json::Value::Object(obj) = totp_value {
+    if let Some(serde_json::Value::String(url)) = obj.get("url") {
+        let totp_code = get_totp_code(url)?;
+        println!("TOTP Code: {}", totp_code.get_code());
+        println!("Time left: {} seconds", totp_code.get_time_left());
+    }
+}
+```
+
+## Folder Operations
+
+### List Folders
+
+```rust
+let folders = secrets_manager.get_folders()?;
+
+for folder in folders {
+    println!("Folder: {} (UID: {})", folder.name, folder.folder_uid);
+    if let Some(parent_uid) = &folder.parent_uid {
+        println!("  Parent: {}", parent_uid);
+    }
+}
+```
+
+### Create Folder
+
+```rust
+use keeper_secrets_manager_core::dto::payload::CreateOptions;
+
+let parent_folder_uid = "PARENT_FOLDER_UID".to_string();
+let create_options = CreateOptions::new(parent_folder_uid, None);
+
+let folder_uid = secrets_manager.create_folder(
+    create_options,
+    "My New Folder".to_string(),
+    Vec::new()
+)?;
+
+println!("Created folder: {}", folder_uid);
+```
+
+### Update Folder
+
+```rust
+let folder_uid = "FOLDER_UID".to_string();
+
+secrets_manager.update_folder(
+    folder_uid,
+    "Renamed Folder".to_string(),
+    Vec::new()
+)?;
+
+println!("Folder renamed");
+```
+
+### Delete Folder
+
+```rust
+// Delete empty folder
+secrets_manager.delete_folder(vec!["FOLDER_UID".to_string()], false)?;
+
+// Force delete non-empty folder
+secrets_manager.delete_folder(vec!["FOLDER_UID".to_string()], true)?;
+```
+
+## Advanced Features
+
+### Disaster Recovery Caching
+
+Automatically cache responses and fall back to cached data on network failures:
+
+```rust
+use keeper_secrets_manager_core::caching;
+
+let storage = FileKeyValueStorage::new(Some("keeper_config.json".to_string()))?;
+let config = KvStoreType::File(storage);
+
+let token = "YOUR_TOKEN".to_string();
+let mut options = ClientOptions::new_client_options_with_token(token, config);
+
+// Enable disaster recovery caching
+options.set_custom_post_function(caching::caching_post_function);
+
+let mut secrets_manager = SecretsManager::new(options)?;
+
+// First call: saves to cache (default: KSM_CACHE_DIR/ksm_cache.bin)
+let secrets = secrets_manager.get_secrets(Vec::new())?;
+
+// Subsequent calls: uses cache if network unavailable
+println!("Retrieved {} secrets (with fallback)", secrets.len());
+```
+
+Cache location can be customized via `KSM_CACHE_DIR` environment variable.
+
+### In-Memory Caching
+
+```rust
+use keeper_secrets_manager_core::cache::KSMRCache;
+
+let storage = FileKeyValueStorage::new(Some("keeper_config.json".to_string()))?;
+let config = KvStoreType::File(storage);
+
+let cache = KSMRCache::new_file_cache(Some("./ksm_cache.bin"))?;
+
+let token = "YOUR_TOKEN".to_string();
+let mut options = ClientOptions::new_client_options_with_token(token, config);
+options.set_cache(cache.into());
+
+let mut secrets_manager = SecretsManager::new(options)?;
+
+// Secrets cached for performance
+let secrets = secrets_manager.get_secrets(Vec::new())?;
+```
+
+## Error Handling
+
+The SDK uses a comprehensive `KSMRError` enum for all errors. All public methods return `Result`:
+
+```rust
+use keeper_secrets_manager_core::custom_error::KSMRError;
+
+match secrets_manager.get_secrets(vec!["INVALID_UID".to_string()]) {
+    Ok(secrets) => {
+        println!("Retrieved {} secrets", secrets.len());
+    }
+    Err(KSMRError::RecordNotFoundError(msg)) => {
+        eprintln!("Record not found: {}", msg);
+    }
+    Err(KSMRError::AuthenticationError(msg)) => {
+        eprintln!("Authentication failed: {}", msg);
+    }
+    Err(KSMRError::HTTPError(msg)) => {
+        eprintln!("Network error: {}", msg);
+    }
+    Err(e) => {
+        eprintln!("Error: {}", e);
+    }
+}
+```
+
+**Common error types:**
+- `RecordNotFoundError` - Record UID not found in vault
+- `FieldNotFoundError` - Requested field doesn't exist
+- `AuthenticationError` - Invalid token or credentials
+- `InvalidTokenError` - Malformed token
+- `CryptoError` - Encryption/decryption failure
+- `HTTPError` - Network or API error
+- `StorageError` - Config file I/O error
+- `NotationError` - Invalid `keeper://` URI syntax
+
+## Storage Options
+
+### File Storage (Persistent)
+
+```rust
+use keeper_secrets_manager_core::storage::FileKeyValueStorage;
+use keeper_secrets_manager_core::enums::KvStoreType;
+
+// Default location: keeper_config.json
+let storage = FileKeyValueStorage::new(None)?;
+
+// Custom location
+let storage = FileKeyValueStorage::new(Some("/path/to/config.json".to_string()))?;
+
+let config = KvStoreType::File(storage);
+```
+
+**File permissions:**
+- Automatically created with `0600` (owner read/write only) on Unix
+- Secure ACLs on Windows (user + Administrator only)
+
+### In-Memory Storage (Ephemeral)
+
+```rust
+use keeper_secrets_manager_core::storage::InMemoryKeyValueStorage;
+use keeper_secrets_manager_core::enums::KvStoreType;
+
+// From base64 config string
+let base64_config = "eyJ...".to_string();
+let storage = InMemoryKeyValueStorage::new(Some(base64_config))?;
+
+// Empty config (useful for one-time token initialization)
+let storage = InMemoryKeyValueStorage::new(None)?;
+
+let config = KvStoreType::InMemory(storage);
+```
+
+**Use cases:**
+- Serverless/Lambda functions
+- Docker containers
+- CI/CD pipelines
+- Applications without filesystem access
+
+## Examples
+
+See `examples/manual_tests/` for comprehensive runnable examples:
+
+| Example | Description |
+|---------|-------------|
+| `01_initialize_and_get_secrets.rs` | Basic initialization and secret retrieval |
+| `02_update_secret.rs` | Update secret fields |
+| `03_password_rotation.rs` | Transaction-based password rotation |
+| `04_search_by_title.rs` | Title-based secret search |
+| `05_update_with_options.rs` | Advanced updates with link removal |
+| `06_caching_function.rs` | Disaster recovery caching |
+| `07_test_rotation_base64.rs` | Rotation with base64 config |
+| `08_test_link_removal.rs` | File link removal |
+| `09_check_fileref.rs` | File reference validation |
+| `10_test_link_removal_debug.rs` | Debug link removal |
+| `11_upload_and_remove_file.rs` | File upload and removal |
+
+Run examples:
+```bash
+cargo run --example 01_initialize_and_get_secrets
+```
+
+See `examples/manual_tests/README.md` for detailed setup instructions.
+
+## Configuration
+
+### Environment Variables
+
+- `KSM_CONFIG` - Base64-encoded JSON configuration (overrides file storage)
+- `KSM_CACHE_DIR` - Cache directory for disaster recovery caching (default: current directory)
+- `KSM_SKIP_VERIFY` - Skip SSL certificate verification (`true`/`false`)
+- `KSM_PROXY_URL` - Proxy URL used by `caching_post_function` (mirrors `ClientOptions.proxy_url` for the caching path)
+- `HTTP_PROXY` - HTTP proxy URL (automatically used if `proxy_url` not set)
+- `HTTPS_PROXY` - HTTPS proxy URL (automatically used if `proxy_url` not set)
+- `NO_PROXY` - Comma-separated list of hosts to exclude from proxying
+
+### Client Options
+
+```rust
+use keeper_secrets_manager_core::core::ClientOptions;
+use keeper_secrets_manager_core::cache::KSMCache;
+use log::Level;
+
+// Full control over initialization
+let options = ClientOptions::new(
+    "YOUR_TOKEN".to_string(),
+    config,
+    Level::Info,                // log level
+    Some("keepersecurity.com".to_string()),  // hostname override
+    Some(false),                // insecure_skip_verify
+    Some("http://proxy.example.com:8080".to_string()), // proxy_url
+    KSMCache::None              // cache
+);
+
+// Or use convenience constructors
+let options = ClientOptions::new_client_options_with_token(token, config);
+let options = ClientOptions::new_client_options(config);
+```
+
+### Proxy Configuration
+
+The Rust SDK supports HTTP/HTTPS proxy configuration for all network operations.
+
+#### Explicit Configuration
+
+```rust
+use keeper_secrets_manager_core::core::ClientOptions;
+use keeper_secrets_manager_core::enums::KvStoreType;
+use keeper_secrets_manager_core::storage::FileKeyValueStorage;
+
+// Create storage
+let storage = FileKeyValueStorage::new(None)?;
+let config = KvStoreType::File(storage);
+
+// Configure with proxy
+let options = ClientOptions::new(
+    token,
+    config,
+    Level::Info,
+    None,
+    None,
+    Some("http://proxy.example.com:8080".to_string()), // proxy_url
+    KSMCache::None,
+);
+
+let mut secrets_manager = SecretsManager::new(options)?;
+```
+
+#### Proxy with Authentication
+
+Include credentials in the proxy URL:
+
+```rust
+let proxy_url = "http://username:password@proxy.example.com:8080";
+
+let options = ClientOptions::new(
+    token,
+    config,
+    Level::Info,
+    None,
+    None,
+    Some(proxy_url.to_string()),
+    KSMCache::None,
+);
+```
+
+#### Environment Variable Fallback
+
+If `proxy_url` is not explicitly set (`None`), the SDK automatically respects standard HTTP proxy environment variables:
+
+```bash
+export HTTPS_PROXY=http://proxy.example.com:8080
+export HTTP_PROXY=http://proxy.example.com:8080
+export NO_PROXY=localhost,127.0.0.1
+```
+
+**Priority**: Explicit `proxy_url` parameter > Environment variables (`HTTPS_PROXY`/`HTTP_PROXY`)
+
+#### Proxy with `caching_post_function`
+
+`caching_post_function` uses a standalone function pointer and cannot capture `SecretsManager` state. Set `KSM_PROXY_URL` to route caching traffic through your proxy:
+
+```bash
+export KSM_PROXY_URL=http://proxy.example.com:8080
+```
+
+```rust
+client_options.set_custom_post_function(caching_post_function);
+// KSM_PROXY_URL is read at call time by caching_post_function
+```
+
+## Dependencies
+
+- `aes-gcm` - AES-256-GCM encryption
+- `p256` - ECDH and ECDSA on NIST P-256 curve
+- `reqwest` - HTTP client (blocking mode)
+- `serde` / `serde_json` - Serialization
+- `base64` - Encoding
+- `chrono` - Date/time handling
+- `log` - Logging facade
+
+**Development dependencies:**
+- `mockall` - Mocking framework for tests
+- `serial_test` - Sequential test execution
+- `tempfile` - Temporary file handling in tests
+
+## Testing
+
+```bash
+# Run all tests
+cargo test
+
+# Run specific test file
+cargo test --test empty_config_test
+
+# Run with output
+cargo test -- --nocapture
+
+# Run single test
+cargo test test_empty_json_config_returns_error_not_panic
+
+# Generate documentation
+cargo doc --open
+```
+
+## Documentation
+
+- **Official Docs**: https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/rust-sdk
+- **Repository**: https://github.com/Keeper-Security/secrets-manager/tree/master/sdk/rust
+- **crates.io**: https://crates.io/crates/keeper-secrets-manager-core
+- **API Docs**: https://docs.rs/keeper-secrets-manager-core
+
+## License
+
+MIT
+
+## Support
+
+For questions or issues:
+- **Email**: sm@keepersecurity.com
+- **GitHub Issues**: https://github.com/Keeper-Security/secrets-manager/issues

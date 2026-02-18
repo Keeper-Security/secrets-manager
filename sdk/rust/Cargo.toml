@@ -1,8 +1,9 @@
 [package]
 name = "keeper-secrets-manager-core"
-version = "16.6.6"
+version = "17.1.0"
 authors = ["Keeper Security <sm@keepersecurity.com>"]
 edition = "2021"
+rust-version = "1.87"
 description = "Rust SDK for Keeper Secrets Manager"
 license = "MIT"
 repository = "https://github.com/Keeper-Security/secrets-manager"
@@ -15,38 +16,34 @@ categories = ["cryptography", "api-bindings"]
 name = "keeper_secrets_manager_core"
 path = "src/lib.rs"
 
-[features]
-default = ["sequential_tests"]
-sequential_tests = []
-
 [dependencies]
-aes="0.8"
-aes-gcm ="0.10"
-data-encoding = "2.6.0"
+aes = "0.8"
+aes-gcm = "0.10"
+data-encoding = "2.9"
 base64 = "0.22"
 block-padding = "0.3"
 cipher = "0.4"
-chrono = "0.4"
+chrono = "0.4.41"
 ecdsa = "0.16"
+env_logger = "0.11"
 hex = "0.4"
 hmac = "0.12"
 log = "0.4"
-lazy_static = "1.4.0"
-mockall = "0.13"
-p256 = {version = "0.13.2", features = ["ecdh"]}
+lazy_static = "1.5"
+p256 = { version = "0.13", features = ["ecdh"] }
 rand = "0.8"
-regex = "1.9"
-reqwest ={version = "0.12", features = ["blocking", "json","multipart"]}
-tokio = { version = "1.15", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = {version= "1.0.133", features = ["preserve_order","arbitrary_precision"]}
+regex = "1.11"
+reqwest = { version = "0.12.22", features = ["blocking", "json", "multipart"] }
+tokio = { version = "1.47", features = ["full"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = { version = "1.0.142", features = ["preserve_order", "arbitrary_precision"] }
 sha2 = "0.10"
 sha1 = "0.10"
 strum = "0.26"
 strum_macros = "0.26"
-tempfile = "3.3"
+tempfile = "3.20"
 tracing = "0.1"
-tracing-subscriber = "0.2"
+tracing-subscriber = "0.3"
 num-bigint = "0.4"
 url = "2.5"
 
@@ -54,4 +51,51 @@ url = "2.5"
 winapi = { version = "0.3" ,features = ["securitybaseapi","winbase","winerror","errhandlingapi","winnt"]}
 
 [dev-dependencies]
-tempfile = "3.14" 
+mockall = "0.13"
+tempfile = "3.20"
+serial_test = "3.0"
+
+# Manual integration test examples
+[[example]]
+name = "01_initialize_and_get_secrets"
+path = "examples/manual_tests/01_initialize_and_get_secrets.rs"
+
+[[example]]
+name = "02_update_secret"
+path = "examples/manual_tests/02_update_secret.rs"
+
+[[example]]
+name = "03_password_rotation"
+path = "examples/manual_tests/03_password_rotation.rs"
+
+[[example]]
+name = "04_search_by_title"
+path = "examples/manual_tests/04_search_by_title.rs"
+
+[[example]]
+name = "05_update_with_options"
+path = "examples/manual_tests/05_update_with_options.rs"
+
+[[example]]
+name = "06_caching_function"
+path = "examples/manual_tests/06_caching_function.rs"
+
+[[example]]
+name = "07_test_rotation_base64"
+path = "examples/manual_tests/07_test_rotation_base64.rs"
+
+[[example]]
+name = "08_test_link_removal"
+path = "examples/manual_tests/08_test_link_removal.rs"
+
+[[example]]
+name = "09_check_fileref"
+path = "examples/manual_tests/09_check_fileref.rs"
+
+[[example]]
+name = "10_test_link_removal_debug"
+path = "examples/manual_tests/10_test_link_removal_debug.rs"
+
+[[example]]
+name = "11_upload_and_remove_file"
+path = "examples/manual_tests/11_upload_and_remove_file.rs" 

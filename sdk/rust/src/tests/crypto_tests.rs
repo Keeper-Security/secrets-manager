@@ -604,7 +604,9 @@ mod generate_private_key_ecc_tests {
         // Convert the encryption_key_int to bytes
         let int_bytes = encryption_key_int.to_bytes_be();
         let mut concatenated_bytes: [u8; 32] = [0u8; 32];
-        concatenated_bytes.copy_from_slice(&int_bytes[..]);
+        // Handle leading zeros - pad from the right for big-endian
+        let offset = 32 - int_bytes.len();
+        concatenated_bytes[offset..].copy_from_slice(&int_bytes[..]);
         // Make sure the lengths match before comparison
         assert_eq!(
             concatenated_bytes.len(),
