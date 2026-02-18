@@ -13,7 +13,6 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::DateTime;
 use log::{error, info};
-use reqwest::blocking::get;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -48,6 +47,7 @@ pub struct Record {
     pub folder_uid: String,
     pub folder_key_bytes: Option<Vec<u8>>,
     pub inner_folder_uid: Option<String>,
+    pub links: Vec<HashMap<String, Value>>, // GraphSync linked records (v16.7.0+)
 }
 
 impl Record {
@@ -144,6 +144,23 @@ impl Record {
             None
         };
 
+        // Parse links array (GraphSync linked records)
+        let links = record_dict
+            .get("links")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|link| {
+                        link.as_object().map(|obj| {
+                            obj.iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect::<HashMap<String, Value>>()
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Ok(Self {
             uid,
             title,
@@ -161,6 +178,7 @@ impl Record {
                 .map(|s| s.to_string()),
             record_key_bytes,
             folder_key_bytes: None,
+            links,
         })
     }
 
@@ -576,6 +594,11 @@ impl Record {
     ) -> Result<Self, KSMRError> {
         let mut record = Record::default();
 
+        // Record UID - Extract early for error logging
+        if let Some(uid) = record_dict.get("recordUid").and_then(|v| v.as_str()) {
+            record.uid = uid.trim().to_string();
+        }
+
         // Record Key
         if let Some(record_key_str) = record_dict
             .get("recordKey")
@@ -589,10 +612,12 @@ impl Record {
                         record.record_key_bytes = record_key_bytes;
                     }
                     Err(err) => {
-                        error!(
+                        let error_msg = format!(
                             "Error decrypting record key: {} - Record UID: {}",
                             err, record.uid
                         );
+                        error!("{}", error_msg);
+                        return Err(KSMRError::CryptoError(error_msg));
                     }
                 }
             }
@@ -614,7 +639,12 @@ impl Record {
                         decrypted_data = json_to_dict(&record_data_json).unwrap();
                     }
                     Err(err) => {
-                        error!("Error decrypting record data: {}", err);
+                        let error_msg = format!(
+                            "Error decrypting record data: {} - Record UID: {}",
+                            err, record.uid
+                        );
+                        error!("{}", error_msg);
+                        return Err(KSMRError::CryptoError(error_msg));
                     }
                 }
             }
@@ -662,11 +692,6 @@ impl Record {
             }
         }
 
-        // Record UID
-        if let Some(uid) = record_dict.get("recordUid").and_then(|v| v.as_str()) {
-            record.uid = uid.trim().to_string();
-        }
-
         // Inner Folder UID
         if let Some(inner_folder_uid) = record_dict.get("innerFolderUid").and_then(|v| v.as_str()) {
             record.inner_folder_uid = Some(inner_folder_uid.trim().to_string());
@@ -707,6 +732,20 @@ impl Record {
             record.files = _files;
         }
 
+        // Parse links from server response envelope (GraphSync linked records)
+        if let Some(Value::Array(links_array)) = record_dict.get("links") {
+            record.links = links_array
+                .iter()
+                .filter_map(|link| {
+                    link.as_object().map(|obj| {
+                        obj.iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect::<HashMap<String, Value>>()
+                    })
+                })
+                .collect();
+        }
+
         Ok(record)
     }
 
@@ -745,7 +784,7 @@ impl Record {
                     Some(item_of_value) => match item_of_value.is_array() {
                         true => match item_of_value.as_array() {
                             Some(arr) => match arr.len() {
-                                0 => return false,
+                                0 => continue, // Skip empty fields, continue checking
                                 _ => return true,
                             },
                             None => return false,
@@ -789,6 +828,73 @@ impl Record {
             )));
         }
         Ok(())
+    }
+
+    /// Consolidate multiple fileRef fields into one (fixes legacy bug where upload_file created separate fields)
+    pub fn consolidate_file_refs(&mut self) {
+        use log::debug;
+
+        if let Some(Value::Array(fields)) = self.record_dict.get_mut("fields") {
+            let mut all_file_uids: Vec<Value> = Vec::new();
+            let mut first_fileref_index: Option<usize> = None;
+
+            // Collect all file UIDs from all fileRef fields
+            for (idx, field) in fields.iter().enumerate() {
+                if let Some(field_obj) = field.as_object() {
+                    if field_obj.get("type").and_then(|v| v.as_str()) == Some("fileRef") {
+                        if first_fileref_index.is_none() {
+                            first_fileref_index = Some(idx);
+                        }
+                        if let Some(Value::Array(values)) = field_obj.get("value") {
+                            all_file_uids.extend(values.clone());
+                        }
+                    }
+                }
+            }
+
+            // If there's more than one fileRef field, consolidate
+            let fileref_count = fields
+                .iter()
+                .filter(|f| f.get("type").and_then(|v| v.as_str()) == Some("fileRef"))
+                .count();
+
+            if fileref_count > 1 {
+                debug!(
+                    "Record '{}': Consolidating {} fileRef fields into one (total {} file UIDs)",
+                    self.title,
+                    fileref_count,
+                    all_file_uids.len()
+                );
+
+                // Remove all fileRef fields
+                fields
+                    .retain(|field| field.get("type").and_then(|v| v.as_str()) != Some("fileRef"));
+
+                // Add back a single consolidated fileRef field
+                if !all_file_uids.is_empty() {
+                    let mut consolidated_field = serde_json::Map::new();
+                    consolidated_field
+                        .insert("type".to_string(), Value::String("fileRef".to_string()));
+                    consolidated_field
+                        .insert("value".to_string(), Value::Array(all_file_uids.clone()));
+
+                    // Insert at the original position of the first fileRef field
+                    if let Some(idx) = first_fileref_index {
+                        fields.insert(idx, Value::Object(consolidated_field));
+                    } else {
+                        fields.push(Value::Object(consolidated_field));
+                    }
+
+                    debug!("Record '{}': Consolidation complete - now has 1 fileRef field with {} UIDs",
+                           self.title, all_file_uids.len());
+                }
+
+                // Update raw_json to reflect the changes
+                if let Ok(json_str) = serde_json::to_string(&self.record_dict) {
+                    self.raw_json = json_str;
+                }
+            }
+        }
     }
 
     pub fn print(&self) {
@@ -941,6 +1047,9 @@ pub struct KeeperFile {
     pub name: String,
     last_modified: i64,
     size: i64,
+    pub url: Option<String>,           // Download URL (v16.7.0+)
+    pub thumbnail_url: Option<String>, // Thumbnail URL (v16.7.0+)
+    pub proxy_url: Option<String>,     // Proxy URL for HTTP requests
 
     f: HashMap<String, Value>,
     record_key_bytes: Vec<u8>,
@@ -959,6 +1068,9 @@ impl KeeperFile {
             name: self.name.clone(),
             last_modified: self.last_modified,
             size: self.size,
+            url: self.url.clone(),
+            thumbnail_url: self.thumbnail_url.clone(),
+            proxy_url: self.proxy_url.clone(),
             f: self.f.clone(),
             record_key_bytes: self.record_key_bytes.clone(),
         }
@@ -1040,7 +1152,18 @@ impl KeeperFile {
             .map_err(|_| KSMRError::FileError("File URL is invalid".to_string()))?;
 
         // Fetch the file data from the URL
-        let mut response = get(&file_url)
+        let mut client_builder = reqwest::blocking::Client::builder();
+        if let Some(ref proxy_url) = self.proxy_url {
+            if let Ok(proxy) = reqwest::Proxy::all(proxy_url) {
+                client_builder = client_builder.proxy(proxy);
+            }
+        }
+        let http_client = client_builder
+            .build()
+            .map_err(|e| KSMRError::FileError(format!("Failed to build HTTP client: {}", e)))?;
+        let mut response = http_client
+            .get(&file_url)
+            .send()
             .map_err(|e| KSMRError::FileError(format!("Failed to fetch file: {}", e)))?;
 
         // Ensure the HTTP request was successful
@@ -1069,6 +1192,11 @@ impl KeeperFile {
 
     /// Retrieves the URL from the `f` HashMap, if available.
     pub fn get_url(&self) -> Result<String, KSMRError> {
+        // Try url field first (if populated from API), then fall back to f HashMap
+        if let Some(url) = &self.url {
+            return Ok(url.clone());
+        }
+
         let file_url = self
             .f
             .get("url") // Look for the "url" key in the HashMap
@@ -1078,10 +1206,87 @@ impl KeeperFile {
         Ok(file_url)
     }
 
+    /// Downloads and decrypts the file thumbnail.
+    ///
+    /// # Returns
+    /// * `Result<Option<Vec<u8>>, KSMRError>` - Decrypted thumbnail data, or None if no thumbnail available
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// # use keeper_secrets_manager_core::dto::KeeperFile;
+    /// # use keeper_secrets_manager_core::custom_error::KSMRError;
+    /// # fn example(file: &mut KeeperFile) -> Result<(), KSMRError> {
+    /// if let Some(thumbnail_data) = file.get_thumbnail_data()? {
+    ///     // Save thumbnail to disk
+    ///     std::fs::write("thumbnail.jpg", thumbnail_data)?;
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_thumbnail_data(&mut self) -> Result<Option<Vec<u8>>, KSMRError> {
+        // Check if thumbnail URL is available
+        let thumbnail_url = if let Some(url) = &self.thumbnail_url {
+            url.clone()
+        } else if let Some(url) = self.f.get("thumbnailUrl").and_then(|v| v.as_str()) {
+            url.to_string()
+        } else {
+            return Ok(None); // No thumbnail available
+        };
+
+        // Decrypt the file key
+        let file_key = self.decrypt_file_key()?;
+
+        // Fetch the thumbnail data from the URL
+        let mut client_builder = reqwest::blocking::Client::builder();
+        if let Some(ref proxy_url) = self.proxy_url {
+            if let Ok(proxy) = reqwest::Proxy::all(proxy_url) {
+                client_builder = client_builder.proxy(proxy);
+            }
+        }
+        let http_client = client_builder
+            .build()
+            .map_err(|e| KSMRError::FileError(format!("Failed to build HTTP client: {}", e)))?;
+        let mut response = http_client
+            .get(&thumbnail_url)
+            .send()
+            .map_err(|e| KSMRError::FileError(format!("Failed to fetch thumbnail: {}", e)))?;
+
+        // Ensure the HTTP request was successful
+        if !response.status().is_success() {
+            return Err(KSMRError::HTTPError(format!(
+                "HTTP request failed with status: {}",
+                response.status()
+            )));
+        }
+
+        // Read the response body
+        let mut encrypted_thumbnail = Vec::new();
+        response
+            .read_to_end(&mut encrypted_thumbnail)
+            .map_err(|e| KSMRError::IOError(format!("Failed to read thumbnail: {}", e)))?;
+
+        // Decrypt the thumbnail data
+        let decrypted_thumbnail = CryptoUtils::decrypt_aes(&encrypted_thumbnail, &file_key)
+            .map_err(|e| KSMRError::CryptoError(format!("Failed to decrypt thumbnail: {}", e)))?;
+
+        Ok(Some(decrypted_thumbnail))
+    }
+
     pub fn new_from_json(
         file_dict: HashMap<String, Value>,
         record_key_bytes: Vec<u8>,
     ) -> Result<Self, KSMRError> {
+        // Extract url and thumbnailUrl from file_dict before creating struct
+        let url = file_dict
+            .get("url")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let thumbnail_url = file_dict
+            .get("thumbnailUrl")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         let mut file = KeeperFile {
             file_key: String::new(),
             metadata_dict: HashMap::new(),
@@ -1092,6 +1297,9 @@ impl KeeperFile {
             name: String::new(),
             last_modified: 0,
             size: 0,
+            url,
+            thumbnail_url,
+            proxy_url: None,
             f: file_dict.clone(),
             record_key_bytes,
         };
@@ -1303,7 +1511,11 @@ impl Folder {
                         }
                     }
                     Err(err) => {
-                        log::error!("Error decrypting folder key: {:?}", err);
+                        log::error!(
+                            "Error decrypting folder key: {:?} - Folder UID: {}",
+                            err,
+                            folder.uid
+                        );
                     }
                 }
             }
@@ -1611,5 +1823,71 @@ impl RecordCreate {
             self.custom = Some(vec![]);
         }
         self.custom.as_mut().unwrap().push(field);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper: construct a minimal KeeperFile for testing struct-level behavior.
+    /// Private fields are accessible here because we are in the same module.
+    fn make_test_file(proxy_url: Option<String>) -> KeeperFile {
+        KeeperFile {
+            file_key: String::new(),
+            metadata_dict: HashMap::new(),
+            data: vec![],
+            uid: String::new(),
+            file_type: String::new(),
+            title: String::new(),
+            name: String::new(),
+            last_modified: 0,
+            size: 0,
+            url: None,
+            thumbnail_url: None,
+            proxy_url,
+            f: HashMap::new(),
+            record_key_bytes: vec![],
+        }
+    }
+
+    /// Regression test for KSM-791:
+    /// KeeperFile.proxy_url must exist and default to None so that
+    /// get_file_data() / get_thumbnail_data() build a proxy-aware HTTP client.
+    /// Previously the field did not exist and bare reqwest::get() was used.
+    #[test]
+    fn test_keeper_file_proxy_url_defaults_to_none() {
+        let file = make_test_file(None);
+        assert!(file.proxy_url.is_none());
+    }
+
+    /// Regression test for KSM-791:
+    /// proxy_url must be settable so that SecretsManager can propagate its
+    /// proxy configuration to files after record decryption.
+    #[test]
+    fn test_keeper_file_proxy_url_can_be_set() {
+        let mut file = make_test_file(None);
+        file.proxy_url = Some("http://proxy.example.com:8080".to_string());
+        assert_eq!(
+            file.proxy_url,
+            Some("http://proxy.example.com:8080".to_string())
+        );
+    }
+
+    /// Regression test for KSM-791:
+    /// deep_copy() must preserve proxy_url so that callers that clone a file
+    /// (e.g. notation lookups) do not silently lose proxy configuration.
+    #[test]
+    fn test_keeper_file_deep_copy_preserves_proxy_url() {
+        let file_with_proxy = make_test_file(Some("http://proxy.example.com:8080".to_string()));
+        let copied = file_with_proxy.deep_copy();
+        assert_eq!(
+            copied.proxy_url,
+            Some("http://proxy.example.com:8080".to_string())
+        );
+
+        let file_without_proxy = make_test_file(None);
+        let copied_none = file_without_proxy.deep_copy();
+        assert!(copied_none.proxy_url.is_none());
     }
 }

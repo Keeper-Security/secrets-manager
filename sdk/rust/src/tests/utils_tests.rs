@@ -645,17 +645,15 @@ mod get_windows_user_sid_and_name_tests {
 #[cfg(test)]
 mod set_config_mode_tests {
     use crate::utils::set_config_mode;
+    use serial_test::serial;
     use std::env;
-    #[cfg(target_os = "windows")]
-    use std::fs::Permissions;
     use std::fs::{self, File};
     #[cfg(target_os = "windows")]
     use std::io;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_os = "windows")]
     #[test]
     fn test_set_config_mode_windows_skip_mode() {
@@ -670,8 +668,7 @@ mod set_config_mode_tests {
         env::remove_var("KSM_CONFIG_SKIP_MODE");
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_os = "windows")]
     #[test]
     fn test_set_config_mode_windows_with_icacls() {
@@ -695,8 +692,7 @@ mod set_config_mode_tests {
         assert!(result.is_ok());
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_family = "unix")]
     #[test]
     fn test_set_config_mode_unix() {
@@ -721,8 +717,7 @@ mod set_config_mode_tests {
         fs::remove_file(file_path).expect("Failed to delete test file");
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_set_config_mode_env_skip() {
@@ -749,6 +744,7 @@ mod set_config_mode_tests {
 mod check_config_mode_tests {
     use crate::utils::check_config_mode;
     use crate::utils::ConfigError;
+    use serial_test::serial;
     use std::env;
     use std::fs;
     // #[cfg(target_os = "windows")]
@@ -777,7 +773,7 @@ mod check_config_mode_tests {
         {
             let mut permissions = fs::metadata(&path).unwrap().permissions();
             permissions.set_mode(_mode);
-            fs::set_permissions(&path, permissions).expect("Unable to set permissions");
+            fs::set_permissions(path, permissions).expect("Unable to set permissions");
 
             // // Adjust ownership (Unix only)
             // Command::new("chown")
@@ -791,8 +787,7 @@ mod check_config_mode_tests {
     }
 
     #[test]
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_os = "windows")]
     fn test_check_config_mode_windows_no_file() {
         // Test for a non-existent file on Windows
@@ -807,8 +802,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_os = "windows")]
     #[test]
     fn test_check_config_mode_windows_permission_denied() {
@@ -824,8 +818,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_os = "windows")]
     #[test]
     fn test_check_config_mode_windows_too_open_permissions() {
@@ -844,8 +837,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[cfg(target_os = "windows")]
     #[test]
     fn test_check_config_mode_windows_proper_permissions() {
@@ -859,8 +851,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[test]
     fn test_check_config_mode_unix_no_file() {
         // Test for a non-existent file on Unix
@@ -874,8 +865,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[test]
     fn test_check_config_mode_unix_permission_denied() {
         // Test for a file that exists but is permission denied
@@ -890,8 +880,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[test]
     fn test_check_config_mode_unix_too_open_permissions() {
         // Create a temporary file and set too open permissions
@@ -909,8 +898,7 @@ mod check_config_mode_tests {
         }
     }
 
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     #[test]
     fn test_check_config_mode_unix_proper_permissions() {
         // Test with a file that has proper permissions
@@ -924,8 +912,7 @@ mod check_config_mode_tests {
     }
 
     #[test]
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     fn test_check_config_mode_skip_mode_check() {
         // Test to skip mode check via environment variable
         env::set_var("KSM_CONFIG_SKIP_MODE", "TRUE");
@@ -940,8 +927,7 @@ mod check_config_mode_tests {
     }
 
     #[test]
-    #[ignore]
-    #[cfg(feature = "sequential_tests")]
+    #[serial]
     fn test_check_config_mode_skip_warning() {
         // Test skipping warning
         let path = create_temp_file_with_permissions("content", 0o600);
@@ -991,7 +977,7 @@ mod generate_password_tests {
         let options = PasswordOptions::new().length(32).digits(4);
         let password = generate_password_with_options(options).unwrap();
         assert_eq!(password.len(), 32);
-        assert!(password.chars().filter(|c| c.is_digit(10)).count() >= 4);
+        assert!(password.chars().filter(|c| c.is_ascii_digit()).count() >= 4);
     }
 
     #[test]
@@ -1020,7 +1006,7 @@ mod generate_password_tests {
         assert_eq!(password.len(), 32);
         assert!(password.chars().filter(|c| c.is_lowercase()).count() >= 4);
         assert!(password.chars().filter(|c| c.is_uppercase()).count() >= 4);
-        assert!(password.chars().filter(|c| c.is_digit(10)).count() >= 4);
+        assert!(password.chars().filter(|c| c.is_ascii_digit()).count() >= 4);
         assert!(
             password
                 .chars()
@@ -1041,9 +1027,10 @@ mod generate_password_tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
-            KSMRError::PasswordCreationError(format!(
+            KSMRError::PasswordCreationError(
                 "The specified character counts (35) exceed the total password length (20)!"
-            ))
+                    .to_string()
+            )
         );
     }
 
@@ -1073,7 +1060,106 @@ mod generate_password_tests {
         assert_eq!(password.len(), 32);
         assert!(password.chars().any(|c| c.is_lowercase()
             || c.is_uppercase()
-            || c.is_digit(10)
+            || c.is_ascii_digit()
             || "!@#$%^&*()-_=+[]{};:,.<>?/|".contains(c)));
+    }
+
+    #[test]
+    fn test_generate_password_with_exact_counts() {
+        // Test exact character counts with negative values (KSM-782)
+        let options = PasswordOptions::new()
+            .lowercase(-8)
+            .uppercase(-8)
+            .digits(-6)
+            .special_characters(-4);
+        let password = generate_password_with_options(options).unwrap();
+
+        // Should be exactly 26 characters (8+8+6+4)
+        assert_eq!(password.len(), 26);
+
+        // Should have EXACTLY the specified counts
+        assert_eq!(password.chars().filter(|c| c.is_lowercase()).count(), 8);
+        assert_eq!(password.chars().filter(|c| c.is_uppercase()).count(), 8);
+        assert_eq!(password.chars().filter(|c| c.is_ascii_digit()).count(), 6);
+
+        let special_count = password
+            .chars()
+            .filter(|c| !c.is_lowercase() && !c.is_uppercase() && !c.is_ascii_digit())
+            .count();
+        assert_eq!(special_count, 4);
+    }
+
+    #[test]
+    fn test_generate_password_with_zero_exact_count() {
+        // Test zero value (also treated as exact count)
+        let options = PasswordOptions::new()
+            .lowercase(-10)
+            .uppercase(-10)
+            .digits(0) // Zero should be treated as exact 0
+            .special_characters(-6);
+        let password = generate_password_with_options(options).unwrap();
+
+        assert_eq!(password.len(), 26); // 10+10+0+6
+        assert_eq!(password.chars().filter(|c| c.is_ascii_digit()).count(), 0);
+    }
+
+    #[test]
+    fn test_generate_password_mixed_exact_and_minimum() {
+        // Test mixing negative (exact) and positive (minimum) values
+        let options = PasswordOptions::new()
+            .length(30)
+            .lowercase(-10) // EXACTLY 10
+            .uppercase(5); // AT LEAST 5
+        let password = generate_password_with_options(options).unwrap();
+
+        assert_eq!(password.len(), 30);
+        assert_eq!(password.chars().filter(|c| c.is_lowercase()).count(), 10);
+        assert!(password.chars().filter(|c| c.is_uppercase()).count() >= 5);
+    }
+
+    #[test]
+    fn test_generate_password_all_exact_counts() {
+        // Test when all counts are exact (all negative)
+        let options = PasswordOptions::new()
+            .lowercase(-12)
+            .uppercase(-8)
+            .digits(-5)
+            .special_characters(-7);
+        let password = generate_password_with_options(options).unwrap();
+
+        // Total should be sum of absolute values: 32
+        assert_eq!(password.len(), 32);
+        assert_eq!(password.chars().filter(|c| c.is_lowercase()).count(), 12);
+        assert_eq!(password.chars().filter(|c| c.is_uppercase()).count(), 8);
+        assert_eq!(password.chars().filter(|c| c.is_ascii_digit()).count(), 5);
+
+        let special_count = password
+            .chars()
+            .filter(|c| !c.is_lowercase() && !c.is_uppercase() && !c.is_ascii_digit())
+            .count();
+        assert_eq!(special_count, 7);
+    }
+
+    #[test]
+    fn test_generate_password_single_exact_count() {
+        // Test single exact count with others minimum
+        let options = PasswordOptions::new().length(25).lowercase(-10); // EXACTLY 10, others fill remaining 15
+        let password = generate_password_with_options(options).unwrap();
+
+        assert_eq!(password.len(), 25);
+        assert_eq!(password.chars().filter(|c| c.is_lowercase()).count(), 10);
+    }
+
+    #[test]
+    fn test_generate_password_exact_ignores_length_param() {
+        // Test that exact mode ignores length parameter (KSM-782)
+        let options = PasswordOptions::new()
+            .length(10) // Length param should be IGNORED
+            .lowercase(-20); // EXACTLY 20 lowercase
+        let password = generate_password_with_options(options).unwrap();
+
+        // Password should be 20 chars (sum of exact counts), NOT 10
+        assert_eq!(password.len(), 20);
+        assert_eq!(password.chars().filter(|c| c.is_lowercase()).count(), 20);
     }
 }

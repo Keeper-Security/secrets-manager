@@ -167,20 +167,30 @@ impl FileCache {
                         .to_string()
                         .contains("The system cannot find the file specified")
                 {
-                    let file = OpenOptions::new()
-                    .read(true) // Open for reading
-                    .write(true) // Open for writing
-                    .create(true) // Create if it doesn't exist
-                    .truncate(true)// Overwrite if already existing
-                    .open(file_path).map_err(|err| KSMRError::CacheSaveError(format!("Error creating cache file in location mentioned {} and exited with error {}.", file_path,err))).unwrap();
-                    file
+                    OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .create(true)
+                        .truncate(true)
+                        .open(file_path)
+                        .map_err(|err| {
+                            KSMRError::CacheSaveError(format!(
+                                "Error creating cache file at {}: {}",
+                                file_path, err
+                            ))
+                        })?
                 } else {
-                    panic!("{}", err);
+                    return Err(KSMRError::CacheSaveError(format!(
+                        "Error opening cache file at {}: {}",
+                        path, err
+                    )));
                 }
             }
         };
 
-        file_opened.flush().unwrap();
+        file_opened.flush().map_err(|e| {
+            KSMRError::CacheSaveError(format!("Error flushing cache file at {}: {}", path, e))
+        })?;
 
         Ok(FileCache { file_path: path })
     }

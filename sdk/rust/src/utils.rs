@@ -827,9 +827,7 @@ This function returns `Ok(())` if the mode is set successfully, or an `io::Error
 if an error occurs.
 
 */
-pub fn set_config_mode(
-    file: &str,
-) -> Result<(), io::Error> {
+pub fn set_config_mode(file: &str) -> Result<(), io::Error> {
     // Check if we should skip setting the mode
     if let Ok(skip_mode) = env::var("KSM_CONFIG_SKIP_MODE") {
         if skip_mode.to_lowercase() == "true" {
@@ -860,7 +858,6 @@ pub fn set_config_mode(
         ];
 
         for command in commands {
-
             let output = Command::new("cmd").args(&["/C", &command]).output()?;
 
             match output.status.code() {
@@ -1371,37 +1368,88 @@ impl Default for PasswordOptions {
 pub fn generate_password_with_options(options: PasswordOptions) -> Result<String, KSMRError> {
     let mut rng = thread_rng();
 
-    // Collect the counts for each character type
-    let lowercase_count = options.lowercase.unwrap_or(0).max(0);
-    let uppercase_count = options.uppercase.unwrap_or(0).max(0);
-    let digits_count = options.digits.unwrap_or(0).max(0);
-    let special_count = options.special_characters.unwrap_or(0).max(0);
+    // Determine if using pure exact-count mode (ALL four character types explicitly set to exact values)
+    // In pure exact mode, the length parameter is ignored and password length = sum of absolute values
+    // None is treated as "minimum of 0" (include in extra pool), so it counts as minimum mode
+    let all_explicit_exact = options.lowercase.is_some_and(|v| v <= 0)
+        && options.uppercase.is_some_and(|v| v <= 0)
+        && options.digits.is_some_and(|v| v <= 0)
+        && options.special_characters.is_some_and(|v| v <= 0);
+    let has_any_minimum_or_none = options.lowercase.is_none()
+        || options.lowercase.is_some_and(|v| v > 0)
+        || options.uppercase.is_none()
+        || options.uppercase.is_some_and(|v| v > 0)
+        || options.digits.is_none()
+        || options.digits.is_some_and(|v| v > 0)
+        || options.special_characters.is_none()
+        || options.special_characters.is_some_and(|v| v > 0);
+    let is_exact_mode = all_explicit_exact && !has_any_minimum_or_none;
+
+    // Collect the counts for each character type (use abs() to support negative values as exact counts)
+    let lowercase_count = options.lowercase.map_or(0, |v| v.abs());
+    let uppercase_count = options.uppercase.map_or(0, |v| v.abs());
+    let digits_count = options.digits.map_or(0, |v| v.abs());
+    let special_count = options.special_characters.map_or(0, |v| v.abs());
 
     // Calculate the total number of specified characters
     let total_specified = lowercase_count + uppercase_count + digits_count + special_count;
 
-    // Check if specified characters exceed the total length
-    if total_specified > options.length as i32 {
+    // Determine target password length
+    // In exact mode: use sum of absolute values
+    // In minimum mode: use requested length parameter
+    let target_length = if is_exact_mode {
+        total_specified as usize
+    } else {
+        options.length
+    };
+
+    // In exact mode, warn if length parameter will be ignored
+    if is_exact_mode && (options.length as i32) != total_specified {
+        warn!(
+            "Exact character counts specified (negative values) - password length will be {} instead of requested {}",
+            total_specified, options.length
+        );
+    }
+
+    // Calculate extra characters needed to reach target length
+    let extra_count = if (target_length as i32) > total_specified {
+        target_length as i32 - total_specified
+    } else {
+        if !is_exact_mode && (options.length as i32) < total_specified {
+            warn!(
+                "Specified character counts ({}) exceed password length ({}) - no extra characters will be added",
+                total_specified, options.length
+            );
+        }
+        0
+    };
+
+    // Error check: only throw error if we have minimum requirements (positive values) that can't be met
+    // If we have exact counts (negative values) that exceed length, just warn and use the exact counts
+    let has_positive_values = options.lowercase.is_some_and(|v| v > 0)
+        || options.uppercase.is_some_and(|v| v > 0)
+        || options.digits.is_some_and(|v| v > 0)
+        || options.special_characters.is_some_and(|v| v > 0);
+    if has_positive_values && total_specified > (options.length as i32) {
         return Err(KSMRError::PasswordCreationError(format!(
             "The specified character counts ({}) exceed the total password length ({})!",
             total_specified, options.length
         )));
     }
 
-    let extra_count = options.length as i32 - total_specified;
-
-    // Build the extra character pool based on available options
+    // Build the extra character pool - only include character types with positive (minimum) values
+    // Negative values (exact counts) are excluded from the extra pool
     let mut extra_chars = String::new();
-    if options.lowercase.is_some() || lowercase_count > 0 {
+    if options.lowercase.is_none() || options.lowercase.is_some_and(|v| v > 0) {
         extra_chars.push_str("abcdefghijklmnopqrstuvwxyz");
     }
-    if options.uppercase.is_some() || uppercase_count > 0 {
+    if options.uppercase.is_none() || options.uppercase.is_some_and(|v| v > 0) {
         extra_chars.push_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     }
-    if options.digits.is_some() || digits_count > 0 {
+    if options.digits.is_none() || options.digits.is_some_and(|v| v > 0) {
         extra_chars.push_str("0123456789");
     }
-    if options.special_characters.is_some() || special_count > 0 {
+    if options.special_characters.is_none() || options.special_characters.is_some_and(|v| v > 0) {
         extra_chars.push_str(&options.special_characterset);
     }
     if extra_chars.is_empty() {
@@ -1429,7 +1477,7 @@ pub fn generate_password_with_options(options: PasswordOptions) -> Result<String
         }
     }
 
-    let mut remaining_length = options.length - password_list.len();
+    let mut remaining_length = target_length.saturating_sub(password_list.len());
 
     while remaining_length > 0 {
         // Randomly select additional characters from the extra characters
@@ -1440,7 +1488,7 @@ pub fn generate_password_with_options(options: PasswordOptions) -> Result<String
             .collect();
 
         password_list.extend(additional_samples);
-        remaining_length = options.length - password_list.len()
+        remaining_length = target_length.saturating_sub(password_list.len())
     }
     password_list.shuffle(&mut rng);
 

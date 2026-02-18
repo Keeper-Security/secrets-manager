@@ -239,12 +239,13 @@ the value or values of the field.  It will be a single value only if the `singl
     let client_options = ClientOptions::new_client_options(config);
     let mut secrets_manager = SecretsManager::new(client_options)?;
 
-    // get all secrets matching the record title
-    let secrets = secrets_manager.get_secret_by_title("My Credentials").unwrap().unwrap();
+    // get first secret matching the record title
+    let secret = secrets_manager.get_secret_by_title("My Credentials")?
+        .ok_or_else(|| KSMRError::CustomError("No record found with that title".to_string()))?;
 ```
 **Response**
 
-> Type: `Record<Option<Vec<Record>>>`
+> Type: `Option<Record>`
   
 
 | Parameter | Type | Required | Description |
@@ -359,7 +360,7 @@ Get TOTP Code of given record
     let mut secrets_manager = SecretsManager::new(client_options)?;
 
     // get a specific secret by UID
-    let secret_to_update = secrets_manager.get_secrets(["<RECORD UID>".to_string()])?;
+    let secret_to_update = secrets_manager.get_secrets(vec!["<RECORD UID>".to_string()])?;
 
     // update a field value
     let field_type= StandardFieldTypeEnum::LOGIN.get_type();
@@ -401,7 +402,7 @@ For a list of field types, see the [Record Types](https://docs.keeper.io/en/secr
     let mut secrets_manager = SecretsManager::new(client_options)?;
 
     // get a specific secret by UID
-    let secret_to_update = secrets_manager.get_secrets(["<RECORD UID>".to_string()])?;
+    let secret_to_update = secrets_manager.get_secrets(vec!["<RECORD UID>".to_string()])?;
 
     // update a field value
     let field_type= StandardFieldTypeEnum::LOGIN.get_type();
@@ -443,7 +444,7 @@ for a list of field types, see the [Record Types](https://docs.keeper.io/en/secr
     let mut secrets_manager = SecretsManager::new(client_options)?;
 
     // get a specific secret by UID
-    let secret_to_update = secrets_manager.get_secrets(["<RECORD UID>".to_string()])?;
+    let secret_to_update = secrets_manager.get_secrets(vec!["<RECORD UID>".to_string()])?;
 
     // update a field value
     secret_to_update.set_custom_field_value_mut("Email", "sample@ks.com".into())?;
@@ -480,7 +481,7 @@ Generate Password
     let mut secrets_manager = SecretsManager::new(client_options)?;
 
     // get a specific secret by UID
-    let secret_to_update = secrets_manager.get_secrets(["<RECORD UID>".to_string()])?;
+    let secret_to_update = secrets_manager.get_secrets(vec!["<RECORD UID>".to_string()])?;
 
     # generate a random password
     let charset: String = "$_!?#".to_string();
@@ -507,12 +508,12 @@ Generate Password
 | `password_options` | `PasswordOptions` | Yes |  | Configuration for the password |
 | `charset` | `String` | Optional |  | Set of special characters to be included in the password |
 | `length` | `i32` | Optional | 64 | Length of password |
-| `lowercase` | `i32` | Optional | 0 | Count of lowercase characters in the password |
-| `uppercase` | `i32` | Optional | 0 | Count of uppercase characters in the password |
-| `digits` | `i32` | Optional | 0 | Count of digits in the password |
-| `special_characters` | `i32` | Optional | 0 | Count of special characters in the password |
+| `lowercase` | `i32` | Optional | 0 | Minimum count (positive) or exact count (negative, e.g. `-8` = exactly 8 lowercase) |
+| `uppercase` | `i32` | Optional | 0 | Minimum count (positive) or exact count (negative) |
+| `digits` | `i32` | Optional | 0 | Minimum count (positive) or exact count (negative) |
+| `special_characters` | `i32` | Optional | 0 | Minimum count (positive) or exact count (negative) |
 
-Each parameter indicates the minimum number of a type of character to include. For example, 'uppercase' indicates the minimum number of uppercase letters to include.
+Positive values set a minimum — the generator may include more of that character type to reach the requested length. Negative values set an exact count — for example, `.lowercase(-8)` produces exactly 8 lowercase characters. In exact mode the total password length is the sum of the absolute values and the `length` parameter is ignored.
 
 ### Download a File
 
@@ -534,9 +535,9 @@ Download File
     let mut secrets_manager = SecretsManager::new(client_options)?;
 
     // get a specific secret by UID
-    let secrets = secrets_manager.get_secrets(["<RECORD UID>".to_string()])?[0];
-    // Save all files to a tmp folder (create folder if does not exist)
-    let path = format!("./temp/demo_{}.txt", secret.title);
+    let secrets = secrets_manager.get_secrets(vec!["<RECORD UID>".to_string()])?;
+    let secret = &secrets[0];
+    let path = format!("./temp/demo_{}.txt", secret.title);
     secret.download_file("uploaded_file.txt", &path)?;
 ```  
 
@@ -567,14 +568,14 @@ Example
     let mut secrets_manager = SecretsManager::new(client_options)?;
 
     // get a specific secret by UID
-    let secrets = secrets_manager.get_secrets(["<RECORD UID>".to_string()])?[0];
-    // Save all files to a tmp folder (create folder if does not exist)
-    let path = format!("./temp/demo_{}.txt", secret.title);
+    let secrets = secrets_manager.get_secrets(vec!["<RECORD UID>".to_string()])?;
+    let secret = secrets.into_iter().next()
+        .ok_or_else(|| KSMRError::CustomError("Record not found".to_string()))?;
     // Prepare file data for upload
-    let keeper_file = KeeperFileUpload::get_file_for_upload(file_path, Some(file_name),file_title, mime_type)?;
+    let keeper_file = KeeperFileUpload::get_file_for_upload(file_path, Some(file_name), file_title, mime_type)?;
 
-    // Upload file attached to the owner record and get the file UID
-    file_uid = secrets_manager.upload_file(owner_record, keeper_file)?;
+    // Upload file attached to the secret and get the file UID
+    let file_uid = secrets_manager.upload_file(secret, keeper_file)?;
 ```  
 
 **Upload File**
@@ -611,7 +612,7 @@ The file UID of the attached file
 *   Created records and record fields must be formatted correctly
     *   See the [documentation](https://docs.keeper.io/en/secrets-manager/commander-cli/command-reference/record-commands/default-record-types#field-types) for expected field formats for each record type
 *   TOTP fields accept only URL generated outside of the KSM SDK
-*   After record creation, you can upload file attachments using [upload\_file](https://docs.keeper.io/en/secrets-manager/secrets-manager/developer-sdk-library/python-sdk#upload-a-file)
+*   After record creation, you can upload file attachments using [upload\_file](https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/rust-sdk#upload-a-file)
     
 
 **Create a Record**
@@ -724,7 +725,7 @@ Delete Secret
     let mut secrets_manager = SecretsManager::new(client_options)?;
 
     // delete a specific secret by UID
-    let secret_to_delete = secrets_manager.delete_secret(["<RECORD UID>".to_string()])?;
+    let secret_to_delete = secrets_manager.delete_secret(vec!["<RECORD UID>".to_string()])?;
 ```
 
 | Parameter | Type | Required | Default | Description |
@@ -795,7 +796,7 @@ Downloads full folder hierarchy.
     let mut secrets_manager = SecretsManager::new(client_options)?;
 
     // get all folder
-    let secrets = secrets_manager.ger_folders()?;
+    let secrets = secrets_manager.get_folders()?;
 ```
 **Returns**
 > Type: `Vec<KeeperFolder>`
