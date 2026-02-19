@@ -1,0 +1,115 @@
+name: Publish GCP Storage to NPM
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to NPM (uncheck to build only)'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  generate-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install package dependencies
+        run: npm install
+        working-directory: ./sdk/javascript/packages/gcp
+
+      - name: Install Syft
+        run: |
+          echo "Installing Syft v1.18.1..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /tmp/bin v1.18.1
+          echo "/tmp/bin" >> $GITHUB_PATH
+
+      - name: Install Manifest CLI
+        run: |
+          echo "Installing Manifest CLI v0.18.3..."
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /tmp/bin v0.18.3
+
+      - name: Create Syft configuration
+        run: |
+          cat > syft-config.yaml << 'EOF'
+          package:
+            search:
+              scope: all-layers
+            cataloger:
+              enabled: true
+              java:
+                enabled: false
+              python:
+                enabled: false
+              nodejs:
+                enabled: true
+          EOF
+
+      - name: Generate and upload SBOM
+        env:
+          MANIFEST_API_KEY: ${{ secrets.MANIFEST_TOKEN }}
+        run: |
+          JAVASCRIPT_SDK_DIR="./sdk/javascript"
+
+          # Get version from package.json
+          echo "Detecting GCP Storage version..."
+          if [ -f "${JAVASCRIPT_SDK_DIR}/packages/gcp/package.json" ]; then
+            VERSION=$(grep -o '"version": "[^"]*"' "${JAVASCRIPT_SDK_DIR}/packages/gcp/package.json" | cut -d'"' -f4)
+            echo "Detected version: ${VERSION}"
+          else
+            VERSION="1.0.0"
+            echo "Could not detect version, using default: ${VERSION}"
+          fi
+
+          echo "Generating SBOM with Manifest CLI..."
+          /tmp/bin/manifest sbom "${JAVASCRIPT_SDK_DIR}/packages/gcp" \
+            --generator=syft \
+            --name=keeper-secrets-manager-javascript-storage-gcp-kms \
+            --version=${VERSION} \
+            --output=spdx-json \
+            --file=gcp-storage-sbom.json \
+            --api-key=${MANIFEST_API_KEY} \
+            --publish=true \
+            --asset-label=application,sbom-generated,nodejs,gcp-storage \
+            --generator-config=syft-config.yaml
+
+          echo "SBOM generated and uploaded successfully: gcp-storage-sbom.json"
+          echo "---------- SBOM Preview (first 20 lines) ----------"
+          head -n 20 gcp-storage-sbom.json
+
+  publish-npm:
+    needs: generate-sbom
+    if: ${{ github.event.inputs.publish == 'true' }}
+    environment: prod
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./sdk/javascript/packages/gcp
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v3
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
+          secrets: |
+            NScQiZwrHJFCPv1gL8TX6Q/field/password > env:NPM_TOKEN
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build package
+        run: npm run build
+
+      - name: Publish package
+        run: npm publish
