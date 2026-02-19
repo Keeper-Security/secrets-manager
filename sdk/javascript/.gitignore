@@ -2,3 +2,4 @@
 **/node_modules
 /packages/core/configs
 /packages/core/cache.dat
+/packages/**/package-lock.json
