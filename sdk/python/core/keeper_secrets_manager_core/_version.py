@@ -11,4 +11,4 @@
 
 # Single source of truth for package version
 # This file is imported by both setup.py and the package itself
-__version__ = "17.1.0"
+__version__ = "17.2.0"

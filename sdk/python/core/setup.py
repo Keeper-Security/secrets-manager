@@ -16,11 +16,9 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
 install_requires = [
-    'requests',
-    'cryptography>=39.0.1,!=44.0.0',  # CVE-2026-23949: exclude vulnerable version (remove when dropping Python 3.6)
-    'importlib_metadata',
-    'urllib3>=2.6.0; python_version >= "3.10"',
-    'urllib3>=1.26.0,<1.27; python_version < "3.10"',
+    'requests>=2.32.4',
+    'cryptography>=46.0.5',
+    'urllib3>=2.6.3',
 ]
 
 setup(
@@ -37,7 +35,7 @@ setup(
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
-    python_requires='>=3.6',
+    python_requires='>=3.9',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
         "Documentation": "https://github.com/Keeper-Security/secrets-manager",
@@ -50,13 +48,11 @@ setup(
         "Operating System :: OS Independent",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.6",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
         "Topic :: Security",
     ],
 )
