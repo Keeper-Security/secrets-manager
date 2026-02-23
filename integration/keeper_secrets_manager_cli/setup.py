@@ -9,8 +9,8 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 
 install_requires = [
     'pip>=24.3.1',
-    'keeper-secrets-manager-core>=17.1.0',
-    'keeper-secrets-manager-helper>=1.0.6',
+    'keeper-secrets-manager-core>=17.2.0',
+    'keeper-secrets-manager-helper>=1.1.0',
     'keeper-secrets-manager-storage>=1.0.2',
     'prompt-toolkit>=3.0',
     'jsonpath-rw-ext',
@@ -45,7 +45,7 @@ setup(
     zip_safe=False,
     install_requires=install_requires,
     extras_require=extras_require,
-    python_requires='>=3.7',
+    python_requires='>=3.9',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
         "Documentation": "https://app.gitbook.com/"
@@ -59,8 +59,6 @@ setup(
         "Operating System :: OS Independent",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
