@@ -11,7 +11,7 @@ jobs:
       helper-version: ${{ steps.extract-helper-version.outputs.version }}
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Extract SDK version
         id: extract-sdk-version
         working-directory: ./sdk/python/core
@@ -19,7 +19,7 @@ jobs:
           VERSION=$(python3 setup.py --version 2>/dev/null || grep -Po 'version\s*=\s*["\x27]\K[^\x27"]*' setup.py)
           echo "SDK Version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-      
+
       - name: Extract Helper version
         id: extract-helper-version
         working-directory: ./sdk/python/helper
@@ -28,110 +28,173 @@ jobs:
           echo "Helper Version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-  # Generate and upload SBOM for SDK
-  generate-sdk-sbom:
+  # Fail fast if either version is already on PyPI - before SBOM generation
+  # and before the release manager is asked to approve anything.
+  validate-versions:
+    name: Validate versions not yet published
     needs: get-versions
-    uses: ./.github/workflows/reusable.sbom.workflow.yml
-    with:
-      working-directory: ./sdk/python/core
-      project-name: keeper-secrets-manager-python
-      project-type: python
-      project-version: ${{ needs.get-versions.outputs.sdk-version }}
-      sbom-format: spdx-json
-      additional-labels: ksm,sdk,python,security
-    secrets:
-      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
-
-  # Generate and upload SBOM for Helper
-  generate-helper-sbom:
-    needs: get-versions
-    uses: ./.github/workflows/reusable.sbom.workflow.yml
-    with:
-      working-directory: ./sdk/python/helper
-      project-name: keeper-secrets-manager-helper
-      project-type: python
-      project-version: ${{ needs.get-versions.outputs.helper-version }}
-      sbom-format: spdx-json
-      additional-labels: ksm,helper,python,security
-    secrets:
-      MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
-
-  # Publish SDK to PyPI
-  publish-sdk:
-    name: Publish KSM Python SDK to PyPI
-    needs: [generate-sdk-sbom, get-versions]
-    environment: prod
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    defaults:
-      run:
-        working-directory: ./sdk/python/core
-
     steps:
-      - name: Get the source code
-        uses: actions/checkout@v3
-
-      - name: Set up Python 3.9
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.9
-
-      - name: Check if SDK version exists on PyPI
-        id: check-sdk-version
+      - name: Check SDK version not on PyPI
         run: |
           VERSION="${{ needs.get-versions.outputs.sdk-version }}"
-          echo "Checking if keeper-secrets-manager-core version $VERSION exists on PyPI..."
+          echo "Checking keeper-secrets-manager-core $VERSION..."
           if pip index versions keeper-secrets-manager-core 2>/dev/null | grep -qE "\b$VERSION\b"; then
-            echo "Version $VERSION already exists on PyPI"
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "Version $VERSION does not exist on PyPI"
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "::error::keeper-secrets-manager-core $VERSION is already on PyPI. Aborting."
+            exit 1
           fi
+          echo "keeper-secrets-manager-core $VERSION not yet on PyPI - ok to proceed"
 
-      - name: Retrieve secrets from KSM
-        if: steps.check-sdk-version.outputs.exists == 'false'
-        id: ksmsecrets
-        uses: Keeper-Security/ksm-action@master
+      - name: Check Helper version not on PyPI
+        run: |
+          VERSION="${{ needs.get-versions.outputs.helper-version }}"
+          echo "Checking keeper-secrets-manager-helper $VERSION..."
+          if pip index versions keeper-secrets-manager-helper 2>/dev/null | grep -qE "\b$VERSION\b"; then
+            echo "::error::keeper-secrets-manager-helper $VERSION is already on PyPI. Aborting."
+            exit 1
+          fi
+          echo "keeper-secrets-manager-helper $VERSION not yet on PyPI - ok to proceed"
+
+  # Generate and publish SBOM for SDK.
+  # Uses pip --target to install only runtime deps into an isolated directory.
+  # This excludes pip, wheel, setuptools and their internal dep trees from the
+  # SBOM so that installer-tool CVEs don't appear as SDK vulnerabilities.
+  generate-sdk-sbom:
+    name: Generate and publish SDK SBOM
+    needs: [get-versions, validate-versions]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          keeper-secret-config: ${{ secrets.KSM_PYPI_PUBLISHER_PYPI_SDK_CONFIG }}
-          secrets: |
-            -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN
+          python-version: '3.11'
 
-      - name: Install dependencies
-        if: steps.check-sdk-version.outputs.exists == 'false'
+      - name: Install SDK from source into scan target
         run: |
-          python3 -m pip install --upgrade setuptools pip twine
-          python3 -m pip install 'wheel>=0.46.3'  # CVE-2026-24049: ensure patched version
-          python3 -m pip install -r requirements.txt
+          mkdir -p /tmp/sdk-scan-target
+          pip3 install --quiet --target /tmp/sdk-scan-target ./sdk/python/core
 
-      - name: Build and Publish SDK
-        if: steps.check-sdk-version.outputs.exists == 'false'
+      - name: Install Syft and Manifest CLI
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.30.0
+
+      - name: Generate and publish SDK SBOM
         env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ steps.ksmsecrets.outputs.PYPI_API_TOKEN }}
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
         run: |
-          python3 setup.py build
-          python3 setup.py sdist
-          python3 -m twine upload --verbose dist/*
+          SCAN_TARGET=/tmp/sdk-scan-target
+          VERSION="${{ needs.get-versions.outputs.sdk-version }}"
 
-      - name: Skip SDK publishing (already exists)
-        if: steps.check-sdk-version.outputs.exists == 'true'
+          echo "Scanning: $SCAN_TARGET"
+          echo "Packages installed:"
+          pip3 list --path "$SCAN_TARGET"
+
+          manifest sbom "$SCAN_TARGET" \
+            --generator=syft \
+            --name=keeper-secrets-manager-python \
+            --version="${VERSION}" \
+            --output=spdx-json \
+            --file=sdk-sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --asset-label=ksm,sdk,python,security 2>&1 || \
+          manifest sbom "$SCAN_TARGET" \
+            --generator=syft \
+            --name=keeper-secrets-manager-python \
+            --version="${VERSION}" \
+            --output=spdx-json \
+            --file=sdk-sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --label=ksm,sdk,python,security
+
+      - name: Archive SDK SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-sdk-${{ needs.get-versions.outputs.sdk-version }}
+          path: sdk-sbom.json
+          retention-days: 90
+
+  # Generate and publish SBOM for Helper.
+  # Installs core from source first so this job has no dependency on core
+  # being published to PyPI - both SBOM jobs run in parallel before the
+  # release manager is asked to approve anything.
+  # Uses pip --target to exclude installer-tool CVEs from the SBOM.
+  generate-helper-sbom:
+    name: Generate and publish Helper SBOM
+    needs: [get-versions, validate-versions]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install SDK and Helper from source into scan target
         run: |
-          echo "::notice::Skipping SDK publishing - version ${{ needs.get-versions.outputs.sdk-version }} already exists on PyPI"
+          mkdir -p /tmp/helper-scan-target
+          # Install both in one call so pip resolves core locally instead of
+          # hitting PyPI - core 17.2.0 isn't published yet at SBOM scan time.
+          pip3 install --quiet --target /tmp/helper-scan-target \
+            ./sdk/python/core ./sdk/python/helper
 
-  # Publish Helper to PyPI
-  publish-helper:
-    name: Publish KSM SDK Helper to PyPI
-    needs: [publish-sdk, generate-helper-sbom, get-versions]  # Depends on SDK being published first
+      - name: Install Syft and Manifest CLI
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.30.0
+
+      - name: Generate and publish Helper SBOM
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+        run: |
+          SCAN_TARGET=/tmp/helper-scan-target
+          VERSION="${{ needs.get-versions.outputs.helper-version }}"
+
+          echo "Scanning: $SCAN_TARGET"
+          echo "Packages installed:"
+          pip3 list --path "$SCAN_TARGET"
+
+          manifest sbom "$SCAN_TARGET" \
+            --generator=syft \
+            --name=keeper-secrets-manager-helper \
+            --version="${VERSION}" \
+            --output=spdx-json \
+            --file=helper-sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --asset-label=ksm,helper,python,security 2>&1 || \
+          manifest sbom "$SCAN_TARGET" \
+            --generator=syft \
+            --name=keeper-secrets-manager-helper \
+            --version="${VERSION}" \
+            --output=spdx-json \
+            --file=helper-sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --label=ksm,helper,python,security
+
+      - name: Archive Helper SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-helper-${{ needs.get-versions.outputs.helper-version }}
+          path: helper-sbom.json
+          retention-days: 90
+
+  # Single publish job - both SDK and Helper publish under one environment: prod
+  # gate so the release manager only presses the button once.
+  # Both SBOM jobs must complete (and be verified by Manifest Cyber) before
+  # this job runs.
+  publish:
+    name: Publish KSM Python SDK and Helper to PyPI
+    needs: [generate-sdk-sbom, generate-helper-sbom, get-versions]
     environment: prod
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    defaults:
-      run:
-        working-directory: ./sdk/python/helper
+    timeout-minutes: 15
 
     steps:
       - name: Get the source code
@@ -140,48 +203,47 @@ jobs:
       - name: Set up Python 3.9
         uses: actions/setup-python@v4
         with:
-          python-version: 3.9
+          python-version: '3.9'
 
-      - name: Check if Helper version exists on PyPI
-        id: check-helper-version
+      - name: Install build tools
         run: |
-          VERSION="${{ needs.get-versions.outputs.helper-version }}"
-          echo "Checking if keeper-secrets-manager-helper version $VERSION exists on PyPI..."
-          if pip index versions keeper-secrets-manager-helper 2>/dev/null | grep -qE "\b$VERSION\b"; then
-            echo "Version $VERSION already exists on PyPI"
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "Version $VERSION does not exist on PyPI"
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
+          python3 -m pip install --upgrade pip setuptools
+          python3 -m pip install build twine 'wheel>=0.46.3'  # wheel pin: CVE-2026-24049
 
-      - name: Retrieve secrets from KSM
-        if: steps.check-helper-version.outputs.exists == 'false'
-        id: ksmsecrets
+      # ── SDK ────────────────────────────────────────────────────────────────
+
+      - name: Retrieve PyPI token from KSM (SDK)
+        id: ksmsecrets-sdk
         uses: Keeper-Security/ksm-action@master
         with:
           keeper-secret-config: ${{ secrets.KSM_PYPI_PUBLISHER_PYPI_SDK_CONFIG }}
           secrets: |
             -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN
 
-      - name: Install dependencies
-        if: steps.check-helper-version.outputs.exists == 'false'
-        run: |
-          python3 -m pip install --upgrade setuptools pip twine
-          python3 -m pip install 'wheel>=0.46.3'  # CVE-2026-24049: ensure patched version
-          python3 -m pip install -r requirements.txt
-
-      - name: Build and Publish Helper
-        if: steps.check-helper-version.outputs.exists == 'false'
+      - name: Build and publish SDK
+        working-directory: ./sdk/python/core
         env:
           TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ steps.ksmsecrets.outputs.PYPI_API_TOKEN }}
+          TWINE_PASSWORD: ${{ steps.ksmsecrets-sdk.outputs.PYPI_API_TOKEN }}
         run: |
-          python3 setup.py build
-          python3 setup.py sdist
+          python3 -m build --no-isolation
           python3 -m twine upload --verbose dist/*
 
-      - name: Skip Helper publishing (already exists)
-        if: steps.check-helper-version.outputs.exists == 'true'
+      # ── Helper ─────────────────────────────────────────────────────────────
+
+      - name: Retrieve PyPI token from KSM (Helper)
+        id: ksmsecrets-helper
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_PYPI_PUBLISHER_PYPI_SDK_CONFIG }}
+          secrets: |
+            -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN
+
+      - name: Build and publish Helper
+        working-directory: ./sdk/python/helper
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ steps.ksmsecrets-helper.outputs.PYPI_API_TOKEN }}
         run: |
-          echo "::notice::Skipping Helper publishing - version ${{ needs.get-versions.outputs.helper-version }} already exists on PyPI"
+          python3 -m build --no-isolation
+          python3 -m twine upload --verbose dist/*

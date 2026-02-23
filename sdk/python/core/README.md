@@ -2,9 +2,20 @@
 
 For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/python-sdk
 
-**Python Requirements**: Python 3.6 or higher
+**Python Requirements**: Python 3.9 or higher
 
 # Change Log
+
+## 17.2.0
+* **Breaking**: Minimum Python version raised from 3.6 to 3.9
+  - Python 3.6-3.8 users: pip will automatically install v17.1.x (no action needed)
+  - Security/bug fixes backported to v17.1.x until August 2026 via `legacy/sdk/python/core/v17.1.x` branch
+* **Security**: KSM-777 - Raised dependency floors to resolve multiple CVEs
+  - `cryptography>=46.0.5` (was >=39.0.1, resolves CVE-2026-26007 elliptic curve vulnerability)
+  - `urllib3>=2.6.3` unconditionally (was split between urllib3 1.x/2.x, resolves CVE-2026-21441, CVE-2025-66471, CVE-2025-66418, CVE-2025-50181, CVE-2025-50182)
+  - `requests>=2.32.4` (resolves CVE-2024-47081 .netrc credentials leak)
+* Removed `importlib_metadata` dependency (stdlib `importlib.metadata` available since Python 3.8)
+* Added Python 3.13 support and CI testing
 
 ## 17.1.0
 * **Security**: KSM-760 - Fixed CVE-2026-23949 (jaraco.context path traversal) in SBOM generation workflow
