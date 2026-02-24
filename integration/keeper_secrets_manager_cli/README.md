@@ -11,7 +11,7 @@ For more information see our official documentation page https://docs.keeper.io/
   - New profiles store configuration in the OS keyring by default (macOS Keychain, Windows Credential Manager, Linux Secret Service)
   - Existing `keeper.ini` profiles continue to work without migration
   - Added `--ini-file` flag to opt into explicit file-based storage
-  - Added `keyring` as a new dependency
+  - Added `keyring` as an optional dependency: `pip install keeper-secrets-manager-cli[keyring]`
 - **Fix**: KSM-691 - keeper.ini now written with owner-only permissions (0600)
 - **Breaking**: KSM-799 - Minimum supported Python version raised from 3.7 to 3.9
 - **Dependency**: Updated keeper-secrets-manager-core to >=17.2.0 and keeper-secrets-manager-helper to >=1.1.0

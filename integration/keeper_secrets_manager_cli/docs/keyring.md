@@ -44,11 +44,13 @@ Linux requires a running Secret Service-compatible keyring daemon (e.g. GNOME Ke
 
 ### Option 1: Python keyring library (recommended)
 
+`keyring` is an optional dependency. Install it alongside the CLI:
+
 ```bash
-pip install keyring
+pip install keeper-secrets-manager-cli[keyring]
 ```
 
-The `keyring` package is included as a dependency in v1.3.0 and is installed automatically with the CLI.
+If `keyring` is not installed, new profiles fall back to `keeper.ini` file storage (with `0600` permissions).
 
 ### Option 2: lkru utility fallback
 
