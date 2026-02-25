@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import unittest
@@ -347,13 +348,81 @@ active_profile = _default
     def test_keyring_used_when_no_ini_file(self):
         """Test that keyring is used when no keeper.ini exists."""
         from keeper_secrets_manager_cli.profile import Profile
-        
+
         mock_cli = MagicMock()
         mock_cli.use_color = False
-        
+
         profile = Profile(cli=mock_cli)
-        
+
         # Should use keyring
+        self.assertTrue(profile.use_keyring)
+
+    def test_warn_when_keyring_empty_and_cwd_ini_exists(self):
+        """Upgrade path: warn on stderr when keyring is active but empty and a keeper.ini exists."""
+        from keeper_secrets_manager_cli.profile import Profile
+
+        ini_content = """[_default]
+clientid = file-id
+privatekey = pk
+appkey = ak
+hostname = test.com
+
+[_config]
+active_profile = _default
+"""
+        with open("keeper.ini", "w") as f:
+            f.write(ini_content)
+        os.chmod("keeper.ini", 0o600)
+
+        mock_cli = MagicMock()
+        mock_cli.use_color = False
+
+        # Keyring is available (mock in place) but empty (no profiles added)
+        with patch('sys.stderr', new_callable=io.StringIO) as mock_stderr:
+            profile = Profile(cli=mock_cli)
+            stderr_output = mock_stderr.getvalue()
+
+        # Warning referencing keeper.ini must appear on stderr
+        self.assertIn("keeper.ini", stderr_output)
+        # Keyring priority must be unchanged
+        self.assertTrue(profile.use_keyring)
+
+    def test_no_warn_when_keyring_has_profiles_and_ini_exists(self):
+        """No spurious warning when keyring already has profiles, even if keeper.ini also exists."""
+        from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage
+        from keeper_secrets_manager_cli.profile import Profile
+
+        ini_content = """[_default]
+clientid = file-id
+privatekey = pk
+appkey = ak
+hostname = test.com
+
+[_config]
+active_profile = _default
+"""
+        with open("keeper.ini", "w") as f:
+            f.write(ini_content)
+        os.chmod("keeper.ini", 0o600)
+
+        # Populate keyring mock with a profile so it is non-empty
+        storage = KeyringConfigStorage()
+        storage.save_profile("_default", {
+            "clientId": "keyring-id", "privateKey": "pk",
+            "appKey": "ak", "hostname": "test.com"
+        })
+        storage.add_profile_to_list("_default")
+        storage.save_common_config({"active_profile": "_default", "profiles": ["_default"]})
+
+        mock_cli = MagicMock()
+        mock_cli.use_color = False
+
+        with patch('sys.stderr', new_callable=io.StringIO) as mock_stderr:
+            profile = Profile(cli=mock_cli)
+            stderr_output = mock_stderr.getvalue()
+
+        # No warning about keeper.ini should appear (keyring is populated)
+        self.assertNotIn("keeper.ini", stderr_output)
         self.assertTrue(profile.use_keyring)
 
 
