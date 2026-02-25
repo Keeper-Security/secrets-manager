@@ -1029,6 +1029,48 @@ class SecretTest(unittest.TestCase):
             self.assertTrue(lines, "did not get back a record uid")  # empty
             self.assertRegex(lines[0], r'^[\w_-]{22}$', "did not get back a record uid")
 
+    def test_create_record_custom_field_empty_list(self):
+        """record create payload always includes custom=[] when no custom fields are set"""
+
+        from unittest.mock import patch as _patch, MagicMock
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        profile_init_res = mock.Response()
+        profile_init_res.add_folder(uid="FAKEUID")
+        profile_init_res.add_record(title="Profile Init")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+
+        fake_folder = MagicMock()
+        fake_folder.folder_uid = "FAKEUID"
+        fake_folder.parent_uid = None
+
+        with _patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             _patch.object(secrets_manager, 'get_folders', return_value=[fake_folder]), \
+             _patch.object(secrets_manager, 'create_secret_with_options',
+                           return_value='NEWUID0000000000000000') as mock_create:
+            mock_client.return_value = secrets_manager
+
+            Profile.init(token='MY_TOKEN')
+
+            runner = CliRunner()
+            results = runner.invoke(cli, ['secret', 'add', 'field',
+                                          '--sf', 'FAKEUID',
+                                          '--rt', 'login',
+                                          '--title', 'No Custom Fields',
+                                          'login=jsmith',
+                                          ], catch_exceptions=False)
+
+        self.assertTrue(mock_create.called, "create_secret_with_options was not called")
+        record_create_obj = mock_create.call_args[0][1]
+        self.assertEqual([], record_create_obj.custom,
+                         "custom must be [] not None in record create payload")
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -855,6 +855,8 @@ class Secret:
             record_uids = []
             for record in records:
                 record_create_obj = record.get_record_create_obj()
+                if record_create_obj.custom is None:   # KSM-702: ensure custom: [] is always present
+                    record_create_obj.custom = []
                 folder_options, folders = self.build_folder_options(folder_uid, folders)
                 record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj, folders)
                 record_uids.append(record_uid)
@@ -881,6 +883,8 @@ class Secret:
             )
             record = records[0]
             record_create_obj = record.get_record_create_obj()
+            if record_create_obj.custom is None:   # KSM-702
+                record_create_obj.custom = []
 
             folder_options, folders = self.build_folder_options(folder_uid)
             record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj, folders)
@@ -915,6 +919,8 @@ class Secret:
                     records = RecordV3.create_from_data(record_data)
                     record = records[0]
                     record_create_obj = record.get_record_create_obj()
+                    if record_create_obj.custom is None:   # KSM-702
+                        record_create_obj.custom = []
                     record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj)
                 else:
                     print(f"Unable to find the parent shared folder for record {uid} - individually shared records cannot be cloned.", file=sys.stderr)
