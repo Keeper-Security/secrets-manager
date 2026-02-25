@@ -201,12 +201,17 @@ class Profile:
     
     def _reload_config(self):
         """Reload configuration from storage (keyring or file).
-        
+
         Uses dynamic detection: checks for INI file first, then keyring.
         """
         from .keyring_config import KeyringConfigStorage
-        
-        if self.use_keyring and self.keyring_storage:
+
+        if os.environ.get("KSM_CONFIG") is not None:
+            self._config._profiles = {}
+            self._config.set_profile_using_base64(Profile.default_profile, os.environ.get("KSM_CONFIG"))
+        elif os.environ.get("KSM_CONFIG_BASE64_1") is not None:
+            self._auto_config_from_env_var(self._config)
+        elif self.use_keyring and self.keyring_storage:
             self._config._profiles = {}
             try:
                 self._load_from_keyring()
