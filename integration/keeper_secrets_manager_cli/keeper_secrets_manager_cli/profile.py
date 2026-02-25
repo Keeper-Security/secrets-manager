@@ -99,6 +99,18 @@ class Profile:
                 except Exception as e:
                     self.logger.debug("Unexpected keyring error: %s", e, exc_info=True)
                     print(Fore.YELLOW + "Warning: Keyring access failed (see debug logs)" + Style.RESET_ALL, file=sys.stderr)
+                # Upgrade-path warning: keyring is empty but a legacy keeper.ini exists
+                if len(self._config.profile_list()) == 0:
+                    found_ini_file = self._find_ini_file()
+                    if found_ini_file is not None:
+                        print(Fore.YELLOW + "Warning: Keyring has no profiles, but a keeper.ini file was "
+                              "found at: " + found_ini_file + Style.RESET_ALL, file=sys.stderr)
+                        print(Fore.YELLOW + "  To use it: ksm --ini-file \"" + found_ini_file
+                              + "\" profile list" + Style.RESET_ALL, file=sys.stderr)
+                        self.logger.warning(
+                            "Keyring active but empty; existing keeper.ini at %s will not be used",
+                            found_ini_file
+                        )
             else:
                 found_ini_file = self._find_ini_file()
                 if found_ini_file is not None:

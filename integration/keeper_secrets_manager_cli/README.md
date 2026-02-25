@@ -18,6 +18,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - **Security**: KSM-761 - Fixed CVE-2026-23949 (jaraco.context path traversal vulnerability)
 - **Fix**: Updated prompt-toolkit from ~=2.0 to >=3.0 (fixes dependency resolution conflicts)
 - **Fix**: Pinned boto3>=1.20.0 to ensure IMDSFetcher support for AWS integrations
+- **Fix**: KSM-804 - Warn on stderr when keyring is active but empty and a keeper.ini file exists at CWD or standard locations, including hint to use `--ini-file`
 
 ## 1.2.0
 - KSM-649 Added AWS KMS JSON support for sync command
