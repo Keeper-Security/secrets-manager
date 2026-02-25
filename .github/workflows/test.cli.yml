@@ -7,6 +7,7 @@ on:
 jobs:
   test-cli:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
@@ -52,6 +53,7 @@ jobs:
       - name: Install CLI dependencies
         working-directory: ./integration/keeper_secrets_manager_cli
         run: |
+          python3 -m pip install --upgrade pip
           python3 -m pip install -r requirements.txt
           python3 -m pip install pytest pytest-cov
 
