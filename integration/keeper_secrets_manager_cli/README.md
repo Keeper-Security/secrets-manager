@@ -20,6 +20,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - **Fix**: Pinned boto3>=1.20.0 to ensure IMDSFetcher support for AWS integrations
 - **Fix**: KSM-804 - Warn on stderr when keyring is active but empty and a keeper.ini file exists at CWD or standard locations, including hint to use `--ini-file`
 - **Fix**: KSM-805 - SHA-256 integrity hash now persisted as a separate Keychain entry and verified on every load; tampered entries raise a `KsmCliIntegrityException` with a clear recovery hint
+- **Fix**: KSM-702 - Record create payload now always includes `custom: []`; previously the key was silently omitted when no custom fields were set
 
 ## 1.2.0
 - KSM-649 Added AWS KMS JSON support for sync command
