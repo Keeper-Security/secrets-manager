@@ -11,7 +11,7 @@ from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core import mock
 from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_cli.__main__ import cli
-from keeper_secrets_manager_cli.exception import KsmCliException
+from keeper_secrets_manager_cli.exception import KsmCliException, KsmCliIntegrityException
 
 
 class MockKeyring:
@@ -424,6 +424,97 @@ active_profile = _default
         # No warning about keeper.ini should appear (keyring is populated)
         self.assertNotIn("keeper.ini", stderr_output)
         self.assertTrue(profile.use_keyring)
+
+
+class KeyringIntegrityTest(unittest.TestCase):
+    """Tests for SHA-256 cross-session integrity verification (KSM-805)."""
+
+    def setUp(self):
+        self.orig_dir = os.getcwd()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        os.chdir(self.temp_dir.name)
+
+        _mock_keyring.clear()
+        self.patcher = patch.dict('sys.modules', {'keyring': _mock_keyring})
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        os.chdir(self.orig_dir)
+
+    def test_integrity_hash_stored_on_save(self):
+        """After save_profile(), the integrity key exists in the keyring."""
+        from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage
+
+        storage = KeyringConfigStorage()
+        storage.save_profile("_default", {"clientId": "test-id", "hostname": "keepersecurity.com"})
+
+        integrity_key = "KSM-cli:ksm-cli-profile-_default-integrity"
+        self.assertIn(integrity_key, _mock_keyring._storage)
+        self.assertTrue(_mock_keyring._storage[integrity_key])
+
+    def test_integrity_check_passes_on_valid_load(self):
+        """Save then load_profile() succeeds with no exception when entry is unmodified."""
+        from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage
+
+        storage = KeyringConfigStorage()
+        storage.save_profile("_default", {"clientId": "test-id", "hostname": "keepersecurity.com"})
+
+        # Should not raise
+        loaded = storage.load_profile("_default")
+        self.assertIsNotNone(loaded)
+
+    def test_integrity_check_fails_on_tampered_entry(self):
+        """Directly altering the keyring entry causes load_profile() to raise KsmCliIntegrityException."""
+        import json as _json
+        from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage
+
+        storage = KeyringConfigStorage()
+        profile_data = {"clientId": "test-id", "hostname": "keepersecurity.com"}
+        storage.save_profile("_default", profile_data)
+
+        # Tamper with the stored config (simulate external modification)
+        config_key = "KSM-cli:ksm-cli-profile-_default"
+        original = _mock_keyring._storage[config_key]
+        tampered = _json.loads(original)
+        tampered["data"] = _json.dumps({"clientId": "hacked", "hostname": "evil.com"})
+        _mock_keyring._storage[config_key] = _json.dumps(tampered)
+
+        with self.assertRaises(KsmCliIntegrityException):
+            storage.load_profile("_default")
+
+    def test_integrity_check_skipped_when_no_hash_stored(self):
+        """Pre-KSM-805 entries (no integrity key) load silently without raising."""
+        import json as _json
+        from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage, KeyringUtilityStorage
+
+        # Write config directly to mock keyring, bypassing KeyringUtilityStorage
+        # (simulates an entry created before KSM-805 — no integrity key present)
+        profile_data = {"clientId": "legacy-id", "hostname": "keepersecurity.com"}
+        inner_payload = _json.dumps({"data": _json.dumps(profile_data)}, indent=4, sort_keys=True)
+        _mock_keyring._storage["KSM-cli:ksm-cli-profile-_default"] = inner_payload
+        # Deliberately omit "KSM-cli:ksm-cli-profile-_default-integrity"
+
+        storage = KeyringConfigStorage()
+        # Should succeed silently (backward-compatible)
+        loaded = storage.load_profile("_default")
+        self.assertIsNotNone(loaded)
+
+    def test_integrity_hash_deleted_on_profile_delete(self):
+        """After delete_profile(), the integrity key is absent from the keyring."""
+        from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage
+
+        storage = KeyringConfigStorage()
+        storage.save_profile("_default", {"clientId": "test-id", "hostname": "keepersecurity.com"})
+        storage.add_profile_to_list("_default")
+
+        # Confirm integrity key was written
+        integrity_key = "KSM-cli:ksm-cli-profile-_default-integrity"
+        self.assertIn(integrity_key, _mock_keyring._storage)
+
+        storage.delete_profile("_default")
+
+        self.assertNotIn(integrity_key, _mock_keyring._storage)
 
 
 if __name__ == '__main__':

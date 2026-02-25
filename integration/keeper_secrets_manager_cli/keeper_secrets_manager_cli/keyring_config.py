@@ -31,7 +31,7 @@ from keeper_secrets_manager_core.storage import KeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core import exceptions
 from keeper_secrets_manager_core.utils import is_base64, url_safe_str_to_bytes
-from keeper_secrets_manager_cli.exception import KsmCliException
+from keeper_secrets_manager_cli.exception import KsmCliException, KsmCliIntegrityException
 
 
 # Profile name validation: alphanumeric, hyphens, underscores, max 64 chars
@@ -65,6 +65,7 @@ class KeyringUtilityStorage(KeyValueStorage):
         keyring_collection_name: str = None,
         keyring_utility: str = "lkru",
         keyring_utility_path: str = None,
+        skip_integrity_check: bool = False,
     ):
         if not secret_name:
             self.__fatal("Keyring Storage requires a secret name")
@@ -106,7 +107,7 @@ class KeyringUtilityStorage(KeyValueStorage):
 
         self.config = {}
         self.config_hash = None
-        self.__load_config()
+        self.__load_config(skip_integrity_check=skip_integrity_check)
 
     def __get_keyring_value(self, key: str) -> str:
         """Get value from keyring (Python library or lkru utility)."""
@@ -173,30 +174,42 @@ class KeyringUtilityStorage(KeyValueStorage):
             self.__fatal(message, e)
 
 
-    def __load_config(self):
+    def __load_config(self, skip_integrity_check: bool = False):
+        _integrity_mismatch = False
         try:
             from keeper_secrets_manager_core.helpers import is_json
-            
+
             contents = self.__get_keyring_value(self.secret_name)
             if not contents:
                 self.config = {}
                 return
-                
+
             if is_base64(contents):
                 contents = url_safe_str_to_bytes(contents)
 
             if is_json(contents):
                 self.config = json.loads(contents)
-                # Use SHA-256 for secure config change detection
+                # Use SHA-256 for write-deduplication within a session
                 self.config_hash = hashlib.sha256(
                     json.dumps(self.config, indent=4, sort_keys=True).encode()
                 ).hexdigest()
+                # Cross-session integrity check against the persisted hash
+                if not skip_integrity_check:
+                    stored_hash = self.__get_keyring_value(self.secret_name + "-integrity")
+                    if stored_hash and stored_hash != self.config_hash:
+                        _integrity_mismatch = True
             else:
                 self.__fatal(
                     "Unable to parse keyring output as JSON: '%s'" % contents
                 )
         except Exception as e:
             self.logger.debug("No existing config in keyring: %s", str(e))
+
+        if _integrity_mismatch:
+            raise KsmCliIntegrityException(
+                "Config integrity check failed for '%s': the Keychain entry may have been "
+                "tampered with. Use 'ksm profile delete' and re-initialize." % self.secret_name
+            )
 
     def __save_config(self, updated_config: dict = None, force: bool = False):
         if updated_config:
@@ -207,6 +220,7 @@ class KeyringUtilityStorage(KeyValueStorage):
             if hash_value != self.config_hash or force:
                 try:
                     self.__set_keyring_value(self.secret_name, config)
+                    self.__set_keyring_value(self.secret_name + "-integrity", hash_value)
                 except Exception as e:
                     self.logger.error(
                         "Failed to save config JSON to keyring: %s", str(e)
@@ -254,6 +268,7 @@ class KeyringUtilityStorage(KeyValueStorage):
         """Delete all config from keyring."""
         try:
             self.__delete_keyring_value(self.secret_name)
+            self.__delete_keyring_value(self.secret_name + "-integrity")
             self.config = {}
             self.config_hash = None
         except Exception as e:
@@ -298,13 +313,16 @@ class KeyringConfigStorage:
                 "alphanumeric characters, hyphens, and underscores"
             )
         
-    def _get_storage(self, secret_name: str) -> KeyringUtilityStorage:
+    def _get_storage(self, secret_name: str, skip_integrity_check: bool = False) -> KeyringUtilityStorage:
         """Get a KeyringUtilityStorage instance for a specific secret."""
         try:
             return KeyringUtilityStorage(
                 secret_name=secret_name,
-                keyring_application_name=self.keyring_application_name
+                keyring_application_name=self.keyring_application_name,
+                skip_integrity_check=skip_integrity_check,
             )
+        except KsmCliIntegrityException:
+            raise
         except (ValueError, TypeError, OSError) as e:
             raise KsmCliException("Failed to initialize keyring storage: %s" % e)
         except Exception as e:
@@ -343,6 +361,8 @@ class KeyringConfigStorage:
         except json.JSONDecodeError as e:
             self.logger.warning("Invalid JSON in common config: %s", e)
             return None
+        except KsmCliIntegrityException:
+            raise
         except KsmCliException:
             return None
         except Exception as e:
@@ -385,6 +405,8 @@ class KeyringConfigStorage:
         except json.JSONDecodeError as e:
             self.logger.warning("Invalid JSON in profile config: %s", e)
             return None
+        except KsmCliIntegrityException:
+            raise
         except KsmCliException:
             return None
         except Exception as e:
@@ -408,7 +430,7 @@ class KeyringConfigStorage:
         self._validate_profile_name(profile_name)
         try:
             secret_name = "%s%s" % (self.PROFILE_SECRET_PREFIX, profile_name)
-            storage = self._get_storage(secret_name)
+            storage = self._get_storage(secret_name, skip_integrity_check=True)
             storage.delete_all()
             self.logger.debug("Deleted profile from keyring")
             
@@ -438,7 +460,7 @@ class KeyringConfigStorage:
     def delete_common_config(self) -> None:
         """Delete common configuration from keyring."""
         try:
-            storage = self._get_storage(self.COMMON_SECRET)
+            storage = self._get_storage(self.COMMON_SECRET, skip_integrity_check=True)
             storage.delete_all()
             self.logger.debug("Deleted common config from keyring")
         except KsmCliException as e:
