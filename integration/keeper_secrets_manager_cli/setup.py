@@ -21,7 +21,7 @@ install_requires = [
     'click-repl',
     'pyyaml',
     'update-checker',
-    'psutil',
+    'psutil>=5.0.0',
     'boto3>=1.20.0'
 ]
 
