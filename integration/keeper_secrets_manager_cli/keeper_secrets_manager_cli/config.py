@@ -213,22 +213,19 @@ class Config:
     def save(self):
         if self.has_config_file is True:
 
-            # Check if the file exists
-            file_exists = os.path.exists(self.ini_file)
-
             config = configparser.ConfigParser(allow_no_value=True)
             config[Config.CONFIG_KEY] = self.config.to_dict()
             for profile in self._profiles:
                 config[profile] = self._profiles[profile].to_dict()
 
-            # Create file with secure permissions (0600) atomically
+            # Create/truncate file at 0600 atomically (POSIX only; mode is ignored on Windows)
             fd = os.open(self.ini_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, 'w') as fh:
                 config.write(fh)
 
-            # If the file already existed, ensure permissions are correct
-            if file_exists is True:
-                set_config_mode(self.ini_file, logger=self.logger)
+            # Always enforce permissions: on Windows os.open mode is ignored so icacls
+            # must run for every write; on Unix this also corrects pre-existing bad permissions.
+            set_config_mode(self.ini_file, logger=self.logger)
 
     def to_dict(self):
         return {
