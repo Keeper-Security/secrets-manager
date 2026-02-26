@@ -13,11 +13,11 @@ For more information see our official documentation page https://docs.keeper.io/
   - Added `--ini-file` flag to opt into explicit file-based storage
   - Added `keyring` as an optional dependency: `pip install keeper-secrets-manager-cli[keyring]`
 - **Fix**: KSM-691 - keeper.ini now written with owner-only permissions (0600)
-- **Breaking**: KSM-799 - Minimum supported Python version raised from 3.7 to 3.9
+- **Breaking**: KSM-799, KSM-817 - Minimum Python raised from 3.7 to 3.10
+- **Breaking**: KSM-817 - boto3 is now an optional dependency; AWS sync users must install the `[aws]` extra: `pip install keeper-secrets-manager-cli[aws]`
 - **Dependency**: Updated keeper-secrets-manager-core to >=17.2.0 and keeper-secrets-manager-helper to >=1.1.0
 - **Security**: KSM-761 - Fixed CVE-2026-23949 (jaraco.context path traversal vulnerability)
 - **Fix**: Updated prompt-toolkit from ~=2.0 to >=3.0 (fixes dependency resolution conflicts)
-- **Fix**: Pinned boto3>=1.20.0 to ensure IMDSFetcher support for AWS integrations
 - **Fix**: KSM-804 - Warn on stderr when keyring is active but empty and a keeper.ini file exists at CWD or standard locations, including hint to use `--ini-file`
 - **Fix**: KSM-805 - SHA-256 integrity hash now persisted as a separate Keychain entry and verified on every load; tampered entries raise a `KsmCliIntegrityException` with a clear recovery hint
 - **Fix**: KSM-702 - Record create payload now always includes `custom: []`; previously the key was silently omitted when no custom fields were set
