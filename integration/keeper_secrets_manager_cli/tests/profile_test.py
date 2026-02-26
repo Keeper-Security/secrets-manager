@@ -390,5 +390,52 @@ color = True
                 fh.close()
 
 
+    def test_delete_command_clears_active_profile(self):
+        """Test that 'ksm profile delete' removes the profile and clears active_profile."""
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        res = mock.Response()
+        res.add_record(title="My Record 1")
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(res)
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            mock_client.return_value = secrets_manager
+
+            runner = CliRunner()
+
+            # Init the default profile (INI storage)
+            result = runner.invoke(cli, ['profile', 'init', '-t', 'TOKEN123'], catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "profile init failed")
+            self.assertTrue(os.path.exists(Config.default_ini_file), "keeper.ini not created")
+
+            # Verify _default profile exists and is active
+            result = runner.invoke(cli, ['profile', 'list', '--json'], catch_exceptions=False)
+            self.assertEqual(0, result.exit_code)
+            profiles = json.loads(result.output)
+            default_item = next((p for p in profiles if p["name"] == "_default"), None)
+            self.assertIsNotNone(default_item, "_default profile not found after init")
+            self.assertTrue(default_item["active"], "_default is not active after init")
+
+            # Delete the active profile
+            result = runner.invoke(cli, ['profile', 'delete', '_default'], catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "profile delete failed: " + str(result.output))
+
+            # Profile must be gone from storage
+            config = Config(ini_file=Config.default_ini_file)
+            config.load()
+            self.assertNotIn("_default", config.profile_list(), "_default still in profiles after delete")
+
+            # active_profile must be cleared
+            self.assertIsNone(
+                config.config.active_profile,
+                "active_profile was not cleared after deleting the active profile"
+            )
+
+
 if __name__ == '__main__':
     unittest.main()

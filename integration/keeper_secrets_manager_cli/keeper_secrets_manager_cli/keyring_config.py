@@ -438,6 +438,8 @@ class KeyringConfigStorage:
             common = self.load_common_config() or {}
             if "profiles" in common and profile_name in common["profiles"]:
                 common["profiles"].remove(profile_name)
+                if common.get("active_profile") == profile_name:
+                    common["active_profile"] = None
                 self.save_common_config(common)
         except KsmCliException:
             raise

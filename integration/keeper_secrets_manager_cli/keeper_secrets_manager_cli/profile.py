@@ -668,6 +668,22 @@ class Profile:
 
         print("{} is now the active profile.".format(profile_name), file=sys.stderr)
 
+    def delete(self, profile_name):
+
+        self._reload_config()
+
+        if self.use_keyring and self.keyring_storage:
+            self.keyring_storage.delete_profile(profile_name)
+        else:
+            if profile_name not in self._config._profiles:
+                raise KsmCliException("Profile {} does not exist.".format(profile_name))
+            del self._config._profiles[profile_name]
+            if self._config.config.active_profile == profile_name:
+                self._config.config.active_profile = None
+            self._config.save()
+
+        print("Profile {} has been deleted.".format(profile_name), file=sys.stderr)
+
     def export_config(self, profile_name=None, file_format='ini', plain=False):
 
         """Take a profile from an existing config and make it a stand-alone config.
