@@ -543,6 +543,9 @@ def profile_export_command(ctx, plain, file_format, profile_name):
 @click.pass_context
 def profile_import_command(ctx, profile_name, output_file, config_base64):
     """Import an encrypted config file"""
+    # If --output-file wasn't given, fall back to the --ini-file path (when set).
+    if output_file is None and ctx.obj["ini_file"] is not None:
+        output_file = ctx.obj["ini_file"]
     ctx.obj["cli"].profile.import_config(
         config_base64=config_base64,
         file=output_file,
@@ -1216,7 +1219,7 @@ def interpolate_command(ctx, output_file, in_place, backup_suffix, dry_run, verb
 @click.pass_context
 def config_command(ctx):
     """Configure the command line tool"""
-    ctx.obj["profile"] = Profile(cli=ctx.obj["cli"], config=global_config)
+    ctx.obj["profile"] = ctx.obj["cli"].profile
 
 
 @click.command(
@@ -1313,7 +1316,7 @@ config_command.add_command(config_editor_command)
 @click.pass_context
 def init_command(ctx):
     """Initialize a configuration file for integrations"""
-    ctx.obj["profile"] = Profile(cli=ctx.obj["cli"], config=global_config)
+    ctx.obj["profile"] = ctx.obj["cli"].profile
 
 
 @click.command(

@@ -470,6 +470,54 @@ color = True
                 "active_profile was not cleared after deleting the active profile"
             )
 
+    def test_ini_file_flag_respected_by_profile_list(self):
+        """Regression test for KSM-814: --ini-file flag must be respected by profile subcommands.
+
+        Before the fix, profile_list_command created a fresh Profile() ignoring the --ini-file
+        value, so it fell back to default discovery (finding no profiles in the temp cwd).
+        After the fix, it reuses ctx.obj["cli"].profile which was initialised with the custom
+        INI file, so the custom profile name appears in the output.
+        """
+
+        custom_profile_name = "ini-file-regression-profile"
+        ini_content = (
+            "[{profile}]\n"
+            "clientid = DUMMY_CLIENT_ID\n"
+            "privatekey = DUMMY_PRIVATE_KEY\n"
+            "appkey = DUMMY_APP_KEY\n"
+            "hostname = https://keepersecurity.com\n"
+            "\n"
+            "[_config]\n"
+            "active_profile = {profile}\n"
+        ).format(profile=custom_profile_name)
+
+        # Write the INI file under a non-default name so default discovery won't find it.
+        ini_path = os.path.join(self.temp_dir.name, "custom_ksm_814.ini")
+        with open(ini_path, "w") as fh:
+            fh.write(ini_content)
+        os.chmod(ini_path, 0o600)
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+            mock_client.return_value = secrets_manager
+
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ['--ini-file', ini_path, 'profile', 'list', '--json'],
+                catch_exceptions=False,
+            )
+
+            self.assertEqual(0, result.exit_code,
+                             "--ini-file profile list failed: " + result.output)
+
+            profiles = json.loads(result.output)
+            profile_names = [p["name"] for p in profiles]
+            self.assertIn(custom_profile_name, profile_names,
+                          "--ini-file was ignored by 'profile list' (KSM-814 regression)")
+
 
 if __name__ == '__main__':
     unittest.main()
