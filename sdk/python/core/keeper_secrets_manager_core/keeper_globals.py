@@ -9,7 +9,7 @@
 # Copyright 2023 Keeper Security Inc.
 # Contact: sm@keepersecurity.com
 
-import importlib_metadata
+from importlib.metadata import version as _get_pkg_version, PackageNotFoundError
 import re
 
 logger_name = 'ksm'
@@ -19,7 +19,7 @@ def get_client_version(hardcode=False):
     """Get the version of the client
 
     Primary source: Package __version__ attribute from _version.py (single source of truth)
-    Fallback: importlib_metadata (for edge cases with broken installs)
+    Fallback: importlib.metadata (for edge cases with broken installs)
     Default: Hardcoded version for unit tests or when both fail
 
     The client version uses the major.minor.revision format (e.g., 17.1.0).
@@ -31,7 +31,7 @@ def get_client_version(hardcode=False):
     """
     # Default version for hardcode mode or when all detection methods fail
     version_major = "17"
-    version_minor_default = "1"
+    version_minor_default = "2"
     version_revision_default = "0"
     version = "{}.{}.{}".format(version_major, version_minor_default, version_revision_default)
 
@@ -50,14 +50,14 @@ def get_client_version(hardcode=False):
             # If __version__ isn't available, fall back to importlib_metadata
             pass
 
-        # Fallback: Try importlib_metadata (for edge cases with broken installs)
+        # Fallback: Try importlib.metadata (for edge cases with broken installs)
         try:
-            ksm_version = importlib_metadata.version("keeper-secrets-manager-core")
+            ksm_version = _get_pkg_version("keeper-secrets-manager-core")
             version_parts = ksm_version.split(".")
             version_minor = version_parts[1]
             version_revision = re.search(r'^\d+', version_parts[2]).group()
             version = "{}.{}.{}".format(version_major, version_minor, version_revision)
-        except importlib_metadata.PackageNotFoundError:
+        except PackageNotFoundError:
             # In a unit test or development run, not an installed version. Just use the default.
             pass
         except Exception as err:
