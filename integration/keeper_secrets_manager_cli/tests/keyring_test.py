@@ -106,16 +106,29 @@ class KeyringConfigStorageTest(unittest.TestCase):
     def test_delete_profile(self):
         """Test deleting a profile."""
         from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage
-        
+
         storage = KeyringConfigStorage()
-        
+
         storage.save_profile("to_delete", {"key": "value"})
         storage.add_profile_to_list("to_delete")
+
+        # Simulate: to_delete is the active profile
+        common = storage.load_common_config() or {}
+        common["active_profile"] = "to_delete"
+        storage.save_common_config(common)
+
         self.assertIn("to_delete", storage.list_profiles())
-        
+
         storage.delete_profile("to_delete")
-        
+
         self.assertNotIn("to_delete", storage.list_profiles())
+
+        # active_profile must be cleared when the active profile is deleted
+        common = storage.load_common_config()
+        self.assertIsNone(
+            common.get("active_profile"),
+            "active_profile was not cleared after deleting the active profile"
+        )
 
     def test_invalid_profile_name(self):
         """Test that invalid profile names are rejected."""
