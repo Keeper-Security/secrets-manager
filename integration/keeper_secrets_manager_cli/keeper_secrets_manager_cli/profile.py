@@ -267,6 +267,16 @@ class Profile:
             index += 1
         config.config.active_profile = os.environ.get("KSM_CONFIG_BASE64_DESC_1", "App1")
 
+    @staticmethod
+    def _validate_profile_name(profile_name):
+        import re
+        if not re.match(r'^\S{1,64}$', profile_name):
+            raise KsmCliException(
+                "Profile name must be 1-64 non-whitespace characters. "
+                "Got: '{}'".format(profile_name)
+            )
+
+
     def get_active_profile_name(self):
         return os.environ.get("KSM_CLI_PROFILE", self._config.config.active_profile)
 
@@ -305,6 +315,8 @@ class Profile:
         if profile_name == Config.CONFIG_KEY:
             raise KsmCliException("The profile '{}' is a reserved profile name. Cannot not init profile.".format(
                 profile_name))
+
+        Profile._validate_profile_name(profile_name)
 
         # Create Config object for file storage
         config = None
@@ -456,6 +468,8 @@ class Profile:
             raise KsmCliException(f"The profile '{profile_name}' is a reserved"
                                   " profile name. Cannot not init profile.")
 
+        Profile._validate_profile_name(profile_name)
+
         config = Config(ini_file=ini_file)
         if os.path.exists(ini_file) is True:
             config.load()
@@ -509,6 +523,8 @@ class Profile:
         if profile_name == Config.CONFIG_KEY:
             raise KsmCliException(f"The profile '{profile_name}' is a reserved"
                                   " profile name. Cannot not init profile.")
+
+        Profile._validate_profile_name(profile_name)
 
         config = Config(ini_file=ini_file)
         if os.path.exists(ini_file) is True:
@@ -571,6 +587,8 @@ class Profile:
         if profile_name == Config.CONFIG_KEY:
             raise KsmCliException(f"The profile '{profile_name}' is a reserved"
                                   " profile name. Cannot not init profile.")
+
+        Profile._validate_profile_name(profile_name)
 
         config = Config(ini_file=ini_file)
         if os.path.exists(ini_file) is True:
