@@ -19,6 +19,14 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Changes
 
+## 1.4.0
+* KSM-816: Fixed `keeper_create` failing when the target shared folder contains no records
+  - The plugin now uses the `get_folders` endpoint to resolve the folder encryption key,
+    which returns all accessible folders regardless of whether they contain records
+  - Previously, the plugin used `get_secrets` which only returns folder keys alongside
+    records — empty shared folders were invisible, causing creation to fail
+  - Closes [GitHub issue #934](https://github.com/Keeper-Security/secrets-manager/issues/934)
+
 ## 1.3.0
 * KSM-781: Fixed Jinja2 templating for `keeper_config_file` and `keeper_cache_dir` variables
   - Variables like `{{ playbook_dir }}/keeper-config.yml` are now resolved before use

@@ -14,7 +14,7 @@ mock_response.add_record(record=mock_record)
 # This is tied to the test. If additional tests are added, they will need their own create_secret mock method.
 def mocked_create_secret(*args):
 
-    # First one in the shared folder uid
+    # args[0] is a CreateOptions object (folder_uid, subfolder_uid)
     _ = args[0]
     record_create = args[1]
 
@@ -48,7 +48,7 @@ def mocked_create_secret(*args):
 
 class KeeperCreateTest(unittest.TestCase):
 
-    @patch("keeper_secrets_manager_core.core.SecretsManager.create_secret", side_effect=mocked_create_secret)
+    @patch("keeper_secrets_manager_core.core.SecretsManager.create_secret_with_options", side_effect=mocked_create_secret)
     def test_keeper_create(self, mock_create):
         with tempfile.TemporaryDirectory() as _:
             a = AnsibleTestFramework(

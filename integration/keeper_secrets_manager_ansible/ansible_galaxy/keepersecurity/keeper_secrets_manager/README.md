@@ -119,6 +119,21 @@ configuration file or even a playbook.
 
 # Changes
 
+## 1.4.0
+* KSM-816: Fixed `keeper_create` failing when the target shared folder contains no records
+  - Closes [GitHub issue #934](https://github.com/Keeper-Security/secrets-manager/issues/934)
+
+## 1.3.0
+* KSM-781: Fixed Jinja2 templating for `keeper_config_file` and `keeper_cache_dir` variables
+* KSM-714: Added notes field update support to `keeper_set`
+* KSM-768: Added notes field retrieval support to `keeper_get`
+* KSM-770: Fixed `keeper_get` error when `notes: yes` is used with an empty notes field
+* KSM-771: Fixed `keeper_copy` error when `notes: yes` parameter is present
+* KSM-772: Fixed `keeper_set` notes field being set to `None` instead of provided value
+* KSM-773: Standardized `notes` parameter name across `keeper_create`, `keeper_set`, `keeper_copy`
+* KSM-780: Added backward-compatible `note` alias (deprecated, will be removed in 2.0.0)
+* **Dependency Update**: Updated Python SDK requirement to v17.1.0
+
 ## 1.2.6
 * KSM-672: KSMCache class initializes cache file path before env vars are set. Closes ([issue #675](https://github.com/Keeper-Security/secrets-manager/issues/675))
 
