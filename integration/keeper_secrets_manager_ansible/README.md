@@ -26,6 +26,10 @@ For more information see our official documentation page https://docs.keeper.io/
   - Previously, the plugin used `get_secrets` which only returns folder keys alongside
     records — empty shared folders were invisible, causing creation to fail
   - Closes [GitHub issue #934](https://github.com/Keeper-Security/secrets-manager/issues/934)
+* KSM-811: Raised minimum Python version from 3.7 to 3.9
+  - Aligns with the Python 3.9+ requirement of keeper-secrets-manager-core >= 17.2.0
+  - Added classifiers for Python 3.12 and 3.13
+* **Dependency Update**: Updated keeper-secrets-manager-core to >= 17.2.0 and keeper-secrets-manager-helper to >= 1.1.0
 
 ## 1.3.0
 * KSM-781: Fixed Jinja2 templating for `keeper_config_file` and `keeper_cache_dir` variables

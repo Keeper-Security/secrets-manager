@@ -122,6 +122,8 @@ configuration file or even a playbook.
 ## 1.4.0
 * KSM-816: Fixed `keeper_create` failing when the target shared folder contains no records
   - Closes [GitHub issue #934](https://github.com/Keeper-Security/secrets-manager/issues/934)
+* KSM-811: Raised minimum Python version from 3.7 to 3.9
+* **Dependency Update**: Updated keeper-secrets-manager-core to >= 17.2.0 and keeper-secrets-manager-helper to >= 1.1.0
 
 ## 1.3.0
 * KSM-781: Fixed Jinja2 templating for `keeper_config_file` and `keeper_cache_dir` variables
