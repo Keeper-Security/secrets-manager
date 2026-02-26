@@ -18,7 +18,6 @@ For more information see our official documentation page https://docs.keeper.io/
 - **Dependency**: Updated keeper-secrets-manager-core to >=17.2.0 and keeper-secrets-manager-helper to >=1.1.0
 - **Security**: KSM-761 - Fixed CVE-2026-23949 (jaraco.context path traversal vulnerability)
 - **Fix**: Updated prompt-toolkit from ~=2.0 to >=3.0 (fixes dependency resolution conflicts)
-- **Fix**: Pinned boto3>=1.20.0 to ensure IMDSFetcher support for AWS integrations
 - **Fix**: KSM-804 - Warn on stderr when keyring is active but empty and a keeper.ini file exists at CWD or standard locations, including hint to use `--ini-file`
 - **Fix**: KSM-805 - SHA-256 integrity hash now persisted as a separate Keychain entry and verified on every load; tampered entries raise a `KsmCliIntegrityException` with a clear recovery hint
 - **Fix**: KSM-702 - Record create payload now always includes `custom: []`; previously the key was silently omitted when no custom fields were set
