@@ -22,6 +22,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - **Fix**: KSM-805 - SHA-256 integrity hash now persisted as a separate Keychain entry and verified on every load; tampered entries raise a `KsmCliIntegrityException` with a clear recovery hint
 - **Fix**: KSM-810 - Added `ksm profile delete <name>` command; fixed keyring storage to clear the active profile pointer when the active profile is deleted, preventing a broken state on subsequent invocations
 - **Fix**: KSM-702 - Record create payload now always includes `custom: []`; previously the key was silently omitted when no custom fields were set
+- **Fix**: KSM-815 - Profile name is now validated before redeeming the one-time token; invalid names (containing whitespace or exceeding 64 characters) are rejected immediately, preventing the token from being consumed on a failed init
 
 ## 1.2.0
 - KSM-649 Added AWS KMS JSON support for sync command

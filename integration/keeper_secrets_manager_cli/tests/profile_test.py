@@ -390,6 +390,40 @@ color = True
                 fh.close()
 
 
+    def test_invalid_profile_name_rejected_before_network_call(self):
+        """Invalid --profile-name must be rejected before OTT is consumed."""
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available', return_value=False):
+            runner = CliRunner()
+
+            mock_config = MockConfig.make_config()
+            secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+            mock_client.return_value = secrets_manager
+
+            for invalid_name, desc in [
+                ('my profile', 'space in name'),
+                ('a' * 65, '65-char name'),
+                ('my\tprofile', 'tab in name'),
+            ]:
+                result = runner.invoke(
+                    cli, ['profile', 'init', '-t', 'XX:YY', '-p', invalid_name],
+                    catch_exceptions=False
+                )
+                self.assertNotEqual(0, result.exit_code, f"expected failure for {desc}")
+                self.assertIn("Profile name must be", result.output,
+                              f"expected validation error message for {desc}")
+
+            # Valid name — validation passes and execution proceeds to the network call
+            res = mock.Response()
+            queue = mock.ResponseQueue(client=secrets_manager)
+            queue.add_response(res)
+
+            result = runner.invoke(
+                cli, ['profile', 'init', '-t', 'XX:YY', '-p', 'valid-name'],
+                catch_exceptions=False
+            )
+            self.assertEqual(0, result.exit_code, "expected success for valid name")
+
     def test_delete_command_clears_active_profile(self):
         """Test that 'ksm profile delete' removes the profile and clears active_profile."""
 
