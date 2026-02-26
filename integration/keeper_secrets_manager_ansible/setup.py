@@ -9,15 +9,15 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
 install_requires = [
-    'keeper-secrets-manager-core>=17.1.0',
-    'keeper-secrets-manager-helper>=1.0.5',
+    'keeper-secrets-manager-core>=17.2.0',
+    'keeper-secrets-manager-helper>=1.1.0',
     'importlib_metadata',
     'ansible-core>=2.12.0'  # Use ansible-core instead of ansible to avoid community collections
 ]
 
 setup(
     name="keeper-secrets-manager-ansible",
-    version='1.3.0',
+    version='1.4.0',
     description="Keeper Secrets Manager plugins for Ansible.",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -29,7 +29,7 @@ setup(
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
-    python_requires='>=3.7',
+    python_requires='>=3.9',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
         "Documentation": "https://app.gitbook.com/@keeper-security/s/secrets-manager/secrets-manager/"
@@ -44,11 +44,11 @@ setup(
         "Operating System :: OS Independent",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
         "Topic :: Security",
         "Topic :: System :: Installation/Setup",
         "Topic :: System :: Systems Administration"
