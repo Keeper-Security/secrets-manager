@@ -118,6 +118,28 @@ Install the `keyring` library or use `--ini-file` for file-based storage.
 
 If `keyring.get_keyring()` returns a `fail.Keyring` backend, no Secret Service daemon is running. Start GNOME Keyring, install KWallet, or use the `lkru` fallback.
 
+### Integrity check failure
+
+```
+ksm had a problem: Keyring entry for profile '<name>' failed integrity check.
+  The entry may have been modified outside of the KSM CLI.
+  To recover, delete the profile and re-initialize:
+    ksm profile delete <name>
+    ksm profile init --token <one-time-token>
+```
+
+This error means the Keychain entry for the named profile was modified outside the CLI (e.g. by another application or a manual edit). The CLI refuses to use the entry to protect against credential substitution attacks.
+
+**Recovery steps:**
+
+```bash
+# 1. Delete the affected profile
+ksm profile delete <name>
+
+# 2. Re-initialize with a new one-time token from the Keeper Admin Console
+ksm profile init --token <one-time-token> --profile-name <name>
+```
+
 ### Finding entries in the OS keyring
 
 The CLI stores entries under the application name `KSM-cli`:
