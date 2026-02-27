@@ -173,7 +173,7 @@ class Secret:
             "type": record.type,
             "notes": record.dict.get("notes", ""),
             "fields": standard_fields,
-            "custom_fields": custom_fields,
+            "custom": custom_fields,
             "files": [{
                 "file_uid": x.f.get("fileUid"),
                 "name": x.name,
@@ -230,7 +230,7 @@ class Secret:
             table.add_row([label, value])
         ret += table.get_string() + "\n"
 
-        if len(record_dict["custom_fields"]) > 0:
+        if len(record_dict["custom"]) > 0:
             ret += "\n"
             table = Table(use_color=use_color)
             table.add_column("Custom Field", data_color=Fore.GREEN)
@@ -239,7 +239,7 @@ class Secret:
 
             problems = []
             seen = {}
-            for field in record_dict["custom_fields"]:
+            for field in record_dict["custom"]:
                 value = field["value"]
                 if len(value) == 0:
                     value = ""
@@ -340,11 +340,11 @@ class Secret:
                     break
 
         # If we don't have a value, check the custom_fields. Label first and then type.
-        if field is None and record.get("custom_fields") is not None:
+        if field is None and record.get("custom") is not None:
             for key in ["label", "type"]:
                 if field is None or len(field) == 0:
                     try:
-                        field = next((item for item in record["custom_fields"] if item.get(key) == field_key), None)
+                        field = next((item for item in record["custom"] if item.get(key) == field_key), None)
                     except ValueError as _:
                         pass
                 if field is not None:
