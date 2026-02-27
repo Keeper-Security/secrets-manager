@@ -1068,8 +1068,15 @@ class SecretTest(unittest.TestCase):
 
         self.assertTrue(mock_create.called, "create_secret_with_options was not called")
         record_create_obj = mock_create.call_args[0][1]
+        # Guard check: null guard must have set the attribute to []
         self.assertEqual([], record_create_obj.custom,
                          "custom must be [] not None in record create payload")
+        # Serialization check: to_dict() must include the custom key in the payload sent to server
+        payload = record_create_obj.to_dict()
+        self.assertIn('custom', payload,
+                      "custom key must be present in serialized payload sent to server")
+        self.assertEqual([], payload['custom'],
+                         "custom value must be [] in serialized payload")
 
 
 if __name__ == '__main__':

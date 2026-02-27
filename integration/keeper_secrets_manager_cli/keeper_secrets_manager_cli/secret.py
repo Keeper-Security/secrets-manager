@@ -23,6 +23,7 @@ from keeper_secrets_manager_cli.common import launch_editor
 from keeper_secrets_manager_core.core import SecretsManager, CreateOptions, KeeperFolder, KeeperFileUpload
 from keeper_secrets_manager_core.dto.payload import UpdateOptions
 from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
+from keeper_secrets_manager_core.dto.dtos import RecordCreate as _RecordCreate
 from keeper_secrets_manager_helper.record import Record
 from keeper_secrets_manager_helper.v3.record import Record as RecordV3
 from keeper_secrets_manager_helper.field_type import FieldType
@@ -31,6 +32,22 @@ from .table import Table, ColumnAlign
 from typing import List, Tuple
 import uuid
 import tempfile
+
+# KSM-702 workaround: Python Core SDK to_dict() uses `if self.custom:` which treats [] as falsy,
+# dropping the custom key from the serialized payload even after our null guard sets it to [].
+# Patch to_dict() at the class level to inject custom:[] when the key is absent.
+# Remove when keeper-secrets-manager-core >= 17.2.1 is released with the proper SDK fix.
+_sdk_to_dict = _RecordCreate.to_dict
+
+
+def _to_dict_with_custom(self):
+    d = _sdk_to_dict(self)
+    if 'custom' not in d:
+        d['custom'] = []
+    return d
+
+
+_RecordCreate.to_dict = _to_dict_with_custom
 
 
 class Secret:
