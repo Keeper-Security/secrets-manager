@@ -19,6 +19,27 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Changes
 
+## 1.4.0
+* KSM-827: Fixed Tower Execution Environment Docker image missing system packages required by AAP
+  - Added `openssh-clients`, `sshpass`, `rsync`, and `git` to `additional_build_packages` in `execution-environment.yml`
+  - Resolves `[dumb-init] ssh agent: No such file or directory` error in Ansible Automation Platform
+  - The `redhat/ubi9` base image (introduced Oct 2025) does not include these packages that the previous `ansible-runner` base provided
+  - `openssh-clients`: provides `ssh-agent` required by AAP at container startup
+  - `sshpass`: required for password-based SSH connections (`ansible_ssh_pass`)
+  - `rsync`: required by `ansible.builtin.synchronize` module
+  - `git`: required by `ansible.builtin.git` module
+  - Added regression test to prevent recurrence
+* KSM-816: Fixed `keeper_create` failing when the target shared folder contains no records
+  - The plugin now uses the `get_folders` endpoint to resolve the folder encryption key,
+    which returns all accessible folders regardless of whether they contain records
+  - Previously, the plugin used `get_secrets` which only returns folder keys alongside
+    records — empty shared folders were invisible, causing creation to fail
+  - Closes [GitHub issue #934](https://github.com/Keeper-Security/secrets-manager/issues/934)
+* KSM-811: Raised minimum Python version from 3.7 to 3.9
+  - Aligns with the Python 3.9+ requirement of keeper-secrets-manager-core >= 17.2.0
+  - Added classifiers for Python 3.12 and 3.13
+* **Dependency Update**: Updated keeper-secrets-manager-core to >= 17.2.0 and keeper-secrets-manager-helper to >= 1.1.0
+
 ## 1.3.0
 * KSM-781: Fixed Jinja2 templating for `keeper_config_file` and `keeper_cache_dir` variables
   - Variables like `{{ playbook_dir }}/keeper-config.yml` are now resolved before use

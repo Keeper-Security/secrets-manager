@@ -25,7 +25,8 @@ author:
 options:
   shared_folder_uid:
     description:
-    - The UID of shared folder in your Keeper application.
+    - The UID of the top-level shared folder in your Keeper application.
+    - Must be a shared folder UID, not a subfolder UID.
     type: str
     required: yes
   record_type:

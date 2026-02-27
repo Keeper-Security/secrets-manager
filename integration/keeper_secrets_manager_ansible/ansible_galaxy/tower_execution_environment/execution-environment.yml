@@ -11,3 +11,9 @@ dependencies:
     package_pip: ansible-runner
   galaxy: requirements.yml
   python: requirements.txt
+
+additional_build_packages:
+  - openssh-clients
+  - sshpass
+  - rsync
+  - git
