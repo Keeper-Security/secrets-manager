@@ -9,26 +9,32 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 
 install_requires = [
     'pip>=24.3.1',
-    'keeper-secrets-manager-core>=17.0.0',
-    'keeper-secrets-manager-helper>=1.0.6',
+    'keeper-secrets-manager-core>=17.2.0',
+    'keeper-secrets-manager-helper>=1.1.0',
     'keeper-secrets-manager-storage>=1.0.2',
-    'prompt-toolkit~=2.0',
+    'prompt-toolkit>=3.0',
     'jsonpath-rw-ext',
     'colorama',
     'importlib_metadata',
     'click',
     'click_help_colors',
-    'click-repl',
+    # KSM-818: click-repl 0.3.0 crashes with click>=8.2 (protected_args became read-only).
+    # Pin to <0.3.0 until click-repl releases Click 8.2+ support (see click-repl PR #132).
+    'click-repl>=0.2.0,<0.3.0',
     'pyyaml',
     'update-checker',
-    'psutil',
-    'boto3'
+    'psutil>=5.0.0',
 ]
+
+extras_require = {
+    'keyring': ['keyring'],
+    'aws': ['boto3>=1.20.0'],
+}
 
 # Version set in the keeper_secrets_manager_cli.version file.
 setup(
     name="keeper-secrets-manager-cli",
-    version="1.2.0",
+    version="1.3.0",
     description="Command line tool for Keeper Secrets Manager",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -40,7 +46,8 @@ setup(
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
-    python_requires='>=3.7',
+    extras_require=extras_require,
+    python_requires='>=3.10',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
         "Documentation": "https://app.gitbook.com/"
@@ -54,9 +61,6 @@ setup(
         "Operating System :: OS Independent",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",

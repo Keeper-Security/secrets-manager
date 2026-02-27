@@ -380,13 +380,17 @@ def profile_init_command(ctx, token, hostname, ini_file, profile_name, token_arg
     if ctx.obj["ini_file"] is not None and ini_file is not None:
         print("NOTE: The INI file config was set on the top level command and also set on the init sub-command. The top"
               " level command parameter will be ignored for the init sub-command.", file=sys.stderr)
+    elif ini_file is None:
+        # Forward the global --ini-file to init when the subcommand flag is not set.
+        ini_file = ctx.obj["ini_file"]
 
     Profile.init(
         token=token,
         server=hostname,
         ini_file=ini_file,
         profile_name=profile_name,
-        launched_from_app=global_config.launched_from_app
+        launched_from_app=global_config.launched_from_app,
+        use_config_file=ini_file is not None
     )
 
 
@@ -419,6 +423,9 @@ def profile_setup_command(ctx, type, secret, credentials,
               " also set on the setup sub-command. The top level command"
               " parameter will be ignored for the setup sub-command.",
               file=sys.stderr)
+    elif ini_file is None:
+        # Forward the global --ini-file to setup when the subcommand flag is not set.
+        ini_file = ctx.obj["ini_file"]
 
     if type == 'aws':
         if not secret:
@@ -495,7 +502,7 @@ def profile_list_command(ctx, json):
     if json is True:
         output = "json"
 
-    Profile(cli=ctx.obj["cli"], config=global_config).list_profiles(output=output)
+    ctx.obj["cli"].profile.list_profiles(output=output)
 
 
 @click.command(
@@ -507,7 +514,7 @@ def profile_list_command(ctx, json):
 @click.pass_context
 def profile_active_command(ctx, profile_name):
     """Set the active profile"""
-    Profile(cli=ctx.obj["cli"], config=global_config).set_active(
+    ctx.obj["cli"].profile.set_active(
         profile_name=profile_name
     )
 
@@ -524,7 +531,7 @@ def profile_active_command(ctx, profile_name):
 @click.pass_context
 def profile_export_command(ctx, plain, file_format, profile_name):
     """Create a new config file from a profile"""
-    Profile(cli=ctx.obj["cli"], config=global_config).export_config(
+    ctx.obj["cli"].profile.export_config(
         plain=plain,
         file_format=file_format,
         profile_name=profile_name
@@ -542,11 +549,28 @@ def profile_export_command(ctx, plain, file_format, profile_name):
 @click.pass_context
 def profile_import_command(ctx, profile_name, output_file, config_base64):
     """Import an encrypted config file"""
-    Profile(cli=ctx.obj["cli"], config=global_config).import_config(
+    # If --output-file wasn't given, fall back to the --ini-file path (when set).
+    if output_file is None and ctx.obj["ini_file"] is not None:
+        output_file = ctx.obj["ini_file"]
+    ctx.obj["cli"].profile.import_config(
         config_base64=config_base64,
         file=output_file,
         profile_name=profile_name,
         launched_from_app=global_config.launched_from_app
+    )
+
+
+@click.command(
+    name='delete',
+    cls=HelpColorsCommand,
+    help_options_color='blue'
+)
+@click.argument('profile-name', type=str, required=True, nargs=1)
+@click.pass_context
+def profile_delete_command(ctx, profile_name):
+    """Delete a profile"""
+    ctx.obj["cli"].profile.delete(
+        profile_name=profile_name
     )
 
 
@@ -556,6 +580,7 @@ profile_command.add_command(profile_list_command)
 profile_command.add_command(profile_active_command)
 profile_command.add_command(profile_export_command)
 profile_command.add_command(profile_import_command)
+profile_command.add_command(profile_delete_command)
 
 
 # FOLDER GROUP
@@ -1200,7 +1225,7 @@ def interpolate_command(ctx, output_file, in_place, backup_suffix, dry_run, verb
 @click.pass_context
 def config_command(ctx):
     """Configure the command line tool"""
-    ctx.obj["profile"] = Profile(cli=ctx.obj["cli"], config=global_config)
+    ctx.obj["profile"] = ctx.obj["cli"].profile
 
 
 @click.command(
@@ -1297,7 +1322,7 @@ config_command.add_command(config_editor_command)
 @click.pass_context
 def init_command(ctx):
     """Initialize a configuration file for integrations"""
-    ctx.obj["profile"] = Profile(cli=ctx.obj["cli"], config=global_config)
+    ctx.obj["profile"] = ctx.obj["cli"].profile
 
 
 @click.command(

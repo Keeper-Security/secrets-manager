@@ -6,6 +6,27 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.3.0
+- **Feature**: KSM-800 - OS-native keyring storage for CLI configuration
+  - New profiles store configuration in the OS keyring by default (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+  - Existing `keeper.ini` profiles continue to work without migration
+  - Added `--ini-file` flag to opt into explicit file-based storage
+  - Added `keyring` as an optional dependency: `pip install keeper-secrets-manager-cli[keyring]`
+- **Fix**: KSM-814 - `--ini-file` flag now respected by all profile and config subcommands: `profile list`, `profile active`, `profile export`, `profile import`, `profile init`, `profile setup`; `config show`, `config color`, `config cache`, `config record-type-dir`, `config editor`
+- **Fix**: KSM-691 - keeper.ini now written with owner-only permissions (0600)
+- **Breaking**: KSM-799, KSM-817 - Minimum Python raised from 3.7 to 3.10
+- **Breaking**: KSM-817 - boto3 is now an optional dependency; AWS sync users must install the `[aws]` extra: `pip install keeper-secrets-manager-cli[aws]`
+- **Dependency**: Updated keeper-secrets-manager-core to >=17.2.0 and keeper-secrets-manager-helper to >=1.1.0
+- **Security**: KSM-761 - Fixed CVE-2026-23949 (jaraco.context path traversal vulnerability)
+- **Fix**: Updated prompt-toolkit from ~=2.0 to >=3.0 (fixes dependency resolution conflicts)
+- **Fix**: KSM-804 - Warn on stderr when keyring is active but empty and a keeper.ini file exists at CWD or standard locations, including hint to use `--ini-file`
+- **Fix**: KSM-805 - SHA-256 integrity hash now persisted as a separate Keychain entry and verified on every load; tampered entries raise a `KsmCliIntegrityException` with a clear recovery hint
+- **Fix**: KSM-810 - Added `ksm profile delete <name>` command; fixed keyring storage to clear the active profile pointer when the active profile is deleted, preventing a broken state on subsequent invocations
+- **Fix**: KSM-702 - Record create payload now always includes `custom: []`; previously the key was silently omitted when no custom fields were set
+- **Fix**: KSM-815 - Profile name is now validated before redeeming the one-time token; invalid names (containing whitespace or exceeding 64 characters) are rejected immediately, preventing the token from being consumed on a failed init
+- **Fix**: KSM-818 - `ksm shell` no longer crashes on any command when click>=8.2 is installed; pinned click-repl to <0.3.0 (0.3.0 incompatible with click>=8.2)
+- **Fix**: KSM-820 - `ksm secret get --json` now outputs custom fields under `"custom"` key (was `"custom_fields"`), matching the canonical V3 record format used by Commander and the Keeper Vault
+
 ## 1.2.0
 - KSM-649 Added AWS KMS JSON support for sync command
 - KSM-465 Implemented ksm interpolate command for shell built-in compatibility
