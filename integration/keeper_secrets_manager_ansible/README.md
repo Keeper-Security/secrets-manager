@@ -20,6 +20,15 @@ For more information see our official documentation page https://docs.keeper.io/
 # Changes
 
 ## 1.4.0
+* KSM-827: Fixed Tower Execution Environment Docker image missing system packages required by AAP
+  - Added `openssh-clients`, `sshpass`, `rsync`, and `git` to `additional_build_packages` in `execution-environment.yml`
+  - Resolves `[dumb-init] ssh agent: No such file or directory` error in Ansible Automation Platform
+  - The `redhat/ubi9` base image (introduced Oct 2025) does not include these packages that the previous `ansible-runner` base provided
+  - `openssh-clients`: provides `ssh-agent` required by AAP at container startup
+  - `sshpass`: required for password-based SSH connections (`ansible_ssh_pass`)
+  - `rsync`: required by `ansible.builtin.synchronize` module
+  - `git`: required by `ansible.builtin.git` module
+  - Added regression test to prevent recurrence
 * KSM-816: Fixed `keeper_create` failing when the target shared folder contains no records
   - The plugin now uses the `get_folders` endpoint to resolve the folder encryption key,
     which returns all accessible folders regardless of whether they contain records
