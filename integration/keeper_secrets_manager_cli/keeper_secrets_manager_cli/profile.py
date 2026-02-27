@@ -711,6 +711,9 @@ class Profile:
 
         """
 
+        # Reload config to ensure we read from the correct storage (keyring or ini file).
+        self._reload_config()
+
         # If the profile name is not set, use the active profile.
         if profile_name is None:
             profile_name = self._config.config.active_profile

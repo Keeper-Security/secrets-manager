@@ -519,5 +519,113 @@ color = True
                           "--ini-file was ignored by 'profile list' (KSM-814 regression)")
 
 
+    def test_ini_file_flag_respected_by_profile_init(self):
+        """Regression test: global --ini-file must route 'profile init' to the ini file.
+
+        Before the fix, profile_init_command forwarded only the subcommand-level --ini-file
+        to Profile.init(). When only the global --ini-file was set (no subcommand flag),
+        Profile.init() received ini_file=None and use_config_file=False, causing it to
+        silently fall through to keychain (if available) or the default keeper.ini instead
+        of the explicitly specified file.
+
+        The ini file must already exist (e.g., created by a previous 'profile init' with
+        the subcommand --ini-file) so the global --ini-file load in cli() succeeds.
+        """
+        existing_profile = "existing-profile"
+        ini_content = (
+            "[{profile}]\n"
+            "clientid = EXISTING_CI\n"
+            "privatekey = EXISTING_PK\n"
+            "appkey = EXISTING_AK\n"
+            "hostname = https://keepersecurity.com\n"
+            "\n"
+            "[_config]\n"
+            "active_profile = {profile}\n"
+        ).format(profile=existing_profile)
+
+        ini_path = os.path.join(self.temp_dir.name, "custom_global_init.ini")
+        with open(ini_path, "w") as fh:
+            fh.write(ini_content)
+        os.chmod(ini_path, 0o600)
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        res = mock.Response()
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(res)
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            mock_client.return_value = secrets_manager
+
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                # Use only the global --ini-file; no subcommand-level --ini-file flag.
+                ['--ini-file', ini_path, 'profile', 'init', '-t', 'US:TOKEN123', '-p', 'ini-global-profile'],
+                catch_exceptions=False,
+            )
+
+            self.assertEqual(0, result.exit_code,
+                             "global --ini-file profile init failed: " + str(result.output))
+
+            config = configparser.ConfigParser(allow_no_value=True)
+            config.read(ini_path)
+            self.assertIn('ini-global-profile', config.sections(),
+                          "global --ini-file was ignored by 'profile init'; "
+                          "new profile was routed to default keeper.ini instead (KSM-814 regression)")
+            # The existing profile must still be present — we're adding, not overwriting.
+            self.assertIn(existing_profile, config.sections(),
+                          "existing ini file profile was lost after profile init")
+
+    def test_ini_file_flag_respected_by_profile_export(self):
+        """Regression test: global --ini-file must route 'profile export' to the ini file.
+
+        export_config() must call _reload_config() (as list_profiles and set_active do) so
+        that it reads from the storage indicated by --ini-file rather than from a stale or
+        keychain-sourced config object.
+        """
+        export_profile_name = "export-ini-profile"
+        unique_client_id = "UNIQUE_INI_FILE_CLIENT_ID_XYZ"
+        ini_content = (
+            "[{profile}]\n"
+            "clientid = {cid}\n"
+            "privatekey = DUMMY_PRIVATE_KEY\n"
+            "appkey = DUMMY_APP_KEY\n"
+            "hostname = https://keepersecurity.com\n"
+            "\n"
+            "[_config]\n"
+            "active_profile = {profile}\n"
+        ).format(profile=export_profile_name, cid=unique_client_id)
+
+        ini_path = os.path.join(self.temp_dir.name, "custom_global_export.ini")
+        with open(ini_path, "w") as fh:
+            fh.write(ini_content)
+        os.chmod(ini_path, 0o600)
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            mock_client.return_value = secrets_manager
+
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ['--ini-file', ini_path, 'profile', 'export', '--plain', export_profile_name],
+                catch_exceptions=False,
+            )
+
+            self.assertEqual(0, result.exit_code,
+                             "global --ini-file profile export failed: " + str(result.output))
+            self.assertIn(unique_client_id, result.output,
+                          "global --ini-file was ignored by 'profile export'; "
+                          "exported credentials do not match the ini file profile (KSM-814 regression)")
+
+
 if __name__ == '__main__':
     unittest.main()

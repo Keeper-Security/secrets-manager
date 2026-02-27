@@ -380,6 +380,9 @@ def profile_init_command(ctx, token, hostname, ini_file, profile_name, token_arg
     if ctx.obj["ini_file"] is not None and ini_file is not None:
         print("NOTE: The INI file config was set on the top level command and also set on the init sub-command. The top"
               " level command parameter will be ignored for the init sub-command.", file=sys.stderr)
+    elif ini_file is None:
+        # Forward the global --ini-file to init when the subcommand flag is not set.
+        ini_file = ctx.obj["ini_file"]
 
     Profile.init(
         token=token,
