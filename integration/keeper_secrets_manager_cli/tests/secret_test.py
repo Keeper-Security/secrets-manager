@@ -768,7 +768,7 @@ class SecretTest(unittest.TestCase):
             with open(tf_name, "r") as fh:
                 secret = json.load(fh)
                 self.assertEqual(dict, type(secret), "record is not a dictionary")
-                self.assertEqual(0, len(secret["custom_fields"]), "custom fields were not empty")
+                self.assertEqual(0, len(secret["custom"]), "custom fields were not empty")
                 fh.close()
 
     def test_get_with_replacement(self):
@@ -821,10 +821,50 @@ class SecretTest(unittest.TestCase):
                 secret = json.load(fh)
                 self.assertEqual(login_record.uid, secret["uid"], "didn't get the correct uid for secret")
 
-                address = secret["custom_fields"][0]
+                address = secret["custom"][0]
                 self.assertEqual(dict, type(address), "address value is not a dict")
                 self.assertEqual("My Address", address["label"], "did not get the addressRef")
 
+                fh.close()
+
+    def test_custom_fields_json_key(self):
+
+        """Regression test for KSM-820: JSON output must use 'custom' key, not 'custom_fields'.
+        """
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        profile_init_res = mock.Response()
+        profile_init_res.add_record(title="Profile Init")
+
+        record_res = mock.Response()
+        record = record_res.add_record(title="My Record", record_type="login")
+        record.field("login", "user@example.com")
+        record.custom_field("My Custom Field", ["custom_value"])
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(profile_init_res)
+        queue.add_response(record_res)
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
+                as mock_client:
+            mock_client.return_value = secrets_manager
+
+            Profile.init(token='MY_TOKEN')
+
+            tf_name = self._make_temp_file()
+            runner = CliRunner()
+            result = runner.invoke(cli, ['-o', tf_name, 'secret', 'get', '-u', record.uid, '--json'],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "the exit code was not 0")
+
+            with open(tf_name, "r") as fh:
+                secret = json.load(fh)
+                self.assertIn("custom", secret, "JSON output must use 'custom' key, not 'custom_fields'")
+                self.assertNotIn("custom_fields", secret, "JSON output must not use deprecated 'custom_fields' key")
+                self.assertEqual(1, len(secret["custom"]), "expected one custom field")
+                self.assertEqual("My Custom Field", secret["custom"][0]["label"], "custom field label mismatch")
                 fh.close()
 
     def test_totp(self):
