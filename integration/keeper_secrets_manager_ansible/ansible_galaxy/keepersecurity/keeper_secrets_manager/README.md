@@ -120,6 +120,9 @@ configuration file or even a playbook.
 # Changes
 
 ## 1.4.0
+* KSM-827: Fixed Tower Execution Environment Docker image missing system packages required by AAP
+  - Added `openssh-clients`, `sshpass`, `rsync`, and `git` to the EE image
+  - Resolves `[dumb-init] ssh agent: No such file or directory` error in Ansible Automation Platform
 * KSM-816: Fixed `keeper_create` failing when the target shared folder contains no records
   - Closes [GitHub issue #934](https://github.com/Keeper-Security/secrets-manager/issues/934)
 * KSM-811: Raised minimum Python version from 3.7 to 3.9
