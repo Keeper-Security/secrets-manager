@@ -18,7 +18,9 @@ install_requires = [
     'importlib_metadata',
     'click',
     'click_help_colors',
-    'click-repl',
+    # KSM-818: click-repl 0.3.0 crashes with click>=8.2 (protected_args became read-only).
+    # Pin to <0.3.0 until click-repl releases Click 8.2+ support (see click-repl PR #132).
+    'click-repl>=0.2.0,<0.3.0',
     'pyyaml',
     'update-checker',
     'psutil>=5.0.0',
