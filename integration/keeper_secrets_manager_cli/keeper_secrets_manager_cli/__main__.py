@@ -423,6 +423,9 @@ def profile_setup_command(ctx, type, secret, credentials,
               " also set on the setup sub-command. The top level command"
               " parameter will be ignored for the setup sub-command.",
               file=sys.stderr)
+    elif ini_file is None:
+        # Forward the global --ini-file to setup when the subcommand flag is not set.
+        ini_file = ctx.obj["ini_file"]
 
     if type == 'aws':
         if not secret:

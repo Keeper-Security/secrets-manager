@@ -627,5 +627,317 @@ color = True
                           "exported credentials do not match the ini file profile (KSM-814 regression)")
 
 
+    def test_ini_file_flag_respected_by_profile_setup(self):
+        """Regression test: global --ini-file must be forwarded to profile_setup_command.
+
+        Before the fix, profile_setup_command noted a conflict when both global and
+        subcommand --ini-file were set, but never fell back to the global flag when
+        only the global flag was provided. So from_aws_ec2instance received ini_file=None.
+        """
+        existing_profile = "setup-existing-profile"
+        ini_content = (
+            "[{profile}]\n"
+            "clientid = EXISTING_CI\n"
+            "privatekey = EXISTING_PK\n"
+            "appkey = EXISTING_AK\n"
+            "hostname = https://keepersecurity.com\n"
+            "\n"
+            "[_config]\n"
+            "active_profile = {profile}\n"
+        ).format(profile=existing_profile)
+
+        ini_path = os.path.join(self.temp_dir.name, "custom_global_setup.ini")
+        with open(ini_path, "w") as fh:
+            fh.write(ini_content)
+        os.chmod(ini_path, 0o600)
+
+        with patch('keeper_secrets_manager_cli.profile.Profile.from_aws_ec2instance') as mock_setup, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ['--ini-file', ini_path, 'profile', 'setup', '--type', 'aws'],
+                catch_exceptions=False,
+            )
+
+            self.assertEqual(0, result.exit_code,
+                             "global --ini-file profile setup failed: " + str(result.output))
+            mock_setup.assert_called_once()
+            _, kwargs = mock_setup.call_args
+            self.assertEqual(ini_path, kwargs.get('ini_file'),
+                             "global --ini-file was not forwarded to 'profile setup' "
+                             "(ini_file=None would fall through to default storage)")
+
+    def test_ini_file_flag_respected_by_config_show(self):
+        """Coverage: global --ini-file must be used by 'config show'.
+
+        Verifies that show_config() reads from the correct storage path
+        after calling _reload_config().
+        """
+        custom_profile = "config-show-profile"
+        ini_content = (
+            "[{profile}]\n"
+            "clientid = SHOW_CI\n"
+            "privatekey = SHOW_PK\n"
+            "appkey = SHOW_AK\n"
+            "hostname = https://keepersecurity.com\n"
+            "\n"
+            "[_config]\n"
+            "active_profile = {profile}\n"
+        ).format(profile=custom_profile)
+
+        ini_path = os.path.join(self.temp_dir.name, "custom_config_show.ini")
+        with open(ini_path, "w") as fh:
+            fh.write(ini_content)
+        os.chmod(ini_path, 0o600)
+
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ['--ini-file', ini_path, 'config', 'show'],
+                catch_exceptions=False,
+            )
+
+            self.assertEqual(0, result.exit_code,
+                             "config show failed: " + str(result.output))
+            self.assertIn(custom_profile, result.output,
+                          "global --ini-file was ignored by 'config show'; "
+                          "active profile not found in output")
+
+    def test_ini_file_flag_respected_by_config_color(self):
+        """Coverage: global --ini-file must be used by 'config color'.
+
+        Verifies that set_color() writes to the correct ini file and does not
+        create a default keeper.ini in the working directory.
+        """
+        custom_profile = "config-color-profile"
+        ini_content = (
+            "[{profile}]\n"
+            "clientid = COLOR_CI\n"
+            "privatekey = COLOR_PK\n"
+            "appkey = COLOR_AK\n"
+            "hostname = https://keepersecurity.com\n"
+            "\n"
+            "[_config]\n"
+            "active_profile = {profile}\n"
+            "color = False\n"
+        ).format(profile=custom_profile)
+
+        ini_path = os.path.join(self.temp_dir.name, "custom_config_color.ini")
+        with open(ini_path, "w") as fh:
+            fh.write(ini_content)
+        os.chmod(ini_path, 0o600)
+
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ['--ini-file', ini_path, 'config', 'color', '--enable'],
+                catch_exceptions=False,
+            )
+
+            self.assertEqual(0, result.exit_code,
+                             "config color --enable failed: " + str(result.output))
+
+            config = configparser.ConfigParser(allow_no_value=True)
+            config.read(ini_path)
+            self.assertEqual('True', config['_config'].get('color'),
+                             "global --ini-file was ignored by 'config color'; "
+                             "color setting not updated in the custom ini file")
+            # The default keeper.ini must NOT have been created.
+            self.assertFalse(os.path.exists(Config.default_ini_file),
+                             "'config color' created default keeper.ini instead of using --ini-file")
+
+    def test_ini_file_flag_respected_by_config_cache(self):
+        """Coverage: global --ini-file must be used by 'config cache'.
+
+        Verifies that set_cache() writes to the correct ini file.
+        """
+        custom_profile = "config-cache-profile"
+        ini_content = (
+            "[{profile}]\n"
+            "clientid = CACHE_CI\n"
+            "privatekey = CACHE_PK\n"
+            "appkey = CACHE_AK\n"
+            "hostname = https://keepersecurity.com\n"
+            "\n"
+            "[_config]\n"
+            "active_profile = {profile}\n"
+            "cache = False\n"
+        ).format(profile=custom_profile)
+
+        ini_path = os.path.join(self.temp_dir.name, "custom_config_cache.ini")
+        with open(ini_path, "w") as fh:
+            fh.write(ini_content)
+        os.chmod(ini_path, 0o600)
+
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ['--ini-file', ini_path, 'config', 'cache', '--enable'],
+                catch_exceptions=False,
+            )
+
+            self.assertEqual(0, result.exit_code,
+                             "config cache --enable failed: " + str(result.output))
+
+            config = configparser.ConfigParser(allow_no_value=True)
+            config.read(ini_path)
+            self.assertEqual('True', config['_config'].get('cache'),
+                             "global --ini-file was ignored by 'config cache'; "
+                             "cache setting not updated in the custom ini file")
+            self.assertFalse(os.path.exists(Config.default_ini_file),
+                             "'config cache' created default keeper.ini instead of using --ini-file")
+
+    def test_ini_file_flag_respected_by_profile_active(self):
+        """Coverage: global --ini-file must be used by 'profile active'.
+
+        Verifies that set_active() persists the active profile change to the
+        correct ini file path when only the global --ini-file flag is set.
+        """
+        profile1 = "active-profile-one"
+        profile2 = "active-profile-two"
+        ini_content = (
+            "[{p1}]\n"
+            "clientid = P1_CI\nprivatekey = P1_PK\nappkey = P1_AK\n"
+            "hostname = https://keepersecurity.com\n"
+            "\n"
+            "[{p2}]\n"
+            "clientid = P2_CI\nprivatekey = P2_PK\nappkey = P2_AK\n"
+            "hostname = https://keepersecurity.com\n"
+            "\n"
+            "[_config]\n"
+            "active_profile = {p1}\n"
+        ).format(p1=profile1, p2=profile2)
+
+        ini_path = os.path.join(self.temp_dir.name, "custom_profile_active.ini")
+        with open(ini_path, "w") as fh:
+            fh.write(ini_content)
+        os.chmod(ini_path, 0o600)
+
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ['--ini-file', ini_path, 'profile', 'active', profile2],
+                catch_exceptions=False,
+            )
+
+            self.assertEqual(0, result.exit_code,
+                             "profile active failed: " + str(result.output))
+
+            config = configparser.ConfigParser(allow_no_value=True)
+            config.read(ini_path)
+            self.assertEqual(profile2, config['_config'].get('active_profile'),
+                             "global --ini-file was ignored by 'profile active'; "
+                             "active_profile not updated in the custom ini file")
+
+    def test_ini_file_flag_respected_by_profile_delete(self):
+        """Coverage: global --ini-file must be used by 'profile delete'.
+
+        Verifies that delete() removes the profile from the correct ini file.
+        """
+        profile1 = "delete-profile-one"
+        profile2 = "delete-profile-two"
+        ini_content = (
+            "[{p1}]\n"
+            "clientid = D1_CI\nprivatekey = D1_PK\nappkey = D1_AK\n"
+            "hostname = https://keepersecurity.com\n"
+            "\n"
+            "[{p2}]\n"
+            "clientid = D2_CI\nprivatekey = D2_PK\nappkey = D2_AK\n"
+            "hostname = https://keepersecurity.com\n"
+            "\n"
+            "[_config]\n"
+            "active_profile = {p1}\n"
+        ).format(p1=profile1, p2=profile2)
+
+        ini_path = os.path.join(self.temp_dir.name, "custom_profile_delete.ini")
+        with open(ini_path, "w") as fh:
+            fh.write(ini_content)
+        os.chmod(ini_path, 0o600)
+
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ['--ini-file', ini_path, 'profile', 'delete', profile2],
+                catch_exceptions=False,
+            )
+
+            self.assertEqual(0, result.exit_code,
+                             "profile delete failed: " + str(result.output))
+
+            config = configparser.ConfigParser(allow_no_value=True)
+            config.read(ini_path)
+            self.assertNotIn(profile2, config.sections(),
+                             "global --ini-file was ignored by 'profile delete'; "
+                             "profile still exists in the custom ini file")
+            self.assertIn(profile1, config.sections(),
+                          "unrelated profile was deleted from the custom ini file")
+
+    def test_ini_file_flag_respected_by_profile_import(self):
+        """Coverage: global --ini-file must be used as output_file by 'profile import'.
+
+        When --output-file is omitted, profile_import_command falls back to ctx.obj["ini_file"]
+        (the global --ini-file). This verifies the imported profile lands in the correct file.
+        """
+        existing_profile = "import-existing-profile"
+        ini_content = (
+            "[{profile}]\n"
+            "clientid = IMPORT_CI\n"
+            "privatekey = IMPORT_PK\n"
+            "appkey = IMPORT_AK\n"
+            "hostname = https://keepersecurity.com\n"
+            "\n"
+            "[_config]\n"
+            "active_profile = {profile}\n"
+        ).format(profile=existing_profile)
+
+        ini_path = os.path.join(self.temp_dir.name, "custom_profile_import.ini")
+        with open(ini_path, "w") as fh:
+            fh.write(ini_content)
+        os.chmod(ini_path, 0o600)
+
+        # Build a minimal JSON config and base64-encode it (Profile.import_config JSON path).
+        imported_profile = "imported-new-profile"
+        json_config = {
+            "clientId": "IMPORT_NEW_CI",
+            "privateKey": "IMPORT_NEW_PK",
+            "appKey": "IMPORT_NEW_AK",
+            "hostname": "https://keepersecurity.com",
+        }
+        config_base64 = base64.urlsafe_b64encode(json.dumps(json_config).encode()).decode()
+
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ['--ini-file', ini_path, 'profile', 'import',
+                 '-p', imported_profile, config_base64],
+                catch_exceptions=False,
+            )
+
+            self.assertEqual(0, result.exit_code,
+                             "profile import failed: " + str(result.output))
+
+            config = configparser.ConfigParser(allow_no_value=True)
+            config.read(ini_path)
+            self.assertIn(imported_profile, config.sections(),
+                          "global --ini-file was ignored by 'profile import'; "
+                          "imported profile not found in the custom ini file")
+            self.assertFalse(os.path.exists(Config.default_ini_file),
+                             "'profile import' created default keeper.ini instead of using --ini-file")
+
+
 if __name__ == '__main__':
     unittest.main()

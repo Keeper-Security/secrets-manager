@@ -786,6 +786,7 @@ class Profile:
         print("Imported config saved to profile {} at {}.".format(profile_name, file), file=sys.stderr)
 
     def set_color(self, on_off):
+        self._reload_config()
         common_config = self._config.config
         common_config.color = str(on_off)
         self.cli.use_color = on_off
@@ -796,6 +797,7 @@ class Profile:
             self._config.save()
 
     def set_cache(self, on_off):
+        self._reload_config()
         common_config = self._config.config
         common_config.cache = str(on_off)
         self.cli.use_cache = on_off
@@ -806,6 +808,7 @@ class Profile:
             self._config.save()
 
     def set_record_type_dir(self, directory):
+        self._reload_config()
         common_config = self._config.config
         if directory is None:
             common_config.record_type_dir = None
@@ -821,6 +824,7 @@ class Profile:
             self._config.save()
 
     def set_editor(self, editor, use_blocking=None, process_name=None):
+        self._reload_config()
         common_config = self._config.config
         if editor is None:
             common_config.editor = None
@@ -841,6 +845,9 @@ class Profile:
             self._config.save()
 
     def show_config(self):
+
+        # Reload config to ensure we read from the correct storage.
+        self._reload_config()
 
         def _check_set(value):
             if value is None:
