@@ -12,7 +12,7 @@ For more information see our official documentation page https://docs.keeper.io/
   - Existing `keeper.ini` profiles continue to work without migration
   - Added `--ini-file` flag to opt into explicit file-based storage
   - Added `keyring` as an optional dependency: `pip install keeper-secrets-manager-cli[keyring]`
-- **Fix**: KSM-814 - `--ini-file` flag now respected by `profile list`, `profile active`, `profile export`, `profile import`, `config`, and `init` subcommands
+- **Fix**: KSM-814 - `--ini-file` flag now respected by all profile and config subcommands: `profile list`, `profile active`, `profile export`, `profile import`, `profile init`, `profile setup`; `config show`, `config color`, `config cache`, `config record-type-dir`, `config editor`
 - **Fix**: KSM-691 - keeper.ini now written with owner-only permissions (0600)
 - **Breaking**: KSM-799, KSM-817 - Minimum Python raised from 3.7 to 3.10
 - **Breaking**: KSM-817 - boto3 is now an optional dependency; AWS sync users must install the `[aws]` extra: `pip install keeper-secrets-manager-cli[aws]`
