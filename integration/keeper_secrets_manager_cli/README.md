@@ -24,6 +24,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - **Fix**: KSM-810 - Added `ksm profile delete <name>` command; fixed keyring storage to clear the active profile pointer when the active profile is deleted, preventing a broken state on subsequent invocations
 - **Fix**: KSM-702 - Record create payload now always includes `custom: []`; previously the key was silently omitted when no custom fields were set
 - **Fix**: KSM-815 - Profile name is now validated before redeeming the one-time token; invalid names (containing whitespace or exceeding 64 characters) are rejected immediately, preventing the token from being consumed on a failed init
+- **Fix**: KSM-818 - `ksm shell` no longer crashes on any command when click>=8.2 is installed; pinned click-repl to <0.3.0 (0.3.0 incompatible with click>=8.2)
 
 ## 1.2.0
 - KSM-649 Added AWS KMS JSON support for sync command

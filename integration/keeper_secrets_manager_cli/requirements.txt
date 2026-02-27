@@ -7,7 +7,7 @@ colorama
 importlib_metadata
 click
 click_help_colors
-click-repl
+click-repl>=0.2.0,<0.3.0
 pyyaml
 update-checker
 psutil>=5.0.0
