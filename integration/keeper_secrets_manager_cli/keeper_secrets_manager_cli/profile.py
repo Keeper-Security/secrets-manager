@@ -269,11 +269,11 @@ class Profile:
 
     @staticmethod
     def _validate_profile_name(profile_name):
-        import re
-        if not re.match(r'^\S{1,64}$', profile_name):
+        from .keyring_config import PROFILE_NAME_PATTERN
+        if not PROFILE_NAME_PATTERN.match(profile_name):
             raise KsmCliException(
-                "Profile name must be 1-64 non-whitespace characters. "
-                "Got: '{}'".format(profile_name)
+                "Profile name must be 1-64 characters, containing only "
+                "alphanumeric characters, hyphens, and underscores"
             )
 
 

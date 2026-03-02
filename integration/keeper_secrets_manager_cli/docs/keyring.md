@@ -140,7 +140,7 @@ ksm profile delete <name>
 ksm profile init --token <one-time-token> --profile-name <name>
 ```
 
-> **Profile name format**: must be 1–64 characters with no whitespace. The name is validated before the one-time token is redeemed, so a bad name won't consume the token.
+> **Profile name format**: must be 1–64 characters containing only letters, numbers, hyphens, and underscores. The name is validated before the one-time token is redeemed, so a bad name won't consume the token.
 
 ### Finding entries in the OS keyring
 

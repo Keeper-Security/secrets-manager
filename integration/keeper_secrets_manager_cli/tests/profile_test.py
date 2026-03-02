@@ -401,9 +401,12 @@ color = True
             mock_client.return_value = secrets_manager
 
             for invalid_name, desc in [
-                ('my profile', 'space in name'),
-                ('a' * 65, '65-char name'),
+                ('my profile',  'space in name'),
+                ('a' * 65,      '65-char name'),
                 ('my\tprofile', 'tab in name'),
+                ('../escape',   'path traversal'),   # KSM-829
+                ('/path',       'leading slash'),    # KSM-829
+                ('abc!@#',      'special chars'),    # KSM-829
             ]:
                 result = runner.invoke(
                     cli, ['profile', 'init', '-t', 'XX:YY', '-p', invalid_name],
