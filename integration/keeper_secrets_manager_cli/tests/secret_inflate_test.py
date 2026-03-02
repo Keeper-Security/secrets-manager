@@ -71,7 +71,9 @@ class SecretInflateTest(unittest.TestCase):
         queue.add_response(address_res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                as mock_client:
+                as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')
