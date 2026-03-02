@@ -4,7 +4,6 @@ keeper-secrets-manager-storage>=1.0.2
 prompt-toolkit>=3.0
 jsonpath-rw-ext
 colorama
-importlib_metadata
 click
 click_help_colors
 click-repl>=0.2.0,<0.3.0

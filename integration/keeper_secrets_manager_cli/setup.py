@@ -15,7 +15,6 @@ install_requires = [
     'prompt-toolkit>=3.0',
     'jsonpath-rw-ext',
     'colorama',
-    'importlib_metadata',
     'click',
     'click_help_colors',
     # KSM-818: click-repl 0.3.0 crashes with click>=8.2 (protected_args became read-only).

@@ -15,7 +15,7 @@ import os
 import sys
 import traceback
 import typing as t
-import importlib_metadata
+from importlib.metadata import version as pkg_version, PackageNotFoundError
 import click
 import keeper_secrets_manager_core
 from click_help_colors import HelpColorsGroup, HelpColorsCommand
@@ -186,8 +186,8 @@ def get_versions():
     else:
         for module in versions:
             try:
-                versions[module] = importlib_metadata.version(module)
-            except importlib_metadata.PackageNotFoundError:
+                versions[module] = pkg_version(module)
+            except PackageNotFoundError:
                 pass
 
     return versions
