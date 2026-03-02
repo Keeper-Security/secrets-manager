@@ -80,7 +80,9 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                as mock_client:
+                as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')
@@ -133,7 +135,9 @@ class SecretTest(unittest.TestCase):
             queue.add_response(res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                as mock_client:
+                as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')
@@ -229,7 +233,9 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                as mock_client:
+                as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')
@@ -276,7 +282,9 @@ class SecretTest(unittest.TestCase):
             queue.add_response(res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                as mock_client:
+                as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')
@@ -330,7 +338,9 @@ class SecretTest(unittest.TestCase):
 
         with patch('requests.get', side_effect=mock_download_get) as mock_get:
             with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                    as mock_client:
+                    as mock_client, \
+                 patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                       return_value=False):
                 mock_client.return_value = secrets_manager
 
                 Profile.init(token='MY_TOKEN')
@@ -351,7 +361,9 @@ class SecretTest(unittest.TestCase):
 
         with patch('requests.get', side_effect=mock_download_get) as mock_get:
             with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                    as mock_client:
+                    as mock_client, \
+                 patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                       return_value=False):
                 mock_client.return_value = secrets_manager
 
                 Profile.init(token='MY_TOKEN')
@@ -387,7 +399,9 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                as mock_client:
+                as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')
@@ -480,7 +494,9 @@ class SecretTest(unittest.TestCase):
 
         with patch('requests.get', side_effect=mock_download_get) as _:
             with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                    as mock_client:
+                    as mock_client, \
+                 patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                       return_value=False):
                 mock_client.return_value = secrets_manager
 
                 Profile.init(token='MY_TOKEN')
@@ -555,7 +571,9 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                as mock_client:
+                as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')
@@ -647,7 +665,9 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                as mock_client:
+                as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')
@@ -752,7 +772,9 @@ class SecretTest(unittest.TestCase):
         queue.add_response(res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                as mock_client:
+                as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')
@@ -805,7 +827,9 @@ class SecretTest(unittest.TestCase):
         queue.add_response(address_res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                as mock_client:
+                as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')
@@ -848,7 +872,9 @@ class SecretTest(unittest.TestCase):
         queue.add_response(record_res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                as mock_client:
+                as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')
@@ -889,7 +915,9 @@ class SecretTest(unittest.TestCase):
         queue.add_response(totp_res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                as mock_client:
+                as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')
@@ -1042,7 +1070,9 @@ class SecretTest(unittest.TestCase):
         queue.add_response(profile_init_res)
 
         with patch('keeper_secrets_manager_cli.KeeperCli.get_client') \
-                as mock_client:
+                as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')
@@ -1093,7 +1123,9 @@ class SecretTest(unittest.TestCase):
         with _patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
              _patch.object(secrets_manager, 'get_folders', return_value=[fake_folder]), \
              _patch.object(secrets_manager, 'create_secret_with_options',
-                           return_value='NEWUID0000000000000000') as mock_create:
+                           return_value='NEWUID0000000000000000') as mock_create, \
+             _patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                    return_value=False):
             mock_client.return_value = secrets_manager
 
             Profile.init(token='MY_TOKEN')

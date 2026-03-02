@@ -26,6 +26,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - **Fix**: KSM-815 - Profile name is now validated before redeeming the one-time token; invalid names (containing whitespace or exceeding 64 characters) are rejected immediately, preventing the token from being consumed on a failed init
 - **Fix**: KSM-818 - `ksm shell` no longer crashes on any command when click>=8.2 is installed; pinned click-repl to <0.3.0 (0.3.0 incompatible with click>=8.2)
 - **Fix**: KSM-820 - `ksm secret get --json` now outputs custom fields under `"custom"` key (was `"custom_fields"`), matching the canonical V3 record format used by Commander and the Keeper Vault
+- **Fix**: KSM-828 - Unit tests no longer write mock data to the real system keyring; added `KeyringConfigStorage.is_available` mock to all tests that call `Profile.init()` as scaffolding (`secret_test.py`, `exec_test.py`, `secret_inflate_test.py`)
 
 ## 1.2.0
 - KSM-649 Added AWS KMS JSON support for sync command
