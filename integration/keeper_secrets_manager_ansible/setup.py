@@ -11,7 +11,6 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
 install_requires = [
     'keeper-secrets-manager-core>=17.2.0',
     'keeper-secrets-manager-helper>=1.1.0',
-    'importlib_metadata',
     'ansible-core>=2.12.0'  # Use ansible-core instead of ansible to avoid community collections
 ]
 

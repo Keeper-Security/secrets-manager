@@ -126,6 +126,7 @@ configuration file or even a playbook.
 * KSM-816: Fixed `keeper_create` failing when the target shared folder contains no records
   - Closes [GitHub issue #934](https://github.com/Keeper-Security/secrets-manager/issues/934)
 * KSM-811: Raised minimum Python version from 3.7 to 3.9
+  - Replaced `importlib_metadata` backport with stdlib `importlib.metadata` (available since Python 3.8)
 * **Dependency Update**: Updated keeper-secrets-manager-core to >= 17.2.0 and keeper-secrets-manager-helper to >= 1.1.0
 
 ## 1.3.0
