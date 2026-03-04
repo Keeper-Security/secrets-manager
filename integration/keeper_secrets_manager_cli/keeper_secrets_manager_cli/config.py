@@ -158,8 +158,6 @@ class Config:
             raise PermissionError("Cannot find configuration file {}.".format(self.ini_file))
 
     def _load_config(self, section: configparser.SectionProxy):
-        from keeper_secrets_manager_storage.storage_aws_secret import AwsConfigProvider
-
         storage = section.get("storage", "")
         if storage in ("", "internal"):
             return ConfigProfile(
@@ -170,6 +168,7 @@ class Config:
                     app_owner_public_key=section.get("appownerpublickey"),
                     server_public_key_id=section.get("serverpublickeyid"))
         elif storage == "aws":
+            from keeper_secrets_manager_storage.storage_aws_secret import AwsConfigProvider
             cfg = ConfigProfile(storage=storage)
             cfg.storage_config = {x: section.get(x) for x in section.keys() if x != "storage"}
 
