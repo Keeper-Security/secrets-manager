@@ -942,5 +942,66 @@ color = True
                              "'profile import' created default keeper.ini instead of using --ini-file")
 
 
+    def test_ini_file_with_internal_storage_does_not_require_boto3(self):
+        """Regression test: --ini-file with internal storage must not require boto3.
+
+        _load_config() must not import AwsConfigProvider unconditionally at the top of
+        the function — doing so triggers a top-level 'import boto3' in storage_aws_secret.py
+        even for profiles with storage=internal, causing a hard failure when boto3 is not
+        installed (e.g., pip install keeper-secrets-manager-cli[keyring] without [aws]).
+
+        The import must be deferred to inside the 'elif storage == "aws":' branch so that
+        non-AWS profiles load without requiring boto3.
+        """
+        import sys
+
+        custom_profile_name = "boto3-regression-profile"
+        ini_content = (
+            "[{profile}]\n"
+            "clientid = DUMMY_CLIENT_ID\n"
+            "privatekey = DUMMY_PRIVATE_KEY\n"
+            "appkey = DUMMY_APP_KEY\n"
+            "hostname = keepersecurity.com\n"
+            "\n"
+            "[_config]\n"
+            "active_profile = {profile}\n"
+        ).format(profile=custom_profile_name)
+
+        ini_path = os.path.join(self.temp_dir.name, "custom_boto3_regression.ini")
+        with open(ini_path, "w") as fh:
+            fh.write(ini_content)
+        os.chmod(ini_path, 0o600)
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        # Simulate boto3 not being installed by removing storage_aws_secret from sys.modules
+        # and making boto3 unimportable. The bug causes _load_config() to import the module
+        # unconditionally, which triggers import boto3, which fails.
+        aws_mod_key = "keeper_secrets_manager_storage.storage_aws_secret"
+        saved = sys.modules.pop(aws_mod_key, None)
+        try:
+            with patch.dict(sys.modules, {"boto3": None}):
+                with patch("keeper_secrets_manager_cli.KeeperCli.get_client") as mock_client:
+                    mock_client.return_value = secrets_manager
+                    runner = CliRunner()
+                    result = runner.invoke(
+                        cli,
+                        ["--ini-file", ini_path, "profile", "list", "--json"],
+                        catch_exceptions=False,
+                    )
+        finally:
+            if saved is not None:
+                sys.modules[aws_mod_key] = saved
+
+        self.assertEqual(0, result.exit_code,
+                         "--ini-file with internal storage failed without boto3: "
+                         + result.output)
+        profiles = json.loads(result.output)
+        profile_names = [p["name"] for p in profiles]
+        self.assertIn(custom_profile_name, profile_names,
+                      "expected profile not found in --ini-file output")
+
+
 if __name__ == '__main__':
     unittest.main()
