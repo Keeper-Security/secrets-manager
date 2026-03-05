@@ -62,7 +62,17 @@ export KSM_CONFIG_KEYRING_UTILITY_PATH=/usr/local/bin/lkru
 
 ### Headless / Server Environments
 
-For headless Linux servers without a keyring daemon, use file-based storage instead:
+For headless Linux servers without a Secret Service daemon, the preferred option is the `lkru` utility — it provides keyring-level security without requiring a running daemon:
+
+```bash
+# Install lkru, then the CLI will detect it automatically
+pip install keeper-secrets-manager-cli[keyring]
+
+# Or point to it explicitly
+export KSM_CONFIG_KEYRING_UTILITY_PATH=/usr/local/bin/lkru
+```
+
+If `lkru` is not available, fall back to file-based storage:
 
 ```bash
 ksm profile init --ini-file ~/.keeper/keeper.ini
@@ -116,7 +126,13 @@ Install the `keyring` library or use `--ini-file` for file-based storage.
 
 ### Wrong keyring backend on Linux
 
-If `keyring.get_keyring()` returns a `fail.Keyring` backend, no Secret Service daemon is running. Start GNOME Keyring, install KWallet, or use the `lkru` fallback.
+If no Secret Service daemon is running, `keyring` returns a `fail.Keyring` backend. The CLI detects this automatically and falls back to `lkru` if it is available. To confirm which backend is active:
+
+```bash
+python3 -c "import keyring; b = keyring.get_keyring(); print(b.__class__.__module__)"
+```
+
+If the output contains `fail`, start GNOME Keyring or KWallet, or install `lkru` and the CLI will use it automatically on the next invocation.
 
 ### Integrity check failure
 

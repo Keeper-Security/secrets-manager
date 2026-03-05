@@ -25,7 +25,7 @@ docker run --rm \
 echo ""
 echo "Running KSM keyring integration tests in Docker (Secret Service)..."
 
-docker build -q -t ksm-cli-keyring-test -f Dockerfile.keyring-test .
+docker build -q -t ksm-cli-keyring-test -f tests/docker/Dockerfile.keyring-test .
 
 docker run --rm ksm-cli-keyring-test \
   dbus-run-session -- bash -c "

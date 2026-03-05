@@ -77,12 +77,15 @@ class KeyringUtilityStorage(KeyValueStorage):
         # Try to use Python keyring library (works on macOS, Windows, Linux)
         self.use_python_keyring = False
         self.keyring_utility_path = None
-        
+
         try:
             import keyring
+            backend = keyring.get_keyring()
+            if 'fail' in backend.__class__.__module__.lower():
+                raise ImportError("No working keyring backend (fail.Keyring) — falling back to lkru")
             self.use_python_keyring = True
             self.logger.debug("Using Python keyring library for OS-native storage")
-        except ImportError:
+        except Exception:
             if keyring_utility_path:
                 p = os.path.abspath(keyring_utility_path).strip()
                 if p and os.path.exists(p):
@@ -490,17 +493,24 @@ class KeyringConfigStorage:
     @staticmethod
     def is_available() -> bool:
         """Check if keyring is available and working."""
+        # 1. Try Python keyring library
         try:
             import keyring
             backend = keyring.get_keyring()
-            
+
             # Reject fail.Keyring backend (doesn't actually store anything)
-            backend_module = backend.__class__.__module__
-            if 'fail' in backend_module.lower():
-                return False
-            
-            return True
+            if 'fail' not in backend.__class__.__module__.lower():
+                return True
         except ImportError:
-            return False
+            pass
         except Exception:
-            return False
+            pass
+
+        # 2. Try lkru utility (headless Linux fallback)
+        lkru_path = os.getenv("KSM_CONFIG_KEYRING_UTILITY_PATH")
+        if lkru_path and os.path.exists(lkru_path):
+            return True
+        if shutil.which("lkru"):
+            return True
+
+        return False

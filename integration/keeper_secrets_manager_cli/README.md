@@ -29,6 +29,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - **Fix**: KSM-828 - Unit tests no longer write mock data to the real system keyring; added `KeyringConfigStorage.is_available` mock to all tests that call `Profile.init()` as scaffolding (`secret_test.py`, `exec_test.py`, `secret_inflate_test.py`)
 - **Fix**: KSM-829 - Profile name validation before OTT redemption now uses the same strict pattern as keyring storage (`[a-zA-Z0-9_-]{1,64}`); previously the early check allowed path-traversal characters and special characters through, consuming the one-time token before the stricter validator fired
 - **Fix**: KSM-831 - `--ini-file` no longer fails with `Missing import dependencies: boto3` for non-AWS profiles; `AwsConfigProvider` import is now deferred to the `aws` storage branch in `_load_config`, so users without the `[aws]` extra are unaffected
+- **Fix**: KSM-832 - lkru utility fallback is now reachable on headless Linux when the `keyring` library is installed but returns a `fail.Keyring` backend (no Secret Service daemon); previously the fallback was unreachable in this configuration despite lkru being available
 ## 1.2.0
 - KSM-649 Added AWS KMS JSON support for sync command
 - KSM-465 Implemented ksm interpolate command for shell built-in compatibility
