@@ -16,7 +16,7 @@ Keyring storage uses the OS credential manager, which enforces access control at
 | Windows | Credential Manager |
 | Linux | Secret Service API (e.g. GNOME Keyring, KWallet) |
 
-Linux also supports a `lkru` utility fallback for headless environments. See [Linux Setup](#linux-setup).
+Linux requires a running Secret Service daemon (GNOME Keyring, KWallet). See [Linux Setup](#linux-setup).
 
 ## How It Works
 
@@ -40,9 +40,7 @@ File-based profiles created with `--ini-file` are now written with `0600` permis
 
 ## Linux Setup
 
-Linux requires a running Secret Service-compatible keyring daemon (e.g. GNOME Keyring or KWallet). If one is not available, the CLI falls back to the `lkru` utility.
-
-### Option 1: Python keyring library (recommended)
+Linux requires a running Secret Service-compatible keyring daemon (e.g. GNOME Keyring or KWallet).
 
 `keyring` is an optional dependency. Install it alongside the CLI:
 
@@ -52,27 +50,9 @@ pip install keeper-secrets-manager-cli[keyring]
 
 If `keyring` is not installed, new profiles fall back to `keeper.ini` file storage (with `0600` permissions).
 
-### Option 2: lkru utility fallback
-
-If the `keyring` library is not available or no Secret Service daemon is running, the CLI will look for `lkru` in your `$PATH`, or at the path specified by the `KSM_CONFIG_KEYRING_UTILITY_PATH` environment variable:
-
-```bash
-export KSM_CONFIG_KEYRING_UTILITY_PATH=/usr/local/bin/lkru
-```
-
 ### Headless / Server Environments
 
-For headless Linux servers without a Secret Service daemon, the preferred option is the `lkru` utility — it provides keyring-level security without requiring a running daemon:
-
-```bash
-# Install lkru, then the CLI will detect it automatically
-pip install keeper-secrets-manager-cli[keyring]
-
-# Or point to it explicitly
-export KSM_CONFIG_KEYRING_UTILITY_PATH=/usr/local/bin/lkru
-```
-
-If `lkru` is not available, fall back to file-based storage:
+If no Secret Service daemon is running, keyring storage is not available. Use file-based storage instead:
 
 ```bash
 ksm profile init --ini-file ~/.keeper/keeper.ini
@@ -126,13 +106,13 @@ Install the `keyring` library or use `--ini-file` for file-based storage.
 
 ### Wrong keyring backend on Linux
 
-If no Secret Service daemon is running, `keyring` returns a `fail.Keyring` backend. The CLI detects this automatically and falls back to `lkru` if it is available. To confirm which backend is active:
+If no Secret Service daemon is running, `keyring` returns a `fail.Keyring` backend. The CLI detects this and falls back to file-based storage. To confirm which backend is active:
 
 ```bash
 python3 -c "import keyring; b = keyring.get_keyring(); print(b.__class__.__module__)"
 ```
 
-If the output contains `fail`, start GNOME Keyring or KWallet, or install `lkru` and the CLI will use it automatically on the next invocation.
+If the output contains `fail`, start GNOME Keyring or KWallet, or use `--ini-file` for file-based storage.
 
 ### Integrity check failure
 

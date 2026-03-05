@@ -128,20 +128,3 @@ jobs:
             KSM_KEYRING_INTEGRATION=1 python -m pytest tests/keyring_integration_test.py -v --tb=short
           "
 
-  test-cli-lkru-headless:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build headless keyring test image
-        working-directory: ./integration/keeper_secrets_manager_cli
-        run: docker build -f tests/docker/Dockerfile.keyring-test -t ksm-cli-keyring-test .
-
-      - name: Run lkru headless fallback tests
-        run: |
-          docker run --rm \
-            -e KSM_LKRU_HEADLESS_TEST=1 \
-            ksm-cli-keyring-test \
-            python3 -m pytest tests/keyring_lkru_headless_test.py -v --tb=short

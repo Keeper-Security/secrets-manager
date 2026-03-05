@@ -22,7 +22,6 @@ import logging
 import hashlib
 import os
 import shutil
-import subprocess
 import base64
 from typing import Dict, Optional
 
@@ -44,7 +43,7 @@ class KeyringUtilityStorage(KeyValueStorage):
     Uses Python keyring library for cross-platform support:
     - macOS: Keychain
     - Windows: Credential Manager  
-    - Linux: Secret Service (or lkru utility as fallback)
+    - Linux: Secret Service (GNOME Keyring, KWallet)
     """
 
     logger = logging.getLogger(logger_name)
@@ -63,8 +62,6 @@ class KeyringUtilityStorage(KeyValueStorage):
         secret_name: str,
         keyring_application_name: str = None,
         keyring_collection_name: str = None,
-        keyring_utility: str = "lkru",
-        keyring_utility_path: str = None,
         skip_integrity_check: bool = False,
     ):
         if not secret_name:
@@ -73,108 +70,35 @@ class KeyringUtilityStorage(KeyValueStorage):
         self.secret_name = secret_name
         self.keyring_application_name = keyring_application_name or "keeper-secrets-manager"
         self.keyring_collection_name = keyring_collection_name
-        
-        # Try to use Python keyring library (works on macOS, Windows, Linux)
-        self.use_python_keyring = False
-        self.keyring_utility_path = None
 
         try:
-            import keyring
-            backend = keyring.get_keyring()
-            if 'fail' in backend.__class__.__module__.lower():
-                raise ImportError("No working keyring backend (fail.Keyring) — falling back to lkru")
-            self.use_python_keyring = True
+            import keyring  # noqa: F401
             self.logger.debug("Using Python keyring library for OS-native storage")
-        except Exception:
-            if keyring_utility_path:
-                p = os.path.abspath(keyring_utility_path).strip()
-                if p and os.path.exists(p):
-                    self.keyring_utility_path = p
-                    self.logger.debug("Using lkru utility at: %s", self.keyring_utility_path)
-                else:
-                    self.__fatal("Invalid keyring utility path: %s" % keyring_utility_path)
-            else:
-                p = os.getenv("KSM_CONFIG_KEYRING_UTILITY_PATH")
-                if p and os.path.exists(p):
-                    self.keyring_utility_path = p
-                    self.logger.debug("Using lkru from KSM_CONFIG_KEYRING_UTILITY_PATH: %s", p)
-                elif p:
-                    self.__fatal("Invalid path in KSM_CONFIG_KEYRING_UTILITY_PATH: %s" % p)
-                else:
-                    p = shutil.which(keyring_utility)
-                    if p:
-                        self.keyring_utility_path = p
-                        self.logger.debug("Using lkru utility at: %s", self.keyring_utility_path)
-                    else:
-                        self.__fatal("No keyring backend available. Install: pip install keyring")
+        except ImportError:
+            self.__fatal("No keyring backend available. Install: pip install keyring")
 
         self.config = {}
         self.config_hash = None
         self.__load_config(skip_integrity_check=skip_integrity_check)
 
     def __get_keyring_value(self, key: str) -> str:
-        """Get value from keyring (Python library or lkru utility)."""
-        if self.use_python_keyring:
-            import keyring
-            value = keyring.get_password(self.keyring_application_name, key)
-            return value if value else ""
-        else:
-            return self.__run_keyring_utility(["get", key])
-    
+        """Get value from keyring."""
+        import keyring
+        value = keyring.get_password(self.keyring_application_name, key)
+        return value if value else ""
+
     def __set_keyring_value(self, key: str, value: str) -> None:
-        """Set value in keyring (Python library or lkru utility)."""
-        if self.use_python_keyring:
-            import keyring
-            keyring.set_password(self.keyring_application_name, key, value)
-        else:
-            self.__run_keyring_utility(["set", key, value])
+        """Set value in keyring."""
+        import keyring
+        keyring.set_password(self.keyring_application_name, key, value)
 
     def __delete_keyring_value(self, key: str) -> None:
-        """Delete value from keyring (Python library or lkru utility)."""
-        if self.use_python_keyring:
-            import keyring
-            try:
-                keyring.delete_password(self.keyring_application_name, key)
-            except keyring.errors.PasswordDeleteError:
-                pass  # Key doesn't exist, that's fine
-        else:
-            self.__run_keyring_utility(["delete", key])
-
-    def __run_keyring_utility(self, args: list) -> str:
-        """Run lkru utility (Linux only fallback)."""
+        """Delete value from keyring."""
+        import keyring
         try:
-            # Use if/elif instead of match for Python 3.7 compatibility
-            cmd = args[0]
-            if cmd == "get" or cmd == "set":
-                args.append("-b")
-
-            if self.keyring_application_name:
-                args.insert(1, self.keyring_application_name)
-                args.insert(1, "-a")
-
-            if self.keyring_collection_name:
-                args.insert(1, self.keyring_collection_name)
-                args.insert(1, "-c")
-
-            args.insert(0, self.keyring_utility_path)
-
-            self.logger.debug("Running keyring utility as: %s", args)
-
-            return (
-                subprocess.run(
-                    args,
-                    capture_output=True,
-                    check=True,
-                    executable=self.keyring_utility_path,
-                )
-                .stdout.decode()
-                .strip()
-            )
-        except subprocess.CalledProcessError as e:
-            message = "Keyring utility exited with %d" % e.returncode
-            if e.stderr:
-                message += " with error output '%s'" % e.stderr.decode().strip()
-            self.__fatal(message, e)
+            keyring.delete_password(self.keyring_application_name, key)
+        except keyring.errors.PasswordDeleteError:
+            pass  # Key doesn't exist, that's fine
 
 
     def __load_config(self, skip_integrity_check: bool = False):
@@ -493,24 +417,13 @@ class KeyringConfigStorage:
     @staticmethod
     def is_available() -> bool:
         """Check if keyring is available and working."""
-        # 1. Try Python keyring library
         try:
             import keyring
             backend = keyring.get_keyring()
-
-            # Reject fail.Keyring backend (doesn't actually store anything)
-            if 'fail' not in backend.__class__.__module__.lower():
-                return True
+            if 'fail' in backend.__class__.__module__.lower():
+                return False
+            return True
         except ImportError:
-            pass
+            return False
         except Exception:
-            pass
-
-        # 2. Try lkru utility (headless Linux fallback)
-        lkru_path = os.getenv("KSM_CONFIG_KEYRING_UTILITY_PATH")
-        if lkru_path and os.path.exists(lkru_path):
-            return True
-        if shutil.which("lkru"):
-            return True
-
-        return False
+            return False

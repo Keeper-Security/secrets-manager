@@ -148,45 +148,6 @@ class KeyringConfigStorageTest(unittest.TestCase):
 
         self.assertTrue(KeyringConfigStorage.is_available())
 
-    def test_is_available_with_lkru_env_var(self):
-        """lkru via KSM_CONFIG_KEYRING_UTILITY_PATH is sufficient when keyring is absent."""
-        import sys
-        import tempfile
-        from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage
-
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            lkru_path = tmp.name
-
-        try:
-            with patch.dict(sys.modules, {'keyring': None}), \
-                 patch.dict(os.environ, {'KSM_CONFIG_KEYRING_UTILITY_PATH': lkru_path}):
-                self.assertTrue(KeyringConfigStorage.is_available())
-        finally:
-            os.unlink(lkru_path)
-            os.environ.pop('KSM_CONFIG_KEYRING_UTILITY_PATH', None)
-
-    def test_is_available_with_lkru_in_path(self):
-        """lkru on PATH is sufficient when keyring is absent."""
-        import sys
-        from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage
-
-        with patch.dict(sys.modules, {'keyring': None}), \
-             patch('shutil.which', return_value='/usr/bin/lkru'), \
-             patch.dict(os.environ, {}, clear=False):
-            os.environ.pop('KSM_CONFIG_KEYRING_UTILITY_PATH', None)
-            self.assertTrue(KeyringConfigStorage.is_available())
-
-    def test_is_available_false_when_no_keyring_and_no_lkru(self):
-        """Returns False when keyring is absent and lkru is not found."""
-        import sys
-        from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage
-
-        with patch.dict(sys.modules, {'keyring': None}), \
-             patch('shutil.which', return_value=None), \
-             patch.dict(os.environ, {}, clear=False):
-            os.environ.pop('KSM_CONFIG_KEYRING_UTILITY_PATH', None)
-            self.assertFalse(KeyringConfigStorage.is_available())
-
 
 class KeyringProfileInitTest(unittest.TestCase):
     """Tests for profile init with keyring storage."""
