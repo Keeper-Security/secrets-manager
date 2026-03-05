@@ -1,0 +1,4 @@
+{
+  "authentication": ["invalid_method"],
+  "secrets": "not_an_array"
+}
