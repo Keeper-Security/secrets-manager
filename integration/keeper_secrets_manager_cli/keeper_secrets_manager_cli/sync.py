@@ -1765,8 +1765,8 @@ class Sync:
         try:
             import boto3
         except ImportError as ie:
-            print(Fore.RED + "Missing AWS dependencies. Install missing packages with: \r\n" +
-                Fore.YELLOW + "pip3 install boto3\r\n" + Style.RESET_ALL, file=sys.stderr)
+            print(Fore.RED + "Missing AWS dependencies. Install the [aws] extra with: \r\n" +
+                Fore.YELLOW + "pip install keeper-secrets-manager-cli[aws]\r\n" + Style.RESET_ALL, file=sys.stderr)
             raise KsmCliException("Missing AWS Dependencies: " + str(ie))
 
         if not credentials or not str(credentials).strip():
