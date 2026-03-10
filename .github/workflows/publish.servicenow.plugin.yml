@@ -59,6 +59,7 @@ jobs:
           cat <<'EOF' > build.sh
           #!/usr/bin/env bash
           MID_SERVER_URLS=''
+          MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2025/04/30/mid.yokohama-12-18-2024__patch3-04-17-2025_04-30-2025_1345.linux.x86-64.zip
           MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2024/09/01/mid.xanadu-07-02-2024__patch1-08-24-2024_09-01-2024_1853.linux.x86-64.zip
           MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2024/08/31/mid.washingtondc-12-20-2023__patch7-08-21-2024_08-31-2024_1809.linux.x86-64.zip
           MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2023/07/26/mid.vancouver-07-06-2023__patch0-07-18-2023_07-26-2023_1029.linux.x86-64.zip
