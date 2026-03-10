@@ -205,4 +205,50 @@ describe('AzureKeyValueStorage', () => {
             }).not.toThrow();
         });
     });
+
+    // KSM-835: Regression tests for delete() and contains() — incorrect `in` operator usage
+    describe('delete() and contains() — KSM-835 regression', () => {
+        let storage: AzureKeyValueStorage;
+        let mockConfig: Record<string, string>;
+
+        beforeEach(() => {
+            const keyId = 'https://test-vault.vault.azure.net/keys/test-key';
+            storage = new AzureKeyValueStorage(keyId, null, null, null);
+
+            // Seed config with known key/value pair
+            mockConfig = { clientId: 'abc', appKey: 'xyz' };
+
+            // Bypass Azure KMS: spy on readStorage/saveStorage directly
+            jest.spyOn(storage, 'readStorage').mockResolvedValue(mockConfig);
+            jest.spyOn(storage, 'saveStorage').mockResolvedValue(undefined);
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        it('delete() should remove an existing key from config', async () => {
+            // When
+            await storage.delete('clientId');
+
+            // Then — key must be gone from the config object
+            expect('clientId' in mockConfig).toBe(false);
+        });
+
+        it('contains() should return true for an existing key', async () => {
+            // When
+            const result = await storage.contains('clientId');
+
+            // Then
+            expect(result).toBe(true);
+        });
+
+        it('contains() should return false for a missing key', async () => {
+            // When
+            const result = await storage.contains('nonexistent');
+
+            // Then
+            expect(result).toBe(false);
+        });
+    });
 });

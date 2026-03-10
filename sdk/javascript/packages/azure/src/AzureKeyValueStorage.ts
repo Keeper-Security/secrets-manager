@@ -311,7 +311,7 @@ export class AzureKeyValueStorage implements KeyValueStorage {
     public async delete(key: string): Promise<void> {
         const config = await this.readStorage();
 
-        if (key in Object.keys(config)) {
+        if (key in config) {
             this.logger.debug(`Deleting key ${key} from ${this.configFileLocation}`);
             delete config[key];
         } else {
@@ -328,7 +328,7 @@ export class AzureKeyValueStorage implements KeyValueStorage {
 
     public async contains(key: string): Promise<boolean> {
         const config = await this.readStorage();
-        return Promise.resolve(key in Object.keys(config));
+        return Promise.resolve(key in config);
     }
 
     public async isEmpty(): Promise<boolean> {
