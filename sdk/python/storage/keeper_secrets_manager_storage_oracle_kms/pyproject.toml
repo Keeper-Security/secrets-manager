@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "keeper-secrets-manager-storage-oracle-kms"
-version = "1.0.0"
+version = "1.1.0"
 description = "Keeper Secrets Manager SDK storage integration with Oracle Cloud KMS for encrypted key-value storage."
 readme = "README.md"
-requires-python = ">=3.6"
+requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
     {name = "Keeper Security", email = "sm@keepersecurity.com"},
@@ -30,22 +30,20 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.6",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Security",
     "Topic :: Security :: Cryptography",
 ]
 dependencies = [
-    "keeper-secrets-manager-core>=16.6.6",
+    "keeper-secrets-manager-core>=17.2.0",
     "oci>=2.146.0",
     "pycryptodome>=3.15.0",
     "requests>=2.25.0",
-    "cryptography>=44.0.0",
+    "cryptography>=46.0.5",
 ]
 
 [project.urls]
@@ -58,4 +56,4 @@ Repository = "https://github.com/Keeper-Security/secrets-manager"
 packages = ["keeper_secrets_manager_storage_oracle_kms"]
 
 [tool.setuptools.package-data]
-"*" = ["*.md", "*.txt"] 
+"*" = ["*.md", "*.txt"]
