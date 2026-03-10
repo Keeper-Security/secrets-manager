@@ -2,21 +2,110 @@ name: Publish to PyPI (Python SDK Storage)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
-  publish-pypi:
+  get-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: extract-version
+        working-directory: ./sdk/python/storage/keeper_secrets_manager_storages
+        run: |
+          VERSION=$(python3 setup.py --version 2>/dev/null || grep -Po 'version\s*=\s*["\x27]\K[^\x27"]*' setup.py)
+          echo "Version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+  validate-versions:
+    name: Validate version not yet published
+    needs: get-versions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check version not on PyPI
+        run: |
+          VERSION="${{ needs.get-versions.outputs.version }}"
+          echo "Checking keeper-secrets-manager-storage $VERSION..."
+          if pip index versions keeper-secrets-manager-storage 2>/dev/null | grep -qE "\b$VERSION\b"; then
+            echo "::error::keeper-secrets-manager-storage $VERSION is already on PyPI. Aborting."
+            exit 1
+          fi
+          echo "keeper-secrets-manager-storage $VERSION not yet on PyPI - ok to proceed"
+
+  generate-sbom:
+    name: Generate and publish SBOM
+    needs: [get-versions, validate-versions]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install package from source into scan target
+        run: |
+          mkdir -p /tmp/scan-target
+          pip3 install --quiet --target /tmp/scan-target ./sdk/python/storage/keeper_secrets_manager_storages
+
+      - name: Install Syft and Manifest CLI
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.30.0
+
+      - name: Generate and publish SBOM
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+        run: |
+          SCAN_TARGET=/tmp/scan-target
+          VERSION="${{ needs.get-versions.outputs.version }}"
+
+          echo "Scanning: $SCAN_TARGET"
+          echo "Packages installed:"
+          pip3 list --path "$SCAN_TARGET"
+
+          manifest sbom "$SCAN_TARGET" \
+            --generator=syft \
+            --name=keeper-secrets-manager-storage \
+            --version="${VERSION}" \
+            --output=spdx-json \
+            --file=sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --asset-label=ksm,storage,python,security 2>&1 || \
+          manifest sbom "$SCAN_TARGET" \
+            --generator=syft \
+            --name=keeper-secrets-manager-storage \
+            --version="${VERSION}" \
+            --output=spdx-json \
+            --file=sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --label=ksm,storage,python,security
+
+      - name: Archive SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ needs.get-versions.outputs.version }}
+          path: sbom.json
+          retention-days: 90
+
+  publish:
     name: Publish KSM Python SDK Storages to PyPI
+    needs: [generate-sbom, get-versions]
     environment: prod
     runs-on: ubuntu-latest
-    timeout-minutes: 10 # To keep builds from running too long
-
-    defaults:
-      run:
-        working-directory: ./sdk/python/storage/keeper_secrets_manager_storages
+    timeout-minutes: 10
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
-
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v4
@@ -31,16 +120,16 @@ jobs:
           secrets: |
             -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN
 
-      - name: Install dependencies
+      - name: Install build tools
         run: |
-          python3 -m pip install --upgrade setuptools pip wheel twine
-          python3 -m pip install -r requirements.txt
+          python3 -m pip install --upgrade pip setuptools
+          python3 -m pip install build twine 'wheel>=0.46.3'  # wheel pin: CVE-2026-24049
 
       - name: Build and Publish
+        working-directory: ./sdk/python/storage/keeper_secrets_manager_storages
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ steps.ksmsecrets.outputs.PYPI_API_TOKEN }}
         run: |
-          python3 setup.py build
-          python3 setup.py sdist
+          python3 -m build --no-isolation
           python3 -m twine upload --verbose dist/*
