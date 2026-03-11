@@ -255,4 +255,36 @@ describe('GCPKeyValueStorage', () => {
             }).not.toThrow();
         });
     });
+
+    // KSM-837: Regression tests for contains() — incorrect `in` operator usage
+    describe('contains() — KSM-837 regression', () => {
+        let storage: GCPKeyValueStorage;
+        let mockConfig: Record<string, string>;
+
+        beforeEach(() => {
+            const gcpKeyConfig = new GCPKeyConfig(
+                'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
+            );
+            storage = new GCPKeyValueStorage(null, gcpKeyConfig, mockSessionConfig);
+
+            mockConfig = { clientId: 'abc', appKey: 'xyz' };
+
+            jest.spyOn(storage, 'readStorage').mockResolvedValue(mockConfig);
+            jest.spyOn(storage, 'saveStorage').mockResolvedValue(undefined);
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        it('contains() should return true for an existing key', async () => {
+            const result = await storage.contains('clientId');
+            expect(result).toBe(true);
+        });
+
+        it('contains() should return false for a missing key', async () => {
+            const result = await storage.contains('nonexistent');
+            expect(result).toBe(false);
+        });
+    });
 });
