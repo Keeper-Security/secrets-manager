@@ -14,4 +14,4 @@ dependencies:
 
 additional_build_steps:
   prepend_final:
-    - RUN $PKGMGR install -y openssh-clients sshpass rsync git && $PKGMGR clean all
+    - RUN $PKGMGR install -y openssh-clients sshpass rsync git krb5-workstation && $PKGMGR clean all
