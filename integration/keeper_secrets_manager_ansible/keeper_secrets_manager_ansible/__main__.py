@@ -16,7 +16,7 @@ import argparse
 import sys
 import os
 import platform
-import importlib_metadata
+from importlib.metadata import version as pkg_version, PackageNotFoundError
 import keeper_secrets_manager_core
 import logging
 import ansible
@@ -55,8 +55,8 @@ def _version():
     }
     for module in versions:
         try:
-            versions[module] = importlib_metadata.version(module)
-        except importlib_metadata.PackageNotFoundError:
+            versions[module] = pkg_version(module)
+        except PackageNotFoundError:
             pass
 
     print()
