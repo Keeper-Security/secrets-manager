@@ -118,7 +118,7 @@ export class AWSKeyValueStorage implements KeyValueStorage {
     return this; // Return the instance to allow chaining
   }
 
-  async getKeyDetails() {
+  private async getKeyDetails() {
     try {
       const input = {
         KeyId: this.keyId,
@@ -479,7 +479,7 @@ export class AWSKeyValueStorage implements KeyValueStorage {
 
   public async contains(key: string): Promise<boolean> {
     const config = await this.readStorage();
-    return Promise.resolve(key in Object.keys(config));
+    return Promise.resolve(key in config);
   }
 
   public async isEmpty(): Promise<boolean> {
