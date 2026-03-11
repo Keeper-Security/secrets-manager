@@ -12,8 +12,6 @@ dependencies:
   galaxy: requirements.yml
   python: requirements.txt
 
-additional_build_packages:
-  - openssh-clients
-  - sshpass
-  - rsync
-  - git
+additional_build_steps:
+  prepend_final:
+    - RUN $PKGMGR install -y openssh-clients sshpass rsync git && $PKGMGR clean all
