@@ -258,4 +258,40 @@ describe('OciKeyValueStorage', () => {
             });
         });
     });
+
+    // KSM-838: Regression tests for contains() — incorrect `in` operator usage
+    describe('contains() — KSM-838 regression', () => {
+        let storage: OciKeyValueStorage;
+        let mockConfig: Record<string, string>;
+
+        beforeEach(() => {
+            const keyId = 'ocid1.key.oc1.phx.example123';
+            const ociSessionConfig = new OCISessionConfig(
+                '~/.oci/config',
+                'DEFAULT',
+                'https://crypto.kms.us-phoenix-1.oraclecloud.com',
+                'https://management.kms.us-phoenix-1.oraclecloud.com'
+            );
+            storage = new OciKeyValueStorage(keyId, null, null, ociSessionConfig, null);
+
+            mockConfig = { clientId: 'abc', appKey: 'xyz' };
+
+            jest.spyOn(storage, 'readStorage').mockResolvedValue(mockConfig);
+            jest.spyOn(storage, 'saveStorage').mockResolvedValue(undefined);
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        it('contains() should return true for an existing key', async () => {
+            const result = await storage.contains('clientId');
+            expect(result).toBe(true);
+        });
+
+        it('contains() should return false for a missing key', async () => {
+            const result = await storage.contains('nonexistent');
+            expect(result).toBe(false);
+        });
+    });
 });

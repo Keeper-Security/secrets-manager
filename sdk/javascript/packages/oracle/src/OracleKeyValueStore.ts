@@ -405,14 +405,14 @@ export class OciKeyValueStorage implements KeyValueStorage {
 		}
 	}
 
-	private async readStorage(): Promise<Record<string, string>> {
+	public async readStorage(): Promise<Record<string, string>> {
 		if (!this.config) {
 			await this.loadConfig();
 		}
 		return Promise.resolve(this.config);
 	}
 
-	private saveStorage(updatedConfig: Record<string, string>): Promise<void> {
+	public saveStorage(updatedConfig: Record<string, string>): Promise<void> {
 		return this.saveConfig(updatedConfig);
 	}
 
@@ -439,18 +439,18 @@ export class OciKeyValueStorage implements KeyValueStorage {
 		await this.saveStorage(config);
 	}
 
-	private async deleteAll(): Promise<void> {
+	public async deleteAll(): Promise<void> {
 		await this.readStorage();
 		Object.keys(this.config).forEach((key) => delete this.config[key]);
 		await this.saveStorage({});
 	}
 
-	private async contains(key: string): Promise<boolean> {
+	public async contains(key: string): Promise<boolean> {
 		const config = await this.readStorage();
-		return Promise.resolve(key in Object.keys(config));
+		return Promise.resolve(key in config);
 	}
 
-	private async isEmpty(): Promise<boolean> {
+	public async isEmpty(): Promise<boolean> {
 		const config = await this.readStorage();
 		return Promise.resolve(Object.keys(config).length === 0);
 	}
