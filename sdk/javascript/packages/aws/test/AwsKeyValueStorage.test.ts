@@ -293,4 +293,35 @@ describe('AWSKeyValueStorage', () => {
             expect(storage.configFileLocation).toBe(customLocation);
         });
     });
+
+    // KSM-836: Regression tests for contains() — incorrect `in` operator usage
+    describe('contains() — KSM-836 regression', () => {
+        let storage: AWSKeyValueStorage;
+        let mockConfig: Record<string, string>;
+
+        beforeEach(() => {
+            const keyId = 'arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012';
+            const awsSessionConfig = new AWSSessionConfig('AKIATEST', 'secret-key', 'us-east-1');
+            storage = new AWSKeyValueStorage(keyId, null, awsSessionConfig, null as any);
+
+            mockConfig = { clientId: 'abc', appKey: 'xyz' };
+
+            jest.spyOn(storage, 'readStorage').mockResolvedValue(mockConfig);
+            jest.spyOn(storage, 'saveStorage').mockResolvedValue(undefined);
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        it('contains() should return true for an existing key', async () => {
+            const result = await storage.contains('clientId');
+            expect(result).toBe(true);
+        });
+
+        it('contains() should return false for a missing key', async () => {
+            const result = await storage.contains('nonexistent');
+            expect(result).toBe(false);
+        });
+    });
 });
