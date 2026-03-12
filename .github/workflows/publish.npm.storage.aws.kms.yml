@@ -83,8 +83,49 @@ jobs:
           echo "---------- SBOM Preview (first 20 lines) ----------"
           head -n 20 aws-storage-sbom.json
 
-  publish-npm:
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-keeper-secrets-manager-javascript-storage-aws-kms-${{ github.run_number }}
+          path: aws-storage-sbom.json
+          retention-days: 90
+
+  build-npm:
     needs: generate-sbom
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./sdk/javascript/packages/aws
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build package
+        run: npm run build
+
+      - name: Upload NPM package
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package-aws-kms-${{ github.run_number }}
+          path: |
+            ${{ github.workspace }}/sdk/javascript/packages/aws/dist/
+            ${{ github.workspace }}/sdk/javascript/packages/aws/package.json
+
+  publish-npm:
+    needs: build-npm
     if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
@@ -97,6 +138,17 @@ jobs:
       - name: Get the source code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build package
+        run: npm run build
+
       - name: Retrieve secrets from KSM
         id: ksmsecrets
         uses: Keeper-Security/ksm-action@master
@@ -105,11 +157,5 @@ jobs:
           secrets: |
             NScQiZwrHJFCPv1gL8TX6Q/field/password > env:NPM_TOKEN
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build package
-        run: npm run build
-
       - name: Publish package
-        run: npm publish
+        run: npm publish --ignore-scripts
