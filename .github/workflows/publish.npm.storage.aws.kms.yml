@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
@@ -28,7 +28,7 @@ jobs:
         run: |
           echo "Installing Syft v1.18.1..."
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /tmp/bin v1.18.1
-          echo "/tmp/bin" >> $GITHUB_PATH
+          echo "/tmp/bin" >> "$GITHUB_PATH"
 
       - name: Install Manifest CLI
         run: |
@@ -71,10 +71,10 @@ jobs:
           /tmp/bin/manifest sbom "${JAVASCRIPT_SDK_DIR}/packages/aws" \
             --generator=syft \
             --name=keeper-secrets-manager-javascript-storage-aws-kms \
-            --version=${VERSION} \
+            --version="${VERSION}" \
             --output=spdx-json \
             --file=aws-storage-sbom.json \
-            --api-key=${MANIFEST_API_KEY} \
+            --api-key="${MANIFEST_API_KEY}" \
             --publish=true \
             --asset-label=application,sbom-generated,nodejs,aws-storage \
             --generator-config=syft-config.yaml
@@ -95,7 +95,7 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
