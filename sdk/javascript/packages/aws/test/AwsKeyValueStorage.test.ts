@@ -294,6 +294,50 @@ describe('AWSKeyValueStorage', () => {
         });
     });
 
+    // KSM-839: Regression tests for delete() — truthy check skips falsy values
+    describe('delete() — KSM-839 regression', () => {
+        let storage: AWSKeyValueStorage;
+
+        beforeEach(() => {
+            const keyId = 'arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012';
+            const awsSessionConfig = new AWSSessionConfig('AKIATEST', 'secret-key', 'us-east-1');
+            storage = new AWSKeyValueStorage(keyId, null, awsSessionConfig, null as any);
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        it('delete() should remove a key whose value is an empty string', async () => {
+            const mockConfig: Record<string, string> = { emptyKey: '' };
+            jest.spyOn(storage, 'readStorage').mockResolvedValue(mockConfig);
+            jest.spyOn(storage, 'saveStorage').mockResolvedValue(undefined);
+
+            await storage.delete('emptyKey');
+
+            expect(mockConfig).not.toHaveProperty('emptyKey');
+        });
+
+        it('delete() should remove a key whose value is falsy (0)', async () => {
+            const mockConfig: Record<string, any> = { zeroKey: 0 };
+            jest.spyOn(storage, 'readStorage').mockResolvedValue(mockConfig);
+            jest.spyOn(storage, 'saveStorage').mockResolvedValue(undefined);
+
+            await storage.delete('zeroKey');
+
+            expect(mockConfig).not.toHaveProperty('zeroKey');
+        });
+
+        it('delete() should log "not found" for a truly missing key', async () => {
+            const mockConfig: Record<string, string> = {};
+            jest.spyOn(storage, 'readStorage').mockResolvedValue(mockConfig);
+            jest.spyOn(storage, 'saveStorage').mockResolvedValue(undefined);
+
+            // Should not throw; saveStorage still called
+            await expect(storage.delete('missing')).resolves.toBeUndefined();
+        });
+    });
+
     // KSM-836: Regression tests for contains() — incorrect `in` operator usage
     describe('contains() — KSM-836 regression', () => {
         let storage: AWSKeyValueStorage;
