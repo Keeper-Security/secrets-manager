@@ -287,4 +287,49 @@ describe('GCPKeyValueStorage', () => {
             expect(result).toBe(false);
         });
     });
+
+    // KSM-840: Regression tests for delete() — truthy check skips falsy values
+    describe('delete() — KSM-840 regression', () => {
+        let storage: GCPKeyValueStorage;
+
+        beforeEach(() => {
+            const gcpKeyConfig = new GCPKeyConfig(
+                'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
+            );
+            storage = new GCPKeyValueStorage(null, gcpKeyConfig, mockSessionConfig);
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        it('delete() should remove a key whose value is an empty string', async () => {
+            const mockConfig: Record<string, string> = { emptyKey: '' };
+            jest.spyOn(storage, 'readStorage').mockResolvedValue(mockConfig);
+            jest.spyOn(storage, 'saveStorage').mockResolvedValue(undefined);
+
+            await storage.delete('emptyKey');
+
+            expect(mockConfig).not.toHaveProperty('emptyKey');
+        });
+
+        it('delete() should remove a key whose value is falsy (0)', async () => {
+            const mockConfig: Record<string, any> = { zeroKey: 0 };
+            jest.spyOn(storage, 'readStorage').mockResolvedValue(mockConfig);
+            jest.spyOn(storage, 'saveStorage').mockResolvedValue(undefined);
+
+            await storage.delete('zeroKey');
+
+            expect(mockConfig).not.toHaveProperty('zeroKey');
+        });
+
+        it('delete() should log "not found" for a truly missing key', async () => {
+            const mockConfig: Record<string, string> = {};
+            jest.spyOn(storage, 'readStorage').mockResolvedValue(mockConfig);
+            jest.spyOn(storage, 'saveStorage').mockResolvedValue(undefined);
+
+            // Should not throw; saveStorage still called
+            await expect(storage.delete('missing')).resolves.toBeUndefined();
+        });
+    });
 });
