@@ -430,7 +430,7 @@ export class OciKeyValueStorage implements KeyValueStorage {
 	public async delete(key: string): Promise<void> {
 		const config = await this.readStorage();
 
-		if (config[key]) {
+		if (key in config) {
 			this.logger.debug(`Deleting key ${key} from ${this.configFileLocation}`);
 			delete config[key];
 		} else {
