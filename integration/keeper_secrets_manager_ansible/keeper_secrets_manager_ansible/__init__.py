@@ -34,7 +34,7 @@ except ImportError:
     KSM_SDK_ERR = traceback.format_exc()
 else:
     from keeper_secrets_manager_core import SecretsManager
-    from keeper_secrets_manager_core.core import KSMCache
+    from keeper_secrets_manager_core.core import KSMCache, CreateOptions
     from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
     from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password, strtobool
 
@@ -478,8 +478,14 @@ class KeeperAnsible:
         return records[0]
 
     def create_record(self, new_record, shared_folder_uid):
+        # KSM-816: use create_secret_with_options() instead of create_secret() so
+        # that folder keys are fetched via the get_folders endpoint, which returns
+        # all folders including empty ones. create_secret() uses get_secrets() which
+        # only returns folder keys when the folder already contains records.
         try:
-            record_uid = self.client.create_secret(shared_folder_uid, new_record)
+            record_uid = self.client.create_secret_with_options(
+                CreateOptions(shared_folder_uid, None), new_record
+            )
         except Exception as err:
             raise Exception("Cannot get create record: {}".format(err))
 

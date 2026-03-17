@@ -16,7 +16,7 @@ from keeper_secrets_manager_ansible import KeeperAnsible
 from keeper_secrets_manager_helper.record_type import RecordType
 from keeper_secrets_manager_helper.field_type import FieldType
 from ansible.utils.display import Display
-import importlib_metadata
+from importlib.metadata import version as pkg_version, PackageNotFoundError
 import json
 
 display = Display()
@@ -66,8 +66,8 @@ class ActionModule(ActionBase):
 
         for module in versions:
             try:
-                versions[module] = importlib_metadata.version(module)
-            except importlib_metadata.PackageNotFoundError:
+                versions[module] = pkg_version(module)
+            except PackageNotFoundError:
                 pass
 
         return versions
