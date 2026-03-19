@@ -13,12 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install package dependencies
         run: npm install
@@ -26,29 +26,21 @@ jobs:
 
       - name: Install Syft
         run: |
-          echo "Installing Syft v1.18.1..."
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /tmp/bin v1.18.1
+          echo "Installing Syft v1.42.2..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /tmp/bin v1.42.2
           echo "/tmp/bin" >> "$GITHUB_PATH"
 
       - name: Install Manifest CLI
         run: |
-          echo "Installing Manifest CLI v0.18.3..."
-          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /tmp/bin v0.18.3
+          echo "Installing Manifest CLI v0.31.0..."
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /tmp/bin v0.31.0
 
       - name: Create Syft configuration
         run: |
           cat > syft-config.yaml << 'EOF'
-          package:
-            search:
-              scope: all-layers
-            cataloger:
-              enabled: true
-              java:
-                enabled: false
-              python:
-                enabled: false
-              nodejs:
-                enabled: true
+          select-catalogers:
+            - "-github-action-workflow-usage-cataloger"
+            - "-github-actions-usage-cataloger"
           EOF
 
       - name: Generate and upload SBOM
@@ -68,7 +60,7 @@ jobs:
           fi
 
           echo "Generating SBOM with Manifest CLI..."
-          /tmp/bin/manifest sbom "${JAVASCRIPT_SDK_DIR}/packages/azure" \
+          manifest sbom "${JAVASCRIPT_SDK_DIR}/packages/azure" \
             --generator=syft \
             --name=keeper-secrets-manager-javascript-storage-azure-kms \
             --version="${VERSION}" \
@@ -84,11 +76,11 @@ jobs:
           head -n 20 azure-storage-sbom.json
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-keeper-secrets-manager-javascript-storage-azure-kms-${{ github.run_number }}
           path: azure-storage-sbom.json
-          retention-days: 90
+          retention-days: 10
 
   build-npm:
     needs: generate-sbom
@@ -100,12 +92,12 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm install
@@ -117,7 +109,7 @@ jobs:
         run: npm run build
 
       - name: Upload NPM package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: npm-package-azure-kms-${{ github.run_number }}
           path: |
@@ -136,12 +128,12 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm ci
