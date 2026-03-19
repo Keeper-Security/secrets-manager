@@ -8,17 +8,24 @@ on:
         default: true
         type: boolean
 
+permissions:
+  contents: read
+
 jobs:
   generate-sbom:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install package dependencies
         run: npm install
@@ -26,29 +33,21 @@ jobs:
 
       - name: Install Syft
         run: |
-          echo "Installing Syft v1.18.1..."
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /tmp/bin v1.18.1
+          echo "Installing Syft v1.32.0..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /tmp/bin v1.32.0
           echo "/tmp/bin" >> "$GITHUB_PATH"
 
       - name: Install Manifest CLI
         run: |
-          echo "Installing Manifest CLI v0.18.3..."
-          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /tmp/bin v0.18.3
+          echo "Installing Manifest CLI v0.31.0..."
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /tmp/bin v0.31.0
 
       - name: Create Syft configuration
         run: |
           cat > syft-config.yaml << 'EOF'
-          package:
-            search:
-              scope: all-layers
-            cataloger:
-              enabled: true
-              java:
-                enabled: false
-              python:
-                enabled: false
-              nodejs:
-                enabled: true
+          select-catalogers:
+            - "-github-action-workflow-usage-cataloger"
+            - "-github-actions-usage-cataloger"
           EOF
 
       - name: Generate and upload SBOM
@@ -68,7 +67,7 @@ jobs:
           fi
 
           echo "Generating SBOM with Manifest CLI..."
-          /tmp/bin/manifest sbom "${JAVASCRIPT_SDK_DIR}/packages/oracle" \
+          manifest sbom "${JAVASCRIPT_SDK_DIR}/packages/oracle" \
             --generator=syft \
             --name=keeper-secrets-manager-javascript-storage-oracle-kms \
             --version="${VERSION}" \
@@ -84,15 +83,17 @@ jobs:
           head -n 20 oracle-storage-sbom.json
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: sbom-keeper-secrets-manager-javascript-storage-oracle-kms-${{ github.run_number }}
           path: oracle-storage-sbom.json
-          retention-days: 90
+          retention-days: 10
 
   build-npm:
     needs: generate-sbom
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     defaults:
       run:
@@ -100,12 +101,14 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm install
@@ -117,7 +120,7 @@ jobs:
         run: npm run build
 
       - name: Upload NPM package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: npm-package-oracle-kms-${{ github.run_number }}
           path: |
@@ -129,6 +132,8 @@ jobs:
     if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     defaults:
       run:
@@ -136,12 +141,14 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm ci
@@ -151,7 +158,7 @@ jobs:
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
-        uses: Keeper-Security/ksm-action@master
+        uses: Keeper-Security/ksm-action@d92a3c5d1df69745083436ba189f64a9cc1b25f5 # master
         with:
           keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
           secrets: |
