@@ -21,7 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - KSM-835 - Fixed `delete()` silently no-opping and `contains()` always returning `false`
   - `key in Object.keys(config)` was checking array indices instead of object property names; fixed to `key in config`
-- KSM-844 - Fixed `saveConfig()` silently swallowing encryption errors — invalid credentials, bad key IDs, and failed key rotation now throw as expected
+- KSM-844 - Fixed encryption and decryption errors being silently swallowed — invalid credentials, bad key IDs, and failed key rotation now throw as expected
+  - `encryptBuffer()` and `decryptBuffer()` in `utils.ts` now rethrow Azure KMS `wrapKey`/`unwrapKey` failures instead of returning empty values
+  - `saveConfig()` in `AzureKeyValueStorage.ts` now rethrows errors instead of logging and continuing, making the full error propagation chain work end-to-end
   - `saveString()`, `saveBytes()`, and `saveObject()` now propagate Azure KMS errors to the caller
   - `changeKey()` rollback path (key and crypto client restoration) is now reachable when encryption with the new key fails
 

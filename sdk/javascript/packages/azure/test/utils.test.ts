@@ -47,17 +47,13 @@ describe('utils', () => {
             );
         });
 
-        it('should return empty buffer when Azure wrapKey fails', async () => {
+        it('should throw when Azure wrapKey fails', async () => {
             // Given
             const message = 'test message';
             mockCryptoClient.wrapKey.mockRejectedValue(new Error('Azure API error'));
 
-            // When
-            const result = await encryptBuffer(mockCryptoClient, message, mockLogger);
-
-            // Then
-            expect(result).toBeInstanceOf(Buffer);
-            expect(result.length).toBe(0);
+            // When/Then — KSM-844: errors must propagate, not be silently swallowed
+            await expect(encryptBuffer(mockCryptoClient, message, mockLogger)).rejects.toThrow();
         });
 
         it('should handle empty message', async () => {
@@ -113,29 +109,23 @@ describe('utils', () => {
     });
 
     describe('decryptBuffer', () => {
-        it('should return empty string when header is invalid', async () => {
+        it('should throw when header is invalid', async () => {
             // Given - buffer without valid header
             const invalidBuffer = Buffer.from([0xFF, 0xFF, 0x00, 0x00]);
 
-            // When
-            const result = await decryptBuffer(mockCryptoClient, invalidBuffer, mockLogger);
-
-            // Then
-            expect(result).toBe('');
+            // When/Then — KSM-844: errors must propagate
+            await expect(decryptBuffer(mockCryptoClient, invalidBuffer, mockLogger)).rejects.toThrow();
         });
 
-        it('should return empty string when buffer is too short', async () => {
+        it('should throw when buffer is too short', async () => {
             // Given - buffer that's too short
             const shortBuffer = Buffer.from([0x01]);
 
-            // When
-            const result = await decryptBuffer(mockCryptoClient, shortBuffer, mockLogger);
-
-            // Then
-            expect(result).toBe('');
+            // When/Then — KSM-844: errors must propagate
+            await expect(decryptBuffer(mockCryptoClient, shortBuffer, mockLogger)).rejects.toThrow();
         });
 
-        it('should return empty string when Azure unwrapKey fails', async () => {
+        it('should throw when Azure unwrapKey fails', async () => {
             // Given - create a properly formatted buffer
             const header = Buffer.from([0x01, 0x00]); // BLOB_HEADER
             const encryptedKey = Buffer.from('encrypted-key-data');
@@ -156,11 +146,8 @@ describe('utils', () => {
 
             mockCryptoClient.unwrapKey.mockRejectedValue(new Error('Azure API error'));
 
-            // When
-            const result = await decryptBuffer(mockCryptoClient, validBuffer, mockLogger);
-
-            // Then
-            expect(result).toBe('');
+            // When/Then — KSM-844: errors must propagate
+            await expect(decryptBuffer(mockCryptoClient, validBuffer, mockLogger)).rejects.toThrow();
         });
     });
 
@@ -193,22 +180,18 @@ describe('utils', () => {
     });
 
     describe('error handling', () => {
-        it('should handle crypto client exceptions gracefully in encrypt', async () => {
+        it('should throw on crypto client exceptions in encrypt', async () => {
             // Given
             const message = 'test message';
             mockCryptoClient.wrapKey.mockImplementation(() => {
                 throw new Error('Unexpected sync error');
             });
 
-            // When
-            const result = await encryptBuffer(mockCryptoClient, message, mockLogger);
-
-            // Then
-            expect(result).toBeInstanceOf(Buffer);
-            expect(result.length).toBe(0);
+            // When/Then — KSM-844: errors must propagate
+            await expect(encryptBuffer(mockCryptoClient, message, mockLogger)).rejects.toThrow();
         });
 
-        it('should handle crypto client exceptions gracefully in decrypt', async () => {
+        it('should throw on crypto client exceptions in decrypt', async () => {
             // Given
             const header = Buffer.from([0x01, 0x00]);
             const encryptedKey = Buffer.from('encrypted-key-data');
@@ -231,11 +214,8 @@ describe('utils', () => {
                 throw new Error('Unexpected sync error');
             });
 
-            // When
-            const result = await decryptBuffer(mockCryptoClient, validBuffer, mockLogger);
-
-            // Then
-            expect(result).toBe('');
+            // When/Then — KSM-844: errors must propagate
+            await expect(decryptBuffer(mockCryptoClient, validBuffer, mockLogger)).rejects.toThrow();
         });
     });
 });
