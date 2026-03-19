@@ -1,5 +1,6 @@
 import { AzureKeyValueStorage } from '../src/AzureKeyValueStorage';
 import { AzureSessionConfig } from '../src/AzureSessionConfig';
+import { CryptographyClient } from '@azure/keyvault-keys';
 import * as utils from '../src/utils';
 
 // Mock Azure SDK modules
@@ -242,6 +243,52 @@ describe('AzureKeyValueStorage', () => {
 
             // Then: original key must be restored (rollback path is now reachable)
             expect((storage as any).keyId).toBe(originalKeyId);
+        });
+    });
+
+    // KSM-844: utils.ts error propagation — encryptBuffer() and decryptBuffer() must throw, not swallow
+    describe('utils.ts error propagation — KSM-844 regression', () => {
+        let mockLogger: any;
+
+        beforeEach(() => {
+            mockLogger = { debug: jest.fn(), error: jest.fn(), warn: jest.fn(), info: jest.fn() };
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        it('encryptBuffer() should throw when wrapKey fails', async () => {
+            // Given: Azure wrapKey fails
+            const mockClient = new (CryptographyClient as jest.MockedClass<typeof CryptographyClient>)('url', null as any);
+            (mockClient.wrapKey as jest.Mock).mockRejectedValue(new Error('Azure KMS wrapKey failed'));
+
+            // When/Then: encryptBuffer must propagate the error, not return an empty buffer
+            await expect(utils.encryptBuffer(mockClient, 'test-message', mockLogger)).rejects.toThrow();
+        });
+
+        it('decryptBuffer() should throw when unwrapKey fails', async () => {
+            // Given: construct a minimal valid blob to pass header/structure validation
+            const header = Buffer.from('\xff\xff', 'latin1');
+            const makePart = (data: Buffer) => {
+                const len = Buffer.alloc(2);
+                len.writeUInt16BE(data.length, 0);
+                return Buffer.concat([len, data]);
+            };
+            const blob = Buffer.concat([
+                header,
+                makePart(Buffer.alloc(16, 0xAA)), // wrappedKey
+                makePart(Buffer.alloc(16, 0xBB)), // nonce
+                makePart(Buffer.alloc(16, 0xCC)), // tag
+                makePart(Buffer.alloc(4, 0xDD)),  // ciphertext
+            ]);
+
+            // Azure unwrapKey fails
+            const mockClient = new (CryptographyClient as jest.MockedClass<typeof CryptographyClient>)('url', null as any);
+            (mockClient.unwrapKey as jest.Mock).mockRejectedValue(new Error('Azure KMS unwrapKey failed'));
+
+            // When/Then: decryptBuffer must propagate the error, not return an empty string
+            await expect(utils.decryptBuffer(mockClient, blob, mockLogger)).rejects.toThrow();
         });
     });
 

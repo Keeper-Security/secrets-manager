@@ -28,7 +28,7 @@ export async function encryptBuffer(azureKvStorageCryptoClient: CryptographyClie
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (err: any) {
             console.error("Azure crypto client failed to wrap key:", err.message);
-            return Buffer.alloc(0); // Return empty buffer in case of an error
+            throw err;
         }
 
         logger.debug("started creating buffer chunks for saving to file");
@@ -47,7 +47,7 @@ export async function encryptBuffer(azureKvStorageCryptoClient: CryptographyClie
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
         logger.warn("Azure KeyVault Storage failed to encrypt:", err.message);
-        return Buffer.alloc(0); // Return empty buffer in case of an error
+        throw err;
     }
 }
 
@@ -101,7 +101,7 @@ export async function decryptBuffer(azureKeyValueStorageCryptoClient: Cryptograp
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (err: any) {
             console.error("Azure crypto client failed to unwrap key:", err.message);
-            return ""; // Return empty string in case of an error
+            throw err;
         }
         logger.debug("creating original key from unwrapped key");
         // Step 4: Decrypt the message using AES-GCM
@@ -119,6 +119,6 @@ export async function decryptBuffer(azureKeyValueStorageCryptoClient: Cryptograp
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
         logger.warn("Azure KeyVault Storage failed to decrypt:", err.message);
-        return ""; // Return empty string in case of an error
+        throw err;
     }
 }
