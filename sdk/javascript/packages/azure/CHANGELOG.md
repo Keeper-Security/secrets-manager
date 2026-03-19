@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - KSM-835 - Fixed `delete()` silently no-opping and `contains()` always returning `false`
   - `key in Object.keys(config)` was checking array indices instead of object property names; fixed to `key in config`
+- KSM-844 - Fixed `saveConfig()` silently swallowing encryption errors — invalid credentials, bad key IDs, and failed key rotation now throw as expected
+  - `saveString()`, `saveBytes()`, and `saveObject()` now propagate Azure KMS errors to the caller
+  - `changeKey()` rollback path (key and crypto client restoration) is now reachable when encryption with the new key fails
 
 ### Security
 

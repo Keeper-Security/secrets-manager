@@ -197,6 +197,7 @@ export class AzureKeyValueStorage implements KeyValueStorage {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (err: any) {
             this.logger.error("Error saving config:", err.message);
+            throw err;
         }
     }
 
