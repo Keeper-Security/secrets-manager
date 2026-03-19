@@ -188,9 +188,7 @@ export class AzureKeyValueStorage implements KeyValueStorage {
             // Encrypt the config JSON and write to the file
             const stringifiedConfig = JSON.stringify(this.config, Object.keys(this.config).sort(), DEFAULT_JSON_INDENT);
             const blob = await encryptBuffer(this.cryptoClient, stringifiedConfig, this.logger);
-            if (blob.length > 0) {
-                await fs.writeFile(this.configFileLocation, blob);
-            }
+            await fs.writeFile(this.configFileLocation, blob);
 
             // Update the last saved config hash
             this.lastSavedConfigHash = configHash;
@@ -221,9 +219,7 @@ export class AzureKeyValueStorage implements KeyValueStorage {
         try {
             // Decrypt the file contents
             plaintext = await decryptBuffer(this.cryptoClient, ciphertext, this.logger);
-            if (plaintext.length === 0) {
-                this.logger.error(`Failed to decrypt config file ${this.configFileLocation}`);
-            } else if (autosave) {
+            if (autosave) {
                 // Optionally autosave the decrypted content
                 this.logger.info(`Saving decrypted config file ${this.configFileLocation}`);
                 await fs.writeFile(this.configFileLocation, plaintext);
@@ -279,10 +275,8 @@ export class AzureKeyValueStorage implements KeyValueStorage {
             const configPath = resolve(this.configFileLocation);
             await fs.writeFile(configPath, Buffer.from("{}"));
             const blob = await encryptBuffer(this.cryptoClient, "{}", this.logger);
-            if (blob.length > 0) {
-                await fs.writeFile(configPath, blob);
-                this.logger.info(`Config file created at: ${this.configFileLocation.toString()} and encrypted data written successfully`);
-            }
+            await fs.writeFile(configPath, blob);
+            this.logger.info(`Config file created at: ${this.configFileLocation.toString()} and encrypted data written successfully`);
         }
     }
 
