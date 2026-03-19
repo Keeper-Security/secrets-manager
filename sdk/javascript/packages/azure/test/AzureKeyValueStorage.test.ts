@@ -1,5 +1,6 @@
 import { AzureKeyValueStorage } from '../src/AzureKeyValueStorage';
 import { AzureSessionConfig } from '../src/AzureSessionConfig';
+import * as utils from '../src/utils';
 
 // Mock Azure SDK modules
 jest.mock('@azure/identity');
@@ -203,6 +204,44 @@ describe('AzureKeyValueStorage', () => {
             expect(() => {
                 new AzureKeyValueStorage(keyId, null, config3, null);
             }).not.toThrow();
+        });
+    });
+
+    // KSM-844: Regression tests — saveConfig() must propagate encryption errors to callers
+    describe('saveConfig() error propagation — KSM-844 regression', () => {
+        let storage: AzureKeyValueStorage;
+
+        beforeEach(() => {
+            const keyId = 'https://test-vault.vault.azure.net/keys/test-key';
+            storage = new AzureKeyValueStorage(keyId, null, null, null);
+            // Seed private config so saveConfig can compute hashes without hitting loadConfig
+            (storage as any).config = {};
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        it('saveString() should throw when encryption fails', async () => {
+            // Given: encryption fails at the Azure KMS layer
+            jest.spyOn(utils, 'encryptBuffer').mockRejectedValue(new Error('Azure KMS encryption failed'));
+            jest.spyOn(storage, 'readStorage').mockResolvedValue({});
+
+            // When/Then: error must propagate to the caller, not be silently swallowed
+            await expect(storage.saveString('key', 'value')).rejects.toThrow();
+        });
+
+        it('changeKey() should throw and roll back to the original key when encryption fails', async () => {
+            // Given
+            const originalKeyId = 'https://test-vault.vault.azure.net/keys/test-key';
+            const newKeyId = 'https://bad-vault.vault.azure.net/keys/bad-key';
+            jest.spyOn(utils, 'encryptBuffer').mockRejectedValue(new Error('Azure KMS encryption failed'));
+
+            // When
+            await expect(storage.changeKey(newKeyId)).rejects.toThrow('Failed to change the key');
+
+            // Then: original key must be restored (rollback path is now reachable)
+            expect((storage as any).keyId).toBe(originalKeyId);
         });
     });
 
