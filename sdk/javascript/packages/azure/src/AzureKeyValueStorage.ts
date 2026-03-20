@@ -32,7 +32,7 @@ export class AzureKeyValueStorage implements KeyValueStorage {
     }
     async getBytes(key: string): Promise<Uint8Array | undefined> {
         const bytesString = await this.get(key);
-        if (bytesString) {
+        if (bytesString !== undefined) {
             return Promise.resolve(platform.base64ToBytes(bytesString));
         }
         return Promise.resolve(undefined);
