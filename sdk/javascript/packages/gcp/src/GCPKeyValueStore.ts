@@ -321,15 +321,14 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         keyProperties: this.gcpKeyConfig,
         token: token
       }, this.logger);
-      if (blob.length > 0) {
-        await fs.writeFile(this.configFileLocation, blob);
-      }
+      await fs.writeFile(this.configFileLocation, blob);
       this.logger.debug("writing to the file completed successfully.");
       // Update the last saved config hash
       this.lastSavedConfigHash = configHash;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       this.logger.error("Error saving config:", err.message);
+      throw err;
     }
   }
 
@@ -377,10 +376,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         // Optionally autosave the decrypted content
         this.logger.debug("Autosave is true here. hence saving to file the decrypted configuration.");
         this.logger.warn("Saving the credentials file as plaintext file, please consider encrypting.");
-        if (plaintext.length > 0) {
-          this.logger.error("saving the credentials file as plaintext file, please consider encrypting.");
-          await fs.writeFile(this.configFileLocation, plaintext);
-        }
+        await fs.writeFile(this.configFileLocation, plaintext);
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
@@ -466,9 +462,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         keyProperties: this.gcpKeyConfig,
         token: token
       }, this.logger);
-      if (blob.length > 0) {
-        await fs.writeFile(configPath, blob);
-      }
+      await fs.writeFile(configPath, blob);
       this.logger.info(`Config file created at: ${configPath}`);
     }
   }

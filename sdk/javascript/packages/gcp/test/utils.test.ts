@@ -74,14 +74,14 @@ describe('utils', () => {
             expect(mockCryptoClient.encrypt).toHaveBeenCalledTimes(1);
         });
 
-        it('should return empty buffer when asymmetric encryption fails', async () => {
+        it('should throw when asymmetric encryption fails', async () => {
             // Given
             const message = 'test message';
 
             mockCryptoClient.getPublicKey.mockRejectedValue(new Error('Failed to get public key'));
 
-            // When
-            const result = await encryptBuffer({
+            // When / Then
+            await expect(encryptBuffer({
                 message,
                 cryptoClient: mockCryptoClient,
                 keyProperties: mockKeyProperties,
@@ -89,11 +89,7 @@ describe('utils', () => {
                 keyType: 'ASYMMETRIC_DECRYPT',
                 encryptionAlgorithm: 'RSA_DECRYPT_OAEP_2048_SHA256',
                 token: null,
-            }, mockLogger);
-
-            // Then
-            expect(result).toBeInstanceOf(Buffer);
-            expect(result.length).toBe(0);
+            }, mockLogger)).rejects.toThrow('Failed to get public key');
             expect(mockCryptoClient.getPublicKey).toHaveBeenCalledTimes(1);
         });
 
@@ -126,13 +122,13 @@ describe('utils', () => {
             expect(axios.post).toHaveBeenCalledTimes(1);
         });
 
-        it('should return empty buffer when encryption fails', async () => {
+        it('should throw when encryption fails', async () => {
             // Given
             const message = 'test message';
             mockCryptoClient.encrypt.mockRejectedValue(new Error('GCP API error'));
 
-            // When
-            const result = await encryptBuffer({
+            // When / Then
+            await expect(encryptBuffer({
                 message,
                 cryptoClient: mockCryptoClient,
                 keyProperties: mockKeyProperties,
@@ -140,11 +136,7 @@ describe('utils', () => {
                 keyType: 'ENCRYPT_DECRYPT',
                 encryptionAlgorithm: '',
                 token: null,
-            }, mockLogger);
-
-            // Then
-            expect(result).toBeInstanceOf(Buffer);
-            expect(result.length).toBe(0);
+            }, mockLogger)).rejects.toThrow('GCP API error');
         });
 
         it('should handle empty message', async () => {
@@ -203,12 +195,12 @@ describe('utils', () => {
     });
 
     describe('decryptBuffer', () => {
-        it('should return empty string when header is invalid', async () => {
+        it('should throw when header is invalid', async () => {
             // Given - buffer without valid header
             const invalidBuffer = Buffer.from([0xFF, 0xFF, 0x00, 0x00]);
 
-            // When
-            const result = await decryptBuffer({
+            // When / Then
+            await expect(decryptBuffer({
                 ciphertext: invalidBuffer,
                 cryptoClient: mockCryptoClient,
                 keyProperties: mockKeyProperties,
@@ -216,18 +208,15 @@ describe('utils', () => {
                 keyType: 'ENCRYPT_DECRYPT',
                 encryptionAlgorithm: '',
                 token: null,
-            }, mockLogger);
-
-            // Then
-            expect(result).toBe('');
+            }, mockLogger)).rejects.toThrow();
         });
 
-        it('should return empty string when buffer is too short', async () => {
+        it('should throw when buffer is too short', async () => {
             // Given - buffer that's too short
             const shortBuffer = Buffer.from([0x01]);
 
-            // When
-            const result = await decryptBuffer({
+            // When / Then
+            await expect(decryptBuffer({
                 ciphertext: shortBuffer,
                 cryptoClient: mockCryptoClient,
                 keyProperties: mockKeyProperties,
@@ -235,15 +224,12 @@ describe('utils', () => {
                 keyType: 'ENCRYPT_DECRYPT',
                 encryptionAlgorithm: '',
                 token: null,
-            }, mockLogger);
-
-            // Then
-            expect(result).toBe('');
+            }, mockLogger)).rejects.toThrow();
         });
 
-        it('should return empty string when GCP decrypt fails', async () => {
+        it('should throw when GCP decrypt fails', async () => {
             // Given - create a properly formatted buffer
-            const header = Buffer.from([0x01, 0x00]); // BLOB_HEADER
+            const header = Buffer.from([0xFF, 0xFF]); // BLOB_HEADER (\xff\xff in Latin-1)
             const encryptedKey = Buffer.from('encrypted-key-data');
             const nonce = Buffer.from('1234567890123456');
             const tag = Buffer.from('1234567890123456');
@@ -262,8 +248,8 @@ describe('utils', () => {
 
             mockCryptoClient.decrypt.mockRejectedValue(new Error('GCP API error'));
 
-            // When
-            const result = await decryptBuffer({
+            // When / Then
+            await expect(decryptBuffer({
                 ciphertext: validBuffer,
                 cryptoClient: mockCryptoClient,
                 keyProperties: mockKeyProperties,
@@ -271,23 +257,20 @@ describe('utils', () => {
                 keyType: 'ENCRYPT_DECRYPT',
                 encryptionAlgorithm: '',
                 token: null,
-            }, mockLogger);
-
-            // Then
-            expect(result).toBe('');
+            }, mockLogger)).rejects.toThrow('GCP API error');
         });
     });
 
     describe('error handling', () => {
-        it('should handle crypto client exceptions gracefully in encrypt', async () => {
+        it('should throw on crypto client exceptions in encrypt', async () => {
             // Given
             const message = 'test message';
             mockCryptoClient.encrypt.mockImplementation(() => {
                 throw new Error('Unexpected sync error');
             });
 
-            // When
-            const result = await encryptBuffer({
+            // When / Then
+            await expect(encryptBuffer({
                 message,
                 cryptoClient: mockCryptoClient,
                 keyProperties: mockKeyProperties,
@@ -295,16 +278,12 @@ describe('utils', () => {
                 keyType: 'ENCRYPT_DECRYPT',
                 encryptionAlgorithm: '',
                 token: null,
-            }, mockLogger);
-
-            // Then
-            expect(result).toBeInstanceOf(Buffer);
-            expect(result.length).toBe(0);
+            }, mockLogger)).rejects.toThrow('Unexpected sync error');
         });
 
-        it('should handle crypto client exceptions gracefully in decrypt', async () => {
+        it('should throw on crypto client exceptions in decrypt', async () => {
             // Given
-            const header = Buffer.from([0x01, 0x00]);
+            const header = Buffer.from([0xFF, 0xFF]); // BLOB_HEADER (\xff\xff in Latin-1)
             const encryptedKey = Buffer.from('encrypted-key-data');
             const nonce = Buffer.from('1234567890123456');
             const tag = Buffer.from('1234567890123456');
@@ -325,8 +304,8 @@ describe('utils', () => {
                 throw new Error('Unexpected sync error');
             });
 
-            // When
-            const result = await decryptBuffer({
+            // When / Then
+            await expect(decryptBuffer({
                 ciphertext: validBuffer,
                 cryptoClient: mockCryptoClient,
                 keyProperties: mockKeyProperties,
@@ -334,10 +313,7 @@ describe('utils', () => {
                 keyType: 'ENCRYPT_DECRYPT',
                 encryptionAlgorithm: '',
                 token: null,
-            }, mockLogger);
-
-            // Then
-            expect(result).toBe('');
+            }, mockLogger)).rejects.toThrow('Unexpected sync error');
         });
     });
 });
