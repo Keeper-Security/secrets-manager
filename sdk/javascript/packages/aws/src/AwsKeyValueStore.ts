@@ -301,14 +301,13 @@ export class AWSKeyValueStorage implements KeyValueStorage {
         keyType: this.keyType,
       }, this.logger);
 
-      if (blob.length > 0) {
-        await fs.writeFile(configPath, blob);
-      }
+      await fs.writeFile(configPath, blob);
       // Update the last saved config hash
       this.lastSavedConfigHash = configHash;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       this.logger.error("Error saving config:", err.message);
+      throw err;
     }
   }
 
@@ -430,9 +429,7 @@ export class AWSKeyValueStorage implements KeyValueStorage {
         cryptoClient: this.cryptoClient,
       }, this.logger);
 
-      if (blob.length > 0) {
-        await fs.writeFile(configPath, blob);
-      }
+      await fs.writeFile(configPath, blob);
       this.logger.info(`Config file created at: ${configPath}`);
     }
   }
