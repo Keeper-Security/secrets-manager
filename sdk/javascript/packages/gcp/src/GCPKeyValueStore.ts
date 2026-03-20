@@ -46,7 +46,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
 
   public async getBytes(key: string): Promise<Uint8Array | undefined> {
     const bytesString = await this.get(key);
-    if (bytesString) {
+    if (bytesString !== undefined) {
       return platform.base64ToBytes(bytesString);
     }
     return undefined;
