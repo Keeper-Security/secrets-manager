@@ -294,6 +294,58 @@ describe('AWSKeyValueStorage', () => {
         });
     });
 
+    // KSM-851: Regression tests — getBytes() must return empty Uint8Array for zero-length values
+    describe('getBytes() zero-length Uint8Array — KSM-851 regression', () => {
+        let storage: AWSKeyValueStorage;
+
+        beforeEach(() => {
+            const keyId = 'arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012';
+            const awsSessionConfig = new AWSSessionConfig('AKIATEST', 'secret-key', 'us-east-1');
+            storage = new AWSKeyValueStorage(keyId, null, awsSessionConfig, null as any);
+        });
+
+        afterEach(() => {
+            jest.restoreAllMocks();
+        });
+
+        it('getBytes() should return a defined empty Uint8Array for a key storing zero-length bytes', async () => {
+            // Given: empty Uint8Array was previously saved (stored as empty base64 string "")
+            jest.spyOn(storage, 'readStorage').mockResolvedValue({ emptyKey: '' });
+
+            // When
+            const result = await storage.getBytes('emptyKey');
+
+            // Then: must return Uint8Array(0), not undefined
+            expect(result).toBeDefined();
+            expect(result).toBeInstanceOf(Uint8Array);
+            expect(result!.length).toBe(0);
+        });
+
+        it('getBytes() should still return undefined for a key that was never saved', async () => {
+            // Given: key is absent from storage
+            jest.spyOn(storage, 'readStorage').mockResolvedValue({});
+
+            // When
+            const result = await storage.getBytes('missingKey');
+
+            // Then
+            expect(result).toBeUndefined();
+        });
+
+        it('contains() and getBytes() must be consistent: if contains returns true, getBytes must return defined', async () => {
+            // Given: empty Uint8Array stored
+            jest.spyOn(storage, 'readStorage').mockResolvedValue({ emptyKey: '' });
+
+            // When
+            const exists = await storage.contains('emptyKey');
+            const value = await storage.getBytes('emptyKey');
+
+            // Then
+            expect(exists).toBe(true);
+            expect(value).toBeDefined();
+        });
+    });
+
     // KSM-839: Regression tests for delete() — truthy check skips falsy values
     describe('delete() — KSM-839 regression', () => {
         let storage: AWSKeyValueStorage;
