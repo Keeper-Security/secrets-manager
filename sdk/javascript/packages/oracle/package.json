@@ -1,0 +1,54 @@
+{
+  "name": "@keeper-security/secrets-manager-oracle-kv",
+  "version": "1.0.0",
+  "description": "Keeper Secrets Manager oracle kv storage. This module enables secure storage of Keeper configuration using Oracle Key Vault Management Service (KMS).",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Keeper-Security/secrets-manager.git"
+  },
+  "license": "ISC",
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "link-local": "yarn link",
+    "build": "tsc",
+    "test": "jest",
+    "lint": "eslint 'src/**/*.ts'",
+    "clean": "rimraf dist node_modules package-lock.json"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.4",
+    "@babel/preset-env": "^7.28.3",
+    "@babel/preset-typescript": "^7.27.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.12.0",
+    "@types/node-fetch": "^2.6.7",
+    "@typescript-eslint/eslint-plugin": "^8.22.0",
+    "@typescript-eslint/parser": "^8.22.0",
+    "babel-jest": "^30.2.0",
+    "eslint": "^9.19.0",
+    "fast-crc32c": "^2.0.0",
+    "jest": "^30.2.0",
+    "rimraf": "^6.0.1",
+    "ts-jest": "^29.4.4",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.22.0"
+  },
+  "dependencies": {
+    "@keeper-security/secrets-manager-core": "^17.3.0",
+    "crc-32": "^1.2.2",
+    "node-fetch": "^2.6.5",
+    "oci-keymanagement": "^2.124.0",
+    "oci-vault": "^2.103.0",
+    "pino": "^10.1.0",
+    "pino-pretty": "^13.0.0"
+  }
+}
