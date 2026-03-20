@@ -58,24 +58,20 @@ describe('utils', () => {
             expect(mockCryptoClient.send).toHaveBeenCalledTimes(1);
         });
 
-        it('should return empty buffer when AWS KMS encrypt fails', async () => {
+        it('should throw when AWS KMS encrypt fails', async () => {
             // Given
             const message = 'test message';
             const keyId = 'arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012';
             mockCryptoClient.send.mockRejectedValue(new Error('AWS KMS API error'));
 
-            // When
-            const result = await encryptBuffer({
+            // When / Then
+            await expect(encryptBuffer({
                 keyId,
                 message,
                 encryptionAlgorithm: 'RSAES_OAEP_SHA_256',
                 cryptoClient: mockCryptoClient,
                 keyType: 'RSA_2048',
-            }, mockLogger);
-
-            // Then
-            expect(result).toBeInstanceOf(Buffer);
-            expect(result.length).toBe(0);
+            }, mockLogger)).rejects.toThrow('AWS KMS API error');
         });
 
         it('should handle empty message', async () => {
@@ -176,45 +172,39 @@ describe('utils', () => {
     });
 
     describe('decryptBuffer', () => {
-        it('should return empty string when header is invalid', async () => {
+        it('should throw when header is invalid', async () => {
             // Given - buffer without valid header
             const invalidBuffer = Buffer.from([0xFF, 0xFF, 0x00, 0x00]);
             const keyId = 'arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012';
 
-            // When
-            const result = await decryptBuffer({
+            // When / Then
+            await expect(decryptBuffer({
                 keyId,
                 encryptionAlgorithm: 'RSAES_OAEP_SHA_256',
                 ciphertext: invalidBuffer,
                 cryptoClient: mockCryptoClient,
                 keyType: 'RSA_2048',
-            }, mockLogger);
-
-            // Then
-            expect(result).toBe('');
+            }, mockLogger)).rejects.toThrow();
         });
 
-        it('should return empty string when buffer is too short', async () => {
+        it('should throw when buffer is too short', async () => {
             // Given - buffer that's too short
             const shortBuffer = Buffer.from([0x01]);
             const keyId = 'arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012';
 
-            // When
-            const result = await decryptBuffer({
+            // When / Then
+            await expect(decryptBuffer({
                 keyId,
                 encryptionAlgorithm: 'RSAES_OAEP_SHA_256',
                 ciphertext: shortBuffer,
                 cryptoClient: mockCryptoClient,
                 keyType: 'RSA_2048',
-            }, mockLogger);
-
-            // Then
-            expect(result).toBe('');
+            }, mockLogger)).rejects.toThrow();
         });
 
-        it('should return empty string when AWS KMS decrypt fails', async () => {
+        it('should throw when AWS KMS decrypt fails', async () => {
             // Given - create a properly formatted buffer
-            const header = Buffer.from([0x01, 0x00]); // BLOB_HEADER
+            const header = Buffer.from([0xFF, 0xFF]); // BLOB_HEADER (\xff\xff)
             const encryptedKey = Buffer.from('encrypted-key-data');
             const nonce = Buffer.from('1234567890123456');
             const tag = Buffer.from('1234567890123456');
@@ -234,22 +224,19 @@ describe('utils', () => {
 
             mockCryptoClient.send.mockRejectedValue(new Error('AWS KMS API error'));
 
-            // When
-            const result = await decryptBuffer({
+            // When / Then
+            await expect(decryptBuffer({
                 keyId,
                 encryptionAlgorithm: 'RSAES_OAEP_SHA_256',
                 ciphertext: validBuffer,
                 cryptoClient: mockCryptoClient,
                 keyType: 'RSA_2048',
-            }, mockLogger);
-
-            // Then
-            expect(result).toBe('');
+            }, mockLogger)).rejects.toThrow('AWS KMS API error');
         });
 
-        it('should return empty string when plaintext key is missing', async () => {
+        it('should throw when plaintext key is missing', async () => {
             // Given - create a properly formatted buffer
-            const header = Buffer.from([0x01, 0x00]); // BLOB_HEADER
+            const header = Buffer.from([0xFF, 0xFF]); // BLOB_HEADER (\xff\xff)
             const encryptedKey = Buffer.from('encrypted-key-data');
             const nonce = Buffer.from('1234567890123456');
             const tag = Buffer.from('1234567890123456');
@@ -271,17 +258,14 @@ describe('utils', () => {
                 Plaintext: undefined,
             } as any);
 
-            // When
-            const result = await decryptBuffer({
+            // When / Then
+            await expect(decryptBuffer({
                 keyId,
                 encryptionAlgorithm: 'RSAES_OAEP_SHA_256',
                 ciphertext: validBuffer,
                 cryptoClient: mockCryptoClient,
                 keyType: 'RSA_2048',
-            }, mockLogger);
-
-            // Then
-            expect(result).toBe('');
+            }, mockLogger)).rejects.toThrow();
         });
     });
 
@@ -321,7 +305,7 @@ describe('utils', () => {
     });
 
     describe('error handling', () => {
-        it('should handle crypto client exceptions gracefully in encrypt', async () => {
+        it('should throw on crypto client exceptions in encrypt', async () => {
             // Given
             const message = 'test message';
             const keyId = 'arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012';
@@ -329,23 +313,19 @@ describe('utils', () => {
                 throw new Error('Unexpected sync error');
             });
 
-            // When
-            const result = await encryptBuffer({
+            // When / Then
+            await expect(encryptBuffer({
                 keyId,
                 message,
                 encryptionAlgorithm: 'RSAES_OAEP_SHA_256',
                 cryptoClient: mockCryptoClient,
                 keyType: 'RSA_2048',
-            }, mockLogger);
-
-            // Then
-            expect(result).toBeInstanceOf(Buffer);
-            expect(result.length).toBe(0);
+            }, mockLogger)).rejects.toThrow('Unexpected sync error');
         });
 
-        it('should handle crypto client exceptions gracefully in decrypt', async () => {
+        it('should throw on crypto client exceptions in decrypt', async () => {
             // Given
-            const header = Buffer.from([0x01, 0x00]);
+            const header = Buffer.from([0xFF, 0xFF]); // BLOB_HEADER (\xff\xff)
             const encryptedKey = Buffer.from('encrypted-key-data');
             const nonce = Buffer.from('1234567890123456');
             const tag = Buffer.from('1234567890123456');
@@ -367,17 +347,14 @@ describe('utils', () => {
                 throw new Error('Unexpected sync error');
             });
 
-            // When
-            const result = await decryptBuffer({
+            // When / Then
+            await expect(decryptBuffer({
                 keyId,
                 encryptionAlgorithm: 'RSAES_OAEP_SHA_256',
                 ciphertext: validBuffer,
                 cryptoClient: mockCryptoClient,
                 keyType: 'RSA_2048',
-            }, mockLogger);
-
-            // Then
-            expect(result).toBe('');
+            }, mockLogger)).rejects.toThrow('Unexpected sync error');
         });
     });
 });
