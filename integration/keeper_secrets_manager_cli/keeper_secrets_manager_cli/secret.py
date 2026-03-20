@@ -23,6 +23,7 @@ from keeper_secrets_manager_cli.common import launch_editor
 from keeper_secrets_manager_core.core import SecretsManager, CreateOptions, KeeperFolder, KeeperFileUpload
 from keeper_secrets_manager_core.dto.payload import UpdateOptions
 from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
+from keeper_secrets_manager_core.dto.dtos import RecordCreate as _RecordCreate
 from keeper_secrets_manager_helper.record import Record
 from keeper_secrets_manager_helper.v3.record import Record as RecordV3
 from keeper_secrets_manager_helper.field_type import FieldType
@@ -31,6 +32,22 @@ from .table import Table, ColumnAlign
 from typing import List, Tuple
 import uuid
 import tempfile
+
+# KSM-702 workaround: Python Core SDK to_dict() uses `if self.custom:` which treats [] as falsy,
+# dropping the custom key from the serialized payload even after our null guard sets it to [].
+# Patch to_dict() at the class level to inject custom:[] when the key is absent.
+# Remove when keeper-secrets-manager-core >= 17.2.1 is released with the proper SDK fix.
+_sdk_to_dict = _RecordCreate.to_dict
+
+
+def _to_dict_with_custom(self):
+    d = _sdk_to_dict(self)
+    if 'custom' not in d:
+        d['custom'] = []
+    return d
+
+
+_RecordCreate.to_dict = _to_dict_with_custom
 
 
 class Secret:
@@ -156,7 +173,7 @@ class Secret:
             "type": record.type,
             "notes": record.dict.get("notes", ""),
             "fields": standard_fields,
-            "custom_fields": custom_fields,
+            "custom": custom_fields,
             "files": [{
                 "file_uid": x.f.get("fileUid"),
                 "name": x.name,
@@ -213,7 +230,7 @@ class Secret:
             table.add_row([label, value])
         ret += table.get_string() + "\n"
 
-        if len(record_dict["custom_fields"]) > 0:
+        if len(record_dict["custom"]) > 0:
             ret += "\n"
             table = Table(use_color=use_color)
             table.add_column("Custom Field", data_color=Fore.GREEN)
@@ -222,7 +239,7 @@ class Secret:
 
             problems = []
             seen = {}
-            for field in record_dict["custom_fields"]:
+            for field in record_dict["custom"]:
                 value = field["value"]
                 if len(value) == 0:
                     value = ""
@@ -323,11 +340,11 @@ class Secret:
                     break
 
         # If we don't have a value, check the custom_fields. Label first and then type.
-        if field is None and record.get("custom_fields") is not None:
+        if field is None and record.get("custom") is not None:
             for key in ["label", "type"]:
                 if field is None or len(field) == 0:
                     try:
-                        field = next((item for item in record["custom_fields"] if item.get(key) == field_key), None)
+                        field = next((item for item in record["custom"] if item.get(key) == field_key), None)
                     except ValueError as _:
                         pass
                 if field is not None:
@@ -855,6 +872,8 @@ class Secret:
             record_uids = []
             for record in records:
                 record_create_obj = record.get_record_create_obj()
+                if record_create_obj.custom is None:   # KSM-702: ensure custom: [] is always present
+                    record_create_obj.custom = []
                 folder_options, folders = self.build_folder_options(folder_uid, folders)
                 record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj, folders)
                 record_uids.append(record_uid)
@@ -881,6 +900,8 @@ class Secret:
             )
             record = records[0]
             record_create_obj = record.get_record_create_obj()
+            if record_create_obj.custom is None:   # KSM-702
+                record_create_obj.custom = []
 
             folder_options, folders = self.build_folder_options(folder_uid)
             record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj, folders)
@@ -915,6 +936,8 @@ class Secret:
                     records = RecordV3.create_from_data(record_data)
                     record = records[0]
                     record_create_obj = record.get_record_create_obj()
+                    if record_create_obj.custom is None:   # KSM-702
+                        record_create_obj.custom = []
                     record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj)
                 else:
                     print(f"Unable to find the parent shared folder for record {uid} - individually shared records cannot be cloned.", file=sys.stderr)
