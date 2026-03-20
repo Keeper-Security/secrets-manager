@@ -272,15 +272,14 @@ export class OciKeyValueStorage implements KeyValueStorage {
 				keyVersionId: this.keyVersion,
 				isAsymmetric: this.isAsymmetric
 			}, this.logger);
-			if (blob.length > 0) {
-				await fs.writeFile(this.configFileLocation, blob);
-			}
+			await fs.writeFile(this.configFileLocation, blob);
 
 			// Update the last saved config hash
 			this.lastSavedConfigHash = configHash;
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} catch (err: any) {
 			this.logger.error("Error saving config:", err.message);
+			throw err;
 		}
 	}
 
@@ -398,10 +397,8 @@ export class OciKeyValueStorage implements KeyValueStorage {
 				keyVersionId: this.keyVersion,
 				isAsymmetric: this.isAsymmetric
 			}, this.logger);
-			if(blob.length>0){
-				await fs.writeFile(configPath, blob);
-				this.logger.info(`Config file created at: ${configPath}`);
-			}
+			await fs.writeFile(configPath, blob);
+			this.logger.info(`Config file created at: ${configPath}`);
 		}
 	}
 
