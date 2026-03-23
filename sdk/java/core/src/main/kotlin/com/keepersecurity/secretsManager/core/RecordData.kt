@@ -57,7 +57,7 @@ data class KeeperFileData(
     val type: String? = null,
     val size: Long,
     @Serializable(with = FlexibleLongSerializer::class)
-    val lastModified: Long
+    val lastModified: Long = 0
 )
 
 @Serializable
