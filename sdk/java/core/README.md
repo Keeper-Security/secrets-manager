@@ -4,6 +4,12 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.2.1
+- KSM-854 - Fix `KeeperFileData` crash when `lastModified` field is absent from file metadata
+  - Files uploaded by non-SDK Keeper clients (iOS, Android, Web Vault) may omit `lastModified`
+  - Previously threw `MissingFieldException` and silently skipped the file attachment
+  - Now defaults to `0` when the field is absent, consistent with .NET SDK behavior (KSM-674)
+
 ## 17.2.0
 - **SECURITY (KSM-699)** - Fix file permissions for config.json and cache.dat
   - Config and cache files now created with 0600 permissions (owner read/write only)
