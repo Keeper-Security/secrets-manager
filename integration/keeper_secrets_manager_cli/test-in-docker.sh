@@ -23,4 +23,16 @@ docker run --rm \
   "
 
 echo ""
-echo "✅ Tests complete!"
+echo "Running KSM keyring integration tests in Docker (Secret Service)..."
+
+docker build -q -t ksm-cli-keyring-test -f tests/docker/Dockerfile.keyring-test .
+
+docker run --rm ksm-cli-keyring-test \
+  dbus-run-session -- bash -c "
+    echo '' | gnome-keyring-daemon --unlock --components=secrets,keyring
+    KSM_KEYRING_INTEGRATION=1 python3 -m pytest tests/keyring_integration_test.py -v --tb=short
+  "
+
+echo "Keyring integration tests complete."
+echo ""
+echo "All tests complete."

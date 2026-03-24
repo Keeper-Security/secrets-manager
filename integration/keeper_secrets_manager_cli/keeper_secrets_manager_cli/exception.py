@@ -31,5 +31,15 @@ class KsmCliException(click.ClickException):
         return self.colorize()
 
 
+class KsmCliIntegrityException(KsmCliException):
+    """Raised when a Keychain/keyring entry fails SHA-256 integrity verification.
+
+    This indicates the stored config was modified outside of the CLI
+    (e.g., via Keychain Access.app or the ``security`` CLI).  The caller
+    should surface a recovery hint directing the user to
+    ``ksm profile delete`` and re-initialize.
+    """
+
+
 class KsmRecordSyntaxException:
     pass
