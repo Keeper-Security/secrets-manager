@@ -168,8 +168,7 @@ internal class SecretsManagerTest {
 //            updateSecret(options, record)
         }
 
-        val fis = FileInputStream("config-dev.json")
-        val bytes = fis.readBytes()
+        val bytes = FileInputStream("config-dev.json").use { it.readBytes() }
         uploadFile(options, record, KeeperFileUpload("config-dev.json", "Sample File", "application/json", bytes))
 
 //        if (record.folderUid != null) {
