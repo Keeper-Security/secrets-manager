@@ -920,7 +920,7 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
 
             val fields = when(selector.lowercase()) {
                 "field" -> record.data.fields
-                "custom_field" -> record.data.custom ?: mutableListOf<KeeperRecordField>()
+                "custom_field" -> record.data.custom
                 else -> throw Exception("Notation error - Expected /field or /custom_field but found /$selector")
             }
 
@@ -991,9 +991,7 @@ fun completeTransaction(options: SecretsManagerOptions, recordUid: String, rollb
 @ExperimentalSerializationApi
 fun addCustomField(record: KeeperRecord, field: KeeperRecordField) {
     if (field.javaClass.superclass == KeeperRecordField::class.java) {
-        if (record.data.custom == null)
-            record.data.custom = mutableListOf()
-        record.data.custom!!.add(field)
+        record.data.custom.add(field)
     }
 }
 

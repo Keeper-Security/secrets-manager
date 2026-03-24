@@ -5,6 +5,9 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 17.2.1
+- KSM-823 - Fix `custom` field omitted from record create payload when no custom fields are set
+  - `KeeperRecordData.custom` now defaults to `mutableListOf()` instead of `null` — `kotlinx-serialization` previously skipped null fields, causing `"custom"` to be absent from the V3 API payload
+  - Consistent with Commander and Vault which always include `"custom": []`
 - KSM-855 - Fix file descriptor and HTTP connection leaks in `LocalConfigStorage` and `SecretsManager`
   - `LocalConfigStorage`: init block, `saveToFile()`, `saveCachedValue()`, and `getCachedValue()` now use Kotlin `.use {}` blocks to guarantee stream closure
   - `SecretsManager`: `postFunction()`, `downloadFile()`, and `uploadFile()` now use try/finally with `disconnect()` to guarantee HTTP connection closure
