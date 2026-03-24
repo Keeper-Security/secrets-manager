@@ -123,6 +123,19 @@ internal class SecretsManagerTest {
     }
 
     @Test
+    fun testRecordCreateEmptyCustomSerialized() {
+        // KSM-823: RecordCreate with no custom fields must include "custom": [] in JSON payload
+        val recordData = KeeperRecordData(
+            title = "Test Record",
+            type = "login",
+            fields = mutableListOf()
+        )
+        val json = Json.encodeToString(recordData)
+        assertTrue(json.contains("\"custom\":[]") || json.contains("\"custom\": []"),
+            "Serialized payload must include custom:[] even when no custom fields are set. Got: $json")
+    }
+
+    @Test
     fun testKeeperFileDataMissingLastModified() {
         // GH-973 / KSM-854: lastModified entirely absent — must deserialize without throwing
         val json = """{"title":"test.txt","name":"test.txt","type":"text/plain","size":1024}"""
