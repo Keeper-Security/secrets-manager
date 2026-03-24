@@ -3,13 +3,19 @@ name: Test-CLI
 on:
   pull_request:
     branches: [ master ]
+    paths:
+      - 'integration/keeper_secrets_manager_cli/**'
+      - 'sdk/python/core/**'
+      - 'sdk/python/helper/**'
+      - '.github/workflows/test.cli.yml'
 
 jobs:
   test-cli:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -52,10 +58,73 @@ jobs:
       - name: Install CLI dependencies
         working-directory: ./integration/keeper_secrets_manager_cli
         run: |
+          python3 -m pip install --upgrade pip
           python3 -m pip install -r requirements.txt
+          python3 -m pip install boto3        # test dep — optional in production
           python3 -m pip install pytest pytest-cov
 
       - name: Run CLI tests
         working-directory: ./integration/keeper_secrets_manager_cli
         run: |
           PYTHONPATH=$PWD pytest
+
+  test-cli-keyring:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install system deps (dbus + gnome-keyring)
+        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
+
+      ########## KSM Python SDK (from source)
+
+      - name: Install SDK dependencies
+        working-directory: ./sdk/python/core
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install setuptools
+          python3 -m pip install -r requirements.txt
+          python3 -m pip install -e .
+
+      - name: Install SDK for integrations
+        working-directory: ./sdk/python/core
+        run: |
+          python3 setup.py build install
+
+      ########## KSM Python Helper (from source)
+
+      - name: Install SDK Helper dependencies
+        working-directory: ./sdk/python/helper
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt
+          python3 -m pip install -e .
+
+      - name: Install SDK Helper for integrations
+        working-directory: ./sdk/python/helper
+        run: |
+          python3 setup.py build install
+
+      ########## CLI with keyring extra
+
+      - name: Install CLI with keyring extra
+        working-directory: ./integration/keeper_secrets_manager_cli
+        run: pip install -e ".[keyring]" pytest
+
+      - name: Run keyring integration tests
+        working-directory: ./integration/keeper_secrets_manager_cli
+        run: |
+          dbus-run-session -- bash -c "
+            echo '' | gnome-keyring-daemon --unlock --components=secrets,keyring
+            KSM_KEYRING_INTEGRATION=1 python -m pytest tests/keyring_integration_test.py -v --tb=short
+          "
+

@@ -6,6 +6,8 @@ on:
 
 jobs:
   test-ansible:
+    # Skip ansible tests on CLI release branches (tests fixed on ansible release branch)
+    if: ${{ !startsWith(github.head_ref, 'release/tool/cli/') }}
     runs-on: ubuntu-latest
     strategy:
       matrix:

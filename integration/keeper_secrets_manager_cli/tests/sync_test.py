@@ -1,9 +1,18 @@
 import unittest
+import pytest
 from unittest.mock import Mock, MagicMock, patch
 import json
 from click.testing import CliRunner
 from keeper_secrets_manager_cli.sync import Sync
 from keeper_secrets_manager_cli.exception import KsmCliException
+
+try:
+    import boto3 as _boto3
+    BOTO3_AVAILABLE = True
+except ImportError:
+    BOTO3_AVAILABLE = False
+
+requires_boto3 = pytest.mark.skipif(not BOTO3_AVAILABLE, reason="boto3 not installed — install with pip install keeper-secrets-manager-cli[aws]")
 
 
 class SyncTest(unittest.TestCase):
@@ -107,6 +116,7 @@ class SyncTest(unittest.TestCase):
         self.assertIn("Cannot use both plain and JSON format for the same AWS secret name", error_msg)
         self.assertIn("overlap_key", error_msg)
 
+    @requires_boto3
     @patch('boto3.client')
     def test_sync_aws_json_dry_run(self, mock_boto_client):
         """Test dry run with JSON format"""
@@ -159,6 +169,7 @@ class SyncTest(unittest.TestCase):
         self.assertIsNone(output_data[0][0]["dstValue"])  # json_key1 doesn't exist yet
         self.assertIsNone(output_data[0][1]["dstValue"])  # json_key2 doesn't exist yet
 
+    @requires_boto3
     @patch('boto3.client')
     def test_sync_aws_json_merge_existing(self, mock_boto_client):
         """Test merging with existing JSON values"""
@@ -215,6 +226,7 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(written_json['json_key1'], 'new_value1')  # Updated
         self.assertEqual(written_json['json_key2'], 'new_value2')  # Added
 
+    @requires_boto3
     @patch('boto3.client')
     def test_sync_aws_json_preserve_plaintext(self, mock_boto_client):
         """Test preserving existing plaintext value when converting to JSON"""
@@ -267,6 +279,7 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(written_json['_preserved_plaintext'], 'existing_plaintext_value')
         self.assertEqual(written_json['json_key1'], 'new_value')
 
+    @requires_boto3
     @patch('boto3.client')
     def test_sync_aws_json_create_new(self, mock_boto_client):
         """Test creating new KMS key with JSON format"""
@@ -322,6 +335,7 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(len(written_json), 1)
 
 
+    @requires_boto3
     @patch('boto3.client')
     def test_sync_mixed_formats(self, mock_boto_client):
         """Test syncing with both plain and JSON formats for different keys"""
