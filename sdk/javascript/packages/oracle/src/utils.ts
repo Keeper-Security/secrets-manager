@@ -9,7 +9,7 @@ import {
   UTF_8_ENCODING,
 } from "./constants";
 import { DecryptResponse, EncryptResponse } from "oci-keymanagement/lib/response";
-import { calculate } from "fast-crc32c";
+import { crc32c as calculate } from "@aws-crypto/crc32c";
 import { EncryptDataDetails } from "oci-keymanagement/lib/model";
 import { Logger } from "pino";
 

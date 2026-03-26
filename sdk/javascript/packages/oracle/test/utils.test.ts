@@ -5,8 +5,8 @@ jest.mock('oci-keymanagement', () => ({
 jest.mock('oci-common', () => ({
     ConfigFileAuthenticationDetailsProvider: jest.fn(),
 }));
-jest.mock('fast-crc32c', () => ({
-    calculate: jest.fn().mockReturnValue(12345),
+jest.mock('@aws-crypto/crc32c', () => ({
+    crc32c: jest.fn().mockReturnValue(12345),
 }));
 
 import { encryptBuffer, decryptBuffer } from '../src/utils';
