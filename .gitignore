@@ -62,6 +62,7 @@ venv.bak/
 keeper.ini*
 *config*.json
 !tsconfig.json
+!tsconfig.test.json
 .secrets
 ansible.cfg
 
