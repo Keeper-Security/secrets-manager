@@ -3,7 +3,7 @@ module.exports = {
         "<rootDir>/test"
     ],
     "transform": {
-        "^.+\\.(ts|tsx)$": "ts-jest"
+        "^.+\\.(ts|tsx)$": ["ts-jest", { tsconfig: "tsconfig.test.json" }]
     },
     "testEnvironment": "node"
 }
