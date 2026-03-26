@@ -6,7 +6,7 @@ import {
 } from "./interface";
 
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
-import { calculate } from "fast-crc32c";
+import { crc32c as calculate } from "@aws-crypto/crc32c";
 import {
     AES_256_GCM,
     BLOB_HEADER,
@@ -98,7 +98,7 @@ async function encryptDataAndValidateCRCAsymmetric(
     }
 
     if (publicKey.pemCrc32c && publicKey.pemCrc32c.value !== undefined) {
-        if (calculate(publicKey.pem) !== Number(publicKey.pemCrc32c.value)) {
+        if (calculate(Buffer.from(publicKey.pem)) !== Number(publicKey.pemCrc32c.value)) {
             throw new Error('GetPublicKey: response corrupted in-transit');
         }
     } else {

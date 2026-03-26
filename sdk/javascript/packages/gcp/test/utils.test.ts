@@ -2,14 +2,12 @@
 jest.mock('@google-cloud/kms', () => ({
     KeyManagementServiceClient: jest.fn(),
 }));
-jest.mock('fast-crc32c', () => ({
-    calculate: jest.fn().mockReturnValue(12345),
-}));
 jest.mock('axios', () => ({
     post: jest.fn(),
 }));
 
 import { encryptBuffer, decryptBuffer } from '../src/utils';
+import { crc32c } from '@aws-crypto/crc32c';
 import { GCPKeyConfig } from '../src/GcpKeyConfig';
 import { Logger } from 'pino';
 import axios from 'axios';
@@ -53,7 +51,7 @@ describe('utils', () => {
 
             mockCryptoClient.encrypt.mockResolvedValue([{
                 ciphertext: mockCiphertext,
-                ciphertextCrc32c: { value: 12345 },
+                ciphertextCrc32c: { value: crc32c(mockCiphertext) },
                 verifiedPlaintextCrc32c: true,
             }]);
 
@@ -146,7 +144,7 @@ describe('utils', () => {
 
             mockCryptoClient.encrypt.mockResolvedValue([{
                 ciphertext: mockCiphertext,
-                ciphertextCrc32c: { value: 12345 },
+                ciphertextCrc32c: { value: crc32c(mockCiphertext) },
                 verifiedPlaintextCrc32c: true,
             }]);
 
@@ -173,7 +171,7 @@ describe('utils', () => {
 
             mockCryptoClient.encrypt.mockResolvedValue([{
                 ciphertext: mockCiphertext,
-                ciphertextCrc32c: { value: 12345 },
+                ciphertextCrc32c: { value: crc32c(mockCiphertext) },
                 verifiedPlaintextCrc32c: true,
             }]);
 
