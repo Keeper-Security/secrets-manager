@@ -68,3 +68,16 @@ You're ready to use the KSM integration 👍
 Using the GCP KMS Integration
 
 Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager Python SDK functionality. Your code will need to be able to access the GCP KMS APIs in order to manage the decryption of the configuration file when run.
+
+## Change Log
+
+### 1.1.0
+
+- Raised minimum Python version to 3.9
+- Updated minimum `keeper-secrets-manager-core` dependency to 17.2.0
+- Fixed CVE-2026-0994: protobuf JSON recursion DoS (upgraded to `protobuf>=6.33.5`)
+- Fixed CVE-2026-26007: cryptography subgroup attack (upgraded to `cryptography>=46.0.5`)
+
+### 1.0.0
+
+- Initial release
