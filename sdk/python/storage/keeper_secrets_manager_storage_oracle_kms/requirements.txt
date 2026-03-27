@@ -2,7 +2,7 @@ certifi==2025.1.31
 cffi==1.17.1
 charset-normalizer==3.4.1
 circuitbreaker==2.0.0
-cryptography==44.0.1
+cryptography==46.0.5
 idna==3.10
 importlib_metadata==8.6.1
 keeper-secrets-manager-core>=16.6.6
@@ -12,7 +12,7 @@ pycryptodome==3.21.0
 pyOpenSSL==24.3.0
 python-dateutil==2.9.0.post0
 pytz==2025.1
-requests==2.32.3
+requests==2.32.4
 six==1.17.0
-urllib3==2.3.0
+urllib3==2.6.3
 zipp==3.21.0
