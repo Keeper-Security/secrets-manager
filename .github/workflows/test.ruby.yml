@@ -41,12 +41,12 @@ jobs:
         run: |
           bundle exec rubocop || true  # Don't fail on linting for now
 
-      - name: Run unit tests
+      - name: Run RSpec tests (unit + integration)
         run: |
           bundle exec rspec spec/
 
-      - name: Run integration tests (mock mode)
+      - name: Run offline mock test
         env:
           KEEPER_MOCK_MODE: 'true'
         run: |
-          ruby -I lib test/integration/test_offline_mock.rb || true  # Don't fail if file doesn't exist yet
+          ruby -I lib test/integration/test_offline_mock.rb

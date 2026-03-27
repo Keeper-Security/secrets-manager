@@ -4,9 +4,8 @@
 
 require 'keeper_secrets_manager'
 
-# Initialize
-config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
-secrets_manager = KeeperSecretsManager.from_config(config)
+# Initialize from saved configuration file
+secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
 
 puts '=== Field Types Example ==='
 

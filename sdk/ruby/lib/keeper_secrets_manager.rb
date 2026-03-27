@@ -8,6 +8,7 @@ require 'keeper_secrets_manager/storage'
 require 'keeper_secrets_manager/dto'
 require 'keeper_secrets_manager/field_types'
 require 'keeper_secrets_manager/notation'
+require 'keeper_secrets_manager/cache'
 require 'keeper_secrets_manager/core'
 require 'keeper_secrets_manager/folder_manager'
 
@@ -28,6 +29,12 @@ module KeeperSecretsManager
   # Convenience method to create from token
   def self.from_token(token, options = {})
     Core::SecretsManager.new(options.merge(token: token))
+  end
+
+  # Convenience method to create from base64 config string
+  def self.from_config(config_base64, options = {})
+    storage = Storage::InMemoryStorage.new(config_base64)
+    Core::SecretsManager.new(options.merge(config: storage))
   end
 
   # Convenience method to create from config file

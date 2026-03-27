@@ -5,9 +5,8 @@
 require 'keeper_secrets_manager'
 require 'tempfile'
 
-# Initialize
-config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
-secrets_manager = KeeperSecretsManager.from_config(config)
+# Initialize from saved configuration file
+secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
 
 puts '=== File Operations Example ==='
 
@@ -38,68 +37,106 @@ if records_with_files.any?
     filename = downloaded['name'] || 'downloaded_file'
     File.write(filename, downloaded['data'])
 
-    puts "✓ Downloaded: #{filename} (#{downloaded['size']} bytes)"
+    puts "[OK] Downloaded: #{filename} (#{downloaded['size']} bytes)"
     puts "  Type: #{downloaded['type']}"
 
     # Clean up
     File.delete(filename) if File.exist?(filename)
 
   rescue StandardError => e
-    puts "✗ Download failed: #{e.message}"
+    puts "[FAIL] Download failed: #{e.message}"
   end
 end
 
-# 3. Upload a file
-puts "\n3. Uploading a file..."
+# 2.5. Download file thumbnails (new in v17.2.0)
+if records_with_files.any?
+  puts "\n2.5. Downloading file thumbnails..."
+  record = records_with_files.first
+
+  record.files.each do |file|
+    # Check if thumbnail is available
+    if file['thumbnailUrl'] || file['thumbnail_url']
+      puts "  Downloading thumbnail for: #{file['name']}"
+
+      begin
+        thumbnail = secrets_manager.download_thumbnail(file)
+
+        # Save thumbnail to disk
+        thumb_filename = "thumb_#{file['name']}"
+        File.write(thumb_filename, thumbnail['data'])
+
+        puts "  [OK] Saved: #{thumb_filename} (#{thumbnail['size']} bytes, #{thumbnail['type']})"
+
+        # Clean up
+        File.delete(thumb_filename) if File.exist?(thumb_filename)
+      rescue StandardError => e
+        puts "  [FAIL] Thumbnail download failed: #{e.message}"
+      end
+    else
+      puts "  No thumbnail available for: #{file['name']}"
+    end
+  end
+end
+
+# 3. Upload a file (traditional method)
+puts "\n3. Uploading a file (traditional method)..."
 begin
   # Create a test file
   test_content = "This is a test file created at #{Time.now}\n"
   test_content += "It contains some sample data for demonstration.\n"
 
-  # Create or find a record to attach the file to
-  record = secrets.first || begin
-    # Create a new record if none exist
-    # Note: You need to specify a folder_uid where the record will be created
-    # Get the first available folder
-    folders = secrets_manager.get_folders
-    folder_uid = folders.first&.uid
-    raise 'No folders available. Please create a folder in your vault first.' unless folder_uid
+  # Get a record to attach the file to
+  record = secrets.first
+  if record
+    puts "Uploading to record: #{record.title}"
 
-    options = KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: folder_uid)
-    uid = secrets_manager.create_secret({
-                                          type: 'login',
-                                          title: 'File Upload Test',
-                                          fields: [
-                                            { type: 'login', value: ['test@example.com'] },
-                                            { type: 'password', value: ['test123'] }
-                                          ]
-                                        }, options)
-    secrets_manager.get_secret_by_uid(uid)
-  end
+    # Upload the file (traditional method with file data)
+    file_uid = secrets_manager.upload_file(
+      record.uid,
+      test_content,
+      'test_document.txt',
+      'Test Document'
+    )
 
-  puts "Uploading to record: #{record.title}"
-
-  # Upload the file
-  file_uid = secrets_manager.upload_file(
-    owner_record_uid: record.uid,
-    file_name: 'test_document.txt',
-    file_data: test_content,
-    mime_type: 'text/plain'
-  )
-
-  puts "✓ Uploaded file with UID: #{file_uid}"
-
-  # Verify by downloading
-  updated_record = secrets_manager.get_secret_by_uid(record.uid)
-  new_file = updated_record.files.find { |f| f['fileUid'] == file_uid }
-
-  if new_file
-    downloaded = secrets_manager.download_file(new_file)
-    puts "✓ Verified: #{downloaded['name']}"
+    puts "[OK] Uploaded file with UID: #{file_uid}"
+  else
+    puts '[WARN] No records available for file upload test'
   end
 rescue StandardError => e
-  puts "✗ Upload failed: #{e.message}"
+  puts "[FAIL] Upload failed: #{e.message}"
   puts '  Note: File upload requires write permissions'
+end
+
+# 3.5. Upload file from path (convenience method - NEW in v17.2.0)
+puts "\n3.5. Uploading file from disk path (convenience method)..."
+begin
+  # Create a temporary file on disk
+  temp_file = Tempfile.new(['keeper_test', '.txt'])
+  temp_file.write("Test file content from disk\nCreated: #{Time.now}")
+  temp_file.close
+
+  record = secrets.first
+  if record
+    puts "Uploading from path: #{temp_file.path}"
+
+    # Convenience method - reads file automatically
+    file_uid = secrets_manager.upload_file_from_path(
+      record.uid,
+      temp_file.path,
+      file_title: 'Uploaded from Disk'
+    )
+
+    puts "[OK] Uploaded file with UID: #{file_uid}"
+    puts "  Filename auto-detected: #{File.basename(temp_file.path)}"
+  else
+    puts '[WARN] No records available for file upload test'
+  end
+
+  # Clean up
+  temp_file.unlink
+rescue StandardError => e
+  puts "[FAIL] Upload from path failed: #{e.message}"
+  temp_file&.unlink
 end
 
 # 4. Working with different file types
