@@ -1,0 +1,52 @@
+{
+    "name": "@keeper-security/secrets-manager-azure",
+    "version": "1.0.0",
+    "description": "Keeper Secrets Manager Azure storage",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "publishConfig": {
+        "access": "public"
+    },
+    "files": [
+        "dist",
+        "README.md"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Keeper-Security/secrets-manager.git"
+    },
+    "scripts": {
+        "prebuild": "rimraf dist",
+        "build": "tsc",
+        "test": "jest",
+        "link-local": "yarn link",
+        "lint": "eslint 'src/**/*.ts'"
+    },
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "@keeper-security/secrets-manager-core": "^17.3.0",
+        "pino": "^10.1.0",
+        "pino-pretty": "^13.0.0",
+        "@azure/identity": "^4.6.0",
+        "@azure/keyvault-keys": "^4.9.0"
+    },
+    "devDependencies": {
+        "@babel/core": "^7.28.4",
+        "@babel/preset-env": "^7.28.3",
+        "@babel/preset-typescript": "^7.27.1",
+        "@eslint/js": "^9.19.0",
+        "@types/jest": "^30.0.0",
+        "@types/node": "^22.12.0",
+        "@typescript-eslint/eslint-plugin": "^8.22.0",
+        "@typescript-eslint/parser": "^8.22.0",
+        "babel-jest": "^30.2.0",
+        "eslint": "^9.19.0",
+        "globals": "^15.14.0",
+        "jest": "^30.2.0",
+        "rimraf": "^6.0.1",
+        "ts-jest": "^29.4.4",
+        "typescript": "^5.7.3",
+        "typescript-eslint": "^8.22.0"
+    }
+}
