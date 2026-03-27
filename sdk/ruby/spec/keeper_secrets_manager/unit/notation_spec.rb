@@ -155,6 +155,28 @@ RSpec.describe KeeperSecretsManager::Notation::Parser do
       end
     end
 
+    context 'duplicate UID handling (shortcuts)' do
+      it 'handles duplicate UIDs from shortcuts/linked records' do
+        # Create two records with same UID (simulating original + shortcut)
+        record1 = KeeperSecretsManager::Dto::KeeperRecord.new(
+          uid: 'duplicate-uid',
+          title: 'Original Record',
+          fields: [{ 'type' => 'login', 'value' => ['testuser'] }]
+        )
+        record2 = KeeperSecretsManager::Dto::KeeperRecord.new(
+          uid: 'duplicate-uid',
+          title: 'Shortcut Record',
+          fields: [{ 'type' => 'login', 'value' => ['testuser'] }]
+        )
+
+        allow(mock_secrets_manager).to receive(:get_secrets).with(['duplicate-uid']).and_return([record1, record2])
+
+        # Should not raise error, should deduplicate and return first record's value
+        result = parser.parse('keeper://duplicate-uid/field/login')
+        expect(result).to eq('testuser')
+      end
+    end
+
     context 'error handling' do
       it 'raises error for invalid notation format' do
         expect { parser.parse('invalid-notation') }.to raise_error(KeeperSecretsManager::NotationError)

@@ -4,9 +4,8 @@
 
 require 'keeper_secrets_manager'
 
-# Initialize
-config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
-secrets_manager = KeeperSecretsManager.from_config(config)
+# Initialize from saved configuration file
+secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
 
 puts '=== TOTP (2FA) Example ==='
 
@@ -15,7 +14,7 @@ puts '=== TOTP (2FA) Example ==='
 
 begin
   # Check if TOTP is available
-  unless defined?(KeeperSecretsManager::Totp)
+  unless defined?(KeeperSecretsManager::TOTP)
     puts "\nTOTP functionality requires the 'base32' gem."
     puts 'Install it with: gem install base32'
     puts "\nWithout TOTP, you can still:"
@@ -57,7 +56,7 @@ begin
       seed = totp_field['value'].first
 
       # Generate current code
-      code = KeeperSecretsManager::Totp.generate(seed)
+      code = KeeperSecretsManager::TOTP.generate_code(seed)
       puts "  #{record.title}: #{code}"
 
       # Show time remaining
