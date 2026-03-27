@@ -19,7 +19,7 @@ import java.util.*
 import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj17.2.0"
+const val KEEPER_CLIENT_VERSION = "mj17.2.1"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -1062,17 +1062,17 @@ fun downloadThumbnail(file: KeeperFile): ByteArray {
 }
 
 private fun downloadFile(file: KeeperFile, url: String): ByteArray {
-    with(URI.create(url).toURL().openConnection() as HttpsURLConnection) {
-        requestMethod = "GET"
-        val statusCode = responseCode
-        val data = when {
-            errorStream != null -> errorStream.readBytes()
-            else -> inputStream.readBytes()
-        }
+    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
+    try {
+        connection.requestMethod = "GET"
+        val statusCode = connection.responseCode
+        val data = (connection.errorStream ?: connection.inputStream).use { it.readBytes() }
         if (statusCode != HTTP_OK) {
             throw Exception(String(data))
         }
         return decrypt(data, file.fileKey)
+    } finally {
+        connection.disconnect()
     }
 }
 
@@ -1082,28 +1082,28 @@ private fun uploadFile(url: String, parameters: String, fileData: ByteArray): Ke
     val boundary = String.format("----------%x", Instant.now().epochSecond)
     val boundaryBytes: ByteArray = stringToBytes("\r\n--$boundary")
     val paramJson = Json.parseToJsonElement(parameters) as JsonObject
-    with(URI.create(url).toURL().openConnection() as HttpsURLConnection) {
-        requestMethod = "POST"
-        useCaches = false
-        doInput = true
-        doOutput = true
-        setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-        with(outputStream) {
+    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
+    try {
+        connection.requestMethod = "POST"
+        connection.useCaches = false
+        connection.doInput = true
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        connection.outputStream.use { os ->
             for (param in paramJson.entries) {
-                write(boundaryBytes)
-                write(stringToBytes("\r\nContent-Disposition: form-data; name=\"${param.key}\"\r\n\r\n${param.value.jsonPrimitive.content}"))
+                os.write(boundaryBytes)
+                os.write(stringToBytes("\r\nContent-Disposition: form-data; name=\"${param.key}\"\r\n\r\n${param.value.jsonPrimitive.content}"))
             }
-            write(boundaryBytes)
-            write(stringToBytes("\r\nContent-Disposition: form-data; name=\"file\"\r\nContent-Type: application/octet-stream\r\n\r\n"))
-            write(fileData)
-            write(boundaryBytes)
-            write(stringToBytes("--\r\n"))
+            os.write(boundaryBytes)
+            os.write(stringToBytes("\r\nContent-Disposition: form-data; name=\"file\"\r\nContent-Type: application/octet-stream\r\n\r\n"))
+            os.write(fileData)
+            os.write(boundaryBytes)
+            os.write(stringToBytes("--\r\n"))
         }
-        statusCode = responseCode
-        data = when {
-            errorStream != null -> errorStream.readBytes()
-            else -> inputStream.readBytes()
-        }
+        statusCode = connection.responseCode
+        data = (connection.errorStream ?: connection.inputStream).use { it.readBytes() }
+    } finally {
+        connection.disconnect()
     }
     return KeeperHttpResponse(statusCode, data)
 }
@@ -1541,22 +1541,24 @@ fun postFunction(
 ): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
-    with(URI.create(url).toURL().openConnection() as HttpsURLConnection) {
+    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
+    try {
         if (allowUnverifiedCertificate) {
-            sslSocketFactory = trustAllSocketFactory()
+            connection.sslSocketFactory = trustAllSocketFactory()
         }
-        requestMethod = "POST"
-        doOutput = true
-        setRequestProperty("PublicKeyId", transmissionKey.publicKeyId.toString())
-        setRequestProperty("TransmissionKey", bytesToBase64(transmissionKey.encryptedKey))
-        setRequestProperty("Authorization", "Signature ${bytesToBase64(payload.signature)}")
-        outputStream.write(payload.payload)
-        outputStream.flush()
-        statusCode = responseCode
-        data = when {
-            errorStream != null -> errorStream.readBytes()
-            else -> inputStream.readBytes()
+        connection.requestMethod = "POST"
+        connection.doOutput = true
+        connection.setRequestProperty("PublicKeyId", transmissionKey.publicKeyId.toString())
+        connection.setRequestProperty("TransmissionKey", bytesToBase64(transmissionKey.encryptedKey))
+        connection.setRequestProperty("Authorization", "Signature ${bytesToBase64(payload.signature)}")
+        connection.outputStream.use { os ->
+            os.write(payload.payload)
+            os.flush()
         }
+        statusCode = connection.responseCode
+        data = (connection.errorStream ?: connection.inputStream).use { it.readBytes() }
+    } finally {
+        connection.disconnect()
     }
     return KeeperHttpResponse(statusCode, data)
 }

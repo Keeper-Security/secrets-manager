@@ -122,6 +122,31 @@ internal class SecretsManagerTest {
         assertEquals("fake.keepersecurity.com", storage.getString("hostname"))
     }
 
+    @Test
+    fun testKeeperFileDataMissingLastModified() {
+        // GH-973 / KSM-854: lastModified entirely absent — must deserialize without throwing
+        val json = """{"title":"test.txt","name":"test.txt","type":"text/plain","size":1024}"""
+        val result = Json.decodeFromString<KeeperFileData>(json)
+        assertEquals(0L, result.lastModified)
+        assertEquals("test.txt", result.name)
+    }
+
+    @Test
+    fun testKeeperFileDataIntegerLastModified() {
+        // Regression guard: normal integer lastModified
+        val json = """{"title":"test.txt","name":"test.txt","size":1024,"lastModified":1700000000000}"""
+        val result = Json.decodeFromString<KeeperFileData>(json)
+        assertEquals(1700000000000L, result.lastModified)
+    }
+
+    @Test
+    fun testKeeperFileDataFractionalLastModified() {
+        // Regression guard for KSM-673: fractional lastModified (iOS client format)
+        val json = """{"title":"test.txt","name":"test.txt","size":1024,"lastModified":1760646182.790214}"""
+        val result = Json.decodeFromString<KeeperFileData>(json)
+        assertEquals(1760646182L, result.lastModified)
+    }
+
 //    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (
@@ -143,8 +168,7 @@ internal class SecretsManagerTest {
 //            updateSecret(options, record)
         }
 
-        val fis = FileInputStream("config-dev.json")
-        val bytes = fis.readBytes()
+        val bytes = FileInputStream("config-dev.json").use { it.readBytes() }
         uploadFile(options, record, KeeperFileUpload("config-dev.json", "Sample File", "application/json", bytes))
 
 //        if (record.folderUid != null) {
