@@ -1,0 +1,239 @@
+name: Publish to Chef Supermarket
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to Chef Supermarket (uncheck to build only)'
+        required: false
+        default: 'true'
+        type: boolean
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract version from metadata.rb
+        id: extract-version
+        working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
+        run: |
+          echo "Detecting Chef cookbook version..."
+          if [ -f "metadata.rb" ]; then
+            VERSION=$(grep "version" "metadata.rb" | awk '{print $2}' | tr -d "'\"")
+            echo "Detected version: ${VERSION}"
+          else
+            VERSION="1.0.0"
+            echo "Could not detect version, using default: ${VERSION}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+  
+
+  generate-sbom:
+    name: Generate SBOM
+    needs: get-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2.4'
+          working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
+
+      - name: Install Syft and Manifest CLI
+        run: |
+          echo "Installing Syft v1.18.1..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /tmp/bin v1.18.1
+          export PATH="/tmp/bin:$PATH"
+
+          echo "Installing Manifest CLI v0.18.3..."
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /tmp/bin v0.18.3
+
+      - name: Generate and publish SBOM
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+          PROJECT_VERSION: ${{ needs.get-version.outputs.version }}
+        run: |
+          export PATH="/tmp/bin:$PATH"
+
+          echo "Creating Syft configuration for Ruby scanning..."
+          cat > syft-config.yaml << 'EOF'
+          package:
+            search:
+              scope: all-layers
+            cataloger:
+              enabled: true
+              java:
+                enabled: false
+              python:
+                enabled: false
+              nodejs:
+                enabled: false
+              ruby:
+                enabled: true
+                search-unindexed-archives: true
+                search-indexed-archives: true
+          EOF
+
+          echo "Generating SBOM with Manifest CLI..."
+          /tmp/bin/manifest sbom . \
+            --generator=syft \
+            --name=keeper-secrets-manager-chef \
+            --version=${PROJECT_VERSION} \
+            --output=spdx-json \
+            --file=chef-sbom.json \
+            --api-key=${MANIFEST_TOKEN} \
+            --publish=true \
+            --asset-label=application,sbom-generated,ruby,chef \
+            --generator-config=syft-config.yaml
+
+          echo "SBOM generated and uploaded successfully: chef-sbom.json"
+
+      - name: Archive SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-chef-${{ needs.get-version.outputs.version }}
+          path: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager/chef-sbom.json
+          retention-days: 90
+
+
+  publish-chef-supermarket:
+    needs: [get-version, generate-sbom]
+    if: ${{ github.event.inputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2.4'
+
+      - name: Retrieve secrets from KSM
+        id: ksmsecrets
+        uses: Keeper-Security/ksm-action@master
+        with:
+          keeper-secret-config: ${{ secrets.KSM_CHEF_SUPERMARKET_CONFIG }}
+          secrets: |
+            b9vSxs5Dn-yJTPYr7Yvfmg/field/login > CHEF_USER
+            b9vSxs5Dn-yJTPYr7Yvfmg/file/keepersecurity.pem > file:keepersecurity.pem
+            b9vSxs5Dn-yJTPYr7Yvfmg/custom_field/server_url > CHEF_SERVER_URL
+
+      - name: Configure knife authentication
+        run: |
+          mkdir -p ~/.chef
+
+          # Move the client key from workspace to ~/.chef
+          mv "${{ github.workspace }}/keepersecurity.pem" ~/.chef/client.pem
+          chmod 600 ~/.chef/client.pem
+
+          # Verify key file exists and has correct permissions
+          ls -la ~/.chef/client.pem
+          echo "Client key file created with permissions: $(stat -f '%A' ~/.chef/client.pem)"
+
+          # Create knife config
+          cat > ~/.chef/config.rb << EOF
+          node_name '${{ steps.ksmsecrets.outputs.CHEF_USER }}'
+          client_key File.expand_path('~/.chef/client.pem')
+          chef_server_url '${{ steps.ksmsecrets.outputs.CHEF_SERVER_URL }}'
+          cookbook_path [File.expand_path('.')]
+          EOF
+
+          echo "Knife configuration created:"
+          cat ~/.chef/config.rb
+
+      - name: Get current version and validate
+        id: version
+        run: |
+          if [[ -f "metadata.rb" ]]; then
+            VERSION=$(grep "version" metadata.rb | awk '{print $2}' | tr -d "'\"")
+            echo "current_version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Current version: $VERSION"
+          else
+            echo "Error: metadata.rb not found"
+            exit 1
+          fi
+
+      - name: Check if version already exists on Chef Supermarket
+        env:
+          VERSION: ${{ steps.version.outputs.current_version }}
+        run: |
+          echo "Checking if version $VERSION exists on Supermarket..."
+          RESULT=$(curl -s "https://supermarket.chef.io/api/v1/cookbooks/keeper_secrets_manager/versions/${VERSION}")
+          if echo "$RESULT" | grep -q '"version"'; then
+            echo "Error: Version $VERSION already exists on Chef Supermarket!"
+            exit 1
+          fi
+          echo "Version $VERSION is available for publishing"
+
+      - name: Install Chef Workstation
+        run: |
+          echo "Installing Chef Workstation..."
+          curl https://omnitruck.chef.io/install.sh | sudo bash -s -- -P chef-workstation
+          chef --version
+
+      - name: Run linting (Cookstyle)
+        run: |
+          echo "Running cookstyle..."
+          cookstyle || exit 1
+
+      - name: Run ChefSpec tests
+        run: |
+          echo "Running ChefSpec tests..."
+          rspec || exit 1
+
+      - name: Publish to Chef Supermarket
+        env:
+          VERSION: ${{ steps.version.outputs.current_version }}
+        run: |
+          echo "Publishing to Chef Supermarket..."
+          echo "Using knife configuration from ~/.chef/config.rb"
+
+          # Verify knife configuration
+          knife ssl check || echo "Warning: SSL check failed, but continuing..."
+
+          # Share cookbook to Supermarket
+          knife supermarket share keeper_secrets_manager "Utilities" \
+            --supermarket-site https://supermarket.chef.io \
+            --cookbook-path .
+
+          echo "Successfully published version $VERSION to Chef Supermarket!"
+
+      - name: Create release summary
+        env:
+          VERSION: ${{ steps.version.outputs.current_version }}
+        run: |
+          echo "## Chef Cookbook Published Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**Cookbook:** keeper_secrets_manager" >> $GITHUB_STEP_SUMMARY
+          echo "**Supermarket URL:** https://supermarket.chef.io/cookbooks/keeper_secrets_manager" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Cookstyle: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- ChefSpec Tests: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Cookbook Build: Successful" >> $GITHUB_STEP_SUMMARY
+          echo "- Supermarket Publish: Successful" >> $GITHUB_STEP_SUMMARY
