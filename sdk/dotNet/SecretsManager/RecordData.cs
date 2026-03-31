@@ -10,7 +10,7 @@ namespace SecretsManager
         public string title { get; set; }
         public string type { get; set; }
         public KeeperRecordField[] fields { get; set; }
-        public KeeperRecordField[] custom { get; set; }
+        public KeeperRecordField[] custom { get; set; } = Array.Empty<KeeperRecordField>();
         public string notes { get; set; }
     }
 

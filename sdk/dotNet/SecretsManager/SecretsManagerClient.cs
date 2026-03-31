@@ -414,12 +414,12 @@ namespace SecretsManager
 
         public object FieldValue(string fieldType)
         {
-            return Data.fields.Concat(Data.custom ?? new KeeperRecordField[] { }).FirstOrDefault(x => x.type == fieldType)?.value[0];
+            return Data.fields.Concat(Data.custom).FirstOrDefault(x => x.type == fieldType)?.value[0];
         }
 
         public void UpdateFieldValue(string fieldType, object value)
         {
-            var field = Data.fields.Concat(Data.custom ?? new KeeperRecordField[] { }).FirstOrDefault(x => x.type == fieldType);
+            var field = Data.fields.Concat(Data.custom).FirstOrDefault(x => x.type == fieldType);
             if (field == null)
             {
                 return;
@@ -436,8 +436,6 @@ namespace SecretsManager
                 Console.Error.WriteLine($"AddCustomField: Field '{field.GetType().Name}' is of unknown field class - skipped.");
                 return false;
             }
-
-            Data.custom = Data.custom ?? new KeeperRecordField[] { };
 
             var json = JsonUtils.SerializeJson(field);
             var krf = JsonUtils.ParseJson<KeeperRecordField>(json);

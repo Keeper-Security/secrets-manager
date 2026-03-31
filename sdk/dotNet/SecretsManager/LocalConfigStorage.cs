@@ -141,23 +141,22 @@ namespace SecretsManager
                 return;
             }
 
-            using var stream = File.Create(fileName);
-            using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions
+            using (var stream = File.Create(fileName))
+            using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions
             {
                 Indented = true,
                 Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            });
-            writer.WriteStartObject();
-            foreach (var kv in storage.Strings)
+            }))
             {
-                writer.WriteString(kv.Key, kv.Value);
-            }
+                writer.WriteStartObject();
+                foreach (var kv in storage.Strings)
+                {
+                    writer.WriteString(kv.Key, kv.Value);
+                }
+                writer.WriteEndObject();
+            } // writer disposed first (flushes), then stream disposed (closes)
 
-            writer.WriteEndObject();
-            writer.Flush();
-            stream.Close();
-
-            // Set secure permissions after file creation
+            // Set secure permissions after file is fully written and closed
             SetSecurePermissions(fileName);
         }
 

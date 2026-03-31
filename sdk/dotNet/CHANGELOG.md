@@ -5,6 +5,18 @@ All notable changes to the Keeper Secrets Manager .NET SDK will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [17.1.2] - 2026-03-23
+
+### Fixed
+
+- KSM-822 - Ensure `"custom": []` is always included in RecordCreate V3 API payload even when no custom fields are set
+  - Changed `KeeperRecordData.custom` default from `null` to empty array so the serializer always includes the field
+  - Aligns .NET SDK record creation with Commander and Vault behavior
+- KSM-843 - Fixed `ObjectDisposedException` in `LocalConfigStorage.SaveToFile()` when writing config to file
+  - `stream.Close()` was called before `writer.Dispose()`, causing the writer's flush-on-dispose to fail
+  - Switched to explicit `using` blocks so the writer flushes and disposes before the stream closes
+  - Regression introduced in v17.1.0 (KSM-698 file permissions fix); resolves GitHub issue #966
+
 ## [17.1.1] - 2026-02-03
 
 ### Fixed

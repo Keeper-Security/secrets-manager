@@ -30,9 +30,57 @@ namespace SecretsManager.Test
             Assert.That(recordData.fields[1].value[0].ToString(), Is.EqualTo(rec.fields[1].value[0]));
         }
         [Test]
+        public void DefaultCustomField_ShouldSerializeAsEmptyArray()
+        {
+            // KSM-822: RecordCreate with no custom fields must include "custom":[] in JSON payload
+            var recordData = new KeeperRecordData
+            {
+                title = "Test Record",
+                type = "login",
+                fields = new KeeperRecordField[]
+                {
+                    new KeeperRecordField { type = "login", value = new object[] { "user@example.com" } }
+                }
+                // custom is intentionally NOT set â€” this is the bug scenario
+            };
+
+            var json = CryptoUtils.BytesToString(JsonUtils.SerializeJson(recordData));
+
+            Assert.That(json, Does.Contain("\"custom\":[]"),
+                "KSM-822: Serialized payload must include 'custom':[] even when custom is not explicitly set");
+        }
+
+        [Test]
+        public void DefaultCustomField_ShouldNotBeNull()
+        {
+            // KSM-822: custom must default to empty array, not null
+            var recordData = new KeeperRecordData();
+            Assert.That(recordData.custom, Is.Not.Null);
+            Assert.That(recordData.custom, Is.Empty);
+        }
+
+        [Test]
+        public void DefaultCustomField_RoundTrip_ShouldPreserveEmptyArray()
+        {
+            // KSM-822: Round-trip serialization must preserve empty custom array
+            var recordData = new KeeperRecordData
+            {
+                title = "Round Trip Test",
+                type = "login",
+                fields = new KeeperRecordField[] { }
+            };
+
+            var jsonBytes = JsonUtils.SerializeJson(recordData);
+            var deserialized = JsonUtils.ParseJson<KeeperRecordData>(jsonBytes);
+
+            Assert.That(deserialized.custom, Is.Not.Null);
+            Assert.That(deserialized.custom, Is.Empty);
+        }
+
+        [Test]
         public void ParseAndSerializeShouldPreserveDiacritics()
         {
-            string recordTitle = "MySpéciàlHomèL°gin";
+            string recordTitle = "MySpï¿½ciï¿½lHomï¿½Lï¿½gin";
             var krdin = new KeeperRecordData { title = recordTitle, type = "login" };
             var krdout = JsonUtils.ParseJson<KeeperRecordData>(JsonUtils.SerializeJson(krdin));
             Assert.That(krdin.title, Is.EqualTo(krdout.title));
