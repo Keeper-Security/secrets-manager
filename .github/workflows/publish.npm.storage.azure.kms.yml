@@ -158,11 +158,11 @@ jobs:
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
-        uses: Keeper-Security/ksm-action@d92a3c5d1df69745083436ba189f64a9cc1b25f5 # master
+        uses: Keeper-Security/ksm-action@560d170bea253481a48eae617f0493aab7436c28 # master
         with:
-          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
+          keeper-secret-config: ${{ secrets.KSM_NPM_PUBLISHER_NPM_SDK_CONFIG }}
           secrets: |
-            NScQiZwrHJFCPv1gL8TX6Q/field/password > env:NPM_TOKEN
+            2LmZq2z682qhTKYUizehow/field/password > env:NPM_TOKEN
 
       - name: Publish package
         run: npm publish --ignore-scripts
