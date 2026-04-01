@@ -61,6 +61,8 @@ venv.bak/
 # Don't add Config files
 keeper.ini*
 *config*.json
+!tsconfig.json
+!tsconfig.test.json
 .secrets
 ansible.cfg
 
