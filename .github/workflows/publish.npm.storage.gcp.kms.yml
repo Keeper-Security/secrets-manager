@@ -28,7 +28,7 @@ jobs:
           node-version: '24'
 
       - name: Install package dependencies
-        run: npm install
+        run: npm ci --omit=dev
         working-directory: ./sdk/javascript/packages/gcp
 
       - name: Install Syft
