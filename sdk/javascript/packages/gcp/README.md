@@ -8,7 +8,7 @@ Keeper Secrets Manager integrates with GCP KMS in order to provide protection fo
 
 ## Prerequisites
 * Supports the JavaScript Secrets Manager SDK
-* Requires `@google-cloud/kms` package
+* `@google-cloud/kms` is bundled — no separate install required
 * These are permissions required for service account:
   * Cloud KMS CryptoKey Decrypter
   * Cloud KMS CryptoKey Encrypter
@@ -38,10 +38,11 @@ For more information on GCP service accounts see the [GCP documentation](https:/
 
 Now that the GCP connection has been configured, you need to tell the Secrets Manager SDK to utilize the KMS as storage.
 
-To do this, use GcpKmsKeyValueStorage as your Secrets Manager storage in the SecretsManager constructor.
+To do this, use `GCPKeyValueStorage` as your Secrets Manager storage in the SecretsManager constructor.
 
 The storage will require a GCP Key ID, as well as the name of the Secrets Manager configuration file which will be encrypted by GCP KMS. We need to make sure that key version is present in key ID provided.
 ```
+    import { getSecrets, initializeStorage } from '@keeper-security/secrets-manager-core';
     import {GCPKeyValueStorage,GCPKeyConfig,GCPKSMClient,LoggerLogLevelOptions} from "@keeper-security/secrets-manager-gcp";
 
     const getKeeperRecordsGCP = async () => {
@@ -53,7 +54,7 @@ The storage will require a GCP Key ID, as well as the name of the Secrets Manage
         const gcpSessionConfig = new GCPKSMClient().createClientFromCredentialsFile('<gcp_credentials_json_location>')
         console.log("extracted gcp session config")
         let config_path = "<path to client-config-gcp.json>"
-        let logLevel = LoggerLogLevelOptions.<log level>;
+        let logLevel = LoggerLogLevelOptions.info;
 
         // oneTimeToken is used only once to initialize the storage
         // after the first run, subsequent calls will use ksm-config.txt
@@ -88,7 +89,7 @@ We can decrypt the configuration file and revert it back to plaintext and save i
 ```
 
 ## Logging
-We support logging for the AWS KSM integration. Supported log levels are as follows
+We support logging for the GCP KMS integration. Supported log levels are as follows
 * trace
 * debug
 * info
@@ -97,7 +98,7 @@ We support logging for the AWS KSM integration. Supported log levels are as foll
 * fatal
 
 All these levels should be accessed from the `LoggerLogLevelOptions` enum. If no log level is set, the default log level is `info`. We can set the logging level to debug to get more information about the integration.
-`
+
 You're ready to use the KSM integration 👍
 Using the GCP KMS Integration
 
