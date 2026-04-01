@@ -8,7 +8,7 @@ Keeper Secrets Manager integrates with AWS KMS in order to provide protection fo
 
 ## Prerequisites
 * Supports the JavaScript Secrets Manager SDK.
-* Requires `@aws-sdk/client-kms` package.
+* `@aws-sdk/client-kms` is bundled — no separate install required.
 * Key needs `Encrypt` and `Decrypt` permissions.
 
 ## Setup
@@ -43,7 +43,7 @@ The storage will require an AWS Key ID, as well as the name of the Secrets Manag
 
     const getKeeperRecordsAWS = async () => {
 
-        const accessKeyId ="<YOUR AWS ACCESS KEY>>";
+        const accessKeyId ="<YOUR AWS ACCESS KEY>";
         const secretAccessKey = "<YOUR AWS SECRET_ACCESS_KEY>";
         const regionName = "<YOUR AWS REGION>";
     
@@ -51,8 +51,9 @@ The storage will require an AWS Key ID, as well as the name of the Secrets Manag
             
         // oneTimeToken is used only once to initialize the storage
         // after the first run, subsequent calls will use ksm-config.txt
-        const oneTimeToken = <one time token>;
-        const logLevel = LoggerLogLevelOptions.Debug;
+        const oneTimeToken = "<one time token>";
+        const logLevel = LoggerLogLevelOptions.debug;
+        let config_path = "<path to client-config-aws.json>";
         const keyId = 'arn:aws:kms:ap-south-1:<accountName>:key/<keyId>';
         const storage = await new AWSKeyValueStorage(keyId,config_path,awsSessionConfig,logLevel).init();
         
@@ -74,13 +75,14 @@ The storage will require an AWS Key ID, as well as the name of the Secrets Manag
 
 ## Change Key operation and using default credentials from AWS
 ```
+    import { getSecrets, initializeStorage } from '@keeper-security/secrets-manager-core';
     import {AWSKeyValueStorage,AWSSessionConfig} from "@keeper-security/secrets-manager-aws";
 
     const getKeeperRecordsAWS = async () => {
 
         const awsSessionConfig2 = new AWSSessionConfig();
         let config_path = "<path to client-config-aws.json>";        
-        const oneTimeToken = "US:kYKVGFJ2605-9UBF4VXd14AztMPXcxZ56zC9gr7O-Cw";
+        const oneTimeToken = "<one time token>";
         const keyId = 'arn:aws:kms:ap-south-1:<accountName>:key/<keyId>';
         const keyId2 = "arn:aws:kms:<cloud-region>:<accountNumber>:key/<keyId2>"
         const storage = await new AWSKeyValueStorage(keyId,config_path).init();
