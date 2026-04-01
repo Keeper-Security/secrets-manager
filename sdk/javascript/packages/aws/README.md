@@ -39,6 +39,7 @@ To do this, use `AWSKeyValueStorage` as your Secrets Manager storage in the `Sec
 
 The storage will require an AWS Key ID, as well as the name of the Secrets Manager configuration file which will be encrypted by AWS KMS.
 ```
+    import { getSecrets, initializeStorage } from '@keeper-security/secrets-manager-core';
     import {AWSKeyValueStorage,AWSSessionConfig,LoggerLogLevelOptions} from "@keeper-security/secrets-manager-aws";
 
     const getKeeperRecordsAWS = async () => {
