@@ -8,7 +8,7 @@ Keeper Secrets Manager integrates with **Oracle Key Vault Management Service (OC
 
 ## Prerequisites
 * Supports the JavaScript Secrets Manager SDK.
-* Requires the **oci-keymanagement** package from OCI SDK.
+* `oci-keymanagement` is bundled — no separate install required.
 * OCI KMS Key needs `ENCRYPT` and `DECRYPT` permissions.
 
 ## Setup
@@ -33,7 +33,8 @@ To do this, use `OciKeyValueStorage` as your Secrets Manager storage in the Secr
 
 The storage will require an `Oracle config file location`, `Oracle configuration profile`(if there are multiple profile configurations) and the OCI `Oracle KMS endpoint` as well as the name of the `Secrets Manager configuration file` which will be encrypted by Oracle KMS.
 ```
-    import { OCISessionConfig, OciKeyValueStorage } from "@keeper-security/secrets-manager-oracle-kv";
+    import { getSecrets, initializeStorage } from '@keeper-security/secrets-manager-core';
+    import { OCISessionConfig, OciKeyValueStorage, LoggerLogLevelOptions } from "@keeper-security/secrets-manager-oracle-kv";
 
     const getKeeperRecordsOCI = async () => {
 
@@ -42,7 +43,7 @@ The storage will require an `Oracle config file location`, `Oracle configuration
         const kmsCryptoEndpoint = "https://<>-crypto.kms.<location>.oraclecloud.com";
         const kmsManagementEndpoint = "https://<>-management.kms.<location>.oraclecloud.com";
 
-        const ociSessionConfig = await new OCISessionConfig(oracleConfigFileLocation, oracleProfile, kmsCryptoEndpoint,kmsManagementEndpoint);
+        const ociSessionConfig = new OCISessionConfig(oracleConfigFileLocation, oracleProfile, kmsCryptoEndpoint, kmsManagementEndpoint);
         const logLevel = LoggerLogLevelOptions.info;
         let config_path = "<Keeper config File Path>";
 
