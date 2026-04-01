@@ -13,7 +13,7 @@ Features
 Prerequisites
 
 * Supports the Javascript Secrets Manager SDK
-* Requires Azure packages: azure-identity and azure-keyvault-keys
+* Azure dependencies (`@azure/identity`, `@azure/keyvault-keys`) are bundled — no separate install required
 * Works with just RSA key types
 
 Setup
@@ -54,7 +54,7 @@ The storage will require an Azure Key ID, as well as the name of the Secrets Man
 azure_keyvault_example_custom.ts 
 ```
     import { getSecrets, initializeStorage, localConfigStorage } from '@keeper-security/secrets-manager-core';
-    import {AzureKeyValueStorage, AzureSessionConfig} from "@keeper/secrets-manager-azure";
+    import {AzureKeyValueStorage, AzureSessionConfig, LoggerLogLevelOptions} from "@keeper-security/secrets-manager-azure";
 
     const getKeeperRecords = async () => {
 
@@ -88,7 +88,7 @@ azure_keyvault_example_custom.ts
 ## Change Key used to change the key configuration of the encrypted KSM configuration file.
 ```
     import { getSecrets, initializeStorage, localConfigStorage } from '@keeper-security/secrets-manager-core';
-    import {AzureKeyValueStorage, AzureSessionConfig} from "@keeper/secrets-manager-azure";
+    import {AzureKeyValueStorage, AzureSessionConfig} from "@keeper-security/secrets-manager-azure";
 
     const getKeeperRecords = async () => {
 
