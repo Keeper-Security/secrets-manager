@@ -64,4 +64,8 @@ keeper.ini*
 .secrets
 ansible.cfg
 
+# Except typescript configuration
+!tsconfig.json
+!tsconfig.test.json
+
 .gradle/
