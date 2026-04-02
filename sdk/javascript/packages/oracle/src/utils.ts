@@ -71,7 +71,7 @@ export async function encryptBuffer(
     return blob;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (err: any) {
-    console.error("OCI KMS Storage failed to encrypt:", err.message);
+    logger.error("Oracle KMS Storage failed to encrypt:", err.message);
     throw err;
   }
 }
@@ -161,7 +161,7 @@ export async function decryptBuffer(
     return decrypted.toString(UTF_8_ENCODING);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (err: any) {
-    console.error("oracle KMS Storage failed to decrypt:", err.message);
+    logger.error("Oracle KMS Storage failed to decrypt:", err.message);
     throw err;
   }
 }

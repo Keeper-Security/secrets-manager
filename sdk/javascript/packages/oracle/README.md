@@ -15,19 +15,19 @@ Keeper Secrets Manager integrates with **Oracle Key Vault Management Service (OC
 
 1. Install KSM Storage Module
 
-The Secrets Manager oracle KSM module can be installed using npm
+The Secrets Manager Oracle KSM module can be installed using npm
 
 > `npm install @keeper-security/secrets-manager-oracle-kv`
 
-2. Configure oracle Connection
+2. Configure Oracle Connection
 
 By default, the **oci-keymanagement** library will use the **default OCI configuration file** (`~/.oci/config`).
 
 See the [OCI documentation](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm) for more details.
 
-3. Add oracle KMS Storage to Your Code
+3. Add Oracle KMS Storage to Your Code
 
-Now that the oracle connection has been configured, you need to tell the Secrets Manager SDK to utilize the KMS as storage.
+Now that the Oracle connection has been configured, you need to tell the Secrets Manager SDK to utilize the KMS as storage.
 
 To do this, use `OciKeyValueStorage` as your Secrets Manager storage in the SecretsManager constructor.
 
@@ -45,24 +45,24 @@ The storage will require an `Oracle config file location`, `Oracle configuration
 
         const ociSessionConfig = new OCISessionConfig(oracleConfigFileLocation, oracleProfile, kmsCryptoEndpoint, kmsManagementEndpoint);
         const logLevel = LoggerLogLevelOptions.info;
-        let config_path = "<Keeper config File Path>";
+        const configPath = "<Keeper config File Path>";
 
+        // oneTimeToken is used only once to initialize the storage
+        // after the first run, subsequent calls will use the encrypted config file
         const oneTimeToken = "<one time token>";
 
         const keyId = 'ocid1.key.oc1.iad.<>.<>';
         const keyVersionId = "ocid1.keyversion.oc1.iad.<>.<>";
 
-        const storage = await new OciKeyValueStorage(keyId, keyVersionId, config_path, ociSessionConfig,logLevel).init();
+        const storage = await new OciKeyValueStorage(keyId, keyVersionId, configPath, ociSessionConfig, logLevel).init();
         await initializeStorage(storage, oneTimeToken);
 
         const { records } = await getSecrets({ storage: storage });
-        console.log(records);
 
         const firstRecord = records[0];
-        const firstRecordPassword = firstRecord.data.fields.find((x: { type: string; }) => x.type === 'bankAccount');
-        console.log(firstRecordPassword.value[0]);
+        const password = firstRecord.data.fields.find((x: { type: string; }) => x.type === 'password');
+        console.log(password.value[0]);
     };
-    console.log("start");
     getKeeperRecordsOCI();
 ```
 ## Change Key
@@ -73,7 +73,7 @@ To change the Oracle KMS key used for encryption, you can call the `changeKey` m
     await storage.changeKey(keyId2, keyVersionId2);
 ```
 
-## decrypt config
+## Decrypt Config
 
 To decrypt the config file and save it again in plaintext, you can call the `decryptConfig` method on the `OciKeyValueStorage` instance.
 Note: this will compromise the security of the config file.
