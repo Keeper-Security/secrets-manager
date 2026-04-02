@@ -954,7 +954,7 @@ namespace SecretsManager
                 throw new Exception($"Thumbnail does not exist for the file {file.FileUid}");
             }
 
-            return DownloadFile(file, file.Url);
+            return DownloadFile(file, file.ThumbnailUrl);
         }
 
         private static byte[] DownloadFile(KeeperFile file, string url)
