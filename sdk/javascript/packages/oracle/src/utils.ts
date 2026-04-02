@@ -141,7 +141,7 @@ export async function decryptBuffer(
     const decryptedKey = response.decryptedData.plaintext;
 
     const verificationStatus = await verifyDecryption(decryptedKey, response.decryptedData.plaintextChecksum);
-    if (verificationStatus) {
+    if (!verificationStatus) {
       logger.debug("checksum validation failed while transporting data to oracle");
       throw new Error("Invalid ciphertext structure: checksum mismatch.");
     }

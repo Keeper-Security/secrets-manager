@@ -254,6 +254,92 @@ describe('utils', () => {
         });
     });
 
+    describe('checksum verification (KSM-866)', () => {
+        const { crc32c: realCrc32c } = jest.requireActual('@aws-crypto/crc32c');
+
+        function buildValidBlob(encryptedKeyBase64: string, nonce: Buffer, tag: Buffer, ciphertext: Buffer): Buffer {
+            const header = Buffer.from([0xFF, 0xFF]);
+            const encryptedKey = Buffer.from(encryptedKeyBase64, 'base64');
+            const parts = [encryptedKey, nonce, tag, ciphertext];
+            const buffers: Buffer[] = [header];
+            for (const part of parts) {
+                const lengthBuffer = Buffer.alloc(2);
+                lengthBuffer.writeUInt16BE(part.length, 0);
+                buffers.push(lengthBuffer, part);
+            }
+            return Buffer.concat(buffers);
+        }
+
+        it('should NOT throw when checksums match (valid OCI response)', async () => {
+            const { createCipheriv, randomBytes } = require('crypto');
+            const key = randomBytes(32);
+            const nonce = randomBytes(16);
+            const cipher = createCipheriv('aes-256-gcm', key, nonce);
+            const encrypted = Buffer.concat([cipher.update('test', 'utf-8'), cipher.final()]);
+            const tag = cipher.getAuthTag();
+
+            const plaintextBase64 = key.toString('base64');
+            const realChecksum = realCrc32c(Buffer.from(plaintextBase64, 'base64'));
+
+            // Use real crc32c for both the mock module and the OCI response
+            const { crc32c: mockedCrc32c } = require('@aws-crypto/crc32c');
+            mockedCrc32c.mockReturnValue(realChecksum);
+
+            const encryptedKeyBase64 = Buffer.from('fake-encrypted-key').toString('base64');
+            const validBlob = buildValidBlob(encryptedKeyBase64, nonce, tag, encrypted);
+
+            mockCryptoClient.decrypt.mockResolvedValue({
+                decryptedData: {
+                    plaintext: plaintextBase64,
+                    plaintextChecksum: realChecksum,
+                },
+            } as any);
+
+            // Checksums match — this SHOULD succeed
+            await expect(decryptBuffer({
+                keyId: 'ocid1.key.oc1.phx.example',
+                ciphertext: validBlob,
+                cryptoClient: mockCryptoClient,
+                keyVersionId: '',
+                isAsymmetric: false,
+            }, mockLogger)).resolves.toBe('test');
+        });
+
+        it('should throw when checksums do NOT match (corrupted OCI response)', async () => {
+            const { createCipheriv, randomBytes } = require('crypto');
+            const key = randomBytes(32);
+            const nonce = randomBytes(16);
+            const cipher = createCipheriv('aes-256-gcm', key, nonce);
+            const encrypted = Buffer.concat([cipher.update('test', 'utf-8'), cipher.final()]);
+            const tag = cipher.getAuthTag();
+
+            const plaintextBase64 = key.toString('base64');
+            const realChecksum = realCrc32c(Buffer.from(plaintextBase64, 'base64'));
+
+            const { crc32c: mockedCrc32c } = require('@aws-crypto/crc32c');
+            mockedCrc32c.mockReturnValue(realChecksum);
+
+            const encryptedKeyBase64 = Buffer.from('fake-encrypted-key').toString('base64');
+            const validBlob = buildValidBlob(encryptedKeyBase64, nonce, tag, encrypted);
+
+            mockCryptoClient.decrypt.mockResolvedValue({
+                decryptedData: {
+                    plaintext: plaintextBase64,
+                    plaintextChecksum: realChecksum + 1, // corrupted — off by one
+                },
+            } as any);
+
+            // Checksums don't match — this SHOULD throw
+            await expect(decryptBuffer({
+                keyId: 'ocid1.key.oc1.phx.example',
+                ciphertext: validBlob,
+                cryptoClient: mockCryptoClient,
+                keyVersionId: '',
+                isAsymmetric: false,
+            }, mockLogger)).rejects.toThrow('checksum mismatch');
+        });
+    });
+
     describe('error handling', () => {
         it('should throw on crypto client exceptions in encrypt', async () => {
             // Given
