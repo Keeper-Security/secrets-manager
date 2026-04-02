@@ -145,6 +145,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       this.logger.error("Failed to get key details:", err.message);
+      throw err;
     }
   }
 

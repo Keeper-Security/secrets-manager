@@ -256,6 +256,39 @@ describe('GCPKeyValueStorage', () => {
         });
     });
 
+    // KSM-867: getKeyDetails() silently swallows errors — init() should propagate
+    describe('init() error propagation — KSM-867 regression', () => {
+        it('init() should throw when getCryptoKey fails (bad credentials)', async () => {
+            const gcpKeyConfig = new GCPKeyConfig(
+                'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
+            );
+            const storage = new GCPKeyValueStorage(null, gcpKeyConfig, mockSessionConfig);
+
+            // Make getCryptoKey reject — simulates bad credentials or non-existent key
+            const mockClient = mockSessionConfig.getCryptoClient();
+            (mockClient.getCryptoKey as jest.Mock).mockRejectedValue(
+                new Error('PERMISSION_DENIED: The caller does not have permission')
+            );
+
+            // BUG: init() silently swallows this error instead of propagating
+            await expect(storage.init()).rejects.toThrow('PERMISSION_DENIED');
+        });
+
+        it('init() should throw when getCryptoKey fails (non-existent key)', async () => {
+            const gcpKeyConfig = new GCPKeyConfig(
+                'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/nonexistent/cryptoKeyVersions/1'
+            );
+            const storage = new GCPKeyValueStorage(null, gcpKeyConfig, mockSessionConfig);
+
+            const mockClient = mockSessionConfig.getCryptoClient();
+            (mockClient.getCryptoKey as jest.Mock).mockRejectedValue(
+                new Error('NOT_FOUND: CryptoKey not found')
+            );
+
+            await expect(storage.init()).rejects.toThrow('NOT_FOUND');
+        });
+    });
+
     // KSM-837: Regression tests for contains() — incorrect `in` operator usage
     describe('contains() — KSM-837 regression', () => {
         let storage: GCPKeyValueStorage;
