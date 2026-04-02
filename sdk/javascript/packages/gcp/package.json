@@ -48,7 +48,6 @@
     "pino-pretty": "^13.0.0"
   },
   "overrides": {
-    "brace-expansion": "2.0.3",
     "@tootallnate/once": "3.0.1"
   }
 }
