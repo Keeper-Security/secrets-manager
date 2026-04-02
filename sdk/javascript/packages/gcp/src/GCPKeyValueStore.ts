@@ -205,7 +205,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       if (jsonError) {
         let token: string | null | undefined = null;
         if (this.keyType === "RAW_ENCRYPT_DECRYPT") {
-          this.logger.debug("using raw symmetric key to encrypt the config.");
+          this.logger.debug("using raw symmetric key to decrypt the config.");
           token = await this.gcpSessionConfig.getToken();
         }
 
@@ -292,7 +292,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
 
       // Check if saving is necessary
       if (!force && configHash === this.lastSavedConfigHash) {
-        console.warn("Skipped config JSON save. No changes detected.");
+        this.logger.warn("Skipped config JSON save. No changes detected.");
         return;
       }
 
@@ -356,7 +356,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
     try {
       let token: string | null | undefined = null;
       if (this.keyType === "RAW_ENCRYPT_DECRYPT") {
-        this.logger.debug("using raw symmetric key to encrypt the config.");
+        this.logger.debug("using raw symmetric key to decrypt the config.");
         token = await this.gcpSessionConfig.getToken();
       }
       // Decrypt the file contents
@@ -469,11 +469,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
   }
 
   public async readStorage(): Promise<Record<string, string>> {
-    if (!this.config) {
-      this.logger.debug("config is empty, loading configuration");
-      await this.loadConfig();
-    }
-    return Promise.resolve(this.config);
+    return this.config;
   }
 
   public saveStorage(updatedConfig: Record<string, string>): Promise<void> {

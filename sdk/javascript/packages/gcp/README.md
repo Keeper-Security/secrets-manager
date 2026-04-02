@@ -26,7 +26,7 @@ The Secrets Manager GCP KSM module can be installed using npm
 
 By default the @google-cloud/kms library will utilize the default connection session setup with the GCP CLI with the gcloud auth command.  If you would like to specify the connection details, the two configuration files located at `~/.config/gcloud/configurations/config_default` and `~/.config/gcloud/legacy_credentials/<user>/adc.json` can be manually edited.
 
-See the GCP documentation for more information on setting up an GCP session [here](https://cloud.google.com/sdk/gcloud/reference/auth)
+See the GCP documentation for more information on setting up a GCP session [here](https://cloud.google.com/sdk/gcloud/reference/auth)
 
 Alternatively, configuration variables can be provided explicitly as a service account file using the GcpSessionConfig data class and providing  a path to the service account json file.
 
@@ -48,32 +48,27 @@ The storage will require a GCP Key ID, as well as the name of the Secrets Manage
     const getKeeperRecordsGCP = async () => {
 
         // example key : projects/<project>/locations/<location>/keyRings/<key>/cryptoKeys/<key_name>/cryptoKeyVersions/<key_version>
-        const keyConfig2  = new GCPKeyConfig("<key_version_resource_url_1>");
-        const keyConfig = new GCPKeyConfig("key_version_resource_url_2");
-        console.log("extracted key details")
+        const keyConfig = new GCPKeyConfig("<key_version_resource_url>");
         const gcpSessionConfig = new GCPKSMClient().createClientFromCredentialsFile('<gcp_credentials_json_location>')
-        console.log("extracted gcp session config")
-        let config_path = "<path to client-config-gcp.json>"
-        let logLevel = LoggerLogLevelOptions.info;
+        const configPath = "<path to client-config-gcp.json>"
+        const logLevel = LoggerLogLevelOptions.info;
 
         // oneTimeToken is used only once to initialize the storage
-        // after the first run, subsequent calls will use ksm-config.txt
+        // after the first run, subsequent calls will use the encrypted config file
         const oneTimeToken = "<one time token>";
-        
-        const storage = await new GCPKeyValueStorage(config_path,keyConfig2,gcpSessionConfig,logLevel).init();
+
+        const storage = await new GCPKeyValueStorage(configPath, keyConfig, gcpSessionConfig, logLevel).init();
         await initializeStorage(storage, oneTimeToken);
-        
+
         const {records} = await getSecrets({storage: storage});
-        console.log(records)
 
         const firstRecord = records[0];
-        const firstRecordPassword = firstRecord.data.fields.find((x: { type: string; }) => x.type === 'bankAccount');
-        console.log(firstRecordPassword.value[0]);
+        const password = firstRecord.data.fields.find((x: { type: string; }) => x.type === 'password');
+        console.log(password.value[0]);
     }
-    console.log("start")
     getKeeperRecordsGCP()
 ```
- ### Change key
+### Change key
 
 You can change the key used to encrypt and decrypt your configuration file by calling the changeKey method on the storage object.
 ```

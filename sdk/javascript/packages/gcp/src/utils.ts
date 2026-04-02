@@ -69,7 +69,7 @@ export async function encryptBuffer(
         return Buffer.concat(buffers);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
-        logger.warn("KCP KMS Storage failed to encrypt:", err.message);
+        logger.warn("GCP KMS Storage failed to encrypt:", err.message);
         throw err;
     }
 }
