@@ -37,6 +37,12 @@ namespace SecretsManager
                 JsonTokenType.True => true,
                 JsonTokenType.False => false,
                 JsonTokenType.Number => reader.GetInt32() != 0,
+                JsonTokenType.String => reader.GetString()?.ToLowerInvariant() switch
+                {
+                    "1" or "true" => true,
+                    "0" or "false" => false,
+                    _ => throw new JsonException("Unable to convert to bool.")
+                },
                 JsonTokenType.Null => null,
                 _ => throw new JsonException("Unable to convert to bool.")
             };

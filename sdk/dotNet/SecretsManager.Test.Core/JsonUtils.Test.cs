@@ -98,6 +98,25 @@ namespace SecretsManager.Test
         }
 
         [Test]
+        public void KSM864_StringBoolFields_ShouldDeserializeWithoutThrowing()
+        {
+            // Older clients/Commander send bool fields as quoted strings (e.g. "required":"1")
+            const string json = "{\"title\":\"Test\",\"type\":\"login\",\"fields\":[" +
+                "{\"type\":\"login\",\"label\":\"Login\",\"value\":[\"user@example.com\"]," +
+                "\"required\":\"1\",\"privacyScreen\":\"false\",\"enforceGeneration\":\"true\"}]," +
+                "\"custom\":[]}";
+
+            KeeperRecordData result = null;
+            Assert.DoesNotThrow(() =>
+                result = JsonUtils.ParseJson<KeeperRecordData>(CryptoUtils.StringToBytes(json)));
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.fields[0].required, Is.EqualTo(true));
+            Assert.That(result.fields[0].privacyScreen, Is.EqualTo(false));
+            Assert.That(result.fields[0].enforceGeneration, Is.EqualTo(true));
+        }
+
+        [Test]
         public void ParseAndSerializeShouldPreserveDiacritics()
         {
             string recordTitle = "MySp�ci�lHom�L�gin";
