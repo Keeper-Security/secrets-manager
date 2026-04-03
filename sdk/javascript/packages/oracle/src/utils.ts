@@ -9,7 +9,7 @@ import {
   UTF_8_ENCODING,
 } from "./constants";
 import { DecryptResponse, EncryptResponse } from "oci-keymanagement/lib/response";
-import { crc32c as calculate } from "@aws-crypto/crc32c";
+import { crc32 } from "zlib";
 import { EncryptDataDetails } from "oci-keymanagement/lib/model";
 import { Logger } from "pino";
 
@@ -140,7 +140,7 @@ export async function decryptBuffer(
 
     const decryptedKey = response.decryptedData.plaintext;
 
-    const verificationStatus = await verifyDecryption(decryptedKey, response.decryptedData.plaintextChecksum);
+    const verificationStatus = verifyDecryption(decryptedKey, response.decryptedData.plaintextChecksum);
     if (!verificationStatus) {
       logger.debug("checksum validation failed while transporting data to oracle");
       throw new Error("Invalid ciphertext structure: checksum mismatch.");
@@ -167,8 +167,8 @@ export async function decryptBuffer(
 }
 
 
-async function verifyDecryption(decryptedData, ociChecksum) {
+function verifyDecryption(decryptedData, ociChecksum) {
   const decryptedDataBuffer = Buffer.from(decryptedData, BASE_64);
-  const checksum = calculate(decryptedDataBuffer);
-  return checksum === ociChecksum;
+  const checksum = crc32(decryptedDataBuffer);
+  return checksum === Number(ociChecksum);
 }

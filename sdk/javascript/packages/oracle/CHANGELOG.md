@@ -29,3 +29,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - KSM-841 - Fixed `delete()` skipping keys with falsy values — truthy check `if (config[key])` replaced with `if (key in config)`
 - KSM-852 - Fixed `getBytes()` returning undefined for keys storing a zero-length Uint8Array
 - KSM-857 - Fixed `fast-crc32c` miscategorized as devDependency — replaced with `@aws-crypto/crc32c` for cross-platform compatibility
+- KSM-870 - Fixed wrong CRC algorithm in `verifyDecryption()` — replaced `@aws-crypto/crc32c` (CRC-32C/Castagnoli) with Node.js built-in `zlib.crc32` (CRC-32/IEEE) to match what Oracle KMS returns; also fixed type mismatch (`number === string`) by coercing `plaintextChecksum` to `Number`

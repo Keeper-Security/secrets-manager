@@ -5,10 +5,6 @@ jest.mock('oci-keymanagement', () => ({
 jest.mock('oci-common', () => ({
     ConfigFileAuthenticationDetailsProvider: jest.fn(),
 }));
-jest.mock('@aws-crypto/crc32c', () => ({
-    crc32c: jest.fn().mockReturnValue(12345),
-}));
-
 import { encryptBuffer, decryptBuffer } from '../src/utils';
 import { KmsCryptoClient } from 'oci-keymanagement';
 import { Logger } from 'pino';
@@ -255,7 +251,7 @@ describe('utils', () => {
     });
 
     describe('checksum verification (KSM-866)', () => {
-        const { crc32c: realCrc32c } = jest.requireActual('@aws-crypto/crc32c');
+        const { crc32: realCrc32 } = require('zlib');
 
         function buildValidBlob(encryptedKeyBase64: string, nonce: Buffer, tag: Buffer, ciphertext: Buffer): Buffer {
             const header = Buffer.from([0xFF, 0xFF]);
@@ -279,11 +275,7 @@ describe('utils', () => {
             const tag = cipher.getAuthTag();
 
             const plaintextBase64 = key.toString('base64');
-            const realChecksum = realCrc32c(Buffer.from(plaintextBase64, 'base64'));
-
-            // Use real crc32c for both the mock module and the OCI response
-            const { crc32c: mockedCrc32c } = require('@aws-crypto/crc32c');
-            mockedCrc32c.mockReturnValue(realChecksum);
+            const realChecksum = realCrc32(Buffer.from(plaintextBase64, 'base64'));
 
             const encryptedKeyBase64 = Buffer.from('fake-encrypted-key').toString('base64');
             const validBlob = buildValidBlob(encryptedKeyBase64, nonce, tag, encrypted);
@@ -291,7 +283,7 @@ describe('utils', () => {
             mockCryptoClient.decrypt.mockResolvedValue({
                 decryptedData: {
                     plaintext: plaintextBase64,
-                    plaintextChecksum: realChecksum,
+                    plaintextChecksum: String(realChecksum), // Oracle returns a string
                 },
             } as any);
 
@@ -314,10 +306,7 @@ describe('utils', () => {
             const tag = cipher.getAuthTag();
 
             const plaintextBase64 = key.toString('base64');
-            const realChecksum = realCrc32c(Buffer.from(plaintextBase64, 'base64'));
-
-            const { crc32c: mockedCrc32c } = require('@aws-crypto/crc32c');
-            mockedCrc32c.mockReturnValue(realChecksum);
+            const realChecksum = realCrc32(Buffer.from(plaintextBase64, 'base64'));
 
             const encryptedKeyBase64 = Buffer.from('fake-encrypted-key').toString('base64');
             const validBlob = buildValidBlob(encryptedKeyBase64, nonce, tag, encrypted);
@@ -325,7 +314,7 @@ describe('utils', () => {
             mockCryptoClient.decrypt.mockResolvedValue({
                 decryptedData: {
                     plaintext: plaintextBase64,
-                    plaintextChecksum: realChecksum + 1, // corrupted — off by one
+                    plaintextChecksum: String(realChecksum + 1), // corrupted — off by one
                 },
             } as any);
 
