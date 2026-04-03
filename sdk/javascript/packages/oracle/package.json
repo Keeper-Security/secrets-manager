@@ -15,7 +15,7 @@
     "type": "git",
     "url": "git+https://github.com/Keeper-Security/secrets-manager.git"
   },
-  "license": "ISC",
+  "license": "MIT",
   "scripts": {
     "prebuild": "rimraf dist",
     "link-local": "yarn link",

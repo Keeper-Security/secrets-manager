@@ -67,20 +67,27 @@ The storage will require an `Oracle config file location`, `Oracle configuration
 ```
 ## Change Key
 
-To change the Oracle KMS key used for encryption, you can call the `changeKey` method on the `OciKeyValueStorage` instance.
-```
-    const storage = await new OciKeyValueStorage(keyId, keyVersionId, config_path2, ociSessionConfig).init();
-    await storage.changeKey(keyId2, keyVersionId2);
+To change the Oracle KMS key used for encryption, call the `changeKey` method on the `OciKeyValueStorage` instance.
+```javascript
+const newKeyId = "ocid1.key.oc1.iad.<new_unique_id>";
+const newKeyVersionId = "ocid1.keyversion.oc1.iad.<new_unique_id>";
+const storage = await new OciKeyValueStorage(keyId, keyVersionId, configPath, ociSessionConfig).init();
+await storage.changeKey(newKeyId, newKeyVersionId);
 ```
 
 ## Decrypt Config
 
-To decrypt the config file and save it again in plaintext, you can call the `decryptConfig` method on the `OciKeyValueStorage` instance.
-Note: this will compromise the security of the config file.
-```
-    const storage = await new OciKeyValueStorage(keyId, keyVersionId, config_path, ociSessionConfig).init();
-    await storage.decryptConfig(true); // Saves to file
-    const decryptedConfig = await storage.decryptConfig(true); // returns the decrypted config
+You can decrypt the configuration file to migrate to a different cloud provider or to retrieve your raw credentials. Pass `true` to save the decrypted configuration back to the file, or `false` to return the plaintext without modifying the file.
+
+Note: decrypting and saving as plaintext will compromise the security of the config file.
+```javascript
+const storage = await new OciKeyValueStorage(keyId, keyVersionId, configPath, ociSessionConfig).init();
+
+// Returns plaintext only (file stays encrypted)
+const plaintext = await storage.decryptConfig(false);
+
+// OR: returns plaintext and saves config as plaintext
+const saved = await storage.decryptConfig(true);
 ```
 
 
