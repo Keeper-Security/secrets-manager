@@ -78,6 +78,26 @@ namespace SecretsManager.Test
         }
 
         [Test]
+        public void KSM864_IntegerBoolFields_ShouldDeserializeWithoutThrowing()
+        {
+            // Server sends integer 0/1 instead of JSON boolean for records created by
+            // older clients or Commander — must not throw JsonException
+            const string json = "{\"title\":\"Test\",\"type\":\"login\",\"fields\":[" +
+                "{\"type\":\"login\",\"label\":\"Login\",\"value\":[\"user@example.com\"]," +
+                "\"required\":1,\"privacyScreen\":0,\"enforceGeneration\":1}]," +
+                "\"custom\":[]}";
+
+            KeeperRecordData result = null;
+            Assert.DoesNotThrow(() =>
+                result = JsonUtils.ParseJson<KeeperRecordData>(CryptoUtils.StringToBytes(json)));
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.fields[0].required, Is.EqualTo(true));
+            Assert.That(result.fields[0].privacyScreen, Is.EqualTo(false));
+            Assert.That(result.fields[0].enforceGeneration, Is.EqualTo(true));
+        }
+
+        [Test]
         public void ParseAndSerializeShouldPreserveDiacritics()
         {
             string recordTitle = "MySp�ci�lHom�L�gin";
