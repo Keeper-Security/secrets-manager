@@ -68,19 +68,26 @@ The storage will require a GCP Key ID, as well as the name of the Secrets Manage
     }
     getKeeperRecordsGCP()
 ```
-### Change key
+### Change Key
 
-You can change the key used to encrypt and decrypt your configuration file by calling the changeKey method on the storage object.
-```
-  const storage = await new GCPKeyValueStorage(configPath,keyConfig,gcpSessionConfig).init();
-  await storage.changeKey(keyConfig2);
+You can change the key used to encrypt and decrypt your configuration file by calling the `changeKey` method on the `GCPKeyValueStorage` instance.
+```javascript
+const newKeyConfig = new GCPKeyConfig("<new_key_version_resource_url>");
+const storage = await new GCPKeyValueStorage(configPath, keyConfig, gcpSessionConfig).init();
+await storage.changeKey(newKeyConfig);
 ```
 
-### Decrypt config
-We can decrypt the configuration file and revert it back to plaintext and save it in default location if needed.
-```
-  const storage = await new GCPKeyValueStorage(configPath,keyConfig,gcpSessionConfig).init();
-  await storage.decryptConfig(true);
+### Decrypt Config
+
+You can decrypt the configuration file to migrate to a different cloud provider or to retrieve your raw credentials. Pass `true` to save the decrypted configuration back to the file, or `false` to return the plaintext without modifying the file.
+```javascript
+const storage = await new GCPKeyValueStorage(configPath, keyConfig, gcpSessionConfig).init();
+
+// Returns plaintext only (file stays encrypted)
+const plaintext = await storage.decryptConfig(false);
+
+// OR: returns plaintext and saves config as plaintext
+const saved = await storage.decryptConfig(true);
 ```
 
 ## Logging
