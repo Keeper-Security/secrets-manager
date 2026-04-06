@@ -197,7 +197,7 @@ namespace SecretManagement.Keeper
             return records
                 .Where(x => x.RecordUid == filter || filterPattern.IsMatch(x.Data.title))
                 .Distinct(new RecordComparer())
-                .Select(x => $"{x.RecordUid} {x.Data.title}").ToArray();
+                .Select(x => string.IsNullOrEmpty(x.Data.title) ? x.RecordUid : x.Data.title).ToArray();
         }
 
         public static async Task<KeeperResult> SetSecret(string name, object secret, Hashtable config)
