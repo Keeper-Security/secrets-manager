@@ -52,7 +52,7 @@ jobs:
 
       - name: Setup .NET
         if: inputs.project-type == 'dotnet'
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5.2.0
         with:
           dotnet-version: '6.0.x'
 
@@ -641,7 +641,7 @@ jobs:
           cp *.json "${{ github.workspace }}/"
 
       - name: Archive SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: sbom-${{ inputs.project-name }}-${{ env.PROJECT_VERSION }}
           path: |

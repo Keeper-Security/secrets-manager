@@ -10,7 +10,7 @@ namespace SecretsManager
         public string title { get; set; }
         public string type { get; set; }
         public KeeperRecordField[] fields { get; set; }
-        public KeeperRecordField[] custom { get; set; }
+        public KeeperRecordField[] custom { get; set; } = Array.Empty<KeeperRecordField>();
         public string notes { get; set; }
     }
 
@@ -19,10 +19,42 @@ namespace SecretsManager
         public string type { get; set; }
         public string label { get; set; }
         public object[] value { get; set; }
-        public bool required { get; set; }
-        public bool privacyScreen { get; set; }
-        public bool enforceGeneration { get; set; }
+        [JsonConverter(typeof(FlexibleBoolConverter))]
+        public bool? required { get; set; }
+        [JsonConverter(typeof(FlexibleBoolConverter))]
+        public bool? privacyScreen { get; set; }
+        [JsonConverter(typeof(FlexibleBoolConverter))]
+        public bool? enforceGeneration { get; set; }
         public object complexity { get; set; }
+    }
+
+    public class FlexibleBoolConverter : JsonConverter<bool?>
+    {
+        public override bool? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            return reader.TokenType switch
+            {
+                JsonTokenType.True => true,
+                JsonTokenType.False => false,
+                JsonTokenType.Number => reader.GetInt32() != 0,
+                JsonTokenType.String => reader.GetString()?.ToLowerInvariant() switch
+                {
+                    "1" or "true" => true,
+                    "0" or "false" => false,
+                    _ => throw new JsonException("Unable to convert to bool.")
+                },
+                JsonTokenType.Null => null,
+                _ => throw new JsonException("Unable to convert to bool.")
+            };
+        }
+
+        public override void Write(Utf8JsonWriter writer, bool? value, JsonSerializerOptions options)
+        {
+            if (value.HasValue)
+                writer.WriteBooleanValue(value.Value);
+            else
+                writer.WriteNullValue();
+        }
     }
 
     public class FlexibleLongConverter : JsonConverter<long>
