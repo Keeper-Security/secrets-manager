@@ -7,7 +7,7 @@
     Author = 'Sergey Aldoukhov'
     CompanyName = 'Keeper Security'
     Copyright = '(c) 2024 Keeper Security, Inc.'
-    FunctionsToExport = 'Set-Secret', 'Get-Secret', 'Remove-Secret', 'Get-SecretInfo', 'Test-SecretVault', 'Set-KeeperVault', 'Get-Notation'
+    FunctionsToExport = 'Set-Secret', 'Get-Secret', 'Remove-Secret', 'Get-SecretInfo', 'Test-SecretVault', 'Get-Notation'
     CmdletsToExport = @()    
     VariablesToExport = @()
     AliasesToExport = @()
