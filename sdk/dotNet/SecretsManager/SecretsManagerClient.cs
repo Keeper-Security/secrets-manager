@@ -414,18 +414,21 @@ namespace SecretsManager
 
         public object FieldValue(string fieldType)
         {
-            return Data.fields.Concat(Data.custom ?? new KeeperRecordField[] { }).FirstOrDefault(x => x.type == fieldType)?.value[0];
+            var field = Data.fields.Concat(Data.custom).FirstOrDefault(x => x.type == fieldType);
+            if (field?.value == null || field.value.Length == 0)
+                return null;
+            return field.value[0];
         }
 
         public void UpdateFieldValue(string fieldType, object value)
         {
-            var field = Data.fields.Concat(Data.custom ?? new KeeperRecordField[] { }).FirstOrDefault(x => x.type == fieldType);
+            var field = Data.fields.Concat(Data.custom).FirstOrDefault(x => x.type == fieldType);
             if (field == null)
-            {
                 return;
-            }
-
-            field.value[0] = value;
+            if (field.value == null || field.value.Length == 0)
+                field.value = new object[] { value };
+            else
+                field.value[0] = value;
         }
 
         public bool AddCustomField(object field)
@@ -436,8 +439,6 @@ namespace SecretsManager
                 Console.Error.WriteLine($"AddCustomField: Field '{field.GetType().Name}' is of unknown field class - skipped.");
                 return false;
             }
-
-            Data.custom = Data.custom ?? new KeeperRecordField[] { };
 
             var json = JsonUtils.SerializeJson(field);
             var krf = JsonUtils.ParseJson<KeeperRecordField>(json);
@@ -851,7 +852,7 @@ namespace SecretsManager
             await UpdateSecretWithOptions(options, record, new UpdateOptions(transactionType, null));
         }
 
-        public static async Task UpdateSecretWithOptions(SecretsManagerOptions options, KeeperRecord record, UpdateOptions? updateOptions = null)
+        public static async Task UpdateSecretWithOptions(SecretsManagerOptions options, KeeperRecord record, UpdateOptions updateOptions = null)
         {
             var payload = PrepareUpdatePayload(options.Storage, record, updateOptions);
             await PostQuery(options, "update_secret", payload);
@@ -956,7 +957,7 @@ namespace SecretsManager
                 throw new Exception($"Thumbnail does not exist for the file {file.FileUid}");
             }
 
-            return DownloadFile(file, file.Url);
+            return DownloadFile(file, file.ThumbnailUrl);
         }
 
         private static byte[] DownloadFile(KeeperFile file, string url)

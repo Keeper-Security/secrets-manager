@@ -15,7 +15,7 @@ jobs:
     outputs:
       sdk-version: ${{ steps.extract-sdk-version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
 
       - name: Extract SDK version
         id: extract-sdk-version
@@ -66,7 +66,7 @@ jobs:
 
   # Generate and upload SBOM for SDK
   generate-sdk-sbom:
-    needs: check-version
+    needs: [check-version, get-version]
     runs-on: ubuntu-latest
 
     defaults:
@@ -74,10 +74,10 @@ jobs:
         working-directory: ./sdk/dotNet
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
 
       - name: Setup .NET 6
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5.2.0
         with:
           dotnet-version: 6.0.x
 
@@ -92,6 +92,12 @@ jobs:
         env:
           MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
           SYFT_PACKAGE_CATALOGER_DOTNET_ENABLED: "true"
+          # Syft reads SYFT_SOURCE_NAME / SYFT_SOURCE_VERSION from the environment when
+          # invoked by manifest-cli, injecting them into the root package versionInfo field.
+          # This fixes the pseudo-version (v0.0.0-YYYYMMDDHHMMSS) that Syft generates when
+          # scanning a directory without a Go module or other recognizable version source.
+          SYFT_SOURCE_NAME: keeper-secrets-manager-dotnet
+          SYFT_SOURCE_VERSION: ${{ needs.get-version.outputs.sdk-version }}
         run: |
           # Install tools
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
@@ -121,11 +127,11 @@ jobs:
           mv sbom.json "${{ github.workspace }}/sdk/dotNet/"
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: sbom-keeper-secrets-manager-dotnet-${{ needs.get-version.outputs.sdk-version }}
           path: ./sdk/dotNet/sbom.json
-          retention-days: 90
+          retention-days: 10
   
   build-nuget:
     needs: generate-sdk-sbom
@@ -137,10 +143,10 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
 
       - name: Setup .NET 6
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5.2.0
         with:
           dotnet-version: 6.0.x
 
@@ -151,7 +157,7 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Upload NuGet packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: nuget-packages-${{ github.run_number }}
           path: |
@@ -165,21 +171,21 @@ jobs:
 
     steps:
       - name: Download NuGet packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8.0.1
         with:
           name: nuget-packages-${{ github.run_number }}
           path: ./packages
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
-        uses: Keeper-Security/ksm-action@master
+        uses: Keeper-Security/ksm-action@37abbada28637b6478ba845e73d3f8b9676572fe
         with:
           keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
           secrets: |
             Sq4nnb5HXXNp1l6KryXynw/field/password > NUGET_AUTH_TOKEN
 
       - name: Setup .NET 6
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5.2.0
         with:
           dotnet-version: 6.0.x
 
@@ -196,10 +202,10 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
 
       - name: Setup .NET 6
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5.2.0
         with:
           dotnet-version: 6.0.x
 
@@ -216,7 +222,7 @@ jobs:
           ./build.ps1 -Package
 
       - name: Upload PowerShell module
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: powershell-module-${{ github.run_number }}
           path: |
@@ -230,14 +236,14 @@ jobs:
 
     steps:
       - name: Download PowerShell module
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8.0.1
         with:
           name: powershell-module-${{ github.run_number }}
           path: ./out
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
-        uses: Keeper-Security/ksm-action@master
+        uses: Keeper-Security/ksm-action@37abbada28637b6478ba845e73d3f8b9676572fe
         with:
           keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
           secrets: |
