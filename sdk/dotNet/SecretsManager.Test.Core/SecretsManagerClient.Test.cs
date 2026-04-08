@@ -3,6 +3,7 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading.Tasks;
+using System.Linq;
 
 namespace SecretsManager.Test
 {
@@ -89,6 +90,42 @@ namespace SecretsManager.Test
 
             var storage = new InMemoryStorage(fakeBase64Config);
             Assert.That("fake.keepersecurity.com", Is.EqualTo(storage.GetString("hostname")));
+        }
+    }
+
+    public class FieldValueTests
+    {
+        [Test]
+        public void FieldValue_ReturnsNull_WhenValueArrayIsNull()
+        {
+            var record = MakeRecord(new KeeperRecordField { type = "login", value = null });
+            Assert.That(record.FieldValue("login"), Is.Null);
+        }
+
+        [Test]
+        public void FieldValue_ReturnsNull_WhenValueArrayIsEmpty()
+        {
+            var record = MakeRecord(new KeeperRecordField { type = "login", value = Array.Empty<object>() });
+            Assert.That(record.FieldValue("login"), Is.Null);
+        }
+
+        [Test]
+        public void FieldValue_ReturnsValue_WhenPresent()
+        {
+            var record = MakeRecord(new KeeperRecordField { type = "login", value = new object[] { "alice" } });
+            Assert.That(record.FieldValue("login"), Is.EqualTo("alice"));
+        }
+
+        private static KeeperRecord MakeRecord(KeeperRecordField field)
+        {
+            var data = new KeeperRecordData
+            {
+                title = "Test",
+                type = "login",
+                fields = new[] { field },
+                custom = Array.Empty<KeeperRecordField>()
+            };
+            return new KeeperRecord(null, "test-uid", null, null, null, data, 0, Array.Empty<KeeperFile>(), null);
         }
     }
 }

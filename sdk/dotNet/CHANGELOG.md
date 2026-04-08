@@ -5,6 +5,36 @@ All notable changes to the Keeper Secrets Manager .NET SDK will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [17.1.2]
+
+### Fixed
+
+- KSM-822 - Ensure `"custom": []` is always included in RecordCreate V3 API payload even when no custom fields are set
+  - Changed `KeeperRecordData.custom` default from `null` to empty array so the serializer always includes the field
+  - Aligns .NET SDK record creation with Commander and Vault behavior
+- KSM-843 - Fixed `ObjectDisposedException` in `LocalConfigStorage.SaveToFile()` when writing config to file
+  - `stream.Close()` was called before `writer.Dispose()`, causing the writer's flush-on-dispose to fail
+  - Switched to explicit `using` blocks so the writer flushes and disposes before the stream closes
+  - Regression introduced in v17.1.0 (KSM-698 file permissions fix); resolves GitHub issue #966
+- KSM-865 - Fixed `DownloadThumbnail` returning full file content instead of thumbnail
+  - Was passing `file.Url` to the internal download call instead of `file.ThumbnailUrl` (copy-paste bug)
+- KSM-864 - Fixed `GetSecrets` silently dropping records when boolean fields contain integer values
+  - `required`, `privacyScreen`, and `enforceGeneration` were declared as non-nullable `bool`
+  - Records created by older clients or Commander send `0`/`1` integers or quoted strings for these fields
+  - Changed to `bool?` with `FlexibleBoolConverter` to accept JSON booleans, integers, and quoted strings
+- KSM-873 - Fixed `Get-SecretInfo` / `Get-Secret` round-trip silently returning null (PowerShell)
+  - `GetSecretsInfo()` was returning names in the format `"UID title"` which `GetSecret()` could not resolve
+  - Now returns the record title as the name (falls back to UID when title is null or empty)
+- KSM-863 - Removed bundled `System.Management.Automation.dll` from PowerShell module package
+  - This DLL conflicts with PowerShell's own copy, causing `Import-Module` to fail on some environments
+  - Removed from the file list in `build.ps1`; PowerShell already provides this assembly at runtime
+- KSM-874 - Removed `Set-KeeperVault` ghost export from PowerShell module manifest
+  - Function was listed in `FunctionsToExport` in `SecretManagement.Keeper.Extension.psd1` but never implemented
+  - Any call to `Set-KeeperVault` produced a hard terminating error
+- KSM-875 - Fixed `FieldValue()` throwing `NullReferenceException` or `IndexOutOfRangeException` on records with null or empty value arrays
+  - Added null/length guard before accessing `value[0]`; returns `null` when the value array is absent
+  - Callers can now safely iterate all fields on any record type, including PAM and gateway records
+
 ## [17.1.1] - 2026-02-03
 
 ### Fixed

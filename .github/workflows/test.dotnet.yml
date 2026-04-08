@@ -3,6 +3,9 @@ name: Test-DotNet
 on:
   pull_request:
     branches: [ master ]
+    paths:
+      - 'sdk/dotNet/**'
+      - '.github/workflows/test.dotnet.yml'
 
 jobs:
   test-dotnet:
@@ -15,10 +18,10 @@ jobs:
       run:
         working-directory: ./sdk/dotNet
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6.0.2
 
     - name: Setup .NET SDK ${{ matrix.dotnet-version }}
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v5.2.0
       with:
         dotnet-version: ${{ matrix.dotnet-version }}
         

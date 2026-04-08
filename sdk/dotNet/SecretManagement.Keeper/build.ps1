@@ -34,7 +34,6 @@ if ($Package) {
         './bin/Release/netstandard2.0/BouncyCastle.Cryptography.dll'
         './bin/Release/netstandard2.0/Microsoft.Bcl.AsyncInterfaces.dll'
         './bin/Release/netstandard2.0/System.Buffers.dll'
-        './bin/Release/netstandard2.0/System.Management.Automation.dll'
         './bin/Release/netstandard2.0/System.Memory.dll'
         './bin/Release/netstandard2.0/System.Numerics.Vectors.dll'
         './bin/Release/netstandard2.0/System.Runtime.CompilerServices.Unsafe.dll'

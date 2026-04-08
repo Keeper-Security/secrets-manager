@@ -148,12 +148,12 @@ namespace SecretManagement.Keeper
                 }
 
                 var field = found.Data.fields
-                    .Concat(found.Data.custom ?? new KeeperRecordField[] { })
+                    .Concat(found.Data.custom)
                     .FirstOrDefault(x => (x.label ?? x.type).Equals(parts[1], StringComparison.OrdinalIgnoreCase));
                 return field?.value[0].ToString();
             }
 
-            foreach (var field in found.Data.fields.Concat(found.Data.custom ?? new KeeperRecordField[] { }))
+            foreach (var field in found.Data.fields.Concat(found.Data.custom))
             {
                 if (field.type == "fileRef" || field.value.Length == 0)
                 {
@@ -197,7 +197,7 @@ namespace SecretManagement.Keeper
             return records
                 .Where(x => x.RecordUid == filter || filterPattern.IsMatch(x.Data.title))
                 .Distinct(new RecordComparer())
-                .Select(x => $"{x.RecordUid} {x.Data.title}").ToArray();
+                .Select(x => string.IsNullOrEmpty(x.Data.title) ? x.RecordUid : x.Data.title).ToArray();
         }
 
         public static async Task<KeeperResult> SetSecret(string name, object secret, Hashtable config)
