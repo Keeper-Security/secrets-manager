@@ -3,6 +3,9 @@ name: Test-Java
 on:
   pull_request:
     branches: [ master ]
+    paths:
+      - 'sdk/java/core/**'
+      - '.github/workflows/test.java.yml'
 
 jobs:
   test-java:
