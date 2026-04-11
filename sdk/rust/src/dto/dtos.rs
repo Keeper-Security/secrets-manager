@@ -1050,6 +1050,13 @@ pub struct KeeperFile {
     pub url: Option<String>,           // Download URL (v16.7.0+)
     pub thumbnail_url: Option<String>, // Thumbnail URL (v16.7.0+)
     pub proxy_url: Option<String>,     // Proxy URL for HTTP requests
+    pub skip_ssl_verify: bool, // Skip SSL cert verification (for corporate proxies like Zscaler)
+    /// Pre-built HTTP client for file downloads. Avoids constructing a new
+    /// reqwest::blocking::Client inside tokio::spawn_blocking, which fails
+    /// because reqwest's blocking module creates an internal tokio runtime.
+    /// See: https://github.com/seanmonstar/reqwest/issues/1017
+    #[serde(skip)]
+    pub http_client: Option<reqwest::blocking::Client>,
 
     f: HashMap<String, Value>,
     record_key_bytes: Vec<u8>,
@@ -1071,6 +1078,8 @@ impl KeeperFile {
             url: self.url.clone(),
             thumbnail_url: self.thumbnail_url.clone(),
             proxy_url: self.proxy_url.clone(),
+            skip_ssl_verify: self.skip_ssl_verify,
+            http_client: self.http_client.clone(),
             f: self.f.clone(),
             record_key_bytes: self.record_key_bytes.clone(),
         }
@@ -1151,16 +1160,24 @@ impl KeeperFile {
             .get_url()
             .map_err(|_| KSMRError::FileError("File URL is invalid".to_string()))?;
 
-        // Fetch the file data from the URL
-        let mut client_builder = reqwest::blocking::Client::builder();
-        if let Some(ref proxy_url) = self.proxy_url {
-            if let Ok(proxy) = reqwest::Proxy::all(proxy_url) {
-                client_builder = client_builder.proxy(proxy);
+        // Use pre-built HTTP client if available. Building a new reqwest::blocking::Client
+        // inside tokio::spawn_blocking fails because reqwest's blocking module creates an
+        // internal tokio runtime which conflicts with the existing one.
+        // See: https://github.com/seanmonstar/reqwest/issues/1017
+        let http_client = if let Some(client) = &self.http_client {
+            client.clone()
+        } else {
+            let mut client_builder = reqwest::blocking::Client::builder()
+                .danger_accept_invalid_certs(self.skip_ssl_verify);
+            if let Some(ref proxy_url) = self.proxy_url {
+                if let Ok(proxy) = reqwest::Proxy::all(proxy_url) {
+                    client_builder = client_builder.proxy(proxy);
+                }
             }
-        }
-        let http_client = client_builder
-            .build()
-            .map_err(|e| KSMRError::FileError(format!("Failed to build HTTP client: {}", e)))?;
+            client_builder
+                .build()
+                .map_err(|e| KSMRError::FileError(format!("Failed to build HTTP client: {}", e)))?
+        };
         let mut response = http_client
             .get(&file_url)
             .send()
@@ -1236,16 +1253,21 @@ impl KeeperFile {
         // Decrypt the file key
         let file_key = self.decrypt_file_key()?;
 
-        // Fetch the thumbnail data from the URL
-        let mut client_builder = reqwest::blocking::Client::builder();
-        if let Some(ref proxy_url) = self.proxy_url {
-            if let Ok(proxy) = reqwest::Proxy::all(proxy_url) {
-                client_builder = client_builder.proxy(proxy);
+        // Fetch the thumbnail data from the URL (reuse pre-built client if available)
+        let http_client = if let Some(client) = &self.http_client {
+            client.clone()
+        } else {
+            let mut client_builder = reqwest::blocking::Client::builder()
+                .danger_accept_invalid_certs(self.skip_ssl_verify);
+            if let Some(ref proxy_url) = self.proxy_url {
+                if let Ok(proxy) = reqwest::Proxy::all(proxy_url) {
+                    client_builder = client_builder.proxy(proxy);
+                }
             }
-        }
-        let http_client = client_builder
-            .build()
-            .map_err(|e| KSMRError::FileError(format!("Failed to build HTTP client: {}", e)))?;
+            client_builder
+                .build()
+                .map_err(|e| KSMRError::FileError(format!("Failed to build HTTP client: {}", e)))?
+        };
         let mut response = http_client
             .get(&thumbnail_url)
             .send()
@@ -1300,6 +1322,8 @@ impl KeeperFile {
             url,
             thumbnail_url,
             proxy_url: None,
+            skip_ssl_verify: false,
+            http_client: None,
             f: file_dict.clone(),
             record_key_bytes,
         };
@@ -1846,6 +1870,8 @@ mod tests {
             url: None,
             thumbnail_url: None,
             proxy_url,
+            skip_ssl_verify: false,
+            http_client: None,
             f: HashMap::new(),
             record_key_bytes: vec![],
         }
