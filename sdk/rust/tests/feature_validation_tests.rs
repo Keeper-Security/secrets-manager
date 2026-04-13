@@ -725,4 +725,41 @@ mod feature_validation_tests {
         // This test passing means all new features are properly exported and compile
         assert!(true);
     }
+
+    /// Regression test for KSM-812: get_folders() must take &mut self, not self.
+    ///
+    /// Before the fix, get_folders() consumed the SecretsManager, so any subsequent
+    /// call on the same instance would fail to compile. This test verifies the
+    /// instance is still usable after calling get_folders().
+    #[test]
+    fn test_get_folders_does_not_consume_secrets_manager() {
+        fn mock_empty_folders(
+            _url: String,
+            transmission_key: TransmissionKey,
+            _encrypted_payload: EncryptedPayload,
+        ) -> Result<KsmHttpResponse, KSMRError> {
+            let response = json!({"folders": [], "records": [], "expiresOn": 0, "warnings": []});
+            let response_bytes = response.to_string().into_bytes();
+            let encrypted =
+                CryptoUtils::encrypt_aes_gcm(&response_bytes, &transmission_key.key, None)?;
+            Ok(KsmHttpResponse {
+                status_code: 200,
+                data: encrypted,
+                http_response: None,
+            })
+        }
+
+        let storage = create_test_storage().expect("Failed to create storage");
+        let mut client_options = ClientOptions::new_client_options(storage);
+        client_options.set_custom_post_function(mock_empty_folders);
+        let mut sm = SecretsManager::new(client_options).expect("Failed to create SecretsManager");
+
+        // First call
+        let first = sm.get_folders();
+        // Second call on the same instance — would not compile if get_folders() took self
+        let second = sm.get_folders();
+
+        assert!(first.is_ok(), "First get_folders() call failed: {:?}", first);
+        assert!(second.is_ok(), "Second get_folders() call failed: {:?}", second);
+    }
 }

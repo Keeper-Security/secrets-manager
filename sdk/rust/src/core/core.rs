@@ -1315,7 +1315,7 @@ impl SecretsManager {
         Ok(secrets_manager_response)
     }
 
-    fn fetch_and_decrypt_folders(mut self) -> Result<Vec<KeeperFolder>, KSMRError> {
+    fn fetch_and_decrypt_folders(&mut self) -> Result<Vec<KeeperFolder>, KSMRError> {
         let payload = self
             .clone()
             .prepare_get_payload(self.config.clone(), None)?;
@@ -1486,7 +1486,7 @@ impl SecretsManager {
     ///
     /// * `HTTPError` - If the API request fails
     /// * `CryptoError` - If folder decryption fails
-    pub fn get_folders(self) -> Result<Vec<KeeperFolder>, KSMRError> {
+    pub fn get_folders(&mut self) -> Result<Vec<KeeperFolder>, KSMRError> {
         let folders = self.fetch_and_decrypt_folders()?;
         Ok(folders)
     }
