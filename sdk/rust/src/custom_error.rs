@@ -11,116 +11,83 @@
 //
 
 use hex::FromHexError;
-use std::error::Error;
-use std::fmt::{self};
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum KSMRError {
+    #[error("Invalid Base64 encoding")]
     InvalidBase64,
+    #[error("Decoded byte array is too short")]
     DecodedBytesTooShort,
+    #[error("Not implemented functionality: {0}")]
     NotImplemented(String),
+    #[error("Invalid length: {0}")]
     InvalidLength(String),
+    #[error("Insufficient bytes in input: {0}")]
     InsufficientBytes(String),
+    #[error("Save Error: {0}")]
     CacheSaveError(String),
+    #[error("Retrieve Error: {0}")]
     CacheRetrieveError(String),
+    #[error("Purge Error: {0}")]
     CachePurgeError(String),
+    #[error("Secret manager creation Error: {0}")]
     SecretManagerCreationError(String),
+    #[error("Storage Error: {0}")]
     StorageError(String),
-    DirectoryCreationError(String, std::io::Error),
-    FileCreationError(String, std::io::Error),
-    FileWriteError(String, std::io::Error),
+    #[error("Directory Creation failed: {0}: {1}")]
+    DirectoryCreationError(String, #[source] std::io::Error),
+    #[error("File Creation failed: {0}: {1}")]
+    FileCreationError(String, #[source] std::io::Error),
+    #[error("File Write failed: {0}: {1}")]
+    FileWriteError(String, #[source] std::io::Error),
+    #[error("JSON serialization/deserialization failed: {0}")]
     SerializationError(String),
+    #[error("Deserialization Error: {0}")]
     DeserializationError(String),
+    #[error("Error sending or receiving data from keeper servers. Exact message includes : {0}")]
     HTTPError(String),
+    #[error("Data Conversion Error: {0}")]
     DataConversionError(String),
+    #[error("{0}")]
     CustomError(String),
+    #[error("Decode Error: {0}")]
     DecodeError(String),
+    #[error("String Conversion Error: {0}")]
     StringConversionError(String),
+    #[error("Cryptography module Error: {0}")]
     CryptoError(String),
+    #[error("Record data error: {0}")]
     RecordDataError(String),
+    #[error("payload doesn't belong to any of these types: {0}")]
     InvalidPayloadError(String),
+    #[error("IO Error: {0}")]
     IOError(String),
+    #[error("Path Error: {0}")]
     PathError(String),
+    #[error("Key not found: {0}")]
     KeyNotFoundError(String),
+    #[error("File Error: {0}")]
     FileError(String),
+    #[error("Password creation Error: {0}")]
     PasswordCreationError(String),
+    #[error("TOTP Error: {0}")]
     TOTPError(String),
+    #[error("Notation Error: {0}")]
     NotationError(String),
     // v17.1.0: Additional error types for better error handling
+    #[error("Record not found: {0}")]
     RecordNotFoundError(String), // Specific error when record doesn't exist
-    FieldNotFoundError(String),  // When a field doesn't exist in a record
+    #[error("Field not found: {0}")]
+    FieldNotFoundError(String), // When a field doesn't exist in a record
+    #[error("Authentication failed: {0}")]
     AuthenticationError(String), // Authentication/authorization failures
-    InvalidTokenError(String),   // Invalid or expired one-time token
-    TransactionError(String),    // Transaction operation failures (commit/rollback)
-    ConfigurationError(String),  // Configuration validation errors
-}
-
-impl fmt::Display for KSMRError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            KSMRError::InvalidBase64 => write!(f, "Invalid Base64 encoding"),
-            KSMRError::DecodedBytesTooShort => write!(f, "Decoded byte array is too short"),
-            KSMRError::NotImplemented(msg) => write!(f, "Not implemented functionality: {}", msg),
-            KSMRError::InsufficientBytes(msg) => write!(f, "Insufficient bytes in input: {}", msg),
-            KSMRError::CacheSaveError(msg) => write!(f, "Save Error: {}", msg),
-            KSMRError::CacheRetrieveError(msg) => write!(f, "Retrieve Error: {}", msg),
-            KSMRError::CachePurgeError(msg) => write!(f, "Purge Error: {}", msg),
-            KSMRError::FileError(msg) => write!(f, "File Error: {}", msg),
-            KSMRError::SecretManagerCreationError(msg) => {
-                write!(f, "Secret manager creation Error: {}", msg)
-            }
-            KSMRError::PasswordCreationError(msg) => write!(f, "Password creation Error: {}", msg),
-            KSMRError::StorageError(msg) => write!(f, "Storage Error: {}", msg),
-            KSMRError::DirectoryCreationError(er, error) => {
-                write!(f, "Directory Creation failed: {}: {}", er, error)
-            }
-            KSMRError::FileCreationError(er, error) => {
-                write!(f, "File Creation failed: {}: {}", er, error)
-            }
-            KSMRError::FileWriteError(er, error) => {
-                write!(f, "File Write failed: {}: {}", er, error)
-            }
-            KSMRError::SerializationError(er) => {
-                write!(f, "JSON serialization/deserialization failed: {}", er)
-            }
-            KSMRError::DecodeError(er) => write!(f, "Decode Error: {}", er),
-            KSMRError::StringConversionError(er) => write!(f, "String Conversion Error: {}", er),
-            KSMRError::DataConversionError(er) => write!(f, "Data Conversion Error: {}", er),
-            KSMRError::CustomError(err) => write!(f, "{}", err),
-            KSMRError::CryptoError(msg) => write!(f, "Cryptography module Error: {}", msg),
-            KSMRError::InvalidLength(msg) => write!(f, "Invalid length: {}", msg),
-            KSMRError::RecordDataError(msg) => write!(f, "Record data error: {}", msg),
-            KSMRError::DeserializationError(msg) => write!(f, "Deserialization Error: {}", msg),
-            KSMRError::HTTPError(msg) => write!(
-                f,
-                "Error sending or receiving data from keeper servers. Exact message includes : {}",
-                msg
-            ),
-            KSMRError::InvalidPayloadError(msg) => {
-                write!(f, "payload doesn't belong to any of these types: {}", msg)
-            }
-            KSMRError::IOError(error) => {
-                write!(f, "IO Error: {}", error)
-            }
-            KSMRError::PathError(string) => {
-                write!(f, "Path Error: {}", string)
-            }
-            KSMRError::KeyNotFoundError(string) => {
-                write!(f, "Key not found: {}", string)
-            }
-            KSMRError::TOTPError(string) => write!(f, "TOTP Error: {}", string),
-            KSMRError::NotationError(string) => write!(f, "Notation Error: {}", string),
-            // v17.1.0: New error types
-            KSMRError::RecordNotFoundError(string) => write!(f, "Record not found: {}", string),
-            KSMRError::FieldNotFoundError(string) => write!(f, "Field not found: {}", string),
-            KSMRError::AuthenticationError(string) => {
-                write!(f, "Authentication failed: {}", string)
-            }
-            KSMRError::InvalidTokenError(string) => write!(f, "Invalid token: {}", string),
-            KSMRError::TransactionError(string) => write!(f, "Transaction error: {}", string),
-            KSMRError::ConfigurationError(string) => write!(f, "Configuration error: {}", string),
-        }
-    }
+    #[error("Invalid token: {0}")]
+    InvalidTokenError(String), // Invalid or expired one-time token
+    #[error("Transaction error: {0}")]
+    TransactionError(String), // Transaction operation failures (commit/rollback)
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String), // Configuration validation errors
 }
 
 impl PartialEq for KSMRError {
@@ -214,5 +181,3 @@ impl From<FromHexError> for KSMRError {
         KSMRError::CryptoError(format!("Hex decode error: {}", error))
     }
 }
-
-impl Error for KSMRError {}

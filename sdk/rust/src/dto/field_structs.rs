@@ -20,8 +20,10 @@ use crate::{
     custom_error::KSMRError,
     enums::Country,
     enums::StandardFieldTypeEnum,
-    utils::{self, PasswordOptions},
+    utils,
 };
+#[cfg(feature = "password-gen")]
+use crate::utils::PasswordOptions;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -225,6 +227,7 @@ pub struct Password {
 
 impl Password {
     #[allow(clippy::new_ret_no_self)]
+    #[cfg(feature = "password-gen")]
     pub fn new(
         value: String,
         label: Option<String>,
@@ -265,6 +268,7 @@ impl Password {
         Ok(keeper_field)
     }
 
+    #[cfg(feature = "password-gen")]
     pub fn new_password(value: String) -> Result<KeeperField, KSMRError> {
         Password::new(value, None, None, None, None, None)
     }

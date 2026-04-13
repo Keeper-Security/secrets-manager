@@ -183,6 +183,101 @@ impl ClientOptions {
     }
 }
 
+/// Builder for [`ClientOptions`].
+///
+/// Use this instead of the verbose `ClientOptions::new()` constructor when you
+/// only need to set a subset of options.
+///
+/// # Example
+///
+/// ```no_run
+/// use keeper_secrets_manager_core::core::core::{ClientOptionsBuilder};
+/// use keeper_secrets_manager_core::enums::KvStoreType;
+/// use keeper_secrets_manager_core::storage::InMemoryKeyValueStorage;
+/// use keeper_secrets_manager_core::custom_error::KSMRError;
+///
+/// fn example() -> Result<(), KSMRError> {
+///     let storage = InMemoryKeyValueStorage::new(Some(std::env::var("KSM_CONFIG").unwrap()))?;
+///     let options = ClientOptionsBuilder::new(KvStoreType::InMemory(storage))
+///         .token("US:YOUR_ONE_TIME_TOKEN")
+///         .build();
+///     Ok(())
+/// }
+/// ```
+pub struct ClientOptionsBuilder {
+    token: String,
+    config: KvStoreType,
+    cache: cache::KSMCache,
+    proxy_url: Option<String>,
+    hostname: Option<String>,
+    log_level: Level,
+    insecure_skip_verify: Option<bool>,
+}
+
+impl ClientOptionsBuilder {
+    /// Create a builder with the required storage backend.
+    pub fn new(config: KvStoreType) -> Self {
+        Self {
+            token: String::new(),
+            config,
+            cache: cache::KSMCache::None,
+            proxy_url: None,
+            hostname: None,
+            log_level: Level::Error,
+            insecure_skip_verify: None,
+        }
+    }
+
+    /// Set the one-time token (required when initialising for the first time).
+    pub fn token(mut self, token: &str) -> Self {
+        self.token = token.to_string();
+        self
+    }
+
+    /// Set a cache backend for performance optimisation.
+    pub fn cache(mut self, cache: cache::KSMCache) -> Self {
+        self.cache = cache;
+        self
+    }
+
+    /// Set an HTTP/HTTPS proxy URL (supports `http://user:pass@host:port`).
+    pub fn proxy_url(mut self, url: &str) -> Self {
+        self.proxy_url = Some(url.to_string());
+        self
+    }
+
+    /// Override the Keeper server hostname.
+    pub fn hostname(mut self, hostname: &str) -> Self {
+        self.hostname = Some(hostname.to_string());
+        self
+    }
+
+    /// Set the logging level.
+    pub fn log_level(mut self, level: Level) -> Self {
+        self.log_level = level;
+        self
+    }
+
+    /// Skip SSL certificate verification (not recommended for production).
+    pub fn insecure_skip_verify(mut self, skip: bool) -> Self {
+        self.insecure_skip_verify = Some(skip);
+        self
+    }
+
+    /// Consume the builder and produce a [`ClientOptions`].
+    pub fn build(self) -> ClientOptions {
+        ClientOptions::new(
+            self.token,
+            self.config,
+            self.log_level,
+            self.hostname,
+            self.insecure_skip_verify,
+            self.proxy_url,
+            self.cache,
+        )
+    }
+}
+
 const DEFAULT_KEY_ID: &str = "10";
 const NOTATION_PREFIX: &str = "keeper";
 
