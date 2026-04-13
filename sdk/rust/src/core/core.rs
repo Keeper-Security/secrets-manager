@@ -408,7 +408,9 @@ impl SecretsManager {
                 client_builder = client_builder.proxy(proxy);
             }
         }
-        sm.http_client = client_builder.build().ok();
+        sm.http_client = Some(client_builder.build().map_err(|e| {
+            KSMRError::SecretManagerCreationError(format!("Failed to build HTTP client: {}", e))
+        })?);
 
         Ok(sm)
     }
