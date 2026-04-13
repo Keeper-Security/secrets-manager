@@ -195,12 +195,16 @@ pub struct SecretsManager {
     pub cache: KSMCache,
     pub proxy_url: Option<String>,
     custom_post_function: Option<CustomPostFunction>,
+    /// Pre-built HTTP client shared across all operations (API calls + file downloads).
+    /// Built once during init to avoid constructing reqwest::blocking::Client inside
+    /// tokio::spawn_blocking, which fails due to nested runtime conflicts.
+    /// See: https://github.com/seanmonstar/reqwest/issues/1017
+    http_client: Option<reqwest::blocking::Client>,
 }
 
 impl Clone for SecretsManager {
     fn clone(&self) -> Self {
         SecretsManager {
-            // Clone each field of the struct
             token: self.token.clone(),
             hostname: self.hostname.clone(),
             verify_ssl_certs: self.verify_ssl_certs,
@@ -209,6 +213,7 @@ impl Clone for SecretsManager {
             cache: self.cache.clone(),
             proxy_url: self.proxy_url.clone(),
             custom_post_function: self.custom_post_function,
+            http_client: self.http_client.clone(),
         }
     }
 }
@@ -251,10 +256,11 @@ impl SecretsManager {
             hostname: String::new(),
             verify_ssl_certs: false,
             config: KvStoreType::None,
-            log_level: Level::Info, // Default to Info if not provided
-            cache: KSMCache::None,  // Default is no cache
+            log_level: Level::Info,
+            cache: KSMCache::None,
             proxy_url: client_options.proxy_url.clone(),
             custom_post_function: client_options.custom_post_function,
+            http_client: None, // built after SSL/proxy config is resolved
         };
 
         let mut config = client_options.config;
@@ -389,10 +395,22 @@ impl SecretsManager {
         }
         secrets_manager.config = config.clone();
 
-        match secrets_manager._init() {
-            Ok(secrets_manager) => Ok(secrets_manager),
-            Err(e) => Err(e),
+        let mut sm = secrets_manager._init()?;
+
+        // Build a shared HTTP client once, outside any async runtime.
+        // Reused for API calls and file downloads. Avoids constructing
+        // reqwest::blocking::Client inside tokio::spawn_blocking which fails
+        // due to nested runtime conflicts (reqwest#1017).
+        let mut client_builder =
+            reqwest::blocking::Client::builder().danger_accept_invalid_certs(sm.verify_ssl_certs);
+        if let Some(proxy_url) = &sm.proxy_url {
+            if let Ok(proxy) = SecretsManager::build_proxy(proxy_url) {
+                client_builder = client_builder.proxy(proxy);
+            }
         }
+        sm.http_client = client_builder.build().ok();
+
+        Ok(sm)
     }
 
     fn _init(&mut self) -> Result<Self, KSMRError> {
@@ -1194,10 +1212,12 @@ impl SecretsManager {
                 let record_result =
                     Record::new_from_json(record_hashmap_parsed, &_secret_key, None);
                 if let Ok(mut unwrapped_record) = record_result {
-                    if let Some(proxy) = &self.proxy_url {
-                        for file in &mut unwrapped_record.files {
+                    for file in &mut unwrapped_record.files {
+                        if let Some(proxy) = &self.proxy_url {
                             file.proxy_url = Some(proxy.clone());
                         }
+                        file.skip_ssl_verify = self.verify_ssl_certs;
+                        file.http_client = self.http_client.clone();
                     }
                     records_count += 1;
                     records.push(unwrapped_record);
@@ -1219,11 +1239,13 @@ impl SecretsManager {
                 if let Some(unwrapped_folder) = folder_result {
                     shared_folders_count += 1;
                     let mut folder_records = unwrapped_folder.records()?;
-                    if let Some(proxy) = &self.proxy_url {
-                        for record in &mut folder_records {
-                            for file in &mut record.files {
+                    for record in &mut folder_records {
+                        for file in &mut record.files {
+                            if let Some(proxy) = &self.proxy_url {
                                 file.proxy_url = Some(proxy.clone());
                             }
+                            file.skip_ssl_verify = self.verify_ssl_certs;
+                            file.http_client = self.http_client.clone();
                         }
                     }
                     records_count += folder_records.len();
