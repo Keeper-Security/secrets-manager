@@ -22,10 +22,12 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1
         with:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
@@ -53,8 +55,13 @@ jobs:
           cargo test --all-features --test integration_tests
           cargo test --all-features --test notation_tests
           cargo test --all-features --test payload_test
+          cargo test --all-features --test proxy_test
           cargo test --all-features --test totp_test
           cargo test --all-features --test update_secret_tests
+          cargo test --all-features --test caching_transmission_key_tests
+          cargo test --all-features --test download_file_by_title_tests
+          cargo test --all-features --test duplicate_uid_notation_test
+          cargo test --all-features --test empty_config_test
 
       - name: Run caching tests (serial execution required)
         run: cargo test --all-features --test caching_tests -- --test-threads=1
@@ -76,7 +83,9 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - name: Detect Rust SDK version
         id: detect-version
@@ -92,7 +101,7 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1
         with:
           toolchain: stable
 
@@ -113,7 +122,7 @@ jobs:
           jq '.metadata.component.name' rust-sdk-sbom.json
 
       - name: Publish SBOM to Manifest Cyber
-        uses: manifest-cyber/manifest-github-action@main
+        uses: manifest-cyber/manifest-github-action@9aa4e84c80e6d232c3f49506a17f0ff1151e6896 # main
         with:
           apiKey: ${{ secrets.MANIFEST_TOKEN }}
           bomFilePath: ./sdk/rust/rust-sdk-sbom.json
@@ -122,7 +131,7 @@ jobs:
           asset-labels: application,sbom-generated,rust,cargo,secrets-manager
 
       - name: Archive SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom-rust-sdk-${{ steps.detect-version.outputs.version }}
           path: ./sdk/rust/rust-sdk-sbom.json
@@ -145,15 +154,17 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1
         with:
           toolchain: stable
 
       - name: Authenticate with crates.io via OIDC
-        uses: rust-lang/crates-io-auth-action@v1
+        uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1
         id: auth
 
       - name: Dry-run publish (validates package and authentication)
@@ -180,15 +191,17 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1
         with:
           toolchain: stable
 
       - name: Authenticate with crates.io via OIDC
-        uses: rust-lang/crates-io-auth-action@v1
+        uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1
         id: auth
 
       - name: Publish to crates.io
