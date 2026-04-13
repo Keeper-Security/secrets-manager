@@ -1,6 +1,6 @@
 [package]
 name = "keeper-secrets-manager-core"
-version = "17.1.0"
+version = "17.2.0"
 authors = ["Keeper Security <sm@keepersecurity.com>"]
 edition = "2021"
 rust-version = "1.87"
