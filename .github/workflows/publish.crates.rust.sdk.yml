@@ -4,8 +4,38 @@ on:
   workflow_dispatch:
 
 jobs:
+  check-version:
+    name: Check version not already published
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    defaults:
+      run:
+        working-directory: ./sdk/rust
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Verify version does not exist on crates.io
+        run: |
+          VERSION=$(grep -Po '^version\s*=\s*"\K[^"]*' Cargo.toml)
+          echo "Checking crates.io for keeper-secrets-manager-core v${VERSION}..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://crates.io/api/v1/crates/keeper_secrets_manager_core/${VERSION}")
+          if [ "$STATUS" = "200" ]; then
+            echo "❌ Version ${VERSION} already exists on crates.io — bump the version before publishing"
+            exit 1
+          fi
+          echo "✅ Version ${VERSION} is new — proceeding with publish"
+
   test-rust-sdk:
     name: Test Rust SDK (${{ matrix.rust }})
+    needs: check-version
     permissions:
       contents: read
     runs-on: ubuntu-latest
