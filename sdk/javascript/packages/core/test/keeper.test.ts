@@ -65,6 +65,10 @@ test('Storage prefixes', async () => {
     expect(await storage.getString('hostname')).toBe('keepersecurity.eu')
 
     storage = inMemoryStorage({})
+    await initializeStorage(storage, 'IL5:ONE_TIME_TOKEN')
+    expect(await storage.getString('hostname')).toBe('il5.keepersecurity.us')
+
+    storage = inMemoryStorage({})
     await initializeStorage(storage, 'fake.keepersecurity.com:ONE_TIME_TOKEN')
     expect(await storage.getString('hostname')).toBe('fake.keepersecurity.com')
 })

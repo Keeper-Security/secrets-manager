@@ -4,6 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.4.1
+- KSM-901 - Add IL5 (DoD Impact Level 5) region mapping (`IL5` → `il5.keepersecurity.us`)
+
 ## 17.4.0
 - KSM-669 - Crypto issues when using getFolders() on Cloudflare workers with JS SDK
 - KSM-697 - Fix file permissions for config files (write with 0600 permissions for security)
