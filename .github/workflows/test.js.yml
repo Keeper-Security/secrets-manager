@@ -3,20 +3,27 @@ name: Test-JS
 on:
   pull_request:
     branches: [ master ]
+    paths:
+      - 'sdk/javascript/packages/core/**'
+      - '.github/workflows/test.js.yml'
 
 jobs:
   test-js:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [ '20', '22', '24' ]
+    name: KSM test with Node.js ${{ matrix.node-version }}
     defaults:
       run:
         working-directory: ./sdk/javascript/packages/core
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Use Node.js 20
+
+      - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node-version }}
 
       - run: npm install
         env:
