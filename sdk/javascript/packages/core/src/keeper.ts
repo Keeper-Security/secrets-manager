@@ -723,7 +723,8 @@ export const initializeStorage = async (
             AU: 'keepersecurity.com.au',
             GOV: 'govcloud.keepersecurity.us',
             JP: 'keepersecurity.jp',
-            CA: 'keepersecurity.ca'
+            CA: 'keepersecurity.ca',
+            IL5: 'il5.keepersecurity.us'
 
         }[tokenParts[0].toUpperCase()]
         if (!host) {
