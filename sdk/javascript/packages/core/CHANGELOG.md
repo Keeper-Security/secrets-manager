@@ -3,6 +3,7 @@
 ## 17.4.1
 - KSM-901 - Add IL5 (DoD Impact Level 5) region mapping (`IL5` → `il5.keepersecurity.us`)
 - KSM-758 - Replace deprecated `rollup-plugin-sourcemaps@0.6.3` with `rollup-plugin-sourcemaps2@0.5.4` — resolves peer dependency warnings with Rollup 4.x
+- Security: Bump `rollup` devDependency from `^4.52.3` to `^4.60.1` — fixes HIGH severity arbitrary file write via path traversal (CVE affects 4.0.0–4.58.0)
 
 ## 17.4.0
 - KSM-669 - Crypto issues when using getFolders() on Cloudflare workers with JS SDK
