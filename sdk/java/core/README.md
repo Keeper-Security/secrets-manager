@@ -5,6 +5,7 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 17.2.1
+- KSM-902 - Add IL5 (DoD Impact Level 5) region mapping (`IL5` → `il5.keepersecurity.us`)
 - KSM-823 - Fix `custom` field omitted from record create payload when no custom fields are set
   - `KeeperRecordData.custom` now defaults to `mutableListOf()` instead of `null` — `kotlinx-serialization` previously skipped null fields, causing `"custom"` to be absent from the V3 API payload
   - Consistent with Commander and Vault which always include `"custom": []`

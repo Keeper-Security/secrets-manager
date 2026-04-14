@@ -109,6 +109,9 @@ internal class SecretsManagerTest {
         initializeStorage(storage, "eu:ONE_TIME_TOKEN")
         assertEquals("keepersecurity.eu", storage.getString("hostname"))
         storage = InMemoryStorage()
+        initializeStorage(storage, "IL5:ONE_TIME_TOKEN")
+        assertEquals("il5.keepersecurity.us", storage.getString("hostname"))
+        storage = InMemoryStorage()
         initializeStorage(storage, "fake.keepersecurity.com:ONE_TIME_TOKEN")
         assertEquals("fake.keepersecurity.com", storage.getString("hostname"))
     }
