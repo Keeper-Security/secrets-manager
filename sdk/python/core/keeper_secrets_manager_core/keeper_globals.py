@@ -32,7 +32,7 @@ def get_client_version(hardcode=False):
     # Default version for hardcode mode or when all detection methods fail
     version_major = "17"
     version_minor_default = "2"
-    version_revision_default = "0"
+    version_revision_default = "1"
     version = "{}.{}.{}".format(version_major, version_minor_default, version_revision_default)
 
     # Allow the default version to be hard coded
@@ -97,5 +97,6 @@ keeper_servers = {
     'AU': 'keepersecurity.com.au',
     'GOV': 'govcloud.keepersecurity.us',
     'JP': 'keepersecurity.jp',
-    'CA': 'keepersecurity.ca'
+    'CA': 'keepersecurity.ca',
+    'IL5': 'il5.keepersecurity.us'
 }

@@ -3,6 +3,10 @@ name: Test-Python-Helper
 on:
   pull_request:
     branches: [ master ]
+    paths:
+      - 'sdk/python/helper/**'
+      - 'sdk/python/core/**'
+      - '.github/workflows/test.python.helper.yml'
 
 jobs:
   test-cli:
@@ -14,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
 
