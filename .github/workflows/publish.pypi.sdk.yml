@@ -1,6 +1,12 @@
 name: Publish to PyPI (Python SDK & Helper)
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to PyPI (uncheck to build and scan SBOM only)'
+        required: false
+        default: 'true'
+        type: boolean
 
 jobs:
   # Extract versions for both SDK and Helper
@@ -10,23 +16,23 @@ jobs:
       sdk-version: ${{ steps.extract-sdk-version.outputs.version }}
       helper-version: ${{ steps.extract-helper-version.outputs.version }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6.0.2
 
       - name: Extract SDK version
         id: extract-sdk-version
         working-directory: ./sdk/python/core
         run: |
           VERSION=$(python3 setup.py --version 2>/dev/null || grep -Po 'version\s*=\s*["\x27]\K[^\x27"]*' setup.py)
-          echo "SDK Version: $VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "SDK Version: ${VERSION}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
 
       - name: Extract Helper version
         id: extract-helper-version
         working-directory: ./sdk/python/helper
         run: |
           VERSION=$(python3 setup.py --version 2>/dev/null || grep -Po 'version\s*=\s*["\x27]\K[^\x27"]*' setup.py)
-          echo "Helper Version: $VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Helper Version: ${VERSION}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
 
   # Fail fast if either version is already on PyPI - before SBOM generation
   # and before the release manager is asked to approve anything.
@@ -64,10 +70,10 @@ jobs:
     needs: [get-versions, validate-versions]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6.0.2
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: '3.11'
 
@@ -112,11 +118,11 @@ jobs:
             --label=ksm,sdk,python,security
 
       - name: Archive SDK SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: sbom-sdk-${{ needs.get-versions.outputs.sdk-version }}
           path: sdk-sbom.json
-          retention-days: 90
+          retention-days: 10
 
   # Generate and publish SBOM for Helper.
   # Installs core from source first so this job has no dependency on core
@@ -128,10 +134,10 @@ jobs:
     needs: [get-versions, validate-versions]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6.0.2
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: '3.11'
 
@@ -179,71 +185,59 @@ jobs:
             --label=ksm,helper,python,security
 
       - name: Archive Helper SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: sbom-helper-${{ needs.get-versions.outputs.helper-version }}
           path: helper-sbom.json
-          retention-days: 90
+          retention-days: 10
 
   # Single publish job - both SDK and Helper publish under one environment: prod
   # gate so the release manager only presses the button once.
   # Both SBOM jobs must complete (and be verified by Manifest Cyber) before
   # this job runs.
+  # Uses PyPI Trusted Publishing (OIDC) — no long-lived API tokens required.
   publish:
     name: Publish KSM Python SDK and Helper to PyPI
     needs: [generate-sdk-sbom, generate-helper-sbom, get-versions]
+    if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      id-token: write
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6.0.2
 
       - name: Set up Python 3.9
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: '3.9'
 
       - name: Install build tools
         run: |
           python3 -m pip install --upgrade pip setuptools
-          python3 -m pip install build twine 'wheel>=0.46.3'  # wheel pin: CVE-2026-24049
+          python3 -m pip install build 'wheel>=0.46.3'  # wheel pin: CVE-2026-24049
 
       # ── SDK ────────────────────────────────────────────────────────────────
 
-      - name: Retrieve PyPI token from KSM (SDK)
-        id: ksmsecrets-sdk
-        uses: Keeper-Security/ksm-action@master
-        with:
-          keeper-secret-config: ${{ secrets.KSM_PYPI_PUBLISHER_PYPI_SDK_CONFIG }}
-          secrets: |
-            -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN
-
-      - name: Build and publish SDK
+      - name: Build SDK
         working-directory: ./sdk/python/core
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ steps.ksmsecrets-sdk.outputs.PYPI_API_TOKEN }}
-        run: |
-          python3 -m build --no-isolation
-          python3 -m twine upload --verbose dist/*
+        run: python3 -m build --no-isolation
+
+      - name: Publish SDK to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdk/python/core/dist/
 
       # ── Helper ─────────────────────────────────────────────────────────────
 
-      - name: Retrieve PyPI token from KSM (Helper)
-        id: ksmsecrets-helper
-        uses: Keeper-Security/ksm-action@master
-        with:
-          keeper-secret-config: ${{ secrets.KSM_PYPI_PUBLISHER_PYPI_SDK_CONFIG }}
-          secrets: |
-            -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN
-
-      - name: Build and publish Helper
+      - name: Build Helper
         working-directory: ./sdk/python/helper
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ steps.ksmsecrets-helper.outputs.PYPI_API_TOKEN }}
-        run: |
-          python3 -m build --no-isolation
-          python3 -m twine upload --verbose dist/*
+        run: python3 -m build --no-isolation
+
+      - name: Publish Helper to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdk/python/helper/dist/

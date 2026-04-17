@@ -10,7 +10,7 @@ from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core import mock
 from keeper_secrets_manager_core.mock import MockConfig
-from keeper_secrets_manager_core.keeper_globals import get_client_version
+from keeper_secrets_manager_core.keeper_globals import get_client_version, keeper_servers
 
 
 class SmokeTest(unittest.TestCase):
@@ -194,11 +194,11 @@ class SmokeTest(unittest.TestCase):
 
         # Test 1: Normal case - __version__ is available (primary path)
         client_version = get_client_version(hardcode=False)
-        self.assertEqual("17.2.0", client_version, "did not get correct version from __version__")
+        self.assertEqual("17.2.1", client_version, "did not get correct version from __version__")
 
         # Test 2: Hardcode mode still works
         client_version = get_client_version(hardcode=True)
-        self.assertEqual("17.2.0", client_version, "did not get the correct client version for hardcoded")
+        self.assertEqual("17.2.1", client_version, "did not get the correct client version for hardcoded")
 
         # Test 3: Fallback to importlib.metadata when __version__ import fails
         # Mock the import to fail, then check fallback works
@@ -232,5 +232,25 @@ class SmokeTest(unittest.TestCase):
             # But __version__ should take precedence with correct version
             client_version = get_client_version(hardcode=False)
             # Should get 17.1.0 from __version__, NOT 16.6.5 from stale metadata
-            self.assertEqual("17.2.0", client_version,
-                           "KSM-749: Should use __version__ (17.1.0) not stale metadata (16.6.5)")
+            self.assertEqual("17.2.1", client_version,
+                           "KSM-749: Should use __version__ not stale metadata (16.6.5)")
+
+    def test_il5_region_mapping(self):
+        """KSM-900: IL5 region token prefix resolves to il5.keepersecurity.us"""
+        self.assertIn('IL5', keeper_servers, "IL5 region must be present in keeper_servers")
+        self.assertEqual('il5.keepersecurity.us', keeper_servers['IL5'])
+
+    def test_all_region_mappings_intact(self):
+        """Existing region mappings are unaffected by IL5 addition"""
+        expected = {
+            'US': 'keepersecurity.com',
+            'EU': 'keepersecurity.eu',
+            'AU': 'keepersecurity.com.au',
+            'GOV': 'govcloud.keepersecurity.us',
+            'JP': 'keepersecurity.jp',
+            'CA': 'keepersecurity.ca',
+            'IL5': 'il5.keepersecurity.us',
+        }
+        for prefix, hostname in expected.items():
+            self.assertEqual(hostname, keeper_servers.get(prefix),
+                             f"keeper_servers['{prefix}'] mismatch")
