@@ -19,7 +19,7 @@ import java.util.*
 import java.util.concurrent.*
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj17.2.0"
+const val KEEPER_CLIENT_VERSION = "mj17.2.1"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
@@ -706,6 +706,7 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
             "GOV" -> "govcloud.keepersecurity.us"
             "JP" -> "keepersecurity.jp"
             "CA" -> "keepersecurity.ca"
+            "IL5" -> "il5.keepersecurity.us"
             else -> tokenParts[0]
         }
         clientKey = tokenParts[1]
@@ -920,7 +921,7 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
 
             val fields = when(selector.lowercase()) {
                 "field" -> record.data.fields
-                "custom_field" -> record.data.custom ?: mutableListOf<KeeperRecordField>()
+                "custom_field" -> record.data.custom
                 else -> throw Exception("Notation error - Expected /field or /custom_field but found /$selector")
             }
 
@@ -991,9 +992,7 @@ fun completeTransaction(options: SecretsManagerOptions, recordUid: String, rollb
 @ExperimentalSerializationApi
 fun addCustomField(record: KeeperRecord, field: KeeperRecordField) {
     if (field.javaClass.superclass == KeeperRecordField::class.java) {
-        if (record.data.custom == null)
-            record.data.custom = mutableListOf()
-        record.data.custom!!.add(field)
+        record.data.custom.add(field)
     }
 }
 

@@ -20,6 +20,11 @@ on:
         required: false
         type: string
         default: '11'
+      publish:
+        description: 'Publish to Maven Central (false = build only)'
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   get-version:
@@ -31,13 +36,17 @@ jobs:
       version: ${{ steps.extract-version.outputs.version }}
       artifact-id: ${{ steps.extract-version.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - name: Extract version and artifact ID from Gradle
         id: extract-version
+        env:
+          PROJECT_NAME: ${{ inputs.project-name }}
         run: |
           VERSION=$(grep -Po 'version\s*=\s*"\K[^"]*' build.gradle.kts || echo "0.0.0-unknown")
           echo "Version retrieved: $VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
           # Extract artifactId from settings.gradle.kts (rootProject.name)
           if [ -f "settings.gradle.kts" ]; then
@@ -51,11 +60,11 @@ jobs:
 
           # Final fallback to project-name input
           if [ -z "$ARTIFACT_ID" ]; then
-            ARTIFACT_ID="${{ inputs.project-name }}"
+            ARTIFACT_ID="$PROJECT_NAME"
           fi
 
           echo "Artifact ID retrieved: $ARTIFACT_ID"
-          echo "artifact-id=$ARTIFACT_ID" >> $GITHUB_OUTPUT
+          echo "artifact-id=$ARTIFACT_ID" >> "$GITHUB_OUTPUT"
 
   generate-and-upload-sbom:
     needs: get-version
@@ -66,98 +75,50 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Java ${{ inputs.java-version }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
 
-      - name: Build project and copy dependencies
-        run: |
-          echo "Building project to resolve dependencies..."
-          ./gradlew build -x test --no-daemon --refresh-dependencies
+      - name: Build project
+        run: ./gradlew build -x test --no-daemon
 
-          echo "Copying runtime dependencies for SBOM scanning..."
-          ./gradlew copyDependencies
+      - name: Generate SBOM with CycloneDX
+        run: ./gradlew cyclonedxBom --no-daemon
 
-          echo "Dependencies collected:"
-          ls -la build/sbom-deps/ || echo "Warning: sbom-deps directory not created"
-
-          echo "Excluding fatJar from SBOM (test artifact only):"
-          find build/libs -name "*.jar" -type f ! -name "*-fat.jar" || true
-
-      - name: Install SBOM tools
-        run: |
-          echo "Installing Syft v1.18.1..."
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
-
-          echo "Installing Manifest CLI v0.18.3..."
-          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b . v0.18.3
-          chmod +x ./manifest
-
-          echo "Verifying installations..."
-          syft version
-          ./manifest --version
-
-      - name: Generate and publish SBOM
-        env:
-          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
-        run: |
-          echo "Creating Syft configuration for Java/Kotlin scanning..."
-          cat > syft-config.yaml << 'EOF'
-          package:
-            search:
-              scope: all-layers
-              unindexed-archives: true
-              indexed-archives: true
-            cataloger:
-              enabled: true
-              java:
-                enabled: true
-                search-unindexed-archives: true
-                search-indexed-archives: true
-                resolve-dependencies: true
-                use-network: false
-                max-parent-recursive-depth: 10
-              # Disable non-Java catalogers
-              ruby:
-                enabled: false
-              python:
-                enabled: false
-              nodejs:
-                enabled: false
-              dotnet:
-                enabled: false
-              golang:
-                enabled: false
-          EOF
-
-          echo "Generating SBOM with Manifest CLI..."
-          ./manifest sbom build/sbom-deps \
-            --generator=syft \
-            --generator-config=syft-config.yaml \
-            --name=${{ inputs.project-name }} \
-            --version=${{ needs.get-version.outputs.version }} \
-            --output=spdx-json \
-            --file=sbom.json \
-            --api-key=${MANIFEST_TOKEN} \
-            --publish=true \
-            --asset-label=application,sbom-generated,java,sdk,maven,security
+      - name: Publish SBOM to Manifest
+        uses: manifest-cyber/manifest-github-action@a90e8d22cb1a607317ec76cc9c53f61769c06213 # v1.6.0
+        with:
+          apiKey: ${{ secrets.MANIFEST_TOKEN }}
+          bomFilePath: ${{ inputs.working-directory }}/build/reports/cyclonedx/bom.json
+          sbomName: ${{ inputs.project-name }}
+          sbomVersion: ${{ needs.get-version.outputs.version }}
+          asset-labels: application,sbom-generated,java,sdk,maven,security
 
       - name: Archive SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: sbom-${{ inputs.project-name }}-${{ needs.get-version.outputs.version }}
-          path: ${{ inputs.working-directory }}/sbom.json
-          retention-days: 90
+          name: sbom-cyclonedx-${{ inputs.project-name }}-${{ needs.get-version.outputs.version }}
+          path: ${{ inputs.working-directory }}/build/reports/cyclonedx/bom.json
+          retention-days: 10
+
+  confirm-publish:
+    needs: generate-and-upload-sbom
+    if: ${{ inputs.publish == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Publish gate confirmed"
 
   publish-to-maven-central:
-    needs: [get-version, generate-and-upload-sbom]
+    needs: [get-version, generate-and-upload-sbom, confirm-publish]
     environment: prod
     runs-on: ubuntu-latest
 
@@ -167,13 +128,14 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
-        uses: Keeper-Security/ksm-action@v1
+        uses: Keeper-Security/ksm-action@37abbada28637b6478ba845e73d3f8b9676572fe # master
         with:
           keeper-secret-config: ${{ secrets.KSM_ARTIFACT_JAVA_APP_CONFIG }}
           secrets: |
@@ -184,16 +146,16 @@ jobs:
             IR14oITcuvFr9Ek-lKVrXw/custom_field/centralPassword > env:JRELEASER_MAVENCENTRAL_PASSWORD
 
       - name: Set up Java ${{ inputs.java-version }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
 
       - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@v3
+        uses: gradle/actions/wrapper-validation@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3
 
       - name: Build and test
         run: ./gradlew clean build test
@@ -212,10 +174,11 @@ jobs:
           JRELEASER_MAVENCENTRAL_PASSWORD: ${{ env.JRELEASER_MAVENCENTRAL_PASSWORD }}
 
       - name: Verify publication via Central Portal API
+        env:
+          ARTIFACT_ID: ${{ needs.get-version.outputs.artifact-id }}
+          VERSION: ${{ needs.get-version.outputs.version }}
         run: |
           GROUP_ID="com.keepersecurity.secrets-manager"
-          ARTIFACT_ID="${{ needs.get-version.outputs.artifact-id }}"
-          VERSION="${{ needs.get-version.outputs.version }}"
           GROUP_PATH="${GROUP_ID//./\/}"
 
           echo "Verifying publication for: ${GROUP_ID}:${ARTIFACT_ID}:${VERSION}"
@@ -235,7 +198,7 @@ jobs:
               echo "Checking deployment status via Central Portal API..."
 
               # Create Bearer token from username:password
-              AUTH_TOKEN=$(printf "%s:%s" "${{ env.JRELEASER_MAVENCENTRAL_USERNAME }}" "${{ env.JRELEASER_MAVENCENTRAL_PASSWORD }}" | base64)
+              AUTH_TOKEN=$(printf "%s:%s" "${JRELEASER_MAVENCENTRAL_USERNAME}" "${JRELEASER_MAVENCENTRAL_PASSWORD}" | base64)
 
               # Poll Portal API for deployment status (max 20 attempts, 30 seconds each = 10 minutes)
               MAX_RETRIES=20
@@ -332,9 +295,9 @@ jobs:
 
       - name: Upload JReleaser logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: jreleaser-logs-${{ inputs.project-name }}
           path: |
             ${{ inputs.working-directory }}/build/jreleaser/
-          retention-days: 5 
+          retention-days: 5

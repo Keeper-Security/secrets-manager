@@ -4,6 +4,16 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.2.1
+- KSM-902 - Add IL5 (DoD Impact Level 5) region mapping (`IL5` → `il5.keepersecurity.us`)
+- KSM-823 - Fix `custom` field omitted from record create payload when no custom fields are set
+  - `KeeperRecordData.custom` now defaults to `mutableListOf()` instead of `null` — `kotlinx-serialization` previously skipped null fields, causing `"custom"` to be absent from the V3 API payload
+  - Consistent with Commander and Vault which always include `"custom": []`
+- KSM-854 - Fix `KeeperFileData` crash when `lastModified` field is absent from file metadata
+  - Files uploaded by non-SDK Keeper clients (iOS, Android, Web Vault) may omit `lastModified`
+  - Previously threw `MissingFieldException` and silently skipped the file attachment
+  - Now defaults to `0` when the field is absent, consistent with .NET SDK behavior (KSM-674)
+
 ## 17.2.0
 - **SECURITY (KSM-699)** - Fix file permissions for config.json and cache.dat
   - Config and cache files now created with 0600 permissions (owner read/write only)

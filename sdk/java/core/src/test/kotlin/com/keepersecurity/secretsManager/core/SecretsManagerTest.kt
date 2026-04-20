@@ -109,6 +109,9 @@ internal class SecretsManagerTest {
         initializeStorage(storage, "eu:ONE_TIME_TOKEN")
         assertEquals("keepersecurity.eu", storage.getString("hostname"))
         storage = InMemoryStorage()
+        initializeStorage(storage, "IL5:ONE_TIME_TOKEN")
+        assertEquals("il5.keepersecurity.us", storage.getString("hostname"))
+        storage = InMemoryStorage()
         initializeStorage(storage, "fake.keepersecurity.com:ONE_TIME_TOKEN")
         assertEquals("fake.keepersecurity.com", storage.getString("hostname"))
     }
@@ -120,6 +123,44 @@ internal class SecretsManagerTest {
                 "V9LRVkiLCAgICAKInNlcnZlclB1YmxpY0tleUlkIjogIjEwIiB9"
         val storage = InMemoryStorage(fakeBase64Config)
         assertEquals("fake.keepersecurity.com", storage.getString("hostname"))
+    }
+
+    @Test
+    fun testRecordCreateEmptyCustomSerialized() {
+        // KSM-823: RecordCreate with no custom fields must include "custom": [] in JSON payload
+        val recordData = KeeperRecordData(
+            title = "Test Record",
+            type = "login",
+            fields = mutableListOf()
+        )
+        val json = Json.encodeToString(recordData)
+        assertTrue(json.contains("\"custom\":[]") || json.contains("\"custom\": []"),
+            "Serialized payload must include custom:[] even when no custom fields are set. Got: $json")
+    }
+
+    @Test
+    fun testKeeperFileDataMissingLastModified() {
+        // GH-973 / KSM-854: lastModified entirely absent — must deserialize without throwing
+        val json = """{"title":"test.txt","name":"test.txt","type":"text/plain","size":1024}"""
+        val result = Json.decodeFromString<KeeperFileData>(json)
+        assertEquals(0L, result.lastModified)
+        assertEquals("test.txt", result.name)
+    }
+
+    @Test
+    fun testKeeperFileDataIntegerLastModified() {
+        // Regression guard: normal integer lastModified
+        val json = """{"title":"test.txt","name":"test.txt","size":1024,"lastModified":1700000000000}"""
+        val result = Json.decodeFromString<KeeperFileData>(json)
+        assertEquals(1700000000000L, result.lastModified)
+    }
+
+    @Test
+    fun testKeeperFileDataFractionalLastModified() {
+        // Regression guard for KSM-673: fractional lastModified (iOS client format)
+        val json = """{"title":"test.txt","name":"test.txt","size":1024,"lastModified":1760646182.790214}"""
+        val result = Json.decodeFromString<KeeperFileData>(json)
+        assertEquals(1760646182L, result.lastModified)
     }
 
 //    @Test // uncomment to debug the integration test
