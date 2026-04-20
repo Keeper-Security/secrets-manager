@@ -2,6 +2,7 @@ import {
     KeeperHttpResponse,
     getSecrets,
     initializeStorage,
+    generateTransmissionKey,
     platform,
     localConfigStorage, SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword
 } from '../'
@@ -248,4 +249,40 @@ test('GeneratePassword', async () => {
     expect(password).not.toBeNull()
     expect(password.length).toBe(32)
     expect(/^["!@#$%()+;<>=?[\]{}^.,]{32}$/.test(password)).toBe(true)
+})
+
+test('IL5 dynamic key - Layer 1: generateTransmissionKey uses serverPublicKey from storage', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20'
+    })
+    platform.getRandomBytes = () => new Uint8Array(32)
+    const transmissionKey = await generateTransmissionKey(storage)
+    expect(transmissionKey.publicKeyId).toBe(20)
+    expect(transmissionKey.key.length).toBe(32)
+})
+
+test('IL5 dynamic key - Layer 2: initializeStorage saves serverPublicKey from OTT third segment', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, `IL5:ONE_TIME_TOKEN:${fakeKey}`)
+    expect(await storage.getString('hostname')).toBe('il5.keepersecurity.us')
+    expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
+})
+
+test('IL5 dynamic key - Layer 3: getSecrets writes serverPublicKey from options to storage', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        queryFunction: async () => ({ statusCode: 200, data: new Uint8Array(0), headers: [] })
+    }
+    try {
+        await getSecrets(options)
+    } catch {
+        // expected — storage is not fully initialized; we only care that serverPublicKey was written
+    }
+    expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
 })

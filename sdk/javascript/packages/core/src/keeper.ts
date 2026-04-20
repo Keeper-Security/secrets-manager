@@ -7,6 +7,7 @@ export {KeyValueStorage} from './platform'
 let packageVersion = '[VI]{version}[/VI]'
 const KEY_HOSTNAME = 'hostname' // base url for the Secrets Manager service
 const KEY_SERVER_PUBLIC_KEY_ID = 'serverPublicKeyId'
+const KEY_SERVER_PUBLIC_KEY = 'serverPublicKey'
 const KEY_CLIENT_ID = 'clientId'
 const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the client before public key
 const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
@@ -44,6 +45,7 @@ export type SecretManagerOptions = {
     storage: KeyValueStorage
     queryFunction?: (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean) => Promise<KeeperHttpResponse>
     allowUnverifiedCertificate?: boolean
+    serverPublicKey?: string
 }
 
 export type QueryOptions = {
@@ -502,6 +504,12 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
     const transmissionKey = platform.getRandomBytes(32)
     const keyNumberString = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
     const keyNumber = keyNumberString ? Number(keyNumberString) : 7
+    const customPublicKeyB64 = await storage.getString(KEY_SERVER_PUBLIC_KEY)
+    if (customPublicKeyB64) {
+        const customPublicKey = webSafe64ToBytes(customPublicKeyB64)
+        const encryptedKey = await platform.publicEncrypt(transmissionKey, customPublicKey)
+        return { publicKeyId: keyNumber, key: transmissionKey, encryptedKey }
+    }
     const keeperPublicKey = keeperPublicKeys[keyNumber]
     if (!keeperPublicKey) {
         throw new Error(`Key number ${keyNumber} is not supported`)
@@ -524,6 +532,9 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     return {payload: encryptedPayload, signature}
 }
 const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
+    if (options.serverPublicKey) {
+        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
+    }
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
         throw new Error('hostname is missing from the configuration')
@@ -591,6 +602,9 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
 
 const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
     const storage = options.storage
+    if (options.serverPublicKey) {
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
+    }
     const payload = await prepareGetPayload(storage, queryOptions)
     const responseData = await postQuery(options, 'get_secret', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
@@ -731,6 +745,9 @@ export const initializeStorage = async (
             host = tokenParts[0]
         }
         clientKey = tokenParts[1]
+        if (tokenParts.length >= 3) {
+            await storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[2])
+        }
     }
     const clientKeyBytes = webSafe64ToBytes(clientKey)
     const clientKeyHash = await platform.hash(clientKeyBytes, CLIENT_ID_HASH_TAG)
