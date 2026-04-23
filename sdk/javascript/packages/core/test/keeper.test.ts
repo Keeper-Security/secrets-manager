@@ -263,20 +263,29 @@ test('IL5 dynamic key - Layer 1: generateTransmissionKey uses serverPublicKey fr
     expect(transmissionKey.key.length).toBe(32)
 })
 
-test('IL5 dynamic key - Layer 2: initializeStorage saves serverPublicKey from OTT third segment', async () => {
+test('IL5 dynamic key - Layer 2: initializeStorage saves serverPublicKeyId and serverPublicKey from 4-segment IL5 OTT', async () => {
     const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
     const storage = inMemoryStorage({})
-    await initializeStorage(storage, `IL5:ONE_TIME_TOKEN:${fakeKey}`)
+    await initializeStorage(storage, `IL5:ONE_TIME_TOKEN:20:${fakeKey}`)
     expect(await storage.getString('hostname')).toBe('il5.keepersecurity.us')
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
     expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
 })
 
-test('IL5 dynamic key - Layer 3: getSecrets writes serverPublicKey from options to storage', async () => {
+test('IL5 dynamic key - Layer 2: initializeStorage ignores extra segments for non-IL5 regions', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, 'US:ONE_TIME_TOKEN:garbage:garbage2')
+    expect(await storage.getString('hostname')).toBe('keepersecurity.com')
+    expect(await storage.getString('serverPublicKey')).toBeUndefined()
+})
+
+test('IL5 dynamic key - Layer 3: getSecrets writes serverPublicKey and serverPublicKeyId from options to storage', async () => {
     const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
     const storage = inMemoryStorage({})
     const options: SecretManagerOptions = {
         storage,
         serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
         queryFunction: async () => ({ statusCode: 200, data: new Uint8Array(0), headers: [] })
     }
     try {
@@ -285,4 +294,29 @@ test('IL5 dynamic key - Layer 3: getSecrets writes serverPublicKey from options 
         // expected — storage is not fully initialized; we only care that serverPublicKey was written
     }
     expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
+test('IL5 dynamic key - rotation suppression: server key_id hint ignored when serverPublicKey is in storage', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({
+        hostname: 'il5.keepersecurity.us',
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20'
+    })
+    const keyError = JSON.stringify({ error: 'key', key_id: 7 })
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => ({
+            statusCode: 400,
+            data: new TextEncoder().encode(keyError),
+            headers: []
+        })
+    }
+    try {
+        await getSecrets(options)
+    } catch {
+        // expected error — we care that serverPublicKeyId was NOT overwritten
+    }
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
 })

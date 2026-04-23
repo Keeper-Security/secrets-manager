@@ -46,6 +46,7 @@ export type SecretManagerOptions = {
     queryFunction?: (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean) => Promise<KeeperHttpResponse>
     allowUnverifiedCertificate?: boolean
     serverPublicKey?: string
+    serverPublicKeyId?: string
 }
 
 export type QueryOptions = {
@@ -551,8 +552,11 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                 try {
                     const errorObj: KeeperError = JSON.parse(errorMessage)
                     if (errorObj.error === 'key') {
-                        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, errorObj.key_id!.toString())
-                        continue
+                        const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
+                        if (!customKey) {
+                            await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, errorObj.key_id!.toString())
+                            continue
+                        }
                     }
                 } catch {
                 }
@@ -604,6 +608,9 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
     const storage = options.storage
     if (options.serverPublicKey) {
         await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
+    }
+    if (options.serverPublicKeyId) {
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
     }
     const payload = await prepareGetPayload(storage, queryOptions)
     const responseData = await postQuery(options, 'get_secret', payload)
@@ -745,8 +752,9 @@ export const initializeStorage = async (
             host = tokenParts[0]
         }
         clientKey = tokenParts[1]
-        if (tokenParts.length >= 3) {
-            await storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[2])
+        if (tokenParts[0].toUpperCase() === 'IL5' && tokenParts.length === 4) {
+            await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, tokenParts[2])
+            await storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
         }
     }
     const clientKeyBytes = webSafe64ToBytes(clientKey)
