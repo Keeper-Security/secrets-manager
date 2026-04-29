@@ -111,7 +111,7 @@ jobs:
 
       - name: Retrieve secrets from KSM
         id: ksmsecrets
-        uses: Keeper-Security/ksm-action@37abbada28637b6478ba845e73d3f8b9676572fe
+        uses: Keeper-Security/ksm-action@37abbada28637b6478ba845e73d3f8b9676572fe # v1.3.0
         with:
           keeper-secret-config: ${{ secrets.KSM_PYPI_PUBLISHER_PYPI_SDK_CONFIG }}
           secrets: |
