@@ -22,6 +22,8 @@ The Secrets Manager GCP KSM module can be installed using pip
 
 > `pip3 install keeper-secrets-manager-storage-gcp-kms`
 
+> **Note**: v1.1.0+ requires Python 3.9+. Users on Python 3.6–3.8 should pin to `keeper-secrets-manager-storage-gcp-kms<1.1.0`.
+
 2. Configure GCP Connection
 
 By default the google-cloud-kms library will utilize the default connection session setup with the GCP CLI with the gcloud auth command.  If you would like to specify the connection details, the two configuration files located at `~/.config/gcloud/configurations/config_default` and ~/.config/gcloud/legacy_credentials/<user>/adc.json can be manually edited.
@@ -77,6 +79,10 @@ Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager
 - Updated minimum `keeper-secrets-manager-core` dependency to 17.2.0
 - Fixed CVE-2026-0994: protobuf JSON recursion DoS (upgraded to `protobuf>=6.33.5`)
 - Fixed CVE-2026-26007: cryptography subgroup attack (upgraded to `cryptography>=46.0.5`)
+
+### 1.0.1
+
+- Fixed installation and import instructions in README
 
 ### 1.0.0
 
