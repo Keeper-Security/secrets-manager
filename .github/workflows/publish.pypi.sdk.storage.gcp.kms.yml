@@ -61,7 +61,7 @@ jobs:
       - name: Install Syft and Manifest CLI
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
-          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.30.0
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.31.0
 
       - name: Generate and publish SBOM
         env:
@@ -82,16 +82,7 @@ jobs:
             --file=sbom.json \
             --api-key="${MANIFEST_TOKEN}" \
             --publish=true \
-            --asset-label=ksm,storage,gcp,python,security 2>&1 || \
-          manifest sbom "$SCAN_TARGET" \
-            --generator=syft \
-            --name=keeper-secrets-manager-storage-gcp-kms \
-            --version="${VERSION}" \
-            --output=spdx-json \
-            --file=sbom.json \
-            --api-key="${MANIFEST_TOKEN}" \
-            --publish=true \
-            --label=ksm,storage,gcp,python,security
+            --asset-label=ksm,storage,gcp,python,security
 
       - name: Archive SBOM
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -138,4 +129,6 @@ jobs:
           TWINE_PASSWORD: ${{ steps.ksmsecrets.outputs.PYPI_API_TOKEN_GCP_KMS }}
         run: |
           python3 -m build --no-isolation
+          python3 -m pip install dist/*.whl
+          python3 -c "import keeper_secrets_manager_storage_gcp_kms; print('import OK')"
           python3 -m twine upload --verbose dist/*
