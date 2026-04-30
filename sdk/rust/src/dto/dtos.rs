@@ -116,8 +116,7 @@ impl Record {
                     match created_keeper_file {
                         Ok(file) => files.push(file),
                         Err(e) => {
-                            let msg = format!("Error loading file: {}", e);
-                            eprintln!("{}", msg);
+                            error!("Error loading file: {}", e);
                         }
                     }
                 }
@@ -723,8 +722,7 @@ impl Record {
                     match created_keeper_file {
                         Ok(file) => _files.push(file),
                         Err(e) => {
-                            let msg = format!("Error loading file: {}", e);
-                            eprintln!("{}", msg);
+                            error!("Error loading file: {}", e);
                         }
                     }
                 }
@@ -1095,9 +1093,15 @@ impl KeeperFile {
         let mut client_builder = reqwest::blocking::Client::builder()
             .danger_accept_invalid_certs(self.skip_ssl_verify);
         if let Some(ref proxy_url) = self.proxy_url {
-            if let Ok(proxy) = reqwest::Proxy::all(proxy_url) {
-                client_builder = client_builder.proxy(proxy);
+            let url = reqwest::Url::parse(proxy_url)
+                .map_err(|e| KSMRError::FileError(format!("Invalid proxy URL '{}': {}", proxy_url, e)))?;
+            let mut proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| KSMRError::FileError(format!("Failed to configure proxy: {}", e)))?;
+            if !url.username().is_empty() {
+                let password = url.password().unwrap_or("");
+                proxy = proxy.basic_auth(url.username(), password);
             }
+            client_builder = client_builder.proxy(proxy);
         }
         client_builder
             .build()

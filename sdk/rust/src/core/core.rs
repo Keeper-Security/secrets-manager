@@ -404,9 +404,8 @@ impl SecretsManager {
         let mut client_builder =
             reqwest::blocking::Client::builder().danger_accept_invalid_certs(sm.verify_ssl_certs);
         if let Some(proxy_url) = &sm.proxy_url {
-            if let Ok(proxy) = SecretsManager::build_proxy(proxy_url) {
-                client_builder = client_builder.proxy(proxy);
-            }
+            let proxy = SecretsManager::build_proxy(proxy_url)?;
+            client_builder = client_builder.proxy(proxy);
         }
         sm.http_client = Some(client_builder.build().map_err(|e| {
             KSMRError::SecretManagerCreationError(format!("Failed to build HTTP client: {}", e))
