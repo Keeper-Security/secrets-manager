@@ -2,6 +2,12 @@ name: Publish to Crates.io (Rust SDK)
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to crates.io (uncheck to build only)'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   check-version:
@@ -205,6 +211,7 @@ jobs:
 
   publish-crates:
     name: Publish Rust SDK to crates.io
+    if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     needs: [dry-run-publish]
     runs-on: ubuntu-latest
