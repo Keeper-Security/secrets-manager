@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [17.2.0]
+
+### Fixed
+
+- **KSM-886**: File downloads and thumbnail downloads crashed with "builder error" when called from inside a tokio runtime
+  - Root cause: `get_file_data()` and `get_thumbnail_data()` built a new `reqwest::blocking::Client` per call inside `tokio::spawn_blocking`, which creates a nested tokio runtime conflict
+  - Fix: one `reqwest::blocking::Client` is built in `SecretsManager::new()` and propagated to all `KeeperFile` instances; file operations reuse it
+  - See: [reqwest#1017](https://github.com/seanmonstar/reqwest/issues/1017)
+- **KSM-812**: `get_folders()` consumed `SecretsManager` by value, preventing any subsequent call on the same instance without cloning first
+  - Signature changed from `self` to `&mut self` to match `get_secrets()`, `create_secret()`, and the rest of the API
+  - **Note**: this is a breaking change for callers that relied on the consuming signature (e.g. via turbofish or trait bounds); the fix is to remove any `.clone()` added to work around the original bug
+- Proxy configuration errors (malformed URL, unsupported scheme) now surface at `SecretsManager::new()` with a clear `SecretManagerCreationError` instead of silently bypassing the proxy and sending traffic direct
+- Authenticated proxy URLs (`http://user:pass@host:port`) are now correctly applied when `KeeperFile` is used outside the standard `get_secrets()` fetch path (e.g. deserialized from storage)
+- TLS initialisation failures now surface at `SecretsManager::new()` instead of deferring to the first API call
+
+### Changed
+
+- `KeeperFile::http_client` and `KeeperFile::skip_ssl_verify` are now `pub(crate)`; they are internal propagation fields and were never part of the public API contract
+
 ## [17.1.0]
 
 ### Added
