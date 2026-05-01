@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [17.2.0]
 
+### Security
+
+- **reqwest 0.12 → 0.13.3** (KSM-922): resolves four `rustls-webpki` advisories
+  - GHSA-82J2-J2CH-GFR8 (High) — certificate validation bypass
+  - GHSA-PWJX-7F5V-R8JG, GHSA-XGP8-6FX6-WHRG, GHSA-965H-77QH-FMWD (Low/Medium)
+- **openssl 0.10.75 → 0.10.78**: resolves four Critical CVEs
+  - CVE-2026-41676, CVE-2026-41677, CVE-2026-41678, CVE-2026-41681 (CVSS 9.1–9.8)
+- **TLS backend**: reqwest 0.13 switches from ring-backed rustls to `aws-lc-rs`-backed rustls — the required foundation for FIPS 140-3 compliance in the Rust SDK
+
 ### Fixed
 
 - **KSM-886**: File downloads and thumbnail downloads crashed with "builder error" when called from inside a tokio runtime
@@ -20,6 +29,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - `KeeperFile::http_client` and `KeeperFile::skip_ssl_verify` are now `pub(crate)`; they are internal propagation fields and were never part of the public API contract
+- `hex` crate removed; hex encoding now uses `data-encoding` (already a direct dependency) — no public API change (KSM-924)
 
 ## [17.1.0]
 

@@ -931,7 +931,7 @@ impl SecretsManager {
                 .unwrap();
             error!(
                 "Client version {} was not registered in the backend",
-                client_id.to_string()
+                client_id
             );
             if let Some(additional_info) = response_dict.get("additional_info") {
                 if let Some(info) = additional_info.as_str() {
@@ -1180,7 +1180,7 @@ impl SecretsManager {
                         for warning in warnings_array {
                             warn!(
                                 "Warning shown while fetching secrets: `{}`",
-                                warning.as_str().unwrap().to_string()
+                                warning.as_str().unwrap()
                             );
                         }
                     }
