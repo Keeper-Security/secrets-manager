@@ -12,6 +12,7 @@
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::DateTime;
+use data_encoding::HEXLOWER;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -1466,7 +1467,7 @@ impl KeeperFolder {
         let mut clone: HashMap<String, Value> = HashMap::new();
         clone.insert(
             "folderKey".to_string(),
-            Value::String(hex::encode(self.folder_key.clone())),
+            Value::String(HEXLOWER.encode(&self.folder_key)),
         );
         clone.insert(
             ("folderUid").to_string(),

@@ -10,7 +10,6 @@
 // Contact: sm@keepersecurity.com
 //
 
-use hex::FromHexError;
 use std::error::Error;
 use std::fmt::{self};
 
@@ -206,12 +205,6 @@ impl From<serde_json::Error> for KSMRError {
         } else {
             KSMRError::SerializationError(error.to_string())
         }
-    }
-}
-
-impl From<FromHexError> for KSMRError {
-    fn from(error: FromHexError) -> Self {
-        KSMRError::CryptoError(format!("Hex decode error: {}", error))
     }
 }
 
