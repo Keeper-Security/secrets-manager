@@ -387,4 +387,33 @@ mod caching_tests {
 
         env::remove_var("KSM_CACHE_DIR");
     }
+
+    /// Test: Caching module is accessible and round-trips data through env-driven path
+    #[test]
+    #[serial]
+    fn test_caching_module_exists() {
+        let (cache_dir, test_dir) = setup_test_cache();
+        env::set_var("KSM_CACHE_DIR", &cache_dir);
+
+        let cache_path = get_cache_file_path();
+        assert!(cache_path.to_str().unwrap().contains("ksm_cache.bin"));
+
+        let _ = clear_cache();
+        assert!(!cache_exists(), "Cache should not exist after clearing");
+
+        let test_data = b"test cache data for validation";
+        save_cache(test_data).expect("Failed to save cache data");
+        assert!(
+            cache_exists(),
+            "Cache should exist after saving. Path: {:?}",
+            cache_path
+        );
+
+        let loaded = get_cached_data().expect("Failed to retrieve cached data");
+        assert_eq!(loaded, test_data, "Cached data should match original");
+
+        clear_cache().expect("Failed to clear cache");
+        cleanup_test_cache(test_dir);
+        env::remove_var("KSM_CACHE_DIR");
+    }
 }
