@@ -33,7 +33,7 @@ lazy_static = "1.5"
 p256 = { version = "0.13", features = ["ecdh"] }
 rand = "0.8"
 regex = "1.11"
-reqwest = { version = "0.12.22", features = ["blocking", "json", "multipart"] }
+reqwest = { version = "0.13.3", features = ["blocking", "json", "multipart"] }
 tokio = { version = "1.47", features = ["full"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.142", features = ["preserve_order", "arbitrary_precision"] }
