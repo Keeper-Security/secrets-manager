@@ -1090,11 +1090,12 @@ impl KeeperFile {
         if let Some(client) = &self.http_client {
             return Ok(client.clone());
         }
-        let mut client_builder = reqwest::blocking::Client::builder()
-            .danger_accept_invalid_certs(self.skip_ssl_verify);
+        let mut client_builder =
+            reqwest::blocking::Client::builder().danger_accept_invalid_certs(self.skip_ssl_verify);
         if let Some(ref proxy_url) = self.proxy_url {
-            let url = reqwest::Url::parse(proxy_url)
-                .map_err(|e| KSMRError::FileError(format!("Invalid proxy URL '{}': {}", proxy_url, e)))?;
+            let url = reqwest::Url::parse(proxy_url).map_err(|e| {
+                KSMRError::FileError(format!("Invalid proxy URL '{}': {}", proxy_url, e))
+            })?;
             let mut proxy = reqwest::Proxy::all(proxy_url)
                 .map_err(|e| KSMRError::FileError(format!("Failed to configure proxy: {}", e)))?;
             if !url.username().is_empty() {
