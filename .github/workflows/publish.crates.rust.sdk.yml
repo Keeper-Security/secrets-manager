@@ -130,42 +130,41 @@ jobs:
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1
-        with:
-          toolchain: stable
-
-      - name: Install cargo-cyclonedx
-        run: cargo install cargo-cyclonedx --locked
-
-      - name: Generate SBOM
+      - name: Install Syft and Manifest CLI
         run: |
-          echo "Generating CycloneDX SBOM with cargo-cyclonedx..."
-          cargo cyclonedx --format json --spec-version 1.5 --override-filename rust-sdk-sbom
-          echo "SBOM generated: rust-sdk-sbom.json"
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.30.0
 
-          echo "Updating SBOM component name to include rust-sdk identifier..."
-          jq '.metadata.component.name = "keeper-secrets-manager-rust-sdk"' rust-sdk-sbom.json > rust-sdk-sbom-fixed.json
-          mv rust-sdk-sbom-fixed.json rust-sdk-sbom.json
-
-          echo "Verifying updated component name:"
-          jq '.metadata.component.name' rust-sdk-sbom.json
-
-      - name: Publish SBOM to Manifest Cyber
-        uses: manifest-cyber/manifest-github-action@9aa4e84c80e6d232c3f49506a17f0ff1151e6896 # main
-        with:
-          apiKey: ${{ secrets.MANIFEST_TOKEN }}
-          bomFilePath: ./sdk/rust/rust-sdk-sbom.json
-          sbomName: keeper-secrets-manager-rust-sdk
-          sbomVersion: ${{ steps.detect-version.outputs.version }}
-          asset-labels: application,sbom-generated,rust,cargo,secrets-manager
+      - name: Generate and publish SDK SBOM
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+          SDK_VERSION: ${{ steps.detect-version.outputs.version }}
+        run: |
+          manifest sbom . \
+            --generator=syft \
+            --name=keeper-secrets-manager-rust-sdk \
+            --version="${SDK_VERSION}" \
+            --output=cyclonedx-json \
+            --file=rust-sdk-sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --asset-label=ksm,sdk,rust,cargo,secrets-manager 2>&1 || \
+          manifest sbom . \
+            --generator=syft \
+            --name=keeper-secrets-manager-rust-sdk \
+            --version="${SDK_VERSION}" \
+            --output=cyclonedx-json \
+            --file=rust-sdk-sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --label=ksm,sdk,rust,cargo,secrets-manager
 
       - name: Archive SBOM
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-rust-sdk-${{ steps.detect-version.outputs.version }}
           path: ./sdk/rust/rust-sdk-sbom.json
-          retention-days: 90
+          retention-days: 10
 
   dry-run-publish:
     name: Validate package (dry-run)
