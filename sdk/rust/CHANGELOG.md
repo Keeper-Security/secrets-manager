@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - **KSM-812**: `get_folders()` consumed `SecretsManager` by value, preventing any subsequent call on the same instance without cloning first
   - Signature changed from `self` to `&mut self` to match `get_secrets()`, `create_secret()`, and the rest of the API
   - **Note**: this is a breaking change for callers that relied on the consuming signature (e.g. via turbofish or trait bounds); the fix is to remove any `.clone()` added to work around the original bug
+- **KSM-925**: Three internal callsites (`update_folder`, `create_folder`, `create_secret`) were still calling `self.clone().get_folders()` after KSM-812 fixed the signature; each clone triggered a wasted extra network round-trip on a throwaway instance — removed
 - Proxy configuration errors (malformed URL, unsupported scheme) now surface at `SecretsManager::new()` with a clear `SecretManagerCreationError` instead of silently bypassing the proxy and sending traffic direct
 - Authenticated proxy URLs (`http://user:pass@host:port`) are now correctly applied when `KeeperFile` is used outside the standard `get_secrets()` fetch path (e.g. deserialized from storage)
 - TLS initialisation failures now surface at `SecretsManager::new()` instead of deferring to the first API call
