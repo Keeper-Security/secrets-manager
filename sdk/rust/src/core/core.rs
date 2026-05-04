@@ -745,6 +745,8 @@ impl SecretsManager {
         Ok(proxy)
     }
 
+    /// `_verify_ssl_certificates` is accepted for API compatibility but ignored since KSM-926;
+    /// TLS verification is controlled by `verify_ssl_certs` set in `SecretsManager::new()`.
     pub fn post_function(
         self,
         url: String,
