@@ -1969,7 +1969,7 @@ impl SecretsManager {
         folders: Vec<KeeperFolder>,
     ) -> Result<String, KSMRError> {
         let folders_copy = match folders.is_empty() {
-            true => self.clone().get_folders()?,
+            true => self.get_folders()?,
             false => folders,
         };
 
@@ -2063,7 +2063,7 @@ impl SecretsManager {
         folders: Vec<KeeperFolder>,
     ) -> Result<String, KSMRError> {
         let folders_copy = match folders.is_empty() {
-            true => self.clone().get_folders()?,
+            true => self.get_folders()?,
             false => folders,
         };
 
@@ -2811,7 +2811,7 @@ impl SecretsManager {
     ) -> Result<String, KSMRError> {
         let record_json_str = record_create_object.to_json()?;
 
-        let folders = self.clone().get_folders()?;
+        let folders = self.get_folders()?;
 
         let mut parent_uid = parent_folder_uid.clone();
         let mut sub_folder_uid: Option<String> = None;
