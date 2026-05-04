@@ -28,6 +28,10 @@ All notable changes to this project will be documented in this file.
 - Proxy configuration errors (malformed URL, unsupported scheme) now surface at `SecretsManager::new()` with a clear `SecretManagerCreationError` instead of silently bypassing the proxy and sending traffic direct
 - Authenticated proxy URLs (`http://user:pass@host:port`) are now correctly applied when `KeeperFile` is used outside the standard `get_secrets()` fetch path (e.g. deserialized from storage)
 - TLS initialisation failures now surface at `SecretsManager::new()` instead of deferring to the first API call
+- **KSM-931**: `caching::caching_post_function` built a new `reqwest::blocking::Client` on every API call, leaving the same nested-runtime panic risk under `tokio::spawn_blocking` that KSM-886 / KSM-926 fixed for the standard paths
+  - Fix: new `caching::make_caching_post_function(client)` factory captures a `reqwest::blocking::Client` built outside any async context and reuses it across all calls; the bare `caching_post_function` is retained for synchronous callers but its docs now warn against use under async runtimes
+  - **Note**: `CustomPostFunction` is now `Arc<dyn Fn(...) + Send + Sync>` instead of a bare `fn` pointer — minor breaking change for callers that stored the alias directly; existing `options.set_custom_post_function(my_fn)` call sites compile unchanged because bare `fn` implements `Fn + Send + Sync + 'static`
+  - See: [reqwest#1017](https://github.com/seanmonstar/reqwest/issues/1017)
 
 ### Changed
 

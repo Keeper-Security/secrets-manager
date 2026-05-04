@@ -52,6 +52,7 @@ winapi = { version = "0.3" ,features = ["securitybaseapi","winbase","winerror","
 mockall = "0.13"
 tempfile = "3.20"
 serial_test = "3.0"
+p256 = { version = "0.13", features = ["ecdsa"] }
 
 # Manual integration test examples
 [[example]]
