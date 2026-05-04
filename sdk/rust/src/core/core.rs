@@ -50,20 +50,17 @@ use regex::Regex;
 use reqwest::header;
 use serde_json::Value;
 
-/// Custom post function type for HTTP request injection (used for testing and mocking)
+/// Custom post function type for HTTP request injection (used for testing and mocking).
 ///
-/// # Arguments
-/// * `url` - The URL to make the request to
-/// * `transmission_key` - The transmission key for encrypting the request
-/// * `encrypted_payload` - The encrypted payload to send
-///
-/// # Returns
-/// * `Result<KsmHttpResponse, KSMRError>` - The HTTP response or an error
-pub type CustomPostFunction = fn(
-    url: String,
-    transmission_key: TransmissionKey,
-    encrypted_payload: EncryptedPayload,
-) -> Result<KsmHttpResponse, KSMRError>;
+/// Changed in v17.2.0 (KSM-931) from `fn(...)` to `Arc<dyn Fn(...) + Send + Sync>` to allow
+/// closures that capture state (e.g. a shared `reqwest::blocking::Client`). Existing call
+/// sites using `options.set_custom_post_function(my_fn)` continue to compile unchanged
+/// because bare `fn` pointers implement `Fn + Send + Sync + 'static`.
+pub type CustomPostFunction = std::sync::Arc<
+    dyn Fn(String, TransmissionKey, EncryptedPayload) -> Result<KsmHttpResponse, KSMRError>
+        + Send
+        + Sync,
+>;
 
 pub struct ClientOptions {
     pub token: String,
@@ -149,13 +146,15 @@ impl ClientOptions {
         self.cache = cache;
     }
 
-    /// Set a custom post function for HTTP requests (primarily for testing and mocking)
+    /// Set a custom post function for HTTP requests (primarily for testing and mocking).
     ///
-    /// # Arguments
-    /// * `post_function` - The custom function to handle HTTP POST requests
+    /// Accepts any closure or bare function pointer that matches the
+    /// `(String, TransmissionKey, EncryptedPayload) -> Result<KsmHttpResponse, KSMRError>`
+    /// signature and is `Send + Sync + 'static`. The value is wrapped in an `Arc`
+    /// internally, so it is cheap to clone inside `SecretsManager`.
     ///
     /// # Example
-    /// ```no_run,no_run
+    /// ```no_run
     /// use keeper_secrets_manager_core::core::ClientOptions;
     /// use keeper_secrets_manager_core::dto::{TransmissionKey, EncryptedPayload, KsmHttpResponse};
     /// use keeper_secrets_manager_core::custom_error::KSMRError;
@@ -169,8 +168,14 @@ impl ClientOptions {
     /// options.set_custom_post_function(my_mock_post);
     /// # }
     /// ```
-    pub fn set_custom_post_function(&mut self, post_function: CustomPostFunction) {
-        self.custom_post_function = Some(post_function);
+    pub fn set_custom_post_function<F>(&mut self, f: F)
+    where
+        F: Fn(String, TransmissionKey, EncryptedPayload) -> Result<KsmHttpResponse, KSMRError>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.custom_post_function = Some(std::sync::Arc::new(f));
     }
 
     /// Sets the logging level for SDK operations.
@@ -212,7 +217,7 @@ impl Clone for SecretsManager {
             log_level: self.log_level,
             cache: self.cache.clone(),
             proxy_url: self.proxy_url.clone(),
-            custom_post_function: self.custom_post_function,
+            custom_post_function: self.custom_post_function.clone(),
             http_client: self.http_client.clone(),
         }
     }
@@ -1088,7 +1093,7 @@ impl SecretsManager {
             .map_err(|e| KSMRError::SecretManagerCreationError(e.to_string()))?;
 
             // Use custom post function if provided (for testing/mocking), otherwise use default HTTP client
-            keeper_response = if let Some(custom_post_fn) = self.custom_post_function {
+            keeper_response = if let Some(custom_post_fn) = &self.custom_post_function {
                 custom_post_fn(
                     url.clone(),
                     transmission_key.clone(),
