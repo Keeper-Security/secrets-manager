@@ -318,7 +318,7 @@ impl SecretsManager {
             secrets_manager.cache = client_options.cache;
         }
 
-        secrets_manager.verify_ssl_certs = client_options.insecure_skip_verify.unwrap_or(false);
+        secrets_manager.verify_ssl_certs = !client_options.insecure_skip_verify.unwrap_or(false);
         if env::var("KSM_SKIP_VERIFY").is_ok() {
             let env_skip_verify = env::var("KSM_SKIP_VERIFY").unwrap().parse::<bool>();
             match env_skip_verify {
@@ -402,7 +402,7 @@ impl SecretsManager {
         // reqwest::blocking::Client inside tokio::spawn_blocking which fails
         // due to nested runtime conflicts (reqwest#1017).
         let mut client_builder =
-            reqwest::blocking::Client::builder().danger_accept_invalid_certs(sm.verify_ssl_certs);
+            reqwest::blocking::Client::builder().danger_accept_invalid_certs(sm.skip_ssl_verify());
         if let Some(proxy_url) = &sm.proxy_url {
             let proxy = SecretsManager::build_proxy(proxy_url)?;
             client_builder = client_builder.proxy(proxy);
@@ -412,6 +412,13 @@ impl SecretsManager {
         })?);
 
         Ok(sm)
+    }
+
+    /// Returns true if TLS certificate verification should be skipped.
+    /// Single source of truth for converting `verify_ssl_certs` to the
+    /// reqwest `danger_accept_invalid_certs` polarity.
+    pub(crate) fn skip_ssl_verify(&self) -> bool {
+        !self.verify_ssl_certs
     }
 
     fn _init(&mut self) -> Result<Self, KSMRError> {
@@ -743,7 +750,7 @@ impl SecretsManager {
         url: String,
         transmission_key: TransmissionKey,
         encrypted_payload_and_signature: EncryptedPayload,
-        verify_ssl_certificates: bool,
+        _verify_ssl_certificates: bool,
     ) -> Result<KsmHttpResponse, KSMRError> {
         let authorization_signature_string = format!(
             "Signature {}",
@@ -768,19 +775,13 @@ impl SecretsManager {
         })?;
         let public_key_for_header = transmission_key.public_key_id.to_string();
 
-        // Build HTTP client with proxy support
-        let mut client_builder = reqwest::blocking::Client::builder()
-            .danger_accept_invalid_certs(verify_ssl_certificates);
-
-        // Apply proxy configuration if provided
-        if let Some(proxy_url) = &self.proxy_url {
-            let proxy = SecretsManager::build_proxy(proxy_url)?;
-            client_builder = client_builder.proxy(proxy);
-        }
-
-        let client = client_builder.build().map_err(|err| {
-            KSMRError::SecretManagerCreationError(format!("error creating HTTP client: {}", err))
-        })?;
+        let client = self
+            .http_client
+            .as_ref()
+            .ok_or_else(|| {
+                KSMRError::SecretManagerCreationError("HTTP client not initialized".to_string())
+            })?
+            .clone();
 
         let request_builder = client
             .post(url)
@@ -2625,15 +2626,13 @@ impl SecretsManager {
         form = form.part("file", multipart::Part::bytes(encrypted_file_data));
 
         // Send the POST request with the multipart form
-        let mut client_builder = reqwest::blocking::Client::builder()
-            .danger_accept_invalid_certs(!self.verify_ssl_certs);
-        if let Some(proxy_url) = &self.proxy_url {
-            let proxy = SecretsManager::build_proxy(proxy_url)?;
-            client_builder = client_builder.proxy(proxy);
-        }
-        let client = client_builder.build().map_err(|err| {
-            KSMRError::SecretManagerCreationError(format!("error creating HTTP client: {}", err))
-        })?;
+        let client = self
+            .http_client
+            .as_ref()
+            .ok_or_else(|| {
+                KSMRError::SecretManagerCreationError("HTTP client not initialized".to_string())
+            })?
+            .clone();
         let response = client
             .post(url)
             .multipart(form)
