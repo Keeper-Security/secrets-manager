@@ -85,7 +85,9 @@ class SecretsManager:
                  config=None,
                  log_level=None,
                  custom_post_function=None,
-                 proxy_url=None
+                 proxy_url=None,
+                 server_public_key=None,
+                 server_public_key_id=None,
                  ):
 
         # Make sure the Python is 3.6 or higher. We'll handle Python 4 in the future :)
@@ -124,6 +126,12 @@ class SecretsManager:
 
                 self.token = token_parts[1]
 
+                # Layer 2: IL5 OTT carries embedded key material as extra segments
+                # Format: IL5:[clientKey]:[keyId]:[serverPublicKeyBase64]
+                if token_parts[0].upper() == 'IL5' and len(token_parts) == 4:
+                    self._il5_key_id = token_parts[2]
+                    self._il5_server_public_key = token_parts[3]
+
         # Init the log, create a logger for the core.
         self._init_logger(log_level=log_level)
         self.logger = logging.getLogger(logger_name)
@@ -146,15 +154,27 @@ class SecretsManager:
         if self.hostname is not None:
             config.set(ConfigKeys.KEY_HOSTNAME, self.hostname)
 
+        # Layer 2: IL5 OTT with embedded key material — write before key ID validation runs
+        if hasattr(self, '_il5_key_id'):
+            config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, self._il5_key_id)
+            config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY, self._il5_server_public_key)
+
+        # Layer 3: programmatic injection — takes precedence over config file, written before validation
+        if server_public_key:
+            config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY, server_public_key)
+        if server_public_key_id:
+            config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, server_public_key_id)
+
         # Make sure our public key id is set and pointing an existing key.
         if config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID) is None:
             self.logger.debug("Setting public key id to the default: {}".format(SecretsManager.default_key_id))
             config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, SecretsManager.default_key_id)
         elif config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID) not in keeper_public_keys:
-            self.logger.debug("Public key id {} does not exists, set to default : {}".format(
-                config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID),
-                SecretsManager.default_key_id))
-            config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, SecretsManager.default_key_id)
+            if not config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY):
+                self.logger.debug("Public key id {} does not exists, set to default : {}".format(
+                    config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID),
+                    SecretsManager.default_key_id))
+                config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, SecretsManager.default_key_id)
 
         self.config: KeyValueStorage = config
 
@@ -287,13 +307,15 @@ class SecretsManager:
         return current_secret_key
 
     @staticmethod
-    def generate_transmission_key(key_id):
+    def generate_transmission_key(key_id, custom_public_key_b64=None):
         transmission_key = utils.generate_random_bytes(32)
 
-        if key_id not in keeper_public_keys:
-            ValueError("The public key id {} does not exist.".format(key_id))
-
-        server_public_raw_key_bytes = url_safe_str_to_bytes(keeper_public_keys[key_id])
+        if custom_public_key_b64:
+            server_public_raw_key_bytes = url_safe_str_to_bytes(custom_public_key_b64)
+        elif key_id not in keeper_public_keys:
+            raise ValueError("The public key id {} does not exist.".format(key_id))
+        else:
+            server_public_raw_key_bytes = url_safe_str_to_bytes(keeper_public_keys[key_id])
 
         encrypted_key = CryptoUtils.public_encrypt(transmission_key, server_public_raw_key_bytes)
 
@@ -590,7 +612,8 @@ class SecretsManager:
         while True:
 
             transmission_key_id = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID)
-            transmission_key = self.generate_transmission_key(transmission_key_id)
+            custom_key = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY)
+            transmission_key = self.generate_transmission_key(transmission_key_id, custom_key)
             encrypted_payload_and_signature = self.encrypt_and_sign_payload(self.config, transmission_key, payload)
 
             if self.custom_post_function and path == 'get_secret':
@@ -686,7 +709,9 @@ class SecretsManager:
 
                 if key_id is None:
                     raise ValueError("The public key is blank from the server")
-                elif str(key_id) not in keeper_public_keys:
+
+                custom_key = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY)
+                if str(key_id) not in keeper_public_keys and not custom_key:
                     raise ValueError("The public key at {} does not exist in the SDK".format(key_id))
 
                 self.config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, str(key_id))
