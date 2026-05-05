@@ -32,6 +32,7 @@ All notable changes to this project will be documented in this file.
   - Fix: new `caching::make_caching_post_function(client)` factory captures a `reqwest::blocking::Client` built outside any async context and reuses it across all calls; the bare `caching_post_function` is retained for synchronous callers but its docs now warn against use under async runtimes
   - **Note**: `CustomPostFunction` is now `Arc<dyn Fn(...) + Send + Sync>` instead of a bare `fn` pointer — minor breaking change for callers that stored the alias directly; existing `options.set_custom_post_function(my_fn)` call sites compile unchanged because bare `fn` implements `Fn + Send + Sync + 'static`
   - See: [reqwest#1017](https://github.com/seanmonstar/reqwest/issues/1017)
+- **KSM-933**: `get_secrets()` was propagating `SecretsManager.verify_ssl_certs` (positive-sense: `true` = strict) directly into `KeeperFile.skip_ssl_verify` (negative-sense: `true` = skip); in strict mode, every file attachment received `skip_ssl_verify=true` — the opposite of intended. Fix: both propagation sites (standalone record path and shared folder record path) now use the `skip_ssl_verify()` accessor, which correctly returns `!verify_ssl_certs`. Currently masked by the shared `http_client` path, but would have become a silent security regression on any future refactor.
 
 ### Changed
 
