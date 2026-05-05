@@ -1225,7 +1225,7 @@ impl SecretsManager {
                         if let Some(proxy) = &self.proxy_url {
                             file.proxy_url = Some(proxy.clone());
                         }
-                        file.skip_ssl_verify = self.verify_ssl_certs;
+                        file.skip_ssl_verify = self.skip_ssl_verify();
                         file.http_client = self.http_client.clone();
                     }
                     records_count += 1;
@@ -1253,7 +1253,7 @@ impl SecretsManager {
                             if let Some(proxy) = &self.proxy_url {
                                 file.proxy_url = Some(proxy.clone());
                             }
-                            file.skip_ssl_verify = self.verify_ssl_certs;
+                            file.skip_ssl_verify = self.skip_ssl_verify();
                             file.http_client = self.http_client.clone();
                         }
                     }

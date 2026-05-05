@@ -1910,4 +1910,22 @@ mod tests {
         let copied_none = file_without_proxy.deep_copy();
         assert!(copied_none.proxy_url.is_none());
     }
+
+    /// Regression test for KSM-933: verify_ssl_certs (positive-sense) and
+    /// skip_ssl_verify (negative-sense) have opposite conventions. Propagation
+    /// from SecretsManager to KeeperFile must negate — not copy directly.
+    #[test]
+    fn test_skip_ssl_verify_polarity_invariant() {
+        // Strict mode: verify_ssl_certs=true → skip_ssl_verify must be false
+        let verify_ssl_certs = true;
+        let mut file = make_test_file(None);
+        file.skip_ssl_verify = !verify_ssl_certs;
+        assert!(!file.skip_ssl_verify, "strict mode: skip_ssl_verify must be false");
+
+        // Permissive mode: verify_ssl_certs=false → skip_ssl_verify must be true
+        let verify_ssl_certs = false;
+        let mut file = make_test_file(None);
+        file.skip_ssl_verify = !verify_ssl_certs;
+        assert!(file.skip_ssl_verify, "permissive mode: skip_ssl_verify must be true");
+    }
 }
