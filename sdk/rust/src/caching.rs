@@ -24,19 +24,16 @@
 //! use keeper_secrets_manager_core::caching;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Build the client once outside any async context (safe for spawn_blocking)
+//! let client = reqwest::blocking::Client::builder().build()?;
 //! let config = FileKeyValueStorage::new_config_storage("config.json".to_string())?;
 //! let mut client_options = ClientOptions::new_client_options(config);
-//!
-//! // Use caching post function for disaster recovery
-//! client_options.set_custom_post_function(caching::caching_post_function);
+//! client_options.set_custom_post_function(caching::make_caching_post_function(client));
 //!
 //! let mut secrets_manager = SecretsManager::new(client_options)?;
 //!
-//! // First call saves to cache
+//! // First call saves to cache; if network fails, falls back to cached data
 //! let secrets = secrets_manager.get_secrets(Vec::new())?;
-//!
-//! // If network fails, falls back to cached data
-//! // let secrets = secrets_manager.get_secrets(Vec::new())?; // Uses cache on failure
 //! # Ok(())
 //! # }
 //! ```
