@@ -526,8 +526,9 @@ let config = KvStoreType::File(storage);
 let token = "YOUR_TOKEN".to_string();
 let mut options = ClientOptions::new_client_options_with_token(token, config);
 
-// Enable disaster recovery caching
-options.set_custom_post_function(caching::caching_post_function);
+// Build the client once outside any async context (safe for spawn_blocking)
+let client = reqwest::blocking::Client::builder().build()?;
+options.set_custom_post_function(caching::make_caching_post_function(client));
 
 let mut secrets_manager = SecretsManager::new(options)?;
 
@@ -671,7 +672,7 @@ See `examples/manual_tests/README.md` for detailed setup instructions.
 - `KSM_CONFIG` - Base64-encoded JSON configuration (overrides file storage)
 - `KSM_CACHE_DIR` - Cache directory for disaster recovery caching (default: current directory)
 - `KSM_SKIP_VERIFY` - Skip SSL certificate verification (`true`/`false`)
-- `KSM_PROXY_URL` - Proxy URL used by `caching_post_function` (mirrors `ClientOptions.proxy_url` for the caching path)
+- `KSM_PROXY_URL` - Proxy URL used by the bare `caching_post_function` (not used by `make_caching_post_function` — configure proxy on the `reqwest::Client` builder instead)
 - `HTTP_PROXY` - HTTP proxy URL (automatically used if `proxy_url` not set)
 - `HTTPS_PROXY` - HTTPS proxy URL (automatically used if `proxy_url` not set)
 - `NO_PROXY` - Comma-separated list of hosts to exclude from proxying
@@ -758,17 +759,25 @@ export NO_PROXY=localhost,127.0.0.1
 
 **Priority**: Explicit `proxy_url` parameter > Environment variables (`HTTPS_PROXY`/`HTTP_PROXY`)
 
-#### Proxy with `caching_post_function`
+#### Proxy with caching
 
-`caching_post_function` uses a standalone function pointer and cannot capture `SecretsManager` state. Set `KSM_PROXY_URL` to route caching traffic through your proxy:
+With `make_caching_post_function`, configure the proxy on the `reqwest::Client` you pass in:
+
+```rust
+let client = reqwest::blocking::Client::builder()
+    .proxy(reqwest::Proxy::https("http://proxy.example.com:8080")?)
+    .build()?;
+client_options.set_custom_post_function(caching::make_caching_post_function(client));
+```
+
+The bare `caching_post_function` (non-async contexts only) reads `KSM_PROXY_URL` at call time instead:
 
 ```bash
 export KSM_PROXY_URL=http://proxy.example.com:8080
 ```
 
 ```rust
-client_options.set_custom_post_function(caching_post_function);
-// KSM_PROXY_URL is read at call time by caching_post_function
+client_options.set_custom_post_function(caching::caching_post_function);
 ```
 
 ## Dependencies
