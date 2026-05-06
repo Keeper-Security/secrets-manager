@@ -1920,12 +1920,18 @@ mod tests {
         let verify_ssl_certs = true;
         let mut file = make_test_file(None);
         file.skip_ssl_verify = !verify_ssl_certs;
-        assert!(!file.skip_ssl_verify, "strict mode: skip_ssl_verify must be false");
+        assert!(
+            !file.skip_ssl_verify,
+            "strict mode: skip_ssl_verify must be false"
+        );
 
         // Permissive mode: verify_ssl_certs=false → skip_ssl_verify must be true
         let verify_ssl_certs = false;
         let mut file = make_test_file(None);
         file.skip_ssl_verify = !verify_ssl_certs;
-        assert!(file.skip_ssl_verify, "permissive mode: skip_ssl_verify must be true");
+        assert!(
+            file.skip_ssl_verify,
+            "permissive mode: skip_ssl_verify must be true"
+        );
     }
 }
