@@ -23,6 +23,7 @@ const val KEEPER_CLIENT_VERSION = "mj17.2.1"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
+const val KEY_SERVER_PUBLIC_KEY = "serverPublicKey" // custom server public key bytes (base64url), overrides embedded table
 const val KEY_CLIENT_ID = "clientId"
 const val KEY_CLIENT_KEY = "clientKey" // The key that is used to identify the client before public key
 const val KEY_APP_KEY = "appKey" // The application key with which all secrets are encrypted
@@ -44,10 +45,13 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val storage: KeyValueStorage,
     val queryFunction: QueryFunction? = null,
     val allowUnverifiedCertificate: Boolean = false,
-    val loggingEnabled: Boolean = true
+    val loggingEnabled: Boolean = true,
+    val serverPublicKey: String? = null  // Layer 3: inject custom server public key at construction time
 ) {
     init {
         testSecureRandom()
+        // Persist the injected key so generateTransmissionKey can pick it up without options in scope
+        serverPublicKey?.let { storage.saveString(KEY_SERVER_PUBLIC_KEY, it) }
     }
 }
 
@@ -710,6 +714,11 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
             else -> tokenParts[0]
         }
         clientKey = tokenParts[1]
+        // Layer 2: extended OTT format REGION:clientKey:keyId:serverPublicKey
+        if (tokenParts.size >= 4) {
+            storage.saveString(KEY_SERVER_PUBIC_KEY_ID, tokenParts[2])
+            storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
+        }
     }
     val clientKeyBytes = webSafe64ToBytes(clientKey)
     val clientKeyHash = hash(clientKeyBytes, CLIENT_ID_HASH_TAG)
@@ -1593,7 +1602,10 @@ private fun generateTransmissionKey(storage: KeyValueStorage): TransmissionKey {
         getRandomBytes(32)
     }
     val keyNumber: Int = storage.getString(KEY_SERVER_PUBIC_KEY_ID)?.toInt() ?: 7
-    val keeperPublicKey = keeperPublicKeys[keyNumber] ?: throw Exception("Key number $keyNumber is not supported")
+    // Layer 1: serverPublicKey in storage (from config JSON, OTT, or constructor) takes priority
+    val keeperPublicKey: ByteArray = storage.getString(KEY_SERVER_PUBLIC_KEY)?.let { webSafe64ToBytes(it) }
+        ?: keeperPublicKeys[keyNumber]
+        ?: throw Exception("Key number $keyNumber is not supported")
     val encryptedKey = publicEncrypt(transmissionKey, keeperPublicKey)
     return TransmissionKey(keyNumber, transmissionKey, encryptedKey)
 }
