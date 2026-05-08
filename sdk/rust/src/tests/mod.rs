@@ -13,5 +13,6 @@
 pub mod config_keys_tests;
 pub mod crypto_tests;
 pub mod keeper_globals_tests;
+pub mod ssl_config_tests;
 pub mod storage_tests;
 pub mod utils_tests;

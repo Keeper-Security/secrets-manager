@@ -12,6 +12,7 @@
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::DateTime;
+use data_encoding::HEXLOWER;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -116,8 +117,7 @@ impl Record {
                     match created_keeper_file {
                         Ok(file) => files.push(file),
                         Err(e) => {
-                            let msg = format!("Error loading file: {}", e);
-                            eprintln!("{}", msg);
+                            error!("Error loading file: {}", e);
                         }
                     }
                 }
@@ -723,8 +723,7 @@ impl Record {
                     match created_keeper_file {
                         Ok(file) => _files.push(file),
                         Err(e) => {
-                            let msg = format!("Error loading file: {}", e);
-                            eprintln!("{}", msg);
+                            error!("Error loading file: {}", e);
                         }
                     }
                 }
@@ -1050,6 +1049,13 @@ pub struct KeeperFile {
     pub url: Option<String>,           // Download URL (v16.7.0+)
     pub thumbnail_url: Option<String>, // Thumbnail URL (v16.7.0+)
     pub proxy_url: Option<String>,     // Proxy URL for HTTP requests
+    pub(crate) skip_ssl_verify: bool, // Skip SSL cert verification (for corporate proxies like Zscaler)
+    /// Pre-built HTTP client for file downloads. Avoids constructing a new
+    /// reqwest::blocking::Client inside tokio::spawn_blocking, which fails
+    /// because reqwest's blocking module creates an internal tokio runtime.
+    /// See: https://github.com/seanmonstar/reqwest/issues/1017
+    #[serde(skip)]
+    pub(crate) http_client: Option<reqwest::blocking::Client>,
 
     f: HashMap<String, Value>,
     record_key_bytes: Vec<u8>,
@@ -1071,9 +1077,37 @@ impl KeeperFile {
             url: self.url.clone(),
             thumbnail_url: self.thumbnail_url.clone(),
             proxy_url: self.proxy_url.clone(),
+            skip_ssl_verify: self.skip_ssl_verify,
+            http_client: self.http_client.clone(),
             f: self.f.clone(),
             record_key_bytes: self.record_key_bytes.clone(),
         }
+    }
+
+    /// Returns the pre-built HTTP client if available, or builds a fallback one.
+    /// The pre-built client is propagated from SecretsManager to avoid constructing
+    /// reqwest::blocking::Client inside tokio::spawn_blocking (reqwest#1017).
+    fn resolve_http_client(&self) -> Result<reqwest::blocking::Client, KSMRError> {
+        if let Some(client) = &self.http_client {
+            return Ok(client.clone());
+        }
+        let mut client_builder =
+            reqwest::blocking::Client::builder().danger_accept_invalid_certs(self.skip_ssl_verify);
+        if let Some(ref proxy_url) = self.proxy_url {
+            let url = reqwest::Url::parse(proxy_url).map_err(|e| {
+                KSMRError::FileError(format!("Invalid proxy URL '{}': {}", proxy_url, e))
+            })?;
+            let mut proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| KSMRError::FileError(format!("Failed to configure proxy: {}", e)))?;
+            if !url.username().is_empty() {
+                let password = url.password().unwrap_or("");
+                proxy = proxy.basic_auth(url.username(), password);
+            }
+            client_builder = client_builder.proxy(proxy);
+        }
+        client_builder
+            .build()
+            .map_err(|e| KSMRError::FileError(format!("Failed to build HTTP client: {}", e)))
     }
 
     /// Decrypts the file key using the record key bytes.
@@ -1151,16 +1185,7 @@ impl KeeperFile {
             .get_url()
             .map_err(|_| KSMRError::FileError("File URL is invalid".to_string()))?;
 
-        // Fetch the file data from the URL
-        let mut client_builder = reqwest::blocking::Client::builder();
-        if let Some(ref proxy_url) = self.proxy_url {
-            if let Ok(proxy) = reqwest::Proxy::all(proxy_url) {
-                client_builder = client_builder.proxy(proxy);
-            }
-        }
-        let http_client = client_builder
-            .build()
-            .map_err(|e| KSMRError::FileError(format!("Failed to build HTTP client: {}", e)))?;
+        let http_client = self.resolve_http_client()?;
         let mut response = http_client
             .get(&file_url)
             .send()
@@ -1236,16 +1261,7 @@ impl KeeperFile {
         // Decrypt the file key
         let file_key = self.decrypt_file_key()?;
 
-        // Fetch the thumbnail data from the URL
-        let mut client_builder = reqwest::blocking::Client::builder();
-        if let Some(ref proxy_url) = self.proxy_url {
-            if let Ok(proxy) = reqwest::Proxy::all(proxy_url) {
-                client_builder = client_builder.proxy(proxy);
-            }
-        }
-        let http_client = client_builder
-            .build()
-            .map_err(|e| KSMRError::FileError(format!("Failed to build HTTP client: {}", e)))?;
+        let http_client = self.resolve_http_client()?;
         let mut response = http_client
             .get(&thumbnail_url)
             .send()
@@ -1300,6 +1316,8 @@ impl KeeperFile {
             url,
             thumbnail_url,
             proxy_url: None,
+            skip_ssl_verify: false,
+            http_client: None,
             f: file_dict.clone(),
             record_key_bytes,
         };
@@ -1449,7 +1467,7 @@ impl KeeperFolder {
         let mut clone: HashMap<String, Value> = HashMap::new();
         clone.insert(
             "folderKey".to_string(),
-            Value::String(hex::encode(self.folder_key.clone())),
+            Value::String(HEXLOWER.encode(&self.folder_key)),
         );
         clone.insert(
             ("folderUid").to_string(),
@@ -1846,6 +1864,8 @@ mod tests {
             url: None,
             thumbnail_url: None,
             proxy_url,
+            skip_ssl_verify: false,
+            http_client: None,
             f: HashMap::new(),
             record_key_bytes: vec![],
         }
@@ -1889,5 +1909,29 @@ mod tests {
         let file_without_proxy = make_test_file(None);
         let copied_none = file_without_proxy.deep_copy();
         assert!(copied_none.proxy_url.is_none());
+    }
+
+    /// Regression test for KSM-933: verify_ssl_certs (positive-sense) and
+    /// skip_ssl_verify (negative-sense) have opposite conventions. Propagation
+    /// from SecretsManager to KeeperFile must negate — not copy directly.
+    #[test]
+    fn test_skip_ssl_verify_polarity_invariant() {
+        // Strict mode: verify_ssl_certs=true → skip_ssl_verify must be false
+        let verify_ssl_certs = true;
+        let mut file = make_test_file(None);
+        file.skip_ssl_verify = !verify_ssl_certs;
+        assert!(
+            !file.skip_ssl_verify,
+            "strict mode: skip_ssl_verify must be false"
+        );
+
+        // Permissive mode: verify_ssl_certs=false → skip_ssl_verify must be true
+        let verify_ssl_certs = false;
+        let mut file = make_test_file(None);
+        file.skip_ssl_verify = !verify_ssl_certs;
+        assert!(
+            file.skip_ssl_verify,
+            "permissive mode: skip_ssl_verify must be true"
+        );
     }
 }

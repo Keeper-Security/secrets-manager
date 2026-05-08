@@ -35,6 +35,7 @@ mod empty_config_tests {
             Level::Error,
             None,
             None,
+            None,
             KSMCache::None,
         );
 
@@ -70,6 +71,7 @@ mod empty_config_tests {
                     Level::Error,
                     None,
                     None,
+                    None,
                     KSMCache::None,
                 );
 
@@ -96,6 +98,7 @@ mod empty_config_tests {
             String::new(),
             config,
             Level::Error,
+            None,
             None,
             None,
             KSMCache::None,

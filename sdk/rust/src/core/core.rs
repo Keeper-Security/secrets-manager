@@ -50,20 +50,17 @@ use regex::Regex;
 use reqwest::header;
 use serde_json::Value;
 
-/// Custom post function type for HTTP request injection (used for testing and mocking)
+/// Custom post function type for HTTP request injection (used for testing and mocking).
 ///
-/// # Arguments
-/// * `url` - The URL to make the request to
-/// * `transmission_key` - The transmission key for encrypting the request
-/// * `encrypted_payload` - The encrypted payload to send
-///
-/// # Returns
-/// * `Result<KsmHttpResponse, KSMRError>` - The HTTP response or an error
-pub type CustomPostFunction = fn(
-    url: String,
-    transmission_key: TransmissionKey,
-    encrypted_payload: EncryptedPayload,
-) -> Result<KsmHttpResponse, KSMRError>;
+/// Changed in v17.2.0 (KSM-931) from `fn(...)` to `Arc<dyn Fn(...) + Send + Sync>` to allow
+/// closures that capture state (e.g. a shared `reqwest::blocking::Client`). Existing call
+/// sites using `options.set_custom_post_function(my_fn)` continue to compile unchanged
+/// because bare `fn` pointers implement `Fn + Send + Sync + 'static`.
+pub type CustomPostFunction = std::sync::Arc<
+    dyn Fn(String, TransmissionKey, EncryptedPayload) -> Result<KsmHttpResponse, KSMRError>
+        + Send
+        + Sync,
+>;
 
 pub struct ClientOptions {
     pub token: String,
@@ -149,13 +146,15 @@ impl ClientOptions {
         self.cache = cache;
     }
 
-    /// Set a custom post function for HTTP requests (primarily for testing and mocking)
+    /// Set a custom post function for HTTP requests (primarily for testing and mocking).
     ///
-    /// # Arguments
-    /// * `post_function` - The custom function to handle HTTP POST requests
+    /// Accepts any closure or bare function pointer that matches the
+    /// `(String, TransmissionKey, EncryptedPayload) -> Result<KsmHttpResponse, KSMRError>`
+    /// signature and is `Send + Sync + 'static`. The value is wrapped in an `Arc`
+    /// internally, so it is cheap to clone inside `SecretsManager`.
     ///
     /// # Example
-    /// ```no_run,no_run
+    /// ```no_run
     /// use keeper_secrets_manager_core::core::ClientOptions;
     /// use keeper_secrets_manager_core::dto::{TransmissionKey, EncryptedPayload, KsmHttpResponse};
     /// use keeper_secrets_manager_core::custom_error::KSMRError;
@@ -169,8 +168,14 @@ impl ClientOptions {
     /// options.set_custom_post_function(my_mock_post);
     /// # }
     /// ```
-    pub fn set_custom_post_function(&mut self, post_function: CustomPostFunction) {
-        self.custom_post_function = Some(post_function);
+    pub fn set_custom_post_function<F>(&mut self, f: F)
+    where
+        F: Fn(String, TransmissionKey, EncryptedPayload) -> Result<KsmHttpResponse, KSMRError>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.custom_post_function = Some(std::sync::Arc::new(f));
     }
 
     /// Sets the logging level for SDK operations.
@@ -195,12 +200,16 @@ pub struct SecretsManager {
     pub cache: KSMCache,
     pub proxy_url: Option<String>,
     custom_post_function: Option<CustomPostFunction>,
+    /// Pre-built HTTP client shared across all operations (API calls + file downloads).
+    /// Built once during init to avoid constructing reqwest::blocking::Client inside
+    /// tokio::spawn_blocking, which fails due to nested runtime conflicts.
+    /// See: https://github.com/seanmonstar/reqwest/issues/1017
+    http_client: Option<reqwest::blocking::Client>,
 }
 
 impl Clone for SecretsManager {
     fn clone(&self) -> Self {
         SecretsManager {
-            // Clone each field of the struct
             token: self.token.clone(),
             hostname: self.hostname.clone(),
             verify_ssl_certs: self.verify_ssl_certs,
@@ -208,7 +217,8 @@ impl Clone for SecretsManager {
             log_level: self.log_level,
             cache: self.cache.clone(),
             proxy_url: self.proxy_url.clone(),
-            custom_post_function: self.custom_post_function,
+            custom_post_function: self.custom_post_function.clone(),
+            http_client: self.http_client.clone(),
         }
     }
 }
@@ -251,10 +261,11 @@ impl SecretsManager {
             hostname: String::new(),
             verify_ssl_certs: false,
             config: KvStoreType::None,
-            log_level: Level::Info, // Default to Info if not provided
-            cache: KSMCache::None,  // Default is no cache
+            log_level: Level::Info,
+            cache: KSMCache::None,
             proxy_url: client_options.proxy_url.clone(),
             custom_post_function: client_options.custom_post_function,
+            http_client: None, // built after SSL/proxy config is resolved
         };
 
         let mut config = client_options.config;
@@ -312,7 +323,7 @@ impl SecretsManager {
             secrets_manager.cache = client_options.cache;
         }
 
-        secrets_manager.verify_ssl_certs = client_options.insecure_skip_verify.unwrap_or(false);
+        secrets_manager.verify_ssl_certs = !client_options.insecure_skip_verify.unwrap_or(false);
         if env::var("KSM_SKIP_VERIFY").is_ok() {
             let env_skip_verify = env::var("KSM_SKIP_VERIFY").unwrap().parse::<bool>();
             match env_skip_verify {
@@ -389,10 +400,30 @@ impl SecretsManager {
         }
         secrets_manager.config = config.clone();
 
-        match secrets_manager._init() {
-            Ok(secrets_manager) => Ok(secrets_manager),
-            Err(e) => Err(e),
+        let mut sm = secrets_manager._init()?;
+
+        // Build a shared HTTP client once, outside any async runtime.
+        // Reused for API calls and file downloads. Avoids constructing
+        // reqwest::blocking::Client inside tokio::spawn_blocking which fails
+        // due to nested runtime conflicts (reqwest#1017).
+        let mut client_builder =
+            reqwest::blocking::Client::builder().danger_accept_invalid_certs(sm.skip_ssl_verify());
+        if let Some(proxy_url) = &sm.proxy_url {
+            let proxy = SecretsManager::build_proxy(proxy_url)?;
+            client_builder = client_builder.proxy(proxy);
         }
+        sm.http_client = Some(client_builder.build().map_err(|e| {
+            KSMRError::SecretManagerCreationError(format!("Failed to build HTTP client: {}", e))
+        })?);
+
+        Ok(sm)
+    }
+
+    /// Returns true if TLS certificate verification should be skipped.
+    /// Single source of truth for converting `verify_ssl_certs` to the
+    /// reqwest `danger_accept_invalid_certs` polarity.
+    pub(crate) fn skip_ssl_verify(&self) -> bool {
+        !self.verify_ssl_certs
     }
 
     fn _init(&mut self) -> Result<Self, KSMRError> {
@@ -719,12 +750,14 @@ impl SecretsManager {
         Ok(proxy)
     }
 
+    /// `_verify_ssl_certificates` is accepted for API compatibility but ignored since KSM-926;
+    /// TLS verification is controlled by `verify_ssl_certs` set in `SecretsManager::new()`.
     pub fn post_function(
         self,
         url: String,
         transmission_key: TransmissionKey,
         encrypted_payload_and_signature: EncryptedPayload,
-        verify_ssl_certificates: bool,
+        _verify_ssl_certificates: bool,
     ) -> Result<KsmHttpResponse, KSMRError> {
         let authorization_signature_string = format!(
             "Signature {}",
@@ -749,19 +782,13 @@ impl SecretsManager {
         })?;
         let public_key_for_header = transmission_key.public_key_id.to_string();
 
-        // Build HTTP client with proxy support
-        let mut client_builder = reqwest::blocking::Client::builder()
-            .danger_accept_invalid_certs(verify_ssl_certificates);
-
-        // Apply proxy configuration if provided
-        if let Some(proxy_url) = &self.proxy_url {
-            let proxy = SecretsManager::build_proxy(proxy_url)?;
-            client_builder = client_builder.proxy(proxy);
-        }
-
-        let client = client_builder.build().map_err(|err| {
-            KSMRError::SecretManagerCreationError(format!("error creating HTTP client: {}", err))
-        })?;
+        let client = self
+            .http_client
+            .as_ref()
+            .ok_or_else(|| {
+                KSMRError::SecretManagerCreationError("HTTP client not initialized".to_string())
+            })?
+            .clone();
 
         let request_builder = client
             .post(url)
@@ -912,7 +939,7 @@ impl SecretsManager {
                 .unwrap();
             error!(
                 "Client version {} was not registered in the backend",
-                client_id.to_string()
+                client_id
             );
             if let Some(additional_info) = response_dict.get("additional_info") {
                 if let Some(info) = additional_info.as_str() {
@@ -1066,7 +1093,7 @@ impl SecretsManager {
             .map_err(|e| KSMRError::SecretManagerCreationError(e.to_string()))?;
 
             // Use custom post function if provided (for testing/mocking), otherwise use default HTTP client
-            keeper_response = if let Some(custom_post_fn) = self.custom_post_function {
+            keeper_response = if let Some(custom_post_fn) = &self.custom_post_function {
                 custom_post_fn(
                     url.clone(),
                     transmission_key.clone(),
@@ -1161,7 +1188,7 @@ impl SecretsManager {
                         for warning in warnings_array {
                             warn!(
                                 "Warning shown while fetching secrets: `{}`",
-                                warning.as_str().unwrap().to_string()
+                                warning.as_str().unwrap()
                             );
                         }
                     }
@@ -1194,10 +1221,12 @@ impl SecretsManager {
                 let record_result =
                     Record::new_from_json(record_hashmap_parsed, &_secret_key, None);
                 if let Ok(mut unwrapped_record) = record_result {
-                    if let Some(proxy) = &self.proxy_url {
-                        for file in &mut unwrapped_record.files {
+                    for file in &mut unwrapped_record.files {
+                        if let Some(proxy) = &self.proxy_url {
                             file.proxy_url = Some(proxy.clone());
                         }
+                        file.skip_ssl_verify = self.skip_ssl_verify();
+                        file.http_client = self.http_client.clone();
                     }
                     records_count += 1;
                     records.push(unwrapped_record);
@@ -1219,11 +1248,13 @@ impl SecretsManager {
                 if let Some(unwrapped_folder) = folder_result {
                     shared_folders_count += 1;
                     let mut folder_records = unwrapped_folder.records()?;
-                    if let Some(proxy) = &self.proxy_url {
-                        for record in &mut folder_records {
-                            for file in &mut record.files {
+                    for record in &mut folder_records {
+                        for file in &mut record.files {
+                            if let Some(proxy) = &self.proxy_url {
                                 file.proxy_url = Some(proxy.clone());
                             }
+                            file.skip_ssl_verify = self.skip_ssl_verify();
+                            file.http_client = self.http_client.clone();
                         }
                     }
                     records_count += folder_records.len();
@@ -1291,7 +1322,7 @@ impl SecretsManager {
         Ok(secrets_manager_response)
     }
 
-    fn fetch_and_decrypt_folders(mut self) -> Result<Vec<KeeperFolder>, KSMRError> {
+    fn fetch_and_decrypt_folders(&mut self) -> Result<Vec<KeeperFolder>, KSMRError> {
         let payload = self
             .clone()
             .prepare_get_payload(self.config.clone(), None)?;
@@ -1462,7 +1493,7 @@ impl SecretsManager {
     ///
     /// * `HTTPError` - If the API request fails
     /// * `CryptoError` - If folder decryption fails
-    pub fn get_folders(self) -> Result<Vec<KeeperFolder>, KSMRError> {
+    pub fn get_folders(&mut self) -> Result<Vec<KeeperFolder>, KSMRError> {
         let folders = self.fetch_and_decrypt_folders()?;
         Ok(folders)
     }
@@ -1946,7 +1977,7 @@ impl SecretsManager {
         folders: Vec<KeeperFolder>,
     ) -> Result<String, KSMRError> {
         let folders_copy = match folders.is_empty() {
-            true => self.clone().get_folders()?,
+            true => self.get_folders()?,
             false => folders,
         };
 
@@ -2040,7 +2071,7 @@ impl SecretsManager {
         folders: Vec<KeeperFolder>,
     ) -> Result<String, KSMRError> {
         let folders_copy = match folders.is_empty() {
-            true => self.clone().get_folders()?,
+            true => self.get_folders()?,
             false => folders,
         };
 
@@ -2602,15 +2633,13 @@ impl SecretsManager {
         form = form.part("file", multipart::Part::bytes(encrypted_file_data));
 
         // Send the POST request with the multipart form
-        let mut client_builder = reqwest::blocking::Client::builder()
-            .danger_accept_invalid_certs(!self.verify_ssl_certs);
-        if let Some(proxy_url) = &self.proxy_url {
-            let proxy = SecretsManager::build_proxy(proxy_url)?;
-            client_builder = client_builder.proxy(proxy);
-        }
-        let client = client_builder.build().map_err(|err| {
-            KSMRError::SecretManagerCreationError(format!("error creating HTTP client: {}", err))
-        })?;
+        let client = self
+            .http_client
+            .as_ref()
+            .ok_or_else(|| {
+                KSMRError::SecretManagerCreationError("HTTP client not initialized".to_string())
+            })?
+            .clone();
         let response = client
             .post(url)
             .multipart(form)
@@ -2788,7 +2817,7 @@ impl SecretsManager {
     ) -> Result<String, KSMRError> {
         let record_json_str = record_create_object.to_json()?;
 
-        let folders = self.clone().get_folders()?;
+        let folders = self.get_folders()?;
 
         let mut parent_uid = parent_folder_uid.clone();
         let mut sub_folder_uid: Option<String> = None;

@@ -24,19 +24,16 @@
 //! use keeper_secrets_manager_core::caching;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Build the client once outside any async context (safe for spawn_blocking)
+//! let client = reqwest::blocking::Client::builder().build()?;
 //! let config = FileKeyValueStorage::new_config_storage("config.json".to_string())?;
 //! let mut client_options = ClientOptions::new_client_options(config);
-//!
-//! // Use caching post function for disaster recovery
-//! client_options.set_custom_post_function(caching::caching_post_function);
+//! client_options.set_custom_post_function(caching::make_caching_post_function(client));
 //!
 //! let mut secrets_manager = SecretsManager::new(client_options)?;
 //!
-//! // First call saves to cache
+//! // First call saves to cache; if network fails, falls back to cached data
 //! let secrets = secrets_manager.get_secrets(Vec::new())?;
-//!
-//! // If network fails, falls back to cached data
-//! // let secrets = secrets_manager.get_secrets(Vec::new())?; // Uses cache on failure
 //! # Ok(())
 //! # }
 //! ```
@@ -126,11 +123,46 @@ pub fn cache_exists() -> bool {
     get_cache_file_path().exists()
 }
 
+/// Build a caching post function that captures a pre-built HTTP client.
+///
+/// Returns a closure suitable for use with `ClientOptions::set_custom_post_function`.
+/// The returned closure reuses the provided `reqwest::blocking::Client` on every call,
+/// so it is safe to invoke from inside `tokio::task::spawn_blocking`. Construct the
+/// client and the closure outside any async context, then pass it to
+/// `ClientOptions::set_custom_post_function` before calling `SecretsManager::new()`.
+///
+/// # Example
+/// ```rust,no_run
+/// use keeper_secrets_manager_core::core::{ClientOptions, SecretsManager};
+/// use keeper_secrets_manager_core::storage::FileKeyValueStorage;
+/// use keeper_secrets_manager_core::caching;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let client = reqwest::blocking::Client::builder().build()?;
+/// let config = FileKeyValueStorage::new_config_storage("config.json".to_string())?;
+/// let mut client_options = ClientOptions::new_client_options(config);
+/// client_options.set_custom_post_function(caching::make_caching_post_function(client));
+/// let mut secrets_manager = SecretsManager::new(client_options)?;
+/// # Ok(())
+/// # }
+/// ```
+pub fn make_caching_post_function(
+    client: reqwest::blocking::Client,
+) -> impl Fn(String, TransmissionKey, EncryptedPayload) -> Result<KsmHttpResponse, KSMRError>
+       + Send
+       + Sync
+       + 'static {
+    move |url, transmission_key, encrypted_payload| {
+        run_caching_logic(url, transmission_key, encrypted_payload, &client)
+    }
+}
+
 /// Caching post function for disaster recovery.
 ///
-/// This function wraps the normal HTTP POST operation and:
-/// 1. On success: Saves the response to cache (transmission key + encrypted data)
-/// 2. On failure: Falls back to cached data if available
+/// **Warning**: This bare function builds a new `reqwest::blocking::Client` on every
+/// call. Calling it from inside `tokio::task::spawn_blocking` will panic with
+/// *"Cannot drop a runtime in a context where blocking is not allowed"*.
+/// Use [`make_caching_post_function`] instead, which captures a pre-built client.
 ///
 /// # Arguments
 /// * `url` - The API endpoint URL
@@ -139,25 +171,32 @@ pub fn cache_exists() -> bool {
 ///
 /// # Returns
 /// * `Result<KsmHttpResponse, KSMRError>` - Response object (from network or cache)
-///
-/// # Example
-/// ```rust,no_run
-/// use keeper_secrets_manager_core::core::ClientOptions;
-/// use keeper_secrets_manager_core::caching::caching_post_function;
-///
-/// # fn main() {
-/// let mut options = ClientOptions::new_client_options(keeper_secrets_manager_core::enums::KvStoreType::None);
-/// options.set_custom_post_function(caching_post_function);
-/// # }
-/// ```
 pub fn caching_post_function(
     url: String,
     transmission_key: TransmissionKey,
     encrypted_payload: EncryptedPayload,
 ) -> Result<KsmHttpResponse, KSMRError> {
     let proxy_url = std::env::var("KSM_PROXY_URL").ok();
+    let mut client_builder = Client::builder();
+    if let Some(ref proxy) = proxy_url {
+        if let Ok(p) = reqwest::Proxy::all(proxy) {
+            client_builder = client_builder.proxy(p);
+        }
+    }
+    let client = client_builder
+        .build()
+        .map_err(|e| KSMRError::HTTPError(format!("Failed to build client: {}", e)))?;
+    run_caching_logic(url, transmission_key, encrypted_payload, &client)
+}
+
+fn run_caching_logic(
+    url: String,
+    transmission_key: TransmissionKey,
+    encrypted_payload: EncryptedPayload,
+    client: &Client,
+) -> Result<KsmHttpResponse, KSMRError> {
     // Try network request first
-    match make_http_request(url, transmission_key.clone(), encrypted_payload, proxy_url) {
+    match make_http_request(client, url, transmission_key.clone(), encrypted_payload) {
         Ok(response) if response.status_code == 200 => {
             // On success, save to cache (transmission key + encrypted response body)
             let mut cache_data = transmission_key.key.clone();
@@ -221,26 +260,12 @@ pub fn caching_post_function(
     }
 }
 
-/// Make HTTP request - extracted to be testable
-///
-/// This duplicates some logic from SecretsManager#process_post_request
-/// because we need a standalone function for the caching pattern.
 fn make_http_request(
+    client: &Client,
     url: String,
     transmission_key: TransmissionKey,
     encrypted_payload: EncryptedPayload,
-    proxy_url: Option<String>,
 ) -> Result<KsmHttpResponse, KSMRError> {
-    let mut client_builder = Client::builder();
-    if let Some(ref proxy) = proxy_url {
-        if let Ok(p) = reqwest::Proxy::all(proxy) {
-            client_builder = client_builder.proxy(p);
-        }
-    }
-    let client = client_builder
-        .build()
-        .map_err(|e| KSMRError::HTTPError(format!("Failed to build client: {}", e)))?;
-
     // Build headers
     let mut headers = HeaderMap::new();
     headers.insert(

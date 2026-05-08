@@ -2416,7 +2416,11 @@ impl RecordField {
         required: bool,
         privacy_screen: bool,
     ) -> KeeperField {
-        let arrayed_value = Value::Array(vec![value]);
+        let arrayed_value = match value {
+            Value::Array(_) => value,
+            Value::Null => Value::Array(vec![]),
+            other => Value::Array(vec![other]),
+        };
 
         match label {
             Some(val) => KeeperField {
@@ -2454,5 +2458,56 @@ impl RecordField {
             required,
             privacy_screen,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    fn field_value(v: Value) -> Value {
+        let f = RecordField::new("text".to_string(), v, None, false, false);
+        f.value
+    }
+
+    // KSM-936: scalar string must be wrapped in a single-element array
+    #[test]
+    fn record_field_wraps_string() {
+        let v = field_value(Value::String("hello".to_string()));
+        assert_eq!(v, json!(["hello"]));
+    }
+
+    // KSM-936: scalar number must be wrapped in a single-element array
+    #[test]
+    fn record_field_wraps_number() {
+        let v = field_value(json!(42));
+        assert_eq!(v, json!([42]));
+    }
+
+    // KSM-936: object must be wrapped in a single-element array
+    #[test]
+    fn record_field_wraps_object() {
+        let v = field_value(json!({"type": "Mobile", "number": "555-0100"}));
+        assert_eq!(v, json!([{"type": "Mobile", "number": "555-0100"}]));
+    }
+
+    // KSM-936: array must pass through unchanged (the bug: it was double-wrapped)
+    #[test]
+    fn record_field_does_not_double_wrap_array() {
+        let input = json!([
+            {"region": "US", "number": "555-0100", "type": "Mobile"},
+            {"region": "US", "number": "555-0200", "type": "Work"}
+        ]);
+        let v = field_value(input.clone());
+        assert_eq!(v, input);
+        assert_eq!(v.as_array().unwrap().len(), 2);
+    }
+
+    // KSM-936: null must become an empty array, not [null]
+    #[test]
+    fn record_field_null_becomes_empty_array() {
+        let v = field_value(Value::Null);
+        assert_eq!(v, json!([]));
     }
 }

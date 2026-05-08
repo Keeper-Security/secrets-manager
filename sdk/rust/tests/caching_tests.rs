@@ -387,4 +387,94 @@ mod caching_tests {
 
         env::remove_var("KSM_CACHE_DIR");
     }
+
+    /// Test: Caching module is accessible and round-trips data through env-driven path
+    #[test]
+    #[serial]
+    fn test_caching_module_exists() {
+        let (cache_dir, test_dir) = setup_test_cache();
+        env::set_var("KSM_CACHE_DIR", &cache_dir);
+
+        let cache_path = get_cache_file_path();
+        assert!(cache_path.to_str().unwrap().contains("ksm_cache.bin"));
+
+        let _ = clear_cache();
+        assert!(!cache_exists(), "Cache should not exist after clearing");
+
+        let test_data = b"test cache data for validation";
+        save_cache(test_data).expect("Failed to save cache data");
+        assert!(
+            cache_exists(),
+            "Cache should exist after saving. Path: {:?}",
+            cache_path
+        );
+
+        let loaded = get_cached_data().expect("Failed to retrieve cached data");
+        assert_eq!(loaded, test_data, "Cached data should match original");
+
+        clear_cache().expect("Failed to clear cache");
+        cleanup_test_cache(test_dir);
+        env::remove_var("KSM_CACHE_DIR");
+    }
+
+    /// Regression test for KSM-931: make_caching_post_function must not panic
+    /// when called from inside tokio::task::spawn_blocking.
+    ///
+    /// Without the fix (bare caching_post_function calling Client::builder().build()
+    /// per call), this scenario panics with:
+    ///   "Cannot drop a runtime in a context where blocking is not allowed"
+    ///
+    /// With the fix (factory captures a pre-built Client), it returns a clean
+    /// network error instead — no panic. Test fails to compile before the fix
+    /// because make_caching_post_function does not exist yet.
+    #[test]
+    fn test_make_caching_post_function_runs_under_spawn_blocking() {
+        use keeper_secrets_manager_core::caching::make_caching_post_function;
+        use keeper_secrets_manager_core::dto::{EncryptedPayload, TransmissionKey};
+        use p256::ecdsa::{signature::Signer, SigningKey};
+
+        // Generate a deterministic signature for the EncryptedPayload constructor.
+        // The server is never reached (port 1 is unreachable) so cryptographic
+        // validity is irrelevant; we just need a structurally valid value.
+        let signing_key = SigningKey::from_slice(&[42u8; 32]).expect("valid test scalar");
+        let raw_sig: p256::ecdsa::Signature = signing_key.sign(b"ksm-931-regression-test");
+        let der_sig: ecdsa::der::Signature<p256::NistP256> = raw_sig.into();
+
+        let tk = TransmissionKey::new("10".to_string(), vec![0u8; 32], vec![0u8; 32]);
+        let ep = EncryptedPayload::new(vec![0u8; 16], der_sig);
+
+        // Build the client OUTSIDE any async context — the correct usage pattern.
+        let client = reqwest::blocking::Client::builder()
+            .build()
+            .expect("build client outside runtime");
+
+        let post_fn = make_caching_post_function(client);
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("build tokio runtime");
+
+        let result = rt.block_on(async {
+            tokio::task::spawn_blocking(move || {
+                // Port 1 is unreachable — we expect a network error, not a panic.
+                post_fn("http://127.0.0.1:1/test".to_string(), tk, ep)
+            })
+            .await
+        });
+
+        // spawn_blocking must not have panicked — if it did, await returns
+        // Err(JoinError::Panicked).
+        assert!(
+            result.is_ok(),
+            "spawn_blocking panicked (nested-runtime bug still present): {:?}",
+            result
+        );
+        // The inner call should return a network error (connection refused), not Ok.
+        let inner = result.unwrap();
+        assert!(
+            inner.is_err(),
+            "expected network error against 127.0.0.1:1, got Ok"
+        );
+    }
 }
