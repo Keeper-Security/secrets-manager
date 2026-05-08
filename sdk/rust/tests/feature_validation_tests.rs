@@ -304,70 +304,6 @@ mod feature_validation_tests {
     }
 
     #[test]
-    fn test_caching_module_exists() {
-        // Verify caching module is accessible
-        use keeper_secrets_manager_core::caching;
-        use std::env;
-
-        // Use unique temp subdirectory to avoid conflicts with parallel tests
-        let unique_dir = env::temp_dir().join(format!(
-            "ksm_test_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&unique_dir).expect("Failed to create test directory");
-        let temp_dir_str = unique_dir.to_str().unwrap();
-        env::set_var("KSM_CACHE_DIR", temp_dir_str);
-
-        // Test cache operations
-        let cache_path = caching::get_cache_file_path();
-        assert!(cache_path.to_str().unwrap().contains("ksm_cache.bin"));
-
-        // Clear any existing cache
-        let _ = caching::clear_cache();
-        assert!(
-            !caching::cache_exists(),
-            "Cache should not exist after clearing"
-        );
-
-        // Save test data
-        let test_data = b"test cache data for validation";
-        caching::save_cache(test_data).expect("Failed to save cache data");
-
-        // Verify cache exists (with retry for CI filesystem delays)
-        // Use exponential backoff: 10ms, 20ms, 40ms, 80ms, 100ms (capped), 100ms...
-        // Total timeout: ~650ms to handle slow CI filesystem sync
-        let mut cache_found = false;
-        let mut backoff_ms = 10u64;
-        for attempt in 0..10 {
-            if caching::cache_exists() {
-                cache_found = true;
-                break;
-            }
-            if attempt < 9 {
-                std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
-                backoff_ms = (backoff_ms * 2).min(100); // Exponential backoff, capped at 100ms
-            }
-        }
-        assert!(
-            cache_found,
-            "Cache should exist after saving (checked 10 times with exponential backoff up to ~650ms). Path: {:?}",
-            cache_path
-        );
-
-        // Load and verify
-        let loaded = caching::get_cached_data().expect("Failed to retrieve cached data");
-        assert_eq!(loaded, test_data, "Cached data should match original");
-
-        // Clean up
-        caching::clear_cache().expect("Failed to clear cache");
-        env::remove_var("KSM_CACHE_DIR");
-        std::fs::remove_dir_all(&unique_dir).ok(); // Clean up test directory
-    }
-
-    #[test]
     fn test_caching_post_function_fallback() {
         use keeper_secrets_manager_core::caching;
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -724,5 +660,50 @@ mod feature_validation_tests {
 
         // This test passing means all new features are properly exported and compile
         assert!(true);
+    }
+
+    /// Regression test for KSM-812: get_folders() must take &mut self, not self.
+    ///
+    /// Before the fix, get_folders() consumed the SecretsManager, so any subsequent
+    /// call on the same instance would fail to compile. This test verifies the
+    /// instance is still usable after calling get_folders().
+    #[test]
+    fn test_get_folders_does_not_consume_secrets_manager() {
+        fn mock_empty_folders(
+            _url: String,
+            transmission_key: TransmissionKey,
+            _encrypted_payload: EncryptedPayload,
+        ) -> Result<KsmHttpResponse, KSMRError> {
+            let response = json!({"folders": [], "records": [], "expiresOn": 0, "warnings": []});
+            let response_bytes = response.to_string().into_bytes();
+            let encrypted =
+                CryptoUtils::encrypt_aes_gcm(&response_bytes, &transmission_key.key, None)?;
+            Ok(KsmHttpResponse {
+                status_code: 200,
+                data: encrypted,
+                http_response: None,
+            })
+        }
+
+        let storage = create_test_storage().expect("Failed to create storage");
+        let mut client_options = ClientOptions::new_client_options(storage);
+        client_options.set_custom_post_function(mock_empty_folders);
+        let mut sm = SecretsManager::new(client_options).expect("Failed to create SecretsManager");
+
+        // First call
+        let first = sm.get_folders();
+        // Second call on the same instance — would not compile if get_folders() took self
+        let second = sm.get_folders();
+
+        assert!(
+            first.is_ok(),
+            "First get_folders() call failed: {:?}",
+            first
+        );
+        assert!(
+            second.is_ok(),
+            "Second get_folders() call failed: {:?}",
+            second
+        );
     }
 }

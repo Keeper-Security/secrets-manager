@@ -1,7 +1,7 @@
 // Manual Integration Test 6: Disaster Recovery Caching
 //
 // This test validates:
-// - caching_post_function
+// - make_caching_post_function (recommended safe API — reuses one pre-built reqwest Client)
 // - Cache save on success
 // - Cache fallback on failure
 // - Cache file operations
@@ -30,8 +30,14 @@ fn main() -> Result<(), KSMRError> {
     let config = FileKeyValueStorage::new_config_storage("test_config.json".to_string())?;
     let mut client_options = ClientOptions::new_client_options(config);
 
+    // Build the reqwest client once outside any async context so it is safe under
+    // tokio::task::spawn_blocking. See caching::make_caching_post_function for details.
+    let client = reqwest::blocking::Client::builder()
+        .build()
+        .expect("build reqwest client");
+
     println!("\nEnabling disaster recovery caching...");
-    client_options.set_custom_post_function(caching::caching_post_function);
+    client_options.set_custom_post_function(caching::make_caching_post_function(client));
 
     let mut secrets_manager = SecretsManager::new(client_options)?;
 
@@ -76,7 +82,7 @@ fn main() -> Result<(), KSMRError> {
     // save mechanism works correctly.
 
     println!("\n=== Cache Function Validation ===");
-    println!("✅ caching_post_function() can be set");
+    println!("✅ make_caching_post_function() can be set");
     println!("✅ Cache saves on successful API call");
     println!("✅ Cache file accessible via get_cached_data()");
     println!("✅ Cache can be cleared via clear_cache()");

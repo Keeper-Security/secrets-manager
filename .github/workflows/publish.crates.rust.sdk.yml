@@ -2,10 +2,46 @@ name: Publish to Crates.io (Rust SDK)
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to crates.io (uncheck to build only)'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
+  check-version:
+    name: Check version not already published
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    defaults:
+      run:
+        working-directory: ./sdk/rust
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Verify version does not exist on crates.io
+        run: |
+          VERSION=$(grep -Po '^version\s*=\s*"\K[^"]*' Cargo.toml)
+          echo "Checking crates.io for keeper-secrets-manager-core v${VERSION}..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://crates.io/api/v1/crates/keeper_secrets_manager_core/${VERSION}")
+          if [ "$STATUS" = "200" ]; then
+            echo "❌ Version ${VERSION} already exists on crates.io — bump the version before publishing"
+            exit 1
+          fi
+          echo "✅ Version ${VERSION} is new — proceeding with publish"
+
   test-rust-sdk:
     name: Test Rust SDK (${{ matrix.rust }})
+    needs: check-version
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -22,10 +58,12 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1
         with:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
@@ -53,8 +91,13 @@ jobs:
           cargo test --all-features --test integration_tests
           cargo test --all-features --test notation_tests
           cargo test --all-features --test payload_test
+          cargo test --all-features --test proxy_test
           cargo test --all-features --test totp_test
           cargo test --all-features --test update_secret_tests
+          cargo test --all-features --test caching_transmission_key_tests
+          cargo test --all-features --test download_file_by_title_tests
+          cargo test --all-features --test duplicate_uid_notation_test
+          cargo test --all-features --test empty_config_test
 
       - name: Run caching tests (serial execution required)
         run: cargo test --all-features --test caching_tests -- --test-threads=1
@@ -76,7 +119,9 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - name: Detect Rust SDK version
         id: detect-version
@@ -91,42 +136,41 @@ jobs:
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Install cargo-cyclonedx
-        run: cargo install cargo-cyclonedx --locked
-
-      - name: Generate SBOM
+      - name: Install Syft and Manifest CLI
         run: |
-          echo "Generating CycloneDX SBOM with cargo-cyclonedx..."
-          cargo cyclonedx --format json --spec-version 1.5 --override-filename rust-sdk-sbom
-          echo "SBOM generated: rust-sdk-sbom.json"
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.30.0
 
-          echo "Updating SBOM component name to include rust-sdk identifier..."
-          jq '.metadata.component.name = "keeper-secrets-manager-rust-sdk"' rust-sdk-sbom.json > rust-sdk-sbom-fixed.json
-          mv rust-sdk-sbom-fixed.json rust-sdk-sbom.json
-
-          echo "Verifying updated component name:"
-          jq '.metadata.component.name' rust-sdk-sbom.json
-
-      - name: Publish SBOM to Manifest Cyber
-        uses: manifest-cyber/manifest-github-action@main
-        with:
-          apiKey: ${{ secrets.MANIFEST_TOKEN }}
-          bomFilePath: ./sdk/rust/rust-sdk-sbom.json
-          sbomName: keeper-secrets-manager-rust-sdk
-          sbomVersion: ${{ steps.detect-version.outputs.version }}
-          asset-labels: application,sbom-generated,rust,cargo,secrets-manager
+      - name: Generate and publish SDK SBOM
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+          SDK_VERSION: ${{ steps.detect-version.outputs.version }}
+        run: |
+          manifest sbom . \
+            --generator=syft \
+            --name=keeper-secrets-manager-rust-sdk \
+            --version="${SDK_VERSION}" \
+            --output=cyclonedx-json \
+            --file=rust-sdk-sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --asset-label=ksm,sdk,rust,cargo,secrets-manager 2>&1 || \
+          manifest sbom . \
+            --generator=syft \
+            --name=keeper-secrets-manager-rust-sdk \
+            --version="${SDK_VERSION}" \
+            --output=cyclonedx-json \
+            --file=rust-sdk-sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --label=ksm,sdk,rust,cargo,secrets-manager
 
       - name: Archive SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-rust-sdk-${{ steps.detect-version.outputs.version }}
           path: ./sdk/rust/rust-sdk-sbom.json
-          retention-days: 90
+          retention-days: 10
 
   dry-run-publish:
     name: Validate package (dry-run)
@@ -145,15 +189,17 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1
         with:
           toolchain: stable
 
       - name: Authenticate with crates.io via OIDC
-        uses: rust-lang/crates-io-auth-action@v1
+        uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1
         id: auth
 
       - name: Dry-run publish (validates package and authentication)
@@ -165,6 +211,7 @@ jobs:
 
   publish-crates:
     name: Publish Rust SDK to crates.io
+    if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     needs: [dry-run-publish]
     runs-on: ubuntu-latest
@@ -180,15 +227,17 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1
         with:
           toolchain: stable
 
       - name: Authenticate with crates.io via OIDC
-        uses: rust-lang/crates-io-auth-action@v1
+        uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1
         id: auth
 
       - name: Publish to crates.io

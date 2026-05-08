@@ -104,7 +104,7 @@ cargo run --example 06_caching_function
 ```
 
 **Validates:**
-- `caching_post_function` module
+- `make_caching_post_function` (recommended safe caching API)
 - Cache save on success
 - Cache file creation
 - Cache load/clear operations

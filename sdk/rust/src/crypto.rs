@@ -952,7 +952,7 @@ impl CryptoUtils {
     /// ```rust
     /// use keeper_secrets_manager_core::crypto::CryptoUtils;
     /// use std::error::Error;
-    /// use hex;
+    /// use data_encoding::HEXLOWER;
     ///
     /// fn main() -> Result<(), Box<dyn Error>> {
     ///     // 32-byte AES key (AES-256 requires a 32-byte key)
@@ -965,7 +965,7 @@ impl CryptoUtils {
     ///     let encrypted_data = CryptoUtils::encrypt_aes_gcm(data, key, None)?;
     ///
     ///     // Print the encrypted data in hex format for better readability
-    ///     println!("Encrypted data: {:?}", hex::encode(&encrypted_data));
+    ///     println!("Encrypted data: {:?}", HEXLOWER.encode(&encrypted_data));
     ///
     ///     Ok(())
     /// }
@@ -1041,7 +1041,7 @@ impl CryptoUtils {
     /// use keeper_secrets_manager_core::custom_error::KSMRError;
     /// use aes_gcm::{Aes256Gcm, Key, Nonce}; // Import the AES-GCM library
     /// use std::error::Error;
-    /// use hex;
+    /// use data_encoding::HEXLOWER;
     ///
     /// fn main() -> Result<(), KSMRError> {
     ///     // 32-byte AES key (AES-256 requires a 32-byte key)
@@ -1051,7 +1051,7 @@ impl CryptoUtils {
     ///     let nonce = b"unique nonce"; // Must be exactly 12 bytes
     ///
     ///     // Example ciphertext (encrypted using the same key and nonce)
-    ///     let ciphertext = hex::decode("c5d3db06f6c3d543663a94051a7a0d65")?; // Example encrypted data
+    ///     let ciphertext = HEXLOWER.decode(b"c5d3db06f6c3d543663a94051a7a0d65").expect("valid hex"); // Example encrypted data
     ///   
     ///     // Concatenate nonce and ciphertext
     ///     let mut encrypted_data = Vec::new();
@@ -1340,7 +1340,7 @@ impl CryptoUtils {
     /// let server_public_key = "04d88c6fa31ea40af14c137b8e62f1151f1cc1e5688cad37b7f2e7";
     ///
     /// // Convert the public key from hex string to bytes
-    /// let server_public_key_bytes = hex::decode(server_public_key).expect("Invalid hex key");
+    /// let server_public_key_bytes = data_encoding::HEXLOWER.decode(server_public_key.as_bytes()).expect("Invalid hex key");
     ///
     /// // Optional IDZ
     /// let idz = Some("optional_identifier".as_bytes());
