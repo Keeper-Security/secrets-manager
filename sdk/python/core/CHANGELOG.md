@@ -1,5 +1,8 @@
 # Change Log
 
+## 17.2.2
+* KSM-901 - IL5 dynamic server public key injection — supports three provisioning paths: config field (`serverPublicKey`), OTS token extension (4-segment IL5 format), and programmatic parameter (`server_public_key` on `SecretsManager`)
+
 ## 17.2.1
 * KSM-900 - Added IL5 (DoD Impact Level 5) region support — token prefix `IL5` resolves to `il5.keepersecurity.us`
 
