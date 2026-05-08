@@ -194,11 +194,11 @@ class SmokeTest(unittest.TestCase):
 
         # Test 1: Normal case - __version__ is available (primary path)
         client_version = get_client_version(hardcode=False)
-        self.assertEqual("17.2.1", client_version, "did not get correct version from __version__")
+        self.assertEqual("17.2.2", client_version, "did not get correct version from __version__")
 
         # Test 2: Hardcode mode still works
         client_version = get_client_version(hardcode=True)
-        self.assertEqual("17.2.1", client_version, "did not get the correct client version for hardcoded")
+        self.assertEqual("17.2.2", client_version, "did not get the correct client version for hardcoded")
 
         # Test 3: Fallback to importlib.metadata when __version__ import fails
         # Mock the import to fail, then check fallback works
@@ -232,7 +232,7 @@ class SmokeTest(unittest.TestCase):
             # But __version__ should take precedence with correct version
             client_version = get_client_version(hardcode=False)
             # Should get 17.1.0 from __version__, NOT 16.6.5 from stale metadata
-            self.assertEqual("17.2.1", client_version,
+            self.assertEqual("17.2.2", client_version,
                            "KSM-749: Should use __version__ not stale metadata (16.6.5)")
 
     def test_il5_region_mapping(self):
