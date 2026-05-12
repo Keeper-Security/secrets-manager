@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
+import google_crc32c
 import pytest
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
@@ -219,3 +220,43 @@ class TestDecryptConfigDefaultAutosaveFalse:
 
         assert result == plaintext
         assert config_path.read_text() == plaintext
+
+
+class TestSymmetricDecryptVersionPinning:
+    """KSM-945 regression: symmetric client.decrypt must use the version-pinned key name."""
+
+    def test_client_decrypt_called_with_versioned_key_name(self):
+        from keeper_secrets_manager_storage_gcp_kms.utils import decrypt_data_and_validate_crc
+
+        versioned_name = "projects/p/locations/global/keyRings/r/cryptoKeys/k/cryptoKeyVersions/1"
+        unversioned_name = "projects/p/locations/global/keyRings/r/cryptoKeys/k"
+
+        key_props = MagicMock()
+        key_props.to_resource_name.return_value = versioned_name
+        key_props.to_key_name.return_value = unversioned_name
+
+        fake_plaintext = get_random_bytes(32)
+        fake_plaintext_crc = google_crc32c.value(fake_plaintext)
+
+        client = MagicMock()
+        client.decrypt.return_value = MagicMock(
+            plaintext=fake_plaintext,
+            plaintext_crc32c=fake_plaintext_crc,
+        )
+
+        options = {
+            "ciphertext": get_random_bytes(32),
+            "crypto_client": client,
+            "key_properties": key_props,
+            "is_asymmetric": False,
+            "token": None,
+            "logger": logging.getLogger("test"),
+        }
+
+        decrypt_data_and_validate_crc(options)
+
+        called_name = client.decrypt.call_args[1]["request"].name
+        assert called_name == versioned_name, (
+            f"Expected version-pinned key name, got: {called_name}"
+        )
+        assert called_name != unversioned_name

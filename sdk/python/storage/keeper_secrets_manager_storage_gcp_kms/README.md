@@ -85,6 +85,7 @@ Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager
 - Replaced MD5 with SHA-256 for config change detection
 - Fixed `read_storage()` returning a live dict reference — caller mutations no longer silently corrupt internal state without triggering encryption (KSM-944)
 - Fixed `decrypt_config()` default `autosave` from `True` to `False` — calling without arguments no longer writes plaintext credentials to disk (KSM-944)
+- Fixed `key_version` silently ignored on symmetric decrypt — `client.decrypt()` now uses the version-pinned key name, preventing GCP silent fallback to the primary key version
 
 ### 1.0.1
 

@@ -236,7 +236,7 @@ def decrypt_data_and_validate_crc(options):
             plaintext = decrypt_data_symmetric_raw(options, options['logger'])
             return plaintext
             
-        key_name = options['key_properties'].to_key_name()
+        key_name = options['key_properties'].to_resource_name()
         input = DecryptRequest(name=key_name, ciphertext=cipher_data,
                                ciphertext_crc32c=cipher_data_crc)
         decrypt_response = client.decrypt(request=input)
