@@ -117,7 +117,7 @@ class GCPKeyValueStorage(KeyValueStorage):
         except Exception as err:
             self.logger.error(f"Error creating config file: {err}")
             
-    def decrypt_config(self, autosave: bool = True) -> str:
+    def decrypt_config(self, autosave: bool = False) -> str:
         ciphertext : bytes = bytes()
         plaintext : str= ""
 
@@ -299,7 +299,7 @@ class GCPKeyValueStorage(KeyValueStorage):
     def read_storage(self) -> Dict[str, str]:
         if not self.config:
             self.load_config()
-        return self.config
+        return dict(self.config)
     
     def save_storage(self, updated_config: Dict[str, str]) -> None:
         self.__save_config(updated_config)

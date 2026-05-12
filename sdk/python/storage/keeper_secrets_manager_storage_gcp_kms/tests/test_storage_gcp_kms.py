@@ -143,3 +143,79 @@ class TestBackwardCompatNonce16:
             )
 
         assert result == message
+
+
+def _make_storage_stub(config=None, config_file_location=None):
+    """Return a GCPKeyValueStorage instance with __init__ bypassed and state set directly."""
+    from keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms import GCPKeyValueStorage
+    from keeper_secrets_manager_storage_gcp_kms.constants import KeyPurpose
+    with patch.object(GCPKeyValueStorage, '__init__', return_value=None):
+        storage = GCPKeyValueStorage.__new__(GCPKeyValueStorage)
+    storage.config = config if config is not None else {}
+    storage.config_file_location = config_file_location or ""
+    storage.logger = logging.getLogger("test")
+    storage.is_asymmetric = False
+    storage.key_purpose_details = KeyPurpose.ENCRYPT_DECRYPT
+    storage.gcp_session_config = MagicMock()
+    storage.crypto_client = MagicMock()
+    storage.gcp_key_config = MagicMock()
+    return storage
+
+
+class TestReadStorageCopyIsolation:
+    """KSM-944: read_storage() must return a copy, not a live dict reference."""
+
+    def test_returned_dict_is_not_live_reference(self):
+        storage = _make_storage_stub(config={"clientId": "original", "appKey": "secret"})
+        result = storage.read_storage()
+        result["clientId"] = "hacked"
+        assert storage.config["clientId"] == "original", (
+            "read_storage() returned a live reference — caller mutation changed internal state"
+        )
+
+    def test_copy_contains_all_keys(self):
+        data = {"clientId": "test-id", "appKey": "key", "hostname": "host"}
+        storage = _make_storage_stub(config=data)
+        result = storage.read_storage()
+        assert result == data
+
+
+class TestDecryptConfigDefaultAutosaveFalse:
+    """KSM-944: decrypt_config() must not write plaintext to disk when called without arguments."""
+
+    def _write_fake_blob(self, path):
+        aes_key = get_random_bytes(32)
+        nonce = get_random_bytes(12)
+        cipher = AES.new(aes_key, AES.MODE_GCM, nonce=nonce)
+        ciphertext, tag = cipher.encrypt_and_digest(b"{}")
+        blob = _make_blob(get_random_bytes(32), nonce, tag, ciphertext)
+        path.write_bytes(blob)
+        return blob
+
+    def test_default_does_not_overwrite_file(self, tmp_path):
+        config_path = tmp_path / "ksm-config.json"
+        original_blob = self._write_fake_blob(config_path)
+
+        storage = _make_storage_stub(config_file_location=str(config_path))
+        plaintext = '{"clientId": "test-id"}'
+
+        with patch("keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms.decrypt_buffer", return_value=plaintext):
+            result = storage.decrypt_config()
+
+        assert result == plaintext
+        assert config_path.read_bytes() == original_blob, (
+            "decrypt_config() with default args wrote plaintext to disk — credentials exposed"
+        )
+
+    def test_autosave_true_writes_plaintext(self, tmp_path):
+        config_path = tmp_path / "ksm-config.json"
+        self._write_fake_blob(config_path)
+
+        storage = _make_storage_stub(config_file_location=str(config_path))
+        plaintext = '{"clientId": "test-id"}'
+
+        with patch("keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms.decrypt_buffer", return_value=plaintext):
+            result = storage.decrypt_config(autosave=True)
+
+        assert result == plaintext
+        assert config_path.read_text() == plaintext
