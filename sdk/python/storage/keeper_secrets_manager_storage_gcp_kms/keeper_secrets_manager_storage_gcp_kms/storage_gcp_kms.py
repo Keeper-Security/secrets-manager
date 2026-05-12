@@ -315,17 +315,15 @@ class GCPKeyValueStorage(KeyValueStorage):
         return config
 
     def delete(self, key: ConfigKeys):
-        config = self.read_storage()
-
         kv = key.value
-        if kv in config:
-            del config[kv]
+        if kv in self.config:
+            del self.config[kv]
             self.logger.debug("Removed key %s" % kv)
         else:
-           self.logger.debug("No key %s was found in config" % kv)
+            self.logger.debug("No key %s was found in config" % kv)
 
-        self.save_storage(config)
-        return config
+        self.save_storage(self.config)
+        return dict(self.config)
 
     def delete_all(self):
         self.read_storage()

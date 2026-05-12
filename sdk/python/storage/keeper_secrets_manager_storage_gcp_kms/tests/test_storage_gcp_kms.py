@@ -160,6 +160,7 @@ def _make_storage_stub(config=None, config_file_location=None):
     storage.gcp_session_config = MagicMock()
     storage.crypto_client = MagicMock()
     storage.gcp_key_config = MagicMock()
+    storage.encryption_algorithm = MagicMock()
     return storage
 
 
@@ -260,3 +261,34 @@ class TestSymmetricDecryptVersionPinning:
             f"Expected version-pinned key name, got: {called_name}"
         )
         assert called_name != unversioned_name
+
+
+class TestDeleteLastKeyPersists:
+    """KSM-944 regression: delete() of the last config key must clear internal state.
+
+    Before the fix, delete() went through read_storage() (a copy), so del config[kv]
+    only mutated the copy. __save_config({}) then hit the falsy-check and skipped
+    updating self.config, silently leaving the deleted key in memory and on disk.
+    """
+
+    def test_delete_last_key_clears_internal_state(self, tmp_path):
+        from keeper_secrets_manager_core.configkeys import ConfigKeys
+
+        config_path = tmp_path / "ksm-config.json"
+        config_path.write_bytes(b"placeholder")
+
+        storage = _make_storage_stub(
+            config={"clientId": "test-id"},
+            config_file_location=str(config_path),
+        )
+        storage.last_saved_config_hash = "old-hash"
+
+        with patch(
+            "keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms.encrypt_buffer",
+            return_value=b"fake-blob",
+        ):
+            storage.delete(ConfigKeys.KEY_CLIENT_ID)
+
+        assert storage.config == {}, (
+            "delete() of the last config key left internal state non-empty — deletion was silently lost"
+        )
