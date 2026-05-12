@@ -81,6 +81,8 @@ Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager
 - Fixed CVE-2026-0994: protobuf JSON recursion DoS (upgraded to `protobuf>=6.33.5`)
 - Fixed CVE-2026-26007: cryptography subgroup attack (upgraded to `cryptography>=46.0.5`)
 - Fixed silent failure when `cloudkms.cryptoKeys.get` is denied — `GCPKeyValueStorage` now raises on init instead of leaving the config file unencrypted on disk
+- Fixed AES-GCM nonce to 96-bit/12-byte per NIST SP 800-38D (was 128-bit/16-byte PyCryptodome default); existing encrypted blobs remain readable
+- Replaced MD5 with SHA-256 for config change detection
 
 ### 1.0.1
 

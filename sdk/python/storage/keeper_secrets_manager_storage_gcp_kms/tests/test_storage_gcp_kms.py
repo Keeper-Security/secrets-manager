@@ -1,10 +1,36 @@
 import json
+import logging
 import os
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
 import pytest
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+
+
+BLOB_HEADER = b"\xff\xff"
+
+
+def _parse_blob_parts(blob):
+    """Parse a KSM GCP KMS blob into its 4 length-prefixed parts: [enc_key, nonce, tag, ciphertext]."""
+    pos = 2  # skip BLOB_HEADER
+    parts = []
+    for _ in range(4):
+        part_len = int.from_bytes(blob[pos:pos + 2], "big")
+        pos += 2
+        parts.append(blob[pos:pos + part_len])
+        pos += part_len
+    return parts
+
+
+def _make_blob(encrypted_key, nonce, tag, ciphertext):
+    buf = bytearray(BLOB_HEADER)
+    for part in [encrypted_key, nonce, tag, ciphertext]:
+        buf.extend(len(part).to_bytes(2, "big"))
+        buf.extend(part)
+    return bytes(buf)
 
 
 def make_mock_session(client_mock):
@@ -56,3 +82,64 @@ class TestGetKeyDetailsFailure:
         assert config_path.read_bytes() == original_content, (
             "Config file was modified despite init failure — credentials may have been re-written in plaintext"
         )
+
+
+class TestNonce12Bytes:
+    """KSM-943 regression: encrypt_buffer must use a 96-bit (12-byte) nonce per NIST SP 800-38D."""
+
+    def test_encrypted_blob_contains_12_byte_nonce(self):
+        from keeper_secrets_manager_storage_gcp_kms.utils import encrypt_buffer
+
+        fake_enc_key = get_random_bytes(32)
+        logger = logging.getLogger("test")
+
+        with patch(
+            "keeper_secrets_manager_storage_gcp_kms.utils.encrypt_data_and_validate_crc",
+            return_value=fake_enc_key,
+        ):
+            blob = encrypt_buffer(
+                is_asymmetric=False,
+                message="ksm-config-test",
+                crypto_client=MagicMock(),
+                key_properties=MagicMock(),
+                encryption_algorithm=MagicMock(),
+                logger=logger,
+                token=None,
+            )
+
+        assert blob[:2] == BLOB_HEADER
+        parts = _parse_blob_parts(blob)
+        nonce = parts[1]
+        assert len(nonce) == 12, f"Expected 12-byte nonce (NIST SP 800-38D), got {len(nonce)}"
+
+
+class TestBackwardCompatNonce16:
+    """KSM-943: decrypt_buffer must still handle blobs encrypted with the old 16-byte nonce."""
+
+    def test_decrypt_buffer_handles_legacy_16_byte_nonce(self):
+        from keeper_secrets_manager_storage_gcp_kms.utils import decrypt_buffer
+
+        message = '{"clientId": "legacy-id"}'
+        aes_key = get_random_bytes(32)
+        nonce_16 = get_random_bytes(16)
+
+        cipher = AES.new(aes_key, AES.MODE_GCM, nonce=nonce_16)
+        ciphertext, tag = cipher.encrypt_and_digest(message.encode())
+
+        blob = _make_blob(get_random_bytes(32), nonce_16, tag, ciphertext)
+        logger = logging.getLogger("test")
+
+        with patch(
+            "keeper_secrets_manager_storage_gcp_kms.utils.decrypt_data_and_validate_crc",
+            return_value=aes_key,
+        ):
+            result = decrypt_buffer(
+                is_asymmetric=False,
+                ciphertext=blob,
+                crypto_client=MagicMock(),
+                key_properties=MagicMock(),
+                logger=logger,
+                token=None,
+            )
+
+        assert result == message
