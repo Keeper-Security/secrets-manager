@@ -13,6 +13,7 @@ import logging
 import os
 import hashlib
 import json
+import threading
 
 from typing import Optional,Dict
 
@@ -39,6 +40,7 @@ class GCPKeyValueStorage(KeyValueStorage):
     gcp_session_config: GCPKMSClientConfig
     is_asymmetric: bool = False
     key_purpose_details: Optional[str] = None
+    _lock: threading.RLock
     
     def __init__(self, key_vault_config_file_location: str , gcp_key_config: GCPKeyConfig, gcp_session_config: GCPKMSClientConfig, logger: Logger = None):
         self.config_file_location = os.path.abspath(key_vault_config_file_location) or os.getenv('KSM_CONFIG_FILE') or os.path.abspath(self.default_config_file_location)
@@ -47,7 +49,7 @@ class GCPKeyValueStorage(KeyValueStorage):
         self.gcp_session_config = gcp_session_config
         self.gcp_key_config = gcp_key_config
         self.crypto_client = self.gcp_session_config.get_crypto_client()
-        
+        self._lock = threading.RLock()
         self.last_saved_config_hash = ""
         self.get_key_details()
         self.load_config()
@@ -297,39 +299,43 @@ class GCPKeyValueStorage(KeyValueStorage):
         return True
     
     def read_storage(self) -> Dict[str, str]:
-        if not self.config:
-            self.load_config()
-        return dict(self.config)
-    
+        with self._lock:
+            if not self.config:
+                self.load_config()
+            return dict(self.config)
+
     def save_storage(self, updated_config: Dict[str, str]) -> None:
-        self.__save_config(updated_config)
-        
+        with self._lock:
+            self.__save_config(updated_config)
+
     def get(self, key: ConfigKeys) -> str:
         config = self.read_storage()
         return config.get(key.value)
-    
+
     def set(self, key: ConfigKeys, value):
-        config = self.read_storage()
-        config[key.value] = value
-        self.save_storage(config)
-        return config
+        with self._lock:
+            config = self.read_storage()
+            config[key.value] = value
+            self.save_storage(config)
+            return config
 
     def delete(self, key: ConfigKeys):
-        kv = key.value
-        if kv in self.config:
-            del self.config[kv]
-            self.logger.debug("Removed key %s" % kv)
-        else:
-            self.logger.debug("No key %s was found in config" % kv)
-
-        self.save_storage(self.config)
-        return dict(self.config)
+        with self._lock:
+            kv = key.value
+            if kv in self.config:
+                del self.config[kv]
+                self.logger.debug("Removed key %s" % kv)
+            else:
+                self.logger.debug("No key %s was found in config" % kv)
+            self.save_storage(self.config)
+            return dict(self.config)
 
     def delete_all(self):
-        self.read_storage()
-        self.config.clear()
-        self.save_storage(self.config)
-        return dict(self.config)
+        with self._lock:
+            self.read_storage()
+            self.config.clear()
+            self.save_storage(self.config)
+            return dict(self.config)
 
     def contains(self, key: ConfigKeys):
         config = self.read_storage()
