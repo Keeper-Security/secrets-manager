@@ -77,7 +77,7 @@ Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager
 ### 1.1.0
 
 - Raised minimum Python version to 3.9
-- Updated minimum `keeper-secrets-manager-core` dependency to 17.2.0
+- Updated minimum `keeper-secrets-manager-core` dependency to 17.2.1
 - Fixed CVE-2026-0994: protobuf JSON recursion DoS (upgraded to `protobuf>=6.33.5`)
 - Fixed CVE-2026-26007: cryptography subgroup attack (upgraded to `cryptography>=46.0.5`)
 - Fixed silent failure when `cloudkms.cryptoKeys.get` is denied — `GCPKeyValueStorage` now raises on init instead of leaving the config file unencrypted on disk
@@ -88,6 +88,10 @@ Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager
 - Fixed `delete()` of the last config key silently lost — key remained in memory and on disk after deletion due to interaction between the copy-isolation fix and an empty-dict falsy-check in the save path
 - Fixed `key_version` silently ignored on symmetric decrypt — `client.decrypt()` now uses the version-pinned key name, preventing GCP silent fallback to the primary key version
 - Fixed thread-safety: added `threading.RLock` to `GCPKeyValueStorage` — concurrent `set()` / `delete()` calls no longer race on the config dict or the encrypt-and-write sequence (KSM-946)
+- Fixed `encrypt_buffer` silently swallowing KMS/network errors — failures now raise so callers see the error rather than proceeding with a plaintext credential file left on disk
+- Fixed `create_config_file_if_missing` swallowing init errors — failures now propagate to the caller
+- Fixed `change_key` incomplete rollback — all key-related attributes (`gcp_key_config`, `crypto_client`, `key_purpose_details`, `encryption_algorithm`, `is_asymmetric`) are now restored on failure; previously a failed rotation left the storage in an inconsistent state where encryption was routed through mismatched key config
+- Fixed `load_config` misclassifying KMS/disk errors as JSON parse failures — the plain-JSON detection block now only catches `JSONDecodeError` and `UnicodeDecodeError`
 
 ### 1.0.1
 

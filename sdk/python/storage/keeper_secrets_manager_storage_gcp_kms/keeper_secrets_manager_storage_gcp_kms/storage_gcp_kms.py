@@ -20,6 +20,8 @@ from typing import Optional,Dict
 from keeper_secrets_manager_core.storage import KeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 
+from google.cloud.kms_v1 import CryptoKey
+
 from .constants import SUPPORTED_KEY_PURPOSE, KeyPurpose
 from .utils import decrypt_buffer, encrypt_buffer
 from .util_options import KMSClient
@@ -39,7 +41,7 @@ class GCPKeyValueStorage(KeyValueStorage):
     config_file_location: str
     gcp_session_config: GCPKMSClientConfig
     is_asymmetric: bool = False
-    key_purpose_details: Optional[str] = None
+    key_purpose_details: Optional[CryptoKey.CryptoKeyPurpose] = None
     _lock: threading.RLock
     
     def __init__(self, key_vault_config_file_location: str , gcp_key_config: GCPKeyConfig, gcp_session_config: GCPKMSClientConfig, logger: Logger = None):
@@ -240,7 +242,7 @@ class GCPKeyValueStorage(KeyValueStorage):
                     self.last_saved_config_hash = hashlib.sha256(
                         json.dumps(config, sort_keys=True, indent=4).encode()
                     ).hexdigest()
-            except Exception as err:
+            except (json.JSONDecodeError, UnicodeDecodeError) as err:
                 json_error = err
 
             if json_error:
@@ -277,6 +279,9 @@ class GCPKeyValueStorage(KeyValueStorage):
     def change_key(self, new_gcp_key_config: GCPKeyConfig) -> bool:
         old_key_configuration = self.gcp_key_config
         old_crypto_client = self.crypto_client
+        old_key_purpose_details = self.key_purpose_details
+        old_encryption_algorithm = self.encryption_algorithm
+        old_is_asymmetric = self.is_asymmetric
 
         try:
             # Update the key and reinitialize the CryptographyClient
@@ -287,9 +292,12 @@ class GCPKeyValueStorage(KeyValueStorage):
             self.get_key_details()
             self.__save_config({}, force=True)
         except Exception as error:
-            # Restore the previous key and crypto client if the operation fails
+            # Restore all key-related state if the operation fails
             self.gcp_key_config = old_key_configuration
             self.crypto_client = old_crypto_client
+            self.key_purpose_details = old_key_purpose_details
+            self.encryption_algorithm = old_encryption_algorithm
+            self.is_asymmetric = old_is_asymmetric
             self.logger.error(
                 f"Failed to change the key to '{new_gcp_key_config.to_key_name()}' for config '{self.config_file_location}': {error}"
             )

@@ -1,8 +1,5 @@
 import json
 import logging
-import os
-import tempfile
-import unittest
 from unittest.mock import MagicMock, patch
 
 import google_crc32c
