@@ -52,12 +52,12 @@ jobs:
             REGISTRY="PyPI"
           fi
           echo "Checking $REGISTRY for keeper-secrets-manager-storage-gcp-kms $VERSION..."
-          STATUS=$(curl -sS -o /dev/null -w "%{http_code}" "$CHECK_URL")
-          if [ "$STATUS" = "200" ]; then
-            echo "::error::keeper-secrets-manager-storage-gcp-kms ${VERSION} is already on $REGISTRY. Aborting."
-            exit 1
-          fi
-          echo "keeper-secrets-manager-storage-gcp-kms $VERSION not yet on $REGISTRY - ok to proceed"
+          STATUS=$(curl -sS --retry 3 --retry-delay 2 -o /dev/null -w "%{http_code}" "$CHECK_URL")
+          case "$STATUS" in
+            404) echo "keeper-secrets-manager-storage-gcp-kms $VERSION not yet on $REGISTRY - ok to proceed" ;;
+            200) echo "::error::keeper-secrets-manager-storage-gcp-kms ${VERSION} is already on $REGISTRY. Aborting."; exit 1 ;;
+            *)   echo "::error::Unexpected status $STATUS from $REGISTRY. Aborting."; exit 1 ;;
+          esac
 
   generate-sbom:
     name: Generate and publish SBOM
@@ -153,7 +153,7 @@ jobs:
         working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
         run: |
           python3 -m pip install dist/*.whl
-          python3 -c "from keeper_secrets_manager_storage_gcp_kms import GCPKeyValueStorage; print('import OK')"
+          cd /tmp && python3 -c "from keeper_secrets_manager_storage_gcp_kms import GCPKeyValueStorage; print('import OK')"
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1

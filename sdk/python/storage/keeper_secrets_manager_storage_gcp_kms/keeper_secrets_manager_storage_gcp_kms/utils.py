@@ -72,8 +72,8 @@ def encrypt_buffer(is_asymmetric, message, crypto_client, key_properties,encrypt
 
         return buffers
     except Exception as err:
-        logger.warning(f"KCP KMS Storage failed to encrypt: {err}")
-        return b''  # Return empty buffer in case of an error
+        logger.error(f"KCP KMS Storage failed to encrypt: {err}")
+        raise
 
 
 def encrypt_data_and_validate_crc_asymmetric(options):

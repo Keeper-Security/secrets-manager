@@ -111,13 +111,13 @@ class GCPKeyValueStorage(KeyValueStorage):
                     token=token,
                     logger = self.logger
                 )
-                if len(blob) != 0:
-                    with open(self.config_file_location, 'wb') as config_file:
-                        config_file.write(blob)
+                with open(self.config_file_location, 'wb') as config_file:
+                    config_file.write(blob)
             else:
                 self.logger.info(f"Config file already exists at: {self.config_file_location}")
         except Exception as err:
             self.logger.error(f"Error creating config file: {err}")
+            raise
             
     def decrypt_config(self, autosave: bool = False) -> str:
         ciphertext : bytes = bytes()
@@ -198,9 +198,8 @@ class GCPKeyValueStorage(KeyValueStorage):
                 token=token,
                 logger = self.logger
             )
-            if len(blob)!=0:
-                with open(self.config_file_location, 'wb') as config_file:
-                    config_file.write(blob)
+            with open(self.config_file_location, 'wb') as config_file:
+                config_file.write(blob)
 
             # Update the last saved config hash
             self.last_saved_config_hash = config_hash
