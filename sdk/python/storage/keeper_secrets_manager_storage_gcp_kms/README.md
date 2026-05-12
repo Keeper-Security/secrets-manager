@@ -13,6 +13,7 @@ Keeper Secrets Manager integrates with GCP KMS in order to provide protection fo
   * Cloud KMS CryptoKey Decrypter
   * Cloud KMS CryptoKey Encrypter
   * Cloud KMS CryptoKey Public Key Viewer
+  * Cloud KMS Viewer (provides `cloudkms.cryptoKeys.get`, required for key introspection on init)
 
 ## Setup
 
