@@ -83,6 +83,8 @@ Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager
 - Fixed silent failure when `cloudkms.cryptoKeys.get` is denied — `GCPKeyValueStorage` now raises on init instead of leaving the config file unencrypted on disk
 - Fixed AES-GCM nonce to 96-bit/12-byte per NIST SP 800-38D (was 128-bit/16-byte PyCryptodome default); existing encrypted blobs remain readable
 - Replaced MD5 with SHA-256 for config change detection
+- Fixed `read_storage()` returning a live dict reference — caller mutations no longer silently corrupt internal state without triggering encryption (KSM-944)
+- Fixed `decrypt_config()` default `autosave` from `True` to `False` — calling without arguments no longer writes plaintext credentials to disk (KSM-944)
 
 ### 1.0.1
 
