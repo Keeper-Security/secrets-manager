@@ -148,6 +148,7 @@ class TestBackwardCompatNonce16:
 
 def _make_storage_stub(config=None, config_file_location=None):
     """Return a GCPKeyValueStorage instance with __init__ bypassed and state set directly."""
+    import threading
     from keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms import GCPKeyValueStorage
     from keeper_secrets_manager_storage_gcp_kms.constants import KeyPurpose
     with patch.object(GCPKeyValueStorage, '__init__', return_value=None):
@@ -161,6 +162,7 @@ def _make_storage_stub(config=None, config_file_location=None):
     storage.crypto_client = MagicMock()
     storage.gcp_key_config = MagicMock()
     storage.encryption_algorithm = MagicMock()
+    storage._lock = threading.RLock()
     return storage
 
 
@@ -292,3 +294,47 @@ class TestDeleteLastKeyPersists:
         assert storage.config == {}, (
             "delete() of the last config key left internal state non-empty — deletion was silently lost"
         )
+
+
+class TestConcurrentSet:
+    """KSM-946 regression: concurrent set() calls must not raise or corrupt internal state."""
+
+    def test_concurrent_set_no_data_loss(self, tmp_path):
+        import threading
+        from keeper_secrets_manager_core.configkeys import ConfigKeys
+
+        config_path = tmp_path / "ksm-config.json"
+        config_path.write_bytes(b"placeholder")
+
+        storage = _make_storage_stub(
+            config={"clientId": "initial"},
+            config_file_location=str(config_path),
+        )
+        storage.last_saved_config_hash = ""
+
+        errors = []
+
+        with patch(
+            "keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms.encrypt_buffer",
+            return_value=b"fake-blob",
+        ), patch.object(storage, "create_config_file_if_missing"):
+            barrier = threading.Barrier(2)
+
+            def writer(value):
+                try:
+                    barrier.wait()
+                    for _ in range(200):
+                        storage.set(ConfigKeys.KEY_CLIENT_ID, value)
+                except Exception as e:
+                    errors.append(e)
+
+            t1 = threading.Thread(target=writer, args=("value_A",))
+            t2 = threading.Thread(target=writer, args=("value_B",))
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+
+        assert not errors, f"Concurrent set() raised: {errors}"
+        final = storage.config.get("clientId")
+        assert final in ("value_A", "value_B"), f"Config corrupted: {storage.config}"

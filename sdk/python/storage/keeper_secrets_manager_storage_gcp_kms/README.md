@@ -87,6 +87,7 @@ Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager
 - Fixed `decrypt_config()` default `autosave` from `True` to `False` — calling without arguments no longer writes plaintext credentials to disk (KSM-944)
 - Fixed `delete()` of the last config key silently lost — key remained in memory and on disk after deletion due to interaction between the copy-isolation fix and an empty-dict falsy-check in the save path
 - Fixed `key_version` silently ignored on symmetric decrypt — `client.decrypt()` now uses the version-pinned key name, preventing GCP silent fallback to the primary key version
+- Fixed thread-safety: added `threading.RLock` to `GCPKeyValueStorage` — concurrent `set()` / `delete()` calls no longer race on the config dict or the encrypt-and-write sequence (KSM-946)
 
 ### 1.0.1
 
