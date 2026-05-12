@@ -1,6 +1,17 @@
 name: Publish to PyPI (Python SDK Storage GCP KMS)
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to PyPI (uncheck to build and scan SBOM only)'
+        required: false
+        default: 'true'
+        type: boolean
+      repository-url:
+        description: 'PyPI upload URL — set to https://test.pypi.org/legacy/ to validate trusted publishing without a real release'
+        required: false
+        default: 'https://upload.pypi.org/legacy/'
+        type: string
 
 permissions:
   contents: read
@@ -21,23 +32,32 @@ jobs:
         run: |
           VERSION=$(grep -Po 'version\s*=\s*["\x27]\K[^\x27"]*' pyproject.toml | head -1)
           echo "Version: $VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   validate-versions:
     name: Validate version not yet published
     needs: get-versions
     runs-on: ubuntu-latest
     steps:
-      - name: Check version not on PyPI
+      - name: Check version not on target registry
+        env:
+          REPO_URL: ${{ inputs.repository-url }}
+          VERSION: ${{ needs.get-versions.outputs.version }}
         run: |
-          VERSION="${{ needs.get-versions.outputs.version }}"
-          echo "Checking keeper-secrets-manager-storage-gcp-kms $VERSION..."
-          STATUS=$(curl -sS -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/keeper-secrets-manager-storage-gcp-kms/${VERSION}/json")
+          if echo "$REPO_URL" | grep -q "test.pypi.org"; then
+            CHECK_URL="https://test.pypi.org/pypi/keeper-secrets-manager-storage-gcp-kms/${VERSION}/json"
+            REGISTRY="TestPyPI"
+          else
+            CHECK_URL="https://pypi.org/pypi/keeper-secrets-manager-storage-gcp-kms/${VERSION}/json"
+            REGISTRY="PyPI"
+          fi
+          echo "Checking $REGISTRY for keeper-secrets-manager-storage-gcp-kms $VERSION..."
+          STATUS=$(curl -sS -o /dev/null -w "%{http_code}" "$CHECK_URL")
           if [ "$STATUS" = "200" ]; then
-            echo "::error::keeper-secrets-manager-storage-gcp-kms ${VERSION} is already on PyPI. Aborting."
+            echo "::error::keeper-secrets-manager-storage-gcp-kms ${VERSION} is already on $REGISTRY. Aborting."
             exit 1
           fi
-          echo "keeper-secrets-manager-storage-gcp-kms $VERSION not yet on PyPI - ok to proceed"
+          echo "keeper-secrets-manager-storage-gcp-kms $VERSION not yet on $REGISTRY - ok to proceed"
 
   generate-sbom:
     name: Generate and publish SBOM
@@ -49,9 +69,9 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version: '3.12'
+          python-version: '3.11'
 
       - name: Install package from source into scan target
         run: |
@@ -66,9 +86,9 @@ jobs:
       - name: Generate and publish SBOM
         env:
           MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+          VERSION: ${{ needs.get-versions.outputs.version }}
         run: |
           SCAN_TARGET=/tmp/scan-target
-          VERSION="${{ needs.get-versions.outputs.version }}"
 
           echo "Scanning: $SCAN_TARGET"
           echo "Packages installed:"
@@ -82,53 +102,61 @@ jobs:
             --file=sbom.json \
             --api-key="${MANIFEST_TOKEN}" \
             --publish=true \
-            --asset-label=ksm,storage,gcp,python,security
+            --asset-label=ksm,storage,gcp,python,security 2>&1 || \
+          manifest sbom "$SCAN_TARGET" \
+            --generator=syft \
+            --name=keeper-secrets-manager-storage-gcp-kms \
+            --version="${VERSION}" \
+            --output=spdx-json \
+            --file=sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --label=ksm,storage,gcp,python,security
 
       - name: Archive SBOM
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-${{ needs.get-versions.outputs.version }}
           path: sbom.json
-          retention-days: 90
+          retention-days: 10
 
   publish:
-    name: Publish KSM Python SDK Storage GCP KMS to PyPI
+    name: Publish to PyPI
     needs: [generate-sbom, get-versions]
+    if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    permissions:
+      id-token: write
 
     steps:
-      - name: Get the source code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up Python 3.9
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version: 3.12
-
-      - name: Retrieve secrets from KSM
-        id: ksmsecrets
-        uses: Keeper-Security/ksm-action@37abbada28637b6478ba845e73d3f8b9676572fe # v1.3.0
-        with:
-          keeper-secret-config: ${{ secrets.KSM_PYPI_PUBLISHER_PYPI_SDK_CONFIG }}
-          secrets: |
-            -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN_GCP_KMS
+          python-version: '3.9'
 
       - name: Install build tools
         run: |
           python3 -m pip install --upgrade pip setuptools
-          python3 -m pip install build twine 'wheel>=0.46.3'  # wheel pin: CVE-2026-24049
+          python3 -m pip install build 'wheel>=0.46.3'  # wheel pin: CVE-2026-24049
 
-      - name: Build and Publish
+      - name: Build
         working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ steps.ksmsecrets.outputs.PYPI_API_TOKEN_GCP_KMS }}
+        run: python3 -m build --no-isolation
+
+      - name: Verify import
+        working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
         run: |
-          python3 -m build --no-isolation
           python3 -m pip install dist/*.whl
-          python3 -c "import keeper_secrets_manager_storage_gcp_kms; print('import OK')"
-          python3 -m twine upload --verbose dist/*
+          python3 -c "from keeper_secrets_manager_storage_gcp_kms import GCPKeyValueStorage; print('import OK')"
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        with:
+          packages-dir: sdk/python/storage/keeper_secrets_manager_storage_gcp_kms/dist/
+          repository-url: ${{ inputs.repository-url }}
