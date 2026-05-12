@@ -80,6 +80,7 @@ Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager
 - Updated minimum `keeper-secrets-manager-core` dependency to 17.2.0
 - Fixed CVE-2026-0994: protobuf JSON recursion DoS (upgraded to `protobuf>=6.33.5`)
 - Fixed CVE-2026-26007: cryptography subgroup attack (upgraded to `cryptography>=46.0.5`)
+- Fixed silent failure when `cloudkms.cryptoKeys.get` is denied — `GCPKeyValueStorage` now raises on init instead of leaving the config file unencrypted on disk
 
 ### 1.0.1
 
