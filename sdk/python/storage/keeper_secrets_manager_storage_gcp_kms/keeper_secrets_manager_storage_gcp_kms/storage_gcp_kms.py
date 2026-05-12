@@ -38,7 +38,7 @@ class GCPKeyValueStorage(KeyValueStorage):
     config_file_location: str
     gcp_session_config: GCPKMSClientConfig
     is_asymmetric: bool = False
-    key_purpose_details: str
+    key_purpose_details: Optional[str] = None
     
     def __init__(self, key_vault_config_file_location: str , gcp_key_config: GCPKeyConfig, gcp_session_config: GCPKMSClientConfig, logger: Logger = None):
         self.config_file_location = os.path.abspath(key_vault_config_file_location) or os.getenv('KSM_CONFIG_FILE') or os.path.abspath(self.default_config_file_location)
@@ -80,8 +80,9 @@ class GCPKeyValueStorage(KeyValueStorage):
 
         except Exception as err:
             self.logger.error(f"Failed to get key details: {err}")
-            
-            
+            raise
+
+
     def create_config_file_if_missing(self):
         try:
             self.logger.info(f"config file path {self.config_file_location}")
@@ -204,7 +205,8 @@ class GCPKeyValueStorage(KeyValueStorage):
 
         except Exception as err:
             self.logger.error(f"Error saving config: {err}")
-            
+            raise
+
     def load_config(self) -> None:
         self.create_config_file_if_missing()
 
