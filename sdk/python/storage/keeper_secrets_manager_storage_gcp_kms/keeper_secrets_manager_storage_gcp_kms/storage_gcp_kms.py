@@ -162,12 +162,12 @@ class GCPKeyValueStorage(KeyValueStorage):
             # Retrieve current config
             config = self.config or {}
             config_json = json.dumps(config, sort_keys=True, indent=4)
-            config_hash = hashlib.md5(config_json.encode()).hexdigest()
+            config_hash = hashlib.sha256(config_json.encode()).hexdigest()
 
             # Compare updated_config hash with current config hash
             if updated_config:
                 updated_config_json = json.dumps(updated_config, sort_keys=True, indent=4)
-                updated_config_hash = hashlib.md5(updated_config_json.encode()).hexdigest()
+                updated_config_hash = hashlib.sha256(updated_config_json.encode()).hexdigest()
 
                 if updated_config_hash != config_hash:
                     config_hash = updated_config_hash
@@ -236,7 +236,7 @@ class GCPKeyValueStorage(KeyValueStorage):
                 if config:
                     self.config = config
                     self.__save_config(config)
-                    self.last_saved_config_hash = hashlib.md5(
+                    self.last_saved_config_hash = hashlib.sha256(
                         json.dumps(config, sort_keys=True, indent=4).encode()
                     ).hexdigest()
             except Exception as err:
@@ -257,7 +257,7 @@ class GCPKeyValueStorage(KeyValueStorage):
                 try:
                     config = json.loads(config_json)
                     self.config = config or {}
-                    self.last_saved_config_hash = hashlib.md5(
+                    self.last_saved_config_hash = hashlib.sha256(
                         json.dumps(config, sort_keys=True, indent=4).encode()
                     ).hexdigest()
                 except Exception as err:

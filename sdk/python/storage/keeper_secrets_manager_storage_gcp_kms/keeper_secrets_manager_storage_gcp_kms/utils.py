@@ -36,8 +36,8 @@ def encrypt_buffer(is_asymmetric, message, crypto_client, key_properties,encrypt
         # Generate a random 32-byte key
         key = get_random_bytes(32)
 
-        # Create AES-GCM cipher instance
-        cipher = AES.new(key, AES.MODE_GCM)
+        # Create AES-GCM cipher instance with 96-bit nonce (NIST SP 800-38D recommended)
+        cipher = AES.new(key, AES.MODE_GCM, nonce=get_random_bytes(12))
 
         # Encrypt the message
         ciphertext, tag = cipher.encrypt_and_digest(
