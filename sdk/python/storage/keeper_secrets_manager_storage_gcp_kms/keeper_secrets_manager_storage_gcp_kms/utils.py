@@ -72,7 +72,7 @@ def encrypt_buffer(is_asymmetric, message, crypto_client, key_properties,encrypt
 
         return buffers
     except Exception as err:
-        logger.error(f"KCP KMS Storage failed to encrypt: {err}")
+        logger.error(f"GCP KMS Storage failed to encrypt: {err}")
         raise
 
 
