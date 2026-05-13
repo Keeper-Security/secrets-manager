@@ -355,7 +355,7 @@ class TestConcurrentSet:
 
 class TestChangeKeyRaisesOnFailure:
     """KSM-942 regression: change_key() must raise (not return True) when re-encryption fails,
-    and must restore all key-related state so the storage remains functional with the original key.
+    and the active key config (gcp_key_config) must be restored so the storage remains functional.
     """
 
     def test_change_key_raises_when_get_key_details_fails(self):
