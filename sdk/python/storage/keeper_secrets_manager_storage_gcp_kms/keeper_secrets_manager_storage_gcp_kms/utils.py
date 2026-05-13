@@ -213,8 +213,8 @@ def decrypt_buffer(is_asymmetric, ciphertext, crypto_client, key_properties,logg
         # Convert decrypted data to a UTF-8 string
         return decrypted.decode()
     except Exception as err:
-        logger.warning(f"Google KMS KeyVault Storage failed to decrypt: {err}")
-        return ""  # Return empty string in case of an error
+        logger.error(f"Google KMS KeyVault Storage failed to decrypt: {err}")
+        raise
 
 
 def decrypt_data_and_validate_crc(options):
