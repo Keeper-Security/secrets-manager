@@ -453,6 +453,33 @@ class TestEncryptBufferPropagatesKMSError:
             with pytest.raises(Exception, match="KMS unavailable"):
                 storage.set(ConfigKeys.KEY_CLIENT_ID, "new-value")
 
+        assert storage.config == {"clientId": "original"}, (
+            "set() raised but self.config was mutated — in-memory and on-disk state diverged"
+        )
+
+    def test_delete_does_not_mutate_on_kms_failure(self, tmp_path):
+        from keeper_secrets_manager_core.configkeys import ConfigKeys
+
+        config_path = tmp_path / "ksm-config.json"
+        config_path.write_bytes(b"placeholder")
+
+        storage = _make_storage_stub(
+            config={"clientId": "original", "appKey": "secret"},
+            config_file_location=str(config_path),
+        )
+        storage.last_saved_config_hash = ""
+
+        with patch(
+            "keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms.encrypt_buffer",
+            side_effect=Exception("KMS unavailable"),
+        ), patch.object(storage, "create_config_file_if_missing"):
+            with pytest.raises(Exception, match="KMS unavailable"):
+                storage.delete(ConfigKeys.KEY_CLIENT_ID)
+
+        assert storage.config == {"clientId": "original", "appKey": "secret"}, (
+            "delete() raised but self.config was mutated — in-memory and on-disk state diverged"
+        )
+
 
 class TestDeleteAllWipesDisk:
     """KSM-940 regression: delete_all() must remove the config file from disk so no credential

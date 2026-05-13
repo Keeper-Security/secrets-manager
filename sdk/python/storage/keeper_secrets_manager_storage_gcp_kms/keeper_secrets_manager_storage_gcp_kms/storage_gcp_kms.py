@@ -162,33 +162,36 @@ class GCPKeyValueStorage(KeyValueStorage):
 
             return plaintext
     
-    def __save_config(self, updated_config: Dict[str, str] = {}, force: bool = False) -> None:
+    def __save_config(self, updated_config: Optional[Dict[str, str]] = None, force: bool = False) -> None:
         try:
             # Retrieve current config
             config = self.config or {}
             config_json = json.dumps(config, sort_keys=True, indent=4)
             config_hash = hashlib.sha256(config_json.encode()).hexdigest()
 
-            # Compare updated_config hash with current config hash
-            if updated_config:
-                updated_config_json = json.dumps(updated_config, sort_keys=True, indent=4)
-                updated_config_hash = hashlib.sha256(updated_config_json.encode()).hexdigest()
-
-                if updated_config_hash != config_hash:
-                    config_hash = updated_config_hash
-                    config_json = updated_config_json
-                    self.config = dict(updated_config)  # Update the current config
+            # Resolve the candidate config without mutating self.config yet. self.config is
+            # only committed after the encrypted blob is successfully written to disk so a
+            # KMS or I/O failure cannot leave in-memory state ahead of the on-disk file.
+            # `updated_config is None` means "re-encrypt the current self.config"; an empty
+            # dict {} is a legitimate override (e.g. delete-of-last-key).
+            if updated_config is not None:
+                new_config = dict(updated_config)
+                new_config_json = json.dumps(new_config, sort_keys=True, indent=4)
+                new_config_hash = hashlib.sha256(new_config_json.encode()).hexdigest()
+            else:
+                new_config = config
+                new_config_hash = config_hash
 
             # Check if saving is necessary
-            if not force and config_hash == self.last_saved_config_hash:
+            if not force and new_config_hash == self.last_saved_config_hash:
                 self.logger.warning("Skipped config JSON save. No changes detected.")
                 return
 
             # Ensure the config file exists
             self.create_config_file_if_missing()
 
-            # Encrypt the config JSON and write to the file
-            stringified_value = json.dumps(self.config, sort_keys=True, indent=4)
+            # Encrypt the candidate config JSON and write to the file
+            stringified_value = json.dumps(new_config, sort_keys=True, indent=4)
             token=None
             if self.key_purpose_details == KeyPurpose.RAW_ENCRYPT_DECRYPT:
                 token = self.gcp_session_config.getToken()
@@ -204,8 +207,9 @@ class GCPKeyValueStorage(KeyValueStorage):
             with open(self.config_file_location, 'wb') as config_file:
                 config_file.write(blob)
 
-            # Update the last saved config hash
-            self.last_saved_config_hash = config_hash
+            # Commit the new state only after the disk write succeeded
+            self.config = new_config
+            self.last_saved_config_hash = new_config_hash
 
         except Exception as err:
             self.logger.error(f"Error saving config: {err}")
@@ -292,7 +296,7 @@ class GCPKeyValueStorage(KeyValueStorage):
                     self.load_config()
                 self.gcp_key_config = new_gcp_key_config
                 self.get_key_details()
-                self.__save_config({}, force=True)
+                self.__save_config(force=True)
             except Exception as error:
                 # Restore all key-related state if the operation fails
                 self.gcp_key_config = old_key_configuration
@@ -331,12 +335,13 @@ class GCPKeyValueStorage(KeyValueStorage):
     def delete(self, key: ConfigKeys):
         with self._lock:
             kv = key.value
-            if kv in self.config:
-                del self.config[kv]
+            new_config = dict(self.config)
+            if kv in new_config:
+                del new_config[kv]
                 self.logger.debug("Removed key %s" % kv)
             else:
                 self.logger.debug("No key %s was found in config" % kv)
-            self.save_storage(self.config)
+            self.save_storage(new_config)
             return dict(self.config)
 
     def delete_all(self):
