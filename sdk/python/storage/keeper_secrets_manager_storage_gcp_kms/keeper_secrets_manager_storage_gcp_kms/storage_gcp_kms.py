@@ -341,9 +341,10 @@ class GCPKeyValueStorage(KeyValueStorage):
 
     def delete_all(self):
         with self._lock:
-            self.read_storage()
+            if os.path.exists(self.config_file_location):
+                os.remove(self.config_file_location)
             self.config.clear()
-            self.save_storage(self.config)
+            self.last_saved_config_hash = ""
             return dict(self.config)
 
     def contains(self, key: ConfigKeys):
