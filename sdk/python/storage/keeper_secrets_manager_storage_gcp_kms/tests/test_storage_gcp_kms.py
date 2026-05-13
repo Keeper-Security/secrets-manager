@@ -222,44 +222,60 @@ class TestDecryptConfigDefaultAutosaveFalse:
         assert config_path.read_text() == plaintext
 
 
-class TestSymmetricDecryptVersionPinning:
-    """KSM-945 regression: symmetric client.decrypt must use the version-pinned key name."""
+class TestSymmetricDecryptUsesUnversionedName:
+    """KSM-945: GCP cryptoKeys.decrypt requires the unversioned CryptoKey name;
+    the version is read from the ciphertext envelope. A versioned CryptoKeyVersion
+    path is rejected with INVALID_ARGUMENT. Only asymmetric_decrypt takes a version.
+    """
 
-    def test_client_decrypt_called_with_versioned_key_name(self):
-        from keeper_secrets_manager_storage_gcp_kms.utils import decrypt_data_and_validate_crc
+    VERSIONED = "projects/p/locations/global/keyRings/r/cryptoKeys/k/cryptoKeyVersions/1"
+    UNVERSIONED = "projects/p/locations/global/keyRings/r/cryptoKeys/k"
 
-        versioned_name = "projects/p/locations/global/keyRings/r/cryptoKeys/k/cryptoKeyVersions/1"
-        unversioned_name = "projects/p/locations/global/keyRings/r/cryptoKeys/k"
-
+    def _decrypt_options(self, is_asymmetric, client):
         key_props = MagicMock()
-        key_props.to_resource_name.return_value = versioned_name
-        key_props.to_key_name.return_value = unversioned_name
-
-        fake_plaintext = get_random_bytes(32)
-        fake_plaintext_crc = google_crc32c.value(fake_plaintext)
-
-        client = MagicMock()
-        client.decrypt.return_value = MagicMock(
-            plaintext=fake_plaintext,
-            plaintext_crc32c=fake_plaintext_crc,
-        )
-
-        options = {
+        key_props.to_resource_name.return_value = self.VERSIONED
+        key_props.to_key_name.return_value = self.UNVERSIONED
+        return {
             "ciphertext": get_random_bytes(32),
             "crypto_client": client,
             "key_properties": key_props,
-            "is_asymmetric": False,
+            "is_asymmetric": is_asymmetric,
             "token": None,
             "logger": logging.getLogger("test"),
         }
 
-        decrypt_data_and_validate_crc(options)
+    def _make_client(self, attr):
+        fake_plaintext = get_random_bytes(32)
+        fake_plaintext_crc = google_crc32c.value(fake_plaintext)
+        client = MagicMock()
+        getattr(client, attr).return_value = MagicMock(
+            plaintext=fake_plaintext,
+            plaintext_crc32c=fake_plaintext_crc,
+        )
+        return client
+
+    def test_symmetric_decrypt_uses_unversioned_key_name(self):
+        from keeper_secrets_manager_storage_gcp_kms.utils import decrypt_data_and_validate_crc
+
+        client = self._make_client("decrypt")
+        decrypt_data_and_validate_crc(self._decrypt_options(False, client))
 
         called_name = client.decrypt.call_args[1]["request"].name
-        assert called_name == versioned_name, (
-            f"Expected version-pinned key name, got: {called_name}"
+        assert called_name == self.UNVERSIONED, (
+            f"symmetric decrypt must use unversioned CryptoKey name, got: {called_name}"
         )
-        assert called_name != unversioned_name
+        assert "cryptoKeyVersions" not in called_name
+
+    def test_asymmetric_decrypt_uses_versioned_resource_name(self):
+        from keeper_secrets_manager_storage_gcp_kms.utils import decrypt_data_and_validate_crc
+
+        client = self._make_client("asymmetric_decrypt")
+        decrypt_data_and_validate_crc(self._decrypt_options(True, client))
+
+        called_name = client.asymmetric_decrypt.call_args[1]["request"].name
+        assert called_name == self.VERSIONED, (
+            f"asymmetric decrypt must use versioned CryptoKeyVersion name, got: {called_name}"
+        )
 
 
 class TestDeleteLastKeyPersists:
