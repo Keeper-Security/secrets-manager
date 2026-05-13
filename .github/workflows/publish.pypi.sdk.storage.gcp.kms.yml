@@ -7,11 +7,6 @@ on:
         required: false
         default: 'true'
         type: boolean
-      repository-url:
-        description: 'PyPI upload URL — set to https://test.pypi.org/legacy/ to validate trusted publishing without a real release'
-        required: false
-        default: 'https://upload.pypi.org/legacy/'
-        type: string
 
 permissions:
   contents: read
@@ -41,22 +36,15 @@ jobs:
     steps:
       - name: Check version not on target registry
         env:
-          REPO_URL: ${{ inputs.repository-url }}
           VERSION: ${{ needs.get-versions.outputs.version }}
         run: |
-          if echo "$REPO_URL" | grep -q "test.pypi.org"; then
-            CHECK_URL="https://test.pypi.org/pypi/keeper-secrets-manager-storage-gcp-kms/${VERSION}/json"
-            REGISTRY="TestPyPI"
-          else
-            CHECK_URL="https://pypi.org/pypi/keeper-secrets-manager-storage-gcp-kms/${VERSION}/json"
-            REGISTRY="PyPI"
-          fi
-          echo "Checking $REGISTRY for keeper-secrets-manager-storage-gcp-kms $VERSION..."
+          CHECK_URL="https://pypi.org/pypi/keeper-secrets-manager-storage-gcp-kms/${VERSION}/json"
+          echo "Checking PyPI for keeper-secrets-manager-storage-gcp-kms $VERSION..."
           STATUS=$(curl -sS --retry 3 --retry-delay 2 -o /dev/null -w "%{http_code}" "$CHECK_URL")
           case "$STATUS" in
-            404) echo "keeper-secrets-manager-storage-gcp-kms $VERSION not yet on $REGISTRY - ok to proceed" ;;
-            200) echo "::error::keeper-secrets-manager-storage-gcp-kms ${VERSION} is already on $REGISTRY. Aborting."; exit 1 ;;
-            *)   echo "::error::Unexpected status $STATUS from $REGISTRY. Aborting."; exit 1 ;;
+            404) echo "keeper-secrets-manager-storage-gcp-kms $VERSION not yet on PyPI - ok to proceed" ;;
+            200) echo "::error::keeper-secrets-manager-storage-gcp-kms ${VERSION} is already on PyPI. Aborting."; exit 1 ;;
+            *)   echo "::error::Unexpected status $STATUS from PyPI. Aborting."; exit 1 ;;
           esac
 
   generate-sbom:
@@ -160,4 +148,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           packages-dir: sdk/python/storage/keeper_secrets_manager_storage_gcp_kms/dist/
-          repository-url: ${{ inputs.repository-url }}
+
