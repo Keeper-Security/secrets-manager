@@ -351,3 +351,58 @@ class TestConcurrentSet:
         assert not errors, f"Concurrent set() raised: {errors}"
         final = storage.config.get("clientId")
         assert final in ("value_A", "value_B"), f"Config corrupted: {storage.config}"
+
+
+class TestChangeKeyRaisesOnFailure:
+    """KSM-942 regression: change_key() must raise (not return True) when re-encryption fails,
+    and must restore all key-related state so the storage remains functional with the original key.
+    """
+
+    def test_change_key_raises_when_get_key_details_fails(self):
+        from keeper_secrets_manager_storage_gcp_kms.kms_key_config import GCPKeyConfig
+
+        old_key_config = MagicMock(spec=GCPKeyConfig)
+        new_key_config = MagicMock(spec=GCPKeyConfig)
+
+        storage = _make_storage_stub(config={"clientId": "test-id"})
+        storage.gcp_key_config = old_key_config
+
+        with patch.object(
+            storage, "get_key_details",
+            side_effect=Exception("403 new key permission denied"),
+        ):
+            with pytest.raises(Exception):
+                storage.change_key(new_key_config)
+
+        assert storage.gcp_key_config is old_key_config, (
+            "change_key() did not restore the original key config after failure"
+        )
+
+    def test_change_key_raises_when_save_fails(self, tmp_path):
+        from keeper_secrets_manager_storage_gcp_kms.kms_key_config import GCPKeyConfig
+
+        config_path = tmp_path / "ksm-config.json"
+        config_path.write_bytes(b"placeholder")
+
+        old_key_config = MagicMock(spec=GCPKeyConfig)
+        new_key_config = MagicMock(spec=GCPKeyConfig)
+
+        storage = _make_storage_stub(
+            config={"clientId": "test-id"},
+            config_file_location=str(config_path),
+        )
+        storage.gcp_key_config = old_key_config
+        storage.last_saved_config_hash = ""
+
+        with patch.object(storage, "get_key_details"), \
+             patch(
+                 "keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms.encrypt_buffer",
+                 side_effect=Exception("KMS save failed"),
+             ), \
+             patch.object(storage, "create_config_file_if_missing"):
+            with pytest.raises(Exception):
+                storage.change_key(new_key_config)
+
+        assert storage.gcp_key_config is old_key_config, (
+            "change_key() did not restore the original key config after save failure"
+        )
