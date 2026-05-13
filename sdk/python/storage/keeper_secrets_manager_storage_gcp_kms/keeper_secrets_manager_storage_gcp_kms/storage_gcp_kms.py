@@ -138,27 +138,30 @@ class GCPKeyValueStorage(KeyValueStorage):
                 raise Exception(f"Failed to load config file {self.config_file_location}")
 
             try:
-                token=None
+                token = None
                 if self.key_purpose_details == KeyPurpose.RAW_ENCRYPT_DECRYPT:
                     token = self.gcp_session_config.getToken()
-                # Decrypt the file contents
                 plaintext = decrypt_buffer(
                     is_asymmetric=self.is_asymmetric,
                     ciphertext=ciphertext,
                     crypto_client=self.crypto_client,
                     key_properties=self.gcp_key_config,
                     token=token,
-                    logger = self.logger
+                    logger=self.logger
                 )
-                if len(plaintext) == 0:
-                    self.logger.error(f"Failed to decrypt config file {self.config_file_location}")
-                elif autosave:
-                    # Optionally autosave the decrypted content
+            except Exception as err:
+                self.logger.error(f"Failed to decrypt config file {self.config_file_location}: {err}")
+                raise Exception(f"Failed to decrypt config file {self.config_file_location}") from err
+
+            if len(plaintext) == 0:
+                self.logger.error(f"Failed to decrypt config file {self.config_file_location}")
+            elif autosave:
+                try:
                     with open(self.config_file_location, 'w') as config_file:
                         config_file.write(plaintext)
-            except Exception as err:
-                self.logger.error(f"Failed to write decrypted config file {self.config_file_location}: {err}")
-                raise Exception(f"Failed to write decrypted config file {self.config_file_location}")
+                except Exception as err:
+                    self.logger.error(f"Failed to write decrypted config file {self.config_file_location}: {err}")
+                    raise Exception(f"Failed to write decrypted config file {self.config_file_location}") from err
 
             return plaintext
     
@@ -236,7 +239,6 @@ class GCPKeyValueStorage(KeyValueStorage):
             # Check if the content is plain JSON
             config = None
             json_error = None
-            decryption_error = False
             try:
                 config_data = contents.decode()
                 config = json.loads(config_data)
@@ -269,13 +271,8 @@ class GCPKeyValueStorage(KeyValueStorage):
                         json.dumps(config, sort_keys=True, indent=4).encode()
                     ).hexdigest()
                 except Exception as err:
-                    decryption_error = True
                     self.logger.error(f"Failed to parse decrypted config file: {err}")
                     raise Exception(f"Failed to parse decrypted config file {self.config_file_location}")
-
-            if json_error and decryption_error:
-                self.logger.info(f"Config file is not a valid JSON file: {json_error}")
-                raise Exception(f"{self.config_file_location} may contain JSON format problems")
 
         except Exception as err:
             self.logger.error(f"Error loading config: {err}")
