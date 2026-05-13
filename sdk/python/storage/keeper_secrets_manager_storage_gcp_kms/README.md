@@ -92,6 +92,8 @@ Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager
 - `decrypt_config()` no longer writes plaintext credentials to disk when called without arguments (`autosave` default changed from `True` to `False`)
 - `read_storage()` now returns a copy; mutations to the returned dict no longer silently corrupt internal state
 - `delete()` of the last config key now persists correctly to disk
+- `delete_all()` now removes the config file from disk; previously it attempted to re-encrypt an empty config, leaving credentials readable if KMS was unavailable
+- `set()` now propagates `PermissionError` when the config file is read-only, preventing silent in-memory/on-disk state divergence
 - `change_key()` rolls back cleanly on failure; a failed rotation no longer leaves the storage in an inconsistent state
 - `GCPKeyValueStorage` is now thread-safe for concurrent `set()`, `delete()`, `change_key()`, and `decrypt_config()` calls (KSM-946)
 - `key_version` on `GCPKeyConfig` applies only to encrypt and asymmetric operations; symmetric `client.decrypt` uses the unversioned CryptoKey name as required by the GCP API (the server selects the version from the ciphertext envelope)
