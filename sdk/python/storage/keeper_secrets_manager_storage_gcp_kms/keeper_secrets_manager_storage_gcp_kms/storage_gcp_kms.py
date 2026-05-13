@@ -122,44 +122,45 @@ class GCPKeyValueStorage(KeyValueStorage):
             raise
             
     def decrypt_config(self, autosave: bool = False) -> str:
-        ciphertext : bytes = bytes()
-        plaintext : str= ""
+        with self._lock:
+            ciphertext : bytes = bytes()
+            plaintext : str= ""
 
-        try:
-            # Read the config file
-            with open(self.config_file_location, 'rb') as config_file:
-                ciphertext = config_file.read()
-            if len(ciphertext) == 0:
-                self.logger.warning(f"Empty config file {self.config_file_location}")
-                return ""
-        except Exception as err:
-            self.logger.error(f"Failed to load config file {self.config_file_location}: {err}")
-            raise Exception(f"Failed to load config file {self.config_file_location}")
+            try:
+                # Read the config file
+                with open(self.config_file_location, 'rb') as config_file:
+                    ciphertext = config_file.read()
+                if len(ciphertext) == 0:
+                    self.logger.warning(f"Empty config file {self.config_file_location}")
+                    return ""
+            except Exception as err:
+                self.logger.error(f"Failed to load config file {self.config_file_location}: {err}")
+                raise Exception(f"Failed to load config file {self.config_file_location}")
 
-        try:
-            token=None
-            if self.key_purpose_details == KeyPurpose.RAW_ENCRYPT_DECRYPT:
-                token = self.gcp_session_config.getToken()
-            # Decrypt the file contents
-            plaintext = decrypt_buffer(
-                is_asymmetric=self.is_asymmetric,
-                ciphertext=ciphertext,
-                crypto_client=self.crypto_client,
-                key_properties=self.gcp_key_config,
-                token=token,
-                logger = self.logger
-            )
-            if len(plaintext) == 0:
-                self.logger.error(f"Failed to decrypt config file {self.config_file_location}")
-            elif autosave:
-                # Optionally autosave the decrypted content
-                with open(self.config_file_location, 'w') as config_file:
-                    config_file.write(plaintext)
-        except Exception as err:
-            self.logger.error(f"Failed to write decrypted config file {self.config_file_location}: {err}")
-            raise Exception(f"Failed to write decrypted config file {self.config_file_location}")
+            try:
+                token=None
+                if self.key_purpose_details == KeyPurpose.RAW_ENCRYPT_DECRYPT:
+                    token = self.gcp_session_config.getToken()
+                # Decrypt the file contents
+                plaintext = decrypt_buffer(
+                    is_asymmetric=self.is_asymmetric,
+                    ciphertext=ciphertext,
+                    crypto_client=self.crypto_client,
+                    key_properties=self.gcp_key_config,
+                    token=token,
+                    logger = self.logger
+                )
+                if len(plaintext) == 0:
+                    self.logger.error(f"Failed to decrypt config file {self.config_file_location}")
+                elif autosave:
+                    # Optionally autosave the decrypted content
+                    with open(self.config_file_location, 'w') as config_file:
+                        config_file.write(plaintext)
+            except Exception as err:
+                self.logger.error(f"Failed to write decrypted config file {self.config_file_location}: {err}")
+                raise Exception(f"Failed to write decrypted config file {self.config_file_location}")
 
-        return plaintext
+            return plaintext
     
     def __save_config(self, updated_config: Dict[str, str] = {}, force: bool = False) -> None:
         try:
@@ -277,33 +278,34 @@ class GCPKeyValueStorage(KeyValueStorage):
             raise err
         
     def change_key(self, new_gcp_key_config: GCPKeyConfig) -> bool:
-        old_key_configuration = self.gcp_key_config
-        old_crypto_client = self.crypto_client
-        old_key_purpose_details = self.key_purpose_details
-        old_encryption_algorithm = self.encryption_algorithm
-        old_is_asymmetric = self.is_asymmetric
+        with self._lock:
+            old_key_configuration = self.gcp_key_config
+            old_crypto_client = self.crypto_client
+            old_key_purpose_details = self.key_purpose_details
+            old_encryption_algorithm = self.encryption_algorithm
+            old_is_asymmetric = self.is_asymmetric
 
-        try:
-            # Update the key and reinitialize the CryptographyClient
-            config = self.config
-            if not config:
-                self.load_config()
-            self.gcp_key_config = new_gcp_key_config
-            self.get_key_details()
-            self.__save_config({}, force=True)
-        except Exception as error:
-            # Restore all key-related state if the operation fails
-            self.gcp_key_config = old_key_configuration
-            self.crypto_client = old_crypto_client
-            self.key_purpose_details = old_key_purpose_details
-            self.encryption_algorithm = old_encryption_algorithm
-            self.is_asymmetric = old_is_asymmetric
-            self.logger.error(
-                f"Failed to change the key to '{new_gcp_key_config.to_key_name()}' for config '{self.config_file_location}': {error}"
-            )
-            raise Exception(f"Failed to change the key for {self.config_file_location}")
+            try:
+                # Update the key and reinitialize the CryptographyClient
+                config = self.config
+                if not config:
+                    self.load_config()
+                self.gcp_key_config = new_gcp_key_config
+                self.get_key_details()
+                self.__save_config({}, force=True)
+            except Exception as error:
+                # Restore all key-related state if the operation fails
+                self.gcp_key_config = old_key_configuration
+                self.crypto_client = old_crypto_client
+                self.key_purpose_details = old_key_purpose_details
+                self.encryption_algorithm = old_encryption_algorithm
+                self.is_asymmetric = old_is_asymmetric
+                self.logger.error(
+                    f"Failed to change the key to '{new_gcp_key_config.to_key_name()}' for config '{self.config_file_location}': {error}"
+                )
+                raise Exception(f"Failed to change the key for {self.config_file_location}")
 
-        return True
+            return True
     
     def read_storage(self) -> Dict[str, str]:
         with self._lock:

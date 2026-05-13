@@ -76,22 +76,25 @@ Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager
 
 ### 1.1.0
 
-- Raised minimum Python version to 3.9
-- Updated minimum `keeper-secrets-manager-core` dependency to 17.2.1
-- Fixed CVE-2026-0994: protobuf JSON recursion DoS (upgraded to `protobuf>=6.33.5`)
-- Fixed CVE-2026-26007: cryptography subgroup attack (upgraded to `cryptography>=46.0.5`)
-- Fixed silent failure when `cloudkms.cryptoKeys.get` is denied — `GCPKeyValueStorage` now raises on init instead of leaving the config file unencrypted on disk
-- Fixed AES-GCM nonce to 96-bit/12-byte per NIST SP 800-38D (was 128-bit/16-byte PyCryptodome default); existing encrypted blobs remain readable
+**Requirements:**
+- Minimum Python version raised to 3.9; users on Python 3.6–3.8 should pin to `<1.1.0`
+- Minimum `keeper-secrets-manager-core` dependency raised to 17.2.1
+
+**Security:**
+- Fixed CVE-2026-0994: upgraded `protobuf` to ≥6.33.5 (JSON recursion DoS)
+- Fixed CVE-2026-26007: upgraded `cryptography` to ≥46.0.5 (subgroup attack)
+- Fixed AES-GCM nonce from 128-bit (PyCryptodome default) to 96-bit per NIST SP 800-38D; existing encrypted blobs remain readable
 - Replaced MD5 with SHA-256 for config change detection
-- Fixed `read_storage()` returning a live dict reference — caller mutations no longer silently corrupt internal state without triggering encryption (KSM-944)
-- Fixed `decrypt_config()` default `autosave` from `True` to `False` — calling without arguments no longer writes plaintext credentials to disk (KSM-944)
-- Fixed `delete()` of the last config key silently lost — key remained in memory and on disk after deletion due to interaction between the copy-isolation fix and an empty-dict falsy-check in the save path
-- Documented GCP's version-from-envelope behavior on symmetric decrypt (KSM-945): `cryptoKeys.decrypt` accepts only the unversioned CryptoKey resource — the server reads the version from the ciphertext envelope (this is required for key rotation). `key_version` on `GCPKeyConfig` therefore applies only to encrypt and asymmetric paths. A prior attempt to "pin" the version on this path passed a `cryptoKeyVersions/...` resource to `client.decrypt`, which GCP rejects with `400 INVALID_ARGUMENT`; that change has been reverted to match the JS and Java siblings
-- Fixed thread-safety: added `threading.RLock` to `GCPKeyValueStorage` — concurrent `set()` / `delete()` calls no longer race on the config dict or the encrypt-and-write sequence (KSM-946)
-- Fixed `encrypt_buffer` silently swallowing KMS/network errors — failures now raise so callers see the error rather than proceeding with a plaintext credential file left on disk
-- Fixed `create_config_file_if_missing` swallowing init errors — failures now propagate to the caller
-- Fixed `change_key` incomplete rollback — all key-related attributes (`gcp_key_config`, `crypto_client`, `key_purpose_details`, `encryption_algorithm`, `is_asymmetric`) are now restored on failure; previously a failed rotation left the storage in an inconsistent state where encryption was routed through mismatched key config
-- Fixed `load_config` misclassifying KMS/disk errors as JSON parse failures — the plain-JSON detection block now only catches `JSONDecodeError` and `UnicodeDecodeError`
+
+**Bug fixes:**
+- `GCPKeyValueStorage` now raises on init when `cloudkms.cryptoKeys.get` is denied, instead of proceeding with the config file left unencrypted on disk
+- KMS errors (permission denials, network failures, decryption failures) now propagate as exceptions instead of being silently swallowed or reported as misleading JSON parse errors
+- `decrypt_config()` no longer writes plaintext credentials to disk when called without arguments (`autosave` default changed from `True` to `False`)
+- `read_storage()` now returns a copy; mutations to the returned dict no longer silently corrupt internal state
+- `delete()` of the last config key now persists correctly to disk
+- `change_key()` rolls back cleanly on failure; a failed rotation no longer leaves the storage in an inconsistent state
+- `GCPKeyValueStorage` is now thread-safe for concurrent `set()`, `delete()`, `change_key()`, and `decrypt_config()` calls (KSM-946)
+- `key_version` on `GCPKeyConfig` applies only to encrypt and asymmetric operations; symmetric `client.decrypt` uses the unversioned CryptoKey name as required by the GCP API (the server selects the version from the ciphertext envelope)
 
 ### 1.0.1
 
