@@ -34,7 +34,7 @@ class GCPKeyValueStorage(KeyValueStorage):
     
     default_config_file_location: str = "client-config.json"
     crypto_client: KMSClient
-    config: Dict[str, str] = {}
+    config: Optional[Dict[str, str]] = None
     last_saved_config_hash: str
     logger: Logger
     gcp_key_config: GCPKeyConfig
@@ -281,7 +281,6 @@ class GCPKeyValueStorage(KeyValueStorage):
     def change_key(self, new_gcp_key_config: GCPKeyConfig) -> bool:
         with self._lock:
             old_key_configuration = self.gcp_key_config
-            old_crypto_client = self.crypto_client
             old_key_purpose_details = self.key_purpose_details
             old_encryption_algorithm = self.encryption_algorithm
             old_is_asymmetric = self.is_asymmetric
@@ -289,7 +288,7 @@ class GCPKeyValueStorage(KeyValueStorage):
             try:
                 # Update the key and reinitialize the CryptographyClient
                 config = self.config
-                if not config:
+                if config is None:
                     self.load_config()
                 self.gcp_key_config = new_gcp_key_config
                 self.get_key_details()
@@ -297,7 +296,6 @@ class GCPKeyValueStorage(KeyValueStorage):
             except Exception as error:
                 # Restore all key-related state if the operation fails
                 self.gcp_key_config = old_key_configuration
-                self.crypto_client = old_crypto_client
                 self.key_purpose_details = old_key_purpose_details
                 self.encryption_algorithm = old_encryption_algorithm
                 self.is_asymmetric = old_is_asymmetric
@@ -310,7 +308,7 @@ class GCPKeyValueStorage(KeyValueStorage):
     
     def read_storage(self) -> Dict[str, str]:
         with self._lock:
-            if not self.config:
+            if self.config is None:
                 self.load_config()
             return dict(self.config)
 
@@ -345,9 +343,9 @@ class GCPKeyValueStorage(KeyValueStorage):
         with self._lock:
             if os.path.exists(self.config_file_location):
                 os.remove(self.config_file_location)
-            self.config.clear()
+            self.config = {}
             self.last_saved_config_hash = ""
-            return dict(self.config)
+            return {}
 
     def contains(self, key: ConfigKeys):
         config = self.read_storage()

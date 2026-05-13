@@ -6,13 +6,11 @@ on:
       - 'release/storage/python/gcp-kms/**'
     paths:
       - 'sdk/python/storage/keeper_secrets_manager_storage_gcp_kms/**'
-      - 'sdk/python/core/**'
       - '.github/workflows/test.python.storage.gcp.kms.yml'
   pull_request:
     branches: [ master ]
     paths:
       - 'sdk/python/storage/keeper_secrets_manager_storage_gcp_kms/**'
-      - 'sdk/python/core/**'
       - '.github/workflows/test.python.storage.gcp.kms.yml'
   workflow_dispatch:
 

@@ -314,7 +314,7 @@ class TestDeleteLastKeyPersists:
 
 
 class TestConcurrentSet:
-    """KSM-946 regression: concurrent set() calls must not raise or corrupt internal state."""
+    """KSM-946 regression: concurrent set() calls must not raise or lose writes."""
 
     def test_concurrent_set_no_data_loss(self, tmp_path):
         import threading
@@ -323,8 +323,11 @@ class TestConcurrentSet:
         config_path = tmp_path / "ksm-config.json"
         config_path.write_bytes(b"placeholder")
 
+        # Two threads write to different keys concurrently. Without RLock, one thread's
+        # read-mutate-save cycle overwrites the other's key entirely. With RLock each
+        # cycle is atomic, so both keys survive.
         storage = _make_storage_stub(
-            config={"clientId": "initial"},
+            config={},
             config_file_location=str(config_path),
         )
         storage.last_saved_config_hash = ""
@@ -337,24 +340,36 @@ class TestConcurrentSet:
         ), patch.object(storage, "create_config_file_if_missing"):
             barrier = threading.Barrier(2)
 
-            def writer(value):
+            def writer_a():
                 try:
                     barrier.wait()
                     for _ in range(200):
-                        storage.set(ConfigKeys.KEY_CLIENT_ID, value)
+                        storage.set(ConfigKeys.KEY_CLIENT_ID, "value_A")
                 except Exception as e:
                     errors.append(e)
 
-            t1 = threading.Thread(target=writer, args=("value_A",))
-            t2 = threading.Thread(target=writer, args=("value_B",))
+            def writer_b():
+                try:
+                    barrier.wait()
+                    for _ in range(200):
+                        storage.set(ConfigKeys.KEY_APP_KEY, "value_B")
+                except Exception as e:
+                    errors.append(e)
+
+            t1 = threading.Thread(target=writer_a)
+            t2 = threading.Thread(target=writer_b)
             t1.start()
             t2.start()
             t1.join()
             t2.join()
 
         assert not errors, f"Concurrent set() raised: {errors}"
-        final = storage.config.get("clientId")
-        assert final in ("value_A", "value_B"), f"Config corrupted: {storage.config}"
+        assert storage.config.get("clientId") == "value_A", (
+            f"KEY_CLIENT_ID lost to concurrent set() race: config={storage.config}"
+        )
+        assert storage.config.get("appKey") == "value_B", (
+            f"KEY_APP_KEY lost to concurrent set() race: config={storage.config}"
+        )
 
 
 class TestChangeKeyRaisesOnFailure:
@@ -384,31 +399,49 @@ class TestChangeKeyRaisesOnFailure:
 
     def test_change_key_raises_when_save_fails(self, tmp_path):
         from keeper_secrets_manager_storage_gcp_kms.kms_key_config import GCPKeyConfig
+        from keeper_secrets_manager_storage_gcp_kms.constants import KeyPurpose
 
         config_path = tmp_path / "ksm-config.json"
         config_path.write_bytes(b"placeholder")
 
         old_key_config = MagicMock(spec=GCPKeyConfig)
         new_key_config = MagicMock(spec=GCPKeyConfig)
+        new_key_config.to_key_name.return_value = "projects/p/locations/global/keyRings/r/cryptoKeys/new-key"
 
         storage = _make_storage_stub(
             config={"clientId": "test-id"},
             config_file_location=str(config_path),
         )
         storage.gcp_key_config = old_key_config
+        old_algo = storage.encryption_algorithm
         storage.last_saved_config_hash = ""
 
-        with patch.object(storage, "get_key_details"), \
-             patch(
-                 "keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms.encrypt_buffer",
-                 side_effect=Exception("KMS save failed"),
-             ), \
-             patch.object(storage, "create_config_file_if_missing"):
+        # get_crypto_key returns an asymmetric key so get_key_details mutates
+        # is_asymmetric, key_purpose_details, and encryption_algorithm before the
+        # save step fails — verifying that the rollback covers all four attributes.
+        asymmetric_response = MagicMock()
+        asymmetric_response.purpose = KeyPurpose.ASYMMETRIC_DECRYPT
+        asymmetric_response.version_template.algorithm = MagicMock()
+        storage.crypto_client.get_crypto_key.return_value = asymmetric_response
+
+        with patch(
+            "keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms.encrypt_buffer",
+            side_effect=Exception("KMS save failed"),
+        ), patch.object(storage, "create_config_file_if_missing"):
             with pytest.raises(Exception):
                 storage.change_key(new_key_config)
 
         assert storage.gcp_key_config is old_key_config, (
-            "change_key() did not restore the original key config after save failure"
+            "change_key() did not restore gcp_key_config after save failure"
+        )
+        assert storage.is_asymmetric is False, (
+            "change_key() did not restore is_asymmetric after save failure"
+        )
+        assert storage.key_purpose_details == KeyPurpose.ENCRYPT_DECRYPT, (
+            "change_key() did not restore key_purpose_details after save failure"
+        )
+        assert storage.encryption_algorithm is old_algo, (
+            "change_key() did not restore encryption_algorithm after save failure"
         )
 
 
