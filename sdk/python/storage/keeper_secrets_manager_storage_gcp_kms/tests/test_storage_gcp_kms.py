@@ -406,3 +406,48 @@ class TestChangeKeyRaisesOnFailure:
         assert storage.gcp_key_config is old_key_config, (
             "change_key() did not restore the original key config after save failure"
         )
+
+
+class TestEncryptBufferPropagatesKMSError:
+    """KSM-939 regression: encrypt_buffer() must raise on KMS failure, not return empty bytes.
+    __save_config() must propagate the error so callers (set, save_storage) know the write failed.
+    """
+
+    def test_encrypt_buffer_raises_on_kms_failure(self):
+        from keeper_secrets_manager_storage_gcp_kms.utils import encrypt_buffer
+
+        logger = logging.getLogger("test")
+
+        with patch(
+            "keeper_secrets_manager_storage_gcp_kms.utils.encrypt_data_and_validate_crc",
+            side_effect=Exception("403 KMS permission denied"),
+        ):
+            with pytest.raises(Exception, match="403"):
+                encrypt_buffer(
+                    is_asymmetric=False,
+                    message="ksm-config-test",
+                    crypto_client=MagicMock(),
+                    key_properties=MagicMock(),
+                    encryption_algorithm=MagicMock(),
+                    logger=logger,
+                    token=None,
+                )
+
+    def test_set_raises_when_kms_is_unavailable(self, tmp_path):
+        from keeper_secrets_manager_core.configkeys import ConfigKeys
+
+        config_path = tmp_path / "ksm-config.json"
+        config_path.write_bytes(b"placeholder")
+
+        storage = _make_storage_stub(
+            config={"clientId": "original"},
+            config_file_location=str(config_path),
+        )
+        storage.last_saved_config_hash = ""
+
+        with patch(
+            "keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms.encrypt_buffer",
+            side_effect=Exception("KMS unavailable"),
+        ), patch.object(storage, "create_config_file_if_missing"):
+            with pytest.raises(Exception, match="KMS unavailable"):
+                storage.set(ConfigKeys.KEY_CLIENT_ID, "new-value")
