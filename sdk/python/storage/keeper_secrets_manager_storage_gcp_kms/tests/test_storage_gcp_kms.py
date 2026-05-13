@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from unittest.mock import MagicMock, patch
 
 import google_crc32c
@@ -498,3 +499,36 @@ class TestDeleteAllWipesDisk:
         assert config_at_remove_time == {"clientId": "test-id", "appKey": "secret"}, (
             "os.remove() ran after config.clear() — config was already empty at removal time"
         )
+
+
+class TestSetRaisesOnReadOnlyFile:
+    """KSM-941 regression: set() must raise when the disk write fails due to file permissions.
+    In-memory and on-disk state must not silently diverge.
+    """
+
+    @pytest.mark.skipif(
+        hasattr(os, "geteuid") and os.geteuid() == 0,
+        reason="chmod 0o444 does not block writes when running as root",
+    )
+    def test_set_raises_on_permission_error(self, tmp_path):
+        from keeper_secrets_manager_core.configkeys import ConfigKeys
+
+        config_path = tmp_path / "ksm-config.json"
+        config_path.write_bytes(b"placeholder")
+
+        storage = _make_storage_stub(
+            config={"clientId": "original"},
+            config_file_location=str(config_path),
+        )
+        storage.last_saved_config_hash = ""
+
+        config_path.chmod(0o444)
+        try:
+            with patch(
+                "keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms.encrypt_buffer",
+                return_value=b"fake-blob",
+            ), patch.object(storage, "create_config_file_if_missing"):
+                with pytest.raises((PermissionError, OSError)):
+                    storage.set(ConfigKeys.KEY_CLIENT_ID, "new-value")
+        finally:
+            config_path.chmod(0o644)
