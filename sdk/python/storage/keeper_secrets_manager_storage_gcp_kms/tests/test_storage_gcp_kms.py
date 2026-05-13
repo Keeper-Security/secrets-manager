@@ -145,12 +145,15 @@ class TestBackwardCompatNonce16:
 
 
 def _make_storage_stub(config=None, config_file_location=None):
-    """Return a GCPKeyValueStorage instance with __init__ bypassed and state set directly."""
+    """Return a GCPKeyValueStorage instance with __init__ bypassed and state set directly.
+
+    `cls.__new__(cls)` allocates a bare instance without invoking __init__, so no patch
+    of __init__ is needed — only `cls(...)` would trigger __init__ via type.__call__.
+    """
     import threading
     from keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms import GCPKeyValueStorage
     from keeper_secrets_manager_storage_gcp_kms.constants import KeyPurpose
-    with patch.object(GCPKeyValueStorage, '__init__', return_value=None):
-        storage = GCPKeyValueStorage.__new__(GCPKeyValueStorage)
+    storage = GCPKeyValueStorage.__new__(GCPKeyValueStorage)
     storage.config = config if config is not None else {}
     storage.config_file_location = config_file_location or ""
     storage.logger = logging.getLogger("test")
