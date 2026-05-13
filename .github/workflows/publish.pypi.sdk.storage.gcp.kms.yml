@@ -50,7 +50,7 @@ jobs:
 
   generate-sbom:
     name: Generate and publish SBOM
-    needs: [get-versions, validate-versions]
+    needs: [get-versions]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -111,7 +111,7 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: [generate-sbom, get-versions]
+    needs: [generate-sbom, validate-versions, get-versions]
     if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
