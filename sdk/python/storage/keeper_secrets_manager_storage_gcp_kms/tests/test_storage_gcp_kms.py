@@ -451,3 +451,50 @@ class TestEncryptBufferPropagatesKMSError:
         ), patch.object(storage, "create_config_file_if_missing"):
             with pytest.raises(Exception, match="KMS unavailable"):
                 storage.set(ConfigKeys.KEY_CLIENT_ID, "new-value")
+
+
+class TestDeleteAllWipesDisk:
+    """KSM-940 regression: delete_all() must remove the config file from disk so no credential
+    bytes remain readable; file removal happens before clearing in-memory state so a failed
+    os.remove() does not leave both sides inconsistent.
+    """
+
+    def test_delete_all_removes_config_file(self, tmp_path):
+        config_path = tmp_path / "ksm-config.json"
+        config_path.write_bytes(b"fake-encrypted-credentials-blob")
+
+        storage = _make_storage_stub(
+            config={"clientId": "test-id", "appKey": "secret"},
+            config_file_location=str(config_path),
+        )
+
+        storage.delete_all()
+
+        assert not config_path.exists(), (
+            "delete_all() left the config file on disk — credentials may still be readable"
+        )
+        assert storage.config == {}
+
+    def test_delete_all_removes_file_before_clearing_memory(self, tmp_path):
+        """os.remove() must run before self.config.clear() so that a failed remove cannot
+        self-heal via read_storage() re-loading credentials from the untouched file."""
+        config_path = tmp_path / "ksm-config.json"
+        config_path.write_bytes(b"fake-encrypted-credentials-blob")
+
+        storage = _make_storage_stub(
+            config={"clientId": "test-id", "appKey": "secret"},
+            config_file_location=str(config_path),
+        )
+
+        config_at_remove_time = {}
+
+        def recording_remove(path):
+            config_at_remove_time.update(storage.config)
+
+        with patch("keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms.os.remove", side_effect=recording_remove), \
+             patch("keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms.os.path.exists", return_value=True):
+            storage.delete_all()
+
+        assert config_at_remove_time == {"clientId": "test-id", "appKey": "secret"}, (
+            "os.remove() ran after config.clear() — config was already empty at removal time"
+        )
