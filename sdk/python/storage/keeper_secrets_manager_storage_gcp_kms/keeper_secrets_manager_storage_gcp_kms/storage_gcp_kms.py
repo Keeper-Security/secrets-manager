@@ -96,9 +96,6 @@ class GCPKeyValueStorage(KeyValueStorage):
                 dir_path = os.path.dirname(self.config_file_location)
                 if not os.path.exists(dir_path):
                     os.makedirs(dir_path, exist_ok=True)
-                with open(self.config_file_location, 'wb') as config_file:
-                    config_file.write(b"{}")
-                    self.logger.info(f"Config file created at: {self.config_file_location}")
                 token=None
                 if self.key_purpose_details == KeyPurpose.RAW_ENCRYPT_DECRYPT:
                     token = self.gcp_session_config.getToken()
@@ -115,6 +112,7 @@ class GCPKeyValueStorage(KeyValueStorage):
                 )
                 with open(self.config_file_location, 'wb') as config_file:
                     config_file.write(blob)
+                self.logger.info(f"Config file created at: {self.config_file_location}")
             else:
                 self.logger.info(f"Config file already exists at: {self.config_file_location}")
         except Exception as err:
