@@ -240,13 +240,16 @@ class GCPKeyValueStorage(KeyValueStorage):
             try:
                 config_data = contents.decode()
                 config = json.loads(config_data)
-                # Encrypt and save the config if it's plain JSON
+                # `{}` is a legitimate empty state from the documented fresh-install
+                # bootstrap, so self.config must be assigned even when the parsed dict
+                # is empty — leaving it as None crashes every subsequent read/set/delete.
+                self.config = config
+                # Re-encrypt any plaintext content to migrate a legacy on-disk config.
                 if config:
-                    self.config = config
                     self.__save_config(config)
-                    self.last_saved_config_hash = hashlib.sha256(
-                        json.dumps(config, sort_keys=True, indent=4).encode()
-                    ).hexdigest()
+                self.last_saved_config_hash = hashlib.sha256(
+                    json.dumps(config, sort_keys=True, indent=4).encode()
+                ).hexdigest()
             except (json.JSONDecodeError, UnicodeDecodeError) as err:
                 json_error = err
 

@@ -595,3 +595,40 @@ class TestSetRaisesOnReadOnlyFile:
                     storage.set(ConfigKeys.KEY_CLIENT_ID, "new-value")
         finally:
             config_path.chmod(0o644)
+
+
+class TestLoadConfigEmptyDictBootstrap:
+    """KSM-948 regression: load_config() must leave self.config as a dict (never None)
+    when the on-disk file's parsed JSON is an empty dict — the documented fresh-install
+    bootstrap pattern from the README."""
+
+    def test_init_with_plaintext_empty_dict_file_leaves_config_as_dict(self, tmp_path):
+        from keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms import GCPKeyValueStorage
+        from keeper_secrets_manager_storage_gcp_kms.constants import KeyPurpose
+        from keeper_secrets_manager_core.configkeys import ConfigKeys
+
+        config_path = tmp_path / "ksm-config.json"
+        config_path.write_bytes(b"{}")
+
+        key_obj = MagicMock()
+        key_obj.purpose = KeyPurpose.ENCRYPT_DECRYPT
+        key_obj.version_template.algorithm = MagicMock()
+        client_mock = MagicMock()
+        client_mock.get_crypto_key.return_value = key_obj
+        session_mock = make_mock_session(client_mock)
+        key_cfg = make_key_config()
+
+        with patch(
+            "keeper_secrets_manager_storage_gcp_kms.storage_gcp_kms.encrypt_buffer",
+            return_value=b"fake-blob",
+        ):
+            storage = GCPKeyValueStorage(str(config_path), key_cfg, session_mock)
+
+            assert storage.config == {}, (
+                "KSM-948: load_config() left self.config as None after empty-dict bootstrap"
+            )
+
+            # Subsequent operations must not crash on dict(None).
+            storage.set(ConfigKeys.KEY_CLIENT_ID, "abc")
+
+        assert storage.config[ConfigKeys.KEY_CLIENT_ID.value] == "abc"

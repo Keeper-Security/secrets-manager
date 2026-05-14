@@ -97,6 +97,7 @@ Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager
 - `change_key()` rolls back cleanly on failure; a failed rotation no longer leaves the storage in an inconsistent state
 - `GCPKeyValueStorage` is now thread-safe for concurrent `set()`, `delete()`, `change_key()`, and `decrypt_config()` calls (KSM-946)
 - `key_version` on `GCPKeyConfig` applies only to encrypt and asymmetric operations; symmetric `client.decrypt` uses the unversioned CryptoKey name as required by the GCP API (the server selects the version from the ciphertext envelope)
+- `load_config()` now always leaves `self.config` as a dict (never `None`) after parsing a plaintext `{}` bootstrap config; previously every subsequent `read`/`set`/`delete` crashed with `TypeError: 'NoneType' object is not iterable` (KSM-948)
 
 ### 1.0.1
 
