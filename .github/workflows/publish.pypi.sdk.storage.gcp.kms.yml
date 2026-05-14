@@ -29,6 +29,35 @@ jobs:
           echo "Version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+  test:
+    name: Test on Python ${{ matrix.python-version }}
+    needs: get-versions
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt pytest pytest-cov
+          python3 -m pip install -e .
+
+      - name: Run tests
+        run: pytest tests/
+
   validate-versions:
     name: Validate version not yet published
     needs: get-versions
@@ -111,7 +140,7 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: [generate-sbom, validate-versions, get-versions]
+    needs: [test, generate-sbom, validate-versions, get-versions]
     if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
@@ -132,13 +161,12 @@ jobs:
 
       - name: Install build tools
         run: |
-          python3 -m pip install --upgrade pip setuptools
+          python3 -m pip install --upgrade pip
           python3 -m pip install build 'wheel>=0.46.3'  # wheel pin: CVE-2026-24049
-          python3 -m pip install 'setuptools_scm[toml]>=6.2'  # required by pyproject.toml build-system
 
       - name: Build
         working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
-        run: python3 -m build --no-isolation
+        run: python3 -m build
 
       - name: Verify import
         working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
