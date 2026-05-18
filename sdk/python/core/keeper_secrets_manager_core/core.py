@@ -89,11 +89,31 @@ class SecretsManager:
                  server_public_key=None,
                  server_public_key_id=None,
                  ):
+        """Construct a SecretsManager client.
 
-        # Make sure the Python is 3.6 or higher. We'll handle Python 4 in the future :)
+        Custom-server-key parameters (KSM-932) — both optional, intended for
+        isolated deployments where the server public key is not shipped with
+        the SDK. Unused for standard Keeper deployments.
+
+        :param server_public_key: Url-safe base64 of an EC P-256 public key
+            to override the SDK's built-in server public key table. When
+            provided, this key is persisted to config under
+            ``serverPublicKey`` and used for all subsequent transmission-key
+            encryption.
+        :param server_public_key_id: Optional public key id to pair with
+            ``server_public_key``. Persisted to config under
+            ``serverPublicKeyId``. If omitted, an existing value in config
+            is preserved.
+
+        Precedence when multiple provisioning paths supply a custom key:
+        programmatic params (this constructor) > one-time-token segments
+        > pre-existing config file values.
+        """
+
+        # Make sure the Python is 3.9 or higher. We'll handle Python 4 in the future :)
         python_version = sys.version_info
-        if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 6):
-            raise Exception("KSM SDK requires Python 3.6 or greater")
+        if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 9):
+            raise Exception("KSM SDK requires Python 3.9 or greater")
 
         self.token = None
         self.hostname = None
@@ -128,7 +148,19 @@ class SecretsManager:
 
                 # Layer 2: IL5 OTT carries embedded key material as extra segments
                 # Format: IL5:[clientKey]:[keyId]:[serverPublicKeyBase64]
-                if token_parts[0].upper() == 'IL5' and len(token_parts) == 4:
+                if token_parts[0].upper() == 'IL5' and len(token_parts) > 2:
+                    if len(token_parts) != 4:
+                        raise ValueError(
+                            "Malformed IL5 one-time token: expected exactly 4 segments "
+                            "'IL5:clientKey:keyId:serverPublicKeyBase64', got {}".format(len(token_parts)))
+                    if not token_parts[2] or not token_parts[3]:
+                        raise ValueError(
+                            "Malformed IL5 one-time token: keyId and serverPublicKey segments must be non-empty")
+                    try:
+                        url_safe_str_to_bytes(token_parts[3])
+                    except Exception:
+                        raise ValueError(
+                            "Malformed IL5 one-time token: serverPublicKey segment is not valid url-safe base64")
                     self._il5_key_id = token_parts[2]
                     self._il5_server_public_key = token_parts[3]
 
@@ -308,6 +340,18 @@ class SecretsManager:
 
     @staticmethod
     def generate_transmission_key(key_id, custom_public_key_b64=None):
+        """Generate a per-request transmission key wrapped with the server public key.
+
+        :param key_id: Public key id used to look up the wrapping key in the
+            built-in ``keeper_public_keys`` registry. When
+            ``custom_public_key_b64`` is provided, ``key_id`` is treated as
+            opaque metadata and not looked up.
+        :param custom_public_key_b64: Optional url-safe base64 of an EC P-256
+            public key (KSM-932). When supplied, this key wraps the
+            transmission key instead of the built-in registry — supports
+            isolated deployments where the server public key is not shipped
+            with the SDK.
+        """
         transmission_key = utils.generate_random_bytes(32)
 
         if custom_public_key_b64:
