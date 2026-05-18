@@ -5,7 +5,11 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 17.2.1
-- KSM-902 - Add IL5 (DoD Impact Level 5) region mapping (`IL5` → `il5.keepersecurity.us`)
+- KSM-902 - Add IL5 (DoD Impact Level 5) region mapping and dynamic server public key injection
+  - Region: `IL5` OTT prefix maps to `il5.keepersecurity.us`
+  - Layer 1 (config field): `serverPublicKey` in storage config overrides the embedded key table
+  - Layer 2 (extended OTT): 4-segment `REGION:clientKey:keyId:serverPublicKey` saves key on bind
+  - Layer 3 (constructor param): `SecretsManagerOptions(serverPublicKey = "...")` persists key to storage
 - KSM-823 - Fix `custom` field omitted from record create payload when no custom fields are set
   - `KeeperRecordData.custom` now defaults to `mutableListOf()` instead of `null` — `kotlinx-serialization` previously skipped null fields, causing `"custom"` to be absent from the V3 API payload
   - Consistent with Commander and Vault which always include `"custom": []`
