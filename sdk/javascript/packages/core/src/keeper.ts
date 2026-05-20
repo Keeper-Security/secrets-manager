@@ -536,6 +536,9 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
     if (options.serverPublicKey) {
         await options.storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
     }
+    if (options.serverPublicKeyId) {
+        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
+    }
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
         throw new Error('hostname is missing from the configuration')
@@ -553,10 +556,12 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                     const errorObj: KeeperError = JSON.parse(errorMessage)
                     if (errorObj.error === 'key') {
                         const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
-                        if (!customKey) {
-                            await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, errorObj.key_id!.toString())
-                            continue
+                        if (customKey) {
+                            const currentKeyId = await options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+                            throw new Error(`Server rejected the custom server public key (id ${currentKeyId}). The server suggested key id ${errorObj.key_id}. Please update your IL5 KSM configuration.`)
                         }
+                        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, errorObj.key_id!.toString())
+                        continue
                     }
                 } catch {
                 }
@@ -752,9 +757,21 @@ export const initializeStorage = async (
             host = tokenParts[0]
         }
         clientKey = tokenParts[1]
-        if (tokenParts[0].toUpperCase() === 'IL5' && tokenParts.length === 4) {
-            await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, tokenParts[2])
-            await storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
+        if (tokenParts[0].toUpperCase() === 'IL5') {
+            if (tokenParts.length > 4) {
+                throw new Error(`IL5 token has unexpected extra segments (${tokenParts.length} parts, expected 2 or 4)`)
+            }
+            if (tokenParts.length === 4) {
+                const keyId = tokenParts[2]
+                if (!/^\d+$/.test(keyId)) {
+                    throw new Error(`IL5 token: serverPublicKeyId '${keyId}' must be a positive integer`)
+                }
+                if (tokenParts[3].length < 80) {
+                    throw new Error(`IL5 token: serverPublicKey appears malformed`)
+                }
+                await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, keyId)
+                await storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
+            }
         }
     }
     const clientKeyBytes = webSafe64ToBytes(clientKey)

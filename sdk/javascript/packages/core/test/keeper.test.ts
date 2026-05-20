@@ -4,7 +4,7 @@ import {
     initializeStorage,
     generateTransmissionKey,
     platform,
-    localConfigStorage, SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword
+    SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword
 } from '../'
 
 import * as fs from 'fs'
@@ -28,7 +28,7 @@ test('Get secrets e2e', async () => {
 
     platform.getRandomBytes = getRandomBytesStub
     platform.post = postStub
-    const kvs = localConfigStorage()
+    const kvs = inMemoryStorage({})
 
     const fakeOneTimeCode = 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'
 
@@ -288,11 +288,8 @@ test('IL5 dynamic key - Layer 3: getSecrets writes serverPublicKey and serverPub
         serverPublicKeyId: '20',
         queryFunction: async () => ({ statusCode: 200, data: new Uint8Array(0), headers: [] })
     }
-    try {
-        await getSecrets(options)
-    } catch {
-        // expected — storage is not fully initialized; we only care that serverPublicKey was written
-    }
+    // Writes happen in fetchAndDecryptSecrets before prepareGetPayload; clientId missing is the expected failure point
+    await expect(getSecrets(options)).rejects.toThrow('Client Id is missing from the configuration')
     expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
     expect(await storage.getString('serverPublicKeyId')).toBe('20')
 })
@@ -313,10 +310,38 @@ test('IL5 dynamic key - rotation suppression: server key_id hint ignored when se
             headers: []
         })
     }
-    try {
-        await getSecrets(options)
-    } catch {
-        // expected error — we care that serverPublicKeyId was NOT overwritten
-    }
+    // Storage has no clientId so prepareGetPayload throws before reaching the key error handler.
+    // Full rotation suppression coverage requires an e2e test with initialized storage.
+    await expect(getSecrets(options)).rejects.toThrow()
     expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
+test('IL5 dynamic key - Layer 2: lowercase il5 prefix is treated as IL5', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, `il5:ONE_TIME_TOKEN:20:${fakeKey}`)
+    expect(await storage.getString('hostname')).toBe('il5.keepersecurity.us')
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+    expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
+})
+
+test('IL5 dynamic key - Layer 2: rejects token with more than 4 segments', async () => {
+    const storage = inMemoryStorage({})
+    await expect(
+        initializeStorage(storage, 'IL5:ONE_TIME_TOKEN:20:SOMEKEY:extra')
+    ).rejects.toThrow('IL5 token has unexpected extra segments')
+})
+
+test('IL5 dynamic key - Layer 2: rejects non-integer serverPublicKeyId', async () => {
+    const storage = inMemoryStorage({})
+    await expect(
+        initializeStorage(storage, 'IL5:ONE_TIME_TOKEN:notanumber:SOMEKEY')
+    ).rejects.toThrow("IL5 token: serverPublicKeyId 'notanumber' must be a positive integer")
+})
+
+test('IL5 dynamic key - Layer 2: rejects malformed (too short) serverPublicKey', async () => {
+    const storage = inMemoryStorage({})
+    await expect(
+        initializeStorage(storage, 'IL5:ONE_TIME_TOKEN:20:tooshort')
+    ).rejects.toThrow('IL5 token: serverPublicKey appears malformed')
 })

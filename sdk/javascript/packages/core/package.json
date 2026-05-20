@@ -8,6 +8,9 @@
   "repository": "https://github.com/Keeper-Security/secrets-manager",
   "author": "sm@keepersecurity.com",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "pretest": "rollup -c --bundleConfigAsCjs",
     "test": "jest",
