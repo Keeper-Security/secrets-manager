@@ -99,3 +99,32 @@ You're ready to use the KSM integration 👍
 ## Using the Oracle KMS Integration
 
 Once setup, the Secrets Manager Oracle KMS integration supports all Secrets Manager Python SDK functionality. Your code will need to be able to access the Oracle KMS APIs in order to manage the decryption of the configuration file when run.
+
+## Change Log
+
+### 1.1.0
+
+**Requirements:**
+- Minimum Python version raised to 3.9.2 (effective floor; `cryptography>=46.0.5` excludes 3.9.0 and 3.9.1 — users on exactly those patch versions will hit a pip resolver error); users on Python 3.6–3.8 should pin to `<1.1.0`
+- Minimum `keeper-secrets-manager-core` dependency raised to 17.2.1
+- Minimum `oci` raised to 2.174.0 on Python 3.10+ and pinned to 2.167.3–2.168.1 on Python 3.9. Required because older `oci` releases cap `cryptography<46.0.0`, which would block the CVE-2026-26007 remediation below. If your environment pins `oci`, update to a compatible range before upgrading.
+
+**Security:**
+- **KSM-834:** Fixed CVE-2026-26007 — `cryptography` upgraded to ≥46.0.5 (ECDH subgroup attack on SECT curves, HIGH CVSS 8.2)
+- **KSM-954:** Fixed AES-GCM nonce length from 128-bit (pycryptodome default) to 96-bit per NIST SP 800-38D; existing encrypted blobs remain readable
+- **KSM-954:** Replaced MD5 with SHA-256 for config change detection
+- `urllib3` upgraded to 2.6.3 (CVE-2026-47081), `requests` to 2.32.4
+
+**Bug fixes:**
+- **KSM-950:** `OracleKeyValueStorage.__init__()` no longer writes plaintext `{}` to disk before encryption succeeds, and KMS failures during the initial `get_key` / `encrypt_buffer` call now propagate instead of being silently swallowed
+- **KSM-951:** `encrypt_buffer()` and `decrypt_buffer()` now raise on KMS failure instead of returning empty bytes/string; callers (`set`, `save_storage`, `delete`) reliably see the failure
+- **KSM-952:** `delete_all()` now removes the credential file from disk via `os.remove()` instead of re-encrypting an empty config and leaving the file in place
+- **KSM-953:** `set()` on a read-only config file now propagates `PermissionError` instead of silently leaving in-memory state ahead of disk state
+- **KSM-955:** `read_storage()` now returns a defensive copy of the config dict instead of a live reference; caller mutations no longer silently corrupt internal state
+- **KSM-955:** `decrypt_config()` autosave default changed from `True` to `False` — a call without arguments no longer writes plaintext credentials to disk. Pass `autosave=True` explicitly to preserve the previous behavior
+- **KSM-956:** `OracleKeyValueStorage` is now thread-safe for concurrent `set()`, `delete()`, `change_key()`, and `decrypt_config()` calls via an internal `threading.RLock`
+- **KSM-957:** `load_config()` no longer leaves `self.config = None` after bootstrapping from an empty JSON `{}` config file; subsequent `get`/`set`/`delete` no longer crash with `TypeError: 'NoneType' object is not iterable`
+
+### 1.0.0
+
+- Initial release
