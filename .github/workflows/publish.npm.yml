@@ -77,7 +77,7 @@ jobs:
           esac
 
   generate-sbom:
-    needs: validate-version
+    needs: [get-version, validate-version]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -122,7 +122,8 @@ jobs:
             --api-key="${MANIFEST_API_KEY}" \
             --publish=true \
             --asset-label=application,sbom-generated,nodejs \
-            --generator-config=syft-config.yaml 2>&1 || \
+            --generator-config=syft-config.yaml \
+            -- --source-name="keeper-secrets-manager-js-sdk" --source-version="${VERSION}" 2>&1 || \
           manifest sbom "${JAVASCRIPT_SDK_DIR}" \
             --generator=syft \
             --name=keeper-secrets-manager-js-sdk \
@@ -132,7 +133,8 @@ jobs:
             --api-key="${MANIFEST_API_KEY}" \
             --publish=true \
             --label=application,sbom-generated,nodejs \
-            --generator-config=syft-config.yaml
+            --generator-config=syft-config.yaml \
+            -- --source-name="keeper-secrets-manager-js-sdk" --source-version="${VERSION}"
 
           echo "---------- SBOM Preview (first 20 lines) ----------"
           head -n 20 js-sdk-sbom.json
