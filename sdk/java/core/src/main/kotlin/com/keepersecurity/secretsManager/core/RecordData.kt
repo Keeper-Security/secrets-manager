@@ -20,7 +20,7 @@ data class KeeperRecordData @JvmOverloads constructor(
     var title: String,
     val type: String,
     val fields: MutableList<KeeperRecordField>,
-    @EncodeDefault var custom: MutableList<KeeperRecordField> = mutableListOf(),
+    @EncodeDefault var custom: MutableList<KeeperRecordField> = mutableListOf(), // KSM-823: always serialize "custom":[] even when empty
     var notes: String? = null
 ) {
     inline fun <reified T> getField(): T? {
@@ -54,13 +54,13 @@ object FlexibleLongSerializer : KSerializer<Long> {
 }
 
 @Serializable
-data class KeeperFileData(
+data class KeeperFileData @JvmOverloads constructor(
     val title: String,
     val name: String,
     val type: String? = null,
     val size: Long,
-    @Serializable(with = FlexibleLongSerializer::class)
-    val lastModified: Long = 0
+    @Serializable(with = FlexibleLongSerializer::class) // KSM-673: iOS/Android clients send fractional epoch seconds
+    val lastModified: Long = 0 // KSM-854: non-SDK clients omit this field; default 0 matches .NET behavior
 )
 
 @Serializable

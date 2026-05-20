@@ -44,7 +44,7 @@ jobs:
         env:
           PROJECT_NAME: ${{ inputs.project-name }}
         run: |
-          VERSION=$(grep -Po 'version\s*=\s*"\K[^"]*' build.gradle.kts || echo "0.0.0-unknown")
+          VERSION=$(grep -Po '^version\s*=\s*"\K[^"]*' build.gradle.kts || echo "0.0.0-unknown")
           echo "Version retrieved: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -66,8 +66,48 @@ jobs:
           echo "Artifact ID retrieved: $ARTIFACT_ID"
           echo "artifact-id=$ARTIFACT_ID" >> "$GITHUB_OUTPUT"
 
-  generate-and-upload-sbom:
+  validate-version:
     needs: get-version
+    permissions: {}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify version not already published on Maven Central
+        env:
+          VERSION: ${{ needs.get-version.outputs.version }}
+          ARTIFACT_ID: ${{ needs.get-version.outputs.artifact-id }}
+        run: |
+          GROUP_PATH="com/keepersecurity/secrets-manager"
+          POM_URL="https://repo1.maven.org/maven2/${GROUP_PATH}/${ARTIFACT_ID}/${VERSION}/${ARTIFACT_ID}-${VERSION}.pom"
+          if curl -sf "$POM_URL" > /dev/null 2>&1; then
+            echo "ERROR: ${ARTIFACT_ID} ${VERSION} already exists on Maven Central"
+            exit 1
+          fi
+          echo "Version ${VERSION} not yet published — OK to proceed"
+
+  test:
+    needs: validate-version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Set up Java ${{ inputs.java-version }}
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+        with:
+          gradle-version: '8.14'
+      - name: Build and Test
+        run: ./gradlew clean build --no-daemon
+
+  generate-and-upload-sbom:
+    needs: [get-version, validate-version]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -111,14 +151,14 @@ jobs:
           retention-days: 10
 
   confirm-publish:
-    needs: generate-and-upload-sbom
+    needs: [test, generate-and-upload-sbom]
     if: ${{ inputs.publish == true }}
     runs-on: ubuntu-latest
     steps:
       - run: echo "Publish gate confirmed"
 
   publish-to-maven-central:
-    needs: [get-version, generate-and-upload-sbom, confirm-publish]
+    needs: [get-version, test, generate-and-upload-sbom, confirm-publish]
     environment: prod
     runs-on: ubuntu-latest
 
@@ -157,8 +197,8 @@ jobs:
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3
 
-      - name: Build and test
-        run: ./gradlew clean build test
+      - name: Build
+        run: ./gradlew clean build -x test --no-daemon
 
       - name: Publish to staging directory
         run: ./gradlew publish
@@ -197,8 +237,8 @@ jobs:
               echo "Found deployment ID: $DEPLOYMENT_ID"
               echo "Checking deployment status via Central Portal API..."
 
-              # Create Bearer token from username:password
-              AUTH_TOKEN=$(printf "%s:%s" "${JRELEASER_MAVENCENTRAL_USERNAME}" "${JRELEASER_MAVENCENTRAL_PASSWORD}" | base64)
+              # Create Bearer token from username:password (no line wrapping)
+              AUTH_TOKEN=$(printf "%s:%s" "${JRELEASER_MAVENCENTRAL_USERNAME}" "${JRELEASER_MAVENCENTRAL_PASSWORD}" | base64 -w 0)
 
               # Poll Portal API for deployment status (max 20 attempts, 30 seconds each = 10 minutes)
               MAX_RETRIES=20
