@@ -159,6 +159,7 @@ jobs:
 
   publish-to-maven-central:
     needs: [get-version, test, generate-and-upload-sbom, confirm-publish]
+    if: ${{ inputs.publish == true }}
     environment: prod
     runs-on: ubuntu-latest
 
