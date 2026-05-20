@@ -132,7 +132,7 @@ internal class SecretsManagerTest {
         val storage = InMemoryStorage()
         initializeStorage(storage, "IL5:FAKE_CLIENT_KEY:20:$fakeServerPublicKey")
         assertEquals("il5.keepersecurity.us", storage.getString(KEY_HOSTNAME))
-        assertEquals("20", storage.getString(KEY_SERVER_PUBIC_KEY_ID))
+        assertEquals("20", storage.getString(KEY_SERVER_PUBLIC_KEY_ID))
         assertEquals(fakeServerPublicKey, storage.getString(KEY_SERVER_PUBLIC_KEY))
     }
 
@@ -147,20 +147,26 @@ internal class SecretsManagerTest {
 
     @Test
     fun testIL5ConfigFieldOverridesEmbeddedTable() {
-        // KSM-902: serverPublicKey in storage is used instead of the embedded key table
-        // Validated by removing key 10 from the table and feeding the same bytes back via storage
-        val key10B64 = "BNYIh_Sv03nRZUUJveE8d2mxKLIDXv654UbshaItHrCJhd6cT7pdZ_XwbdyxAOCWMkBb9AZ4t1XRCsM8-wkEBRg"
+        // KSM-902: KEY_SERVER_PUBLIC_KEY in storage must be used instead of the embedded key table.
+        // Key ID 999 is not in the embedded table. With a custom key in storage, generateTransmissionKey
+        // must use the storage key. If it falls through to the table, it throws
+        // "Key number 999 is not supported" and the post function is never called.
+        val customKey = "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"
         val storage = InMemoryStorage()
-        storage.saveString(KEY_SERVER_PUBIC_KEY_ID, "10")
-        storage.saveString(KEY_SERVER_PUBLIC_KEY, key10B64)
-        // generateTransmissionKey is private; verify indirectly through storage state
-        // If key lookup fell through to the table it would also work, but we verify the
-        // storage field is read by ensuring a non-table key ID doesn't throw
-        storage.saveString(KEY_SERVER_PUBIC_KEY_ID, "20")
-        storage.saveString(KEY_SERVER_PUBLIC_KEY, key10B64)
-        // Storage has key ID 20 (not in table) + custom key bytes — must not throw
-        assertNotNull(storage.getString(KEY_SERVER_PUBLIC_KEY))
-        assertEquals("20", storage.getString(KEY_SERVER_PUBIC_KEY_ID))
+        initializeStorage(storage, "IL5:FAKE_CLIENT_KEY:999:$customKey")
+        assertEquals("999", storage.getString(KEY_SERVER_PUBLIC_KEY_ID))
+        assertEquals(customKey, storage.getString(KEY_SERVER_PUBLIC_KEY))
+
+        var capturedKeyId: Int? = null
+        TestStubs.transmissionKeyStub = { ByteArray(32) }
+        val testPostFunction: (String, TransmissionKey, EncryptedPayload) -> KeeperHttpResponse = { _, tk, _ ->
+            capturedKeyId = tk.publicKeyId
+            KeeperHttpResponse(400, """{"error":"generic","message":"intercepted"}""".toByteArray())
+        }
+        val options = SecretsManagerOptions(storage, testPostFunction)
+        try { getSecrets(options) } catch (_: Exception) {}
+
+        assertEquals(999, capturedKeyId, "generateTransmissionKey must use storage key (ID 999) not the embedded table")
     }
 
     @Test

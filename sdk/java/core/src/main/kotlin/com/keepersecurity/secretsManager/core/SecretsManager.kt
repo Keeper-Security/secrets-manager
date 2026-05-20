@@ -22,7 +22,7 @@ import javax.net.ssl.*
 const val KEEPER_CLIENT_VERSION = "mj17.2.1"
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
-const val KEY_SERVER_PUBIC_KEY_ID = "serverPublicKeyId"
+const val KEY_SERVER_PUBLIC_KEY_ID = "serverPublicKeyId"
 const val KEY_SERVER_PUBLIC_KEY = "serverPublicKey" // custom server public key bytes (base64url), overrides embedded table
 const val KEY_CLIENT_ID = "clientId"
 const val KEY_CLIENT_KEY = "clientKey" // The key that is used to identify the client before public key
@@ -46,12 +46,13 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val queryFunction: QueryFunction? = null,
     val allowUnverifiedCertificate: Boolean = false,
     val loggingEnabled: Boolean = true,
-    val serverPublicKey: String? = null  // Layer 3: inject custom server public key at construction time
+    val serverPublicKey: String? = null,
+    val serverPublicKeyId: String? = null
 ) {
     init {
         testSecureRandom()
-        // Persist the injected key so generateTransmissionKey can pick it up without options in scope
         serverPublicKey?.let { storage.saveString(KEY_SERVER_PUBLIC_KEY, it) }
+        serverPublicKeyId?.let { storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, it) }
     }
 }
 
@@ -715,8 +716,18 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
         }
         clientKey = tokenParts[1]
         // Layer 2: extended OTT format REGION:clientKey:keyId:serverPublicKey
-        if (tokenParts.size >= 4) {
-            storage.saveString(KEY_SERVER_PUBIC_KEY_ID, tokenParts[2])
+        if (tokenParts.size > 4) {
+            throw Exception("Extended OTT token has unexpected extra segments (${tokenParts.size} parts, expected 2 or 4)")
+        }
+        if (tokenParts.size == 4) {
+            val keyId = tokenParts[2]
+            if (keyId.isEmpty() || !keyId.all { it.isDigit() }) {
+                throw Exception("Extended OTT token: serverPublicKeyId '$keyId' must be a positive integer")
+            }
+            if (tokenParts[3].length < 80) {
+                throw Exception("Extended OTT token: serverPublicKey appears malformed")
+            }
+            storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, keyId)
             storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
         }
     }
@@ -1601,7 +1612,7 @@ private fun generateTransmissionKey(storage: KeyValueStorage): TransmissionKey {
     } else {
         getRandomBytes(32)
     }
-    val keyNumber: Int = storage.getString(KEY_SERVER_PUBIC_KEY_ID)?.toInt() ?: 7
+    val keyNumber: Int = storage.getString(KEY_SERVER_PUBLIC_KEY_ID)?.toInt() ?: 7
     // Layer 1: serverPublicKey in storage (from config JSON, OTT, or constructor) takes priority
     val keeperPublicKey: ByteArray = storage.getString(KEY_SERVER_PUBLIC_KEY)?.let { webSafe64ToBytes(it) }
         ?: keeperPublicKeys[keyNumber]
@@ -1645,7 +1656,12 @@ private inline fun <reified T> postQuery(
             try {
                 val error = nonStrictJson.decodeFromString<KeeperError>(errorMessage)
                 if (error.error == "key") {
-                    options.storage.saveString(KEY_SERVER_PUBIC_KEY_ID, error.key_id.toString())
+                    val customKey = options.storage.getString(KEY_SERVER_PUBLIC_KEY)
+                    if (customKey != null) {
+                        val currentKeyId = options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+                        throw Exception("Server rejected the custom server public key (id $currentKeyId). The server suggested key id ${error.key_id}. Please update your IL5 KSM configuration.")
+                    }
+                    options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, error.key_id.toString())
                     continue
                 }
             } catch (_: Exception) {
