@@ -27,7 +27,7 @@ setup(
     package_data={},
     include_package_data=True,
     install_requires=install_requires,
-    python_requires='>=3.10',
+    python_requires='>=3.9.2',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
         "Documentation": "https://docs.keeper.io/secrets-manager/secrets-manager/overview",
@@ -40,6 +40,7 @@ setup(
         "Operating System :: OS Independent",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",

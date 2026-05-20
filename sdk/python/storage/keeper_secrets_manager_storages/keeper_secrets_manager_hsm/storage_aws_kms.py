@@ -15,6 +15,7 @@ import logging
 import os
 
 from json import JSONDecodeError
+from typing import Optional
 from keeper_secrets_manager_core.helpers import is_json
 
 from keeper_secrets_manager_core.storage import KeyValueStorage
@@ -55,7 +56,7 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
 
     default_config_file_location = "client-config.json"
 
-    def __init__(self, key_id: str, config_file_location: str = "", aws_session_config: AwsSessionConfig | None = None):
+    def __init__(self, key_id: str, config_file_location: str = "", aws_session_config: Optional[AwsSessionConfig] = None):
         self.default_config_file_location = config_file_location if config_file_location else os.environ.get("KSM_CONFIG_FILE",
             AwsKmsKeyValueStorage.default_config_file_location)
         self.key_id = key_id if key_id else os.environ.get("KSM_KMS_KEY_ID", "")  # Master Key ID

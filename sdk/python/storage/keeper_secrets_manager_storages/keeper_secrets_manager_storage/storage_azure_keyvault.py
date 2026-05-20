@@ -15,6 +15,7 @@ import logging
 import os
 
 from json import JSONDecodeError
+from typing import Optional
 from keeper_secrets_manager_core.helpers import is_json
 
 from keeper_secrets_manager_core.storage import KeyValueStorage
@@ -66,7 +67,7 @@ class AzureKeyValueStorage(KeyValueStorage):
 
     default_config_file_location = "client-config.json"
 
-    def __init__(self, key_id: str, config_file_location: str = "", az_session_config: AzureSessionConfig | None = None):
+    def __init__(self, key_id: str, config_file_location: str = "", az_session_config: Optional[AzureSessionConfig] = None):
         """Initilaizes AzureKeyValueStorage
 
         key_id URI of the master key - if missing read from env KSM_AZ_KEY_ID
