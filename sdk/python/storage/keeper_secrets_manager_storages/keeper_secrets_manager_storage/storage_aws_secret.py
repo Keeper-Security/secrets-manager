@@ -458,7 +458,7 @@ class AwsSecretStorage(KeyValueStorage):
             # we must make sure it is (valid) KSM JSON - check for privateKey
             if config and config.get("privateKey", ""):
                 self.config = config
-                self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
+                self.last_saved_config_hash = hashlib.sha256(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
             else:
                 err = f"Failed to load/parse config JSON from AWS secret '{self.provider.key_name}' - the value must be a valid JSON, value='{contents}'"
         except Exception as e:
@@ -470,11 +470,11 @@ class AwsSecretStorage(KeyValueStorage):
     def __save_config(self, updated_config: dict = {}, module=0, force=False):
         config = self.config if self.config else {}
         config_json: str = json.dumps(config, indent=4, sort_keys=True)
-        config_hash = hashlib.md5(config_json.encode()).hexdigest()
+        config_hash = hashlib.sha256(config_json.encode()).hexdigest()
 
         if updated_config:
             ucfg_json: str = json.dumps(updated_config, indent=4, sort_keys=True)
-            ucfg_hash = hashlib.md5(ucfg_json.encode()).hexdigest()
+            ucfg_hash = hashlib.sha256(ucfg_json.encode()).hexdigest()
             if ucfg_hash != config_hash:
                 config_hash = ucfg_hash
                 config_json = ucfg_json

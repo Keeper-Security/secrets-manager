@@ -110,7 +110,7 @@ class AzureKeyValueStorage(KeyValueStorage):
     def __encrypt_buffer(self, message: str) -> bytes:
         try:
             key = get_random_bytes(32)
-            cipher = AES.new(key, AES.MODE_GCM)
+            cipher = AES.new(key, AES.MODE_GCM, nonce=get_random_bytes(12))
             ciphertext, tag = cipher.encrypt_and_digest(message.encode())
             # response = self.crypto_client.encrypt(EncryptionAlgorithm.a256_gcm, message.encode()) # HSM Only
             try:
@@ -210,14 +210,14 @@ class AzureKeyValueStorage(KeyValueStorage):
                 # detected plaintext JSON config -> encrypt
                 self.config = config
                 self.__save_config() # save encrypted
-                self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
+                self.last_saved_config_hash = hashlib.sha256(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
             else:
                 # Try to decrypt binary blob
                 config_json = self.__decrypt_buffer(contents)
                 try:
                     config = json.loads(config_json)
                     self.config = config
-                    self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
+                    self.last_saved_config_hash = hashlib.sha256(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
                 except Exception as err:
                     logger.error("Config JSON has problems: {}".format(err))
                     raise err
@@ -227,11 +227,11 @@ class AzureKeyValueStorage(KeyValueStorage):
     def __save_config(self, updated_config:dict = {}, module=0, force=False):
         config = self.config if self.config else {}
         config_json:str = json.dumps(config, indent=4, sort_keys=True)
-        config_hash = hashlib.md5(config_json.encode()).hexdigest()
+        config_hash = hashlib.sha256(config_json.encode()).hexdigest()
 
         if updated_config:
             ucfg_json:str = json.dumps(updated_config, indent=4, sort_keys=True)
-            ucfg_hash = hashlib.md5(ucfg_json.encode()).hexdigest()
+            ucfg_hash = hashlib.sha256(ucfg_json.encode()).hexdigest()
             if ucfg_hash != config_hash:
                 config_hash = ucfg_hash
                 config_json = ucfg_json
