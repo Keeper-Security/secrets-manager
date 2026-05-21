@@ -258,7 +258,9 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
         with self._lock:
             self.read_storage()
             self.config.clear()
-            self.save_storage(self.config)
+            if os.path.exists(self.default_config_file_location):
+                os.remove(self.default_config_file_location)
+            self.last_saved_config_hash = ""
             return dict(self.config)
 
     def contains(self, key: ConfigKeys):
