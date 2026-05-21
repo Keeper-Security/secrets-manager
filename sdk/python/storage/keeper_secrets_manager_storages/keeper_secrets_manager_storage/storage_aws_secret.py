@@ -238,6 +238,13 @@ class AwsConfigProvider(IConfigProvider):
             except Exception:
                 pass
 
+        if not region:
+            logger.error("Failed to auto-detect AWS region from IMDS for secret '%s'", self.key_name)
+            raise Exception(
+                f"Failed to determine AWS region for EC2 instance. "
+                f"Use a full ARN as the key name or configure the region via environment."
+            )
+
         return region
 
     def _setup_credential_provider(self):
@@ -296,6 +303,11 @@ class AwsConfigProvider(IConfigProvider):
             res = self._get_secret_aws(secretsmanager, self.key_name)
 
         result = res.get("value", "") or "" if res else ""
+        if not result:
+            error = (res.get("error", "") if res else "") or ""
+            if error:
+                logger.error("Failed to read config from AWS secret '%s': %s", self.key_name, error)
+                raise Exception(f"Failed to read config from AWS secret '{self.key_name}': {error}")
         return result
 
     def write_config(self, config: str) -> str:
