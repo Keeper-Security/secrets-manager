@@ -117,7 +117,7 @@ class AzureKeyValueStorage(KeyValueStorage):
                 response = self.crypto_client.wrap_key(KeyWrapAlgorithm.rsa_oaep, key)
             except Exception as err:
                 logger.error("Azure crypto client failed to wrap key. %s", str(err))
-                return b""
+                raise
 
             blob = bytearray(BLOB_HEADER)
             for x in (response.encrypted_key, cipher.nonce, tag, ciphertext):
@@ -126,7 +126,7 @@ class AzureKeyValueStorage(KeyValueStorage):
             return blob
         except Exception as err:
             logger.error("Azure KeyVault Storage failed to encrypt. %s", str(err))
-            return b""
+            raise
 
     def __decrypt_buffer(self, ciphertext: bytes) -> str:
         try:
@@ -156,14 +156,14 @@ class AzureKeyValueStorage(KeyValueStorage):
                 key = response.key
             except Exception as err:
                 logger.error("Azure crypto client failed to unwrap key. %s", str(err))
-                return b""
+                raise
             cipher = AES.new(key, AES.MODE_GCM, nonce)
             data = cipher.decrypt_and_verify(encrypted_text, tag)
             plaintext = data.decode('utf8')
             return plaintext
         except Exception as err:
             logger.error("Azure KeyVault Storage failed to decrypt. %s", str(err))
-            return ""
+            raise
 
     def __load_config(self, module=0):
         self.create_config_file_if_missing()

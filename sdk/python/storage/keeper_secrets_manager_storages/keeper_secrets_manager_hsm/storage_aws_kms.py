@@ -84,7 +84,7 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
             return ciphertext
         except ClientError as err:
             logger.error("KMS client failed to encrypt plaintext. %s", err.response['Error']['Message'])
-        return b""
+            raise
 
     def __decrypt_buffer(self, ciphertext: bytes) -> str:
         try:
@@ -93,7 +93,7 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
             return plaintext.decode('utf8')
         except ClientError as err:
             logger.error("KMS client failed to decrypt ciphertext. %s", err.response['Error']['Message'])
-        return ""
+            raise
 
     def __load_config(self, module=0):
         self.create_config_file_if_missing()
