@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 
 from json import JSONDecodeError
 from typing import Optional
@@ -99,6 +100,7 @@ class AzureKeyValueStorage(KeyValueStorage):
 
         self.crypto_client = CryptographyClient(self.key_id, credential=self.az_credential)
 
+        self._lock = threading.RLock()
         self.last_saved_config_hash = ""
         self.config = {}
         self.__load_config()
@@ -272,55 +274,61 @@ class AzureKeyValueStorage(KeyValueStorage):
         return plaintext
 
     def change_key(self, new_key_id: str) -> bool:
-        old_key_id = self.key_id
-        old_crypto_client = self.crypto_client
-        try:
-            self.key_id = new_key_id
-            self.crypto_client = CryptographyClient(self.key_id, credential=self.az_credential)
-            self.__save_config(force=True)
-        except Exception as e:
-            self.key_id = old_key_id
-            self.crypto_client = old_crypto_client
-            logging.getLogger(logger_name).error(f"Failed to change the key to '{new_key_id}' for config '{self.default_config_file_location}'")
-            raise Exception("Failed to change the key for " + self.default_config_file_location)
-        return True
+        with self._lock:
+            old_key_id = self.key_id
+            old_crypto_client = self.crypto_client
+            try:
+                self.key_id = new_key_id
+                self.crypto_client = CryptographyClient(self.key_id, credential=self.az_credential)
+                self.__save_config(force=True)
+            except Exception as e:
+                self.key_id = old_key_id
+                self.crypto_client = old_crypto_client
+                logging.getLogger(logger_name).error(f"Failed to change the key to '{new_key_id}' for config '{self.default_config_file_location}'")
+                raise Exception("Failed to change the key for " + self.default_config_file_location)
+            return True
 
     def read_storage(self):
-        if not self.config:
-            self.__load_config()
-        return dict(self.config)
+        with self._lock:
+            if not self.config:
+                self.__load_config()
+            return dict(self.config)
 
     def save_storage(self, updated_config):
-        self.__save_config(updated_config)
+        with self._lock:
+            self.__save_config(updated_config)
 
     def get(self, key: ConfigKeys):
         config = self.read_storage()
         return config.get(key.value)
 
     def set(self, key: ConfigKeys, value):
-        config = self.read_storage()
-        config[key.value] = value
-        self.save_storage(config)
-        return config
+        with self._lock:
+            config = self.read_storage()
+            config[key.value] = value
+            self.save_storage(config)
+            return config
 
     def delete(self, key: ConfigKeys):
-        config = self.read_storage()
+        with self._lock:
+            config = self.read_storage()
 
-        kv = key.value
-        if kv in config:
-            del config[kv]
-            logger.debug("Removed key %s" % kv)
-        else:
-           logger.debug("No key %s was found in config" % kv)
+            kv = key.value
+            if kv in config:
+                del config[kv]
+                logger.debug("Removed key %s" % kv)
+            else:
+                logger.debug("No key %s was found in config" % kv)
 
-        self.save_storage(config)
-        return config
+            self.save_storage(config)
+            return config
 
     def delete_all(self):
-        self.read_storage()
-        self.config.clear()
-        self.save_storage(self.config)
-        return dict(self.config)
+        with self._lock:
+            self.read_storage()
+            self.config.clear()
+            self.save_storage(self.config)
+            return dict(self.config)
 
     def contains(self, key: ConfigKeys):
         config = self.read_storage()

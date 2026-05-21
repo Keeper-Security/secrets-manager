@@ -22,6 +22,7 @@ import hashlib
 import logging
 import os
 import json
+import threading
 
 import errno
 from json import JSONDecodeError
@@ -62,6 +63,7 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
         self.hsm_ident = ident if ident else os.environ.get("KSM_NFAST_IDENT", '')
         self.conn = nfpython.connection(needworldinfo=True)
         self.key = self.__load_key()
+        self._lock = threading.RLock()
         self.last_saved_config_hash = ""
         self.config = {}
         self.__load_config()
@@ -315,55 +317,61 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
         return plaintext
 
     def change_key(self, new_ident: str) -> bool:
-        old_ident = self.hsm_ident
-        old_key = self.key
-        try:
-            self.hsm_ident = new_ident
-            self.key = self.__load_key()
-            self.__save_config(force=True)
-        except Exception as e:
-            self.hsm_ident = old_ident
-            self.key = old_key
-            logging.getLogger(logger_name).error(f"Failed to change the key to '{new_ident}' for config '{self.default_config_file_location}'")
-            raise Exception("Failed to change the key for " + self.default_config_file_location)
-        return True
+        with self._lock:
+            old_ident = self.hsm_ident
+            old_key = self.key
+            try:
+                self.hsm_ident = new_ident
+                self.key = self.__load_key()
+                self.__save_config(force=True)
+            except Exception as e:
+                self.hsm_ident = old_ident
+                self.key = old_key
+                logging.getLogger(logger_name).error(f"Failed to change the key to '{new_ident}' for config '{self.default_config_file_location}'")
+                raise Exception("Failed to change the key for " + self.default_config_file_location)
+            return True
 
     def read_storage(self):
-        if not self.config:
-            self.__load_config()
-        return dict(self.config)
+        with self._lock:
+            if not self.config:
+                self.__load_config()
+            return dict(self.config)
 
     def save_storage(self, updated_config):
-        self.__save_config(updated_config)
+        with self._lock:
+            self.__save_config(updated_config)
 
     def get(self, key: ConfigKeys):
         config = self.read_storage()
         return config.get(key.value)
 
     def set(self, key: ConfigKeys, value):
-        config = self.read_storage()
-        config[key.value] = value
-        self.save_storage(config)
-        return config
+        with self._lock:
+            config = self.read_storage()
+            config[key.value] = value
+            self.save_storage(config)
+            return config
 
     def delete(self, key: ConfigKeys):
-        config = self.read_storage()
+        with self._lock:
+            config = self.read_storage()
 
-        kv = key.value
-        if kv in config:
-            del config[kv]
-            logging.getLogger(logger_name).debug("Removed key %s" % kv)
-        else:
-            logging.getLogger(logger_name).debug("No key %s was found in config" % kv)
+            kv = key.value
+            if kv in config:
+                del config[kv]
+                logging.getLogger(logger_name).debug("Removed key %s" % kv)
+            else:
+                logging.getLogger(logger_name).debug("No key %s was found in config" % kv)
 
-        self.save_storage(config)
-        return config
+            self.save_storage(config)
+            return config
 
     def delete_all(self):
-        self.read_storage()
-        self.config.clear()
-        self.save_storage(self.config)
-        return dict(self.config)
+        with self._lock:
+            self.read_storage()
+            self.config.clear()
+            self.save_storage(self.config)
+            return dict(self.config)
 
     def contains(self, key: ConfigKeys):
         config = self.read_storage()

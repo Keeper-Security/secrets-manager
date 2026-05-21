@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import threading
 
 from enum import Enum
 from keeper_secrets_manager_core.helpers import is_json
@@ -398,6 +399,7 @@ class AwsSecretStorage(KeyValueStorage):
         self.provider = AwsConfigProvider(aws_key)
         self.provider.from_ec2instance_config(aws_key, fallback_to_default_profile)
 
+        self._lock = threading.RLock()
         self.config = {}
         self.last_saved_config_hash = ""
         # self.__load_config()  # don't initialize here - use helpers
@@ -490,41 +492,46 @@ class AwsSecretStorage(KeyValueStorage):
 
     # Interface methods implementation
     def read_storage(self):
-        if not self.config:
-            self.__load_config()
-        return dict(self.config)
+        with self._lock:
+            if not self.config:
+                self.__load_config()
+            return dict(self.config)
 
     def save_storage(self, updated_config):
-        self.__save_config(updated_config)
+        with self._lock:
+            self.__save_config(updated_config)
 
     def get(self, key: ConfigKeys):
         config = self.read_storage()
         return config.get(key.value)
 
     def set(self, key: ConfigKeys, value):
-        config = self.read_storage()
-        config[key.value] = value
-        self.save_storage(config)
-        return config
+        with self._lock:
+            config = self.read_storage()
+            config[key.value] = value
+            self.save_storage(config)
+            return config
 
     def delete(self, key: ConfigKeys):
-        config = self.read_storage()
+        with self._lock:
+            config = self.read_storage()
 
-        kv = key.value
-        if kv in config:
-            del config[kv]
-            logger.debug(f"Removed key {kv}")
-        else:
-            logger.debug(f"No key {kv} was found in config")
+            kv = key.value
+            if kv in config:
+                del config[kv]
+                logger.debug(f"Removed key {kv}")
+            else:
+                logger.debug(f"No key {kv} was found in config")
 
-        self.save_storage(config)
-        return config
+            self.save_storage(config)
+            return config
 
     def delete_all(self):
-        self.read_storage()
-        self.config.clear()
-        self.save_storage(self.config)
-        return dict(self.config)
+        with self._lock:
+            self.read_storage()
+            self.config.clear()
+            self.save_storage(self.config)
+            return dict(self.config)
 
     def contains(self, key: ConfigKeys):
         config = self.read_storage()

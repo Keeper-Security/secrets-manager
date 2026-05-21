@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 
 from json import JSONDecodeError
 from typing import Optional
@@ -71,6 +72,7 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
                 region_name=aws_session_config.region_name)
         else:
             self.kms_client = boto3.client('kms')  # uses default session
+        self._lock = threading.RLock()
         self.last_saved_config_hash = ""
         self.config = {}
         self.__load_config()
@@ -206,52 +208,58 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
         return plaintext
 
     def change_key(self, new_key_id: str) -> bool:
-        old_key_id = self.key_id
-        try:
-            self.key_id = new_key_id
-            self.__save_config(force=True)
-        except Exception:
-            self.key_id = old_key_id
-            logging.getLogger(logger_name).error(f"Failed to change the key to '{new_key_id}' for config '{self.default_config_file_location}'")
-            raise Exception("Failed to change the key for " + self.default_config_file_location)
-        return True
+        with self._lock:
+            old_key_id = self.key_id
+            try:
+                self.key_id = new_key_id
+                self.__save_config(force=True)
+            except Exception:
+                self.key_id = old_key_id
+                logging.getLogger(logger_name).error(f"Failed to change the key to '{new_key_id}' for config '{self.default_config_file_location}'")
+                raise Exception("Failed to change the key for " + self.default_config_file_location)
+            return True
 
     def read_storage(self):
-        if not self.config:
-            self.__load_config()
-        return dict(self.config)
+        with self._lock:
+            if not self.config:
+                self.__load_config()
+            return dict(self.config)
 
     def save_storage(self, updated_config):
-        self.__save_config(updated_config)
+        with self._lock:
+            self.__save_config(updated_config)
 
     def get(self, key: ConfigKeys):
         config = self.read_storage()
         return config.get(key.value)
 
     def set(self, key: ConfigKeys, value):
-        config = self.read_storage()
-        config[key.value] = value
-        self.save_storage(config)
-        return config
+        with self._lock:
+            config = self.read_storage()
+            config[key.value] = value
+            self.save_storage(config)
+            return config
 
     def delete(self, key: ConfigKeys):
-        config = self.read_storage()
+        with self._lock:
+            config = self.read_storage()
 
-        kv = key.value
-        if kv in config:
-            del config[kv]
-            logger.debug(f"Removed key {kv}")
-        else:
-            logger.debug(f"No key {kv} was found in config")
+            kv = key.value
+            if kv in config:
+                del config[kv]
+                logger.debug(f"Removed key {kv}")
+            else:
+                logger.debug(f"No key {kv} was found in config")
 
-        self.save_storage(config)
-        return config
+            self.save_storage(config)
+            return config
 
     def delete_all(self):
-        self.read_storage()
-        self.config.clear()
-        self.save_storage(self.config)
-        return dict(self.config)
+        with self._lock:
+            self.read_storage()
+            self.config.clear()
+            self.save_storage(self.config)
+            return dict(self.config)
 
     def contains(self, key: ConfigKeys):
         config = self.read_storage()
