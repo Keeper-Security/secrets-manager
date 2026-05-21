@@ -114,6 +114,10 @@ class TestKsm961AwsKmsEncryptError(unittest.TestCase):
     def test_load_raises_on_decrypt_client_error(self):
         """KSM-961: __load_config must raise when KMS decrypt raises ClientError."""
         from botocore.exceptions import ClientError
+        # Write non-JSON binary content so __load_config uses the decrypt path.
+        # (The identity mock produces JSON-like output; real KMS would produce binary ciphertext.)
+        with open(self.config_path, 'wb') as fh:
+            fh.write(b'\x00\x01\x02\x03' * 64)
         self.storage.config = {}  # clear cache to force re-read
         self.storage.kms_client.decrypt.side_effect = ClientError(
             {'Error': {'Code': 'KMSInvalidStateException', 'Message': 'Key disabled'}},

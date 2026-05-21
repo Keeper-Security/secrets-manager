@@ -136,7 +136,7 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
                             raise Exception("{} is not a utf-8 encoded file.".format(self.default_config_file_location))
                         raise err
 
-            if config:
+            if config is not None:
                 # detected plaintext JSON config -> encrypt
                 self.config = config
                 self.__save_config()  # save encrypted
