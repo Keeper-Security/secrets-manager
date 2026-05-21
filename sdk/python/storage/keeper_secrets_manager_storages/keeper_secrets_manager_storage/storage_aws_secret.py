@@ -239,7 +239,7 @@ class AwsConfigProvider(IConfigProvider):
                 pass
 
         if not region:
-            logger.error("Failed to auto-detect AWS region from IMDS for secret '%s'", self.key_name)
+            logger.error("Failed to auto-detect AWS region from IMDS")
             raise Exception(
                 f"Failed to determine AWS region for EC2 instance. "
                 f"Use a full ARN as the key name or configure the region via environment."
@@ -306,7 +306,7 @@ class AwsConfigProvider(IConfigProvider):
         if not result:
             error = (res.get("error", "") if res else "") or ""
             if error:
-                logger.error("Failed to read config from AWS secret '%s': %s", self.key_name, error)
+                logger.error("Failed to read config from AWS secret")
                 raise Exception(f"Failed to read config from AWS secret '{self.key_name}': {error}")
         return result
 

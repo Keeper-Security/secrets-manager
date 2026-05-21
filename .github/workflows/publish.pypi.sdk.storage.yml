@@ -33,11 +33,11 @@ jobs:
           VERSION="${{ needs.get-versions.outputs.version }}"
           echo "Checking keeper-secrets-manager-storage $VERSION..."
           STATUS=$(curl -sS -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/keeper-secrets-manager-storage/${VERSION}/json")
-          if [ "$STATUS" = "200" ]; then
-            echo "::error::keeper-secrets-manager-storage ${VERSION} is already on PyPI. Aborting."
-            exit 1
-          fi
-          echo "keeper-secrets-manager-storage $VERSION not yet on PyPI - ok to proceed"
+          case "$STATUS" in
+            200) echo "::error::keeper-secrets-manager-storage ${VERSION} is already on PyPI. Aborting."; exit 1 ;;
+            404) echo "keeper-secrets-manager-storage $VERSION not yet on PyPI - ok to proceed" ;;
+            *)   echo "::error::Unexpected HTTP $STATUS from PyPI version endpoint. Aborting."; exit 1 ;;
+          esac
 
   generate-sbom:
     name: Generate and publish SBOM
@@ -130,5 +130,5 @@ jobs:
         run: |
           python3 -m build --no-isolation
           python3 -m pip install dist/*.whl
-          python3 -c "import keeper_secrets_manager_storage; print('import OK')"
+          python3 -c "import keeper_secrets_manager_storage, keeper_secrets_manager_hsm; print('import OK')"
           python3 -m twine upload --verbose dist/*
