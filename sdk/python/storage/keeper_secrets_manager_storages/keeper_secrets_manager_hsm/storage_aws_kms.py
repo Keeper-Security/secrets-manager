@@ -162,15 +162,14 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
         config_json: str = json.dumps(config, indent=4, sort_keys=True)
         config_hash = hashlib.sha256(config_json.encode()).hexdigest()
 
+        pending_config = None
         if updated_config:
             ucfg_json: str = json.dumps(updated_config, indent=4, sort_keys=True)
             ucfg_hash = hashlib.sha256(ucfg_json.encode()).hexdigest()
             if ucfg_hash != config_hash:
                 config_hash = ucfg_hash
                 config_json = ucfg_json
-                self.config = dict(updated_config)
-                # update after save - to allow for retries
-                # self.last_saved_config_hash = config_hash
+                pending_config = dict(updated_config)
 
         if not force and config_hash == self.last_saved_config_hash:
             logger.warning("Skipped config JSON save. No changes detected.")
@@ -181,6 +180,8 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
         with open(self.default_config_file_location, "wb") as write_file:
             write_file.write(blob)
         self.last_saved_config_hash = config_hash
+        if pending_config is not None:
+            self.config = pending_config
 
     def decrypt_config(self, autosave: bool = True) -> str:
         ciphertext: bytes = bytes()

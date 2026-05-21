@@ -272,14 +272,14 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
         config_json:str = json.dumps(config, indent=4, sort_keys=True)
         config_hash = hashlib.sha256(config_json.encode()).hexdigest()
 
+        pending_config = None
         if updated_config:
             ucfg_json:str = json.dumps(updated_config, indent=4, sort_keys=True)
             ucfg_hash = hashlib.sha256(ucfg_json.encode()).hexdigest()
             if ucfg_hash != config_hash:
                 config_hash = ucfg_hash
                 config_json = ucfg_json
-                self.config = dict(updated_config)
-                # self.last_saved_config_hash = config_hash # update after save - to allow for retries
+                pending_config = dict(updated_config)
 
         if not force and config_hash == self.last_saved_config_hash:
             logging.getLogger(logger_name).warning("Skipped config JSON save. No changes detected.")
@@ -290,6 +290,8 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
         with open(self.default_config_file_location, "wb") as write_file:
             write_file.write(blob)
         self.last_saved_config_hash = config_hash
+        if pending_config is not None:
+            self.config = pending_config
 
     def decrypt_config(self, autosave: bool = True) -> str:
         ciphertext: bytes = bytes()
