@@ -250,7 +250,7 @@ class AzureKeyValueStorage(KeyValueStorage):
         if pending_config is not None:
             self.config = pending_config
 
-    def decrypt_config(self, autosave: bool = True) -> str:
+    def decrypt_config(self, autosave: bool = False) -> str:
         ciphertext: bytes = bytes()
         plaintext: str = ""
         try:
