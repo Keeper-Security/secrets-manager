@@ -44,7 +44,8 @@ def _aws_kms_storage(config_path: str):
 
 def _aws_secret_storage():
     from keeper_secrets_manager_storage.storage_aws_secret import AwsSecretStorage, AwsConfigProvider
-    with patch.object(AwsConfigProvider, 'from_ec2instance_config'):
+    with patch.object(AwsConfigProvider, 'from_ec2instance_config'), \
+         patch.object(AwsConfigProvider, 'read_config', return_value='{}'):
         return AwsSecretStorage('test-secret')
 
 

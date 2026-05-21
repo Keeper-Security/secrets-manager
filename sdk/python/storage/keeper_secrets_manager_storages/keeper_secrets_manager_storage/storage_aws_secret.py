@@ -414,7 +414,7 @@ class AwsSecretStorage(KeyValueStorage):
         self._lock = threading.RLock()
         self.config = {}
         self.last_saved_config_hash = ""
-        # self.__load_config()  # don't initialize here - use helpers
+        self.__load_config()
 
     def from_default_config(self, aws_key: str, fallback_to_default_profile: bool = True):
         self.provider = AwsConfigProvider(aws_key)
@@ -466,13 +466,12 @@ class AwsSecretStorage(KeyValueStorage):
             if is_json(contents):
                 config = json.loads(contents)
 
-            # AWS secret should be plaintext, but if it is JSON
-            # we must make sure it is (valid) KSM JSON - check for privateKey
-            if config and config.get("privateKey", ""):
+            # Accept any valid JSON object; downstream SDK validates required fields
+            if config is not None and isinstance(config, dict):
                 self.config = config
                 self.last_saved_config_hash = hashlib.sha256(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
             else:
-                err = f"Failed to load/parse config JSON from AWS secret '{self.provider.key_name}' - the value must be a valid JSON, value='{contents}'"
+                err = f"Failed to load/parse config JSON from AWS secret '{self.provider.key_name}' - the value must be a valid JSON object, value='{contents}'"
         except Exception as e:
             logger.error(f"Failed to load config JSON from AWS secret '{self.provider.key_name}', Error: {str(e)}")
 
