@@ -222,7 +222,7 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
                         config = json.loads(config_data)
                     except UnicodeDecodeError:
                         logging.getLogger(logger_name).error("Config file is not utf-8 encoded.")
-                        raise Exception("{} is not a utf-8 encoded file".format(self.default_config_file_location))
+                        raise Exception("{} is not a valid encrypted config file".format(self.default_config_file_location))
                     except JSONDecodeError as err:
                         # If the JSON file was not empty, it's a legit JSON error. Throw an exception.
                         if config_data is not None and config_data.strip() != "":
@@ -235,7 +235,7 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
                     except Exception as err:
                         logging.getLogger(logger_name).error("Config JSON has problems: {}".format(err))
                         if "codec" in str(err):
-                            raise Exception("{} is not a utf-8 encoded file.".format(self.default_config_file_location))
+                            raise Exception("{} is not a valid encrypted config file.".format(self.default_config_file_location))
                         raise err
 
             if config is not None:

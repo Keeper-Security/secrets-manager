@@ -190,7 +190,7 @@ class AzureKeyValueStorage(KeyValueStorage):
                         config = json.loads(config_data)
                     except UnicodeDecodeError:
                         logger.error("Config file is not utf-8 encoded.")
-                        raise Exception("{} is not a utf-8 encoded file".format(self.default_config_file_location))
+                        raise Exception("{} is not a valid encrypted config file".format(self.default_config_file_location))
                     except JSONDecodeError as err:
                         # If the JSON file was not empty, it's a legit JSON error. Throw an exception.
                         if config_data is not None and config_data.strip() != "":
@@ -214,6 +214,8 @@ class AzureKeyValueStorage(KeyValueStorage):
             else:
                 # Try to decrypt binary blob
                 config_json = self.__decrypt_buffer(contents)
+                if not config_json:
+                    raise Exception("{} is not a valid encrypted config file".format(self.default_config_file_location))
                 try:
                     config = json.loads(config_json)
                     self.config = config

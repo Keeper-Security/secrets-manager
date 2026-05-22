@@ -120,7 +120,7 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
                         config = json.loads(config_data)
                     except UnicodeDecodeError:
                         logger.error("Config file is not utf-8 encoded.")
-                        raise Exception("{} is not a utf-8 encoded file".format(self.default_config_file_location))
+                        raise Exception("{} is not a valid encrypted config file".format(self.default_config_file_location))
                     except JSONDecodeError as err:
                         # If the JSON file was not empty, it's a legit JSON error. Throw an exception.
                         if config_data is not None and config_data.strip() != "":
@@ -143,7 +143,10 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
                 self.last_saved_config_hash = hashlib.sha256(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
             else:
                 # Try to decrypt binary blob
-                config_json = self.__decrypt_buffer(contents)
+                try:
+                    config_json = self.__decrypt_buffer(contents)
+                except UnicodeDecodeError:
+                    raise Exception("{} is not a valid encrypted config file".format(self.default_config_file_location))
                 if len(config_json) == 0:
                     logging.getLogger(logger_name).error("Failed to decrypt config file " + self.default_config_file_location)
                 else:
