@@ -242,3 +242,42 @@ class ConfigSavePermissionsWindowsTest(unittest.TestCase):
         with patch("keeper_secrets_manager_cli.config.set_config_mode") as mock_scm:
             self._make_config(ini_file).save()
             mock_scm.assert_called_once_with(ini_file, logger=ANY)
+
+
+class DefaultIniFileLocationTest(unittest.TestCase):
+    """KSM-980: binary installs must use HOME, not CWD, for keeper.ini default path."""
+
+    def test_pip_install_uses_cwd(self):
+        """Non-frozen (pip) install uses CWD as default ini directory."""
+        had_frozen = hasattr(sys, 'frozen')
+        try:
+            if had_frozen:
+                del sys.frozen
+            result = Config.get_default_ini_file(launched_from_app=False)
+            self.assertEqual(result, os.path.join(os.getcwd(), Config.default_ini_file))
+        finally:
+            pass
+
+    def test_binary_install_uses_home(self):
+        """KSM-980: frozen (binary) install must use HOME instead of CWD."""
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE", "")
+        had_frozen = hasattr(sys, 'frozen')
+        try:
+            sys.frozen = True
+            result = Config.get_default_ini_file(launched_from_app=False)
+            self.assertEqual(result, os.path.join(home, Config.default_ini_file))
+        finally:
+            if not had_frozen:
+                del sys.frozen
+
+    def test_launched_from_app_uses_home(self):
+        """launched_from_app=True still uses HOME (existing behaviour unchanged)."""
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE", "")
+        had_frozen = hasattr(sys, 'frozen')
+        try:
+            if had_frozen:
+                del sys.frozen
+            result = Config.get_default_ini_file(launched_from_app=True)
+            self.assertEqual(result, os.path.join(home, Config.default_ini_file))
+        finally:
+            pass
