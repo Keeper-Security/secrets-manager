@@ -473,7 +473,8 @@ class AwsSecretStorage(KeyValueStorage):
             else:
                 err = f"Failed to load/parse config JSON from AWS secret '{self.provider.key_name}' - the value must be a valid JSON object, value='{contents}'"
         except Exception as e:
-            logger.error(f"Failed to load config JSON from AWS secret '{self.provider.key_name}', Error: {str(e)}")
+            err = f"Failed to load config JSON from AWS secret '{self.provider.key_name}', Error: {str(e)}"
+            logger.error(err)
 
         if err:
             raise ValueError(err)
