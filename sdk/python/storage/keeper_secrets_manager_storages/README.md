@@ -21,6 +21,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - `AwsSecretStorage.__init__` now eagerly loads the config on construction, matching all other backends
 - `AwsSecretStorage.__load_config()` now raises when the underlying AWS Secrets Manager call fails — previously the exception from `read_config` was logged but not propagated, leaving `config = {}` with no error
 - Non-UTF8 bytes that are not a valid encrypted blob now raise a clear `"is not a valid encrypted config file"` exception across all encrypted backends (nfast, AWS KMS, Azure KeyVault)
+- HsmNfast and AwsKms now raise `"is not a valid encrypted config file"` when decryption produces empty output — previously HsmNfast leaked a bare `JSONDecodeError` and AwsKms logged silently without raising, unlike Azure
 
 ## 1.0.2
 
