@@ -1003,5 +1003,138 @@ color = True
                       "expected profile not found in --ini-file output")
 
 
+class KeyringWarningMessageTest(unittest.TestCase):
+    """KSM-975: keyring fallback warning must give context-appropriate advice.
+
+    When keyring is unavailable the warning should:
+    - Direct *pip* users to install with quoted brackets (zsh-safe).
+    - Direct *binary* users (sys.frozen=True) to the releases page, not pip.
+    """
+
+    def setUp(self):
+        self.orig_dir = os.getcwd()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        os.chdir(self.temp_dir.name)
+        os.environ.pop("KSM_CONFIG", None)
+
+    def tearDown(self):
+        os.chdir(self.orig_dir)
+        self.temp_dir.cleanup()
+        os.environ.pop("KSM_CONFIG", None)
+
+    def _run_profile_init(self, runner, frozen=False):
+        """Invoke 'profile init' with keyring disabled and optional sys.frozen mock."""
+        res_queue = {}
+
+        def do_run():
+            patches = [
+                patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                      return_value=False),
+                patch('keeper_secrets_manager_cli.profile.Profile._mock_client',
+                      create=True),
+            ]
+            if frozen:
+                patches.append(patch('sys.frozen', True, create=True))
+
+            # Patch the network call so init doesn't actually hit the server
+            from keeper_secrets_manager_core import mock as ksm_mock
+            res = ksm_mock.Response()
+            res.flags = 0
+            queue = ksm_mock.ResponseQueue(client=None)
+            queue.add_response(res)
+
+            with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                       return_value=False):
+                if frozen:
+                    with patch.object(__builtins__ if isinstance(__builtins__, dict)
+                                      else __import__('builtins'), '__dict__', {}):
+                        pass  # just need sys.frozen below
+                import sys as _sys
+                had_frozen = hasattr(_sys, 'frozen')
+                try:
+                    if frozen:
+                        _sys.frozen = True
+                    result = runner.invoke(
+                        cli,
+                        ['profile', 'init', '-t', 'US:FAKE_TOKEN_FOR_WARNING_TEST'],
+                        catch_exceptions=True,
+                    )
+                    res_queue['result'] = result
+                finally:
+                    if frozen:
+                        if had_frozen:
+                            pass
+                        else:
+                            del _sys.frozen
+
+        do_run()
+        return res_queue.get('result')
+
+    def test_pip_warning_uses_quoted_brackets(self):
+        """KSM-975: pip path warning must quote brackets — unquoted [] fails on zsh."""
+        runner = CliRunner()
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            import sys as _sys
+            had_frozen = hasattr(_sys, 'frozen')
+            try:
+                if had_frozen:
+                    del _sys.frozen  # ensure we're in pip path
+                result = runner.invoke(
+                    cli,
+                    ['profile', 'init', '-t', 'US:FAKE_TOKEN_KSM975'],
+                    catch_exceptions=True,
+                )
+            finally:
+                pass  # frozen was not set, nothing to restore
+
+        # The warning must use quoted brackets: 'keeper-secrets-manager-cli[keyring]'
+        combined = (result.output or '') + (result.stderr if hasattr(result, 'stderr') else '')
+        self.assertIn(
+            "pip install 'keeper-secrets-manager-cli[keyring]'",
+            combined,
+            "pip warning must use single-quoted package name for zsh compatibility"
+        )
+        # Must NOT contain the unquoted form as the install suggestion
+        self.assertNotIn(
+            "pip install keeper-secrets-manager-cli[keyring]\n",
+            combined,
+            "unquoted pip command found — will fail on zsh"
+        )
+
+    def test_binary_warning_points_to_releases_not_pip(self):
+        """KSM-975: binary path (sys.frozen=True) must direct users to releases page, not pip."""
+        runner = CliRunner()
+        import sys as _sys
+        had_frozen = hasattr(_sys, 'frozen')
+        try:
+            _sys.frozen = True
+            with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                       return_value=False):
+                result = runner.invoke(
+                    cli,
+                    ['profile', 'init', '-t', 'US:FAKE_TOKEN_KSM975_BINARY'],
+                    catch_exceptions=True,
+                )
+        finally:
+            if not had_frozen:
+                del _sys.frozen
+
+        combined = (result.output or '') + (result.stderr if hasattr(result, 'stderr') else '')
+
+        # Must point to the releases page
+        self.assertIn(
+            'github.com/Keeper-Security/secrets-manager/releases',
+            combined,
+            "binary warning must link to the releases page for the -keyring binary"
+        )
+        # Must NOT tell binary users to run pip install
+        self.assertNotIn(
+            'pip install',
+            combined,
+            "binary users should not be told to use pip install"
+        )
+
+
 if __name__ == '__main__':
     unittest.main()
