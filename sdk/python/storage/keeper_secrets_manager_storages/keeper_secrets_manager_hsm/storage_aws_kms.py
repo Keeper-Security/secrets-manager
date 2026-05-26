@@ -147,8 +147,8 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
                     config_json = self.__decrypt_buffer(contents)
                 except UnicodeDecodeError:
                     raise Exception("{} is not a valid encrypted config file".format(self.default_config_file_location))
-                if len(config_json) == 0:
-                    logging.getLogger(logger_name).error("Failed to decrypt config file " + self.default_config_file_location)
+                if not config_json:
+                    raise Exception("{} is not a valid encrypted config file".format(self.default_config_file_location))
                 else:
                     try:
                         config = json.loads(config_json)

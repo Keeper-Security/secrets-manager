@@ -257,6 +257,8 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
                     logging.getLogger(logger_name).warning("Empty config file " + self.default_config_file_location)
 
                 config_json = self.__decrypt_buffer(ciphertext)
+                if not config_json:
+                    raise Exception("{} is not a valid encrypted config file".format(self.default_config_file_location))
                 try:
                     config = json.loads(config_json)
                     self.config = config
