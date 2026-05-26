@@ -19,6 +19,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - `__load_config` check fixed from `if config:` to `if config is not None:` — a plaintext `{}` config is now correctly re-encrypted on first load
 - `_get_instance_region` and `read_config` (AWS Secrets Manager provider) now raise on failure instead of silently returning empty values
 - `AwsSecretStorage.__init__` now eagerly loads the config on construction, matching all other backends
+- `AwsSecretStorage.__load_config()` now raises when the underlying AWS Secrets Manager call fails — previously the exception from `read_config` was logged but not propagated, leaving `config = {}` with no error
 - Non-UTF8 bytes that are not a valid encrypted blob now raise a clear `"is not a valid encrypted config file"` exception across all encrypted backends (nfast, AWS KMS, Azure KeyVault)
 
 ## 1.0.2
