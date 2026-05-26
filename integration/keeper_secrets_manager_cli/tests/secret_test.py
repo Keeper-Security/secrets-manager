@@ -1151,5 +1151,102 @@ class SecretTest(unittest.TestCase):
                          "custom value must be [] in serialized payload")
 
 
+class LinkedRecordsTest(unittest.TestCase):
+    """KSM-981: linked records must be surfaced in secret get output."""
+
+    def setUp(self):
+        self.orig_dir = os.getcwd()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        os.chdir(self.temp_dir.name)
+
+    def tearDown(self):
+        os.chdir(self.orig_dir)
+
+    def test_links_present_in_json_output(self):
+        """secret get --json must include a links key even when links is empty."""
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        res = mock.Response()
+        parent = res.add_record(title="PAM Machine")
+        parent.field("login", "admin")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(res)
+        queue.add_response(res)
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            mock_client.return_value = secrets_manager
+            Profile.init(token='MY_TOKEN')
+
+            runner = CliRunner()
+            result = runner.invoke(cli, ['secret', 'get', '-u', parent.uid, '--json'],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "non-zero exit on secret get --json")
+            data = json.loads(result.output)
+            self.assertIn('links', data, "links key must be present in JSON output")
+
+    def test_links_populated_in_json_output(self):
+        """secret get --json must include populated links when the record has linked UIDs."""
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        linked_uid = "LINKEDUID0000000000000"
+        res = mock.Response()
+        parent = res.add_record(title="PAM Machine",
+                                links=[{"recordUid": linked_uid}])
+        parent.field("login", "admin")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(res)
+        queue.add_response(res)
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            mock_client.return_value = secrets_manager
+            Profile.init(token='MY_TOKEN')
+
+            runner = CliRunner()
+            result = runner.invoke(cli, ['secret', 'get', '-u', parent.uid, '--json'],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "non-zero exit on secret get --json")
+            data = json.loads(result.output)
+            self.assertIn('links', data, "links key must be present in JSON output")
+            self.assertEqual(1, len(data['links']), "expected 1 link")
+            self.assertEqual(linked_uid, data['links'][0]['recordUid'],
+                             "linked UID must match")
+
+    def test_links_shown_in_text_output(self):
+        """secret get text output must include a Links section when links are present."""
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        linked_uid = "LINKEDUID0000000000000"
+        res = mock.Response()
+        parent = res.add_record(title="PAM Machine",
+                                links=[{"recordUid": linked_uid}])
+        parent.field("login", "admin")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(res)
+        queue.add_response(res)
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            mock_client.return_value = secrets_manager
+            Profile.init(token='MY_TOKEN')
+
+            runner = CliRunner()
+            result = runner.invoke(cli, ['secret', 'get', '-u', parent.uid],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, "non-zero exit on secret get text")
+            self.assertIn(linked_uid, result.output,
+                          "linked UID must appear in text output")
+
+
 if __name__ == '__main__':
     unittest.main()

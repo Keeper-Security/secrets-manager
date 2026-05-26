@@ -20,7 +20,7 @@ from pathlib import Path
 from jsonpath_rw_ext import parse
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_cli.common import launch_editor
-from keeper_secrets_manager_core.core import SecretsManager, CreateOptions, KeeperFolder, KeeperFileUpload
+from keeper_secrets_manager_core.core import SecretsManager, CreateOptions, KeeperFolder, KeeperFileUpload, QueryOptions
 from keeper_secrets_manager_core.dto.payload import UpdateOptions
 from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
 from keeper_secrets_manager_core.dto.dtos import RecordCreate as _RecordCreate
@@ -181,7 +181,8 @@ class Secret:
                 "type": x.type,
                 "last_modified": x.last_modified,
                 "size": x.size
-            } for x in record.files]
+            } for x in record.files],
+            "links": record.links
         }
 
         return ret
@@ -283,6 +284,14 @@ class Secret:
                     file["file_uid"]
                 ]
                 table.add_row(row)
+            ret += table.get_string() + "\n"
+
+        if len(record_dict.get("links", [])) > 0:
+            ret += "\n"
+            table = Table(use_color=use_color)
+            table.add_column("Linked Record UID", data_color=Fore.GREEN)
+            for link in record_dict["links"]:
+                table.add_row([link.get("recordUid", "")])
             ret += table.get_string() + "\n"
 
         ret += "\n"
@@ -422,7 +431,9 @@ class Secret:
         if len(titles) == 0 and uids:
             fetch_uids = uids
 
-        secrets = self.cli.client.get_secrets(uids=fetch_uids)
+        secrets = self.cli.client.get_secrets_with_options(
+            QueryOptions(records_filter=fetch_uids, folders_filter=None, request_links=True)
+        )
         if len(secrets) == 0 and fetch_uids is not None:
             raise KsmCliException("Cannot find requested record(s).")
 
