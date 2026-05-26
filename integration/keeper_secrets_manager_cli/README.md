@@ -6,6 +6,11 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.4.0
+- **Fix**: KSM-975 - Binary install keyring warning gave pip install advice instead of pointing to the `-keyring` binary download; bracket syntax in the advice also caused zsh glob errors. Now detects `sys.frozen` to show binary-appropriate help text and single-quotes the bracket expression for zsh compatibility.
+- **Fix**: KSM-980 - Binary install created `keeper.ini` in the current working directory instead of the user's home directory. Now detects `sys.frozen` in `Config.get_default_ini_file()` and uses `$HOME`/`%USERPROFILE%` for binary installs, matching the existing `launched_from_app` behaviour.
+- **Fix**: KSM-981 - `ksm secret get` did not surface linked records (PAM credential records were invisible). Now passes `request_links=True` to the server so linked record UIDs are returned, includes a `links` array in JSON output, and shows a Links table in text output.
+
 ## 1.3.0
 - **Feature**: KSM-800 - OS-native keyring storage for CLI configuration
   - New profiles store configuration in the OS keyring by default (macOS Keychain, Windows Credential Manager, Linux Secret Service)
