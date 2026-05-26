@@ -178,10 +178,18 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
             logger.warning("Skipped config JSON save. No changes detected.")
             return
 
-        self.create_config_file_if_missing()
         blob = self.__encrypt_buffer(config_json)
-        with open(self.default_config_file_location, "wb") as write_file:
-            write_file.write(blob)
+        tmp_path = self.default_config_file_location + ".tmp"
+        try:
+            with open(tmp_path, "wb") as write_file:
+                write_file.write(blob)
+            os.replace(tmp_path, self.default_config_file_location)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
         self.last_saved_config_hash = config_hash
         if pending_config is not None:
             self.config = pending_config
@@ -273,9 +281,18 @@ class AwsKmsKeyValueStorage(KeyValueStorage):
 
     def create_config_file_if_missing(self):
         if not os.path.exists(self.default_config_file_location):
-            with open(self.default_config_file_location, "wb") as fh:
+            tmp_path = self.default_config_file_location + ".tmp"
+            try:
                 blob = self.__encrypt_buffer("{}")
-                fh.write(blob)
+                with open(tmp_path, "wb") as fh:
+                    fh.write(blob)
+                os.replace(tmp_path, self.default_config_file_location)
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
 
     def is_empty(self):
         config = self.read_storage()
