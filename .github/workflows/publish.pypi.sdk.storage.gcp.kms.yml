@@ -1,44 +1,209 @@
 name: Publish to PyPI (Python SDK Storage GCP KMS)
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to PyPI (uncheck to build and scan SBOM only)'
+        required: false
+        default: 'true'
+        type: boolean
+
+permissions:
+  contents: read
 
 jobs:
-  publish-pypi:
-    name: Publish KSM Python SDK Storage GCP KMS to PyPI
-    environment: prod
+  get-versions:
     runs-on: ubuntu-latest
-    timeout-minutes: 10 # To keep builds from running too long
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
+      - name: Extract version
+        id: extract-version
+        working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
+        run: |
+          VERSION=$(grep -Po 'version\s*=\s*["\x27]\K[^\x27"]*' pyproject.toml | head -1)
+          echo "Version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Test on Python ${{ matrix.python-version }}
+    needs: get-versions
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
     defaults:
       run:
         working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
-
     steps:
-      - name: Get the source code
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          python-version: 3.12
+          persist-credentials: false
 
-      - name: Retrieve secrets from KSM
-        id: ksmsecrets
-        uses: Keeper-Security/ksm-action@master
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          keeper-secret-config: ${{ secrets.KSM_PYPI_PUBLISHER_PYPI_SDK_CONFIG }}
-          secrets: |
-            -aBWi3-yU_qvatNh0Eaqew/field/password > PYPI_API_TOKEN_GCP_KMS
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
-          python3 -m pip install --upgrade pip build twine
-          python3 -m pip install -r requirements.txt
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt pytest pytest-cov
+          python3 -m pip install -e .
 
-      - name: Build and Publish
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ steps.ksmsecrets.outputs.PYPI_API_TOKEN_GCP_KMS }}
+      - name: Run tests
+        run: pytest tests/
+
+  smoke-test:
+    name: Smoke test (floor resolution, Python 3.13)
+    needs: get-versions
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.13'
+
+      - name: Install from floor constraints only
         run: |
-          python3 -m build
-          python3 -m twine upload --verbose dist/* 
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pytest
+          python3 -m pip install -e .
+
+      - name: Run tests
+        run: pytest tests/
+
+  validate-versions:
+    name: Validate version not yet published
+    needs: get-versions
+    if: ${{ github.event.inputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check version not on target registry
+        env:
+          VERSION: ${{ needs.get-versions.outputs.version }}
+        run: |
+          CHECK_URL="https://pypi.org/pypi/keeper-secrets-manager-storage-gcp-kms/${VERSION}/json"
+          echo "Checking PyPI for keeper-secrets-manager-storage-gcp-kms $VERSION..."
+          RESPONSE=$(curl -sS --retry 3 --retry-delay 2 -w "\n%{http_code}" "$CHECK_URL")
+          STATUS=$(printf '%s' "$RESPONSE" | tail -1)
+          BODY=$(printf '%s' "$RESPONSE" | head -n -1)
+          case "$STATUS" in
+            404) echo "keeper-secrets-manager-storage-gcp-kms $VERSION not yet on PyPI - ok to proceed" ;;
+            200) echo "::error::keeper-secrets-manager-storage-gcp-kms ${VERSION} is already on PyPI. Aborting."; echo "$BODY"; exit 1 ;;
+            *)   echo "::error::Unexpected status $STATUS from PyPI. Aborting."; echo "$BODY"; exit 1 ;;
+          esac
+
+  generate-sbom:
+    name: Generate and publish SBOM
+    needs: [get-versions]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.11'
+
+      - name: Install package from source into scan target
+        run: |
+          mkdir -p /tmp/scan-target
+          pip3 install --quiet --target /tmp/scan-target ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
+
+      - name: Install Syft and Manifest CLI
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.31.0
+
+      - name: Generate and publish SBOM
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+          VERSION: ${{ needs.get-versions.outputs.version }}
+        run: |
+          SCAN_TARGET=/tmp/scan-target
+
+          echo "Scanning: $SCAN_TARGET"
+          echo "Packages installed:"
+          pip3 list --path "$SCAN_TARGET"
+
+          manifest sbom "$SCAN_TARGET" \
+            --generator=syft \
+            --name=keeper-secrets-manager-storage-gcp-kms \
+            --version="${VERSION}" \
+            --output=spdx-json \
+            --file=sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --asset-label=ksm,storage,gcp,python,security 2>&1 || \
+          manifest sbom "$SCAN_TARGET" \
+            --generator=syft \
+            --name=keeper-secrets-manager-storage-gcp-kms \
+            --version="${VERSION}" \
+            --output=spdx-json \
+            --file=sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --label=ksm,storage,gcp,python,security
+
+      - name: Archive SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom-${{ needs.get-versions.outputs.version }}
+          path: sbom.json
+          retention-days: 10
+
+  publish:
+    name: Publish to PyPI
+    needs: [test, smoke-test, generate-sbom, validate-versions, get-versions]
+    if: ${{ github.event.inputs.publish == 'true' }}
+    environment: prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.9'
+
+      - name: Install build tools
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install build 'wheel>=0.46.3'  # wheel pin: CVE-2026-24049
+
+      - name: Build
+        working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
+        run: python3 -m build
+
+      - name: Verify import
+        working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
+        run: |
+          python3 -m pip install dist/*.whl
+          cd /tmp && python3 -c "from keeper_secrets_manager_storage_gcp_kms import GCPKeyValueStorage; print('import OK')"
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
+        with:
+          packages-dir: sdk/python/storage/keeper_secrets_manager_storage_gcp_kms/dist/
+
