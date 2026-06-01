@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import threading
 
 from enum import Enum
 from keeper_secrets_manager_core.helpers import is_json
@@ -237,6 +238,13 @@ class AwsConfigProvider(IConfigProvider):
             except Exception:
                 pass
 
+        if not region:
+            logger.error("Failed to auto-detect AWS region from IMDS")
+            raise Exception(
+                f"Failed to determine AWS region for EC2 instance. "
+                f"Use a full ARN as the key name or configure the region via environment."
+            )
+
         return region
 
     def _setup_credential_provider(self):
@@ -295,6 +303,11 @@ class AwsConfigProvider(IConfigProvider):
             res = self._get_secret_aws(secretsmanager, self.key_name)
 
         result = res.get("value", "") or "" if res else ""
+        if not result:
+            error = (res.get("error", "") if res else "") or ""
+            if error:
+                logger.error("Failed to read config from AWS secret")
+                raise Exception(f"Failed to read config from AWS secret '{self.key_name}': {error}")
         return result
 
     def write_config(self, config: str) -> str:
@@ -398,9 +411,10 @@ class AwsSecretStorage(KeyValueStorage):
         self.provider = AwsConfigProvider(aws_key)
         self.provider.from_ec2instance_config(aws_key, fallback_to_default_profile)
 
+        self._lock = threading.RLock()
         self.config = {}
         self.last_saved_config_hash = ""
-        # self.__load_config()  # don't initialize here - use helpers
+        self.__load_config()
 
     def from_default_config(self, aws_key: str, fallback_to_default_profile: bool = True):
         self.provider = AwsConfigProvider(aws_key)
@@ -452,15 +466,15 @@ class AwsSecretStorage(KeyValueStorage):
             if is_json(contents):
                 config = json.loads(contents)
 
-            # AWS secret should be plaintext, but if it is JSON
-            # we must make sure it is (valid) KSM JSON - check for privateKey
-            if config and config.get("privateKey", ""):
+            # Accept any valid JSON object; downstream SDK validates required fields
+            if config is not None and isinstance(config, dict):
                 self.config = config
-                self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
+                self.last_saved_config_hash = hashlib.sha256(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
             else:
-                err = f"Failed to load/parse config JSON from AWS secret '{self.provider.key_name}' - the value must be a valid JSON, value='{contents}'"
+                err = f"Failed to load/parse config JSON from AWS secret '{self.provider.key_name}' - the value must be a valid JSON object, value='{contents}'"
         except Exception as e:
-            logger.error(f"Failed to load config JSON from AWS secret '{self.provider.key_name}', Error: {str(e)}")
+            err = f"Failed to load config JSON from AWS secret '{self.provider.key_name}', Error: {str(e)}"
+            logger.error(err)
 
         if err:
             raise ValueError(err)
@@ -468,17 +482,16 @@ class AwsSecretStorage(KeyValueStorage):
     def __save_config(self, updated_config: dict = {}, module=0, force=False):
         config = self.config if self.config else {}
         config_json: str = json.dumps(config, indent=4, sort_keys=True)
-        config_hash = hashlib.md5(config_json.encode()).hexdigest()
+        config_hash = hashlib.sha256(config_json.encode()).hexdigest()
 
+        pending_config = None
         if updated_config:
             ucfg_json: str = json.dumps(updated_config, indent=4, sort_keys=True)
-            ucfg_hash = hashlib.md5(ucfg_json.encode()).hexdigest()
+            ucfg_hash = hashlib.sha256(ucfg_json.encode()).hexdigest()
             if ucfg_hash != config_hash:
                 config_hash = ucfg_hash
                 config_json = ucfg_json
-                self.config = dict(updated_config)
-                # update after save - to allow for retries
-                # self.last_saved_config_hash = config_hash
+                pending_config = dict(updated_config)
 
         if not force and config_hash == self.last_saved_config_hash:
             logger.warning("Skipped config JSON save. No changes detected.")
@@ -487,44 +500,51 @@ class AwsSecretStorage(KeyValueStorage):
         # self.create_config_if_missing() # secret must exist in AWS
         self.provider.write_config(config_json)
         self.last_saved_config_hash = config_hash
+        if pending_config is not None:
+            self.config = pending_config
 
     # Interface methods implementation
     def read_storage(self):
-        if not self.config:
-            self.__load_config()
-        return dict(self.config)
+        with self._lock:
+            if not self.config:
+                self.__load_config()
+            return dict(self.config)
 
     def save_storage(self, updated_config):
-        self.__save_config(updated_config)
+        with self._lock:
+            self.__save_config(updated_config)
 
     def get(self, key: ConfigKeys):
         config = self.read_storage()
         return config.get(key.value)
 
     def set(self, key: ConfigKeys, value):
-        config = self.read_storage()
-        config[key.value] = value
-        self.save_storage(config)
-        return config
+        with self._lock:
+            config = self.read_storage()
+            config[key.value] = value
+            self.save_storage(config)
+            return config
 
     def delete(self, key: ConfigKeys):
-        config = self.read_storage()
+        with self._lock:
+            config = self.read_storage()
 
-        kv = key.value
-        if kv in config:
-            del config[kv]
-            logger.debug(f"Removed key {kv}")
-        else:
-            logger.debug(f"No key {kv} was found in config")
+            kv = key.value
+            if kv in config:
+                del config[kv]
+                logger.debug(f"Removed key {kv}")
+            else:
+                logger.debug(f"No key {kv} was found in config")
 
-        self.save_storage(config)
-        return config
+            self.save_storage(config)
+            return config
 
     def delete_all(self):
-        self.read_storage()
-        self.config.clear()
-        self.save_storage(self.config)
-        return dict(self.config)
+        with self._lock:
+            self.read_storage()
+            self.config.clear()
+            self.save_storage(self.config)
+            return dict(self.config)
 
     def contains(self, key: ConfigKeys):
         config = self.read_storage()
