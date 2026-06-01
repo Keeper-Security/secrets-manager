@@ -22,6 +22,7 @@ import hashlib
 import logging
 import os
 import json
+import threading
 
 import errno
 from json import JSONDecodeError
@@ -62,6 +63,7 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
         self.hsm_ident = ident if ident else os.environ.get("KSM_NFAST_IDENT", '')
         self.conn = nfpython.connection(needworldinfo=True)
         self.key = self.__load_key()
+        self._lock = threading.RLock()
         self.last_saved_config_hash = ""
         self.config = {}
         self.__load_config()
@@ -220,7 +222,7 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
                         config = json.loads(config_data)
                     except UnicodeDecodeError:
                         logging.getLogger(logger_name).error("Config file is not utf-8 encoded.")
-                        raise Exception("{} is not a utf-8 encoded file".format(self.default_config_file_location))
+                        raise Exception("{} is not a valid encrypted config file".format(self.default_config_file_location))
                     except JSONDecodeError as err:
                         # If the JSON file was not empty, it's a legit JSON error. Throw an exception.
                         if config_data is not None and config_data.strip() != "":
@@ -233,14 +235,14 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
                     except Exception as err:
                         logging.getLogger(logger_name).error("Config JSON has problems: {}".format(err))
                         if "codec" in str(err):
-                            raise Exception("{} is not a utf-8 encoded file.".format(self.default_config_file_location))
+                            raise Exception("{} is not a valid encrypted config file.".format(self.default_config_file_location))
                         raise err
 
-            if config:
+            if config is not None:
                 # detected plaintext JSON config -> encrypt
                 self.config = config
                 self.__save_config() # save encrypted
-                self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
+                self.last_saved_config_hash = hashlib.sha256(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
             else:
                 # decrypt binary blob
                 ciphertext: bytes = bytes()
@@ -255,10 +257,12 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
                     logging.getLogger(logger_name).warning("Empty config file " + self.default_config_file_location)
 
                 config_json = self.__decrypt_buffer(ciphertext)
+                if not config_json:
+                    raise Exception("{} is not a valid encrypted config file".format(self.default_config_file_location))
                 try:
                     config = json.loads(config_json)
                     self.config = config
-                    self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
+                    self.last_saved_config_hash = hashlib.sha256(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
                 except Exception as err:
                     logging.getLogger(logger_name).error("Config JSON has problems: {}".format(err))
                     raise err
@@ -268,28 +272,38 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
     def __save_config(self, updated_config:dict = {}, module=0, force=False):
         config = self.config if self.config else {}
         config_json:str = json.dumps(config, indent=4, sort_keys=True)
-        config_hash = hashlib.md5(config_json.encode()).hexdigest()
+        config_hash = hashlib.sha256(config_json.encode()).hexdigest()
 
+        pending_config = None
         if updated_config:
             ucfg_json:str = json.dumps(updated_config, indent=4, sort_keys=True)
-            ucfg_hash = hashlib.md5(ucfg_json.encode()).hexdigest()
+            ucfg_hash = hashlib.sha256(ucfg_json.encode()).hexdigest()
             if ucfg_hash != config_hash:
                 config_hash = ucfg_hash
                 config_json = ucfg_json
-                self.config = dict(updated_config)
-                # self.last_saved_config_hash = config_hash # update after save - to allow for retries
+                pending_config = dict(updated_config)
 
         if not force and config_hash == self.last_saved_config_hash:
             logging.getLogger(logger_name).warning("Skipped config JSON save. No changes detected.")
             return
 
-        self.create_config_file_if_missing()
         blob = self.__encrypt_buffer(config_json)
-        with open(self.default_config_file_location, "wb") as write_file:
-            write_file.write(blob)
+        tmp_path = self.default_config_file_location + ".tmp"
+        try:
+            with open(tmp_path, "wb") as write_file:
+                write_file.write(blob)
+            os.replace(tmp_path, self.default_config_file_location)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
         self.last_saved_config_hash = config_hash
+        if pending_config is not None:
+            self.config = pending_config
 
-    def decrypt_config(self, autosave: bool = True) -> str:
+    def decrypt_config(self, autosave: bool = False) -> str:
         ciphertext: bytes = bytes()
         plaintext: str = ""
         try:
@@ -315,55 +329,63 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
         return plaintext
 
     def change_key(self, new_ident: str) -> bool:
-        old_ident = self.hsm_ident
-        old_key = self.key
-        try:
-            self.hsm_ident = new_ident
-            self.key = self.__load_key()
-            self.__save_config(force=True)
-        except Exception as e:
-            self.hsm_ident = old_ident
-            self.key = old_key
-            logging.getLogger(logger_name).error(f"Failed to change the key to '{new_ident}' for config '{self.default_config_file_location}'")
-            raise Exception("Failed to change the key for " + self.default_config_file_location)
-        return True
+        with self._lock:
+            old_ident = self.hsm_ident
+            old_key = self.key
+            try:
+                self.hsm_ident = new_ident
+                self.key = self.__load_key()
+                self.__save_config(force=True)
+            except Exception as e:
+                self.hsm_ident = old_ident
+                self.key = old_key
+                logging.getLogger(logger_name).error(f"Failed to change the key to '{new_ident}' for config '{self.default_config_file_location}'")
+                raise Exception("Failed to change the key for " + self.default_config_file_location)
+            return True
 
     def read_storage(self):
-        if not self.config:
-            self.__load_config()
-        return dict(self.config)
+        with self._lock:
+            if not self.config:
+                self.__load_config()
+            return dict(self.config)
 
     def save_storage(self, updated_config):
-        self.__save_config(updated_config)
+        with self._lock:
+            self.__save_config(updated_config)
 
     def get(self, key: ConfigKeys):
         config = self.read_storage()
         return config.get(key.value)
 
     def set(self, key: ConfigKeys, value):
-        config = self.read_storage()
-        config[key.value] = value
-        self.save_storage(config)
-        return config
+        with self._lock:
+            config = self.read_storage()
+            config[key.value] = value
+            self.save_storage(config)
+            return config
 
     def delete(self, key: ConfigKeys):
-        config = self.read_storage()
+        with self._lock:
+            config = self.read_storage()
 
-        kv = key.value
-        if kv in config:
-            del config[kv]
-            logging.getLogger(logger_name).debug("Removed key %s" % kv)
-        else:
-            logging.getLogger(logger_name).debug("No key %s was found in config" % kv)
+            kv = key.value
+            if kv in config:
+                del config[kv]
+                logging.getLogger(logger_name).debug("Removed key %s" % kv)
+            else:
+                logging.getLogger(logger_name).debug("No key %s was found in config" % kv)
 
-        self.save_storage(config)
-        return config
+            self.save_storage(config)
+            return config
 
     def delete_all(self):
-        self.read_storage()
-        self.config.clear()
-        self.save_storage(self.config)
-        return dict(self.config)
+        with self._lock:
+            self.read_storage()
+            self.config.clear()
+            if os.path.exists(self.default_config_file_location):
+                os.remove(self.default_config_file_location)
+            self.last_saved_config_hash = ""
+            return dict(self.config)
 
     def contains(self, key: ConfigKeys):
         config = self.read_storage()
@@ -371,9 +393,18 @@ class HsmNfastKeyValueStorage(KeyValueStorage):
 
     def create_config_file_if_missing(self):
         if not os.path.exists(self.default_config_file_location):
-            with open(self.default_config_file_location, "wb") as fh:
+            tmp_path = self.default_config_file_location + ".tmp"
+            try:
                 blob = self.__encrypt_buffer("{}")
-                fh.write(blob)
+                with open(tmp_path, "wb") as fh:
+                    fh.write(blob)
+                os.replace(tmp_path, self.default_config_file_location)
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
 
     def is_empty(self):
         config = self.read_storage()
