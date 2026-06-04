@@ -69,6 +69,8 @@ pub struct ClientOptions {
     pub log_level: Level,
     pub hostname: Option<String>,
     pub proxy_url: Option<String>,
+    pub server_public_key: Option<String>,
+    pub server_public_key_id: Option<String>,
     cache: KSMCache,
     custom_post_function: Option<CustomPostFunction>,
 }
@@ -107,6 +109,8 @@ impl ClientOptions {
             hostname,
             insecure_skip_verify,
             proxy_url,
+            server_public_key: None,
+            server_public_key_id: None,
             cache,
             custom_post_function: None,
         }
@@ -185,6 +189,17 @@ impl ClientOptions {
     /// * `log_level` - Logging level (Info, Debug, Warn, Error, Trace)
     pub fn set_log_level(&mut self, log_level: Level) {
         self.log_level = log_level;
+    }
+
+    /// Inject a custom EC public key (base64url) for isolated deployments (e.g. IL5).
+    /// Takes precedence over keys derived from the OTT or stored config.
+    pub fn set_server_public_key(&mut self, key_b64: &str) {
+        self.server_public_key = Some(key_b64.to_string());
+    }
+
+    /// Set the server public key ID to use alongside a custom public key.
+    pub fn set_server_public_key_id(&mut self, key_id: &str) {
+        self.server_public_key_id = Some(key_id.to_string());
     }
 }
 
@@ -372,7 +387,7 @@ impl SecretsManager {
     /// # Errors
     ///
     /// * `SecretManagerCreationError` - If initialisation fails (invalid token, storage error, missing config)
-    pub fn new(client_options: ClientOptions) -> Result<Self, KSMRError> {
+    pub fn new(mut client_options: ClientOptions) -> Result<Self, KSMRError> {
         let mut secrets_manager = SecretsManager {
             token: String::new(),
             hostname: String::new(),
@@ -420,6 +435,29 @@ impl SecretsManager {
                         KSMRError::SecretManagerCreationError("Hostname is required".to_owned())
                     })?
                     .clone();
+            } else if token_parts[0].to_uppercase() == "IL5" && token_parts.len() == 4 {
+                // Layer 2: 4-segment IL5 OTT — IL5:clientKey:keyId:serverPublicKeyBase64
+                let il5_client_key = token_parts[1];
+                let il5_key_id = token_parts[2];
+                let il5_public_key = token_parts[3];
+                if il5_client_key.is_empty() || il5_key_id.is_empty() || il5_public_key.is_empty() {
+                    return Err(KSMRError::SecretManagerCreationError(
+                        "IL5 token segments must not be empty".to_owned(),
+                    ));
+                }
+                url_safe_str_to_bytes(il5_public_key).map_err(|_| {
+                    KSMRError::SecretManagerCreationError(
+                        "IL5 token serverPublicKey segment is not valid base64".to_owned(),
+                    )
+                })?;
+                let keeper_servers = get_keeper_servers();
+                secrets_manager.hostname = keeper_servers
+                    .get("IL5")
+                    .map(|h| h.to_string())
+                    .unwrap_or_else(|| "il5.keepersecurity.us".to_string());
+                secrets_manager.token = il5_client_key.to_string();
+                client_options.server_public_key = Some(il5_public_key.to_string());
+                client_options.server_public_key_id = Some(il5_key_id.to_string());
             } else {
                 let token_host_key = token_parts[0].to_uppercase();
                 let keeper_servers = get_keeper_servers();
@@ -479,6 +517,28 @@ impl SecretsManager {
                 })?;
         }
 
+        // Layer 3: programmatic key injection (takes precedence over token-derived values)
+        if let Some(ref spk) = client_options.server_public_key {
+            config
+                .set(ConfigKeys::KeyServerPublicKey, spk.clone())
+                .map_err(|e| {
+                    KSMRError::SecretManagerCreationError(format!(
+                        "Error setting server public key in config: {}",
+                        e
+                    ))
+                })?;
+        }
+        if let Some(ref spk_id) = client_options.server_public_key_id {
+            config
+                .set(ConfigKeys::KeyServerPublicKeyId, spk_id.clone())
+                .map_err(|e| {
+                    KSMRError::SecretManagerCreationError(format!(
+                        "Error setting server public key id in config: {}",
+                        e
+                    ))
+                })?;
+        }
+
         info!("Initializing SecretsManager and values are set");
 
         let server_public_key_id: Option<String> =
@@ -489,6 +549,11 @@ impl SecretsManager {
                 ))
             })?;
         let keeper_public_keys = get_keeper_public_keys();
+        let has_custom_public_key = config
+            .get(ConfigKeys::KeyServerPublicKey)
+            .ok()
+            .flatten()
+            .is_some();
         if server_public_key_id.is_none() {
             debug!("Setting public key id to the default: {}", DEFAULT_KEY_ID);
             config
@@ -500,7 +565,7 @@ impl SecretsManager {
                     ))
                 })?;
         } else if let Some(key_id) = &server_public_key_id {
-            if !keeper_public_keys.contains_key(key_id.as_str()) {
+            if !keeper_public_keys.contains_key(key_id.as_str()) && !has_custom_public_key {
                 debug!(
                     "Public key id {} does not exists, set to default : {}",
                     key_id, DEFAULT_KEY_ID
@@ -773,18 +838,27 @@ impl SecretsManager {
         Ok(current_secret_key)
     }
 
-    pub fn generate_transmission_key(key_id: &str) -> Result<TransmissionKey, KSMRError> {
+    pub fn generate_transmission_key(
+        key_id: &str,
+        custom_public_key_b64: Option<&str>,
+    ) -> Result<TransmissionKey, KSMRError> {
         let transmission_key = generate_random_bytes(32);
-        let keeper_public_keys = get_keeper_public_keys();
-        if !keeper_public_keys.contains_key(key_id) {
-            return Err(KSMRError::SecretManagerCreationError(format!(
-                "Public key not found for key id: {}",
-                key_id
-            )));
-        }
-
-        let server_public_key = keeper_public_keys.get(key_id).unwrap();
-        let server_public_key_raw_key_bytes = url_safe_str_to_bytes(server_public_key).unwrap();
+        let server_public_key_b64 = if let Some(custom_key) = custom_public_key_b64 {
+            custom_key.to_string()
+        } else {
+            let keeper_public_keys = get_keeper_public_keys();
+            if !keeper_public_keys.contains_key(key_id) {
+                return Err(KSMRError::SecretManagerCreationError(format!(
+                    "Public key not found for key id: {}",
+                    key_id
+                )));
+            }
+            keeper_public_keys.get(key_id).unwrap().clone()
+        };
+        let server_public_key_raw_key_bytes =
+            url_safe_str_to_bytes(&server_public_key_b64).map_err(|e| {
+                KSMRError::CryptoError(format!("Failed to decode server public key: {}", e))
+            })?;
         let encrypted_key =
             CryptoUtils::public_encrypt(&transmission_key, &server_public_key_raw_key_bytes, None)?;
 
@@ -1080,8 +1154,23 @@ impl SecretsManager {
             if let Some(key_id) = key_id_str {
                 info!("Server has requested we use public key {}", key_id);
                 let keeper_public_keys = get_keeper_public_keys();
+                let has_custom_key = self
+                    .config
+                    .get(ConfigKeys::KeyServerPublicKey)
+                    .ok()
+                    .flatten()
+                    .is_some();
                 if key_id.is_empty() {
                     msg = "The public key is blank from the server".to_string();
+                } else if has_custom_key {
+                    // Custom key mode (IL5/isolated): ignore server-pushed key rotation to prevent
+                    // the server overwriting our injected key with a standard one. Retry as-is.
+                    info!(
+                        "Custom key mode: suppressing server key rotation hint (key_id={})",
+                        key_id
+                    );
+                    _retry = true;
+                    return Ok(_retry);
                 } else if keeper_public_keys.contains_key(&key_id) {
                     let _ = self
                         .config
@@ -1198,9 +1287,17 @@ impl SecretsManager {
                     "Error finding public key id in storage".to_string(),
                 ))?;
 
-            transmission_key =
-                SecretsManager::generate_transmission_key(transmission_key_id.as_str())
-                    .map_err(|e| KSMRError::SecretManagerCreationError(e.to_string()))?;
+            let custom_key = self
+                .config
+                .get(ConfigKeys::KeyServerPublicKey)
+                .ok()
+                .flatten();
+
+            transmission_key = SecretsManager::generate_transmission_key(
+                transmission_key_id.as_str(),
+                custom_key.as_deref(),
+            )
+            .map_err(|e| KSMRError::SecretManagerCreationError(e.to_string()))?;
 
             let encrypted_payload_and_signature = Self::encrypt_and_sign_payload(
                 self.config.clone(),
