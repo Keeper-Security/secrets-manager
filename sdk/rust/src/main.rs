@@ -25,5 +25,6 @@ pub mod tests;
 pub mod utils;
 
 fn main() {
+    #[cfg(feature = "tracing-init")]
     env_logger::init();
 }

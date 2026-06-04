@@ -28,12 +28,7 @@
 //! ## Quick Start
 //!
 //! ```no_run
-//! use keeper_secrets_manager_core::{
-//!     core::{ClientOptions, SecretsManager},
-//!     custom_error::KSMRError,
-//!     enums::KvStoreType,
-//!     storage::FileKeyValueStorage,
-//! };
+//! use keeper_secrets_manager_core::{SecretsManager, ClientOptions, KSMRError, KvStoreType, FileKeyValueStorage};
 //!
 //! fn main() -> Result<(), KSMRError> {
 //!     // Initialize with one-time token
@@ -53,6 +48,24 @@
 //! }
 //! ```
 //!
+//! Or use the builder:
+//!
+//! ```no_run
+//! use keeper_secrets_manager_core::{SecretsManager, ClientOptionsBuilder, KSMRError, KvStoreType, InMemoryKeyValueStorage};
+//!
+//! fn main() -> Result<(), KSMRError> {
+//!     let config_b64 = std::env::var("KSM_CONFIG").expect("KSM_CONFIG required");
+//!     let storage = InMemoryKeyValueStorage::new(Some(config_b64))?;
+//!     let options = ClientOptionsBuilder::new(KvStoreType::InMemory(storage))
+//!         .token("US:YOUR_ONE_TIME_TOKEN")
+//!         .build();
+//!     let mut sm = SecretsManager::new(options)?;
+//!     let secrets = sm.get_secrets(Vec::new())?;
+//!     println!("Found {} secrets", secrets.len());
+//!     Ok(())
+//! }
+//! ```
+//!
 //! ## Modules
 //!
 //! - [`core`] - Main `SecretsManager` API and client configuration
@@ -65,44 +78,14 @@
 //! - [`custom_error`] - Error types (`KSMRError` enum)
 //! - [`enums`] - Type enums (field types, record types, storage types)
 //!
-//! ## Storage Options
+//! ## Cargo Features
 //!
-//! ### File Storage (Persistent)
-//!
-//! ```no_run
-//! use keeper_secrets_manager_core::storage::FileKeyValueStorage;
-//! use keeper_secrets_manager_core::enums::KvStoreType;
-//! use keeper_secrets_manager_core::custom_error::KSMRError;
-//!
-//! fn example() -> Result<(), KSMRError> {
-//!     let storage = FileKeyValueStorage::new(Some("keeper_config.json".to_string()))?;
-//!     let config = KvStoreType::File(storage);
-//!     // Config persisted to file with secure permissions (0600 on Unix)
-//!     Ok(())
-//! }
-//! ```
-//!
-//! ### In-Memory Storage (Ephemeral)
-//!
-//! ```no_run
-//! use keeper_secrets_manager_core::storage::InMemoryKeyValueStorage;
-//! use keeper_secrets_manager_core::enums::KvStoreType;
-//! use keeper_secrets_manager_core::custom_error::KSMRError;
-//!
-//! fn example() -> Result<(), KSMRError> {
-//!     let base64_config = std::env::var("KSM_CONFIG")
-//!         .expect("KSM_CONFIG required");
-//!     let storage = InMemoryKeyValueStorage::new(Some(base64_config))?;
-//!     let config = KvStoreType::InMemory(storage);
-//!     // Useful for serverless, Docker, CI/CD pipelines
-//!     Ok(())
-//! }
-//! ```
-//!
-//! ## Examples
-//!
-//! See the [repository](https://github.com/Keeper-Security/secrets-manager/tree/master/sdk/rust/examples)
-//! for comprehensive examples covering all SDK features.
+//! | Feature | Default | Description |
+//! |---------|---------|-------------|
+//! | `blocking` | yes | Enables `reqwest/blocking` HTTP client |
+//! | `totp` | yes | TOTP code generation (`get_totp_code`) |
+//! | `password-gen` | yes | Password generation (`generate_password`) |
+//! | `tracing-init` | yes | `env_logger` initializer in the binary |
 
 pub mod cache;
 pub mod caching;
@@ -118,3 +101,26 @@ pub mod keeper_globals;
 pub mod storage;
 mod tests;
 pub mod utils;
+
+// --- Flat re-exports for ergonomic top-level imports ---
+
+pub use cache::KSMCache;
+pub use core::core::{ClientOptions, ClientOptionsBuilder, SecretsManager};
+pub use custom_error::KSMRError;
+pub use dto::dtos::Record;
+pub use enums::{DefaultRecordType, KvStoreType, StandardFieldTypeEnum};
+pub use storage::{FileKeyValueStorage, InMemoryKeyValueStorage, KeyValueStorage};
+
+/// Convenient glob import for the most common types.
+///
+/// ```no_run
+/// use keeper_secrets_manager_core::prelude::*;
+/// ```
+pub mod prelude {
+    pub use crate::cache::KSMCache;
+    pub use crate::core::core::{ClientOptions, ClientOptionsBuilder, SecretsManager};
+    pub use crate::custom_error::KSMRError;
+    pub use crate::dto::dtos::Record;
+    pub use crate::enums::{DefaultRecordType, KvStoreType, StandardFieldTypeEnum};
+    pub use crate::storage::{FileKeyValueStorage, InMemoryKeyValueStorage, KeyValueStorage};
+}

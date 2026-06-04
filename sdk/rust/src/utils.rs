@@ -21,21 +21,25 @@ use base64::{
 };
 use chrono::Utc;
 use core::str;
+#[cfg(feature = "totp")]
 use data_encoding::BASE32;
+#[cfg(feature = "totp")]
 use hmac::{Hmac, Mac};
 use log::warn;
 use num_bigint::BigUint;
-use rand::{
-    seq::{IteratorRandom, SliceRandom},
-    thread_rng,
-};
+use rand::{seq::IteratorRandom, thread_rng};
+#[cfg(feature = "password-gen")]
+use rand::seq::SliceRandom;
 use serde::Serialize;
 use serde_json::Value;
+#[cfg(feature = "totp")]
 use sha1::Sha1;
+#[cfg(feature = "totp")]
 use sha2::{Sha256, Sha512};
 use std::process::Output;
 use std::{collections::HashMap, option::Option};
 use std::{env, io};
+#[cfg(feature = "totp")]
 use url::{form_urlencoded::parse, Url};
 
 #[cfg(unix)]
@@ -500,6 +504,7 @@ pub fn json_to_dict(json_str: &str) -> Option<HashMap<String, Value>> {
 pub fn now_milliseconds() -> i64 {
     Utc::now().timestamp_millis()
 }
+#[cfg(feature = "totp")]
 /// Represents a TOTP code along with its time left and period.
 #[derive(Debug, Clone)]
 pub struct TotpCode {
@@ -508,6 +513,7 @@ pub struct TotpCode {
     period: u64,    // Assuming period is also in seconds
 }
 
+#[cfg(feature = "totp")]
 impl TotpCode {
     /// Creates a new `TotpCode`.
     ///
@@ -565,6 +571,7 @@ impl TotpCode {
 ///     Err(e) => println!("Error: {}", e),
 /// }
 /// ```
+#[cfg(feature = "totp")]
 pub fn get_totp_code(url: &str) -> Result<TotpCode, KSMRError> {
     let comp = Url::parse(url).map_err(|_| KSMRError::TOTPError("Invalid URL".to_string()))?;
     if comp.scheme() != "otpauth" {
@@ -1249,6 +1256,7 @@ fn is_file_accessible(file: &str) -> bool {
     File::open(file).is_ok()
 }
 
+#[cfg(feature = "password-gen")]
 #[derive(Debug)]
 pub struct PasswordOptions {
     length: usize,
@@ -1259,6 +1267,7 @@ pub struct PasswordOptions {
     special_characterset: String,
 }
 
+#[cfg(feature = "password-gen")]
 impl PasswordOptions {
     /// Creates a new PasswordOptions with default values.
     pub fn new() -> Self {
@@ -1313,12 +1322,14 @@ impl PasswordOptions {
     }
 }
 
+#[cfg(feature = "password-gen")]
 impl Default for PasswordOptions {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "password-gen")]
 /// Generates a new password based on the specified options.
 ///
 /// The generated password will adhere to the constraints set by the
@@ -1495,6 +1506,7 @@ pub fn generate_password_with_options(options: PasswordOptions) -> Result<String
     Ok(password_list.into_iter().collect())
 }
 
+#[cfg(feature = "password-gen")]
 pub fn generate_password() -> Result<String, KSMRError> {
     let password_options_default = PasswordOptions::new();
     generate_password_with_options(password_options_default)
