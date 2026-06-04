@@ -224,27 +224,31 @@ impl Clone for SecretsManager {
 }
 
 impl SecretsManager {
-    /// Creates a new `SecretsManager` instance and initializes it with the provided configuration.
+    /// Creates a new `SecretsManager` instance and initialises it with the provided configuration.
     ///
-    /// This method performs token binding (if using a one-time token), sets up storage,
-    /// and validates the configuration. The SDK never panics - all errors are returned as `Result`.
+    /// # ⚠️ Deferred bind — this constructor makes NO network calls
     ///
-    /// # Arguments
+    /// `new()` only sets up local state: it generates the key-pair, stores the token and
+    /// hostname in the configured storage backend, and builds the HTTP client. The
+    /// one-time token is **not** redeemed here.
     ///
-    /// * `client_options` - Configuration options including token, storage backend, hostname, and cache settings
+    /// The token is redeemed on the **first method call that contacts Keeper Cloud**
+    /// (typically `get_secrets`). Until that call completes successfully the configured
+    /// storage is **unbound**: it contains `clientId`, `privateKey`, `hostname`, and
+    /// `serverPublicKeyId`, but is **missing `appKey` and `appOwnerPublicKey`**. An
+    /// unbound config cannot be loaded into a new `SecretsManager` on a future run.
     ///
-    /// # Returns
-    ///
-    /// * `Result<Self, KSMRError>` - Initialized `SecretsManager` instance or an error
-    ///
-    /// # Errors
-    ///
-    /// * `SecretManagerCreationError` - If initialization fails (invalid token, storage error, missing config)
-    ///
-    /// # Example
+    /// **If you intend to persist the config to an external store** (OS keychain,
+    /// AWS Secrets Manager, HashiCorp Vault, …), call `get_secrets(vec![])` immediately
+    /// after `new()` to force the bind, then export from the storage backend:
     ///
     /// ```no_run
-    /// use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, enums::KvStoreType, storage::FileKeyValueStorage, custom_error::KSMRError};
+    /// use keeper_secrets_manager_core::{
+    ///     core::{ClientOptions, SecretsManager},
+    ///     enums::KvStoreType,
+    ///     storage::FileKeyValueStorage,
+    ///     custom_error::KSMRError,
+    /// };
     ///
     /// fn example() -> Result<(), KSMRError> {
     ///     let storage = FileKeyValueStorage::new(Some("config.json".to_string()))?;
@@ -252,9 +256,27 @@ impl SecretsManager {
     ///     let token = "US:YOUR_TOKEN".to_string();
     ///     let options = ClientOptions::new_client_options_with_token(token, config);
     ///     let mut secrets_manager = SecretsManager::new(options)?;
+    ///
+    ///     // IMPORTANT: the one-time token is redeemed on the FIRST network call.
+    ///     // After this line the storage is fully bound (appKey + appOwnerPublicKey
+    ///     // are written) and safe to persist to an external store.
+    ///     secrets_manager.get_secrets(vec![])?;
+    ///
     ///     Ok(())
     /// }
     /// ```
+    ///
+    /// # Arguments
+    ///
+    /// * `client_options` - Configuration options including token, storage backend, hostname, and cache settings
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, KSMRError>` - Initialised `SecretsManager` instance or an error
+    ///
+    /// # Errors
+    ///
+    /// * `SecretManagerCreationError` - If initialisation fails (invalid token, storage error, missing config)
     pub fn new(client_options: ClientOptions) -> Result<Self, KSMRError> {
         let mut secrets_manager = SecretsManager {
             token: String::new(),
