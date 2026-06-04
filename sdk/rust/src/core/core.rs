@@ -879,7 +879,7 @@ impl SecretsManager {
     }
 
     fn handle_http_error(
-        mut self,
+        &mut self,
         status_code: u16,
         response: Option<String>,
     ) -> Result<bool, KSMRError> {
@@ -1120,9 +1120,12 @@ impl SecretsManager {
             }
 
             // Handle the error. Handling will throw an exception if it doesn't want us to retry.
-            let handle_error_result: bool = self
-                .clone()
-                .handle_http_error(keeper_response.status_code, keeper_response.http_response)?;
+            // Must borrow &mut self (not self.clone()) so a server-requested key
+            // rotation (`result_code: "key"`) persists KeyServerPublicKeyId on the
+            // real config; cloning here discarded the update and looped forever
+            // against any data center whose active key != DEFAULT_KEY_ID.
+            let handle_error_result: bool =
+                self.handle_http_error(keeper_response.status_code, keeper_response.http_response)?;
             retry = handle_error_result
         }
         Err(KSMRError::SecretManagerCreationError(
@@ -3773,5 +3776,75 @@ impl NotationSection {
             index1: None,
             index2: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod key_rotation_regression {
+    use super::*;
+    use crate::config_keys::ConfigKeys;
+    use crate::enums::KvStoreType;
+    use crate::storage::{InMemoryKeyValueStorage, KeyValueStorage};
+
+    /// Build a minimally "already bound" SecretsManager without any network
+    /// or live keypair: a non-empty `clientId` plus an empty token makes
+    /// `_init` take the already-bound early-return path. Enough to exercise
+    /// `handle_http_error`, which needs only the config.
+    fn bound_sm(server_key_id: &str) -> SecretsManager {
+        let json =
+            format!(r#"{{"clientId":"dGVzdENsaWVudElk","serverPublicKeyId":"{server_key_id}"}}"#);
+        let storage = InMemoryKeyValueStorage::new(Some(json)).unwrap();
+        let opts = ClientOptions::new_client_options(KvStoreType::InMemory(storage));
+        SecretsManager::new(opts).unwrap()
+    }
+
+    /// Regression: a server key-rotation response (`error: "key"`) must
+    /// persist the server-requested `serverPublicKeyId` on the live config.
+    ///
+    /// Previously `post_query` invoked `self.clone().handle_http_error(...)`,
+    /// so the rotation was written to a discarded clone. `post_query`'s
+    /// `while retry` loop then re-read the original (default) key id every
+    /// iteration and looped forever against any data center whose active
+    /// transmission key id != DEFAULT_KEY_ID (e.g. a token whose region
+    /// expects key 9 while the default is 10).
+    #[test]
+    fn key_rotation_persists_on_live_config() {
+        let mut sm = bound_sm("10");
+        assert_eq!(
+            sm.config
+                .get(ConfigKeys::KeyServerPublicKeyId)
+                .unwrap()
+                .as_deref(),
+            Some("10"),
+            "precondition: starts on the default key id"
+        );
+
+        let body = r#"{"key_id":9,"error":"key","message":"invalid key id"}"#.to_string();
+        let retry = sm
+            .handle_http_error(401, Some(body))
+            .expect("a key-rotation response should request a retry");
+
+        assert!(retry, "server key error must request a retry");
+        assert_eq!(
+            sm.config
+                .get(ConfigKeys::KeyServerPublicKeyId)
+                .unwrap()
+                .as_deref(),
+            Some("9"),
+            "rotated key id must persist on the live config (not a clone)"
+        );
+    }
+
+    /// A non-rotation error must NOT request a retry (guards against turning
+    /// every error into a retry loop).
+    #[test]
+    fn non_key_error_does_not_retry() {
+        let mut sm = bound_sm("10");
+        let body = r#"{"error":"access_denied","message":"nope"}"#.to_string();
+        let result = sm.handle_http_error(403, Some(body));
+        assert!(
+            result.is_err(),
+            "a non-key error should surface as an error, not a retry"
+        );
     }
 }
