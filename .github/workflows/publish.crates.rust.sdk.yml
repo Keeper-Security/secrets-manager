@@ -98,6 +98,8 @@ jobs:
           cargo test --all-features --test download_file_by_title_tests
           cargo test --all-features --test duplicate_uid_notation_test
           cargo test --all-features --test empty_config_test
+          cargo test --all-features --test bind_lifecycle_tests
+          cargo test --all-features --test il5_tests
 
       - name: Run caching tests (serial execution required)
         run: cargo test --all-features --test caching_tests -- --test-threads=1
