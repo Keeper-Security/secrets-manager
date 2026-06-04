@@ -14,9 +14,7 @@ import kotlin.collections.HashMap
 
 fun saveCachedValue(data: ByteArray) {
     val file = File("cache.dat")
-    val fos = FileOutputStream(file)
-    fos.write(data)
-    fos.close()
+    FileOutputStream(file).use { fos -> fos.write(data) } // KSM-855: .use{} closes on exception
 
     // Set file permissions to 0600 (owner read/write only)
     try {
@@ -34,10 +32,7 @@ fun saveCachedValue(data: ByteArray) {
 
 fun getCachedValue(): ByteArray {
     try {
-        val fis = FileInputStream("cache.dat")
-        val bytes = fis.readBytes()
-        fis.close()
-        return bytes
+        return FileInputStream("cache.dat").use { it.readBytes() } // KSM-855: .use{} closes on exception
     } catch (e: Exception) {
         throw Exception("Cached value does not exist")
     }
@@ -117,8 +112,8 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
 
     private val file = configName?.let { File(it) }
     private var storage: InMemoryStorage = if (file != null && file.exists()) {
-        val inputStream = BufferedReader(FileReader(file))
-        InMemoryStorage(inputStream.readText())
+        val content = BufferedReader(FileReader(file)).use { it.readText() } // KSM-855: was never closed
+        InMemoryStorage(content)
     } else {
         InMemoryStorage()
     }
@@ -136,9 +131,7 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         config.appOwnerPublicKey = storage.getString(KEY_OWNER_PUBLIC_KEY)
         config.serverPublicKeyId = storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
         val json = prettyJson.encodeToString(config)
-        val outputStream = BufferedWriter(FileWriter(file))
-        outputStream.write(json)
-        outputStream.close()
+        BufferedWriter(FileWriter(file)).use { it.write(json) } // KSM-855: .use{} closes on exception
 
         // Set file permissions to 0600 (owner read/write only)
         try {

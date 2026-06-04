@@ -19,6 +19,17 @@ For more information see our official documentation page https://docs.keeper.io/
   - Files uploaded by non-SDK Keeper clients (iOS, Android, Web Vault) may omit `lastModified`
   - Previously threw `MissingFieldException` and silently skipped the file attachment
   - Now defaults to `0` when the field is absent, consistent with .NET SDK behavior (KSM-674)
+- KSM-753 - Fix record key decryption for shared folder records in flat `response.records[]`
+  - Records created via Commander/PowerShell in shared folders have their key encrypted with the folder key, not the app key
+  - SDK previously always used the app key for flat records, causing all field values to return null
+  - Now detects `innerFolderUid` and decrypts using the correct folder key
+- KSM-765 - Fix NPE crash when `url` field is absent from file response
+  - `KeeperFile.url` is now `String?` (nullable); server may omit it for files without a download URL
+- KSM-855 - Fix file descriptor leaks in `LocalConfigStorage` and HTTP connections
+  - `LocalConfigStorage`: replaced manual `stream.close()` calls with Kotlin `.use { }` in 4 locations — streams previously leaked on any I/O exception, and the init block never closed its reader at all
+  - `downloadFile`, `uploadFile`, `postFunction`: `HttpsURLConnection` is now explicitly disconnected in a `finally` block; `with()` is not try-with-resources and did not guarantee cleanup on exception
+- KSM-985 - Add typed empty-string guard to internal Base64 decoders (KSM-808 parity)
+  - `base64ToBytes("")` and `webSafe64ToBytes("")` now throw a `Keeper` exception instead of an opaque NPE from inside `java.util.Base64`
 
 ## 17.2.0
 - **SECURITY (KSM-699)** - Fix file permissions for config.json and cache.dat

@@ -207,6 +207,23 @@ internal class SecretsManagerTest {
         assertEquals(1760646182L, result.lastModified)
     }
 
+    @Test
+    fun testKeeperFileNullUrl() {
+        // KSM-765: KeeperFile.url must be nullable; server may omit url for files without a download link
+        val fileData = KeeperFileData("test.txt", "test.txt", "text/plain", 1024)
+        val file = KeeperFile(ByteArray(32), "uid123", fileData, null, null)
+        assertNull(file.url)
+    }
+
+    @Test
+    fun testBase64EmptyStringThrowsTypedException() {
+        // KSM-985: empty string must throw a typed Keeper exception, not an NPE from inside java.util.Base64
+        val base64Ex = assertFailsWith<Exception> { base64ToBytes("") }
+        assertTrue(base64Ex.message?.isNotEmpty() == true)
+        val webSafe64Ex = assertFailsWith<Exception> { webSafe64ToBytes("") }
+        assertTrue(webSafe64Ex.message?.isNotEmpty() == true)
+    }
+
 //    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (

@@ -575,7 +575,7 @@ private data class SecretsManagerResponseFile(
     val fileUid: String,
     val fileKey: String,
     val data: String,
-    val url: String,
+    val url: String?, // KSM-765: server may omit url; nullable prevents NPE on deserialization
     val thumbnailUrl: String?
 )
 
@@ -684,7 +684,7 @@ data class KeeperFile(
     val fileKey: ByteArray,
     val fileUid: String,
     val data: KeeperFileData,
-    val url: String,
+    val url: String?, // KSM-765: nullable; server may omit url for files without a download URL
     val thumbnailUrl: String?
 )
 
@@ -1070,7 +1070,8 @@ fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: 
 }
 
 fun downloadFile(file: KeeperFile): ByteArray {
-    return downloadFile(file, file.url)
+    val url = file.url ?: throw Exception("File ${file.fileUid} has no download URL")
+    return downloadFile(file, url)
 }
 
 fun downloadThumbnail(file: KeeperFile): ByteArray {
@@ -1081,17 +1082,20 @@ fun downloadThumbnail(file: KeeperFile): ByteArray {
 }
 
 private fun downloadFile(file: KeeperFile, url: String): ByteArray {
-    with(URI.create(url).toURL().openConnection() as HttpsURLConnection) {
-        requestMethod = "GET"
-        val statusCode = responseCode
+    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection // KSM-855
+    try {
+        connection.requestMethod = "GET"
+        val statusCode = connection.responseCode
         val data = when {
-            errorStream != null -> errorStream.readBytes()
-            else -> inputStream.readBytes()
+            connection.errorStream != null -> connection.errorStream.readBytes()
+            else -> connection.inputStream.readBytes()
         }
         if (statusCode != HTTP_OK) {
             throw Exception(String(data))
         }
         return decrypt(data, file.fileKey)
+    } finally {
+        connection.disconnect()
     }
 }
 
@@ -1101,28 +1105,31 @@ private fun uploadFile(url: String, parameters: String, fileData: ByteArray): Ke
     val boundary = String.format("----------%x", Instant.now().epochSecond)
     val boundaryBytes: ByteArray = stringToBytes("\r\n--$boundary")
     val paramJson = Json.parseToJsonElement(parameters) as JsonObject
-    with(URI.create(url).toURL().openConnection() as HttpsURLConnection) {
-        requestMethod = "POST"
-        useCaches = false
-        doInput = true
-        doOutput = true
-        setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-        with(outputStream) {
+    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection // KSM-855
+    try {
+        connection.requestMethod = "POST"
+        connection.useCaches = false
+        connection.doInput = true
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        connection.outputStream.use { os ->
             for (param in paramJson.entries) {
-                write(boundaryBytes)
-                write(stringToBytes("\r\nContent-Disposition: form-data; name=\"${param.key}\"\r\n\r\n${param.value.jsonPrimitive.content}"))
+                os.write(boundaryBytes)
+                os.write(stringToBytes("\r\nContent-Disposition: form-data; name=\"${param.key}\"\r\n\r\n${param.value.jsonPrimitive.content}"))
             }
-            write(boundaryBytes)
-            write(stringToBytes("\r\nContent-Disposition: form-data; name=\"file\"\r\nContent-Type: application/octet-stream\r\n\r\n"))
-            write(fileData)
-            write(boundaryBytes)
-            write(stringToBytes("--\r\n"))
+            os.write(boundaryBytes)
+            os.write(stringToBytes("\r\nContent-Disposition: form-data; name=\"file\"\r\nContent-Type: application/octet-stream\r\n\r\n"))
+            os.write(fileData)
+            os.write(boundaryBytes)
+            os.write(stringToBytes("--\r\n"))
         }
-        statusCode = responseCode
+        statusCode = connection.responseCode
         data = when {
-            errorStream != null -> errorStream.readBytes()
-            else -> inputStream.readBytes()
+            connection.errorStream != null -> connection.errorStream.readBytes()
+            else -> connection.inputStream.readBytes()
         }
+    } finally {
+        connection.disconnect()
     }
     return KeeperHttpResponse(statusCode, data)
 }
@@ -1152,13 +1159,29 @@ private fun fetchAndDecryptSecrets(
     } else {
         appKey = storage.getBytes(KEY_APP_KEY) ?: throw Exception("App key is missing from the storage")
     }
+    // KSM-753: records created via non-SDK clients in shared folders appear in response.records[]
+    // with innerFolderUid set; their recordKey is encrypted with the folder key, not the app key.
+    val folderKeyMap: Map<String, ByteArray> = response.folders
+        ?.mapNotNull { f ->
+            try { f.folderUid to decrypt(f.folderKey, appKey) } catch (e: Exception) { null }
+        }?.toMap() ?: emptyMap()
+
     val records: MutableList<KeeperRecord> = mutableListOf()
     if (response.records != null) {
         response.records.forEach {
             try {
-                val recordKey = decrypt(it.recordKey, appKey)
+                val decryptKey = if (it.innerFolderUid != null && folderKeyMap.containsKey(it.innerFolderUid)) {
+                    folderKeyMap[it.innerFolderUid]!!
+                } else {
+                    appKey
+                }
+                val recordKey = decrypt(it.recordKey, decryptKey)
                 val decryptedRecord = decryptRecord(it, recordKey, options)
                 if (decryptedRecord != null) {
+                    if (it.innerFolderUid != null && folderKeyMap.containsKey(it.innerFolderUid)) {
+                        decryptedRecord.folderUid = it.innerFolderUid
+                        decryptedRecord.folderKey = folderKeyMap[it.innerFolderUid]
+                    }
                     records.add(decryptedRecord)
                 }
             } catch (e: Exception) {
@@ -1560,22 +1583,25 @@ fun postFunction(
 ): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
-    with(URI.create(url).toURL().openConnection() as HttpsURLConnection) {
+    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection // KSM-855
+    try {
         if (allowUnverifiedCertificate) {
-            sslSocketFactory = trustAllSocketFactory()
+            connection.sslSocketFactory = trustAllSocketFactory()
         }
-        requestMethod = "POST"
-        doOutput = true
-        setRequestProperty("PublicKeyId", transmissionKey.publicKeyId.toString())
-        setRequestProperty("TransmissionKey", bytesToBase64(transmissionKey.encryptedKey))
-        setRequestProperty("Authorization", "Signature ${bytesToBase64(payload.signature)}")
-        outputStream.write(payload.payload)
-        outputStream.flush()
-        statusCode = responseCode
+        connection.requestMethod = "POST"
+        connection.doOutput = true
+        connection.setRequestProperty("PublicKeyId", transmissionKey.publicKeyId.toString())
+        connection.setRequestProperty("TransmissionKey", bytesToBase64(transmissionKey.encryptedKey))
+        connection.setRequestProperty("Authorization", "Signature ${bytesToBase64(payload.signature)}")
+        connection.outputStream.write(payload.payload)
+        connection.outputStream.flush()
+        statusCode = connection.responseCode
         data = when {
-            errorStream != null -> errorStream.readBytes()
-            else -> inputStream.readBytes()
+            connection.errorStream != null -> connection.errorStream.readBytes()
+            else -> connection.inputStream.readBytes()
         }
+    } finally {
+        connection.disconnect()
     }
     return KeeperHttpResponse(statusCode, data)
 }
