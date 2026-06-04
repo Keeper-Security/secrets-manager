@@ -20,7 +20,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-keeper-secrets-manager-core = "17.2.0"
+keeper-secrets-manager-core = "17.3.0"
 ```
 
 ## Quick Start

@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [17.3.0]
+
+### Added
+
+- **KSM-904**: IL5 dynamic server public key injection — three-layer mechanism for isolated deployments (e.g. IL5 region) that use a non-standard server key not present in the hardcoded key map:
+  - **Layer 1 (core)**: `generate_transmission_key()` accepts an optional `custom_public_key_b64` parameter; `post_query()` reads `serverPublicKey` from config and passes it automatically
+  - **Layer 2 (OTT)**: 4-segment IL5 token format `IL5:clientKey:keyId:serverPublicKeyBase64` — key material is written to config at `SecretsManager::new()` time so Layer 1 picks it up without additional steps. Invalid base64 in the public key segment is rejected with a clear error.
+  - **Layer 3 (API)**: `ClientOptions::set_server_public_key()` and `ClientOptions::set_server_public_key_id()` for programmatic injection (takes precedence over token-derived values)
+  - Rotation suppression: when `serverPublicKey` is present in config, server-pushed `key_id` hints are ignored to prevent overwriting the custom key with a standard one — the SDK retries with the custom key intact
+  - New `ConfigKeys::KeyServerPublicKey` variant (`"serverPublicKey"`) for storage
+  - IL5 region added to `get_keeper_servers()` (`"IL5"` → `"il5.keepersecurity.us"`)
+- **`test.rust.yml`** CI workflow: runs on every PR to `master` touching `sdk/rust/**`; tests on Rust 1.87 + stable with `cargo fmt`, `cargo clippy -D warnings`, all integration tests, and a release build
+
+### Fixed
+
+- **KSM-998**: Server key rotation written to discarded clone causes infinite 401 loop against environments whose active server key is not DEFAULT_KEY_ID (10)
+  - Root cause: `post_query()` called `self.clone().handle_http_error(...)` — `InMemoryKeyValueStorage` is `#[derive(Clone)]` (deep copy, no interior sharing), so the `KeyServerPublicKeyId` update was written to the clone and discarded, causing the retry loop to re-read the original key ID every iteration
+  - Fix: `handle_http_error()` takes `&mut self`; the `.clone()` at the call site is removed — the key rotation now persists to the live config
+  - Found by Craig Lurey (PR #1029)
+
+### Changed
+
+- **KSM-891/892/893**: Phase 1 SDK modernisation — idiomatic Rust patterns:
+  - `KSMRError` now derived via `thiserror` instead of manual `impl Display` + `impl Error`; new `From<hex::FromHexError>` conversion
+  - `env_logger` made optional, gated behind the `tracing-init` Cargo feature (already in `default`)
+  - `reqwest` blocking feature separated from the dependency declaration — `features = ["json", "multipart"]` in `[dependencies]`, `blocking = ["reqwest/blocking"]` as a Cargo feature flag
+  - tokio runtime reduced to `"rt"` feature (single-threaded runtime); caching tests updated to use `new_current_thread()`
+  - SBOM generation switched from Syft + Manifest CLI to `cargo-cyclonedx` (CycloneDX JSON v1.5) + `manifest-cyber/manifest-github-action`
+
+### Documentation
+
+- **KSM-973**: `SecretsManager::new()` doc comment clarifies the deferred bind contract — the one-time token is redeemed on the first network call, not in the constructor. Callers that persist config to external storage (OS keychain, AWS Secrets Manager, etc.) must call `get_secrets(vec![])` immediately after `new()` to force the bind before exporting. Inline example updated to show the forced-bind pattern.
+
 ## [17.2.0]
 
 ### Security
