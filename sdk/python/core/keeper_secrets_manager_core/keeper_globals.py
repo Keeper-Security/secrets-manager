@@ -31,8 +31,8 @@ def get_client_version(hardcode=False):
     """
     # Default version for hardcode mode or when all detection methods fail
     version_major = "17"
-    version_minor_default = "2"
-    version_revision_default = "2"
+    version_minor_default = "3"
+    version_revision_default = "0"
     version = "{}.{}.{}".format(version_major, version_minor_default, version_revision_default)
 
     # Allow the default version to be hard coded
