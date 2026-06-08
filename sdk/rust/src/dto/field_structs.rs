@@ -16,14 +16,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Error;
 use serde_json::Value;
 
-use crate::{
-    custom_error::KSMRError,
-    enums::Country,
-    enums::StandardFieldTypeEnum,
-    utils,
-};
 #[cfg(feature = "password-gen")]
 use crate::utils::PasswordOptions;
+use crate::{custom_error::KSMRError, enums::Country, enums::StandardFieldTypeEnum, utils};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -41,9 +36,9 @@ pub struct KeeperField {
 }
 
 impl KeeperField {
-    pub fn new(field_type: String, label: Option<String>) -> Self {
+    pub fn new(field_type: impl Into<String>, label: Option<String>) -> Self {
         KeeperField {
-            field_type,
+            field_type: field_type.into(),
             label: label.unwrap_or("".to_string()),
             value: Value::Null,
             required: false,

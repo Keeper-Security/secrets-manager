@@ -107,7 +107,7 @@ pub mod utils;
 pub use cache::KSMCache;
 pub use core::core::{ClientOptions, ClientOptionsBuilder, SecretsManager};
 pub use custom_error::KSMRError;
-pub use dto::dtos::Record;
+pub use dto::dtos::{KeeperRecordLink, Record};
 pub use enums::{DefaultRecordType, KvStoreType, StandardFieldTypeEnum};
 pub use storage::{FileKeyValueStorage, InMemoryKeyValueStorage, KeyValueStorage};
 
@@ -120,7 +120,7 @@ pub mod prelude {
     pub use crate::cache::KSMCache;
     pub use crate::core::core::{ClientOptions, ClientOptionsBuilder, SecretsManager};
     pub use crate::custom_error::KSMRError;
-    pub use crate::dto::dtos::Record;
+    pub use crate::dto::dtos::{KeeperRecordLink, Record};
     pub use crate::enums::{DefaultRecordType, KvStoreType, StandardFieldTypeEnum};
     pub use crate::storage::{FileKeyValueStorage, InMemoryKeyValueStorage, KeyValueStorage};
 }

@@ -21,7 +21,7 @@ use std::{
     fmt::{self},
     fs::{self, File},
     io::{Read, Write as _},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use crate::{
@@ -990,7 +990,7 @@ impl Record {
 
         match found_file {
             Some(file) => {
-                let file_status = file.save_file(path.to_string(), false)?;
+                let file_status = file.save_file(path, false)?;
                 Ok(file_status)
             }
             None => Err(KSMRError::FileError(format!(
@@ -1005,7 +1005,7 @@ impl Record {
 
         match found_file {
             Some(file) => {
-                let file_status = file.save_file(path.to_string(), false)?;
+                let file_status = file.save_file(path, false)?;
                 Ok(file_status)
             }
             None => {
@@ -1029,6 +1029,238 @@ impl fmt::Display for Record {
             self.title,
             self.files.len()
         )
+    }
+}
+
+impl Record {
+    /// Returns the record's linked credentials (GraphSync links, v16.7.0+) as typed
+    /// [`KeeperRecordLink`] values instead of raw maps.
+    ///
+    /// This is the ergonomic, typed accessor for the raw [`Record::links`] field — it
+    /// mirrors the Java SDK's `KeeperRecordLink` accessor layer. The raw `links` field
+    /// remains available unchanged for backward compatibility.
+    pub fn get_links(&self) -> Vec<KeeperRecordLink> {
+        self.links
+            .iter()
+            .filter_map(KeeperRecordLink::from_map)
+            .collect()
+    }
+}
+
+/// A typed view over a single GraphSync linked credential on a [`Record`].
+///
+/// Linked credentials carry permission metadata (`is_admin`, `rotation`, …) and, for
+/// certain `path`s (e.g. `ai_settings`, `jit_settings`), structured settings that may be
+/// stored either as plain base64-encoded JSON or AES-256-GCM encrypted under the record
+/// key. The accessor methods mirror the Java SDK's `KeeperRecordLink` API.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeeperRecordLink {
+    /// UID of the linked record.
+    pub record_uid: String,
+    /// Base64-encoded link metadata (plain JSON or encrypted), if present.
+    pub data: Option<String>,
+    /// Link path discriminator (e.g. `ai_settings`, `jit_settings`), if present.
+    pub path: Option<String>,
+}
+
+impl KeeperRecordLink {
+    /// Build a typed link from a raw `links` entry. Returns `None` if the entry has no
+    /// `recordUid` string.
+    fn from_map(map: &HashMap<String, Value>) -> Option<Self> {
+        let record_uid = map.get("recordUid").and_then(Value::as_str)?.to_string();
+        let data = map.get("data").and_then(Value::as_str).map(str::to_string);
+        let path = map.get("path").and_then(Value::as_str).map(str::to_string);
+        Some(Self {
+            record_uid,
+            data,
+            path,
+        })
+    }
+
+    /// Base64-decode `data` and parse it as a JSON object. Returns `None` when `data` is
+    /// absent, not valid base64, or not a JSON object (e.g. encrypted bytes).
+    fn parse_json_data(&self) -> Option<serde_json::Map<String, Value>> {
+        let decoded = self.get_decoded_data()?;
+        match serde_json::from_str::<Value>(&decoded) {
+            Ok(Value::Object(map)) => Some(map),
+            _ => None,
+        }
+    }
+
+    fn bool_value(&self, key: &str) -> bool {
+        self.parse_json_data()
+            .and_then(|m| m.get(key).and_then(Value::as_bool))
+            .unwrap_or(false)
+    }
+
+    /// Whether the linked user is an admin (`is_admin`).
+    pub fn is_admin_user(&self) -> bool {
+        self.bool_value("is_admin")
+    }
+
+    /// Whether this is a launch credential link (`is_launch_credential`).
+    pub fn is_launch_credential(&self) -> bool {
+        self.bool_value("is_launch_credential")
+    }
+
+    /// Whether rotation is allowed (`rotation`).
+    pub fn allows_rotation(&self) -> bool {
+        self.bool_value("rotation")
+    }
+
+    /// Whether connections are allowed (`connections`).
+    pub fn allows_connections(&self) -> bool {
+        self.bool_value("connections")
+    }
+
+    /// Whether port forwards are allowed (`portForwards`).
+    pub fn allows_port_forwards(&self) -> bool {
+        self.bool_value("portForwards")
+    }
+
+    /// Whether session recording is enabled (`sessionRecording`).
+    pub fn allows_session_recording(&self) -> bool {
+        self.bool_value("sessionRecording")
+    }
+
+    /// Whether TypeScript recording is enabled (`typescriptRecording`).
+    pub fn allows_typescript_recording(&self) -> bool {
+        self.bool_value("typescriptRecording")
+    }
+
+    /// Whether remote browser isolation is enabled (`remoteBrowserIsolation`).
+    pub fn allows_remote_browser_isolation(&self) -> bool {
+        self.bool_value("remoteBrowserIsolation")
+    }
+
+    /// Whether rotation on termination is enabled (`rotateOnTermination`).
+    pub fn rotates_on_termination(&self) -> bool {
+        self.bool_value("rotateOnTermination")
+    }
+
+    /// The link data schema version (`version`), if present.
+    pub fn get_link_data_version(&self) -> Option<i64> {
+        self.parse_json_data()
+            .and_then(|m| m.get("version").and_then(Value::as_i64))
+    }
+
+    /// Base64-decode `data` to a UTF-8 string (lossy). Returns `None` if `data` is absent
+    /// or not valid base64.
+    pub fn get_decoded_data(&self) -> Option<String> {
+        let data = self.data.as_ref()?;
+        utils::base64_to_bytes(data)
+            .ok()
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    /// Whether the decoded data looks like readable JSON (starts with `{` or `[`).
+    pub fn has_readable_data(&self) -> bool {
+        match self.get_decoded_data() {
+            Some(decoded) => decoded.starts_with('{') || decoded.starts_with('['),
+            None => false,
+        }
+    }
+
+    /// Whether this link's `path` is a known potentially-encrypted path
+    /// (`ai_settings` or `jit_settings`).
+    pub fn might_be_encrypted(&self) -> bool {
+        matches!(
+            self.path.as_deref(),
+            Some("ai_settings") | Some("jit_settings")
+        )
+    }
+
+    /// Whether the data appears encrypted by inspecting the decoded bytes (not JSON and
+    /// not mostly printable text).
+    pub fn has_encrypted_data(&self) -> bool {
+        match self.get_decoded_data() {
+            Some(decoded) => {
+                !decoded.starts_with('{')
+                    && !decoded.starts_with('[')
+                    && !Self::is_printable_text(&decoded)
+            }
+            None => false,
+        }
+    }
+
+    /// Decrypt `data` with the provided record key using AES-256-GCM. Returns `None` if
+    /// `data`/`record_key` is absent or decryption fails.
+    pub fn get_decrypted_data(&self, record_key: Option<&[u8]>) -> Option<String> {
+        let data = self.data.as_ref()?;
+        let key = record_key?;
+        let encrypted = utils::base64_to_bytes(data).ok()?;
+        let decrypted = CryptoUtils::decrypt_aes(&encrypted, key).ok()?;
+        Some(String::from_utf8_lossy(&decrypted).into_owned())
+    }
+
+    /// Get link data as a JSON object, auto-handling plain JSON or encrypted data.
+    /// Plain JSON parses without a key; encrypted data requires `record_key`.
+    pub fn get_link_data(
+        &self,
+        record_key: Option<&[u8]>,
+    ) -> Option<serde_json::Map<String, Value>> {
+        let decoded = self.get_decoded_data()?;
+        if decoded.starts_with('{') || decoded.starts_with('[') {
+            return match serde_json::from_str::<Value>(&decoded) {
+                Ok(Value::Object(map)) => Some(map),
+                _ => None,
+            };
+        }
+        // Not plain JSON — try decryption if a key is available.
+        let decrypted = self.get_decrypted_data(record_key)?;
+        match serde_json::from_str::<Value>(&decrypted) {
+            Ok(Value::Object(map)) => Some(map),
+            _ => None,
+        }
+    }
+
+    /// Get AI settings data — only when `path == "ai_settings"`.
+    pub fn get_ai_settings_data(
+        &self,
+        record_key: &[u8],
+    ) -> Option<serde_json::Map<String, Value>> {
+        if self.path.as_deref() != Some("ai_settings") {
+            return None;
+        }
+        self.get_link_data(Some(record_key))
+    }
+
+    /// Get JIT (Just-In-Time) settings data — only when `path == "jit_settings"`.
+    pub fn get_jit_settings_data(
+        &self,
+        record_key: &[u8],
+    ) -> Option<serde_json::Map<String, Value>> {
+        if self.path.as_deref() != Some("jit_settings") {
+            return None;
+        }
+        self.get_link_data(Some(record_key))
+    }
+
+    /// Get settings data for any `path` — returns `None` unless the link's `path` matches
+    /// `settings_path`.
+    pub fn get_settings_for_path(
+        &self,
+        settings_path: &str,
+        record_key: Option<&[u8]>,
+    ) -> Option<serde_json::Map<String, Value>> {
+        if self.path.as_deref() != Some(settings_path) {
+            return None;
+        }
+        self.get_link_data(record_key)
+    }
+
+    /// Whether a string is mostly printable text (>90% of the first 100 chars printable),
+    /// used to distinguish encrypted bytes from text.
+    fn is_printable_text(s: &str) -> bool {
+        if s.is_empty() {
+            return false;
+        }
+        let sample: Vec<char> = s.chars().take(100).collect();
+        let printable = sample
+            .iter()
+            .filter(|&&c| (' '..='~').contains(&c) || c == '\n' || c == '\r' || c == '\t')
+            .count();
+        (printable as f32 / sample.len() as f32) > 0.9
     }
 }
 
@@ -1346,18 +1578,23 @@ impl KeeperFile {
         Ok(file)
     }
 
-    pub fn save_file(&mut self, path: String, create_folders: bool) -> Result<bool, KSMRError> {
+    pub fn save_file(
+        &mut self,
+        path: impl AsRef<Path>,
+        create_folders: bool,
+    ) -> Result<bool, KSMRError> {
+        let path = path.as_ref();
         // Resolve the absolute path
-        let abs_path = match fs::canonicalize(&path) {
+        let abs_path = match fs::canonicalize(path) {
             Ok(p) => p,
-            Err(_) => PathBuf::from(&path), // Fallback to given path if canonicalization fails
+            Err(_) => path.to_path_buf(), // Fallback to given path if canonicalization fails
         };
 
         // Get the parent directory
         let dir_path = abs_path.parent().ok_or_else(|| {
             KSMRError::PathError(format!(
                 "Failed to determine parent directory for path: {}",
-                path
+                path.display()
             ))
         })?;
 
@@ -1399,6 +1636,14 @@ impl KeeperFile {
         })?;
 
         Ok(true)
+    }
+
+    /// Download (if not already cached) and write the file's decrypted bytes to `path`.
+    ///
+    /// Convenience wrapper over [`save_file`](Self::save_file) that accepts any path type
+    /// (`&str`, `String`, `&Path`, `PathBuf`) and does not create parent directories.
+    pub fn save_to_file(&mut self, path: impl AsRef<Path>) -> Result<bool, KSMRError> {
+        self.save_file(path, false)
     }
 
     pub fn to_string(&self) -> String {
@@ -1717,10 +1962,14 @@ pub const VALID_RECORD_FIELDS: [&str; 45] = [
 ];
 
 impl RecordCreate {
-    pub fn new(record_type: String, title: String, notes: Option<String>) -> Self {
+    pub fn new(
+        record_type: impl Into<String>,
+        title: impl Into<String>,
+        notes: Option<String>,
+    ) -> Self {
         Self {
-            record_type,
-            title,
+            record_type: record_type.into(),
+            title: title.into(),
             notes,
             fields: None,
             custom: None,

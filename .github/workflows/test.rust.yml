@@ -75,6 +75,8 @@ jobs:
           cargo test --all-features --test empty_config_test
           cargo test --all-features --test bind_lifecycle_tests
           cargo test --all-features --test il5_tests
+          cargo test --all-features --test keeper_record_link_tests
+          cargo test --all-features --test str_ownership_tests
 
       - name: Run caching tests (serial execution required)
         run: cargo test --all-features --test caching_tests -- --test-threads=1

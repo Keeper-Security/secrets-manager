@@ -94,7 +94,7 @@ impl ClientOptions {
     ///
     /// * `ClientOptions` - Configured options ready for `SecretsManager::new()`
     pub fn new(
-        token: String,
+        token: impl Into<String>,
         config: KvStoreType,
         log_level: Level,
         hostname: Option<String>,
@@ -103,7 +103,7 @@ impl ClientOptions {
         cache: KSMCache,
     ) -> Self {
         Self {
-            token,
+            token: token.into(),
             config,
             log_level,
             hostname,
@@ -855,8 +855,8 @@ impl SecretsManager {
             }
             keeper_public_keys.get(key_id).unwrap().clone()
         };
-        let server_public_key_raw_key_bytes =
-            url_safe_str_to_bytes(&server_public_key_b64).map_err(|e| {
+        let server_public_key_raw_key_bytes = url_safe_str_to_bytes(&server_public_key_b64)
+            .map_err(|e| {
                 KSMRError::CryptoError(format!("Failed to decode server public key: {}", e))
             })?;
         let encrypted_key =
@@ -2189,10 +2189,11 @@ impl SecretsManager {
     /// * `CryptoError` - If encryption fails
     pub fn update_folder(
         &mut self,
-        folder_uid: String,
+        folder_uid: impl AsRef<str>,
         folder_name: String,
         folders: Vec<KeeperFolder>,
     ) -> Result<String, KSMRError> {
+        let folder_uid = folder_uid.as_ref();
         let folders_copy = match folders.is_empty() {
             true => self.get_folders()?,
             false => folders,
@@ -2214,7 +2215,7 @@ impl SecretsManager {
         };
 
         let update_payload = self.prepare_update_payload(
-            folder_uid.clone(),
+            folder_uid.to_string(),
             folder_name.clone(),
             folder_key.clone(),
         )?;
@@ -2691,7 +2692,7 @@ impl SecretsManager {
     /// ```
     pub fn complete_transaction(
         &mut self,
-        record_uid: String,
+        record_uid: impl Into<String>,
         rollback: bool,
     ) -> Result<(), KSMRError> {
         let endpoint = if rollback {
@@ -2700,7 +2701,8 @@ impl SecretsManager {
             "finalize_secret_update"
         };
 
-        let payload = Self::prepare_complete_transaction_payload(self.config.clone(), record_uid)?;
+        let payload =
+            Self::prepare_complete_transaction_payload(self.config.clone(), record_uid.into())?;
 
         let _result = self.post_query(endpoint.to_string(), &payload)?;
         Ok(())
@@ -3029,14 +3031,14 @@ impl SecretsManager {
     /// * `SerializationError` - If record data is invalid
     pub fn create_secret(
         &mut self,
-        parent_folder_uid: String,
+        parent_folder_uid: impl AsRef<str>,
         record_create_object: RecordCreate,
     ) -> Result<String, KSMRError> {
         let record_json_str = record_create_object.to_json()?;
 
         let folders = self.get_folders()?;
 
-        let mut parent_uid = parent_folder_uid.clone();
+        let mut parent_uid = parent_folder_uid.as_ref().to_string();
         let mut sub_folder_uid: Option<String> = None;
         let mut shared_folder: Option<&KeeperFolder> = None;
 
@@ -3061,7 +3063,7 @@ impl SecretsManager {
             None => {
                 return Err(KSMRError::SecretManagerCreationError(format!(
                     "Could not find a shared folder in the ancestry of folder uid '{}'.",
-                    parent_folder_uid
+                    parent_folder_uid.as_ref()
                 )))
             }
         };
@@ -3155,7 +3157,7 @@ impl SecretsManager {
     }
 
     pub fn try_get_notation_results(&mut self, notation: &str) -> Result<Vec<String>, KSMRError> {
-        let tried_results = self.get_notation_result(notation.to_string());
+        let tried_results = self.get_notation_result(notation);
         let results = match tried_results {
             Ok(results) => results,
             Err(err) => {
@@ -3195,8 +3197,8 @@ impl SecretsManager {
     ///     Ok(())
     /// }
     /// ```
-    pub fn get_notation(&mut self, url: String) -> Result<serde_json::Value, KSMRError> {
-        let result = self._get_notation(url)?;
+    pub fn get_notation(&mut self, url: impl AsRef<str>) -> Result<serde_json::Value, KSMRError> {
+        let result = self._get_notation(url.as_ref())?;
         match &result {
             serde_json::Value::String(s) => {
                 // Try to parse as JSON, otherwise return as string
@@ -3225,7 +3227,7 @@ impl SecretsManager {
         }
     }
 
-    fn _get_notation(&mut self, url: String) -> Result<serde_json::Value, KSMRError> {
+    fn _get_notation(&mut self, url: &str) -> Result<serde_json::Value, KSMRError> {
         let values = self.get_notation_result(url)?;
         if values.len() == 1 {
             Ok(serde_json::Value::String(values[0].clone()))
@@ -3608,9 +3610,13 @@ impl SecretsManager {
         Ok(vec![prefix, record, selector, footer])
     }
 
-    pub fn get_notation_result(&mut self, notation: String) -> Result<Vec<String>, KSMRError> {
+    pub fn get_notation_result(
+        &mut self,
+        notation: impl AsRef<str>,
+    ) -> Result<Vec<String>, KSMRError> {
+        let notation = notation.as_ref();
         let mut result = Vec::new();
-        let parsed = SecretsManager::parse_notation(&notation, false)
+        let parsed = SecretsManager::parse_notation(notation, false)
             .map_err(|e| KSMRError::NotationError(e.to_string()))?;
 
         if parsed.len() < 3 {

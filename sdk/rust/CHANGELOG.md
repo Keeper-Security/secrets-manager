@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file.
   - New `ConfigKeys::KeyServerPublicKey` variant (`"serverPublicKey"`) for storage
   - IL5 region added to `get_keeper_servers()` (`"IL5"` → `"il5.keepersecurity.us"`)
 - **`test.rust.yml`** CI workflow: runs on every PR to `master` touching `sdk/rust/**`; tests on Rust 1.87 + stable with `cargo fmt`, `cargo clippy -D warnings`, all integration tests, and a release build
+- **KSM-997**: typed `KeeperRecordLink` linked-credential accessor layer + `Record::get_links()` — mirrors the Java SDK's `KeeperRecordLink` API (19 accessors: permission booleans such as `is_admin_user`/`allows_rotation`, `get_link_data_version`, `get_decoded_data`, `get_decrypted_data` (AES-256-GCM), `get_link_data`, and `get_ai_settings_data`/`get_jit_settings_data`/`get_settings_for_path`). Additive — the raw `Record.links` field is unchanged.
+- **KSM-896**: `KeeperFile::save_to_file(path)` convenience — downloads (if needed) and writes the decrypted file to disk in one call; accepts `&str`, `String`, `&Path`, or `PathBuf`.
 
 ### Fixed
 
@@ -30,6 +32,8 @@ All notable changes to this project will be documented in this file.
   - `reqwest` blocking feature separated from the dependency declaration — `features = ["json", "multipart"]` in `[dependencies]`, `blocking = ["reqwest/blocking"]` as a Cargo feature flag
   - tokio runtime reduced to `"rt"` feature (single-threaded runtime); caching tests updated to use `new_current_thread()`
   - SBOM generation switched from Syft + Manifest CLI to `cargo-cyclonedx` (CycloneDX JSON v1.5) + `manifest-cyber/manifest-github-action`
+- **KSM-999**: public-API `&str`/`String` ergonomics (non-breaking) — read-only parameters now accept `impl AsRef<str>` (`get_notation`, `get_notation_result`, `create_secret`, `update_folder`) and `KeeperFile::save_file` accepts `impl AsRef<Path>`; constructors accept `impl Into<String>` (`ClientOptions::new`, `RecordCreate::new`, `KeeperField::new`, `complete_transaction`). Existing `String` callers compile unchanged.
+- **KSM-1000**: `data-encoding` moved from the `totp` feature to a base dependency — fixes a mis-gating that made the `totp` feature impossible to disable (core folder-key serialization uses `HEXLOWER` unconditionally).
 
 ### Documentation
 
