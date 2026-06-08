@@ -19,14 +19,14 @@ path = "src/lib.rs"
 [features]
 default = ["blocking", "totp", "password-gen", "tracing-init"]
 blocking = ["reqwest/blocking"]
-totp = ["dep:data-encoding", "dep:sha1"]
+totp = ["dep:sha1"]
 password-gen = []
 tracing-init = ["dep:env_logger"]
 
 [dependencies]
 aes = "0.8"
 aes-gcm = "0.10"
-data-encoding = { version = "2.9", optional = true }
+data-encoding = { version = "2.9" }
 base64 = "0.22"
 block-padding = "0.3"
 cipher = "0.4"
