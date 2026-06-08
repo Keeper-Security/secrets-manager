@@ -243,6 +243,19 @@ class ThrottleRetryIntegrationTest(unittest.TestCase):
         mock_sleep.assert_not_called()
 
     @patch(SLEEP)
+    def test_throttle_body_non_403_not_retried(self, mock_sleep):
+        # A non-403 response (e.g. 500) that happens to carry a {"error":"throttled"} body
+        # must NOT be treated as a throttle: it falls straight through to error handling.
+        sm = make_sm()
+        q = mock.ResponseQueue(client=sm)
+        body = {"error": "throttled", "message": "throttled"}
+        q.add_response(mock.Response(content=json.dumps(body).encode(), status_code=500))
+
+        with self.assertRaises(KeeperError):
+            sm.get_secrets()
+        mock_sleep.assert_not_called()
+
+    @patch(SLEEP)
     def test_counter_resets_per_call(self, mock_sleep):
         sm = make_sm()
         q = mock.ResponseQueue(client=sm)

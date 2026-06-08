@@ -677,19 +677,22 @@ class SecretsManager:
             # The backend throttles with HTTP 403 {"error":"throttled"}. Retry with exponential
             # backoff + jitter before falling through to generic error handling. Checked before
             # handler_http_error so the existing key-rotation retry path is left untouched.
-            retry_after = self._parse_throttle(ksm_rs.http_response)
-            if retry_after is not None:
-                if throttle_attempt >= MAX_THROTTLE_RETRIES:
-                    raise KeeperThrottleError(
-                        "Request throttled by Keeper backend; exhausted %d retries"
-                        % MAX_THROTTLE_RETRIES)
-                delay = self._throttle_delay(throttle_attempt, retry_after)
-                self.logger.warning(
-                    "Request throttled (attempt %d/%d); retrying in %.1fs"
-                    % (throttle_attempt + 1, MAX_THROTTLE_RETRIES, delay))
-                time.sleep(delay)
-                throttle_attempt += 1
-                continue
+            # Gated on the 403 status so a non-403 response (e.g. 500/502) that happens to carry
+            # a {"error":"throttled"} body is not mistaken for a throttle and retried.
+            if ksm_rs.status_code == 403:
+                retry_after = self._parse_throttle(ksm_rs.http_response)
+                if retry_after is not None:
+                    if throttle_attempt >= MAX_THROTTLE_RETRIES:
+                        raise KeeperThrottleError(
+                            "Request throttled by Keeper backend; exhausted %d retries"
+                            % MAX_THROTTLE_RETRIES)
+                    delay = self._throttle_delay(throttle_attempt, retry_after)
+                    self.logger.warning(
+                        "Request throttled (attempt %d/%d); retrying in %.1fs"
+                        % (throttle_attempt + 1, MAX_THROTTLE_RETRIES, delay))
+                    time.sleep(delay)
+                    throttle_attempt += 1
+                    continue
 
             # Handle the error. Handling will throw an exception if it doesn't want us to retry.
             self.handler_http_error(ksm_rs.http_response)
