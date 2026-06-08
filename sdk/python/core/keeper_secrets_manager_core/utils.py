@@ -321,7 +321,7 @@ def set_config_mode(file, logger=None):
                 commands = [
                     'icacls.exe "{}" /reset'.format(file),
                     'icacls.exe "{}" /inheritance:r'.format(file),
-                    'icacls.exe "{}" /remove:g Everyone:F'.format(file),
+                    'icacls.exe "{}" /remove Everyone'.format(file),
                     'icacls.exe "{}" /grant:r Administrators:F'.format(file),
                     'icacls.exe "{}" /grant:r *{}:F'.format(file, sid),
                 ]
@@ -476,7 +476,7 @@ def check_config_mode(file, color_mod=None, logger=None) -> bool:
                                             "for other users and groups.\n\n".format(file)
                                     message += '> icacls.exe "{}" /reset\n'.format(file)
                                     message += '> icacls.exe "{}" /inheritance:r\n'.format(file)
-                                    message += '> icacls.exe "{}" /remove:g Everyone:F\n'.format(file)
+                                    message += '> icacls.exe "{}" /remove Everyone\n'.format(file)
                                     message += '> icacls.exe "{}" /grant:r Administrators:F\n'.format(file)
                                     message += '> icacls.exe "{}" /grant:r *{}:F\n'.format(file, sid)
                                     message += "\nTo disable this check, set the environmental variable " \
