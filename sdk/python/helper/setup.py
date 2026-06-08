@@ -8,7 +8,7 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 install_requires = [
-    'keeper-secrets-manager-core>=17.2.2',
+    'keeper-secrets-manager-core>=17.3.0',
     'pyyaml>=6.0.1',
     'iso8601'
 ]
