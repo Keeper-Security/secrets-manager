@@ -39,6 +39,7 @@ see the official docs link above.
 * KSM-932 - IL5 custom server public key support — supports three provisioning paths: config field (`serverPublicKey`), OTS token extension (4-segment IL5 format), and programmatic parameter (`server_public_key` on `SecretsManager`)
 * KSM-808 - Config-decoding utilities (`base64_to_bytes`, `url_safe_str_to_bytes`, `base64_to_string`, `CryptoUtils.url_safe_str_to_bytes`) now raise `KeeperError` with actionable messages instead of cryptic `TypeError` when passed `None` from an incomplete config or empty server response field. Per-call-site guards in `core.py` name the specific missing `ConfigKey` (`appKey`, `clientKey`) and direct users to reinitialize with a fresh One-Time Token.
 * KSM-813 - Fixed `set_config_mode()` Windows ACL sequence to remove all Everyone access (not just Full Control)
+* KSM-819 - Fixed `RecordCreate.to_dict()` silently dropping `"custom": []` from the serialized payload (Python falsy check treated empty list as absent). Records created via the SDK now correctly include `"custom": []`, matching Commander and Vault behavior.
 
 ### 17.2.1
 * KSM-900 - Added IL5 (DoD Impact Level 5) region support — token prefix `IL5` resolves to `il5.keepersecurity.us`

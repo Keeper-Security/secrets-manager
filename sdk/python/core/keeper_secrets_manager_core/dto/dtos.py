@@ -550,7 +550,7 @@ class RecordCreate:
         if self.notes:
             rec_dict['notes'] = self.notes
 
-        if self.custom:
+        if self.custom is not None:
             rec_dict['custom'] = self.custom
 
         return helpers.obj_to_dict(rec_dict)
