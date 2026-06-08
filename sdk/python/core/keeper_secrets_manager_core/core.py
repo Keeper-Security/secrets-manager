@@ -13,9 +13,11 @@ import hmac
 import json
 import logging
 import os
+import random
 import re
 import requests
 import sys
+import time
 from base64 import urlsafe_b64decode
 from http import HTTPStatus
 from typing import List, Tuple, Optional
@@ -31,9 +33,10 @@ from keeper_secrets_manager_core.dto.payload import GetPayload, \
     EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, \
     DeletePayload, CreateFolderPayload, UpdateFolderPayload, \
     DeleteFolderPayload, CreateOptions, QueryOptions
-from keeper_secrets_manager_core.exceptions import KeeperError
+from keeper_secrets_manager_core.exceptions import KeeperError, KeeperThrottleError
 from keeper_secrets_manager_core.keeper_globals import keeper_public_keys, \
-    keeper_secrets_manager_sdk_client_id, logger_name, keeper_servers
+    keeper_secrets_manager_sdk_client_id, logger_name, keeper_servers, \
+    MAX_THROTTLE_RETRIES, BASE_THROTTLE_DELAY_SEC
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, \
     KeyValueStorage, InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
@@ -653,6 +656,8 @@ class SecretsManager:
         keeper_server = helpers.get_server(self.hostname, self.config)
         url = "https://%s/api/rest/sm/v1/%s" % (keeper_server, path)
 
+        throttle_attempt = 0
+
         while True:
 
             transmission_key_id = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID)
@@ -668,6 +673,26 @@ class SecretsManager:
             # If we are ok, then break out of the while loop
             if ksm_rs.status_code == 200:
                 break
+
+            # The backend throttles with HTTP 403 {"error":"throttled"}. Retry with exponential
+            # backoff + jitter before falling through to generic error handling. Checked before
+            # handler_http_error so the existing key-rotation retry path is left untouched.
+            # Gated on the 403 status so a non-403 response (e.g. 500/502) that happens to carry
+            # a {"error":"throttled"} body is not mistaken for a throttle and retried.
+            if ksm_rs.status_code == 403:
+                retry_after = self._parse_throttle(ksm_rs.http_response)
+                if retry_after is not None:
+                    if throttle_attempt >= MAX_THROTTLE_RETRIES:
+                        raise KeeperThrottleError(
+                            "Request throttled by Keeper backend; exhausted %d retries"
+                            % MAX_THROTTLE_RETRIES)
+                    delay = self._throttle_delay(throttle_attempt, retry_after)
+                    self.logger.warning(
+                        "Request throttled (attempt %d/%d); retrying in %.1fs"
+                        % (throttle_attempt + 1, MAX_THROTTLE_RETRIES, delay))
+                    time.sleep(delay)
+                    throttle_attempt += 1
+                    continue
 
             # Handle the error. Handling will throw an exception if it doesn't want us to retry.
             self.handler_http_error(ksm_rs.http_response)
@@ -728,6 +753,42 @@ class SecretsManager:
         else:
             return None
 
+    @staticmethod
+    def _parse_throttle(http_response):
+        """If the response is a backend throttle error, return its retry_after (>= 0), else None.
+
+        Throttle responses are HTTP 403 with a JSON body {"error":"throttled", ...} and an
+        optional numeric "retry_after" field (seconds). Returns None for any non-throttle
+        response (including non-JSON bodies) so the caller falls through to normal error handling.
+        """
+        try:
+            response_dict = utils.json_to_dict(http_response.text)
+        except Exception:
+            return None
+        if not response_dict:
+            return None
+        if response_dict.get('result_code', response_dict.get('error')) != 'throttled':
+            return None
+        try:
+            retry_after = float(response_dict.get('retry_after', 0) or 0)
+        except (TypeError, ValueError):
+            retry_after = 0.0
+        return max(retry_after, 0.0)
+
+    @staticmethod
+    def _throttle_delay(attempt, retry_after=0.0):
+        """Compute the throttle backoff delay in seconds for a 0-based attempt number.
+
+        Uses retry_after when the server provides one (> 0), otherwise exponential backoff
+        (BASE_THROTTLE_DELAY_SEC * 2**attempt -> 11s, 22s, 44s, 88s, 176s). A +/- 25% jitter is
+        then applied to desynchronize concurrent clients retrying at the same time.
+        """
+        if retry_after and retry_after > 0:
+            delay = retry_after
+        else:
+            delay = BASE_THROTTLE_DELAY_SEC * (2 ** attempt)
+        delay += delay * random.uniform(-0.25, 0.25)
+        return delay
 
     def handler_http_error(self, rs):
 
