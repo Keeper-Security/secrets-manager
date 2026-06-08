@@ -910,10 +910,22 @@ class SecretsManager:
     def fetch_and_decrypt_secrets(self, query_options: QueryOptions):
         payload = SecretsManager.prepare_get_payload(self.config, query_options=query_options)
 
-        decrypted_response_bytes = self._post_query(
-            'get_secret',
-            payload
-        )
+        try:
+            decrypted_response_bytes = self._post_query('get_secret', payload)
+        except Exception as e:
+            if self.config.get(ConfigKeys.KEY_APP_KEY) is None:
+                if isinstance(self.config, FileKeyValueStorage):
+                    try:
+                        os.remove(self.config.default_config_file_location)
+                    except OSError:
+                        pass
+                    raise KeeperError(
+                        "Initialization failed: '{}' has been removed. "
+                        "Please generate a new One-Time Token and try again.".format(
+                            self.config.default_config_file_location
+                        )
+                    ) from e
+            raise
 
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
         decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}

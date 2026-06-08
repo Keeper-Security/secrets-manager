@@ -35,6 +35,7 @@ see the official docs link above.
 
 ### 17.3.0
 * KSM-877 - Added automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, requests are retried up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus ±25% jitter, honoring `retry_after` from the response when present; a typed `KeeperThrottleError` (subclass of `KeeperError`) is raised once retries are exhausted. Existing key-rotation retry behavior is unchanged.
+* KSM-807 - Fixed partial `client-config.json` left behind after a failed initialization (expired or consumed One-Time Token). The SDK now deletes the incomplete config file on failure so users are not silently trapped in a retry loop. The error message names the file and instructs the user to generate a fresh token.
 * KSM-932 - IL5 custom server public key support — supports three provisioning paths: config field (`serverPublicKey`), OTS token extension (4-segment IL5 format), and programmatic parameter (`server_public_key` on `SecretsManager`)
 * KSM-808 - Config-decoding utilities (`base64_to_bytes`, `url_safe_str_to_bytes`, `base64_to_string`, `CryptoUtils.url_safe_str_to_bytes`) now raise `KeeperError` with actionable messages instead of cryptic `TypeError` when passed `None` from an incomplete config or empty server response field. Per-call-site guards in `core.py` name the specific missing `ConfigKey` (`appKey`, `clientKey`) and direct users to reinitialize with a fresh One-Time Token.
 
