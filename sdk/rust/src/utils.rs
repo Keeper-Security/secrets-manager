@@ -27,9 +27,9 @@ use data_encoding::BASE32;
 use hmac::{Hmac, Mac};
 use log::warn;
 use num_bigint::BigUint;
-use rand::{seq::IteratorRandom, thread_rng};
 #[cfg(feature = "password-gen")]
 use rand::seq::SliceRandom;
+use rand::{seq::IteratorRandom, thread_rng};
 use serde::Serialize;
 use serde_json::Value;
 #[cfg(feature = "totp")]

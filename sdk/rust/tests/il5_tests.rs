@@ -48,16 +48,17 @@ mod il5_tests {
         })
     }
 
-    fn bound_storage_with_custom_key(key_b64: &str, key_id: &str) -> Result<KvStoreType, KSMRError> {
+    fn bound_storage_with_custom_key(
+        key_b64: &str,
+        key_id: &str,
+    ) -> Result<KvStoreType, KSMRError> {
         let storage = InMemoryKeyValueStorage::new(None)?;
         let mut kv = KvStoreType::InMemory(storage);
         let private_key_der = CryptoUtils::generate_private_key_der()?;
-        let private_key_b64 =
-            keeper_secrets_manager_core::utils::bytes_to_base64(&private_key_der);
+        let private_key_b64 = keeper_secrets_manager_core::utils::bytes_to_base64(&private_key_der);
         let public_key_bytes =
             CryptoUtils::public_key_ecc(&CryptoUtils::generate_private_key_ecc()?);
-        let public_key_b64 =
-            keeper_secrets_manager_core::utils::bytes_to_base64(&public_key_bytes);
+        let public_key_b64 = keeper_secrets_manager_core::utils::bytes_to_base64(&public_key_bytes);
 
         kv.set(ConfigKeys::KeyClientId, "TEST_CLIENT_ID".to_string())?;
         kv.set(
@@ -75,14 +76,17 @@ mod il5_tests {
     // Layer 1: a bound config that already has KeyServerPublicKey uses it for encryption.
     #[test]
     fn test_layer1_custom_key_from_config_is_used() {
-        let storage =
-            bound_storage_with_custom_key(KNOWN_PUBLIC_KEY_B64, "20").expect("storage");
+        let storage = bound_storage_with_custom_key(KNOWN_PUBLIC_KEY_B64, "20").expect("storage");
         let mut opts = ClientOptions::new_client_options(storage);
         opts.set_custom_post_function(mock_empty_post);
 
         let mut sm = SecretsManager::new(opts).expect("SecretsManager::new");
         let result = sm.get_secrets(vec![]);
-        assert!(result.is_ok(), "get_secrets with custom key failed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "get_secrets with custom key failed: {:?}",
+            result
+        );
     }
 
     // Layer 1: generate_transmission_key uses custom key when provided.
@@ -97,7 +101,10 @@ mod il5_tests {
     #[test]
     fn test_generate_transmission_key_unknown_id_no_custom_key_fails() {
         let tk = SecretsManager::generate_transmission_key("99", None);
-        assert!(tk.is_err(), "should fail for unknown key_id without custom key");
+        assert!(
+            tk.is_err(),
+            "should fail for unknown key_id without custom key"
+        );
     }
 
     // Layer 2: IL5 4-segment OTT writes hostname, key_id, and public key to config.
@@ -124,7 +131,10 @@ mod il5_tests {
             .get(ConfigKeys::KeyServerPublicKey)
             .expect("get custom key")
             .expect("custom key present");
-        assert_eq!(stored_key, KNOWN_PUBLIC_KEY_B64, "IL5 public key should be stored");
+        assert_eq!(
+            stored_key, KNOWN_PUBLIC_KEY_B64,
+            "IL5 public key should be stored"
+        );
 
         assert_eq!(sm.hostname, "il5.keepersecurity.us", "IL5 hostname");
     }
@@ -135,10 +145,7 @@ mod il5_tests {
         let storage = InMemoryKeyValueStorage::new(None).expect("storage");
         let kv = KvStoreType::InMemory(storage);
         // Normal US token — should parse as US region + client key, not IL5
-        let opts = ClientOptions::new_client_options_with_token(
-            "US:someclientkey".to_string(),
-            kv,
-        );
+        let opts = ClientOptions::new_client_options_with_token("US:someclientkey".to_string(), kv);
         let sm = SecretsManager::new(opts);
         // Just verify it doesn't panic or misroute — US host is expected
         if let Ok(ref sm) = sm {
@@ -158,7 +165,10 @@ mod il5_tests {
         let bad_token = format!("IL5:{}:20:not!!valid!!base64", KNOWN_PUBLIC_KEY_B64);
         let opts = ClientOptions::new_client_options_with_token(bad_token, kv);
         let result = SecretsManager::new(opts);
-        assert!(result.is_err(), "IL5 token with bad base64 should be rejected");
+        assert!(
+            result.is_err(),
+            "IL5 token with bad base64 should be rejected"
+        );
     }
 
     // Layer 3: set_server_public_key writes to config and is used for encryption.
@@ -186,8 +196,7 @@ mod il5_tests {
     // Rotation suppression: custom key mode ignores server-pushed key_id hint and retries.
     #[test]
     fn test_rotation_suppressed_in_custom_key_mode() {
-        let storage =
-            bound_storage_with_custom_key(KNOWN_PUBLIC_KEY_B64, "20").expect("storage");
+        let storage = bound_storage_with_custom_key(KNOWN_PUBLIC_KEY_B64, "20").expect("storage");
         let mut opts = ClientOptions::new_client_options(storage);
 
         let call_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
@@ -207,7 +216,11 @@ mod il5_tests {
         let mut sm = SecretsManager::new(opts).expect("SecretsManager::new");
         let result = sm.get_secrets(vec![]);
 
-        assert!(result.is_ok(), "should succeed after suppressed rotation: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "should succeed after suppressed rotation: {:?}",
+            result
+        );
 
         // key_id should remain 20 (not overwritten to 10)
         let stored_key_id = sm
@@ -215,6 +228,9 @@ mod il5_tests {
             .get(ConfigKeys::KeyServerPublicKeyId)
             .expect("get")
             .expect("present");
-        assert_eq!(stored_key_id, "20", "key_id must not be overwritten by server hint");
+        assert_eq!(
+            stored_key_id, "20",
+            "key_id must not be overwritten by server hint"
+        );
     }
 }

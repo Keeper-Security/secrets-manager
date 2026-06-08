@@ -695,7 +695,15 @@ mod feature_validation_tests {
         // Second call on the same instance — would not compile if get_folders() took self
         let second = sm.get_folders();
 
-        assert!(first.is_ok(), "First get_folders() call failed: {:?}", first);
-        assert!(second.is_ok(), "Second get_folders() call failed: {:?}", second);
+        assert!(
+            first.is_ok(),
+            "First get_folders() call failed: {:?}",
+            first
+        );
+        assert!(
+            second.is_ok(),
+            "Second get_folders() call failed: {:?}",
+            second
+        );
     }
 }
