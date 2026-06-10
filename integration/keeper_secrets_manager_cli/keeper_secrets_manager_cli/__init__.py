@@ -10,6 +10,35 @@
 # Contact: ops@keepersecurity.com
 #
 
+import os
+import sys
+
+
+def _default_cache_dir():
+    """Resolve the directory for ``ksm_cache.bin`` (KSM-1003).
+
+    The cache co-locates with ``keeper.ini``: it follows the same location
+    policy as ``Config.get_default_ini_file`` (KSM-980). Returns the directory,
+    or ``None`` to leave the SDK core's default (current working directory) in
+    place. Must run before the SDK core is imported, because
+    ``KSMCache.kms_cache_file_name`` is evaluated at import time.
+    """
+    if "KSM_CACHE_DIR" in os.environ:
+        return os.environ["KSM_CACHE_DIR"]
+    if "KSM_INI_DIR" in os.environ:
+        return os.environ["KSM_INI_DIR"]
+    if getattr(sys, "frozen", False):
+        return os.environ["USERPROFILE"] if os.name == "nt" else os.environ["HOME"]
+    return None
+
+
+# Set KSM_CACHE_DIR before importing the SDK core so KSMCache reads it (the cache
+# path is a class attribute evaluated at import time). Frozen binaries get the
+# cache next to keeper.ini instead of polluting the current working directory.
+_cache_dir = _default_cache_dir()
+if _cache_dir is not None:
+    os.environ["KSM_CACHE_DIR"] = _cache_dir
+
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.core import KSMCache
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
@@ -21,8 +50,6 @@ from keeper_secrets_manager_core.utils import strtobool
 from .exception import KsmCliException
 from .profile import Profile
 from .config import Config
-import sys
-import os
 
 
 class KeeperCli:
