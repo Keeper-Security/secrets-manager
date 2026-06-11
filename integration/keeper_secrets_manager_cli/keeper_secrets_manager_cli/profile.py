@@ -307,9 +307,9 @@ class Profile:
             print(Fore.YELLOW + "Warning: Keyring not available, using keeper.ini file instead" + Style.RESET_ALL, file=sys.stderr)
             if getattr(sys, 'frozen', False):
                 # Running from a standalone binary install — pip is not applicable.
-                # Two binaries are published: with and without keyring support.
-                print(Fore.YELLOW + "Warning: For keychain support, download the '-keyring' version of the binary:" + Style.RESET_ALL, file=sys.stderr)
-                print(Fore.YELLOW + "  https://github.com/Keeper-Security/secrets-manager/releases" + Style.RESET_ALL, file=sys.stderr)
+                # Keyring ships as the selectable "OS Keyring Support" component in
+                # the installer (every OS); there is no separate "-keyring" binary.
+                print(Fore.YELLOW + "Warning: For keyring support, re-run the installer and enable the 'OS Keyring Support' component." + Style.RESET_ALL, file=sys.stderr)
             else:
                 # Running from pip install — quote the package name for zsh compatibility
                 # (unquoted [] is a glob pattern in zsh and causes "no matches found").
