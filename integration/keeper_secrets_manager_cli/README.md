@@ -11,6 +11,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - **Fix**: KSM-980 - Binary install created `keeper.ini` in the current working directory instead of the user's home directory. Now detects `sys.frozen` in `Config.get_default_ini_file()` and uses `$HOME`/`%USERPROFILE%` for binary installs, matching the existing `launched_from_app` behaviour.
 - **Fix**: KSM-981 - `ksm secret get` did not surface linked records (PAM credential records were invisible). Now passes `request_links=True` to the server so linked record UIDs are returned, includes a `links` array in JSON output, and shows a Links table in text output.
 - **Fix**: KSM-1003 - Binary install wrote `ksm_cache.bin` to the current working directory when caching was enabled (sibling to KSM-980). The CLI now sets `KSM_CACHE_DIR` to the same directory it resolves for `keeper.ini` before loading the SDK core, so the cache co-locates with the ini in `$HOME`/`%USERPROFILE%` for binary installs; pip/source installs are unchanged.
+- **Fix**: KSM-1005 - `ksm shell` crashed on launch (`UpdateChecker.check() takes 1 positional argument but 3 were given`) on any fresh install after the `update-checker` 1.0.0 release made `check()` keyword-only. The CLI now calls it with keyword arguments (compatible with both 0.18.0 and 1.0.0, no version pin needed), and the `shell` startup update check is wrapped in try/except so a failed update check can never block the shell from starting.
 
 ## 1.3.0
 - **Feature**: KSM-800 - OS-native keyring storage for CLI configuration

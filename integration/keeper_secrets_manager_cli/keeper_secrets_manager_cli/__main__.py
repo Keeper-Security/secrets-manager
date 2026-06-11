@@ -197,7 +197,7 @@ def update_available(module, versions=None):
 
     if versions is None:
         versions = get_versions()
-    return UpdateChecker().check(module, versions[module])
+    return UpdateChecker().check(package_name=module, package_version=versions[module])
 
 
 def base_command_help(f):
@@ -1433,9 +1433,13 @@ def shell_command(app):
     versions = get_versions()
 
     print(Fore.CYAN + "Current Version: " + Fore.GREEN + versions.get("keeper-secrets-manager-cli", "") + Style.RESET_ALL)
-    update = update_available("keeper-secrets-manager-cli", versions)
-    if update is not None:
-        print(Fore.YELLOW + "Version {} is available.".format(update.available_version) + Style.RESET_ALL)
+    try:
+        update = update_available("keeper-secrets-manager-cli", versions)
+        if update is not None:
+            print(Fore.YELLOW + "Version {} is available.".format(update.available_version) + Style.RESET_ALL)
+    except (Exception,):
+        # A failed update check must never block the shell from starting.
+        pass
 
     print("\nRunning in shell mode. Type 'quit' to exit.\n")
 
