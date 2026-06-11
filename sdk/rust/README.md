@@ -135,8 +135,13 @@ for secret in &secrets {
             secret.title,
             link.record_uid,
             link.is_admin_user(),
-            link.allows_rotation(),
+            link.allows_rotation(), // reads top-level keys and the nested allowedSettings
         );
+
+        // "meta" self-links carry the record's own PAM settings as plain JSON
+        if let Some(meta) = link.get_meta_data(None) {
+            println!("  meta: {meta:?}, allowed: {:?}", link.get_allowed_settings());
+        }
 
         // ai_settings / jit_settings link data is decrypted with the record key
         if let Some(settings) = link.get_ai_settings_data(&secret.record_key_bytes) {
@@ -145,8 +150,9 @@ for secret in &secrets {
     }
 }
 
-// The raw `secret.links` field (Vec<HashMap<String, Value>>) remains available
-// for backward compatibility.
+// The raw `secret.links` field (Vec<HashMap<String, Value>>) remains available for
+// backward compatibility, and each typed link keeps its untouched original entry
+// in `link.raw`.
 ```
 
 ## Accessing Field Values
