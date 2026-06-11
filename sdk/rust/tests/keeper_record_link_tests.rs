@@ -564,3 +564,61 @@ fn link_top_level_wins_over_allowed_settings() {
         "fallback applies when top level is absent"
     );
 }
+
+// (18) Ciphertext coincidentally starting with `{` or `[` still decrypts. AES-GCM
+// output starts with the random nonce, so ~2/256 of encrypted links begin with a JSON
+// marker; the plain-JSON fast path must fall through to decryption when its parse
+// fails instead of dropping the data (PR #1036 review).
+//
+// `encrypt_aes_gcm` ignores its `nonce_bytes` parameter (always random), so the
+// fixture re-encrypts until the nonce starts with the wanted marker — expected ~256
+// attempts, bounded far beyond any realistic failure odds.
+fn ciphertext_starting_with(marker: u8, payload: &[u8], key: &[u8]) -> Vec<u8> {
+    for _ in 0..200_000 {
+        let ciphertext = CryptoUtils::encrypt_aes_gcm(payload, key, None).expect("encrypts");
+        if ciphertext[0] == marker {
+            return ciphertext;
+        }
+    }
+    panic!("could not produce a ciphertext starting with {marker:#x}");
+}
+
+#[test]
+fn link_ciphertext_with_json_like_first_byte() {
+    let key = CryptoUtils::generate_encryption_key_bytes();
+    let payload = json!({ "createEphemeral": true, "elevate": true });
+
+    for marker in [b'{', b'['] {
+        let ciphertext = ciphertext_starting_with(marker, payload.to_string().as_bytes(), &key);
+        assert_eq!(ciphertext[0], marker, "fixture must start with the marker");
+
+        let link = KeeperRecordLink::new(
+            "RU",
+            Some(bytes_to_base64(&ciphertext)),
+            Some("jit_settings".to_string()),
+        );
+
+        let data = link
+            .get_link_data(Some(&key))
+            .expect("falls through to decryption despite the JSON-like first byte");
+        assert_eq!(Value::Object(data), payload);
+        let jit = link
+            .get_jit_settings_data(&key)
+            .expect("settings accessors benefit from the fall-through");
+        assert_eq!(Value::Object(jit), payload);
+        assert!(link
+            .get_settings_for_path("jit_settings", Some(&key))
+            .is_some());
+        assert!(
+            link.get_link_data(None).is_none(),
+            "still None without a key"
+        );
+    }
+
+    // The plain-JSON fast path is unaffected.
+    let plain = link_with_plain_json(None, json!({ "a": 1 }));
+    assert_eq!(
+        plain.get_link_data(None).expect("plain parses").get("a"),
+        Some(&Value::Number(1.into()))
+    );
+}

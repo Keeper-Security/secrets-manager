@@ -1307,16 +1307,18 @@ impl KeeperRecordLink {
 
     /// Get link data as a JSON object, auto-handling plain JSON or encrypted data.
     /// Plain JSON parses without a key; encrypted data requires `record_key`.
+    /// Ciphertext can coincidentally start with `{` or `[`, so a failed plain-JSON
+    /// parse falls through to decryption rather than giving up.
     pub fn get_link_data(
         &self,
         record_key: Option<&[u8]>,
     ) -> Option<serde_json::Map<String, Value>> {
         let decoded = self.get_decoded_data()?;
         if decoded.starts_with('{') || decoded.starts_with('[') {
-            return match serde_json::from_str::<Value>(&decoded) {
-                Ok(Value::Object(map)) => Some(map),
-                _ => None,
-            };
+            if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(&decoded) {
+                return Some(map);
+            }
+            // Leading {/[ was coincidental ciphertext - fall through to decryption.
         }
         // Not plain JSON — try decryption if a key is available.
         let decrypted = self.get_decrypted_data(record_key)?;
