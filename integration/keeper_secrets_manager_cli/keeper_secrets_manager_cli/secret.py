@@ -23,7 +23,7 @@ from keeper_secrets_manager_cli.common import launch_editor
 from keeper_secrets_manager_core.core import SecretsManager, CreateOptions, KeeperFolder, KeeperFileUpload, QueryOptions
 from keeper_secrets_manager_core.dto.payload import UpdateOptions
 from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
-from keeper_secrets_manager_core.dto.dtos import RecordCreate as _RecordCreate
+from keeper_secrets_manager_core.dto.dtos import KeeperRecordLink, RecordCreate as _RecordCreate
 from keeper_secrets_manager_helper.record import Record
 from keeper_secrets_manager_helper.v3.record import Record as RecordV3
 from keeper_secrets_manager_helper.field_type import FieldType
@@ -182,10 +182,26 @@ class Secret:
                 "last_modified": x.last_modified,
                 "size": x.size
             } for x in record.files],
-            "links": record.links
+            "links": self._links_to_dict(record)
         }
 
         return ret
+
+    @staticmethod
+    def _links_to_dict(record):
+        """Link entries with their data decoded via the SDK's typed accessors (KSM-1015).
+
+        Each entry keeps the raw recordUid/data/path fields untouched and gains a
+        "decoded" object: plain base64 JSON parsed, or ai_settings/jit_settings
+        decrypted with the record's key. Links without data decode to None.
+        """
+        links = []
+        for link_dict in record.links or []:
+            entry = dict(link_dict) if isinstance(link_dict, dict) else {"value": link_dict}
+            entry["decoded"] = KeeperRecordLink(link_dict).get_link_data(record.record_key_bytes) \
+                if isinstance(link_dict, dict) else None
+            links.append(entry)
+        return links
 
     @staticmethod
     def _color_it(value, color=Style.RESET_ALL, use_color=True):
@@ -290,8 +306,20 @@ class Secret:
             ret += "\n"
             table = Table(use_color=use_color)
             table.add_column("Linked Record UID", data_color=Fore.GREEN)
+            table.add_column("Path", data_color=Fore.YELLOW)
+            table.add_column("Link Data", allow_wrap=True, data_color=Fore.YELLOW)
             for link in record_dict["links"]:
-                table.add_row([link.get("recordUid", "")])
+                # Self-links (recordUid == this record) carry the record's own
+                # settings: "meta" (PAM settings), "ai_settings", "jit_settings".
+                uid = link.get("recordUid", "")
+                if uid == record_dict.get("uid"):
+                    uid += " (self)"
+                decoded = link.get("decoded")
+                table.add_row([
+                    uid,
+                    link.get("path") or "",
+                    json.dumps(decoded) if decoded is not None else ""
+                ])
             ret += table.get_string() + "\n"
 
         ret += "\n"
