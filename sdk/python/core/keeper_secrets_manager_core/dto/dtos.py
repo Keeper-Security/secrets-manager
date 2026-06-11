@@ -8,16 +8,20 @@
 # Keeper Secrets Manager
 # Copyright 2023 Keeper Security Inc.
 # Contact: sm@keepersecurity.com
+import base64
 import json
+import logging
 import mimetypes
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import List, Optional
 
 import requests
 from keeper_secrets_manager_core import utils, helpers
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core.exceptions import KeeperError
+from keeper_secrets_manager_core.keeper_globals import logger_name
 
 
 class Record:
@@ -100,6 +104,26 @@ class Record:
             raise KeeperError("File %s not found" % title)
 
         found_file.save_file(path)
+
+    def get_links(self) -> List["KeeperRecordLink"]:
+        """Return this record's linked-credential entries as typed KeeperRecordLink objects.
+
+        Typed view over the raw `links` list (populated when secrets are fetched with
+        `QueryOptions(..., request_links=True)`). The raw `links` list of dicts is kept
+        unchanged for backward compatibility; entries without a `recordUid` string are
+        skipped here.
+
+        :return: List of KeeperRecordLink, empty when the record has no links
+        """
+        links = []
+        for link_dict in self.links or []:
+            if not isinstance(link_dict, dict):
+                continue
+            record_uid = link_dict.get("recordUid")
+            if not record_uid or not isinstance(record_uid, str):
+                continue
+            links.append(KeeperRecordLink(link_dict))
+        return links
 
     def __str__(self):
         return '[Record: uid=%s, type: %s, title: %s, files count: %s]' % (self.uid, self.type, self.title,
@@ -289,6 +313,303 @@ class Record:
         print("------")
         for item in self.dict.get('custom', []):
             print("{} ({}) : {}".format(item["label"], item["type"], ", ".join(item["value"])))
+
+
+class KeeperRecordLink:
+    """Typed view over a single linked-credential entry of a record (`record.links`).
+
+    A link entry carries `recordUid`, optional base64 `data`, and an optional `path`
+    discriminator. Observed payload shapes (verified against the live backend):
+
+    - path "meta" (self-link, recordUid == owning record): plain base64 JSON with
+      `allowedSettings` (rotation, connections, portForwards, sessionRecording,
+      typescriptRecording, aiEnabled, aiSessionTerminate, remoteBrowserIsolation),
+      plus `rotateOnTermination`, `version` and `no_update_services`.
+    - path None (credential link to another record): plain base64 JSON with
+      `is_admin`, `is_launch_credential`, `is_iam_user`, `belongs_to` and
+      `rotation_settings`; or no data at all (pure record reference).
+    - path "ai_settings" / "jit_settings" (self-links): data is AES-256-GCM
+      encrypted under the owning record's key — see get_decrypted_data().
+
+    Accessors mirror the Java SDK's KeeperRecordLink API and never raise: parse,
+    decode or decryption failures yield None/False. The original link dict is kept
+    untouched in `raw`, and get_link_data() returns the complete parsed payload, so
+    fields unknown to this SDK version are always preserved.
+    """
+
+    def __init__(self, link_dict):
+        if not isinstance(link_dict, dict):
+            link_dict = {}
+        self.raw = dict(link_dict)
+        self.record_uid = link_dict.get("recordUid")
+        self.data = link_dict.get("data")
+        self.path = link_dict.get("path")
+
+    def __str__(self):
+        return '[KeeperRecordLink: record_uid=%s, path=%s]' % (self.record_uid, self.path)
+
+    def _parse_json_data(self) -> Optional[dict]:
+        """Decode `data` and parse it as a JSON object, handling errors gracefully."""
+        decoded = self.get_decoded_data()
+        if decoded is None or not (decoded.startswith("{") or decoded.startswith("[")):
+            # Not present, or likely encrypted/binary data - nothing to parse.
+            return None
+        try:
+            parsed = json.loads(decoded)
+        except ValueError as err:
+            logging.getLogger(logger_name).debug(
+                "KeeperRecordLink: failed to parse JSON link data - {}".format(err))
+            return None
+        if not isinstance(parsed, dict):
+            logging.getLogger(logger_name).debug(
+                "KeeperRecordLink: link data is not a JSON object (was JSON array or primitive)")
+            return None
+        return parsed
+
+    def _get_boolean_value(self, key, check_allowed_settings=False) -> bool:
+        """Read a strict boolean from the link data; missing or non-bool values are False.
+
+        With check_allowed_settings=True the nested `allowedSettings` object is
+        consulted when the key is absent at the top level (a top-level boolean wins).
+        """
+        parsed = self._parse_json_data()
+        if parsed is None:
+            return False
+        value = parsed.get(key)
+        if isinstance(value, bool):
+            return value
+        if check_allowed_settings:
+            allowed_settings = parsed.get("allowedSettings")
+            if isinstance(allowed_settings, dict):
+                value = allowed_settings.get(key)
+                if isinstance(value, bool):
+                    return value
+        return False
+
+    def _get_int_value(self, key) -> Optional[int]:
+        """Read a strict integer from the link data; strings and booleans yield None."""
+        parsed = self._parse_json_data()
+        value = parsed.get(key) if parsed else None
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        return None
+
+    def is_admin_user(self) -> bool:
+        """Whether the linked user is an admin (`is_admin`)."""
+        return self._get_boolean_value("is_admin")
+
+    def is_launch_credential(self) -> bool:
+        """Whether this is a launch credential link (`is_launch_credential`)."""
+        return self._get_boolean_value("is_launch_credential")
+
+    def is_iam_user(self) -> bool:
+        """Whether the linked user is an IAM user (`is_iam_user`)."""
+        return self._get_boolean_value("is_iam_user")
+
+    def belongs_to(self) -> bool:
+        """Whether the linked credential belongs to the record (`belongs_to`)."""
+        return self._get_boolean_value("belongs_to")
+
+    def no_update_services(self) -> bool:
+        """Whether service updates are disabled for this link (`no_update_services`)."""
+        return self._get_boolean_value("no_update_services")
+
+    def allows_rotation(self) -> bool:
+        """Whether rotation is allowed (`rotation`, top-level or in `allowedSettings`)."""
+        return self._get_boolean_value("rotation", check_allowed_settings=True)
+
+    def allows_connections(self) -> bool:
+        """Whether connections are allowed (`connections`, top-level or in `allowedSettings`)."""
+        return self._get_boolean_value("connections", check_allowed_settings=True)
+
+    def allows_port_forwards(self) -> bool:
+        """Whether port forwards are allowed (`portForwards`, top-level or in `allowedSettings`)."""
+        return self._get_boolean_value("portForwards", check_allowed_settings=True)
+
+    def allows_session_recording(self) -> bool:
+        """Whether session recording is enabled (`sessionRecording`, top-level or in `allowedSettings`)."""
+        return self._get_boolean_value("sessionRecording", check_allowed_settings=True)
+
+    def allows_typescript_recording(self) -> bool:
+        """Whether typescript recording is enabled (`typescriptRecording`, top-level or in `allowedSettings`)."""
+        return self._get_boolean_value("typescriptRecording", check_allowed_settings=True)
+
+    def allows_remote_browser_isolation(self) -> bool:
+        """Whether remote browser isolation is enabled (`remoteBrowserIsolation`, top-level or in `allowedSettings`)."""
+        return self._get_boolean_value("remoteBrowserIsolation", check_allowed_settings=True)
+
+    def ai_enabled(self) -> bool:
+        """Whether AI features are enabled (`aiEnabled`, top-level or in `allowedSettings`)."""
+        return self._get_boolean_value("aiEnabled", check_allowed_settings=True)
+
+    def ai_session_terminate(self) -> bool:
+        """Whether AI session termination is enabled (`aiSessionTerminate`, top-level or in `allowedSettings`)."""
+        return self._get_boolean_value("aiSessionTerminate", check_allowed_settings=True)
+
+    def rotates_on_termination(self) -> bool:
+        """Whether rotation on termination is enabled (`rotateOnTermination`)."""
+        return self._get_boolean_value("rotateOnTermination")
+
+    def get_link_data_version(self) -> Optional[int]:
+        """The link data schema version (`version`) when it is an integer, else None."""
+        return self._get_int_value("version")
+
+    def get_allowed_settings(self) -> dict:
+        """The `allowedSettings` object from the link data (empty dict when absent)."""
+        parsed = self._parse_json_data()
+        allowed_settings = parsed.get("allowedSettings") if parsed else None
+        return allowed_settings if isinstance(allowed_settings, dict) else {}
+
+    def get_rotation_settings(self) -> Optional[dict]:
+        """The `rotation_settings` object from the link data (schedule, pwd_complexity,
+        disabled, noop, saas_record_uid_list), or None when absent."""
+        parsed = self._parse_json_data()
+        rotation_settings = parsed.get("rotation_settings") if parsed else None
+        return rotation_settings if isinstance(rotation_settings, dict) else None
+
+    def get_decoded_data(self) -> Optional[str]:
+        """Base64-decode `data` to a string (for debugging/advanced use), or None."""
+        if self.data is None:
+            return None
+        try:
+            decoded_bytes = base64.b64decode(self.data)
+        except (ValueError, TypeError) as err:
+            logging.getLogger(logger_name).debug(
+                "KeeperRecordLink: failed to decode base64 data - {}".format(err))
+            return None
+        return decoded_bytes.decode("utf-8", errors="replace")
+
+    def has_readable_data(self) -> bool:
+        """Whether the link has readable JSON data (vs. encrypted/binary data)."""
+        decoded = self.get_decoded_data()
+        return decoded is not None and (decoded.startswith("{") or decoded.startswith("["))
+
+    def might_be_encrypted(self) -> bool:
+        """Whether this link's path indicates potentially encrypted data.
+
+        Currently known encrypted paths: ai_settings, jit_settings. Other paths
+        (including "meta") carry plain base64 JSON.
+        """
+        return self.path in ("ai_settings", "jit_settings")
+
+    def has_encrypted_data(self) -> bool:
+        """Whether the data appears encrypted, by inspecting the actual content
+        (non-JSON and mostly non-printable) rather than path naming conventions."""
+        decoded = self.get_decoded_data()
+        if decoded is None:
+            return False
+        if decoded.startswith("{") or decoded.startswith("["):
+            return False
+        return not KeeperRecordLink._is_printable_text(decoded)
+
+    def get_decrypted_data(self, record_key=None) -> Optional[str]:
+        """Decrypt the link data with the owning record's key (AES-256-GCM).
+
+        :param record_key: The record's encryption key bytes (record.record_key_bytes)
+        :return: Decrypted string data, or None if data/key is missing or decryption fails
+        """
+        if self.data is None or record_key is None:
+            return None
+        try:
+            encrypted_data = base64.b64decode(self.data)
+            decrypted_bytes = CryptoUtils.decrypt_aes(encrypted_data, record_key)
+            return decrypted_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            # Wrong key, malformed base64 or data that is not encrypted.
+            return None
+
+    def get_link_data(self, record_key=None) -> Optional[dict]:
+        """Get the complete link data payload, handling both plain and encrypted JSON.
+
+        Plain base64 JSON parses without a key; encrypted data requires the owning
+        record's key. The returned dict preserves all fields sent by the server,
+        including ones this SDK version doesn't know about yet.
+
+        :param record_key: Optional record key bytes for encrypted link data
+        :return: Parsed payload as a dict, or None if parsing fails
+        """
+        decoded = self.get_decoded_data()
+        if decoded is None:
+            return None
+        if decoded.startswith("{") or decoded.startswith("["):
+            return KeeperRecordLink._parse_json_to_dict(decoded)
+        decrypted = self.get_decrypted_data(record_key)
+        if decrypted is None:
+            return None
+        return KeeperRecordLink._parse_json_to_dict(decrypted)
+
+    def get_meta_data(self, record_key=None) -> Optional[dict]:
+        """Get PAM settings data from this link - only when path == "meta".
+
+        Meta links are self-links (recordUid == owning record) carrying the record's
+        own PAM settings: `allowedSettings`, `rotateOnTermination`, `version`,
+        `no_update_services`. Plain JSON today; the key is accepted for forward
+        compatibility.
+        """
+        return self.get_settings_for_path("meta", record_key)
+
+    def get_ai_settings_data(self, record_key) -> Optional[dict]:
+        """Get AI settings data from this link - only when path == "ai_settings".
+
+        Encrypted under the owning record's key. Known fields: `version` (string,
+        e.g. "v1.0.0") and `riskLevels` (critical/high/medium/low, each with `tags`
+        allow/deny lists and `aiSessionTerminate`). Additional fields may be present
+        in newer versions; the returned dict preserves all of them.
+
+        :param record_key: The record's encryption key bytes
+        :return: Settings data as a dict, or None if not available
+        """
+        if self.path != "ai_settings":
+            return None
+        return self.get_link_data(record_key)
+
+    def get_jit_settings_data(self, record_key) -> Optional[dict]:
+        """Get JIT (Just-In-Time) settings data from this link - only when path == "jit_settings".
+
+        Encrypted under the owning record's key. Known fields: `createEphemeral`,
+        `elevate`, `elevationMethod`, `elevationString`, `baseDistinguishedName`.
+        Additional fields may be present in newer versions; the returned dict
+        preserves all of them.
+
+        :param record_key: The record's encryption key bytes
+        :return: Settings data as a dict, or None if not available
+        """
+        if self.path != "jit_settings":
+            return None
+        return self.get_link_data(record_key)
+
+    def get_settings_for_path(self, settings_path, record_key=None) -> Optional[dict]:
+        """Get settings data for any path, current or future.
+
+        Automatically detects whether the data is plain or encrypted and handles
+        it appropriately.
+
+        :param settings_path: The path to match (e.g. "meta", "ai_settings")
+        :param record_key: The record's encryption key bytes (required for encrypted data)
+        :return: Settings data as a dict, or None if the path doesn't match or parsing fails
+        """
+        if self.path != settings_path:
+            return None
+        return self.get_link_data(record_key)
+
+    @staticmethod
+    def _parse_json_to_dict(json_str) -> Optional[dict]:
+        """Parse a JSON string, returning a dict only for JSON objects."""
+        try:
+            parsed = json.loads(json_str)
+        except ValueError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    @staticmethod
+    def _is_printable_text(text) -> bool:
+        """Whether a string is mostly printable text (>90% of the first 100 chars),
+        used to distinguish encrypted bytes from plain text."""
+        if not text:
+            return False
+        sample = text[:100]
+        printable_count = sum(1 for c in sample if ' ' <= c <= '~' or c in '\n\r\t')
+        return (printable_count / len(sample)) > 0.9
 
 
 class KeeperFolder:
