@@ -1008,7 +1008,8 @@ class KeyringWarningMessageTest(unittest.TestCase):
 
     When keyring is unavailable the warning should:
     - Direct *pip* users to install with quoted brackets (zsh-safe).
-    - Direct *binary* users (sys.frozen=True) to the releases page, not pip.
+    - Direct *binary* users (sys.frozen=True) to the installer's
+      'OS Keyring Support' component, not pip (KSM-1014).
     """
 
     def setUp(self):
@@ -1102,8 +1103,9 @@ class KeyringWarningMessageTest(unittest.TestCase):
             "unquoted pip command found — will fail on zsh"
         )
 
-    def test_binary_warning_points_to_releases_not_pip(self):
-        """KSM-975: binary path (sys.frozen=True) must direct users to releases page, not pip."""
+    def test_binary_warning_points_to_installer_component_not_pip(self):
+        """KSM-1014: binary path (sys.frozen=True) must direct users to the installer's
+        'OS Keyring Support' component, not a non-existent '-keyring' binary or pip."""
         runner = CliRunner()
         import sys as _sys
         had_frozen = hasattr(_sys, 'frozen')
@@ -1113,7 +1115,7 @@ class KeyringWarningMessageTest(unittest.TestCase):
                        return_value=False):
                 result = runner.invoke(
                     cli,
-                    ['profile', 'init', '-t', 'US:FAKE_TOKEN_KSM975_BINARY'],
+                    ['profile', 'init', '-t', 'US:FAKE_TOKEN_KSM1014_BINARY'],
                     catch_exceptions=True,
                 )
         finally:
@@ -1122,11 +1124,17 @@ class KeyringWarningMessageTest(unittest.TestCase):
 
         combined = (result.output or '') + (result.stderr if hasattr(result, 'stderr') else '')
 
-        # Must point to the releases page
+        # Must point to the installer's selectable component
         self.assertIn(
+            'OS Keyring Support',
+            combined,
+            "binary warning must point to the installer's 'OS Keyring Support' component"
+        )
+        # Must NOT point to a non-existent '-keyring' binary on the releases page
+        self.assertNotIn(
             'github.com/Keeper-Security/secrets-manager/releases',
             combined,
-            "binary warning must link to the releases page for the -keyring binary"
+            "binary warning must not link to a non-existent '-keyring' binary"
         )
         # Must NOT tell binary users to run pip install
         self.assertNotIn(
