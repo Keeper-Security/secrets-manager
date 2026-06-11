@@ -441,6 +441,41 @@ class RecordLinkTest(unittest.TestCase):
         only_nested = plain_link({"allowedSettings": {"rotation": True}})
         self.assertTrue(only_nested.allows_rotation(), "fallback applies when top level is absent")
 
+    def test_ciphertext_with_json_like_first_byte(self):
+        """Ciphertext coincidentally starting with "{" or "[" still decrypts.
+
+        AES-GCM output starts with the random IV, so ~2/256 of encrypted links
+        begin with a JSON marker. The plain-JSON fast path must fall through to
+        decryption when its parse fails, instead of dropping the data.
+        """
+
+        key = CryptoUtils.generate_random_bytes(32)
+        payload = {"createEphemeral": True, "elevate": True}
+
+        for marker in (b"{", b"["):
+            iv = marker + os.urandom(11)
+            ciphertext = CryptoUtils.encrypt_aes(json.dumps(payload).encode(), key, iv=iv)
+            link = KeeperRecordLink({
+                "recordUid": "RU",
+                "data": utils.bytes_to_base64(ciphertext),
+                "path": "jit_settings"
+            })
+
+            decoded = link.get_decoded_data()
+            self.assertEqual(marker.decode(), decoded[0],
+                             "fixture must start with the JSON marker")
+
+            self.assertEqual(payload, link.get_link_data(key),
+                             "falls through to decryption despite the JSON-like first byte")
+            self.assertEqual(payload, link.get_jit_settings_data(key),
+                             "settings accessors benefit from the fall-through")
+            self.assertEqual(payload, link.get_settings_for_path("jit_settings", key))
+            self.assertIsNone(link.get_link_data(None),
+                              "still None without a key")
+
+        # The plain-JSON fast path is unaffected.
+        self.assertEqual({"a": 1}, plain_link({"a": 1}).get_link_data())
+
 
 if __name__ == '__main__':
     unittest.main()

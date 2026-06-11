@@ -522,8 +522,10 @@ class KeeperRecordLink:
         """Get the complete link data payload, handling both plain and encrypted JSON.
 
         Plain base64 JSON parses without a key; encrypted data requires the owning
-        record's key. The returned dict preserves all fields sent by the server,
-        including ones this SDK version doesn't know about yet.
+        record's key. Ciphertext can coincidentally start with "{" or "[", so a
+        failed plain-JSON parse falls through to decryption rather than giving up.
+        The returned dict preserves all fields sent by the server, including ones
+        this SDK version doesn't know about yet.
 
         :param record_key: Optional record key bytes for encrypted link data
         :return: Parsed payload as a dict, or None if parsing fails
@@ -532,7 +534,10 @@ class KeeperRecordLink:
         if decoded is None:
             return None
         if decoded.startswith("{") or decoded.startswith("["):
-            return KeeperRecordLink._parse_json_to_dict(decoded)
+            parsed = KeeperRecordLink._parse_json_to_dict(decoded)
+            if parsed is not None:
+                return parsed
+            # Leading {/[ was coincidental ciphertext - fall through to decryption.
         decrypted = self.get_decrypted_data(record_key)
         if decrypted is None:
             return None
