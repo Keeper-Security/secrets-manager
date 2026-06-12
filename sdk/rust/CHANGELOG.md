@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **KSM-882**: Automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `post_query` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus ±25% jitter, honoring `retry_after` from the response when present; returns the new `KSMRError::Throttled` once retries are exhausted. Existing key-rotation retry behavior is unchanged.
 - **KSM-904**: IL5 dynamic server public key injection — three-layer mechanism for isolated deployments (e.g. IL5 region) that use a non-standard server key not present in the hardcoded key map:
   - **Layer 1 (core)**: `generate_transmission_key()` accepts an optional `custom_public_key_b64` parameter; `post_query()` reads `serverPublicKey` from config and passes it automatically
   - **Layer 2 (OTT)**: 4-segment IL5 token format `IL5:clientKey:keyId:serverPublicKeyBase64` — key material is written to config at `SecretsManager::new()` time so Layer 1 picks it up without additional steps. Invalid base64 in the public key segment is rejected with a clear error.
