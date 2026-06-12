@@ -12,6 +12,12 @@ module KeeperSecretsManager
       NOTATION_PREFIX = 'keeper'.freeze
       DEFAULT_KEY_ID = '7'.freeze
 
+      # Throttle retry (KSM-876 / KSM-883). The backend throttles HTTP 403 {"error":"throttled"}
+      # per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
+      # request, so the counter only clears after 10s of silence).
+      MAX_THROTTLE_RETRIES = 5
+      BASE_THROTTLE_DELAY_SEC = 11 # 1s safety margin over the backend's 10s memcached TTL
+
       # Field types that can be inflated
       INFLATE_REF_TYPES = {
         'addressRef' => ['address'],
@@ -1118,6 +1124,7 @@ module KeeperSecretsManager
         server = get_server(@hostname)
         url = "https://#{server}/api/rest/sm/v1/#{path}"
 
+        throttle_attempt = 0
         loop do
           # Generate transmission key
           key_id = config.get_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID) || DEFAULT_KEY_ID
@@ -1144,6 +1151,23 @@ module KeeperSecretsManager
               return response.data
             end
           else
+            # Throttle retry with exponential backoff + jitter (KSM-876 / KSM-883). Checked before
+            # handle_http_error (which still drives key-rotation retry), and gated on the 403 status
+            # so a non-403 response carrying a {"error":"throttled"} body is not retried.
+            retry_after = parse_throttle(response)
+            if response.status_code == 403 && !retry_after.nil?
+              if throttle_attempt >= MAX_THROTTLE_RETRIES
+                raise ThrottledError.new('throttled',
+                                         "Request throttled by Keeper backend; exhausted #{MAX_THROTTLE_RETRIES} retries")
+              end
+              delay = throttle_delay(throttle_attempt, retry_after)
+              @logger.warn("Request throttled (attempt #{throttle_attempt + 1}/#{MAX_THROTTLE_RETRIES}); " \
+                           "retrying in #{delay.round(1)}s")
+              sleep(delay)
+              throttle_attempt += 1
+              next
+            end
+
             handle_http_error(response, config)
           end
         end
@@ -1326,11 +1350,6 @@ module KeeperSecretsManager
           config_to_use = config || @config
           config_to_use.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID, key_id.to_s) if config_to_use
           nil # Retry
-        when 'throttled'
-          sleep_time = error_data['retry_after'] || 60
-          @logger.warn("Request throttled, waiting #{sleep_time} seconds")
-          sleep(sleep_time)
-          nil # Retry
         else
           raise ErrorFactory.from_server_response(result_code, message)
         end
@@ -1338,6 +1357,35 @@ module KeeperSecretsManager
         raise NetworkError.new("Server error: HTTP #{response.status_code}",
                                status_code: response.status_code,
                                response_body: response.data)
+      end
+
+      # Returns the throttle retry_after (>= 0) when +response+ is a backend throttle error
+      # (result_code/error == "throttled"), otherwise nil so the caller falls through to
+      # handle_http_error. Non-JSON / non-object bodies return nil. (KSM-876 / KSM-883)
+      def parse_throttle(response)
+        data = JSON.parse(response.data)
+        return nil unless data.is_a?(Hash)
+
+        result_code = data['result_code'] || data['error']
+        return nil unless result_code == 'throttled'
+
+        retry_after = begin
+          Float(data['retry_after'])
+        rescue ArgumentError, TypeError
+          0.0
+        end
+        retry_after.negative? ? 0.0 : retry_after
+      rescue JSON::ParserError
+        nil
+      end
+
+      # Backoff delay (seconds) for a 0-based attempt: retry_after when > 0, otherwise exponential
+      # backoff (BASE_THROTTLE_DELAY_SEC * 2**attempt -> 11, 22, 44, 88, 176s). A +/-25% jitter is
+      # then applied to desynchronize concurrent clients retrying at the same time.
+      def throttle_delay(attempt, retry_after = 0)
+        base = retry_after.to_f.positive? ? retry_after.to_f : BASE_THROTTLE_DELAY_SEC * (2**attempt)
+        delay = base + base * rand(-0.25..0.25)
+        delay.negative? ? 0.0 : delay
       end
 
       # Get server hostname
