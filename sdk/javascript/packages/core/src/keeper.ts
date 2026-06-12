@@ -13,6 +13,12 @@ const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the clien
 const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
 const KEY_OWNER_PUBLIC_KEY = 'appOwnerPublicKey' // The application owner public key, to create records
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
+
+// Throttle retry (KSM-876 / KSM-880). The backend throttles HTTP 403 {"error":"throttled"}
+// per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
+// request, so the counter only clears after 10s of silence).
+const MAX_THROTTLE_RETRIES = 5
+const BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
 
 let keeperPublicKeys: Record<number, Uint8Array>
@@ -47,6 +53,61 @@ export type SecretManagerOptions = {
     allowUnverifiedCertificate?: boolean
     serverPublicKey?: string
     serverPublicKeyId?: string
+    // Override the sleep between throttle retries (primarily for tests). Defaults to setTimeout.
+    throttleSleep?: (milliseconds: number) => Promise<void>
+}
+
+/**
+ * Thrown when the Keeper backend throttles requests (HTTP 403 {"error":"throttled"}) and the
+ * SDK has exhausted its automatic retries (MAX_THROTTLE_RETRIES). Extends Error so existing
+ * `catch` handlers keep working; callers that want to react specifically to throttling can
+ * check `instanceof KeeperThrottleError`.
+ */
+export class KeeperThrottleError extends Error {
+    constructor(message: string) {
+        super(message)
+        this.name = 'KeeperThrottleError'
+        // Restore the prototype chain so `instanceof` works across transpilation targets.
+        Object.setPrototypeOf(this, KeeperThrottleError.prototype)
+    }
+}
+
+// Returns a jitter multiplier in [-0.25, 0.25). Kept separate so concurrent clients
+// desynchronize their retries; unit tests exercise throttleDelay with a pinned jitter.
+export const throttleJitter = (): number => Math.random() * 0.5 - 0.25
+
+/**
+ * If `body` is a backend throttle error (`result_code`/`error` === "throttled") returns its
+ * `retry_after` in seconds (>= 0); otherwise returns `null` so the caller falls through to
+ * normal error handling. Non-JSON / non-object bodies return `null`.
+ */
+export const parseThrottle = (body: string): number | null => {
+    let obj: any
+    try {
+        obj = JSON.parse(body)
+    } catch {
+        return null
+    }
+    if (!obj || typeof obj !== 'object') {
+        return null
+    }
+    const resultCode = obj.result_code ?? obj.error
+    if (resultCode !== 'throttled') {
+        return null
+    }
+    const retryAfter = Number(obj.retry_after)
+    return Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 0
+}
+
+/**
+ * Computes the backoff delay (milliseconds) for a 0-based `attempt`: `retryAfter` seconds when
+ * provided (> 0), otherwise exponential backoff (BASE_THROTTLE_DELAY_SEC * 2**attempt -> 11, 22,
+ * 44, 88, 176s). The `jitter` fraction (typically in [-0.25, 0.25)) is then applied.
+ */
+export const throttleDelay = (attempt: number, retryAfter: number, jitter: number = throttleJitter()): number => {
+    const baseSec = retryAfter > 0 ? retryAfter : BASE_THROTTLE_DELAY_SEC * Math.pow(2, attempt)
+    const sec = baseSec + baseSec * jitter
+    return Math.max(sec, 0) * 1000
 }
 
 export type QueryOptions = {
@@ -544,6 +605,8 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
         throw new Error('hostname is missing from the configuration')
     }
     const url = `https://${hostName}/api/rest/sm/v1/${path}`
+    const sleep = options.throttleSleep || ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)))
+    let throttleAttempt = 0
     while (true) {
         const transmissionKey = await generateTransmissionKey(options.storage)
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
@@ -552,6 +615,22 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
             let errorMessage
             if (response.data) {
                 errorMessage = platform.bytesToString(response.data.slice(0, 1000))
+                // Throttle retry with exponential backoff + jitter (KSM-876 / KSM-880). Checked
+                // before key-rotation so that path is untouched, and gated on the 403 status so a
+                // non-403 response carrying a {"error":"throttled"} body is not retried.
+                if (response.statusCode === 403) {
+                    const retryAfter = parseThrottle(errorMessage)
+                    if (retryAfter !== null) {
+                        if (throttleAttempt >= MAX_THROTTLE_RETRIES) {
+                            throw new KeeperThrottleError(`Request throttled by Keeper backend; exhausted ${MAX_THROTTLE_RETRIES} retries`)
+                        }
+                        const delay = throttleDelay(throttleAttempt, retryAfter)
+                        console.error(`WARNING: Request throttled (attempt ${throttleAttempt + 1}/${MAX_THROTTLE_RETRIES}); retrying in ${(delay / 1000).toFixed(1)}s`)
+                        await sleep(delay)
+                        throttleAttempt++
+                        continue
+                    }
+                }
                 try {
                     const errorObj: KeeperError = JSON.parse(errorMessage)
                     if (errorObj.error === 'key') {

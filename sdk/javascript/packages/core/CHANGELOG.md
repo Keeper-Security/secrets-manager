@@ -1,6 +1,7 @@
 # Change Log
 
 ## 17.4.1
+- KSM-880 - Added automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `postQuery` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus ±25% jitter, honoring `retry_after` from the response when present; a typed `KeeperThrottleError` is thrown once retries are exhausted. Existing key-rotation retry behavior is unchanged.
 - KSM-901 - Add IL5 (DoD Impact Level 5) support: region mapping (`IL5` → `il5.keepersecurity.us`) and custom server public key injection via three layers — OTS token (`IL5:TOKEN:keyId:publicKey`), `ClientConfiguration` fields (`serverPublicKey` / `serverPublicKeyId`), and `initialize()` options parameter. When a custom key is configured, server-side key rotation hints are suppressed so the client stays pinned to the IL5 key.
 - KSM-758 - Replace deprecated `rollup-plugin-sourcemaps@0.6.3` with `rollup-plugin-sourcemaps2@0.5.6` — resolves peer dependency warnings with Rollup 4.x; bumped to 0.5.6 to resolve transitive `picomatch` HIGH vulnerability (dev dependency only, no production impact)
 - Security: Bump `rollup` devDependency from `^4.52.3` to `^4.60.1` — fixes HIGH severity arbitrary file write via path traversal (CVE affects 4.0.0–4.58.0)
