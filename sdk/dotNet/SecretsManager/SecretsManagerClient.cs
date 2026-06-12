@@ -9,6 +9,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("SecretsManager.Test.Core")]
+
 namespace SecretsManager
 {
     using GetRandomBytesFunction = Func<int, byte[]>;
@@ -29,12 +31,17 @@ namespace SecretsManager
         public IKeyValueStorage Storage { get; }
         public QueryFunction QueryFunction { get; }
         public string ProxyUrl { get; }
-        public SecretsManagerOptions(IKeyValueStorage storage, QueryFunction queryFunction = null, bool allowUnverifiedCertificate = false, string proxyUrl = null)
+
+        // Override the sleep between throttle retries (primarily for tests). Defaults to Task.Delay.
+        public Func<int, Task> ThrottleSleep { get; }
+
+        public SecretsManagerOptions(IKeyValueStorage storage, QueryFunction queryFunction = null, bool allowUnverifiedCertificate = false, string proxyUrl = null, Func<int, Task> throttleSleep = null)
         {
             Storage = storage;
             QueryFunction = queryFunction;
             AllowUnverifiedCertificate = allowUnverifiedCertificate;
             ProxyUrl = proxyUrl;
+            ThrottleSleep = throttleSleep;
         }
     }
 
@@ -82,12 +89,23 @@ namespace SecretsManager
     {
         public byte[] Data { get; }
         public bool IsError { get; }
+        public int StatusCode { get; }
 
-        public KeeperHttpResponse(byte[] data, bool isError)
+        public KeeperHttpResponse(byte[] data, bool isError, int statusCode = 0)
         {
             Data = data;
             IsError = isError;
+            StatusCode = statusCode;
         }
+    }
+
+    /// <summary>
+    /// Thrown when the Keeper backend throttles requests (HTTP 403 {"error":"throttled"}) and the
+    /// SDK has exhausted its automatic retries (see throttle constants in SecretsManagerClient).
+    /// </summary>
+    public class KeeperThrottleException : Exception
+    {
+        public KeeperThrottleException(string message) : base(message) { }
     }
 
     public class EncryptedPayload
@@ -543,6 +561,16 @@ namespace SecretsManager
         private const string KeyAppKey = "appKey"; // The application key with which all secrets are encrypted
         private const string KeyOwnerPublicKey = "appOwnerPublicKey"; // The application owner public key, to create records
         private const string KeyPrivateKey = "privateKey"; // The client's private key
+
+        // Throttle retry (KSM-876 / KSM-879). The backend throttles HTTP 403 {"error":"throttled"}
+        // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
+        // request, so the counter only clears after 10s of silence).
+        private const int MaxThrottleRetries = 5;
+        private const int BaseThrottleDelaySec = 11; // 1s safety margin over the backend's 10s memcached TTL
+        private static readonly Random ThrottleRng = new Random();
+
+        // Jitter multiplier in [-0.25, 0.25). A settable seam so unit tests can pin it.
+        internal static Func<double> ThrottleJitter = () => ThrottleRng.NextDouble() * 0.5 - 0.25;
 
         private const string ClientIdHashTag = "KEEPER_SECRETS_MANAGER_CLIENT_ID"; // Tag for hashing the client key to client id
 
@@ -1498,7 +1526,7 @@ namespace SecretsManager
                 var cachedTransmissionKey = cachedData.Take(32).ToArray();
                 transmissionKey.Key = cachedTransmissionKey;
                 var data = cachedData.Skip(32).ToArray();
-                return new KeeperHttpResponse(data, false);
+                return new KeeperHttpResponse(data, false, 200);
             }
         }
 
@@ -1544,11 +1572,56 @@ namespace SecretsManager
                     throw new InvalidOperationException("Response was expected but not received");
                 }
 
-                return new KeeperHttpResponse(StreamToBytes(errorResponseStream), true);
+                return new KeeperHttpResponse(StreamToBytes(errorResponseStream), true, (int)((HttpWebResponse)e.Response).StatusCode);
             }
 
             using var responseStream = response.GetResponseStream();
-            return new KeeperHttpResponse(StreamToBytes(responseStream), false);
+            return new KeeperHttpResponse(StreamToBytes(responseStream), false, (int)response.StatusCode);
+        }
+
+        /// <summary>
+        /// If <paramref name="data"/> is a backend throttle error (result_code/error == "throttled")
+        /// returns its retry_after in seconds (>= 0); otherwise null so the caller falls through to
+        /// normal error handling. Non-JSON / non-object bodies return null.
+        /// </summary>
+        internal static double? ParseThrottle(byte[] data)
+        {
+            if (data == null || data.Length == 0) return null;
+            try
+            {
+                using var doc = JsonDocument.Parse(data);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object) return null;
+                string resultCode = null;
+                if (root.TryGetProperty("result_code", out var rcEl) && rcEl.ValueKind == JsonValueKind.String)
+                    resultCode = rcEl.GetString();
+                else if (root.TryGetProperty("error", out var errEl) && errEl.ValueKind == JsonValueKind.String)
+                    resultCode = errEl.GetString();
+                if (resultCode != "throttled") return null;
+                double retryAfter = 0;
+                if (root.TryGetProperty("retry_after", out var raEl))
+                {
+                    if (raEl.ValueKind == JsonValueKind.Number) retryAfter = raEl.GetDouble();
+                    else if (raEl.ValueKind == JsonValueKind.String && double.TryParse(raEl.GetString(), out var parsed)) retryAfter = parsed;
+                }
+                return Math.Max(retryAfter, 0);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Computes the backoff delay (milliseconds) for a 0-based attempt: retry_after seconds when
+        /// provided (&gt; 0), otherwise exponential backoff (BaseThrottleDelaySec * 2**attempt -> 11,
+        /// 22, 44, 88, 176s). The jitter fraction (random in [-0.25, 0.25) unless pinned) is applied.
+        /// </summary>
+        internal static int ThrottleDelayMs(int attempt, double retryAfter, double? jitter = null)
+        {
+            var baseSec = retryAfter > 0 ? retryAfter : BaseThrottleDelaySec * Math.Pow(2, attempt);
+            var sec = baseSec + baseSec * (jitter ?? ThrottleJitter());
+            return (int)(Math.Max(sec, 0) * 1000);
         }
 
         private static async Task<byte[]> PostQuery<T>(SecretsManagerOptions options, string path, T payload)
@@ -1560,6 +1633,8 @@ namespace SecretsManager
             }
 
             var url = $"https://{hostName}/api/rest/sm/v1/{path}";
+            var throttleSleep = options.ThrottleSleep ?? (ms => Task.Delay(ms));
+            var throttleAttempt = 0;
             while (true)
             {
                 var transmissionKey = GenerateTransmissionKey(options.Storage);
@@ -1569,6 +1644,26 @@ namespace SecretsManager
                     : await options.QueryFunction(url, transmissionKey, encryptedPayload, options.ProxyUrl);
                 if (response.IsError)
                 {
+                    // Throttle retry with exponential backoff + jitter (KSM-876 / KSM-879). Checked
+                    // before key rotation so that path is untouched, and gated on the 403 status so a
+                    // non-403 response carrying a {"error":"throttled"} body is not retried.
+                    if (response.StatusCode == 403)
+                    {
+                        var retryAfter = ParseThrottle(response.Data);
+                        if (retryAfter.HasValue)
+                        {
+                            if (throttleAttempt >= MaxThrottleRetries)
+                            {
+                                throw new KeeperThrottleException($"Request throttled by Keeper backend; exhausted {MaxThrottleRetries} retries");
+                            }
+                            var delayMs = ThrottleDelayMs(throttleAttempt, retryAfter.Value);
+                            Console.Error.WriteLine($"WARNING: Request throttled (attempt {throttleAttempt + 1}/{MaxThrottleRetries}); retrying in {delayMs / 1000.0:F1}s");
+                            await throttleSleep(delayMs);
+                            throttleAttempt++;
+                            continue;
+                        }
+                    }
+
                     try
                     {
                         var error = JsonSerializer.Deserialize<KeeperError>(response.Data);
