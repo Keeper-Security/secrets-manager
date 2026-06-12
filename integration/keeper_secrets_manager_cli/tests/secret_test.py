@@ -1188,16 +1188,35 @@ class LinkedRecordsTest(unittest.TestCase):
             data = json.loads(result.output)
             self.assertIn('links', data, "links key must be present in JSON output")
 
+    @staticmethod
+    def _live_shape_links(parent_uid, linked_uid):
+        """Link fixtures matching the live backend shapes (see KSM-1007 epic):
+        a meta self-link, a credential link with flags, and a data-less reference."""
+        meta_payload = {
+            "allowedSettings": {"rotation": True, "connections": True},
+            "rotateOnTermination": False,
+            "version": 1
+        }
+        cred_payload = {"is_admin": True, "is_launch_credential": True}
+        return [
+            {"recordUid": parent_uid, "path": "meta",
+             "data": base64.b64encode(json.dumps(meta_payload).encode()).decode()},
+            {"recordUid": linked_uid, "path": None,
+             "data": base64.b64encode(json.dumps(cred_payload).encode()).decode()},
+            {"recordUid": "REFUID0000000000000000", "data": None, "path": None},
+        ], meta_payload, cred_payload
+
     def test_links_populated_in_json_output(self):
-        """secret get --json must include populated links when the record has linked UIDs."""
+        """secret get --json keeps raw link fields and adds decoded data (KSM-1015)."""
         mock_config = MockConfig.make_config()
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         linked_uid = "LINKEDUID0000000000000"
         res = mock.Response()
-        parent = res.add_record(title="PAM Machine",
-                                links=[{"recordUid": linked_uid}])
+        parent = res.add_record(title="PAM Machine")
         parent.field("login", "admin")
+        links, meta_payload, cred_payload = self._live_shape_links(parent.uid, linked_uid)
+        parent.links = links
 
         queue = mock.ResponseQueue(client=secrets_manager)
         queue.add_response(res)
@@ -1215,20 +1234,35 @@ class LinkedRecordsTest(unittest.TestCase):
             self.assertEqual(0, result.exit_code, "non-zero exit on secret get --json")
             data = json.loads(result.output)
             self.assertIn('links', data, "links key must be present in JSON output")
-            self.assertEqual(1, len(data['links']), "expected 1 link")
-            self.assertEqual(linked_uid, data['links'][0]['recordUid'],
-                             "linked UID must match")
+            self.assertEqual(3, len(data['links']), "expected 3 links")
+
+            meta_link, cred_link, ref_link = data['links']
+
+            # Raw fields are preserved untouched (lossless)
+            self.assertEqual(parent.uid, meta_link['recordUid'])
+            self.assertEqual("meta", meta_link['path'])
+            self.assertEqual(links[0]['data'], meta_link['data'])
+            self.assertEqual(linked_uid, cred_link['recordUid'])
+
+            # Decoded data is added per link (KSM-1015)
+            self.assertEqual(meta_payload, meta_link['decoded'],
+                             "meta self-link data must be decoded")
+            self.assertEqual(cred_payload, cred_link['decoded'],
+                             "credential link flags must be decoded")
+            self.assertIsNone(ref_link['decoded'],
+                              "data-less reference decodes to None")
 
     def test_links_shown_in_text_output(self):
-        """secret get text output must include a Links section when links are present."""
+        """secret get text output labels self-links and shows decoded link data (KSM-1015)."""
         mock_config = MockConfig.make_config()
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
         linked_uid = "LINKEDUID0000000000000"
         res = mock.Response()
-        parent = res.add_record(title="PAM Machine",
-                                links=[{"recordUid": linked_uid}])
+        parent = res.add_record(title="PAM Machine")
         parent.field("login", "admin")
+        links, _, _ = self._live_shape_links(parent.uid, linked_uid)
+        parent.links = links
 
         queue = mock.ResponseQueue(client=secrets_manager)
         queue.add_response(res)
@@ -1246,6 +1280,12 @@ class LinkedRecordsTest(unittest.TestCase):
             self.assertEqual(0, result.exit_code, "non-zero exit on secret get text")
             self.assertIn(linked_uid, result.output,
                           "linked UID must appear in text output")
+            self.assertIn("(self)", result.output,
+                          "self-links must be labeled")
+            self.assertIn("meta", result.output,
+                          "link path must appear in text output")
+            self.assertIn("is_admin", result.output,
+                          "decoded credential flags must appear in text output")
 
 
 if __name__ == '__main__':
