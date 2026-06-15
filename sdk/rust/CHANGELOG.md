@@ -6,39 +6,23 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **KSM-904**: IL5 dynamic server public key injection — three-layer mechanism for isolated deployments (e.g. IL5 region) that use a non-standard server key not present in the hardcoded key map:
-  - **Layer 1 (core)**: `generate_transmission_key()` accepts an optional `custom_public_key_b64` parameter; `post_query()` reads `serverPublicKey` from config and passes it automatically
-  - **Layer 2 (OTT)**: 4-segment IL5 token format `IL5:clientKey:keyId:serverPublicKeyBase64` — key material is written to config at `SecretsManager::new()` time so Layer 1 picks it up without additional steps. Invalid base64 in the public key segment is rejected with a clear error.
-  - **Layer 3 (API)**: `ClientOptions::set_server_public_key()` and `ClientOptions::set_server_public_key_id()` for programmatic injection (takes precedence over token-derived values)
-  - Rotation suppression: when `serverPublicKey` is present in config, server-pushed `key_id` hints are ignored to prevent overwriting the custom key with a standard one — the SDK retries with the custom key intact
-  - New `ConfigKeys::KeyServerPublicKey` variant (`"serverPublicKey"`) for storage
-  - IL5 region added to `get_keeper_servers()` (`"IL5"` → `"il5.keepersecurity.us"`)
-- **`test.rust.yml`** CI workflow: runs on every PR to `master` touching `sdk/rust/**`; tests on Rust 1.87 + stable with `cargo fmt`, `cargo clippy -D warnings`, all integration tests, and a release build
-- **KSM-997**: typed `KeeperRecordLink` linked-credential accessor layer + `Record::get_links()` — mirrors the Java SDK's `KeeperRecordLink` API (19 accessors: permission booleans such as `is_admin_user`/`allows_rotation`, `get_link_data_version`, `get_decoded_data`, `get_decrypted_data` (AES-256-GCM), `get_link_data`, and `get_ai_settings_data`/`get_jit_settings_data`/`get_settings_for_path`). Additive — the raw `Record.links` field is unchanged.
-- **KSM-1009**: `KeeperRecordLink` aligned with the Python SDK reference implementation (KSM-992), mapped from the live-verified backend payload shapes. Permission booleans (`allows_rotation`, `allows_connections`, `allows_port_forwards`, `allows_session_recording`, `allows_typescript_recording`, `allows_remote_browser_isolation`) now also read the nested `allowedSettings` object used by current `meta` links (a top-level key wins). New accessors: `is_iam_user`, `belongs_to`, `no_update_services`, `ai_enabled`, `ai_session_terminate`, `get_allowed_settings`, `get_rotation_settings`, `get_meta_data`. Each typed link now keeps the untouched original entry in `.raw` (lossless), and `KeeperRecordLink::new(record_uid, data, path)` constructs one from parts. Doc comments updated to the live-verified `meta`/credential/`ai_settings`/`jit_settings` payload shapes.
-- **KSM-896**: `KeeperFile::save_to_file(path)` convenience — downloads (if needed) and writes the decrypted file to disk in one call; accepts `&str`, `String`, `&Path`, or `PathBuf`.
+- **KSM-904**: Connect to isolated deployments whose server uses a non-standard public key that is not built into the SDK (for example, the IL5 region). Supply the custom key in any of three ways: an extended one-time token of the form `IL5:clientKey:keyId:serverPublicKeyBase64`, the `serverPublicKey` config field, or programmatically with `ClientOptions::set_server_public_key()` / `set_server_public_key_id()` (programmatic values take precedence). `"IL5"` (`il5.keepersecurity.us`) is now a recognized server keyword. While a custom key is in use, server-pushed key-rotation hints are ignored so the custom key is preserved.
+- **KSM-997 / KSM-1009**: Typed access to a record's linked PAM credentials through `Record::get_links()`, which returns `KeeperRecordLink` values; the raw `links` field remains available unchanged. Each link exposes permission flags (`allows_rotation`, `allows_connections`, `allows_port_forwards`, `allows_session_recording`, `allows_typescript_recording`, `allows_remote_browser_isolation`, `ai_enabled`, `ai_session_terminate`), credential flags (`is_admin_user`, `is_launch_credential`, `is_iam_user`, `belongs_to`, `no_update_services`, `rotates_on_termination`), and structured settings (`get_allowed_settings`, `get_rotation_settings`, `get_meta_data`, `get_ai_settings_data`, `get_jit_settings_data`, `get_link_data`). Encrypted AI/JIT settings are decrypted with the record key, and the complete original payload is preserved so fields newer than this release are never dropped.
+- **KSM-896**: `KeeperFile::save_to_file(path)` — downloads (if needed) and writes a decrypted file to disk in one call; accepts `&str`, `String`, `&Path`, or `PathBuf`.
 
 ### Fixed
 
-- **KSM-998**: Server key rotation written to discarded clone causes infinite 401 loop against environments whose active server key is not DEFAULT_KEY_ID (10)
-  - Root cause: `post_query()` called `self.clone().handle_http_error(...)` — `InMemoryKeyValueStorage` is `#[derive(Clone)]` (deep copy, no interior sharing), so the `KeyServerPublicKeyId` update was written to the clone and discarded, causing the retry loop to re-read the original key ID every iteration
-  - Fix: `handle_http_error()` takes `&mut self`; the `.clone()` at the call site is removed — the key rotation now persists to the live config
-  - Found by Craig Lurey (PR #1029)
+- **KSM-998**: Connecting to an environment whose active server key is not the default could hang in an infinite 401 retry loop. The rotated key is now applied on retry, so the connection succeeds.
 
 ### Changed
 
-- **KSM-891/892/893**: Phase 1 SDK modernisation — idiomatic Rust patterns:
-  - `KSMRError` now derived via `thiserror` instead of manual `impl Display` + `impl Error`; new `From<hex::FromHexError>` conversion
-  - `env_logger` made optional, gated behind the `tracing-init` Cargo feature (already in `default`)
-  - `reqwest` blocking feature separated from the dependency declaration — `features = ["json", "multipart"]` in `[dependencies]`, `blocking = ["reqwest/blocking"]` as a Cargo feature flag
-  - tokio runtime reduced to `"rt"` feature (single-threaded runtime); caching tests updated to use `new_current_thread()`
-  - SBOM generation switched from Syft + Manifest CLI to `cargo-cyclonedx` (CycloneDX JSON v1.5) + `manifest-cyber/manifest-github-action`
-- **KSM-999**: public-API `&str`/`String` ergonomics (non-breaking) — read-only parameters now accept `impl AsRef<str>` (`get_notation`, `get_notation_result`, `create_secret`, `update_folder`) and `KeeperFile::save_file` accepts `impl AsRef<Path>`; constructors accept `impl Into<String>` (`ClientOptions::new`, `RecordCreate::new`, `KeeperField::new`, `complete_transaction`). Existing `String` callers compile unchanged.
-- **KSM-1000**: `data-encoding` moved from the `totp` feature to a base dependency — fixes a mis-gating that made the `totp` feature impossible to disable (core folder-key serialization uses `HEXLOWER` unconditionally).
+- **KSM-999**: Read-only string parameters now accept `impl AsRef<str>` (`get_notation`, `get_notation_result`, `create_secret`, `update_folder`) and `KeeperFile::save_file` accepts `impl AsRef<Path>`; constructors accept `impl Into<String>` (`ClientOptions::new`, `RecordCreate::new`, `KeeperField::new`, `complete_transaction`). You can now pass a `&str` where a `String` was previously required; existing `String` callers compile unchanged.
+- **KSM-891/892/893**: Optional functionality moved behind Cargo features — log initialization is now the `tracing-init` feature and blocking HTTP is the `blocking` feature (both still included in `default`). Building with `default-features = false` no longer pulls them in.
+- **KSM-1000**: The `totp` feature can now be turned off. It was previously impossible to disable because core functionality depended on it; that dependency has been removed.
 
 ### Documentation
 
-- **KSM-973**: `SecretsManager::new()` doc comment clarifies the deferred bind contract — the one-time token is redeemed on the first network call, not in the constructor. Callers that persist config to external storage (OS keychain, AWS Secrets Manager, etc.) must call `get_secrets(vec![])` immediately after `new()` to force the bind before exporting. Inline example updated to show the forced-bind pattern.
+- **KSM-973**: `SecretsManager::new()` now documents the deferred bind contract — the one-time token is redeemed on the first network call, not in the constructor. Callers that persist config to external storage (OS keychain, AWS Secrets Manager, etc.) should call `get_secrets(vec![])` immediately after `new()` to force the bind before exporting.
 
 ## [17.2.0]
 
