@@ -31,8 +31,8 @@ def get_client_version(hardcode=False):
     """
     # Default version for hardcode mode or when all detection methods fail
     version_major = "17"
-    version_minor_default = "2"
-    version_revision_default = "1"
+    version_minor_default = "3"
+    version_revision_default = "0"
     version = "{}.{}.{}".format(version_major, version_minor_default, version_revision_default)
 
     # Allow the default version to be hard coded
@@ -100,3 +100,9 @@ keeper_servers = {
     'CA': 'keepersecurity.ca',
     'IL5': 'il5.keepersecurity.us'
 }
+
+# Throttle retry (KSM-876 / KSM-877). The backend throttles HTTP 403 {"error":"throttled"}
+# per clientId+endpoint (100 requests / 10s window; memcached TTL is 10s and resets on every
+# request, so the counter only clears after 10s of silence).
+MAX_THROTTLE_RETRIES = 5
+BASE_THROTTLE_DELAY_SEC = 11  # 1s safety margin over the backend's 10s memcached TTL

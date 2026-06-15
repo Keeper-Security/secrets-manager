@@ -1,4 +1,6 @@
+import json
 import unittest
+from unittest.mock import patch
 
 from keeper_secrets_manager_core.exceptions import KeeperError
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
@@ -6,6 +8,7 @@ from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.crypto import CryptoUtils
 from keeper_secrets_manager_core import utils
+from keeper_secrets_manager_core.dto.payload import QueryOptions
 from keeper_secrets_manager_core.mock import MockConfig
 
 
@@ -119,6 +122,101 @@ class ConfigErrorTest(unittest.TestCase):
             "Error parsing private key" in error_message or
             "Error loading private key" in error_message
         )
+
+    # ------------------------------------------------------------------
+    # KSM-808: None-guard regression tests for config-decoding utilities
+    # ------------------------------------------------------------------
+
+    def test_base64_to_bytes_none_raises_keeper_error(self):
+        """KSM-808: base64_to_bytes(None) must raise KeeperError, not TypeError."""
+        with self.assertRaises(KeeperError) as context:
+            utils.base64_to_bytes(None)
+        message = str(context.exception)
+        self.assertIn("None", message)
+        self.assertIn("configuration", message.lower())
+
+    def test_url_safe_str_to_bytes_none_raises_keeper_error(self):
+        """KSM-808: url_safe_str_to_bytes(None) must raise KeeperError, not TypeError."""
+        with self.assertRaises(KeeperError) as context:
+            utils.url_safe_str_to_bytes(None)
+        message = str(context.exception)
+        self.assertIn("None", message)
+        self.assertIn("configuration", message.lower())
+
+    def test_base64_to_string_none_raises_keeper_error(self):
+        """KSM-808: base64_to_string(None) must raise KeeperError, not TypeError."""
+        with self.assertRaises(KeeperError) as context:
+            utils.base64_to_string(None)
+        message = str(context.exception)
+        self.assertIn("None", message)
+        self.assertIn("configuration", message.lower())
+
+    def test_cryptoutils_url_safe_str_to_bytes_none_raises_keeper_error(self):
+        """KSM-808: CryptoUtils.url_safe_str_to_bytes(None) must raise KeeperError."""
+        with self.assertRaises(KeeperError) as context:
+            CryptoUtils.url_safe_str_to_bytes(None)
+        message = str(context.exception)
+        self.assertIn("None", message)
+        self.assertIn("configuration", message.lower())
+
+    def _make_secrets_manager_with_config(self, config_overrides=None, skip_keys=None):
+        """Build a SecretsManager whose InMemoryKeyValueStorage is missing the requested keys."""
+        skip_keys = skip_keys or []
+        config_dict = MockConfig.make_config()
+        for key in skip_keys:
+            config_dict.pop(key, None)
+        if config_overrides:
+            config_dict.update(config_overrides)
+        storage = InMemoryKeyValueStorage(config_dict)
+        return SecretsManager(config=storage)
+
+    def test_fetch_records_missing_client_key_in_config(self):
+        """KSM-808: rebind path (server returns encryptedAppKey) names 'clientKey' when missing."""
+        sm = self._make_secrets_manager_with_config(skip_keys=["clientKey"])
+        rebind_response = json.dumps({
+            "encryptedAppKey": "Zm9vYmFy",
+            "records": [],
+            "folders": [],
+        }).encode("utf-8")
+
+        with patch.object(sm, "_post_query", return_value=rebind_response):
+            with self.assertRaises(KeeperError) as context:
+                sm.fetch_and_decrypt_secrets(QueryOptions(records_filter=[], folders_filter=[]))
+
+        message = str(context.exception)
+        self.assertIn("clientKey", message)
+        self.assertIn("One-Time Token", message)
+
+    def test_fetch_records_missing_app_key_in_config(self):
+        """KSM-808: already-bound path (no encryptedAppKey from server) names 'appKey' when missing."""
+        sm = self._make_secrets_manager_with_config(skip_keys=["appKey"])
+        already_bound_response = json.dumps({
+            "records": [],
+            "folders": [],
+        }).encode("utf-8")
+
+        with patch.object(sm, "_post_query", return_value=already_bound_response):
+            with self.assertRaises(KeeperError) as context:
+                sm.fetch_and_decrypt_secrets(QueryOptions(records_filter=[], folders_filter=[]))
+
+        message = str(context.exception)
+        self.assertIn("appKey", message)
+        self.assertIn("One-Time Token", message)
+
+    def test_fetch_and_decrypt_folders_missing_app_key(self):
+        """KSM-808: fetch_and_decrypt_folders names 'appKey' when missing from config."""
+        sm = self._make_secrets_manager_with_config(skip_keys=["appKey"])
+        folders_response = json.dumps({
+            "folders": [{"folderUid": "abc", "folderKey": "Zm9v"}],
+        }).encode("utf-8")
+
+        with patch.object(sm, "_post_query", return_value=folders_response):
+            with self.assertRaises(KeeperError) as context:
+                sm.fetch_and_decrypt_folders()
+
+        message = str(context.exception)
+        self.assertIn("appKey", message)
+        self.assertIn("One-Time Token", message)
 
 
 if __name__ == '__main__':
