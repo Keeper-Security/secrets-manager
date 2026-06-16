@@ -1,0 +1,6 @@
+# Module specific facts for keeper_secrets_manager_puppet
+---
+keeper_secrets_manager_puppet:
+  config_dir: "/opt/keeper_secret_manager"
+  python_path: "/usr/bin/python3"
+  script_path: "/opt/keeper_secret_manager/ksm.py" 
