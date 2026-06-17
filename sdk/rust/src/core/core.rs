@@ -55,7 +55,7 @@ use serde_json::Value;
 
 /// Custom post function type for HTTP request injection (used for testing and mocking).
 ///
-/// Changed in v17.2.0 (KSM-931) from `fn(...)` to `Arc<dyn Fn(...) + Send + Sync>` to allow
+/// Changed in v17.2.0 from `fn(...)` to `Arc<dyn Fn(...) + Send + Sync>` to allow
 /// closures that capture state (e.g. a shared `reqwest::blocking::Client`). Existing call
 /// sites using `options.set_custom_post_function(my_fn)` continue to compile unchanged
 /// because bare `fn` pointers implement `Fn + Send + Sync + 'static`.
@@ -994,7 +994,7 @@ impl SecretsManager {
         Ok(proxy)
     }
 
-    /// `_verify_ssl_certificates` is accepted for API compatibility but ignored since KSM-926;
+    /// `_verify_ssl_certificates` is accepted for API compatibility but ignored;
     /// TLS verification is controlled by `verify_ssl_certs` set in `SecretsManager::new()`.
     pub fn post_function(
         self,
@@ -1399,7 +1399,7 @@ impl SecretsManager {
                 return Ok(keeper_result);
             }
 
-            // Throttle retry with exponential backoff + jitter (KSM-876 / KSM-882). Detected
+            // Throttle retry with exponential backoff + jitter. Detected
             // before handle_http_error so the existing key-rotation retry path is untouched.
             // Gated on the 403 status so a non-403 response carrying a {"error":"throttled"}
             // body is not mistaken for a throttle and retried.
@@ -4168,7 +4168,7 @@ mod key_rotation_regression {
 mod throttle_unit {
     use super::{parse_throttle, throttle_delay};
 
-    // throttle_delay with zero jitter yields the exact exponential sequence (KSM-876).
+    // throttle_delay with zero jitter yields the exact exponential sequence.
     #[test]
     fn delay_exponential_sequence_no_jitter() {
         let expected = [11.0, 22.0, 44.0, 88.0, 176.0];

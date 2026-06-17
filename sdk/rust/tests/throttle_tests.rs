@@ -10,7 +10,7 @@
 // Contact: sm@keepersecurity.com
 //
 
-//! End-to-end tests for throttle retry with exponential backoff (KSM-876 / KSM-882).
+//! End-to-end tests for throttle retry with exponential backoff.
 //!
 //! Each test drives a real `update_secret` round-trip through `post_query` with a mocked
 //! post function (returning HTTP 403 `{"error":"throttled"}` responses) and a recording

@@ -23,7 +23,7 @@ static CLIENT_VERSION: LazyLock<String> = LazyLock::new(|| get_client_version(fa
 pub static KEEPER_SECRETS_MANAGER_SDK_CLIENT_ID: LazyLock<String> =
     LazyLock::new(|| format!("{}{}", RUST_VERSION_PREFIX, CLIENT_VERSION.clone()));
 
-// Throttle retry (KSM-876 / KSM-882). The backend throttles HTTP 403 {"error":"throttled"}
+// Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
 // request, so the counter only clears after 10s of silence).
 pub const MAX_THROTTLE_RETRIES: u32 = 5;
