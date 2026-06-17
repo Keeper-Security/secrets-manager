@@ -20,25 +20,17 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- **KSM-998**: Server key rotation written to discarded clone causes infinite 401 loop against environments whose active server key is not DEFAULT_KEY_ID (10)
-  - Root cause: `post_query()` called `self.clone().handle_http_error(...)` — `InMemoryKeyValueStorage` is `#[derive(Clone)]` (deep copy, no interior sharing), so the `KeyServerPublicKeyId` update was written to the clone and discarded, causing the retry loop to re-read the original key ID every iteration
-  - Fix: `handle_http_error()` takes `&mut self`; the `.clone()` at the call site is removed — the key rotation now persists to the live config
-  - Found by Craig Lurey (PR #1029)
+- **KSM-998**: Connecting to an environment whose active server key is not the default could hang in an infinite 401 retry loop. The rotated key is now applied on retry, so the connection succeeds.
 
 ### Changed
 
-- **KSM-891/892/893**: Phase 1 SDK modernisation — idiomatic Rust patterns:
-  - `KSMRError` now derived via `thiserror` instead of manual `impl Display` + `impl Error`; new `From<hex::FromHexError>` conversion
-  - `env_logger` made optional, gated behind the `tracing-init` Cargo feature (already in `default`)
-  - `reqwest` blocking feature separated from the dependency declaration — `features = ["json", "multipart"]` in `[dependencies]`, `blocking = ["reqwest/blocking"]` as a Cargo feature flag
-  - tokio runtime reduced to `"rt"` feature (single-threaded runtime); caching tests updated to use `new_current_thread()`
-  - SBOM generation switched from Syft + Manifest CLI to `cargo-cyclonedx` (CycloneDX JSON v1.5) + `manifest-cyber/manifest-github-action`
-- **KSM-999**: public-API `&str`/`String` ergonomics (non-breaking) — read-only parameters now accept `impl AsRef<str>` (`get_notation`, `get_notation_result`, `create_secret`, `update_folder`) and `KeeperFile::save_file` accepts `impl AsRef<Path>`; constructors accept `impl Into<String>` (`ClientOptions::new`, `RecordCreate::new`, `KeeperField::new`, `complete_transaction`). Existing `String` callers compile unchanged.
-- **KSM-1000**: `data-encoding` moved from the `totp` feature to a base dependency — fixes a mis-gating that made the `totp` feature impossible to disable (core folder-key serialization uses `HEXLOWER` unconditionally).
+- **KSM-999**: Read-only string parameters now accept `impl AsRef<str>` (`get_notation`, `get_notation_result`, `create_secret`, `update_folder`) and `KeeperFile::save_file` accepts `impl AsRef<Path>`; constructors accept `impl Into<String>` (`ClientOptions::new`, `RecordCreate::new`, `KeeperField::new`, `complete_transaction`). You can now pass a `&str` where a `String` was previously required; existing `String` callers compile unchanged.
+- **KSM-891/892/893**: Optional functionality moved behind Cargo features — log initialization is now the `tracing-init` feature and blocking HTTP is the `blocking` feature (both still included in `default`). Building with `default-features = false` no longer pulls them in.
+- **KSM-1000**: The `totp` feature can now be turned off. It was previously impossible to disable because core functionality depended on it; that dependency has been removed.
 
 ### Documentation
 
-- **KSM-973**: `SecretsManager::new()` doc comment clarifies the deferred bind contract — the one-time token is redeemed on the first network call, not in the constructor. Callers that persist config to external storage (OS keychain, AWS Secrets Manager, etc.) must call `get_secrets(vec![])` immediately after `new()` to force the bind before exporting. Inline example updated to show the forced-bind pattern.
+- **KSM-973**: `SecretsManager::new()` now documents the deferred bind contract — the one-time token is redeemed on the first network call, not in the constructor. Callers that persist config to external storage (OS keychain, AWS Secrets Manager, etc.) should call `get_secrets(vec![])` immediately after `new()` to force the bind before exporting.
 
 ## [17.2.0]
 
