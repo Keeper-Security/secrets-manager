@@ -14,7 +14,7 @@ const KEY_APP_KEY = 'appKey' // The application key with which all secrets are e
 const KEY_OWNER_PUBLIC_KEY = 'appOwnerPublicKey' // The application owner public key, to create records
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
 
-// Throttle retry (KSM-876 / KSM-880). The backend throttles HTTP 403 {"error":"throttled"}
+// Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
 // request, so the counter only clears after 10s of silence).
 const MAX_THROTTLE_RETRIES = 5
@@ -615,7 +615,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
             let errorMessage
             if (response.data) {
                 errorMessage = platform.bytesToString(response.data.slice(0, 1000))
-                // Throttle retry with exponential backoff + jitter (KSM-876 / KSM-880). Checked
+                // Throttle retry with exponential backoff + jitter. Checked
                 // before key-rotation so that path is untouched, and gated on the 403 status so a
                 // non-403 response carrying a {"error":"throttled"} body is not retried.
                 if (response.statusCode === 403) {
