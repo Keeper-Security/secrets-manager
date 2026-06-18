@@ -39,6 +39,33 @@ class CacheTest(unittest.TestCase):
                 else:
                     os.environ["KSM_CACHE_DIR"] = original
 
+    def test_kms_cache_file_name_override_is_honored(self):
+        """Assigning KSMCache.kms_cache_file_name must override the cache path (backward compat).
+
+        Before the lazy-resolution change this override governed the cache location; cache
+        operations must continue to honor it when it is explicitly set.
+        """
+        original = KSMCache.kms_cache_file_name
+        with tempfile.TemporaryDirectory() as temp_dir:
+            custom_path = os.path.join(temp_dir, "custom_cache.bin")
+            KSMCache.kms_cache_file_name = custom_path
+            try:
+                payload = b"override-bytes"
+                KSMCache.save_cache(payload)
+                self.assertTrue(
+                    os.path.exists(custom_path),
+                    "cache file should be written to the overridden kms_cache_file_name",
+                )
+                self.assertEqual(payload, KSMCache.get_cached_data())
+
+                KSMCache.remove_cache_file()
+                self.assertFalse(
+                    os.path.exists(custom_path),
+                    "remove_cache_file should delete the overridden cache file",
+                )
+            finally:
+                KSMCache.kms_cache_file_name = original
+
 
 if __name__ == "__main__":
     unittest.main()

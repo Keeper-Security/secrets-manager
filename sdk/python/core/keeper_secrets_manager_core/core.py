@@ -1904,14 +1904,20 @@ class SecretsManager:
 
 
 class KSMCache:
-    # Default cache file name, kept for backward compatibility. The directory is read
-    # lazily from KSM_CACHE_DIR at call time (see get_cache_file_path), so setting the
-    # env var after import is honored. If not set, the cache file is created in the
-    # current working directory.
+    # Default cache file name. The directory is read lazily from KSM_CACHE_DIR at call
+    # time (see get_cache_file_path), so setting the env var after import is honored. If
+    # not set, the cache file is created in the current working directory. Assigning
+    # kms_cache_file_name directly still overrides the full path (backward compatibility).
     kms_cache_file_name = os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
+    # Snapshot of the import-time default, used to detect an explicit override above.
+    _default_cache_file_name = kms_cache_file_name
 
     @classmethod
     def get_cache_file_path(cls):
+        # An explicit assignment to kms_cache_file_name takes precedence (backward compat)...
+        if cls.kms_cache_file_name != cls._default_cache_file_name:
+            return cls.kms_cache_file_name
+        # ...otherwise resolve the directory from KSM_CACHE_DIR at call time.
         return os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
 
     @staticmethod
