@@ -88,6 +88,8 @@ pub enum KSMRError {
     TransactionError(String), // Transaction operation failures (commit/rollback)
     #[error("Configuration error: {0}")]
     ConfigurationError(String), // Configuration validation errors
+    #[error("Request throttled by Keeper backend: {0}")]
+    Throttled(String), // HTTP 403 {"error":"throttled"} — automatic retries exhausted
 }
 
 impl PartialEq for KSMRError {
@@ -161,6 +163,7 @@ impl PartialEq for KSMRError {
             (KSMRError::ConfigurationError(msg1), KSMRError::ConfigurationError(msg2)) => {
                 msg1 == msg2
             }
+            (KSMRError::Throttled(msg1), KSMRError::Throttled(msg2)) => msg1 == msg2,
             _ => false,
         }
     }

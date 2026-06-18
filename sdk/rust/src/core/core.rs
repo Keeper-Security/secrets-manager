@@ -12,6 +12,7 @@
 
 use std::env;
 use std::str::FromStr;
+use std::time::Duration;
 
 use crate::cache::{self, KSMCache};
 use crate::dto::dtos::{KeeperFileUpload, KeeperFolder, RecordCreate};
@@ -43,7 +44,9 @@ use crate::dto::{
     TransmissionKey, UpdateFolderPayload, UpdatePayload, UpdateTransactionType,
 };
 use crate::helpers::get_servers;
-use crate::keeper_globals::KEEPER_SECRETS_MANAGER_SDK_CLIENT_ID;
+use crate::keeper_globals::{
+    BASE_THROTTLE_DELAY_SEC, KEEPER_SECRETS_MANAGER_SDK_CLIENT_ID, MAX_THROTTLE_RETRIES,
+};
 use crate::utils::{base64_to_bytes, bytes_to_base64, json_to_dict, string_to_bytes};
 use log::{debug, error, info, warn};
 use regex::Regex;
@@ -52,7 +55,7 @@ use serde_json::Value;
 
 /// Custom post function type for HTTP request injection (used for testing and mocking).
 ///
-/// Changed in v17.2.0 (KSM-931) from `fn(...)` to `Arc<dyn Fn(...) + Send + Sync>` to allow
+/// Changed in v17.2.0 from `fn(...)` to `Arc<dyn Fn(...) + Send + Sync>` to allow
 /// closures that capture state (e.g. a shared `reqwest::blocking::Client`). Existing call
 /// sites using `options.set_custom_post_function(my_fn)` continue to compile unchanged
 /// because bare `fn` pointers implement `Fn + Send + Sync + 'static`.
@@ -61,6 +64,51 @@ pub type CustomPostFunction = std::sync::Arc<
         + Send
         + Sync,
 >;
+
+/// Optional sleep override used between throttle retries (primarily for testing/mocking).
+/// When unset, `std::thread::sleep` is used. Mirrors [`CustomPostFunction`].
+pub type CustomSleepFunction = std::sync::Arc<dyn Fn(Duration) + Send + Sync>;
+
+/// Returns a jitter multiplier in `[-0.25, 0.25)`. Kept separate so concurrent clients
+/// desynchronize their retries; unit tests exercise [`throttle_delay`] with a pinned jitter.
+fn throttle_jitter() -> f64 {
+    use rand::Rng;
+    rand::thread_rng().gen_range(-0.25..0.25)
+}
+
+/// Reports whether `body` is a backend throttle error (`result_code`/`error` == "throttled")
+/// and, if so, returns its optional `retry_after` (seconds, `>= 0`). Returns `None` for any
+/// non-throttle response (including non-JSON or empty bodies) so the caller falls through to
+/// normal error handling.
+fn parse_throttle(body: Option<&str>) -> Option<f64> {
+    let dict = json_to_dict(body?)?;
+    let rc = dict
+        .get("result_code")
+        .or_else(|| dict.get("error"))
+        .and_then(|v| v.as_str())?;
+    if rc != "throttled" {
+        return None;
+    }
+    let retry_after = match dict.get("retry_after") {
+        Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0),
+        Some(Value::String(s)) => s.parse::<f64>().unwrap_or(0.0),
+        _ => 0.0,
+    };
+    Some(retry_after.max(0.0))
+}
+
+/// Computes the backoff delay for a 0-based `attempt`: `retry_after` when provided (`> 0`),
+/// otherwise exponential backoff (`BASE_THROTTLE_DELAY_SEC * 2**attempt` -> 11, 22, 44, 88,
+/// 176s). The `jitter` fraction (typically in `[-0.25, 0.25)`) is then applied.
+fn throttle_delay(attempt: u32, retry_after: f64, jitter: f64) -> Duration {
+    let base = if retry_after > 0.0 {
+        retry_after
+    } else {
+        (BASE_THROTTLE_DELAY_SEC as f64) * 2f64.powi(attempt as i32)
+    };
+    let secs = (base + base * jitter).max(0.0);
+    Duration::from_secs_f64(secs)
+}
 
 pub struct ClientOptions {
     pub token: String,
@@ -310,6 +358,9 @@ pub struct SecretsManager {
     pub cache: KSMCache,
     pub proxy_url: Option<String>,
     custom_post_function: Option<CustomPostFunction>,
+    /// Optional sleep override for throttle backoff (defaults to `std::thread::sleep`); tests
+    /// inject a no-op/recording sleeper via [`SecretsManager::set_custom_sleep_function`].
+    custom_sleep_function: Option<CustomSleepFunction>,
     /// Pre-built HTTP client shared across all operations (API calls + file downloads).
     /// Built once during init to avoid constructing reqwest::blocking::Client inside
     /// tokio::spawn_blocking, which fails due to nested runtime conflicts.
@@ -328,6 +379,7 @@ impl Clone for SecretsManager {
             cache: self.cache.clone(),
             proxy_url: self.proxy_url.clone(),
             custom_post_function: self.custom_post_function.clone(),
+            custom_sleep_function: self.custom_sleep_function.clone(),
             http_client: self.http_client.clone(),
         }
     }
@@ -397,6 +449,7 @@ impl SecretsManager {
             cache: KSMCache::None,
             proxy_url: client_options.proxy_url.clone(),
             custom_post_function: client_options.custom_post_function,
+            custom_sleep_function: None,
             http_client: None, // built after SSL/proxy config is resolved
         };
 
@@ -941,7 +994,7 @@ impl SecretsManager {
         Ok(proxy)
     }
 
-    /// `_verify_ssl_certificates` is accepted for API compatibility but ignored since KSM-926;
+    /// `_verify_ssl_certificates` is accepted for API compatibility but ignored;
     /// TLS verification is controlled by `verify_ssl_certs` set in `SecretsManager::new()`.
     pub fn post_function(
         self,
@@ -1270,6 +1323,15 @@ impl SecretsManager {
         Ok(ksp)
     }
 
+    /// Override the sleep used between throttle retries (primarily for tests/mocking). When
+    /// unset, `std::thread::sleep` is used. Accepts any `Fn(Duration) + Send + Sync + 'static`.
+    pub fn set_custom_sleep_function<F>(&mut self, f: F)
+    where
+        F: Fn(Duration) + Send + Sync + 'static,
+    {
+        self.custom_sleep_function = Some(std::sync::Arc::new(f));
+    }
+
     fn post_query(&mut self, path: String, payload: &dyn Payload) -> Result<Vec<u8>, KSMRError> {
         let keeper_server = get_servers(self.hostname.clone(), self.config.clone())
             .map_err(|e| KSMRError::StorageError(e.to_string()))?;
@@ -1278,6 +1340,10 @@ impl SecretsManager {
         let mut keeper_response: KsmHttpResponse;
         let mut transmission_key: TransmissionKey;
         let mut retry = true;
+        // Cloned once so the throttle sleeper can be invoked without borrowing `self` across
+        // the later `&mut self` call to `handle_http_error`.
+        let throttle_sleeper = self.custom_sleep_function.clone();
+        let mut throttle_attempt: u32 = 0;
         while retry {
             let transmission_key_id = self
                 .config
@@ -1331,6 +1397,35 @@ impl SecretsManager {
                     CryptoUtils::decrypt_aes(&keeper_response.data, &transmission_key.key)?
                 };
                 return Ok(keeper_result);
+            }
+
+            // Throttle retry with exponential backoff + jitter. Detected
+            // before handle_http_error so the existing key-rotation retry path is untouched.
+            // Gated on the 403 status so a non-403 response carrying a {"error":"throttled"}
+            // body is not mistaken for a throttle and retried.
+            if keeper_response.status_code == 403 {
+                if let Some(retry_after) = parse_throttle(keeper_response.http_response.as_deref()) {
+                    if throttle_attempt >= MAX_THROTTLE_RETRIES {
+                        error!("Request throttled; exhausted {} retries", MAX_THROTTLE_RETRIES);
+                        return Err(KSMRError::Throttled(format!(
+                            "Request throttled by Keeper backend; exhausted {} retries",
+                            MAX_THROTTLE_RETRIES
+                        )));
+                    }
+                    let delay = throttle_delay(throttle_attempt, retry_after, throttle_jitter());
+                    warn!(
+                        "Request throttled (attempt {}/{}); retrying in {:.1}s",
+                        throttle_attempt + 1,
+                        MAX_THROTTLE_RETRIES,
+                        delay.as_secs_f64()
+                    );
+                    match &throttle_sleeper {
+                        Some(sleeper) => sleeper(delay),
+                        None => std::thread::sleep(delay),
+                    }
+                    throttle_attempt += 1;
+                    continue;
+                }
             }
 
             // Handle the error. Handling will throw an exception if it doesn't want us to retry.
@@ -4066,5 +4161,71 @@ mod key_rotation_regression {
             result.is_err(),
             "a non-key error should surface as an error, not a retry"
         );
+    }
+}
+
+#[cfg(test)]
+mod throttle_unit {
+    use super::{parse_throttle, throttle_delay};
+
+    // throttle_delay with zero jitter yields the exact exponential sequence.
+    #[test]
+    fn delay_exponential_sequence_no_jitter() {
+        let expected = [11.0, 22.0, 44.0, 88.0, 176.0];
+        for (attempt, want) in expected.iter().enumerate() {
+            let got = throttle_delay(attempt as u32, 0.0, 0.0).as_secs_f64();
+            assert!(
+                (got - want).abs() < 1e-9,
+                "attempt {attempt}: got {got}, want {want}"
+            );
+        }
+    }
+
+    // retry_after (> 0) takes precedence over the exponential backoff.
+    #[test]
+    fn delay_retry_after_precedence() {
+        assert!((throttle_delay(3, 7.0, 0.0).as_secs_f64() - 7.0).abs() < 1e-9);
+    }
+
+    // A non-positive retry_after is ignored in favor of exponential backoff.
+    #[test]
+    fn delay_non_positive_retry_after_ignored() {
+        assert!((throttle_delay(0, 0.0, 0.0).as_secs_f64() - 11.0).abs() < 1e-9);
+        assert!((throttle_delay(1, -5.0, 0.0).as_secs_f64() - 22.0).abs() < 1e-9);
+    }
+
+    // +/-25% jitter keeps the first delay within [8.25, 13.75] (still > the 10s TTL at +0%).
+    #[test]
+    fn delay_jitter_bounds() {
+        assert!((throttle_delay(0, 0.0, -0.25).as_secs_f64() - 8.25).abs() < 1e-9);
+        assert!((throttle_delay(0, 0.0, 0.25).as_secs_f64() - 13.75).abs() < 1e-9);
+    }
+
+    #[test]
+    fn parse_throttle_table() {
+        // throttled via "error"
+        assert_eq!(parse_throttle(Some(r#"{"error":"throttled"}"#)), Some(0.0));
+        // throttled via "result_code" with numeric retry_after
+        assert_eq!(
+            parse_throttle(Some(r#"{"result_code":"throttled","retry_after":5}"#)),
+            Some(5.0)
+        );
+        // string retry_after is parsed
+        assert_eq!(
+            parse_throttle(Some(r#"{"error":"throttled","retry_after":"3"}"#)),
+            Some(3.0)
+        );
+        // negative retry_after is clamped to 0
+        assert_eq!(
+            parse_throttle(Some(r#"{"error":"throttled","retry_after":-2}"#)),
+            Some(0.0)
+        );
+        // other error -> not throttled
+        assert_eq!(parse_throttle(Some(r#"{"error":"key"}"#)), None);
+        // non-JSON -> not throttled
+        assert_eq!(parse_throttle(Some("not json")), None);
+        // empty / none -> not throttled
+        assert_eq!(parse_throttle(Some("")), None);
+        assert_eq!(parse_throttle(None), None);
     }
 }

@@ -22,3 +22,9 @@ pub fn get_client_version(_hardcode: bool) -> String {
 static CLIENT_VERSION: LazyLock<String> = LazyLock::new(|| get_client_version(false));
 pub static KEEPER_SECRETS_MANAGER_SDK_CLIENT_ID: LazyLock<String> =
     LazyLock::new(|| format!("{}{}", RUST_VERSION_PREFIX, CLIENT_VERSION.clone()));
+
+// Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
+// per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
+// request, so the counter only clears after 10s of silence).
+pub const MAX_THROTTLE_RETRIES: u32 = 5;
+pub const BASE_THROTTLE_DELAY_SEC: u64 = 11; // 1s safety margin over the backend's 10s memcached TTL
