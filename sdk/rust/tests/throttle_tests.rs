@@ -60,7 +60,8 @@ mod throttle_tests {
             "fake.keepersecurity.com".to_string(),
         )
         .unwrap();
-        kv.set(ConfigKeys::KeyPrivateKey, private_key_base64).unwrap();
+        kv.set(ConfigKeys::KeyPrivateKey, private_key_base64)
+            .unwrap();
         kv.set(ConfigKeys::KeyOwnerPublicKey, public_key_base64)
             .unwrap();
         kv
@@ -256,8 +257,8 @@ mod throttle_tests {
         // 403 throttle -> 401 key rotation (key_id 9) -> 200 success.
         let calls = Arc::new(AtomicUsize::new(0));
         let c = calls.clone();
-        let (mut sm, sleeps) = sm_with(move |_url, tk, _p| {
-            match c.fetch_add(1, Ordering::SeqCst) {
+        let (mut sm, sleeps) =
+            sm_with(move |_url, tk, _p| match c.fetch_add(1, Ordering::SeqCst) {
                 0 => Ok(throttle_403(None)),
                 1 => Ok(KsmHttpResponse {
                     status_code: 401,
@@ -267,8 +268,7 @@ mod throttle_tests {
                     ),
                 }),
                 _ => encrypted_success(&tk),
-            }
-        });
+            });
 
         let res = sm.update_secret(make_record());
         assert!(

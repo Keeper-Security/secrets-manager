@@ -1404,9 +1404,13 @@ impl SecretsManager {
             // Gated on the 403 status so a non-403 response carrying a {"error":"throttled"}
             // body is not mistaken for a throttle and retried.
             if keeper_response.status_code == 403 {
-                if let Some(retry_after) = parse_throttle(keeper_response.http_response.as_deref()) {
+                if let Some(retry_after) = parse_throttle(keeper_response.http_response.as_deref())
+                {
                     if throttle_attempt >= MAX_THROTTLE_RETRIES {
-                        error!("Request throttled; exhausted {} retries", MAX_THROTTLE_RETRIES);
+                        error!(
+                            "Request throttled; exhausted {} retries",
+                            MAX_THROTTLE_RETRIES
+                        );
                         return Err(KSMRError::Throttled(format!(
                             "Request throttled by Keeper backend; exhausted {} retries",
                             MAX_THROTTLE_RETRIES
