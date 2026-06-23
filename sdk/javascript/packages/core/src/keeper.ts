@@ -175,10 +175,10 @@ type SecretsManagerResponseRecord = {
     revision: number
     files: SecretsManagerResponseFile[]
     innerFolderUid: string
-    links?: KeeperRecordLink[]
+    links?: KeeperRecordLinkRaw[]
 }
 
-type KeeperRecordLink = {
+type KeeperRecordLinkRaw = {
     recordUid: string
     data?: string
     path?: string
@@ -232,7 +232,7 @@ export type KeeperRecord = {
     data: any
     revision: number
     files?: KeeperFile[]
-    links?: KeeperRecordLink[]
+    links?: KeeperRecordLinkRaw[]
 }
 
 export type KeeperFolder = {
@@ -258,6 +258,193 @@ export type KeeperFileUpload = {
 type KeeperError = {
     error?: string
     key_id?: number
+}
+
+export class KeeperRecordLink {
+    readonly recordUid: string
+    readonly data: string | undefined
+    readonly path: string | undefined
+    private readonly ownerRecordUid: string
+
+    constructor(raw: KeeperRecordLinkRaw, ownerRecordUid: string) {
+        this.recordUid = raw.recordUid
+        this.data = raw.data
+        this.path = raw.path
+        this.ownerRecordUid = ownerRecordUid
+    }
+
+    toString(): string {
+        return `[KeeperRecordLink: recordUid=${this.recordUid}, path=${this.path}]`
+    }
+
+    private _parseJsonData(): Record<string, unknown> | null {
+        const decoded = this.getDecodedData()
+        if (decoded == null) return null
+        if (!decoded.startsWith('{') && !decoded.startsWith('[')) return null
+        try {
+            const parsed = JSON.parse(decoded)
+            return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+                ? parsed as Record<string, unknown>
+                : null
+        } catch {
+            return null
+        }
+    }
+
+    private _getBooleanValue(key: string, checkAllowedSettings = false): boolean {
+        const parsed = this._parseJsonData()
+        if (parsed == null) return false
+        const value = parsed[key]
+        if (typeof value === 'boolean') return value
+        if (checkAllowedSettings) {
+            const allowedSettings = parsed['allowedSettings']
+            if (typeof allowedSettings === 'object' && allowedSettings !== null) {
+                const nested = (allowedSettings as Record<string, unknown>)[key]
+                if (typeof nested === 'boolean') return nested
+            }
+        }
+        return false
+    }
+
+    private _getIntValue(key: string): number | null {
+        const parsed = this._parseJsonData()
+        const value = parsed ? parsed[key] : undefined
+        return typeof value === 'number' && !Number.isNaN(value) ? Math.trunc(value) : null
+    }
+
+    private static _isReadableJson(text: string): boolean {
+        return text.startsWith('{') || text.startsWith('[')
+    }
+
+    private static _isPrintableText(text: string): boolean {
+        if (!text) return false
+        const sample = text.slice(0, 100)
+        let printable = 0
+        for (const c of sample) {
+            const code = c.charCodeAt(0)
+            if ((code >= 0x20 && code <= 0x7e) || c === '\n' || c === '\r' || c === '\t') printable++
+        }
+        return printable / sample.length > 0.9
+    }
+
+    private static _parseJsonToRecord(jsonStr: string): Record<string, unknown> | null {
+        try {
+            const parsed = JSON.parse(jsonStr)
+            return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+                ? parsed as Record<string, unknown>
+                : null
+        } catch {
+            return null
+        }
+    }
+
+    isAdminUser(): boolean { return this._getBooleanValue('is_admin') }
+    isLaunchCredential(): boolean { return this._getBooleanValue('is_launch_credential') }
+    isIamUser(): boolean { return this._getBooleanValue('is_iam_user') }
+    belongsTo(): boolean { return this._getBooleanValue('belongs_to') }
+    noUpdateServices(): boolean { return this._getBooleanValue('no_update_services') }
+    allowsRotation(): boolean { return this._getBooleanValue('rotation', true) }
+    allowsConnections(): boolean { return this._getBooleanValue('connections', true) }
+    allowsPortForwards(): boolean { return this._getBooleanValue('portForwards', true) }
+    allowsSessionRecording(): boolean { return this._getBooleanValue('sessionRecording', true) }
+    allowsTypescriptRecording(): boolean { return this._getBooleanValue('typescriptRecording', true) }
+    allowsRemoteBrowserIsolation(): boolean { return this._getBooleanValue('remoteBrowserIsolation', true) }
+    aiEnabled(): boolean { return this._getBooleanValue('aiEnabled', true) }
+    aiSessionTerminate(): boolean { return this._getBooleanValue('aiSessionTerminate', true) }
+    rotatesOnTermination(): boolean { return this._getBooleanValue('rotateOnTermination') }
+
+    getLinkDataVersion(): number | null { return this._getIntValue('version') }
+
+    getDecodedData(): string | null {
+        if (this.data == null) return null
+        if (!/^[A-Za-z0-9+/]*={0,2}$/.test(this.data)) return null
+        try {
+            return platform.bytesToString(platform.base64ToBytes(this.data))
+        } catch {
+            return null
+        }
+    }
+
+    hasReadableData(): boolean {
+        const decoded = this.getDecodedData()
+        return decoded != null && KeeperRecordLink._isReadableJson(decoded)
+    }
+
+    mightBeEncrypted(): boolean {
+        return this.path === 'ai_settings' || this.path === 'jit_settings'
+    }
+
+    hasEncryptedData(): boolean {
+        const decoded = this.getDecodedData()
+        if (decoded == null) return false
+        if (KeeperRecordLink._isReadableJson(decoded)) return false
+        return !KeeperRecordLink._isPrintableText(decoded)
+    }
+
+    async getDecryptedData(recordKey?: Uint8Array): Promise<string | null> {
+        if (this.data == null) return null
+        try {
+            const encrypted = platform.base64ToBytes(this.data)
+            const decrypted = recordKey
+                ? await platform.decryptWithKey(encrypted, recordKey)
+                : await platform.decrypt(encrypted, this.ownerRecordUid)
+            return platform.bytesToString(decrypted)
+        } catch {
+            return null
+        }
+    }
+
+    async getLinkData(recordKey?: Uint8Array): Promise<Record<string, unknown> | null> {
+        const decoded = this.getDecodedData()
+        if (decoded == null) return null
+        if (KeeperRecordLink._isReadableJson(decoded)) {
+            const parsed = KeeperRecordLink._parseJsonToRecord(decoded)
+            if (parsed != null) return parsed
+        }
+        const decrypted = await this.getDecryptedData(recordKey)
+        if (decrypted == null) return null
+        return KeeperRecordLink._parseJsonToRecord(decrypted)
+    }
+
+    async getAiSettingsData(recordKey?: Uint8Array): Promise<Record<string, unknown> | null> {
+        return this.getSettingsForPath('ai_settings', recordKey)
+    }
+
+    async getJitSettingsData(recordKey?: Uint8Array): Promise<Record<string, unknown> | null> {
+        return this.getSettingsForPath('jit_settings', recordKey)
+    }
+
+    async getMetaData(recordKey?: Uint8Array): Promise<Record<string, unknown> | null> {
+        return this.getSettingsForPath('meta', recordKey)
+    }
+
+    async getSettingsForPath(settingsPath: string, recordKey?: Uint8Array): Promise<Record<string, unknown> | null> {
+        if (this.path !== settingsPath) return null
+        return this.getLinkData(recordKey)
+    }
+
+    getAllowedSettings(): Record<string, unknown> {
+        const parsed = this._parseJsonData()
+        const s = parsed ? parsed['allowedSettings'] : undefined
+        return (typeof s === 'object' && s !== null && !Array.isArray(s))
+            ? s as Record<string, unknown>
+            : {}
+    }
+
+    getRotationSettings(): Record<string, unknown> | null {
+        const parsed = this._parseJsonData()
+        const s = parsed ? parsed['rotation_settings'] : undefined
+        return (typeof s === 'object' && s !== null && !Array.isArray(s))
+            ? s as Record<string, unknown>
+            : null
+    }
+}
+
+export function getLinks(record: KeeperRecord): KeeperRecordLink[] {
+    const raw = record.links || []
+    return raw
+        .filter(link => typeof link.recordUid === 'string' && link.recordUid.length > 0)
+        .map(link => new KeeperRecordLink(link, record.recordUid))
 }
 
 const getUidBytes = (): Uint8Array => {
@@ -645,9 +832,11 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
     if (response.folders) {
         for (const folder of response.folders) {
             try {
+                if (!folder.folderKey) throw new Error(`Folder key missing for UID ${folder.folderUid} — reinitialize with a fresh One-Time Token`)
                 await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
                 for (const record of folder.records) {
                     try {
+                        if (!record.recordKey) throw new Error(`Record key missing for UID ${record.recordUid} in folder ${folder.folderUid}`)
                         await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, folder.folderUid)
                         const decryptedRecord = await decryptRecord(record)
                         decryptedRecord.folderUid = folder.folderUid
