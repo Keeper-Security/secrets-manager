@@ -118,6 +118,13 @@ namespace SecretManagement.Keeper
             return new string[] { title.ToString(), query.Substring(pos + 1) };
         }
 
+        internal static KeeperRecordField FindRecordField(KeeperRecordData data, string fieldName)
+        {
+            return data.fields
+                .Concat(data.custom)
+                .FirstOrDefault(x => (x.label ?? x.type).Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+        }
+
         public static async Task<object> GetSecret(string name, Hashtable config)
         {
             var parts = ParseQuery(name);
@@ -147,9 +154,7 @@ namespace SecretManagement.Keeper
                         : SecretsManagerClient.DownloadFile(file);
                 }
 
-                var field = found.Data.fields
-                    .Concat(found.Data.custom)
-                    .FirstOrDefault(x => (x.label ?? x.type).Equals(parts[1], StringComparison.OrdinalIgnoreCase));
+                var field = FindRecordField(found.Data, parts[1]);
                 return field?.value[0].ToString();
             }
 
@@ -215,7 +220,7 @@ namespace SecretManagement.Keeper
                 return KeeperResult.Error("Set-Secret can only be used to update existing Keeper secrets");
             }
 
-            var field = found.Data.fields.FirstOrDefault(x => (x.label ?? x.type).Equals(parts[1], StringComparison.OrdinalIgnoreCase));
+            var field = FindRecordField(found.Data, parts[1]);
             if (field == null)
             {
                 return KeeperResult.Error("Set-Secret can only be used to update existing Keeper secrets");
