@@ -4,7 +4,7 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
-## 17.2.1
+## 17.3.0
 - KSM-902 - Add IL5 (DoD Impact Level 5) region mapping and dynamic server public key injection
   - Region: `IL5` OTT prefix maps to `il5.keepersecurity.us`
   - Layer 1 (config field): `serverPublicKey` in storage config overrides the embedded key table
