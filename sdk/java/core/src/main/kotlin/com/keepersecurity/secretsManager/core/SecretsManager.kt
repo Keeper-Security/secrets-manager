@@ -8,6 +8,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.doubleOrNull
 import java.net.HttpURLConnection.HTTP_OK
 import java.net.URI
 import java.security.KeyManagementException
@@ -204,6 +211,26 @@ private data class SecretsManagerResponseRecord(
     val links: List<KeeperRecordLink>? = null
 )
 
+/**
+ * Typed view over a single linked-credential entry of a record (the entries in [KeeperRecord.links]).
+ *
+ * A link entry carries [recordUid], optional base64 [data], and an optional [path] discriminator.
+ * Observed payload shapes (verified against the live backend):
+ *
+ * - path "meta" (self-link, recordUid == owning record): plain base64 JSON with `allowedSettings`
+ *   (rotation, connections, portForwards, sessionRecording, typescriptRecording, aiEnabled,
+ *   aiSessionTerminate, remoteBrowserIsolation), plus `rotateOnTermination`, `version` and
+ *   `no_update_services`.
+ * - path null (credential link to another record): plain base64 JSON with `is_admin`,
+ *   `is_launch_credential`, `is_iam_user`, `belongs_to` and `rotation_settings`; or no data at all
+ *   (a pure record reference).
+ * - path "ai_settings" / "jit_settings" (self-links): data is AES-256-GCM encrypted under the
+ *   owning record's key — see [getDecryptedData].
+ *
+ * Accessors never throw: parse, decode or decryption failures yield null/false. [getLinkData]
+ * returns the complete parsed payload with nested objects and arrays preserved, so fields unknown
+ * to this SDK version are retained.
+ */
 @Serializable
 data class KeeperRecordLink(
     val recordUid: String,
@@ -228,22 +255,7 @@ data class KeeperRecordLink(
             
             val jsonElement = Json.parseToJsonElement(decodedData)
             if (jsonElement is JsonObject) {
-                jsonElement.entries.associate { (key, value) ->
-                    key to when {
-                        value is JsonPrimitive && value.isString -> value.content
-                        value is JsonPrimitive -> {
-                            // Try to parse as different types
-                            when {
-                                value.content == "true" -> true
-                                value.content == "false" -> false
-                                value.content.toIntOrNull() != null -> value.content.toInt()
-                                value.content.toLongOrNull() != null -> value.content.toLong()
-                                else -> value.content
-                            }
-                        }
-                        else -> value.toString()
-                    }
-                }
+                jsonObjectToMap(jsonElement)
             } else {
                 // Only log if it looked like JSON but wasn't a JSON object
                 System.err.println("KeeperRecordLink: Link data is not a JSON object (was JSON array or primitive)")
@@ -268,10 +280,20 @@ data class KeeperRecordLink(
     }
 
     /**
-     * Get a boolean value from the parsed JSON data
+     * Get a strict boolean value from the parsed JSON data; missing or non-boolean values are false.
+     *
+     * When [checkAllowedSettings] is true the nested `allowedSettings` object is consulted if the
+     * key is absent at the top level — a top-level boolean wins. The backend nests permission flags
+     * under `allowedSettings` in `path:"meta"` links.
      */
-    private fun getBooleanValue(key: String): Boolean {
-        return parseJsonData()?.get(key) as? Boolean ?: false
+    private fun getBooleanValue(key: String, checkAllowedSettings: Boolean = false): Boolean {
+        val parsed = parseJsonData() ?: return false
+        (parsed[key] as? Boolean)?.let { return it }
+        if (checkAllowedSettings) {
+            val allowed = parsed["allowedSettings"] as? Map<*, *>
+            (allowed?.get(key) as? Boolean)?.let { return it }
+        }
+        return false
     }
 
     /**
@@ -289,6 +311,32 @@ data class KeeperRecordLink(
     }
 
     /**
+     * Recursively convert a [JsonElement] to a plain Kotlin value: objects become
+     * `Map<String, Any>`, arrays become `List<Any>`, and primitives become typed scalars
+     * (String/Boolean/Int/Long/Double). Strings are never coerced, so a quoted "3"/"true"
+     * stays a String. JSON nulls are dropped by [jsonObjectToMap].
+     */
+    private fun jsonElementToValue(element: JsonElement): Any? = when (element) {
+        is JsonNull -> null
+        is JsonObject -> jsonObjectToMap(element)
+        is JsonArray -> element.mapNotNull { jsonElementToValue(it) }
+        is JsonPrimitive ->
+            if (element.isString) element.content
+            else element.booleanOrNull
+                ?: element.intOrNull
+                ?: element.longOrNull
+                ?: element.doubleOrNull
+                ?: element.content
+    }
+
+    /**
+     * Convert a [JsonObject] to a nested `Map<String, Any>`, preserving nested objects and arrays
+     * (lossless). Keys whose value is JSON null are omitted.
+     */
+    private fun jsonObjectToMap(obj: JsonObject): Map<String, Any> =
+        obj.entries.mapNotNull { (key, value) -> jsonElementToValue(value)?.let { key to it } }.toMap()
+
+    /**
      * Check if the link data indicates admin status for a user
      */
     fun isAdminUser(): Boolean = getBooleanValue("is_admin")
@@ -301,37 +349,81 @@ data class KeeperRecordLink(
     /**
      * Check if rotation is allowed based on link settings
      */
-    fun allowsRotation(): Boolean = getBooleanValue("rotation")
+    fun allowsRotation(): Boolean = getBooleanValue("rotation", checkAllowedSettings = true)
     
     /**
      * Check if connections are allowed based on link settings
      */
-    fun allowsConnections(): Boolean = getBooleanValue("connections")
+    fun allowsConnections(): Boolean = getBooleanValue("connections", checkAllowedSettings = true)
     
     /**
      * Check if port forwards are allowed based on link settings
      */
-    fun allowsPortForwards(): Boolean = getBooleanValue("portForwards")
+    fun allowsPortForwards(): Boolean = getBooleanValue("portForwards", checkAllowedSettings = true)
     
     /**
      * Check if session recording is enabled
      */
-    fun allowsSessionRecording(): Boolean = getBooleanValue("sessionRecording")
+    fun allowsSessionRecording(): Boolean = getBooleanValue("sessionRecording", checkAllowedSettings = true)
     
     /**
      * Check if TypeScript recording is enabled
      */
-    fun allowsTypescriptRecording(): Boolean = getBooleanValue("typescriptRecording")
+    fun allowsTypescriptRecording(): Boolean = getBooleanValue("typescriptRecording", checkAllowedSettings = true)
     
     /**
      * Check if remote browser isolation is enabled
      */
-    fun allowsRemoteBrowserIsolation(): Boolean = getBooleanValue("remoteBrowserIsolation")
+    fun allowsRemoteBrowserIsolation(): Boolean = getBooleanValue("remoteBrowserIsolation", checkAllowedSettings = true)
     
     /**
      * Check if rotation on termination is enabled
      */
     fun rotatesOnTermination(): Boolean = getBooleanValue("rotateOnTermination")
+
+    /**
+     * Whether the linked user is an IAM user (`is_iam_user`).
+     */
+    fun isIamUser(): Boolean = getBooleanValue("is_iam_user")
+
+    /**
+     * Whether the linked credential belongs to the record (`belongs_to`).
+     */
+    fun belongsTo(): Boolean = getBooleanValue("belongs_to")
+
+    /**
+     * Whether service updates are disabled for this link (`no_update_services`).
+     */
+    fun noUpdateServices(): Boolean = getBooleanValue("no_update_services")
+
+    /**
+     * Whether AI features are enabled (`aiEnabled`, top-level or in `allowedSettings`).
+     */
+    fun aiEnabled(): Boolean = getBooleanValue("aiEnabled", checkAllowedSettings = true)
+
+    /**
+     * Whether AI session termination is enabled (`aiSessionTerminate`, top-level or in `allowedSettings`).
+     */
+    fun aiSessionTerminate(): Boolean = getBooleanValue("aiSessionTerminate", checkAllowedSettings = true)
+
+    /**
+     * The `allowedSettings` object from the link data (empty map when absent).
+     */
+    fun getAllowedSettings(): Map<String, Any> {
+        val parsed = parseJsonData() ?: return emptyMap()
+        @Suppress("UNCHECKED_CAST")
+        return (parsed["allowedSettings"] as? Map<String, Any>) ?: emptyMap()
+    }
+
+    /**
+     * The `rotation_settings` object from the link data (schedule, pwd_complexity, disabled, noop,
+     * saas_record_uid_list), or null when absent.
+     */
+    fun getRotationSettings(): Map<String, Any>? {
+        val parsed = parseJsonData() ?: return null
+        @Suppress("UNCHECKED_CAST")
+        return parsed["rotation_settings"] as? Map<String, Any>
+    }
     
     /**
      * Get the link data version (if available)
@@ -435,9 +527,10 @@ data class KeeperRecordLink(
             return null
         }
         
-        // If it looks like JSON, parse it directly
+        // If it looks like JSON, parse it directly; if that fails (coincidental ciphertext that
+        // happens to start with { or [), fall through to decryption rather than giving up.
         if (decodedData.startsWith("{") || decodedData.startsWith("[")) {
-            return parseJsonToMap(decodedData)
+            parseJsonToMap(decodedData)?.let { return it }
         }
         
         // If not JSON and we have a key, try decryption
@@ -457,30 +550,7 @@ data class KeeperRecordLink(
         return try {
             val jsonElement = Json.parseToJsonElement(jsonString)
             when (jsonElement) {
-                is JsonObject -> {
-                    jsonElement.entries.associate { (key, value) ->
-                        key to when (value) {
-                            is JsonPrimitive -> {
-                                when {
-                                    value.isString -> value.content
-                                    else -> {
-                                        // Try to parse as different types
-                                        when {
-                                            value.content == "true" -> true
-                                            value.content == "false" -> false
-                                            value.content.toIntOrNull() != null -> value.content.toInt()
-                                            value.content.toLongOrNull() != null -> value.content.toLong()
-                                            value.content.toDoubleOrNull() != null -> value.content.toDouble()
-                                            else -> value.content
-                                        }
-                                    }
-                                }
-                            }
-                            is JsonObject -> value.toString() // Nested objects as strings
-                            is kotlinx.serialization.json.JsonArray -> value.toString() // Arrays as strings
-                        }
-                    }
-                }
+                is JsonObject -> jsonObjectToMap(jsonElement)
                 else -> null
             }
         } catch (e: Exception) {
@@ -509,12 +579,10 @@ data class KeeperRecordLink(
     /**
      * Get AI settings data from this link
      * 
-     * Known fields for ai_settings (as of SDK v17.1.0):
-     * - aiEnabled: Boolean - Whether AI features are enabled
-     * - aiModel: String - The AI model being used
-     * - aiProvider: String - The AI provider (e.g., "openai", "anthropic")
-     * - aiSessionTerminate: Boolean - Whether to terminate AI session
-     * - allowedSettings: Map - Nested settings for allowed operations
+     * Encrypted under the owning record's key. Known fields (live-verified):
+     * - version: String - settings schema version, e.g. "v1.0.0"
+     * - riskLevels: Map - critical/high/medium/low, each with `tags` (allow/deny lists)
+     *   and `aiSessionTerminate`
      * 
      * Note: Additional fields may be present in newer versions.
      * The returned Map will preserve all fields sent by the server.
@@ -530,17 +598,12 @@ data class KeeperRecordLink(
     /**
      * Get JIT (Just-In-Time) settings data from this link
      * 
-     * Known fields for jit_settings (as of SDK v17.1.0):
-     * - enabled: Boolean - Whether JIT access is enabled
-     * - ttl: Int - Time-to-live in seconds
-     * - maxUses: Int - Maximum number of uses allowed
-     * - expiresAt: Long - Expiration timestamp in milliseconds
-     * - allowedSettings: Map - Nested settings for allowed operations:
-     *   - rotation: Boolean - Allow credential rotation
-     *   - connections: Boolean - Allow connections
-     *   - portForwards: Boolean - Allow port forwarding
-     *   - sessionRecording: Boolean - Enable session recording
-     *   - typescriptRecording: Boolean - Enable TypeScript recording
+     * Encrypted under the owning record's key. Known fields (live-verified):
+     * - createEphemeral: Boolean
+     * - elevate: Boolean
+     * - elevationMethod: String
+     * - elevationString: String
+     * - baseDistinguishedName: String
      * 
      * Note: Additional fields may be present in newer versions.
      * The returned Map will preserve all fields sent by the server.
@@ -564,10 +627,21 @@ data class KeeperRecordLink(
      * @param recordKey The record's encryption key (required for encrypted data)
      * @return Settings data as a Map, or null if path doesn't match or parsing fails
      */
+    @JvmOverloads
     fun getSettingsForPath(settingsPath: String, recordKey: ByteArray? = null): Map<String, Any>? {
         if (path != settingsPath) return null
         return getLinkData(recordKey)
     }
+
+    /**
+     * Get PAM settings data from this link — only when [path] == "meta".
+     *
+     * Meta links are self-links (recordUid == owning record) carrying the record's own PAM settings:
+     * `allowedSettings`, `rotateOnTermination`, `version`, `no_update_services`. Plain JSON today;
+     * the key is accepted for forward compatibility.
+     */
+    @JvmOverloads
+    fun getMetaData(recordKey: ByteArray? = null): Map<String, Any>? = getSettingsForPath("meta", recordKey)
 }
 
 @Serializable
