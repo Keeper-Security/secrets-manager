@@ -808,18 +808,16 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                         continue
                     }
                 }
-                try {
-                    const errorObj: KeeperApiError = JSON.parse(errorMessage)
-                    if (errorObj.error === 'key') {
-                        const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
-                        if (customKey) {
-                            const currentKeyId = await options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-                            throw new Error(`Server rejected the custom server public key (id ${currentKeyId}). The server suggested key id ${errorObj.key_id}. Please update your IL5 KSM configuration.`)
-                        }
-                        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, errorObj.key_id!.toString())
-                        continue
+                let errorObj: KeeperApiError | null = null
+                try { errorObj = JSON.parse(errorMessage) } catch {}
+                if (errorObj?.error === 'key') {
+                    const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
+                    if (customKey) {
+                        const currentKeyId = await options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+                        throw new Error(`Server rejected the custom server public key (id ${currentKeyId}). The server suggested key id ${errorObj.key_id}. Please update your IL5 KSM configuration.`)
                     }
-                } catch {
+                    await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, errorObj.key_id!.toString())
+                    continue
                 }
             } else {
                 errorMessage = `unknown ksm error, code ${response.statusCode}`

@@ -1,6 +1,7 @@
 # Change Log
 
 ## 17.5.0
+- KSM-1029 - Fixed stale pinned server key error: the diagnostic message ("Server rejected the custom server public key... Please update your IL5 KSM configuration") now propagates to the caller instead of being swallowed by a bare catch.
 - KSM-880 - Added automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `postQuery` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus ±25% jitter, honoring `retry_after` from the response when present; a typed `KeeperThrottleError` is thrown once retries are exhausted. Existing key-rotation retry behavior is unchanged.
 - KSM-901 - Add IL5 (DoD Impact Level 5) support: region mapping (`IL5` → `il5.keepersecurity.us`) and custom server public key injection via three layers — OTS token (`IL5:TOKEN:keyId:publicKey`), `ClientConfiguration` fields (`serverPublicKey` / `serverPublicKeyId`), and `initialize()` options parameter. When a custom key is configured, server-side key rotation hints are suppressed so the client stays pinned to the IL5 key.
 - KSM-887 - Added `secureStorage(dbName)` browser storage backend: generates a non-extractable AES-256-GCM `CryptoKey` stored in IndexedDB so KSM credentials are never held in extractable form in browser storage.

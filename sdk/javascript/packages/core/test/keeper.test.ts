@@ -316,6 +316,27 @@ test('IL5 dynamic key - rotation suppression: server key_id hint ignored when se
     expect(await storage.getString('serverPublicKeyId')).toBe('20')
 })
 
+test('stale pinned server key: diagnostic message propagates to caller, key preserved', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c', 'fake.keepersecurity.com')
+    await storage.saveString('serverPublicKey', fakeKey)
+    await storage.saveString('serverPublicKeyId', '20')
+    const keyError = JSON.stringify({ error: 'key', key_id: 7 })
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => ({
+            statusCode: 400,
+            data: new TextEncoder().encode(keyError),
+            headers: []
+        })
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/Server rejected the custom server public key/)
+    await expect(getSecrets(options)).rejects.toThrow(/Please update your IL5 KSM configuration/)
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+    expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
+})
+
 test('IL5 dynamic key - Layer 2: lowercase il5 prefix is treated as IL5', async () => {
     const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
     const storage = inMemoryStorage({})
