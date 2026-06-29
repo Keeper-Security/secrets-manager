@@ -1,12 +1,13 @@
-import {platform} from '../'
+import {platform, KeeperError} from '../'
 
-// KSM-984: null/undefined guard on base64 decoders (tested through the platform API)
-
-test('platform.base64ToBytes throws on null', () => {
+// A null/undefined config value must surface as a typed, catchable KeeperError, not a cryptic native throw.
+test('platform.base64ToBytes throws KeeperError on null', () => {
+    expect(() => platform.base64ToBytes(null as any)).toThrow(KeeperError)
     expect(() => platform.base64ToBytes(null as any)).toThrow(/null/)
 })
 
-test('platform.base64ToBytes throws on undefined', () => {
+test('platform.base64ToBytes throws KeeperError on undefined', () => {
+    expect(() => platform.base64ToBytes(undefined as any)).toThrow(KeeperError)
     expect(() => platform.base64ToBytes(undefined as any)).toThrow(/undefined/)
 })
 
