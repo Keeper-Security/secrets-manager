@@ -125,6 +125,151 @@ namespace SecretManagement.Keeper
                 .FirstOrDefault(x => (x.label ?? x.type).Equals(fieldName, StringComparison.OrdinalIgnoreCase));
         }
 
+        internal static bool TryPrepareFieldUpdate(KeeperRecordField field, object secret, out object preparedValue, out string errorMessage)
+        {
+            preparedValue = null;
+            errorMessage = null;
+
+            if (field?.value == null || field.value.Length == 0)
+            {
+                errorMessage = "Field has no value to update";
+                return false;
+            }
+
+            if (!TryGetJsonValueKind(field.value[0], out var existingKind))
+            {
+                errorMessage = "unsupported_field_type";
+                return false;
+            }
+
+            return TryCoerceSetSecretValue(existingKind, secret, out preparedValue, out errorMessage);
+        }
+
+        private static bool TryGetJsonValueKind(object value, out JsonValueKind kind)
+        {
+            if (value is JsonElement jsonElement)
+            {
+                kind = jsonElement.ValueKind;
+                return true;
+            }
+
+            if (value is string)
+            {
+                kind = JsonValueKind.String;
+                return true;
+            }
+
+            if (value is bool boolValue)
+            {
+                kind = boolValue ? JsonValueKind.True : JsonValueKind.False;
+                return true;
+            }
+
+            if (value is int || value is long || value is float || value is double || value is decimal)
+            {
+                kind = JsonValueKind.Number;
+                return true;
+            }
+
+            kind = JsonValueKind.Undefined;
+            return false;
+        }
+
+        private static bool TryCoerceSetSecretValue(JsonValueKind existingKind, object secret, out object preparedValue, out string errorMessage)
+        {
+            preparedValue = null;
+            errorMessage = null;
+
+            switch (existingKind)
+            {
+                case JsonValueKind.String:
+                    if (secret is string stringValue)
+                    {
+                        preparedValue = stringValue;
+                        return true;
+                    }
+                    errorMessage = "type_mismatch";
+                    return false;
+
+                case JsonValueKind.Number:
+                    if (secret is int || secret is long || secret is double || secret is float || secret is decimal)
+                    {
+                        preparedValue = secret;
+                        return true;
+                    }
+                    if (secret is string numberText && long.TryParse(numberText, out var parsedNumber))
+                    {
+                        preparedValue = parsedNumber;
+                        return true;
+                    }
+                    errorMessage = "type_mismatch";
+                    return false;
+
+                case JsonValueKind.True:
+                case JsonValueKind.False:
+                    if (secret is bool boolValue)
+                    {
+                        preparedValue = boolValue;
+                        return true;
+                    }
+                    if (secret is string boolText && bool.TryParse(boolText, out var parsedBool))
+                    {
+                        preparedValue = parsedBool;
+                        return true;
+                    }
+                    errorMessage = "type_mismatch";
+                    return false;
+
+                case JsonValueKind.Object:
+                case JsonValueKind.Array:
+                    return TryCoerceJsonStructureValue(secret, out preparedValue, out errorMessage);
+
+                default:
+                    errorMessage = "unsupported_field_type";
+                    return false;
+            }
+        }
+
+        private static bool TryCoerceJsonStructureValue(object secret, out object preparedValue, out string errorMessage)
+        {
+            preparedValue = null;
+            errorMessage = null;
+
+            if (secret is JsonElement jsonElement)
+            {
+                preparedValue = jsonElement.Clone();
+                return true;
+            }
+
+            if (secret is string jsonText)
+            {
+                try
+                {
+                    using (var document = JsonDocument.Parse(jsonText))
+                    {
+                        preparedValue = document.RootElement.Clone();
+                    }
+                    return true;
+                }
+                catch (JsonException)
+                {
+                    errorMessage = "type_mismatch";
+                    return false;
+                }
+            }
+
+            try
+            {
+                preparedValue = JsonSerializer.SerializeToElement(secret);
+                return true;
+            }
+            catch (NotSupportedException)
+            {
+                errorMessage = "type_mismatch";
+                return false;
+            }
+        }
+
         public static async Task<object> GetSecret(string name, Hashtable config)
         {
             var parts = ParseQuery(name);
@@ -226,36 +371,17 @@ namespace SecretManagement.Keeper
                 return KeeperResult.Error("Set-Secret can only be used to update existing Keeper secrets");
             }
 
-            var fieldValueJson = (JsonElement)field.value[0];
-
-            // ReSharper disable once SwitchStatementHandlesSomeKnownEnumValuesWithDefault
-            var typeMismatch = false;
-            switch (fieldValueJson.ValueKind)
+            if (!TryPrepareFieldUpdate(field, secret, out var preparedValue, out var prepareError))
             {
-                case JsonValueKind.String:
-                    if (!(secret is string))
-                    {
-                        typeMismatch = true;
-                    }
-
-                    break;
-                case JsonValueKind.Number:
-                    if (!(secret is int))
-                    {
-                        typeMismatch = true;
-                    }
-
-                    break;
-                default:
+                if (prepareError == "unsupported_field_type")
+                {
                     return KeeperResult.Error($"Setting values for the field {parts[1]} is not supported");
-            }
+                }
 
-            if (typeMismatch)
-            {
                 return KeeperResult.Error($"The new value for field {parts[1]} does not match the existing type");
             }
 
-            field.value[0] = secret;
+            field.value[0] = preparedValue;
 
             try
             {
