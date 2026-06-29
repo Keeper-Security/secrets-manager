@@ -1700,6 +1700,7 @@ internal fun throttleDelayMillis(attempt: Int, retryAfter: Double, jitter: Doubl
 // throttleDelayMillis with a pinned jitter instead.
 internal fun throttleJitter(): Double = Random.nextDouble(-0.25, 0.25)
 
+@ExperimentalSerializationApi
 private inline fun <reified T> postQuery(
     options: SecretsManagerOptions,
     path: String,
