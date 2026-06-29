@@ -5,6 +5,7 @@ import {
     platform,
     SecretManagerOptions,
     KeeperHttpResponse,
+    KeeperError,
     KeeperThrottleError,
     parseThrottle,
     throttleDelay,
@@ -99,6 +100,16 @@ describe('throttle retry (e2e via getSecrets)', () => {
         await expect(getSecrets(options)).rejects.toBeInstanceOf(KeeperThrottleError)
         expect(sleeps.length).toBe(5)
         expect(call).toBe(6) // 5 retries + the final throttled response
+    })
+
+    // The setPrototypeOf chain must survive transpilation, otherwise consumers' `instanceof KeeperError`
+    // catches would silently break when a KeeperThrottleError is thrown.
+    test('thrown KeeperThrottleError is also instanceof KeeperError and Error', async () => {
+        const { options } = await makeOptions(async () => throttle403())
+        const err = await getSecrets(options).catch(e => e)
+        expect(err).toBeInstanceOf(KeeperThrottleError)
+        expect(err).toBeInstanceOf(KeeperError)
+        expect(err).toBeInstanceOf(Error)
     })
 
     test('honors retry_after from the response body', async () => {

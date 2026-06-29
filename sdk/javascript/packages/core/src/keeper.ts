@@ -1,6 +1,7 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey} from './platform'
 import {webSafe64FromBytes, webSafe64ToBytes, tryParseInt} from './utils'
 import {parseNotation} from './notation'
+import {KeeperThrottleError} from './errors'
 
 export {KeyValueStorage} from './platform'
 
@@ -57,20 +58,9 @@ export type SecretManagerOptions = {
     throttleSleep?: (milliseconds: number) => Promise<void>
 }
 
-/**
- * Thrown when the Keeper backend throttles requests (HTTP 403 {"error":"throttled"}) and the
- * SDK has exhausted its automatic retries (MAX_THROTTLE_RETRIES). Extends Error so existing
- * `catch` handlers keep working; callers that want to react specifically to throttling can
- * check `instanceof KeeperThrottleError`.
- */
-export class KeeperThrottleError extends Error {
-    constructor(message: string) {
-        super(message)
-        this.name = 'KeeperThrottleError'
-        // Restore the prototype chain so `instanceof` works across transpilation targets.
-        Object.setPrototypeOf(this, KeeperThrottleError.prototype)
-    }
-}
+// Error classes live in a dependency-free module (errors.ts) to avoid a circular import with
+// utils.ts/platform code that throws them; re-exported here so the public API is unchanged.
+export {KeeperError, KeeperThrottleError} from './errors'
 
 // Returns a jitter multiplier in [-0.25, 0.25). Kept separate so concurrent clients
 // desynchronize their retries; unit tests exercise throttleDelay with a pinned jitter.
@@ -316,7 +306,7 @@ export type KeeperFileUpload = {
     data: Uint8Array
 }
 
-type KeeperError = {
+type KeeperApiError = {
     error?: string
     key_id?: number
 }
@@ -819,7 +809,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                     }
                 }
                 try {
-                    const errorObj: KeeperError = JSON.parse(errorMessage)
+                    const errorObj: KeeperApiError = JSON.parse(errorMessage)
                     if (errorObj.error === 'key') {
                         const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
                         if (customKey) {
