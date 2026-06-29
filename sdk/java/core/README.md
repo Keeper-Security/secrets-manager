@@ -5,6 +5,14 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 17.3.0
+- KSM-531 - Add HTTP/HTTPS proxy support
+  - New `proxyUrl` option on `SecretsManagerOptions`, e.g. `SecretsManagerOptions(storage, proxyUrl = "http://proxy.local:8080")`
+  - Authenticated proxies use the `http://user:password@host:port` URL form
+  - Applies to all SDK network calls: secret queries, file uploads, and file downloads
+  - When `proxyUrl` is not set, the SDK falls back to JVM system properties (`https.proxyHost`/`https.proxyPort`), then the `HTTPS_PROXY`/`HTTP_PROXY` environment variables; `NO_PROXY` and `http.nonProxyHosts` exclusions are honored
+  - Authenticated proxies require Basic auth over the HTTPS CONNECT tunnel, which the JVM disables by default. The SDK clears `jdk.http.auth.tunneling.disabledSchemes` automatically when proxy credentials are supplied; if a TLS connection was already opened earlier in the process, start the JVM with `-Djdk.http.auth.tunneling.disabledSchemes=` instead
+  - Proxy credentials are supplied via a default `java.net.Authenticator` scoped to the configured proxy host. Applications that install their own default `Authenticator` should pass proxy credentials through that mechanism instead
+  - The legacy `cachingPostFunction` helper does not carry the proxy; use the `proxyUrl` option with the default query path
 - KSM-902 - Add IL5 (DoD Impact Level 5) region mapping and dynamic server public key injection
   - Region: `IL5` OTT prefix maps to `il5.keepersecurity.us`
   - Layer 1 (config field): `serverPublicKey` in storage config overrides the embedded key table

@@ -47,7 +47,8 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val allowUnverifiedCertificate: Boolean = false,
     val loggingEnabled: Boolean = true,
     val serverPublicKey: String? = null,
-    val serverPublicKeyId: String? = null
+    val serverPublicKeyId: String? = null,
+    val proxyUrl: String? = null
 ) {
     init {
         testSecureRandom()
@@ -685,7 +686,8 @@ data class KeeperFile(
     val fileUid: String,
     val data: KeeperFileData,
     val url: String?, // KSM-765: nullable; server may omit url for files without a download URL
-    val thumbnailUrl: String?
+    val thumbnailUrl: String?,
+    val proxyUrl: String? = null
 )
 
 data class KeeperFileUpload(
@@ -1062,7 +1064,7 @@ fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: 
     val payloadAndFile = prepareFileUploadPayload(options.storage, ownerRecord, file)
     val responseData = postQuery(options, "add_file", payloadAndFile.payload)
     val response = nonStrictJson.decodeFromString<SecretsManagerAddFileResponse>(bytesToString(responseData))
-    val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile)
+    val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile, options.proxyUrl)
     if (uploadResult.statusCode != response.successStatusCode) {
         throw Exception("Upload failed (${bytesToString(uploadResult.data)}), code ${uploadResult.statusCode}")
     }
@@ -1082,7 +1084,7 @@ fun downloadThumbnail(file: KeeperFile): ByteArray {
 }
 
 private fun downloadFile(file: KeeperFile, url: String): ByteArray {
-    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection // KSM-855
+    val connection = openProxiedConnection(url, file.proxyUrl, false)
     try {
         connection.requestMethod = "GET"
         val statusCode = connection.responseCode
@@ -1099,13 +1101,13 @@ private fun downloadFile(file: KeeperFile, url: String): ByteArray {
     }
 }
 
-private fun uploadFile(url: String, parameters: String, fileData: ByteArray): KeeperHttpResponse {
+private fun uploadFile(url: String, parameters: String, fileData: ByteArray, proxyUrl: String?): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
     val boundary = String.format("----------%x", Instant.now().epochSecond)
     val boundaryBytes: ByteArray = stringToBytes("\r\n--$boundary")
     val paramJson = Json.parseToJsonElement(parameters) as JsonObject
-    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection // KSM-855
+    val connection = openProxiedConnection(url, proxyUrl, false)
     try {
         connection.requestMethod = "POST"
         connection.useCaches = false
@@ -1240,7 +1242,8 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
                         it.fileUid,
                         Json.decodeFromString(bytesToString(decryptedFile)),
                         it.url,
-                        it.thumbnailUrl
+                        it.thumbnailUrl,
+                        options.proxyUrl
                     )
                 )
             } catch (e: Exception) {
@@ -1580,14 +1583,19 @@ fun postFunction(
     transmissionKey: TransmissionKey,
     payload: EncryptedPayload,
     allowUnverifiedCertificate: Boolean
+): KeeperHttpResponse = postFunction(url, transmissionKey, payload, allowUnverifiedCertificate, null)
+
+fun postFunction(
+    url: String,
+    transmissionKey: TransmissionKey,
+    payload: EncryptedPayload,
+    allowUnverifiedCertificate: Boolean,
+    proxyUrl: String?
 ): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
-    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection // KSM-855
+    val connection = openProxiedConnection(url, proxyUrl, allowUnverifiedCertificate)
     try {
-        if (allowUnverifiedCertificate) {
-            connection.sslSocketFactory = trustAllSocketFactory()
-        }
         connection.requestMethod = "POST"
         connection.doOutput = true
         connection.setRequestProperty("PublicKeyId", transmissionKey.publicKeyId.toString())
@@ -1673,7 +1681,7 @@ private inline fun <reified T> postQuery(
         val transmissionKey = generateTransmissionKey(options.storage)
         val encryptedPayload = encryptAndSignPayload(options.storage, transmissionKey, payload)
         val response = if (options.queryFunction == null) {
-            postFunction(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate)
+            postFunction(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, options.proxyUrl)
         } else {
             options.queryFunction.invoke(url, transmissionKey, encryptedPayload)
         }
@@ -1701,7 +1709,7 @@ private inline fun <reified T> postQuery(
     }
 }
 
-private fun trustAllSocketFactory(): SSLSocketFactory {
+internal fun trustAllSocketFactory(): SSLSocketFactory {
     val trustAllCerts: Array<TrustManager> = arrayOf(
         object : X509TrustManager {
             private val AcceptedIssuers = arrayOf<X509Certificate>()
