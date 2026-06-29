@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.net.HttpURLConnection.HTTP_FORBIDDEN
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -24,9 +25,16 @@ import java.security.cert.X509Certificate
 import java.time.Instant
 import java.util.*
 import java.util.concurrent.*
+import kotlin.random.Random
 import javax.net.ssl.*
 
 const val KEEPER_CLIENT_VERSION = "mj17.3.0"
+
+// Throttle retry (KSM-876 / KSM-878). The backend throttles HTTP 403 {"error":"throttled"}
+// per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
+// request, so the counter only clears after 10s of silence).
+const val MAX_THROTTLE_RETRIES = 5
+const val BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBLIC_KEY_ID = "serverPublicKeyId"
@@ -54,7 +62,9 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val allowUnverifiedCertificate: Boolean = false,
     val loggingEnabled: Boolean = true,
     val serverPublicKey: String? = null,
-    val serverPublicKeyId: String? = null
+    val serverPublicKeyId: String? = null,
+    // Override the sleep between throttle retries (primarily for tests). Defaults to Thread.sleep.
+    val throttleSleepMillis: ((Long) -> Unit)? = null
 ) {
     init {
         testSecureRandom()
@@ -1736,6 +1746,35 @@ private inline fun <reified T> encryptAndSignPayload(
 }
 
 @ExperimentalSerializationApi
+// Returns the throttle retry_after (>= 0) when [body] is a backend throttle error
+// (result_code/error == "throttled"), otherwise null so the caller falls through to normal
+// error handling. Non-JSON / non-object bodies return null. (KSM-876 / KSM-878)
+internal fun parseThrottle(body: String): Double? {
+    val obj = try {
+        nonStrictJson.parseToJsonElement(body).jsonObject
+    } catch (e: Exception) {
+        return null
+    }
+    val resultCode = ((obj["result_code"] ?: obj["error"]) as? JsonPrimitive)?.content
+    if (resultCode != "throttled") return null
+    val retryAfter = (obj["retry_after"] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: 0.0
+    return if (retryAfter < 0.0) 0.0 else retryAfter
+}
+
+// Backoff delay (milliseconds) for a 0-based [attempt]: retryAfter when > 0, otherwise
+// exponential backoff (BASE_THROTTLE_DELAY_SEC * 2**attempt -> 11, 22, 44, 88, 176s). The
+// [jitter] fraction (typically in [-0.25, 0.25)) is then applied.
+internal fun throttleDelayMillis(attempt: Int, retryAfter: Double, jitter: Double): Long {
+    val baseSec = if (retryAfter > 0.0) retryAfter else BASE_THROTTLE_DELAY_SEC.toDouble() * (1L shl attempt)
+    val sec = baseSec + baseSec * jitter
+    return (maxOf(sec, 0.0) * 1000).toLong()
+}
+
+// Random jitter multiplier in [-0.25, 0.25). Kept separate so unit tests exercise
+// throttleDelayMillis with a pinned jitter instead.
+internal fun throttleJitter(): Double = Random.nextDouble(-0.25, 0.25)
+
+@ExperimentalSerializationApi
 private inline fun <reified T> postQuery(
     options: SecretsManagerOptions,
     path: String,
@@ -1743,6 +1782,8 @@ private inline fun <reified T> postQuery(
 ): ByteArray {
     val hostName = options.storage.getString(KEY_HOSTNAME) ?: throw Exception("hostname is missing from the storage")
     val url = "https://${hostName}/api/rest/sm/v1/${path}"
+    val throttleSleep = options.throttleSleepMillis ?: { ms -> Thread.sleep(ms) }
+    var throttleAttempt = 0
     while (true) {
         val transmissionKey = generateTransmissionKey(options.storage)
         val encryptedPayload = encryptAndSignPayload(options.storage, transmissionKey, payload)
@@ -1753,6 +1794,28 @@ private inline fun <reified T> postQuery(
         }
         if (response.statusCode != HTTP_OK) {
             val errorMessage = String(response.data)
+            // Throttle retry with exponential backoff + jitter (KSM-876 / KSM-878). Checked before
+            // key-rotation so that path (incl. the IL5 custom-key suppression) is untouched, and
+            // gated on the 403 status so a non-403 response carrying a {"error":"throttled"} body
+            // is not mistaken for a throttle and retried.
+            if (response.statusCode == HTTP_FORBIDDEN) {
+                val retryAfter = parseThrottle(errorMessage)
+                if (retryAfter != null) {
+                    if (throttleAttempt >= MAX_THROTTLE_RETRIES) {
+                        throw KeeperThrottleException("Request throttled by Keeper backend; exhausted $MAX_THROTTLE_RETRIES retries")
+                    }
+                    val delayMs = throttleDelayMillis(throttleAttempt, retryAfter, throttleJitter())
+                    if (options.loggingEnabled) {
+                        System.err.println(
+                            "WARNING: Request throttled (attempt ${throttleAttempt + 1}/$MAX_THROTTLE_RETRIES); " +
+                                "retrying in ${"%.1f".format(delayMs / 1000.0)}s"
+                        )
+                    }
+                    throttleSleep(delayMs)
+                    throttleAttempt++
+                    continue
+                }
+            }
             try {
                 val error = nonStrictJson.decodeFromString<KeeperError>(errorMessage)
                 if (error.error == "key") {
