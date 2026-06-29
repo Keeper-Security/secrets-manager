@@ -154,4 +154,53 @@ internal class ThrottleTest {
         assertFailsWith<Exception> { getSecrets(options) }
         assertEquals(0, sleeps.size)
     }
+
+    // --- logging gate (PR #1043 review): the throttle warning must respect options.loggingEnabled ---
+
+    // Runs one throttle-then-success getSecrets with the given flag, returning whatever the SDK
+    // wrote to stderr. Tests run sequentially here (shared TestStubs, no parallel config), so
+    // temporarily swapping System.err is safe.
+    private fun captureThrottleStderr(loggingEnabled: Boolean): String {
+        var calls = 0
+        val mock: QueryFunction = { _, transmissionKey, _ ->
+            calls++
+            if (calls == 1) {
+                KeeperHttpResponse(HTTP_FORBIDDEN, throttleBody())
+            } else {
+                val body = """{"records":[],"folders":[],"encryptedAppKey":null}""".toByteArray()
+                KeeperHttpResponse(HTTP_OK, encrypt(body, transmissionKey.key))
+            }
+        }
+        val options = SecretsManagerOptions(
+            buildStorage(), mock, loggingEnabled = loggingEnabled, throttleSleepMillis = { }
+        )
+        val original = System.err
+        val buf = java.io.ByteArrayOutputStream()
+        System.setErr(java.io.PrintStream(buf, true))
+        try {
+            getSecrets(options)
+        } finally {
+            System.setErr(original)
+        }
+        return buf.toString()
+    }
+
+    @Test
+    fun throttleWarning_suppressedWhenLoggingDisabled() {
+        val err = captureThrottleStderr(loggingEnabled = false)
+        assertFalse(
+            err.contains("throttled", ignoreCase = true),
+            "no throttle warning should reach stderr when loggingEnabled=false, got: $err"
+        )
+    }
+
+    @Test
+    fun throttleWarning_emittedWhenLoggingEnabled() {
+        val err = captureThrottleStderr(loggingEnabled = true)
+        assertTrue(err.contains("throttled", ignoreCase = true), "expected a throttle warning on stderr")
+        assertTrue(
+            Regex("attempt 1/$MAX_THROTTLE_RETRIES").containsMatchIn(err),
+            "expected attempt counter in warning, got: $err"
+        )
+    }
 }

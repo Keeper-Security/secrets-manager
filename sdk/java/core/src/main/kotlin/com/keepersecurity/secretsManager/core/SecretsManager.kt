@@ -1730,10 +1730,12 @@ private inline fun <reified T> postQuery(
                         throw KeeperThrottleException("Request throttled by Keeper backend; exhausted $MAX_THROTTLE_RETRIES retries")
                     }
                     val delayMs = throttleDelayMillis(throttleAttempt, retryAfter, throttleJitter())
-                    System.err.println(
-                        "WARNING: Request throttled (attempt ${throttleAttempt + 1}/$MAX_THROTTLE_RETRIES); " +
-                            "retrying in ${"%.1f".format(delayMs / 1000.0)}s"
-                    )
+                    if (options.loggingEnabled) {
+                        System.err.println(
+                            "WARNING: Request throttled (attempt ${throttleAttempt + 1}/$MAX_THROTTLE_RETRIES); " +
+                                "retrying in ${"%.1f".format(delayMs / 1000.0)}s"
+                        )
+                    }
                     throttleSleep(delayMs)
                     throttleAttempt++
                     continue
