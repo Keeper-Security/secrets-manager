@@ -241,7 +241,7 @@ data class KeeperRecordLink(
     /**
      * Parse the link data as a JSON object, handling errors gracefully
      */
-    private fun parseJsonData(): Map<String, Any>? {
+    private fun parseJsonData(): Map<String, Any?>? {
         if (data == null) return null
         
         return try {
@@ -312,14 +312,14 @@ data class KeeperRecordLink(
 
     /**
      * Recursively convert a [JsonElement] to a plain Kotlin value: objects become
-     * `Map<String, Any>`, arrays become `List<Any>`, and primitives become typed scalars
+     * `Map<String, Any?>`, arrays become `List<Any?>`, and primitives become typed scalars
      * (String/Boolean/Int/Long/Double). Strings are never coerced, so a quoted "3"/"true"
-     * stays a String. JSON nulls are dropped by [jsonObjectToMap].
+     * stays a String. JSON nulls become Kotlin null and are preserved on both branches.
      */
     private fun jsonElementToValue(element: JsonElement): Any? = when (element) {
         is JsonNull -> null
         is JsonObject -> jsonObjectToMap(element)
-        is JsonArray -> element.mapNotNull { jsonElementToValue(it) }
+        is JsonArray -> element.map { jsonElementToValue(it) }
         is JsonPrimitive ->
             if (element.isString) element.content
             else element.booleanOrNull
@@ -330,11 +330,11 @@ data class KeeperRecordLink(
     }
 
     /**
-     * Convert a [JsonObject] to a nested `Map<String, Any>`, preserving nested objects and arrays
-     * (lossless). Keys whose value is JSON null are omitted.
+     * Convert a [JsonObject] to a nested `Map<String, Any?>`, preserving nested objects, arrays and
+     * JSON null values (lossless, matching the Python reference).
      */
-    private fun jsonObjectToMap(obj: JsonObject): Map<String, Any> =
-        obj.entries.mapNotNull { (key, value) -> jsonElementToValue(value)?.let { key to it } }.toMap()
+    private fun jsonObjectToMap(obj: JsonObject): Map<String, Any?> =
+        obj.entries.associate { (key, value) -> key to jsonElementToValue(value) }
 
     /**
      * Check if the link data indicates admin status for a user
@@ -409,20 +409,20 @@ data class KeeperRecordLink(
     /**
      * The `allowedSettings` object from the link data (empty map when absent).
      */
-    fun getAllowedSettings(): Map<String, Any> {
+    fun getAllowedSettings(): Map<String, Any?> {
         val parsed = parseJsonData() ?: return emptyMap()
         @Suppress("UNCHECKED_CAST")
-        return (parsed["allowedSettings"] as? Map<String, Any>) ?: emptyMap()
+        return (parsed["allowedSettings"] as? Map<String, Any?>) ?: emptyMap()
     }
 
     /**
      * The `rotation_settings` object from the link data (schedule, pwd_complexity, disabled, noop,
      * saas_record_uid_list), or null when absent.
      */
-    fun getRotationSettings(): Map<String, Any>? {
+    fun getRotationSettings(): Map<String, Any?>? {
         val parsed = parseJsonData() ?: return null
         @Suppress("UNCHECKED_CAST")
-        return parsed["rotation_settings"] as? Map<String, Any>
+        return parsed["rotation_settings"] as? Map<String, Any?>
     }
     
     /**
@@ -517,7 +517,7 @@ data class KeeperRecordLink(
      * @return Parsed data as a Map, or null if parsing fails
      */
     @JvmOverloads
-    fun getLinkData(recordKey: ByteArray? = null): Map<String, Any>? {
+    fun getLinkData(recordKey: ByteArray? = null): Map<String, Any?>? {
         if (data == null) return null
         
         // First, try to decode and check if it's plain JSON
@@ -546,7 +546,7 @@ data class KeeperRecordLink(
     /**
      * Helper method to parse JSON string to Map
      */
-    private fun parseJsonToMap(jsonString: String): Map<String, Any>? {
+    private fun parseJsonToMap(jsonString: String): Map<String, Any?>? {
         return try {
             val jsonElement = Json.parseToJsonElement(jsonString)
             when (jsonElement) {
@@ -590,7 +590,7 @@ data class KeeperRecordLink(
      * @param recordKey The record's encryption key
      * @return Settings data as a Map, or null if not available
      */
-    fun getAiSettingsData(recordKey: ByteArray): Map<String, Any>? {
+    fun getAiSettingsData(recordKey: ByteArray): Map<String, Any?>? {
         if (path != "ai_settings") return null
         return getLinkData(recordKey)
     }
@@ -611,7 +611,7 @@ data class KeeperRecordLink(
      * @param recordKey The record's encryption key
      * @return Settings data as a Map, or null if not available
      */
-    fun getJitSettingsData(recordKey: ByteArray): Map<String, Any>? {
+    fun getJitSettingsData(recordKey: ByteArray): Map<String, Any?>? {
         if (path != "jit_settings") return null
         return getLinkData(recordKey)
     }
@@ -628,7 +628,7 @@ data class KeeperRecordLink(
      * @return Settings data as a Map, or null if path doesn't match or parsing fails
      */
     @JvmOverloads
-    fun getSettingsForPath(settingsPath: String, recordKey: ByteArray? = null): Map<String, Any>? {
+    fun getSettingsForPath(settingsPath: String, recordKey: ByteArray? = null): Map<String, Any?>? {
         if (path != settingsPath) return null
         return getLinkData(recordKey)
     }
@@ -641,7 +641,7 @@ data class KeeperRecordLink(
      * the key is accepted for forward compatibility.
      */
     @JvmOverloads
-    fun getMetaData(recordKey: ByteArray? = null): Map<String, Any>? = getSettingsForPath("meta", recordKey)
+    fun getMetaData(recordKey: ByteArray? = null): Map<String, Any?>? = getSettingsForPath("meta", recordKey)
 }
 
 @Serializable

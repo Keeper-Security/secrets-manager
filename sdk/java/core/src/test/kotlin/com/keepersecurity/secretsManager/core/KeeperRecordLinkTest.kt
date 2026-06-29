@@ -295,15 +295,20 @@ class KeeperRecordLinkTest {
 
     @Test
     fun losslessnessPreservesNestedStructures() {
-        val link = plainLink("""{"is_admin": true, "futureField": {"nested": [1, 2, 3]}}""")
+        val link = plainLink("""{"is_admin": true, "futureField": {"nested": [1, 2, 3]}, "maybe": null, "list": [1, null, 2]}""")
         val data = link.getLinkData()
         assertNotNull(data)
 
         val future = data["futureField"]
         assertTrue(future is Map<*, *>)               // nested object preserved as a Map, not a String
         @Suppress("UNCHECKED_CAST")
-        val nested = (future as Map<String, Any>)["nested"]
+        val nested = (future as Map<String, Any?>)["nested"]
         assertEquals(listOf(1, 2, 3), nested)         // nested array preserved as a List of ints
+
+        // JSON nulls are preserved (matching the Python reference), not dropped.
+        assertTrue(data.containsKey("maybe"))
+        assertNull(data["maybe"])
+        assertEquals(listOf(1, null, 2), data["list"])
 
         // Raw link fields are untouched.
         assertEquals("RU_test", link.recordUid)
