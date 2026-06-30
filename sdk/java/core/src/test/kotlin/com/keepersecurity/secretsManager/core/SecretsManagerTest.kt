@@ -224,6 +224,42 @@ internal class SecretsManagerTest {
         assertTrue(webSafe64Ex.message?.isNotEmpty() == true)
     }
 
+    @Test
+    fun testSharedFolderFlatRecordUsesFolderKey() {
+        // A flat records[] entry with innerFolderUid set has its recordKey encrypted with the
+        // folder key, not the app key. Decrypting with the app key yields garbage and the record
+        // is silently skipped, so all of its fields come back missing.
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+
+        val appKey = getRandomBytes(32)
+        val folderKey = getRandomBytes(32)
+        val recordKey = getRandomBytes(32)
+        val folderUid = "testFolderUid001"
+        val recordUid = "testRecordUid001"
+
+        val encFolderKey = bytesToBase64(encrypt(folderKey, appKey))
+        val encRecordKey = bytesToBase64(encrypt(recordKey, folderKey))
+        val recordDataJson = """{"title":"Shared Record","type":"login","fields":[],"custom":[]}"""
+        val encData = bytesToBase64(encrypt(stringToBytes(recordDataJson), recordKey))
+
+        val responseJson = """{"encryptedAppKey":null,"folders":[{"folderUid":"$folderUid","folderKey":"$encFolderKey","data":null,"parent":null,"records":null}],"records":[{"recordUid":"$recordUid","recordKey":"$encRecordKey","data":"$encData","revision":1,"isEditable":true,"files":null,"innerFolderUid":"$folderUid"}]}"""
+        val encryptedResponse = encrypt(stringToBytes(responseJson), transmissionKey)
+
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+
+        val options = SecretsManagerOptions(storage, queryFunction = { _, _, _ -> KeeperHttpResponse(200, encryptedResponse) })
+        val secrets = getSecrets(options)
+
+        assertEquals(1, secrets.records.size)
+        val record = secrets.records[0]
+        assertEquals("Shared Record", record.data.title,
+            "flat record with innerFolderUid must decrypt with the folder key, not the app key")
+        assertEquals(folderUid, record.folderUid)
+    }
+
 //    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (
