@@ -77,17 +77,19 @@ jobs:
           esac
 
   generate-sbom:
-    needs: [get-version, validate-version]
+    needs: [build-npm, get-version]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Download dist artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          persist-credentials: false
+          name: npm-dist-${{ github.run_number }}
+          path: ./sbom-target
 
       - name: Install Syft and Manifest CLI
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
-          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.31.0
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.35.0
 
       - name: Create Syft configuration
         run: |
@@ -110,10 +112,9 @@ jobs:
           MANIFEST_API_KEY: ${{ secrets.MANIFEST_TOKEN }}
           VERSION: ${{ needs.get-version.outputs.version }}
         run: |
-          JAVASCRIPT_SDK_DIR="./sdk/javascript/packages/core"
           echo "Generating SBOM for @keeper-security/secrets-manager-core $VERSION..."
 
-          manifest sbom "${JAVASCRIPT_SDK_DIR}" \
+          manifest sbom "./sbom-target" \
             --generator=syft \
             --name=keeper-secrets-manager-js-sdk \
             --version="${VERSION}" \
@@ -124,7 +125,7 @@ jobs:
             --asset-label=application,sbom-generated,nodejs \
             --generator-config=syft-config.yaml \
             -- --source-name="keeper-secrets-manager-js-sdk" --source-version="${VERSION}" 2>&1 || \
-          manifest sbom "${JAVASCRIPT_SDK_DIR}" \
+          manifest sbom "./sbom-target" \
             --generator=syft \
             --name=keeper-secrets-manager-js-sdk \
             --version="${VERSION}" \
@@ -147,7 +148,7 @@ jobs:
           retention-days: 90
 
   build-npm:
-    needs: [test, generate-sbom]
+    needs: [test, validate-version]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -168,8 +169,18 @@ jobs:
       - name: Build package
         run: npm run prepublishOnly
 
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-dist-${{ github.run_number }}
+          path: |
+            sdk/javascript/packages/core/dist/
+            sdk/javascript/packages/core/package.json
+            sdk/javascript/packages/core/package-lock.json
+          retention-days: 1
+
   publish-npm:
-    needs: [build-npm, validate-version]
+    needs: [generate-sbom, validate-version]
     if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
