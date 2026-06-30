@@ -802,19 +802,20 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
         }
         clientKey = tokenParts[1]
         // Layer 2: extended OTT format REGION:clientKey:keyId:serverPublicKey
-        if (tokenParts.size != 2 && tokenParts.size != 4) {
-            throw Exception("Extended OTT token has unexpected segment count (${tokenParts.size} parts, expected 2 or 4)")
-        }
-        if (tokenParts.size == 4) {
-            val keyId = tokenParts[2]
-            if (keyId.isEmpty() || !keyId.all { it.isDigit() }) {
-                throw Exception("Extended OTT token: serverPublicKeyId '$keyId' must be a positive integer")
+        when (tokenParts.size) {
+            2 -> {} // plain REGION:clientKey
+            4 -> {
+                val keyId = tokenParts[2]
+                if (keyId.isEmpty() || !keyId.all { it.isDigit() }) {
+                    throw Exception("Extended OTT token: serverPublicKeyId '$keyId' must be a positive integer")
+                }
+                if (tokenParts[3].length < 80) {
+                    throw Exception("Extended OTT token: serverPublicKey appears malformed")
+                }
+                storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, keyId)
+                storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
             }
-            if (tokenParts[3].length < 80) {
-                throw Exception("Extended OTT token: serverPublicKey appears malformed")
-            }
-            storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, keyId)
-            storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
+            else -> throw Exception("Extended OTT token has unexpected segment count (${tokenParts.size} parts, expected 2 or 4)")
         }
     }
     val clientKeyBytes = webSafe64ToBytes(clientKey)

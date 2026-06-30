@@ -247,14 +247,13 @@ internal class SecretsManagerTest {
         val folderKey = getRandomBytes(32)
         val recordKey = getRandomBytes(32)
         val folderUid = "testFolderUid001"
-        val recordUid = "testRecordUid001"
 
         val encFolderKey = bytesToBase64(encrypt(folderKey, appKey))
         val encRecordKey = bytesToBase64(encrypt(recordKey, folderKey))
         val recordDataJson = """{"title":"Shared Record","type":"login","fields":[],"custom":[]}"""
         val encData = bytesToBase64(encrypt(stringToBytes(recordDataJson), recordKey))
 
-        val responseJson = """{"encryptedAppKey":null,"folders":[{"folderUid":"$folderUid","folderKey":"$encFolderKey","data":null,"parent":null,"records":null}],"records":[{"recordUid":"$recordUid","recordKey":"$encRecordKey","data":"$encData","revision":1,"isEditable":true,"files":null,"innerFolderUid":"$folderUid"}]}"""
+        val responseJson = """{"encryptedAppKey":null,"folders":[{"folderUid":"$folderUid","folderKey":"$encFolderKey","data":null,"parent":null,"records":null}],"records":[{"recordUid":"testRecordUid001","recordKey":"$encRecordKey","data":"$encData","revision":1,"isEditable":true,"files":null,"innerFolderUid":"$folderUid"}]}"""
         val encryptedResponse = encrypt(stringToBytes(responseJson), transmissionKey)
 
         val storage = InMemoryStorage()
