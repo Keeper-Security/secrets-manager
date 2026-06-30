@@ -26,9 +26,13 @@ on:
         type: boolean
         default: true
 
+permissions: {}
+
 jobs:
   get-version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -87,6 +91,8 @@ jobs:
   test:
     needs: validate-version
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -109,6 +115,8 @@ jobs:
   generate-and-upload-sbom:
     needs: [get-version, validate-version]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -162,6 +170,8 @@ jobs:
     if: ${{ inputs.publish == true }}
     environment: prod
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     defaults:
       run:
