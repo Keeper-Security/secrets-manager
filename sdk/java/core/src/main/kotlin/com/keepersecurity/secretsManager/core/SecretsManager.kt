@@ -38,6 +38,8 @@ const val BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBLIC_KEY_ID = "serverPublicKeyId"
+@Deprecated("Typo; use KEY_SERVER_PUBLIC_KEY_ID", ReplaceWith("KEY_SERVER_PUBLIC_KEY_ID"))
+const val KEY_SERVER_PUBIC_KEY_ID = KEY_SERVER_PUBLIC_KEY_ID
 const val KEY_SERVER_PUBLIC_KEY = "serverPublicKey" // custom server public key bytes (base64url), overrides embedded table
 const val KEY_CLIENT_ID = "clientId"
 const val KEY_CLIENT_KEY = "clientKey" // The key that is used to identify the client before public key
