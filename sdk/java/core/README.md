@@ -5,6 +5,11 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 17.3.0
+**Breaking Changes**
+- `KeeperFile.url` changed from `String` to `String?` — callers that access `url` directly must now handle null; `downloadFile()` already does this with a typed exception
+- `KeeperRecordData.custom` changed from `MutableList<KeeperRecordField>?` to `MutableList<KeeperRecordField>` — assigning `null` to this field will no longer compile; use an empty list instead
+- `KEY_SERVER_PUBIC_KEY_ID` is deprecated — replace with `KEY_SERVER_PUBLIC_KEY_ID` (corrected spelling); the old name is retained as a `@Deprecated` alias for back-compatibility
+
 - KSM-878 - Throttle retry with exponential backoff
   - Automatically retries HTTP 403 `{"error":"throttled"}` responses up to 5 times (`MAX_THROTTLE_RETRIES`)
   - Exponential backoff starting at 11s (1s margin over the backend's 10s memcached TTL), with ±25% jitter; uses `retry_after` from the response body when present
