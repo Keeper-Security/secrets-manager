@@ -5,6 +5,17 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 17.3.0
+- KSM-878 - Throttle retry with exponential backoff
+  - Automatically retries HTTP 403 `{"error":"throttled"}` responses up to 5 times (`MAX_THROTTLE_RETRIES`)
+  - Exponential backoff starting at 11s (1s margin over the backend's 10s memcached TTL), with ±25% jitter; uses `retry_after` from the response body when present
+  - Warning logged to stderr on each retry (gated on `loggingEnabled`)
+  - Exhausted retries throw `KeeperThrottleException` (public; catchable separately from generic `Exception`)
+  - Injectable `throttleSleepMillis` hook in `SecretsManagerOptions` for test overrides
+- KSM-1008 - Align `KeeperRecordLink` accessors with Python reference
+  - Recursive `jsonElementToValue`/`jsonObjectToMap` helpers preserve JSON nulls (lossless, matching Python SDK)
+  - `getLinkData()` now returns `Map<String, Any?>` with typed scalars (String/Boolean/Int/Long/Double); nested objects and arrays are preserved
+  - `getBooleanValue` checks the nested `allowedSettings` object for permission flags in `path:"meta"` links when `checkAllowedSettings = true`; accessors for `allowsRotation()`, `allowsConnections()`, etc. updated accordingly
+  - Added `KeeperRecordLinkTest` suite covering all accessors, nested structures, and null preservation
 - KSM-902 - Add IL5 (DoD Impact Level 5) region mapping and dynamic server public key injection
   - Region: `IL5` OTT prefix maps to `il5.keepersecurity.us`
   - Layer 1 (config field): `serverPublicKey` in storage config overrides the embedded key table
