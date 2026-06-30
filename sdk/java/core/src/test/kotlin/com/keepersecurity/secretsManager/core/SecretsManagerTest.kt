@@ -137,6 +137,17 @@ internal class SecretsManagerTest {
     }
 
     @Test
+    fun testExtendedOttRejectsThreeSegments() {
+        // A 3-segment OTT was previously accepted and silently misparsed as a 2-segment token
+        // with the third segment dropped; it must now be rejected loudly instead.
+        val storage = InMemoryStorage()
+        val ex = assertFailsWith<Exception> {
+            initializeStorage(storage, "IL5:FAKE_CLIENT_KEY:20")
+        }
+        assertTrue(ex.message?.contains("segment count") == true, "Got: ${ex.message}")
+    }
+
+    @Test
     fun testIL5ConstructorParamPersistsToStorage() {
         // KSM-902: serverPublicKey constructor param is saved to storage so generateTransmissionKey can use it
         val fakeServerPublicKey = "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"

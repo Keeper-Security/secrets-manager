@@ -802,8 +802,8 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
         }
         clientKey = tokenParts[1]
         // Layer 2: extended OTT format REGION:clientKey:keyId:serverPublicKey
-        if (tokenParts.size > 4) {
-            throw Exception("Extended OTT token has unexpected extra segments (${tokenParts.size} parts, expected 2 or 4)")
+        if (tokenParts.size != 2 && tokenParts.size != 4) {
+            throw Exception("Extended OTT token has unexpected segment count (${tokenParts.size} parts, expected 2 or 4)")
         }
         if (tokenParts.size == 4) {
             val keyId = tokenParts[2]
@@ -1810,7 +1810,7 @@ private inline fun <reified T> postQuery(
                     if (options.loggingEnabled) {
                         System.err.println(
                             "WARNING: Request throttled (attempt ${throttleAttempt + 1}/$MAX_THROTTLE_RETRIES); " +
-                                "retrying in ${"%.1f".format(delayMs / 1000.0)}s"
+                                "retrying in ${"%.1f".format(Locale.US, delayMs / 1000.0)}s"
                         )
                     }
                     throttleSleep(delayMs)
