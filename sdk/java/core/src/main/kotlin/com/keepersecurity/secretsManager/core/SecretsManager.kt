@@ -35,6 +35,7 @@ const val KEEPER_CLIENT_VERSION = "mj17.3.0"
 // request, so the counter only clears after 10s of silence).
 const val MAX_THROTTLE_RETRIES = 5
 const val BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
+const val MAX_THROTTLE_DELAY_SEC = 176 // caps a backend-supplied retry_after from forcing an excessive wait
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBLIC_KEY_ID = "serverPublicKeyId"
@@ -1761,21 +1762,22 @@ internal fun parseThrottle(body: String): Double? {
     val resultCode = ((obj["result_code"] ?: obj["error"]) as? JsonPrimitive)?.content
     if (resultCode != "throttled") return null
     val retryAfter = (obj["retry_after"] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: 0.0
-    return if (retryAfter < 0.0) 0.0 else retryAfter
+    return retryAfter.coerceIn(0.0, MAX_THROTTLE_DELAY_SEC.toDouble())
 }
 
 // Backoff delay (milliseconds) for a 0-based [attempt]: retryAfter when > 0, otherwise
 // exponential backoff (BASE_THROTTLE_DELAY_SEC * 2**attempt -> 11, 22, 44, 88, 176s). The
-// [jitter] fraction (typically in [-0.25, 0.25)) is then applied.
+// [jitter] fraction (typically in [0, 0.25)) is then applied.
 internal fun throttleDelayMillis(attempt: Int, retryAfter: Double, jitter: Double): Long {
     val baseSec = if (retryAfter > 0.0) retryAfter else BASE_THROTTLE_DELAY_SEC.toDouble() * (1L shl attempt)
     val sec = baseSec + baseSec * jitter
-    return (maxOf(sec, 0.0) * 1000).toLong()
+    return (sec * 1000).toLong()
 }
 
-// Random jitter multiplier in [-0.25, 0.25). Kept separate so unit tests exercise
-// throttleDelayMillis with a pinned jitter instead.
-internal fun throttleJitter(): Double = Random.nextDouble(-0.25, 0.25)
+// Random jitter multiplier in [0, 0.25) — one-sided so a delay is only ever padded, never
+// undercuts the server-requested (or exponential-backoff) floor. Kept separate so unit tests
+// exercise throttleDelayMillis with a pinned jitter instead.
+internal fun throttleJitter(): Double = Random.nextDouble(0.0, 0.25)
 
 @ExperimentalSerializationApi
 private inline fun <reified T> postQuery(

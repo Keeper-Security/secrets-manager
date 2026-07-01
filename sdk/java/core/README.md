@@ -12,7 +12,7 @@ For more information see our official documentation page https://docs.keeper.io/
 
 - KSM-878 - Throttle retry with exponential backoff
   - Automatically retries HTTP 403 `{"error":"throttled"}` responses up to 5 times (`MAX_THROTTLE_RETRIES`)
-  - Exponential backoff starting at 11s (1s margin over the backend's 10s memcached TTL), with ±25% jitter; uses `retry_after` from the response body when present
+  - Exponential backoff starting at 11s (1s margin over the backend's 10s memcached TTL), with one-sided 0-25% jitter (delay never undercuts the server's requested `retry_after`); uses `retry_after` from the response body when present, capped at 176s (`MAX_THROTTLE_DELAY_SEC`)
   - Warning logged to stderr on each retry (gated on `loggingEnabled`)
   - Exhausted retries throw `KeeperThrottleException` (public; catchable separately from generic `Exception`)
   - Injectable `throttleSleepMillis` hook in `SecretsManagerOptions` for test overrides

@@ -49,7 +49,7 @@ internal class ThrottleTest {
 
     @Test
     fun throttleDelay_jitterBounds() {
-        assertEquals(8250L, throttleDelayMillis(0, 0.0, -0.25))
+        assertEquals(11000L, throttleDelayMillis(0, 0.0, 0.0))
         assertEquals(13750L, throttleDelayMillis(0, 0.0, 0.25))
     }
 
@@ -61,6 +61,7 @@ internal class ThrottleTest {
         assertEquals(5.0, parseThrottle("""{"result_code":"throttled","retry_after":5}"""))
         assertEquals(3.0, parseThrottle("""{"error":"throttled","retry_after":"3"}"""))
         assertEquals(0.0, parseThrottle("""{"error":"throttled","retry_after":-2}"""))
+        assertEquals(176.0, parseThrottle("""{"error":"throttled","retry_after":300}"""))
         assertNull(parseThrottle("""{"error":"key"}"""))
         assertNull(parseThrottle("not json"))
         assertNull(parseThrottle(""))
@@ -125,8 +126,8 @@ internal class ThrottleTest {
         val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
 
         assertFailsWith<KeeperThrottleException> { getSecrets(options) }
-        // retry_after = 3s with +/-25% jitter -> [2250ms, 3750ms]
-        assertTrue(sleeps[0] in 2250L..3750L, "first delay was ${sleeps[0]}ms")
+        // retry_after = 3s with one-sided [0, 0.25) jitter -> [3000ms, 3750ms]
+        assertTrue(sleeps[0] in 3000L..3750L, "first delay was ${sleeps[0]}ms")
     }
 
     @Test
