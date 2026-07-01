@@ -94,17 +94,9 @@ jobs:
       - name: Create Syft configuration
         run: |
           cat > syft-config.yaml << 'EOF'
-          package:
-            search:
-              scope: all-layers
-            cataloger:
-              enabled: true
-              java:
-                enabled: false
-              python:
-                enabled: false
-              nodejs:
-                enabled: true
+          select-catalogers:
+            - "-github-action-workflow-usage-cataloger"
+            - "-github-actions-usage-cataloger"
           EOF
 
       - name: Generate and upload SBOM
@@ -113,11 +105,13 @@ jobs:
           VERSION: ${{ needs.get-version.outputs.version }}
         run: |
           echo "Generating SBOM for @keeper-security/secrets-manager-core $VERSION..."
+          NAMESPACE="https://spdx.org/spdxdocs/keeper-secrets-manager-js-sdk-${VERSION}-$(cat /proc/sys/kernel/random/uuid)"
 
           manifest sbom "./sbom-target" \
             --generator=syft \
             --name=keeper-secrets-manager-js-sdk \
             --version="${VERSION}" \
+            --namespace="${NAMESPACE}" \
             --output=spdx-json \
             --file=js-sdk-sbom.json \
             --api-key="${MANIFEST_API_KEY}" \
@@ -129,6 +123,7 @@ jobs:
             --generator=syft \
             --name=keeper-secrets-manager-js-sdk \
             --version="${VERSION}" \
+            --namespace="${NAMESPACE}" \
             --output=spdx-json \
             --file=js-sdk-sbom.json \
             --api-key="${MANIFEST_API_KEY}" \
@@ -136,6 +131,10 @@ jobs:
             --label=application,sbom-generated,nodejs \
             --generator-config=syft-config.yaml \
             -- --source-name="keeper-secrets-manager-js-sdk" --source-version="${VERSION}"
+
+          jq '(.packages[] | select(.SPDXID == "SPDXRef-Package-keeper-secrets-manager-js-sdk")) |=
+            (.filesAnalyzed = false) | del(.packageVerificationCode)' js-sdk-sbom.json \
+            > js-sdk-sbom-fixed.json && mv js-sdk-sbom-fixed.json js-sdk-sbom.json
 
           echo "---------- SBOM Preview (first 20 lines) ----------"
           head -n 20 js-sdk-sbom.json
@@ -145,7 +144,7 @@ jobs:
         with:
           name: sbom-keeper-secrets-manager-js-sdk-${{ github.run_number }}
           path: js-sdk-sbom.json
-          retention-days: 90
+          retention-days: 10
 
   build-npm:
     needs: [test, validate-version]
@@ -184,6 +183,9 @@ jobs:
     if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: ./sdk/javascript/packages/core
@@ -195,7 +197,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: '22'
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Upgrade npm
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: npm ci
@@ -203,13 +210,5 @@ jobs:
       - name: Build package
         run: npm run prepublishOnly
 
-      - name: Retrieve secrets from KSM
-        id: ksmsecrets
-        uses: Keeper-Security/ksm-action@37abbada28637b6478ba845e73d3f8b9676572fe # master
-        with:
-          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
-          secrets: |
-            NScQiZwrHJFCPv1gL8TX6Q/field/password > env:NPM_TOKEN
-
       - name: Publish package
-        run: npm publish --ignore-scripts
+        run: npm publish --ignore-scripts --provenance
