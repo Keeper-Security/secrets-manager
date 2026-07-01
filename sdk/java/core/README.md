@@ -46,6 +46,9 @@ For more information see our official documentation page https://docs.keeper.io/
   - `downloadFile`, `uploadFile`, `postFunction`: `HttpsURLConnection` is now explicitly disconnected in a `finally` block; `with()` is not try-with-resources and did not guarantee cleanup on exception
 - KSM-985 - Add typed empty-string guard to internal Base64 decoders (KSM-808 parity)
   - `base64ToBytes("")` and `webSafe64ToBytes("")` now throw a `Keeper` exception instead of an opaque NPE from inside `java.util.Base64`
+- KSM-1026 - Make `SecretsManagerException` public
+  - Java consumers can now `catch (SecretsManagerException e)` to handle SDK-level errors by type instead of catching bare `Exception`
+  - `SecureRandomException` / `SecureRandomSlowGenerationException` remain internal (no public use case)
 
 ## 17.2.0
 - **SECURITY (KSM-699)** - Fix file permissions for config.json and cache.dat
