@@ -791,7 +791,7 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
         host = hostName ?: throw Exception("The hostname must be present in the token or as a parameter")
         clientKey = oneTimeToken
     } else {
-        host = when (tokenParts[0].uppercase(Locale.getDefault())) {
+        host = when (tokenParts[0].uppercase(Locale.US)) {
             "US" -> "keepersecurity.com"
             "EU" -> "keepersecurity.eu"
             "AU" -> "keepersecurity.com.au"
