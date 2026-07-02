@@ -1956,6 +1956,7 @@ export type PamSettingsConnection = {
     ignoreCert?: boolean
     resizeMethod?: string
     colorScheme?: string
+    dbConnectionMethod?: string
 }
 
 export type PamSettingsPortForward = {
