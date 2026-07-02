@@ -684,6 +684,7 @@ data class PamSettingsConnection @JvmOverloads constructor(
 
     // Database-specific fields
     val database: String? = null,
+    val dbConnectionMethod: String? = null,
     val disableCsvExport: Boolean? = null,
     val disableCsvImport: Boolean? = null,
 
