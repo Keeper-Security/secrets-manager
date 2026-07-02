@@ -116,10 +116,7 @@ module KeeperSecretsManager
         end
       end
 
-      # Decrypt with AES-GCM or fallback to CBC
       def decrypt_aes_gcm(encrypted_data, key)
-        # Try GCM first
-        # Extract components
         iv = encrypted_data[0...GCM_IV_LENGTH]
         tag = encrypted_data[-GCM_TAG_LENGTH..]
         ciphertext = encrypted_data[GCM_IV_LENGTH...-GCM_TAG_LENGTH]
@@ -133,18 +130,12 @@ module KeeperSecretsManager
         cipher.update(ciphertext) + cipher.final
       rescue RuntimeError => e
         if e.message.include?('unsupported cipher')
-          # Fallback to AES-CBC
           decrypt_aes_cbc(encrypted_data, key)
         else
           raise e
         end
       rescue OpenSSL::Cipher::CipherError => e
-        # Maybe it's CBC encrypted?
-        begin
-          decrypt_aes_cbc(encrypted_data, key)
-        rescue StandardError
-          raise DecryptionError, "Failed to decrypt data: #{e.message}"
-        end
+        raise DecryptionError, "Failed to decrypt data: #{e.message}"
       end
 
       # Legacy AES-CBC encryption (for compatibility)
