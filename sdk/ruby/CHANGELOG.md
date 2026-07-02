@@ -1,8 +1,9 @@
 # Changelog
 
-## [17.2.0] - 2025-11-14
+## [17.2.0]
 
 ### Fixed
+- Fixed silent AES-CBC fallback in `decrypt_aes_gcm`: an AES-GCM authentication-tag failure now raises `DecryptionError` immediately rather than retrying decryption as AES-CBC. Previously, tampered or wrong-key ciphertext could produce output without any error.
 - KSM-685: `CreateOptions.subfolder_uid` parameter is now correctly sent to API when creating records
 - KSM-686: Implemented disaster recovery caching with `CachingPostFunction` to match other SDKs
   - API response caching now works for both `get_secret` and `get_folders` endpoints
