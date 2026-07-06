@@ -56,12 +56,12 @@ internal fun bytesToBase64(data: ByteArray): String {
 }
 
 internal fun base64ToBytes(data: String): ByteArray {
-    if (data.isEmpty()) throw Exception("Base64-encoded value is empty") // KSM-985
+    if (data.isEmpty()) throw SecretsManagerException("Base64-encoded value is empty") // KSM-985
     return Base64.getDecoder().decode(data)
 }
 
 internal fun webSafe64ToBytes(data: String): ByteArray {
-    if (data.isEmpty()) throw Exception("Base64url-encoded value is empty") // KSM-985
+    if (data.isEmpty()) throw SecretsManagerException("Base64url-encoded value is empty") // KSM-985
     return Base64.getUrlDecoder().decode(data)
 }
 
