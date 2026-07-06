@@ -21,6 +21,11 @@ For more information see our official documentation page https://docs.keeper.io/
   - `getLinkData()` now returns `Map<String, Any?>` with typed scalars (String/Boolean/Int/Long/Double); nested objects and arrays are preserved
   - `getBooleanValue` checks the nested `allowedSettings` object for permission flags in `path:"meta"` links when `checkAllowedSettings = true`; accessors for `allowsRotation()`, `allowsConnections()`, etc. updated accordingly
   - Added `KeeperRecordLinkTest` suite covering all accessors, nested structures, and null preservation
+- KSM-1066 - Fix IL5 custom server public key not persisted by LocalConfigStorage
+  - `serverPublicKey` is now saved to and loaded from the on-disk config alongside `serverPublicKeyId`
+  - Without this fix, a second run after IL5 bind failed with "Key number X is not supported" because the key ID was stored but the key bytes were not
+- KSM-1067 - Fix IL5 stale-key diagnostic message swallowed by bare catch
+  - The actionable "Server rejected the custom server public key" error now propagates to callers instead of being swallowed
 - KSM-902 - Add IL5 (DoD Impact Level 5) region mapping and dynamic server public key injection
   - Region: `IL5` OTT prefix maps to `il5.keepersecurity.us`
   - Layer 1 (config field): `serverPublicKey` in storage config overrides the embedded key table

@@ -738,7 +738,7 @@ data class KeeperRecord(
     }
 
     fun updatePassword(newPassword: String) {
-        val passwordField = data.getField<Password>() ?: throw Exception("Password field is not present on the record $recordUid")
+        val passwordField = data.getField<Password>() ?: throw SecretsManagerException("Password field is not present on the record $recordUid")
 
         if (passwordField.value.size == 0)
             passwordField.value.add(newPassword)
@@ -788,7 +788,7 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
     val host: String
     val clientKey: String
     if (tokenParts.size == 1) {
-        host = hostName ?: throw Exception("The hostname must be present in the token or as a parameter")
+        host = hostName ?: throw SecretsManagerException("The hostname must be present in the token or as a parameter")
         clientKey = oneTimeToken
     } else {
         host = when (tokenParts[0].uppercase(Locale.US)) {
@@ -808,15 +808,15 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
             4 -> {
                 val keyId = tokenParts[2]
                 if (keyId.isEmpty() || !keyId.all { it.isDigit() }) {
-                    throw Exception("Extended OTT token: serverPublicKeyId '$keyId' must be a positive integer")
+                    throw SecretsManagerException("Extended OTT token: serverPublicKeyId '$keyId' must be a positive integer")
                 }
                 if (tokenParts[3].length < 80) {
-                    throw Exception("Extended OTT token: serverPublicKey appears malformed")
+                    throw SecretsManagerException("Extended OTT token: serverPublicKey appears malformed")
                 }
                 storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, keyId)
                 storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
             }
-            else -> throw Exception("Extended OTT token has unexpected segment count (${tokenParts.size} parts, expected 2 or 4)")
+            else -> throw SecretsManagerException("Extended OTT token has unexpected segment count (${tokenParts.size} parts, expected 2 or 4)")
         }
     }
     val clientKeyBytes = webSafe64ToBytes(clientKey)
@@ -827,7 +827,7 @@ fun initializeStorage(storage: KeyValueStorage, oneTimeToken: String, hostName: 
         if (clientId == existingClientId) {
             return   // the storage is already initialized
         }
-        throw Exception("The storage is already initialized with a different client Id (${existingClientId})")
+        throw SecretsManagerException("The storage is already initialized with a different client Id (${existingClientId})")
     }
     storage.saveString(KEY_HOSTNAME, host)
     storage.saveString(KEY_CLIENT_ID, clientId)
@@ -970,12 +970,12 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
 
     val parsedNotation = parseNotation(notation) // prefix, record, selector, footer
     if (parsedNotation.size < 3)
-        throw Exception("Invalid notation '$notation'")
+        throw SecretsManagerException("Invalid notation '$notation'")
 
     val selector = parsedNotation[2].text?.first ?: // type|title|notes or file|field|custom_field
-        throw Exception("Invalid notation '$notation'")
+        throw SecretsManagerException("Invalid notation '$notation'")
     val recordToken = parsedNotation[1].text?.first ?: // UID or Title
-        throw Exception("Invalid notation '$notation'")
+        throw SecretsManagerException("Invalid notation '$notation'")
 
     // to minimize traffic - if it looks like a Record UID try to pull a single record
     var records = listOf<KeeperRecord>()
@@ -995,9 +995,9 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
     }
 
     if (records.size > 1)
-        throw Exception("Notation error - multiple records match record '$recordToken'")
+        throw SecretsManagerException("Notation error - multiple records match record '$recordToken'")
     if (records.isEmpty())
-        throw Exception("Notation error - no records match record '$recordToken'")
+        throw SecretsManagerException("Notation error - no records match record '$recordToken'")
 
     val record = records[0]
     val parameter = parsedNotation[2].parameter?.first
@@ -1010,45 +1010,45 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
         "notes" -> if (record.data.notes != null) result.add(record.data.notes!!)
         "file" -> {
             if (parameter == null)
-                throw Exception("Notation error - Missing required parameter: filename or file UID for files in record '$recordToken'")
+                throw SecretsManagerException("Notation error - Missing required parameter: filename or file UID for files in record '$recordToken'")
             if ((record.files?.size ?: 0) < 1)
-                throw Exception("Notation error - Record $recordToken has no file attachments.")
+                throw SecretsManagerException("Notation error - Record $recordToken has no file attachments.")
             val files = record.files!!.filter { parameter == it.data.name || parameter == it.data.title || parameter == it.fileUid }
             // file searches do not use indexes and rely on unique file names or fileUid
             if (files.size > 1)
-                throw Exception("Notation error - Record $recordToken has multiple files matching the search criteria '$parameter'")
+                throw SecretsManagerException("Notation error - Record $recordToken has multiple files matching the search criteria '$parameter'")
             if (files.isEmpty())
-                throw Exception("Notation error - Record $recordToken has no files matching the search criteria '$parameter'")
+                throw SecretsManagerException("Notation error - Record $recordToken has no files matching the search criteria '$parameter'")
             val contents = downloadFile(files[0])
             val text = webSafe64FromBytes(contents)
             result.add(text)
         }
         "field", "custom_field" -> {
             if (parameter == null)
-                throw Exception("Notation error - Missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel")
+                throw SecretsManagerException("Notation error - Missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel")
 
             val fields = when(selector.lowercase()) {
                 "field" -> record.data.fields
                 "custom_field" -> record.data.custom
-                else -> throw Exception("Notation error - Expected /field or /custom_field but found /$selector")
+                else -> throw SecretsManagerException("Notation error - Expected /field or /custom_field but found /$selector")
             }
 
             val flds = fields.filter { parameter == fieldType(it) || parameter == it.label }
             if (flds.size > 1)
-                throw Exception("Notation error - Record $recordToken has multiple fields matching the search criteria '$parameter'")
+                throw SecretsManagerException("Notation error - Record $recordToken has multiple fields matching the search criteria '$parameter'")
             if (flds.isEmpty())
-                throw Exception("Notation error - Record $recordToken has no fields matching the search criteria '$parameter'")
+                throw SecretsManagerException("Notation error - Record $recordToken has no fields matching the search criteria '$parameter'")
             val field = flds[0]
             //val fieldType = fieldType(field)
 
             val idx = index1?.toIntOrNull() ?: -1 // -1 full value
             // valid only if [] or missing - ex. /field/phone or /field/phone[]
             if (idx == -1 && !(parsedNotation[2].index1?.second.isNullOrEmpty() || parsedNotation[2].index1?.second == "[]"))
-                throw Exception("Notation error - Invalid field index $idx")
+                throw SecretsManagerException("Notation error - Invalid field index $idx")
 
             val valuesCount = getFieldValuesCount(field)
             if (idx >= valuesCount)
-                throw Exception("Notation error - Field index out of bounds $idx >= $valuesCount for field $parameter")
+                throw SecretsManagerException("Notation error - Field index out of bounds $idx >= $valuesCount for field $parameter")
 
             //val fullObjValue = (parsedNotation[2].index2?.second.isNullOrEmpty() || parsedNotation[2].index2?.second == "[]")
             val objPropertyName = parsedNotation[2].index2?.first
@@ -1060,7 +1060,7 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
             if (res.isNotEmpty())
                 result.addAll(res)
         }
-        else -> throw Exception("Invalid notation '$notation'")
+        else -> throw SecretsManagerException("Invalid notation '$notation'")
     }
     return result
 }
@@ -1109,7 +1109,7 @@ fun addCustomField(record: KeeperRecord, field: KeeperRecordField) {
 fun createSecret(options: SecretsManagerOptions, folderUid: String, recordData: KeeperRecordData, secrets: KeeperSecrets = getSecrets(options)): String {
     val recordFromFolder = secrets.records.find { it.folderUid == folderUid }
     if (recordFromFolder?.folderKey == null) {
-        throw Exception("Unable to create record - folder key for $folderUid not found")
+        throw SecretsManagerException("Unable to create record - folder key for $folderUid not found")
     }
     val payload = prepareCreatePayload(options.storage, CreateOptions(folderUid), recordData, recordFromFolder.folderKey!!)
     postQuery(options, "create_secret", payload)
@@ -1120,7 +1120,7 @@ fun createSecret(options: SecretsManagerOptions, folderUid: String, recordData: 
 @JvmOverloads
 fun createSecret2(options: SecretsManagerOptions, createOptions: CreateOptions, recordData: KeeperRecordData, folders: List<KeeperFolder> = getFolders(options)): String {
     val sharedFolder: KeeperFolder = folders.find { it.folderUid == createOptions.folderUid }
-        ?: throw Exception("Unable to create record - folder key for ${createOptions.folderUid} not found")
+        ?: throw SecretsManagerException("Unable to create record - folder key for ${createOptions.folderUid} not found")
     val payload = prepareCreatePayload(options.storage, createOptions, recordData, sharedFolder.folderKey)
     postQuery(options, "create_secret", payload)
     return payload.recordUid
@@ -1130,7 +1130,7 @@ fun createSecret2(options: SecretsManagerOptions, createOptions: CreateOptions, 
 @JvmOverloads
 fun createFolder(options: SecretsManagerOptions, createOptions: CreateOptions, folderName: String, folders: List<KeeperFolder> = getFolders(options)): String {
     val sharedFolder: KeeperFolder = folders.find { it.folderUid == createOptions.folderUid }
-        ?: throw Exception("Unable to create folder - folder key for ${createOptions.folderUid} not found")
+        ?: throw SecretsManagerException("Unable to create folder - folder key for ${createOptions.folderUid} not found")
     val payload = prepareCreateFolderPayload(options.storage, createOptions, folderName, sharedFolder.folderKey)
     postQuery(options, "create_folder", payload)
     return payload.folderUid
@@ -1140,7 +1140,7 @@ fun createFolder(options: SecretsManagerOptions, createOptions: CreateOptions, f
 @JvmOverloads
 fun updateFolder(options: SecretsManagerOptions, folderUid: String, folderName: String, folders: List<KeeperFolder> = getFolders(options)) {
     val folder: KeeperFolder = folders.find { it.folderUid == folderUid }
-        ?: throw Exception("Unable to update folder - folder key for $folderUid not found")
+        ?: throw SecretsManagerException("Unable to update folder - folder key for $folderUid not found")
     val payload = prepareUpdateFolderPayload(options.storage, folderUid, folderName, folder.folderKey)
     postQuery(options, "update_folder", payload)
 }
@@ -1152,19 +1152,19 @@ fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: 
     val response = nonStrictJson.decodeFromString<SecretsManagerAddFileResponse>(bytesToString(responseData))
     val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile)
     if (uploadResult.statusCode != response.successStatusCode) {
-        throw Exception("Upload failed (${bytesToString(uploadResult.data)}), code ${uploadResult.statusCode}")
+        throw SecretsManagerException("Upload failed (${bytesToString(uploadResult.data)}), code ${uploadResult.statusCode}")
     }
     return payloadAndFile.payload.fileRecordUid
 }
 
 fun downloadFile(file: KeeperFile): ByteArray {
-    val url = file.url ?: throw Exception("File ${file.fileUid} has no download URL")
+    val url = file.url ?: throw SecretsManagerException("File ${file.fileUid} has no download URL")
     return downloadFile(file, url)
 }
 
 fun downloadThumbnail(file: KeeperFile): ByteArray {
     if (file.thumbnailUrl == null) {
-        throw Exception("Thumbnail does not exist for the file ${file.fileUid}")
+        throw SecretsManagerException("Thumbnail does not exist for the file ${file.fileUid}")
     }
     return downloadFile(file, file.thumbnailUrl)
 }
@@ -1179,7 +1179,7 @@ private fun downloadFile(file: KeeperFile, url: String): ByteArray {
             else -> connection.inputStream.readBytes()
         }
         if (statusCode != HTTP_OK) {
-            throw Exception(String(data))
+            throw SecretsManagerException(String(data))
         }
         return decrypt(data, file.fileKey)
     } finally {
@@ -1236,7 +1236,7 @@ private fun fetchAndDecryptSecrets(
     val appKey: ByteArray
     if (response.encryptedAppKey != null) {
         justBound = true
-        val clientKey = storage.getBytes(KEY_CLIENT_KEY) ?: throw Exception("Client key is missing from the storage")
+        val clientKey = storage.getBytes(KEY_CLIENT_KEY) ?: throw SecretsManagerException("Client key is missing from the storage")
         appKey = decrypt(response.encryptedAppKey, clientKey)
         storage.saveBytes(KEY_APP_KEY, appKey)
         storage.delete(KEY_CLIENT_KEY)
@@ -1245,7 +1245,7 @@ private fun fetchAndDecryptSecrets(
             storage.saveString(KEY_OWNER_PUBLIC_KEY, it)
         }
     } else {
-        appKey = storage.getBytes(KEY_APP_KEY) ?: throw Exception("App key is missing from the storage")
+        appKey = storage.getBytes(KEY_APP_KEY) ?: throw SecretsManagerException("App key is missing from the storage")
     }
     // KSM-753: records created via non-SDK clients in shared folders appear in response.records[]
     // with innerFolderUid set; their recordKey is encrypted with the folder key, not the app key.
@@ -1427,12 +1427,12 @@ private fun fetchAndDecryptFolders(
         return emptyList()
     }
     val folders: MutableList<KeeperFolder> = mutableListOf()
-    val appKey = storage.getBytes(KEY_APP_KEY) ?: throw Exception("App key is missing from the storage")
+    val appKey = storage.getBytes(KEY_APP_KEY) ?: throw SecretsManagerException("App key is missing from the storage")
     response.folders.forEach { folder ->
         val folderKey: ByteArray = if (folder.parent == null) {
             decrypt(folder.folderKey, appKey)
         } else {
-            val sharedFolderKey = getSharedFolderKey(folders, response.folders, folder.parent) ?: throw Exception("Folder data inconsistent - unable to locate shared folder")
+            val sharedFolderKey = getSharedFolderKey(folders, response.folders, folder.parent) ?: throw SecretsManagerException("Folder data inconsistent - unable to locate shared folder")
             decrypt(folder.folderKey, sharedFolderKey, true)
         }
         val decryptedData = decrypt(folder.data!!, folderKey, true)
@@ -1455,7 +1455,7 @@ private fun prepareGetPayload(
     storage: KeyValueStorage,
     queryOptions: QueryOptions?
 ): GetPayload {
-    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw SecretsManagerException("Client Id is missing from the configuration")
     val payload = GetPayload(
         KEEPER_CLIENT_VERSION,
         clientId,
@@ -1464,7 +1464,7 @@ private fun prepareGetPayload(
     )
     val appKey = storage.getBytes(KEY_APP_KEY)
     if (appKey == null) {
-        val publicKey = storage.getBytes(KEY_PUBLIC_KEY) ?: throw Exception("Public key is missing from the storage")
+        val publicKey = storage.getBytes(KEY_PUBLIC_KEY) ?: throw SecretsManagerException("Public key is missing from the storage")
         payload.publicKey = bytesToBase64(publicKey)
     }
     if (queryOptions != null) {
@@ -1486,7 +1486,7 @@ private fun prepareDeletePayload(
     storage: KeyValueStorage,
     recordUids: List<String>
 ): DeletePayload {
-    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw SecretsManagerException("Client Id is missing from the configuration")
     return DeletePayload(KEEPER_CLIENT_VERSION, clientId, recordUids)
 }
 
@@ -1496,7 +1496,7 @@ private fun prepareDeleteFolderPayload(
     folderUids: List<String>,
     forceDeletion: Boolean
 ): DeleteFolderPayload {
-    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw SecretsManagerException("Client Id is missing from the configuration")
     return DeleteFolderPayload(KEEPER_CLIENT_VERSION, clientId, folderUids, forceDeletion)
 }
 
@@ -1506,7 +1506,7 @@ private fun prepareUpdatePayload(
     record: KeeperRecord,
     updateOptions: UpdateOptions? = null
 ): UpdatePayload {
-    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw SecretsManagerException("Client Id is missing from the configuration")
 
     updateOptions?.linksToRemove?.takeIf { it.isNotEmpty() }?.let {
         val frefs = record.data.getField<FileRef>()
@@ -1534,7 +1534,7 @@ private fun prepareCompleteTransactionPayload(
     storage: KeyValueStorage,
     recordUid: String
 ): CompleteTransactionPayload {
-    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw SecretsManagerException("Client Id is missing from the configuration")
     return CompleteTransactionPayload(KEEPER_CLIENT_VERSION, clientId, recordUid)
 }
 
@@ -1545,8 +1545,8 @@ private fun prepareCreatePayload(
     recordData: KeeperRecordData,
     folderKey: ByteArray
 ): CreatePayload {
-    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
-    val ownerPublicKey = storage.getBytes(KEY_OWNER_PUBLIC_KEY) ?: throw Exception("Application owner public key is missing from the configuration")
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw SecretsManagerException("Client Id is missing from the configuration")
+    val ownerPublicKey = storage.getBytes(KEY_OWNER_PUBLIC_KEY) ?: throw SecretsManagerException("Application owner public key is missing from the configuration")
     val recordBytes = stringToBytes(Json.encodeToString(recordData))
     val recordKey = getRandomBytes(32)
     val recordUid = generateUid()
@@ -1569,7 +1569,7 @@ private fun prepareCreateFolderPayload(
     folderName: String,
     sharedFolderKey: ByteArray
 ): CreateFolderPayload {
-    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw SecretsManagerException("Client Id is missing from the configuration")
     val folderDataBytes = stringToBytes(Json.encodeToString(KeeperFolderName(folderName)))
     val folderKey = getRandomBytes(32)
     val folderUid = generateUid()
@@ -1590,7 +1590,7 @@ private fun prepareUpdateFolderPayload(
     folderName: String,
     folderKey: ByteArray
 ): UpdateFolderPayload {
-    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw SecretsManagerException("Client Id is missing from the configuration")
     val folderDataBytes = stringToBytes(Json.encodeToString(KeeperFolderName(folderName)))
     val encryptedFolderData = encrypt(folderDataBytes, folderKey, true)
     return UpdateFolderPayload(KEEPER_CLIENT_VERSION, clientId,
@@ -1604,8 +1604,8 @@ private fun prepareFileUploadPayload(
     ownerRecord: KeeperRecord,
     file: KeeperFileUpload
 ): FileUploadPayloadAndFile {
-    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw Exception("Client Id is missing from the configuration")
-    val ownerPublicKey = storage.getBytes(KEY_OWNER_PUBLIC_KEY) ?: throw Exception("Application owner public key is missing from the configuration")
+    val clientId = storage.getString(KEY_CLIENT_ID) ?: throw SecretsManagerException("Client Id is missing from the configuration")
+    val ownerPublicKey = storage.getBytes(KEY_OWNER_PUBLIC_KEY) ?: throw SecretsManagerException("Application owner public key is missing from the configuration")
 
     val fileData = KeeperFileData(
         file.title,
@@ -1730,7 +1730,7 @@ private fun generateTransmissionKey(storage: KeyValueStorage): TransmissionKey {
     // Layer 1: serverPublicKey in storage (from config JSON, OTT, or constructor) takes priority
     val keeperPublicKey: ByteArray = storage.getString(KEY_SERVER_PUBLIC_KEY)?.let { webSafe64ToBytes(it) }
         ?: keeperPublicKeys[keyNumber]
-        ?: throw Exception("Key number $keyNumber is not supported")
+        ?: throw SecretsManagerException("Key number $keyNumber is not supported")
     val encryptedKey = publicEncrypt(transmissionKey, keeperPublicKey)
     return TransmissionKey(keyNumber, transmissionKey, encryptedKey)
 }
@@ -1743,7 +1743,7 @@ private inline fun <reified T> encryptAndSignPayload(
 ): EncryptedPayload {
     val payloadBytes = stringToBytes(Json.encodeToString(payload))
     val encryptedPayload = encrypt(payloadBytes, transmissionKey.key)
-    val privateKey = storage.getBytes(KEY_PRIVATE_KEY) ?: throw Exception("Private key is missing from the storage")
+    val privateKey = storage.getBytes(KEY_PRIVATE_KEY) ?: throw SecretsManagerException("Private key is missing from the storage")
     val signatureBase = transmissionKey.encryptedKey + encryptedPayload
     val signature = sign(signatureBase, privateKey)
     return EncryptedPayload(encryptedPayload, signature)
@@ -1785,7 +1785,7 @@ private inline fun <reified T> postQuery(
     path: String,
     payload: T
 ): ByteArray {
-    val hostName = options.storage.getString(KEY_HOSTNAME) ?: throw Exception("hostname is missing from the storage")
+    val hostName = options.storage.getString(KEY_HOSTNAME) ?: throw SecretsManagerException("hostname is missing from the storage")
     val url = "https://${hostName}/api/rest/sm/v1/${path}"
     val throttleSleep = options.throttleSleepMillis ?: { ms -> Thread.sleep(ms) }
     var throttleAttempt = 0
@@ -1821,20 +1821,18 @@ private inline fun <reified T> postQuery(
                     continue
                 }
             }
-            try {
-                val error = nonStrictJson.decodeFromString<KeeperError>(errorMessage)
-                if (error.error == "key") {
-                    val customKey = options.storage.getString(KEY_SERVER_PUBLIC_KEY)
-                    if (customKey != null) {
-                        val currentKeyId = options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-                        throw Exception("Server rejected the custom server public key (id $currentKeyId). The server suggested key id ${error.key_id}. Please update your IL5 KSM configuration.")
-                    }
-                    options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, error.key_id.toString())
-                    continue
+            // Parse outside the bare catch so the actionable IL5 throw can escape.
+            val error = try { nonStrictJson.decodeFromString<KeeperError>(errorMessage) } catch (_: Exception) { null }
+            if (error?.error == "key") {
+                val customKey = options.storage.getString(KEY_SERVER_PUBLIC_KEY)
+                if (customKey != null) {
+                    val currentKeyId = options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+                    throw SecretsManagerException("Server rejected the custom server public key (id $currentKeyId). The server suggested key id ${error.key_id}. Please update your IL5 KSM configuration.")
                 }
-            } catch (_: Exception) {
+                options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, error.key_id.toString())
+                continue
             }
-            throw Exception(errorMessage)
+            throw SecretsManagerException(errorMessage)
         }
         if (response.data.isEmpty()) {
             return response.data

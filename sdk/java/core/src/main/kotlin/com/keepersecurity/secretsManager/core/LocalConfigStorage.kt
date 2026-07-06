@@ -34,7 +34,7 @@ fun getCachedValue(): ByteArray {
     try {
         return FileInputStream("cache.dat").use { it.readBytes() } // KSM-855: .use{} closes on exception
     } catch (e: Exception) {
-        throw Exception("Cached value does not exist")
+        throw SecretsManagerException("Cached value does not exist")
     }
 }
 
@@ -49,7 +49,8 @@ class InMemoryStorage(configJson: String? = null) : KeyValueStorage {
         var clientKey: String? = null,
         var appKey: String? = null,
         var appOwnerPublicKey: String? = null,
-        var serverPublicKeyId: String? = null
+        var serverPublicKeyId: String? = null,
+        var serverPublicKey: String? = null
     )
 
     private val strings: MutableMap<String, String> = HashMap()
@@ -70,6 +71,7 @@ class InMemoryStorage(configJson: String? = null) : KeyValueStorage {
             optSetFn(KEY_APP_KEY, config.appKey)
             optSetFn(KEY_OWNER_PUBLIC_KEY, config.appOwnerPublicKey)
             optSetFn(KEY_SERVER_PUBLIC_KEY_ID, config.serverPublicKeyId)
+            optSetFn(KEY_SERVER_PUBLIC_KEY, config.serverPublicKey)
         }
     }
 
@@ -107,7 +109,8 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         var clientKey: String? = null,
         var appKey: String? = null,
         var appOwnerPublicKey: String? = null,
-        var serverPublicKeyId: String? = null
+        var serverPublicKeyId: String? = null,
+        var serverPublicKey: String? = null
     )
 
     private val file = configName?.let { File(it) }
@@ -130,6 +133,7 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         config.appKey = storage.getString(KEY_APP_KEY)
         config.appOwnerPublicKey = storage.getString(KEY_OWNER_PUBLIC_KEY)
         config.serverPublicKeyId = storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+        config.serverPublicKey = storage.getString(KEY_SERVER_PUBLIC_KEY)
         val json = prettyJson.encodeToString(config)
         BufferedWriter(FileWriter(file)).use { it.write(json) } // KSM-855: .use{} closes on exception
 
