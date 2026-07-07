@@ -957,24 +957,28 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
     const folders: KeeperFolder[] = []
     if (response.folders) {
         for (const folder of response.folders) {
-            let decryptedData: Uint8Array
-            const decryptedFolder: KeeperFolder = {
-                folderUid: folder.folderUid
-            }
-            if (folder.parent) {
-                decryptedFolder.parentUid = folder.parent
-                const sharedFolderUid = getSharedFolderUid(response.folders, folder.parent)
-                if (!sharedFolderUid) {
-                    throw new Error('Folder data inconsistent - unable to locate shared folder')
+            try {
+                let decryptedData: Uint8Array
+                const decryptedFolder: KeeperFolder = {
+                    folderUid: folder.folderUid
                 }
-                await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, sharedFolderUid, storage, true, true)
-                decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
-            } else {
-                await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true, true)
-                decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
+                if (folder.parent) {
+                    decryptedFolder.parentUid = folder.parent
+                    const sharedFolderUid = getSharedFolderUid(response.folders, folder.parent)
+                    if (!sharedFolderUid) {
+                        throw new Error('Folder data inconsistent - unable to locate shared folder')
+                    }
+                    await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, sharedFolderUid, storage, true, true)
+                    decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
+                } else {
+                    await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true, true)
+                    decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
+                }
+                decryptedFolder.name = JSON.parse(platform.bytesToString(decryptedData))['name']
+                folders.push(decryptedFolder)
+            } catch (e: Error | any) {
+                console.error(`Folder ${folder.folderUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
             }
-            decryptedFolder.name = JSON.parse(platform.bytesToString(decryptedData))['name']
-            folders.push(decryptedFolder)
         }
     }
     return folders
