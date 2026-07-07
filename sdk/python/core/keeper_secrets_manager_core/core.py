@@ -1109,7 +1109,12 @@ class SecretsManager:
         response_str = bytes_to_string(response)
         response_dict = json_to_dict(response_str)
 
-        return response_dict.get('records')
+        records = response_dict.get('records') or []
+        for r in (records or []):
+            if r.get('responseCode') != 'ok':
+                self.logger.error("Failed to delete record %s: %s %s",
+                                  r.get('recordUid', '?'), r.get('responseCode', ''), r.get('errorMessage', ''))
+        return records
 
     def create_secret(self, folder_uid, record_data):
 
@@ -1233,7 +1238,12 @@ class SecretsManager:
         response_str = bytes_to_string(response)
         response_dict = json_to_dict(response_str)
 
-        return response_dict.get('folders', {}) if isinstance(response_dict, dict) else {}
+        folders = response_dict.get('folders') if isinstance(response_dict, dict) else None
+        for f in (folders or []):
+            if f.get('responseCode') != 'ok':
+                self.logger.error("Failed to delete folder %s: %s %s",
+                                  f.get('folderUid', '?'), f.get('responseCode', ''), f.get('errorMessage', ''))
+        return folders or []
 
     def upload_file(self, owner_record, file: KeeperFileUpload):
         """
