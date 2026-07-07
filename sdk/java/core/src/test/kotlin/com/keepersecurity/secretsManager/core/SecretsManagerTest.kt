@@ -270,6 +270,35 @@ internal class SecretsManagerTest {
         assertEquals(folderUid, record.folderUid)
     }
 
+    @Test
+    fun testGetFoldersSkipsUndecryptableFolder() {
+        // A single folder whose key cannot be decrypted must not abort getFolders(). The bad
+        // folder is skipped and the remaining good folder is still returned.
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+
+        val appKey = getRandomBytes(32)
+        val goodFolderKey = getRandomBytes(32)
+
+        val encGoodFolderKey = bytesToBase64(encrypt(goodFolderKey, appKey))
+        val encGoodData = bytesToBase64(encrypt(stringToBytes("""{"name":"Good Folder"}"""), goodFolderKey, true))
+        val badFolderKey = bytesToBase64(ByteArray(16) { it.toByte() })
+
+        val responseJson = """{"encryptedAppKey":null,"folders":[{"folderUid":"good-uid","folderKey":"$encGoodFolderKey","data":"$encGoodData","parent":null,"records":null},{"folderUid":"bad-uid","folderKey":"$badFolderKey","data":null,"parent":null,"records":null}],"records":null}"""
+        val encryptedResponse = encrypt(stringToBytes(responseJson), transmissionKey)
+
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+
+        val options = SecretsManagerOptions(storage, queryFunction = { _, _, _ -> KeeperHttpResponse(200, encryptedResponse) })
+        val folders = getFolders(options)
+
+        assertEquals(1, folders.size, "the undecryptable folder must be skipped, not abort the whole call")
+        assertEquals("good-uid", folders[0].folderUid)
+        assertEquals("Good Folder", folders[0].name)
+    }
+
 //    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (
