@@ -1296,13 +1296,25 @@ export const completeTransaction = async (options: SecretManagerOptions, recordU
 export const deleteSecret = async (options: SecretManagerOptions, recordUids: string[]): Promise<SecretsManagerDeleteResponse> => {
     const payload = await prepareDeletePayload(options.storage, recordUids)
     const responseData = await postQuery(options, 'delete_secret', payload)
-    return JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
+    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
+    for (const r of (response.records || [])) {
+        if (r.responseCode !== 'ok') {
+            console.error(`Failed to delete record ${r.recordUid}: ${r.responseCode} ${r.errorMessage}`)
+        }
+    }
+    return response
 }
 
 export const deleteFolder = async (options: SecretManagerOptions, folderUids: string[], forceDeletion?: boolean): Promise<SecretsManagerDeleteResponse> => {
     const payload = await prepareDeleteFolderPayload(options.storage, folderUids, forceDeletion)
     const responseData = await postQuery(options, 'delete_folder', payload)
-    return JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
+    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
+    for (const f of (response.folders || [])) {
+        if (f.responseCode !== 'ok') {
+            console.error(`Failed to delete folder ${f.folderUid}: ${f.responseCode} ${f.errorMessage}`)
+        }
+    }
+    return response
 }
 
 export const createSecret = async (options: SecretManagerOptions, folderUid: string, recordData: any): Promise<string> => {
