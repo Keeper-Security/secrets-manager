@@ -885,25 +885,28 @@ class SecretsManager:
 
         folders = []
         for folder in response_folders:
-            folder_key = folder.get('folderKey')
-            folder_parent = folder.get('parent', '') or ''
-            if not folder_parent:
-                folder_key = CryptoUtils.decrypt_aes(utils.base64_to_bytes(folder_key), app_key)
-            else:
-                shared_folder_key = SecretsManager.get_shared_folder_key(folders, response_folders, folder_parent)
-                folder_key = CryptoUtils.decrypt_aes_cbc(utils.base64_to_bytes(folder_key), shared_folder_key)
+            try:
+                folder_key = folder.get('folderKey')
+                folder_parent = folder.get('parent', '') or ''
+                if not folder_parent:
+                    folder_key = CryptoUtils.decrypt_aes(utils.base64_to_bytes(folder_key), app_key)
+                else:
+                    shared_folder_key = SecretsManager.get_shared_folder_key(folders, response_folders, folder_parent)
+                    folder_key = CryptoUtils.decrypt_aes_cbc(utils.base64_to_bytes(folder_key), shared_folder_key)
 
-            folder_name = ''
-            folder_data = folder.get('data', '')
-            if folder_data:
-                folder_data_json = CryptoUtils.decrypt_aes_cbc(utils.base64_to_bytes(folder_data), folder_key)
-                folder_data_dict = json.loads(folder_data_json.decode())
-                folder_name = folder_data_dict.get('name', '') or ''
-            fldr = KeeperFolder(folder_key,
-                                folder.get('folderUid', '') or '',
-                                folder_parent,
-                                folder_name)
-            folders.append(fldr)
+                folder_name = ''
+                folder_data = folder.get('data', '')
+                if folder_data:
+                    folder_data_json = CryptoUtils.decrypt_aes_cbc(utils.base64_to_bytes(folder_data), folder_key)
+                    folder_data_dict = json.loads(folder_data_json.decode())
+                    folder_name = folder_data_dict.get('name', '') or ''
+                fldr = KeeperFolder(folder_key,
+                                    folder.get('folderUid', '') or '',
+                                    folder_parent,
+                                    folder_name)
+                folders.append(fldr)
+            except Exception as e:
+                self.logger.warning('Folder %s skipped due to error: %s', folder.get('folderUid', ''), e)
         return folders
 
 
