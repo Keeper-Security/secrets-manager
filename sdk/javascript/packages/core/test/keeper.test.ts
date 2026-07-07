@@ -1,6 +1,7 @@
 import {
     KeeperHttpResponse,
     getSecrets,
+    getFolders,
     initializeStorage,
     generateTransmissionKey,
     platform,
@@ -365,4 +366,42 @@ test('IL5 dynamic key - Layer 2: rejects malformed (too short) serverPublicKey',
     await expect(
         initializeStorage(storage, 'IL5:ONE_TIME_TOKEN:20:tooshort')
     ).rejects.toThrow('IL5 token: serverPublicKey appears malformed')
+})
+
+test('getFolders skips an undecryptable folder and returns the good one', async () => {
+    const transmissionKey = new Uint8Array(32).fill(1)
+    const appKey = new Uint8Array(32).fill(2)
+    const folderKey = new Uint8Array(32).fill(3)
+
+    const goodFolderKeyWrapped = await platform.encryptWithKey(folderKey, appKey)
+    const goodFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Good Folder' })), folderKey, true)
+    const badFolderKeyWrapped = new Uint8Array(16).fill(9)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'good-uid', folderKey: platform.bytesToBase64(goodFolderKeyWrapped), data: platform.bytesToBase64(goodFolderData) },
+            { folderUid: 'bad-uid', folderKey: platform.bytesToBase64(badFolderKeyWrapped), data: '' }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    // postQuery uses options.queryFunction (not platform.post); pin getRandomBytes so the
+    // transmission key matches the key used to encrypt the response above.
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders.length).toBe(1)
+    expect(folders[0].folderUid).toBe('good-uid')
+    expect(folders[0].name).toBe('Good Folder')
 })
