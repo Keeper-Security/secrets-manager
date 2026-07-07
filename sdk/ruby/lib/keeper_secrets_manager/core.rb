@@ -16,7 +16,8 @@ module KeeperSecretsManager
       # per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
       # request, so the counter only clears after 10s of silence).
       MAX_THROTTLE_RETRIES = 5
-      BASE_THROTTLE_DELAY_SEC = 11 # 1s safety margin over the backend's 10s memcached TTL
+      BASE_THROTTLE_DELAY_SEC = 11  # 1s safety margin over the backend's 10s memcached TTL
+      MAX_THROTTLE_DELAY_SEC = 176  # cap on server-supplied retry_after (BASE * 2**4)
 
       # Field types that can be inflated
       INFLATE_REF_TYPES = {
@@ -1380,11 +1381,13 @@ module KeeperSecretsManager
       end
 
       # Backoff delay (seconds) for a 0-based attempt: retry_after when > 0, otherwise exponential
-      # backoff (BASE_THROTTLE_DELAY_SEC * 2**attempt -> 11, 22, 44, 88, 176s). A +/-25% jitter is
-      # then applied to desynchronize concurrent clients retrying at the same time.
+      # backoff (BASE_THROTTLE_DELAY_SEC * 2**attempt -> 11, 22, 44, 88, 176s). A 0 to +25% jitter
+      # is applied (one-sided so delay is always >= floor, preventing a retry before the backend's
+      # 10s memcached window expires).
       def throttle_delay(attempt, retry_after = 0)
         base = retry_after.to_f.positive? ? retry_after.to_f : BASE_THROTTLE_DELAY_SEC * (2**attempt)
-        delay = base + base * rand(-0.25..0.25)
+        base = MAX_THROTTLE_DELAY_SEC if base > MAX_THROTTLE_DELAY_SEC
+        delay = base + base * rand(0.0..0.25)
         delay.negative? ? 0.0 : delay
       end
 
