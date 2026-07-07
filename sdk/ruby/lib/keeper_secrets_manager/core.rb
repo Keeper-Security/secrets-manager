@@ -342,7 +342,12 @@ module KeeperSecretsManager
         response = post_query('delete_secret', payload)
 
         result = JSON.parse(response)
-        result['records']
+        records = result['records'] || []
+        records.each do |r|
+          next if r['responseCode'] == 'ok'
+          @logger.error("Failed to delete record #{r['recordUid']}: #{r['responseCode']} #{r['errorMessage']}")
+        end
+        records
       end
 
       # Get notation value
@@ -472,7 +477,12 @@ module KeeperSecretsManager
         response = post_query('delete_folder', payload)
 
         result = JSON.parse(response)
-        result['folders']
+        folders = result['folders'] || []
+        folders.each do |f|
+          next if f['responseCode'] == 'ok'
+          @logger.error("Failed to delete folder #{f['folderUid']}: #{f['responseCode']} #{f['errorMessage']}")
+        end
+        folders
       end
 
       # Get folder hierarchy manager
