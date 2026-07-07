@@ -1429,16 +1429,20 @@ private fun fetchAndDecryptFolders(
     val folders: MutableList<KeeperFolder> = mutableListOf()
     val appKey = storage.getBytes(KEY_APP_KEY) ?: throw SecretsManagerException("App key is missing from the storage")
     response.folders.forEach { folder ->
-        val folderKey: ByteArray = if (folder.parent == null) {
-            decrypt(folder.folderKey, appKey)
-        } else {
-            val sharedFolderKey = getSharedFolderKey(folders, response.folders, folder.parent) ?: throw SecretsManagerException("Folder data inconsistent - unable to locate shared folder")
-            decrypt(folder.folderKey, sharedFolderKey, true)
+        try {
+            val folderKey: ByteArray = if (folder.parent == null) {
+                decrypt(folder.folderKey, appKey)
+            } else {
+                val sharedFolderKey = getSharedFolderKey(folders, response.folders, folder.parent) ?: throw SecretsManagerException("Folder data inconsistent - unable to locate shared folder")
+                decrypt(folder.folderKey, sharedFolderKey, true)
+            }
+            val decryptedData = decrypt(folder.data!!, folderKey, true)
+            val folderNameJson = bytesToString(decryptedData)
+            val folderName = nonStrictJson.decodeFromString<KeeperFolderName>(folderNameJson)
+            folders.add(KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name))
+        } catch (e: Exception) {
+            System.err.println("Folder ${folder.folderUid} skipped due to error: ${e.message}")
         }
-        val decryptedData = decrypt(folder.data!!, folderKey, true)
-        val folderNameJson = bytesToString(decryptedData)
-        val folderName = nonStrictJson.decodeFromString<KeeperFolderName>(folderNameJson)
-        folders.add(KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name))
     }
     return folders
 }
