@@ -567,10 +567,12 @@ namespace SecretsManager
         // request, so the counter only clears after 10s of silence).
         private const int MaxThrottleRetries = 5;
         private const int BaseThrottleDelaySec = 11; // 1s safety margin over the backend's 10s memcached TTL
+        private const int MaxThrottleDelaySec = 176; // cap on server-supplied retry_after (baseThrottleDelaySec * 2^4)
         private static readonly Random ThrottleRng = new Random();
 
-        // Jitter multiplier in [-0.25, 0.25). A settable seam so unit tests can pin it.
-        internal static Func<double> ThrottleJitter = () => ThrottleRng.NextDouble() * 0.5 - 0.25;
+        // Jitter multiplier in [0, 0.25). One-sided so delay is always >= floor, preventing a retry
+        // before the backend's 10s memcached window expires. A settable seam so unit tests can pin it.
+        internal static Func<double> ThrottleJitter = () => ThrottleRng.NextDouble() * 0.25;
 
         private const string ClientIdHashTag = "KEEPER_SECRETS_MANAGER_CLIENT_ID"; // Tag for hashing the client key to client id
 
@@ -1615,11 +1617,12 @@ namespace SecretsManager
         /// <summary>
         /// Computes the backoff delay (milliseconds) for a 0-based attempt: retry_after seconds when
         /// provided (&gt; 0), otherwise exponential backoff (BaseThrottleDelaySec * 2**attempt -> 11,
-        /// 22, 44, 88, 176s). The jitter fraction (random in [-0.25, 0.25) unless pinned) is applied.
+        /// 22, 44, 88, 176s), capped at MaxThrottleDelaySec. A 0 to +25% jitter is then applied.
         /// </summary>
         internal static int ThrottleDelayMs(int attempt, double retryAfter, double? jitter = null)
         {
             var baseSec = retryAfter > 0 ? retryAfter : BaseThrottleDelaySec * Math.Pow(2, attempt);
+            if (baseSec > MaxThrottleDelaySec) baseSec = MaxThrottleDelaySec;
             var sec = baseSec + baseSec * (jitter ?? ThrottleJitter());
             return (int)(Math.Max(sec, 0) * 1000);
         }
