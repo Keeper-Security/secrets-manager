@@ -1661,88 +1661,89 @@ impl SecretsManager {
         };
         let app_key = base64_to_bytes(app_key_base64.as_str())?;
 
-        let empty_vec_for_folder = Vec::new();
         let folders_resp = decrypted_response_dict
             .get("folders")
-            .unwrap()
-            .as_array()
-            .unwrap_or(&empty_vec_for_folder);
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
 
         if folders_resp.is_empty() {
             return Ok(Vec::new());
         }
 
         let mut folders: Vec<KeeperFolder> = Vec::new();
-        for folder in folders_resp {
-            let folder_obj = folder
-                .as_object()
-                .unwrap()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.clone()))
-                .collect::<HashMap<String, Value>>();
-            let folder_key_string = match folder_obj.get("folderKey") {
-                Some(folder_key_value) => folder_key_value.as_str().unwrap().to_string(),
-                None => "".to_string(),
-            };
-
-            let folder_parent = match folder_obj.get("parent") {
-                Some(folder_parent_value) => match folder_parent_value.as_str() {
-                    Some(folder_parent_val) => folder_parent_val.to_string(),
-                    None => "".to_string(),
-                },
-                None => "".to_string(),
-            };
-            let mut _folder_key = Vec::new();
-            if folder_parent.is_empty() {
-                let folder_key_bytes = utils::base64_to_bytes(&folder_key_string)?;
-                _folder_key = CryptoUtils::decrypt_aes(&folder_key_bytes, &app_key)?;
-            } else {
-                let shared_folder_key = self
-                    .clone()
-                    .get_shared_folder_key(
-                        folders.clone(),
-                        folders_resp.to_vec(),
-                        folder_parent.clone(),
-                    )
-                    .unwrap_or_default();
-                let folder_key_bytes = utils::base64_to_bytes(&folder_key_string)?;
-                _folder_key = CryptoUtils::decrypt_aes_cbc(&folder_key_bytes, &shared_folder_key)?;
-            }
-
-            let mut _folder_name = "".to_string();
-            let folder_data = match folder_obj.get("data") {
-                Some(folder_data_value) => match folder_data_value.as_str() {
-                    Some(folder_data_val) => folder_data_val.to_string(),
-                    None => "".to_string(),
-                },
-                None => "".to_string(),
-            };
-
-            if !folder_data.is_empty() {
-                let folder_data_bytes = utils::base64_to_bytes(&folder_data)?;
-                _folder_key = match _folder_key.len() {
-                    32 => _folder_key,
-                    _ => unpad_data(&_folder_key)?,
-                };
-
-                let folder_data_json_bytes_decrypted =
-                    CryptoUtils::decrypt_aes_cbc(&folder_data_bytes, &_folder_key)?;
-                let folder_data_string =
-                    utils::bytes_to_string_unpad(&folder_data_json_bytes_decrypted)?;
-                let folder_data_dict: serde_json::Value =
-                    serde_json::from_str(&folder_data_string)?;
-                _folder_name = folder_data_dict
+        for folder in &folders_resp {
+            let folder_uid = folder
+                .get("folderUid")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let result: Result<KeeperFolder, KSMRError> = (|| {
+                let folder_obj = folder
                     .as_object()
-                    .unwrap()
-                    .get("name")
-                    .unwrap()
-                    .as_str()
-                    .unwrap()
+                    .ok_or_else(|| KSMRError::RecordDataError("Folder is not an object".to_string()))?
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect::<HashMap<String, Value>>();
+                let folder_key_string = folder_obj
+                    .get("folderKey")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
                     .to_string();
+                let folder_parent = folder_obj
+                    .get("parent")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let mut _folder_key = Vec::new();
+                if folder_parent.is_empty() {
+                    let folder_key_bytes = utils::base64_to_bytes(&folder_key_string)?;
+                    _folder_key = CryptoUtils::decrypt_aes(&folder_key_bytes, &app_key)?;
+                } else {
+                    let shared_folder_key = self
+                        .clone()
+                        .get_shared_folder_key(
+                            folders.clone(),
+                            folders_resp.clone(),
+                            folder_parent.clone(),
+                        )
+                        .ok_or_else(|| KSMRError::RecordDataError(
+                            "Folder data inconsistent - unable to locate shared folder".to_string(),
+                        ))?;
+                    let folder_key_bytes = utils::base64_to_bytes(&folder_key_string)?;
+                    _folder_key = CryptoUtils::decrypt_aes_cbc(&folder_key_bytes, &shared_folder_key)?;
+                }
+                let folder_data = folder_obj
+                    .get("data")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let mut _folder_name = String::new();
+                if !folder_data.is_empty() {
+                    let folder_data_bytes = utils::base64_to_bytes(&folder_data)?;
+                    _folder_key = match _folder_key.len() {
+                        32 => _folder_key,
+                        _ => unpad_data(&_folder_key)?,
+                    };
+                    let folder_data_json_bytes_decrypted =
+                        CryptoUtils::decrypt_aes_cbc(&folder_data_bytes, &_folder_key)?;
+                    let folder_data_string =
+                        utils::bytes_to_string_unpad(&folder_data_json_bytes_decrypted)?;
+                    let folder_data_dict: serde_json::Value =
+                        serde_json::from_str(&folder_data_string)?;
+                    _folder_name = folder_data_dict
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                }
+                let folder_ = KeeperFolder::new(&folder_obj, _folder_key)?;
+                Ok(folder_)
+            })();
+            match result {
+                Ok(f) => folders.push(f),
+                Err(e) => warn!("Folder {} skipped due to error: {}", folder_uid, e),
             }
-
-            let folder_ = KeeperFolder::new(&folder_obj, _folder_key)?;
-            folders.push(folder_);
         }
         Ok(folders)
     }
