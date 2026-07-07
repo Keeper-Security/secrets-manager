@@ -690,6 +690,18 @@ data class SecretsManagerDeleteResponseRecord(
 )
 
 @Serializable
+data class SecretsManagerDeleteFolderResponseRecord(
+    val errorMessage: String? = null,
+    val folderUid: String,
+    val responseCode: String
+)
+
+@Serializable
+data class SecretsManagerDeleteFolderResponse(
+    val folders: List<SecretsManagerDeleteFolderResponseRecord>
+)
+
+@Serializable
 private data class SecretsManagerAddFileResponse(
     val url: String,
     val parameters: String,
@@ -1069,14 +1081,26 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
 fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>): SecretsManagerDeleteResponse {
     val payload = prepareDeletePayload(options.storage, recordUids)
     val responseData = postQuery(options, "delete_secret", payload)
-    return nonStrictJson.decodeFromString(bytesToString(responseData))
+    val response: SecretsManagerDeleteResponse = nonStrictJson.decodeFromString(bytesToString(responseData))
+    for (r in response.records) {
+        if (r.responseCode != "ok") {
+            System.err.println("Failed to delete record ${r.recordUid}: ${r.responseCode} ${r.errorMessage ?: ""}")
+        }
+    }
+    return response
 }
 
 @ExperimentalSerializationApi
-fun deleteFolder(options: SecretsManagerOptions, folderUids: List<String>, forceDeletion: Boolean = false): SecretsManagerDeleteResponse {
+fun deleteFolder(options: SecretsManagerOptions, folderUids: List<String>, forceDeletion: Boolean = false): SecretsManagerDeleteFolderResponse {
     val payload = prepareDeleteFolderPayload(options.storage, folderUids, forceDeletion)
     val responseData = postQuery(options, "delete_folder", payload)
-    return nonStrictJson.decodeFromString(bytesToString(responseData))
+    val response: SecretsManagerDeleteFolderResponse = nonStrictJson.decodeFromString(bytesToString(responseData))
+    for (f in response.folders) {
+        if (f.responseCode != "ok") {
+            System.err.println("Failed to delete folder ${f.folderUid}: ${f.responseCode} ${f.errorMessage ?: ""}")
+        }
+    }
+    return response
 }
 
 @ExperimentalSerializationApi
