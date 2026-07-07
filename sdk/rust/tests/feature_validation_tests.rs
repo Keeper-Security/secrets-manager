@@ -706,4 +706,100 @@ mod feature_validation_tests {
             second
         );
     }
+
+    /// Regression test for get_folders() crash-safety: one undecryptable folder
+    /// must not abort the whole call.
+    ///
+    /// `fetch_and_decrypt_folders` decrypts each folder inside a per-folder IIFE
+    /// closure and skips (logs) any folder whose crypto fails, instead of
+    /// propagating the first error out of the loop. This drives that path with a
+    /// server response containing two root folders:
+    ///   - "good-uid": folder key AES-GCM-encrypted with the app key, folder data
+    ///     `{"name":"Good Folder"}` AES-CBC-encrypted with the folder key.
+    ///   - "bad-uid": folder key is 16 zero bytes, which fails AES-GCM auth.
+    ///
+    /// A pass proves the bad folder is dropped and the good one is returned. A
+    /// failure means either the old crash behavior (Err), both folders dropped
+    /// (0 returned), or the bad folder leaking through (2 returned).
+    #[test]
+    fn test_get_folders_skips_undecryptable_folder() {
+        use keeper_secrets_manager_core::utils::bytes_to_base64;
+
+        let app_key = CryptoUtils::generate_encryption_key_bytes();
+        let app_key_base64 = bytes_to_base64(&app_key);
+
+        let good_folder_key = CryptoUtils::generate_encryption_key_bytes();
+        let good_folder_key_enc = CryptoUtils::encrypt_aes_gcm(&good_folder_key, &app_key, None)
+            .expect("Failed to encrypt good folder key");
+        let good_folder_key_b64 = bytes_to_base64(&good_folder_key_enc);
+
+        let good_folder_data = json!({ "name": "Good Folder" }).to_string().into_bytes();
+        let good_folder_data_enc =
+            CryptoUtils::encrypt_aes_cbc(&good_folder_data, &good_folder_key, None)
+                .expect("Failed to encrypt good folder data");
+        let good_folder_data_b64 = bytes_to_base64(&good_folder_data_enc);
+
+        // 16 zero bytes: too short to be a valid AES-GCM ciphertext, so
+        // decrypt_aes (GCM) fails authentication and this folder is skipped.
+        let bad_folder_key_b64 = bytes_to_base64(&[0u8; 16]);
+
+        let response = json!({
+            "folders": [
+                {
+                    "folderUid": "good-uid",
+                    "folderKey": good_folder_key_b64,
+                    "data": good_folder_data_b64
+                },
+                {
+                    "folderUid": "bad-uid",
+                    "folderKey": bad_folder_key_b64,
+                    "data": ""
+                }
+            ],
+            "records": [],
+            "expiresOn": 0,
+            "warnings": []
+        });
+        let response_bytes = response.to_string().into_bytes();
+
+        let mut storage = create_test_storage().expect("Failed to create storage");
+        storage
+            .set(ConfigKeys::KeyAppKey, app_key_base64)
+            .expect("Failed to set app key");
+
+        let mut client_options = ClientOptions::new_client_options(storage);
+        client_options.set_custom_post_function(
+            move |_url: String,
+                  transmission_key: TransmissionKey,
+                  _payload: EncryptedPayload| {
+                let encrypted =
+                    CryptoUtils::encrypt_aes_gcm(&response_bytes, &transmission_key.key, None)?;
+                Ok(KsmHttpResponse {
+                    status_code: 200,
+                    data: encrypted,
+                    http_response: None,
+                })
+            },
+        );
+        let mut sm = SecretsManager::new(client_options).expect("Failed to create SecretsManager");
+
+        let result = sm.get_folders();
+        assert!(
+            result.is_ok(),
+            "get_folders() must not fail when one folder is undecryptable, got: {:?}",
+            result
+        );
+
+        let folders = result.unwrap();
+        let uids: Vec<String> = folders.iter().map(|f| f.folder_uid.clone()).collect();
+        assert_eq!(
+            folders.len(),
+            1,
+            "expected exactly 1 folder (bad one skipped), got {}: {:?}",
+            folders.len(),
+            uids
+        );
+        assert_eq!(folders[0].folder_uid, "good-uid");
+        assert_eq!(folders[0].name, "Good Folder");
+    }
 }
