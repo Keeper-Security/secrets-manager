@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- KSM-879 - Added automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `PostQuery` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus ±25% jitter, honoring `retry_after` from the response when present; a typed `KeeperThrottleException` is thrown once retries are exhausted. `KeeperHttpResponse` now carries the HTTP `StatusCode` so the retry is gated on 403. Existing key-rotation retry behavior is unchanged.
+- KSM-879 - Added automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `PostQuery` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus 0–25% jitter (one-sided, so the delay always meets or exceeds the floor), honoring `retry_after` from the response when present; a typed `KeeperThrottleException` is thrown once retries are exhausted. `KeeperHttpResponse` now carries the HTTP `StatusCode` so the retry is gated on 403. Existing key-rotation retry behavior is unchanged.
 
 ## [17.1.2]
 
