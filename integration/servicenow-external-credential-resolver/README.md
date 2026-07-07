@@ -2,7 +2,7 @@
 This is the ServiceNow MID Server custom external credential resolver for the Keeper vault credential storage.
 
 # Pre-requisites:
-Keeper External Credential Resolver requires JDK 1.8 or newer  
+Keeper External Credential Resolver requires JDK 11 to build. The published JAR is built with the Java 11 toolchain and runs on the MID Server JRE (JRE 11 for Vancouver; JRE 17 for Washington DC and newer).  
 IntelliJ IDEA or any equivalent IDE
 
 > ⚠️ JRE 8 versions prior to u161 require strong cryptography (JCE) to be enabled.
@@ -15,15 +15,15 @@ Latest versions of JRE have strong cryptography enabled [by default](https://bug
 * Update the code in CredentialResolver.java to customize anything.
 * Use the following gradle command or IDE (IntelliJ or Eclipse) gradle build option to build the jar:
   > gradle jar  
-* keeper-external-credentials-0.1.0.jar will be generated under target folder.
+* keeper-external-credentials-1.0.0.jar will be generated under the build/libs folder. (A local `gradle jar` includes both resolver class names; the published per-ServiceNow-release JARs are split into `fqcn`/`legacy` variants - see "Registering the resolver" below. Pass `-PresolverVariant=fqcn` or `-PresolverVariant=legacy` to reproduce a specific variant locally.)
 
 # Steps to install and use Keeper Secrets Manager as external credential resolver
 
 * Make sure that "External Credential Storage" plugin (com.snc.discovery.external_credentials) is installed in your ServiceNow instance.
-* Import the keeper-external-credentials-0.1.0.jar file from target folder in ServiceNow instance.
+* Import the keeper-external-credentials JAR for your ServiceNow release (see "Registering the resolver" below) into the ServiceNow instance. For a local build, use keeper-external-credentials-1.0.0.jar from the build/libs folder.
     - Navigate to MID Server – JAR Files
     - Create a New Record by clicking New
-    - Name it "KeeperCredentialResolver", version 0.1.0 and attach keeper-external-credentials-0.1.0.jar from target folder.
+    - Name it "KeeperCredentialResolver", version 1.0.0 and attach the JAR.
     - Click Submit
 * Update the _config.xml_ in MID Server with following parameters and restart the MID Server.  
   `<parameter name="ext.cred.keeper.ksm_config" secure="true" value="<ksm-config-base64-string>"/>`  
@@ -31,6 +31,24 @@ Latest versions of JRE have strong cryptography enabled [by default](https://bug
 * Create Credential in the instance with "External credential store" flag activated.
 * Ensure that the "Credential ID" matches a record UID in your Keeper vault.
 * Ensure that the record in the vault contains fields matching the ServiceNow credential record fields - ex. record _type=login_ or any record type with custom fields of _type=hidden_ or _type=text_ with labels matching with the column names in discovery_credential table, where each label is prefixed with  "mid_" (ex. GCP Credential requires a record with two custom fields labelled: mid_email and mid_secret_key)
+
+# Registering the resolver (class name / FQCN)
+Each release publishes one JAR per supported ServiceNow version, in one of two variants depending on the release:
+
+* **Pre-Xanadu (Utah, Vancouver, Washington DC)** select the resolver by the shared credential-resolver class name `com.snc.discovery.CredentialResolver` (the default; only one such resolver JAR can be used per MID Server).
+* **Xanadu and newer (Xanadu, Yokohama Patch 7+, Zurich)** let you set a **Fully Qualified Class Name (FQCN)** on the External Credential Resolver configuration. Set it to `com.snc.discovery.keeper.KeeperCredentialResolver`. These (`fqcn`-variant) JARs ship **only** that class - not the shared `com.snc.discovery.CredentialResolver` - so the Keeper resolver can coexist with other vendors' resolvers (CyberArk, HashiCorp, Delinea, …) on the same MID Server, which is not possible when every resolver JAR ships `com.snc.discovery.CredentialResolver`.
+
+### Compatibility matrix
+| ServiceNow release | MID Server JRE | Resolver class / FQCN to configure |
+| --- | --- | --- |
+| Utah | JRE 11 | `com.snc.discovery.CredentialResolver` |
+| Vancouver | JRE 11 | `com.snc.discovery.CredentialResolver` |
+| Washington DC | JRE 17 | `com.snc.discovery.CredentialResolver` |
+| Xanadu | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
+| Yokohama (Patch 7+) | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
+| Zurich | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
+
+Each JAR is built with the Java 11 toolchain, so it runs on both JRE 11 (Vancouver) and JRE 17 (Washington DC and newer). ServiceNow releases older than Utah (Tokyo, San Diego, Rome) are past support and are not built for this release.
 
 # Finding records
 Credential ID (credId parameter) passed from MID Server to Credential Resolver must be either a valid record UID (22 alphanumeric characters incl. "-" and "_") or in the following format type:title. The second format allows searches by type only or by title only (or both, but single ":" is invalid combination)
@@ -71,6 +89,8 @@ The credential map returned from the resolve method is expected to have keys mat
 # Throttles and cache
 The plugin will try to resolve _"throttled"_ errors by default by adding a random delays and retrying later, which works well for up to 1000-3000 requests per 10 sec interval (throttles start after 300-600 requests/10 sec) If you expect 5000+ requests in less than 10 seconds we recommend to enable caching by setting `ext.cred.keeper.use_ksm_cache` parameter to `"true"` in _config.xml_ and restarting the MID Server. Cached data is stored in an encrypted file `ksm_cache.dat` in MID Server's work folder. Cache is updated at most once every 5 minutes or with the next request.
 
+> ️ⓘ Enabling the cache (or using the `type:title` credential ID form) makes the resolver fetch **all** records shared to the Keeper Secrets Manager application, not just the target record. To minimize what is fetched, prefer **record-UID** credential IDs (a UID lookup is filtered server-side). The resolver tolerates PAM and other record types shared to the same application - the bundled SDK (0.2.0+ / KSM SDK 17.x) skips records it cannot parse instead of failing the whole fetch.
+
 # Troubleshooting
 ### Check the logs
 Check the log files inside `logs/` in the agent installation folder for logs and errors. The resolver logs a line for each credential ID that it successfully queries, and also logs the fields that the credentials were extracted from.
@@ -78,6 +98,9 @@ Check the log files inside `logs/` in the agent installation folder for logs and
 If a particular credential ID is failing, search for that ID in the logs, and check that it is successfully queried and that the credentials were extracted from the fields you expected.
 
 You will also find any exceptions that the resolver throws in the logs, including errors locating a record or finding fields, or if it couldn't communicate with Keeper vault.
+
+### `Serializer for subclass 'pamSettings' is not found` (or a similar polymorphic error)
+This error in the MID Server logs means the deployed resolver JAR bundles an old Keeper Secrets Manager SDK that predates newer field/record types (such as PAM records) shared to the same application. Upgrade to resolver JAR **0.2.0 or newer** (which bundles a current KSM SDK). As an interim workaround you can remove PAM records from the application's shared folder, disable the cache, and use record-UID credential IDs.
 
 ### Use the Test credential feature
 When creating or configuring a credential in the ServiceNow UI, you should be able to click "Test credential" to perform a quick targeted test. Select the MID server that should query Keeper vault, and select a target that the credential should work for to check that everything works as expected. If it doesn't, check the logs for errors and debug information as detailed above.
