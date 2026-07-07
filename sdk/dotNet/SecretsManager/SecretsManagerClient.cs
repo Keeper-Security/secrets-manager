@@ -1188,20 +1188,27 @@ namespace SecretsManager
 
             foreach (var folder in response.folders)
             {
-                byte[] folderKey;
-                if (folder.parent == null)
+                try
                 {
-                    folderKey = CryptoUtils.Decrypt(folder.folderKey, appKey);
-                }
-                else
-                {
-                    var sharedFolderKey = GetSharedFolderKey(folders, response.folders, folder.parent);
-                    folderKey = CryptoUtils.Decrypt(folder.folderKey, sharedFolderKey, true);
-                }
+                    byte[] folderKey;
+                    if (folder.parent == null)
+                    {
+                        folderKey = CryptoUtils.Decrypt(folder.folderKey, appKey);
+                    }
+                    else
+                    {
+                        var sharedFolderKey = GetSharedFolderKey(folders, response.folders, folder.parent);
+                        folderKey = CryptoUtils.Decrypt(folder.folderKey, sharedFolderKey, true);
+                    }
 
-                var folderNameJson = CryptoUtils.Decrypt(folder.data, folderKey, true);
-                var folderName = JsonUtils.ParseJson<KeeperFolderName>(folderNameJson);
-                folders.Add(new KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name));
+                    var folderNameJson = CryptoUtils.Decrypt(folder.data, folderKey, true);
+                    var folderName = JsonUtils.ParseJson<KeeperFolderName>(folderNameJson);
+                    folders.Add(new KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name));
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Folder {folder.folderUid} skipped due to error: {ex.GetType().Name}, {ex.Message}");
+                }
             }
             return folders.ToArray();
         }
