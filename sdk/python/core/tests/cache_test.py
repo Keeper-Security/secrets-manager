@@ -66,6 +66,35 @@ class CacheTest(unittest.TestCase):
             finally:
                 KSMCache.kms_cache_file_name = original
 
+    def test_override_equal_to_default_text_is_still_honored(self):
+        """An explicit kms_cache_file_name override must win even when its text equals the
+        import-time default and KSM_CACHE_DIR is set afterward.
+
+        Regression guard: a value-equality check treated a same-text override as "not set"
+        and silently re-derived the path from KSM_CACHE_DIR. Identity-based detection fixes it.
+        """
+        original_override = KSMCache.kms_cache_file_name
+        original_env = os.environ.get("KSM_CACHE_DIR")
+        try:
+            # A distinct str object whose text equals the import-time default.
+            colliding_override = str(KSMCache._default_cache_file_name)
+            KSMCache.kms_cache_file_name = colliding_override
+            # Env set AFTER the override; the old code re-derived from this and dropped it.
+            os.environ["KSM_CACHE_DIR"] = os.path.join("some", "other", "dir")
+
+            self.assertEqual(
+                colliding_override,
+                KSMCache.get_cache_file_path(),
+                "explicit kms_cache_file_name override must take precedence over "
+                "KSM_CACHE_DIR even when its text equals the default",
+            )
+        finally:
+            KSMCache.kms_cache_file_name = original_override
+            if original_env is None:
+                os.environ.pop("KSM_CACHE_DIR", None)
+            else:
+                os.environ["KSM_CACHE_DIR"] = original_env
+
 
 if __name__ == "__main__":
     unittest.main()

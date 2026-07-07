@@ -1903,21 +1903,35 @@ class SecretsManager:
         return value
 
 
+# A str subclass used only as the import-time default-cache-path sentinel. Because it is a
+# distinct subclass and a fresh instance, an explicit kms_cache_file_name assignment can
+# never be object-identical to it, so get_cache_file_path detects an override by identity
+# rather than value. That holds even when the override's text equals the default. It
+# behaves as an ordinary str everywhere else.
+class _DefaultCachePath(str):
+    pass
+
+
 class KSMCache:
-    # Default cache file name. The directory is read lazily from KSM_CACHE_DIR at call
-    # time (see get_cache_file_path), so setting the env var after import is honored. If
-    # not set, the cache file is created in the current working directory. Assigning
-    # kms_cache_file_name directly still overrides the full path (backward compatibility).
-    kms_cache_file_name = os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
-    # Snapshot of the import-time default, used to detect an explicit override above.
-    _default_cache_file_name = kms_cache_file_name
+    # Import-time default cache path. The directory is read lazily from KSM_CACHE_DIR at
+    # call time (see get_cache_file_path), so setting the env var after import is honored;
+    # if unset, the cache file is created in the current working directory. Assigning
+    # kms_cache_file_name directly overrides the full path (backward compatibility); the
+    # override is detected by object identity against this sentinel, so it holds even when
+    # the assigned value equals the default text. (Re-assign _default_cache_file_name to
+    # restore the default.)
+    _default_cache_file_name = _DefaultCachePath(
+        os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
+    )
+    kms_cache_file_name = _default_cache_file_name
 
     @classmethod
     def get_cache_file_path(cls):
-        # An explicit assignment to kms_cache_file_name takes precedence (backward compat)...
-        if cls.kms_cache_file_name != cls._default_cache_file_name:
+        # An explicit assignment to kms_cache_file_name takes precedence (backward compat);
+        # detected by identity so a same-text override is not mistaken for the default.
+        if cls.kms_cache_file_name is not cls._default_cache_file_name:
             return cls.kms_cache_file_name
-        # ...otherwise resolve the directory from KSM_CACHE_DIR at call time.
+        # Otherwise resolve the directory from KSM_CACHE_DIR at call time.
         return os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
 
     @staticmethod
