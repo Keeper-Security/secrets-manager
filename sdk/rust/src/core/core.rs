@@ -2124,7 +2124,10 @@ impl SecretsManager {
                     dict_value.get("recordUid").cloned()
                 } else {
                     if let Some(record_uid) = dict_value.get("recordUid") {
-                        error!("Failed to delete secret: {}", record_uid);
+                        error!("Failed to delete secret {}: {} {}",
+                            record_uid,
+                            dict_value.get("responseCode").map(|s| s.trim_matches('"')).unwrap_or(""),
+                            dict_value.get("errorMessage").map(|s| s.trim_matches('"')).unwrap_or(""));
                     }
                     None
                 }
@@ -2190,6 +2193,14 @@ impl SecretsManager {
                     |e| KSMRError::DeserializationError(format!("Failed to parse response: {}", e)),
                 )
             })?;
+        for folder in &folders {
+            let response_code = folder.get("responseCode").and_then(|v| v.as_str()).unwrap_or("");
+            if response_code != "ok" {
+                let folder_uid = folder.get("folderUid").and_then(|v| v.as_str()).unwrap_or("?");
+                let error_msg = folder.get("errorMessage").and_then(|v| v.as_str()).unwrap_or("");
+                warn!("Failed to delete folder {}: {} {}", folder_uid, response_code, error_msg);
+            }
+        }
         Ok(folders)
     }
 
