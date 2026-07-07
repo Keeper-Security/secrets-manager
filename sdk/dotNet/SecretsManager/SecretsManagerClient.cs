@@ -229,6 +229,30 @@ namespace SecretsManager
         }
     }
 
+    internal class DeleteSecretResponseRecord
+    {
+        public string recordUid { get; set; }
+        public string responseCode { get; set; }
+        public string errorMessage { get; set; }
+    }
+
+    internal class DeleteSecretResponse
+    {
+        public DeleteSecretResponseRecord[] records { get; set; }
+    }
+
+    internal class DeleteFolderResponseRecord
+    {
+        public string folderUid { get; set; }
+        public string responseCode { get; set; }
+        public string errorMessage { get; set; }
+    }
+
+    internal class DeleteFolderResponseBody
+    {
+        public DeleteFolderResponseRecord[] folders { get; set; }
+    }
+
     internal class CreatePayload
     {
         public string clientVersion { get; }
@@ -898,13 +922,25 @@ namespace SecretsManager
         public static async Task DeleteSecret(SecretsManagerOptions options, string[] recordsUids)
         {
             var payload = PrepareDeletePayload(options.Storage, recordsUids);
-            await PostQuery(options, "delete_secret", payload);
+            var responseData = await PostQuery(options, "delete_secret", payload);
+            var response = JsonUtils.ParseJson<DeleteSecretResponse>(responseData);
+            foreach (var r in response?.records ?? Array.Empty<DeleteSecretResponseRecord>())
+            {
+                if (r.responseCode != "ok")
+                    Console.Error.WriteLine($"Failed to delete record {r.recordUid}: {r.responseCode} {r.errorMessage}");
+            }
         }
 
         public static async Task DeleteFolder(SecretsManagerOptions options, string[] folderUids, bool forceDeletion = false)
         {
             var payload = PrepareDeleteFolderPayload(options.Storage, folderUids, forceDeletion);
-            await PostQuery(options, "delete_folder", payload);
+            var responseData = await PostQuery(options, "delete_folder", payload);
+            var response = JsonUtils.ParseJson<DeleteFolderResponseBody>(responseData);
+            foreach (var f in response?.folders ?? Array.Empty<DeleteFolderResponseRecord>())
+            {
+                if (f.responseCode != "ok")
+                    Console.Error.WriteLine($"Failed to delete folder {f.folderUid}: {f.responseCode} {f.errorMessage}");
+            }
         }
 
         public static async Task<string> CreateSecret(SecretsManagerOptions options, string folderUid, KeeperRecordData recordData, KeeperSecrets secrets = null)
