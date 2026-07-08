@@ -127,8 +127,8 @@ jobs:
       - name: Create Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tagname }}
         run: |
-          TAG="${{ github.event.inputs.tagname }}"
           GRADLE_CFG=./build.gradle.kts
           BUILD_NAME=`fgrep archivesName $GRADLE_CFG | sed -r 's/^\s*archivesName\s*=\s*//g' | sed 's/"//g'`
           BUILD_VERSION=`fgrep version $GRADLE_CFG | sed -r 's/^version[[:space:]]*=?[[:space:]]*//g' | sed 's/"//g'`
