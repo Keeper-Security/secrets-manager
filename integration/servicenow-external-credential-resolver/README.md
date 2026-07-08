@@ -36,7 +36,7 @@ Latest versions of JRE have strong cryptography enabled [by default](https://bug
 Each release publishes one JAR per supported ServiceNow version, in one of two variants depending on the release:
 
 * **Pre-Xanadu (Utah, Vancouver, Washington DC)** select the resolver by the shared credential-resolver class name `com.snc.discovery.CredentialResolver` (the default; only one such resolver JAR can be used per MID Server).
-* **Xanadu and newer (Xanadu, Yokohama Patch 7+, Zurich)** let you set a **Fully Qualified Class Name (FQCN)** on the External Credential Resolver configuration. Set it to `com.snc.discovery.keeper.KeeperCredentialResolver`. These (`fqcn`-variant) JARs ship **only** that class - not the shared `com.snc.discovery.CredentialResolver` - so the Keeper resolver can coexist with other vendors' resolvers (CyberArk, HashiCorp, Delinea, …) on the same MID Server, which is not possible when every resolver JAR ships `com.snc.discovery.CredentialResolver`.
+* **Xanadu and newer (Xanadu, Yokohama Patch 7+, Zurich, Australia)** let you set a **Fully Qualified Class Name (FQCN)** on the External Credential Resolver configuration. Set it to `com.snc.discovery.keeper.KeeperCredentialResolver`. These (`fqcn`-variant) JARs ship **only** that class - not the shared `com.snc.discovery.CredentialResolver` - so the Keeper resolver can coexist with other vendors' resolvers (CyberArk, HashiCorp, Delinea, …) on the same MID Server, which is not possible when every resolver JAR ships `com.snc.discovery.CredentialResolver`.
 
 ### Compatibility matrix
 | ServiceNow release | MID Server JRE | Resolver class / FQCN to configure |
@@ -47,6 +47,7 @@ Each release publishes one JAR per supported ServiceNow version, in one of two v
 | Xanadu | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
 | Yokohama (Patch 7+) | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
 | Zurich | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
+| Australia | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
 
 Each JAR is built with the Java 11 toolchain, so it runs on both JRE 11 (Vancouver) and JRE 17 (Washington DC and newer). ServiceNow releases older than Utah (Tokyo, San Diego, Rome) are past support and are not built for this release.
 

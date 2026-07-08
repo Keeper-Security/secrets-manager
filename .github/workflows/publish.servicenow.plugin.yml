@@ -58,10 +58,13 @@ jobs:
           cat <<'EOF' > build.sh
           #!/usr/bin/env bash
           MID_SERVER_URLS=''
-          # MID Server build zip per supported ServiceNow release. Policy: current + 2 previous.
-          # Find versions/build tags at:
-          #   https://www.servicenow.com/docs/bundle/zurich-release-notes/page/release-notes/available-versions.html
-          #   https://hub.docker.com/r/moers/mid-server/tags   (update these URLs when a new version ships)
+          # MID Server build zip per supported ServiceNow release (Xanadu+ build the fqcn variant;
+          # Washington DC and older build the legacy variant - see the per-target case below).
+          # To add a release: open its release-notes "Available versions" page, take the target
+          # patch's "Build tag" and "Build date", replace the "glide-" prefix with "mid.", append
+          # "_<Build date>.linux.x86-64.zip", and use the Build date as the yyyy/MM/dd URL path.
+          #   https://www.servicenow.com/docs/r/release-notes/available-versions.html
+          MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2026/06/12/mid.australia-02-11-2026__patch3-05-25-2026_06-12-2026_1106.linux.x86-64.zip
           MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2025/09/08/mid.zurich-07-01-2025__patch1-08-20-2025_09-08-2025_1328.linux.x86-64.zip
           MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2025/04/30/mid.yokohama-12-18-2024__patch3-04-17-2025_04-30-2025_1345.linux.x86-64.zip
           MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2024/09/01/mid.xanadu-07-02-2024__patch1-08-24-2024_09-01-2024_1853.linux.x86-64.zip
