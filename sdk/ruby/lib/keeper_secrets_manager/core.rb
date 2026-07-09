@@ -97,10 +97,10 @@ module KeeperSecretsManager
       end
 
       # Get secrets with optional filtering
-      def get_secrets(uids = nil, full_response: false)
+      def get_secrets(uids = nil, full_response: false, request_links: false)
         uids = [uids] if uids.is_a?(String)
 
-        query_options = Dto::QueryOptions.new(records: uids, folders: nil)
+        query_options = Dto::QueryOptions.new(records: uids, folders: nil, request_links: request_links)
         get_secrets_with_options(query_options, full_response: full_response)
       end
 

@@ -8,6 +8,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - KSM-685 - Fixed `CreateOptions.subfolder_uid` parameter API transmission
 - KSM-686 - Implemented disaster recovery caching with `CachingPostFunction`
 - KSM-687 - Added missing DTO fields for complete SDK parity (links, is_editable, inner_folder_uid, thumbnail_url, last_modified, expires_on)
+- KSM-1013 - Added typed linked-credential accessors (`KeeperRecordLink` via `record.get_links`) and a `request_links:` option on `get_secrets`
 - KSM-692 - Added HTTP proxy support for enterprise environments
 - KSM-694 - Added convenience methods (`upload_file_from_path`, `try_get_notation`)
 - KSM-696 - Fixed file permissions for Ruby SDK config files
@@ -54,6 +55,30 @@ records = secrets_manager.get_secrets
 record = records.first
 puts "Password: #{record.password}"
 ```
+
+## Linked Credentials (PAM)
+
+PAM records can carry linked credentials. Request them with `request_links: true`, then use the typed `KeeperRecordLink` accessors returned by `record.get_links` (the raw entries remain available on `record.links`):
+
+```ruby
+records = secrets_manager.get_secrets(request_links: true)
+
+records.each do |record|
+  record.get_links.each do |link|
+    puts "-> #{link.record_uid} (path: #{link.path.inspect})"
+
+    # Permission booleans read allowedSettings when nested (e.g. on "meta" links)
+    puts "  rotation allowed: #{link.allows_rotation?}"
+    puts "  admin user: #{link.admin_user?}"
+
+    # Encrypted ai_settings / jit_settings decrypt with the owning record's key
+    ai = link.get_ai_settings_data(record.record_key)
+    puts "  ai settings: #{ai.inspect}" if ai
+  end
+end
+```
+
+Accessors never raise — decode or decryption failures return `nil`/`false`.
 
 ## Proxy Support
 

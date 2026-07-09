@@ -3,6 +3,7 @@
 ## [17.2.0]
 
 ### Added
+- KSM-1013 - Typed linked-credential accessors: `KeeperRecordLink` (via `KeeperRecord#get_links`) wraps each raw `links` entry with never-raising typed accessors — permission booleans with an `allowedSettings` fallback (top-level wins), AES-256-GCM `get_decrypted_data`/`get_link_data`, and `meta`/`ai_settings`/`jit_settings` settings accessors. Adds a `request_links:` keyword to `get_secrets`. Purely additive; the raw `record.links` list is unchanged. Mirrors the Python reference (KSM-992).
 - KSM-883 - Automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `post_query` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus 0–25% jitter (one-sided, so the delay always meets or exceeds the floor), honoring `retry_after` from the response when present, and raises `ThrottledError` once retries are exhausted. Replaces the previous fixed 60-second sleep (which had no backoff, jitter, or retry cap). Existing key-rotation retry behavior is unchanged.
 
 ### Fixed
