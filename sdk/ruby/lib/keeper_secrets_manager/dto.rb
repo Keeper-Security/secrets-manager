@@ -63,8 +63,7 @@ module KeeperSecretsManager
           'fields' => fields
         }
 
-        # Only include custom if it has entries (server doesn't send empty arrays)
-        result['custom'] = custom if custom && !custom.empty?
+        result['custom'] = custom unless custom.nil?
 
         # Only include notes if present
         result['notes'] = notes if notes && !notes.empty?

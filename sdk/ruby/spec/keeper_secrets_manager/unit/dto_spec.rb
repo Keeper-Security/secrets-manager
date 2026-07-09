@@ -178,6 +178,21 @@ RSpec.describe KeeperSecretsManager::Dto do
         expect(hash).to have_key('title')
         expect(hash).not_to have_key('folder_uid')
       end
+
+      it 'always includes custom key even when no custom fields exist' do
+        record = described_class.new(title: 'Test', type: 'login', fields: [])
+        hash = record.to_h
+        expect(hash).to have_key('custom')
+        expect(hash['custom']).to eq([])
+      end
+
+      it 'includes custom fields when present' do
+        record = described_class.new(
+          title: 'Test', type: 'login', fields: [],
+          custom: [{ 'type' => 'text', 'value' => ['x'] }]
+        )
+        expect(record.to_h['custom']).not_to be_empty
+      end
     end
   end
 
