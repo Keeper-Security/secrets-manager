@@ -33,6 +33,12 @@ see the official docs link above.
 
 ## Change Log
 
+### 17.4.0
+* KSM-299 - `InMemoryKeyValueStorage` now raises a clear `KeeperError` (`"Could not load config data..."`) instead of a cryptic `TypeError: object of type 'NoneType' has no len()` when initialized with a config string that is not valid JSON or base64-encoded JSON.
+* KSM-1019 - Fixed `KSMCache` silently ignoring an explicit `KSMCache.kms_cache_file_name` override when the assigned path equaled the import-time default (regression from KSM-1004). The override is now detected by object identity, so an explicit assignment always takes precedence over `KSM_CACHE_DIR`; default behavior and `KSM_CACHE_DIR` resolution are unchanged.
+* KSM-1085 - `delete_secret` and `delete_folder` now surface the backend's per-item error messages instead of a generic failure, so callers can see why an individual deletion failed.
+* KSM-1080 - `get_folders` now skips undecryptable folders instead of raising, so a single corrupt folder no longer breaks folder enumeration.
+
 ### 17.3.0
 * KSM-992 - Added a typed `KeeperRecordLink` linked-credential accessor layer and `Record.get_links()`. Provides Java-parity accessors (`is_admin_user()`, `is_launch_credential()`, permission booleans such as `allows_rotation()`/`allows_connections()`, `get_link_data_version()`, `get_decoded_data()`, encryption detection, AES-256-GCM `get_decrypted_data()`, `get_link_data()`, and `get_ai_settings_data()`/`get_jit_settings_data()`/`get_settings_for_path()`) plus accessors for the current link payload shape verified against the live backend: `meta` self-links (`get_meta_data()`, `get_allowed_settings()`), `is_iam_user()`, `belongs_to()`, `no_update_services()`, `ai_enabled()`, `ai_session_terminate()` and `get_rotation_settings()`. Permission booleans read both top-level keys and the nested `allowedSettings`. Purely additive — the raw `record.links` list is unchanged, and each typed link keeps the untouched original dict in `.raw`.
 * KSM-877 - Added automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, requests are retried up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus ±25% jitter, honoring `retry_after` from the response when present; a typed `KeeperThrottleError` (subclass of `KeeperError`) is raised once retries are exhausted. Existing key-rotation retry behavior is unchanged.
