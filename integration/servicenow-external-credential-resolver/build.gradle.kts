@@ -4,6 +4,7 @@ version = "1.0.0"
 plugins {
     base
     java
+    id("org.cyclonedx.bom") version "2.3.0"
 }
 
 base {

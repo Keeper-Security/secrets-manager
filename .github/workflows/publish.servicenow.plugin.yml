@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -74,12 +74,12 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: false
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
@@ -90,38 +90,35 @@ jobs:
           VERSION=$(grep '^version = ' build.gradle.kts | sed -r 's/^version = "(.*)"/\1/')
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve Gradle dependencies
+      - name: Generate SBOM via CycloneDX Gradle plugin
         run: |
           chmod +x gradlew
+          # Build against the latest release — runtime deps are identical across all MID releases.
+          # cyclonedxBom resolves runtimeClasspath through Gradle, capturing the KSM SDK and all
+          # transitive deps while correctly excluding compileOnly MID server JARs.
           LATEST=$(ls -d libs/*/ | sort | tail -1 | xargs basename)
-          ./gradlew dependencies --configuration runtimeClasspath -PmidRelease="${LATEST}" --no-daemon -q
+          ./gradlew cyclonedxBom -PmidRelease="${LATEST}" --no-daemon
 
-      - name: Install Syft and Manifest CLI
+      - name: Install Manifest CLI
         run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
           curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.30.0
 
-      - name: Generate and publish SBOM
+      - name: Publish SBOM to Manifest
         env:
           MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
           VERSION: ${{ steps.detect-version.outputs.version }}
-          SYFT_SOURCE_NAME: keeper-secrets-manager-servicenow-plugin
-          SYFT_SOURCE_VERSION: ${{ steps.detect-version.outputs.version }}
         run: |
-          # Scan the source directory so Syft reads build.gradle.kts for declared deps.
-          # The fat JAR merges class files and loses Maven coordinates for bundled deps.
-          manifest sbom . \
-            --generator=syft \
+          cp build/reports/bom.json servicenow-plugin-sbom.json
+          manifest sbom servicenow-plugin-sbom.json \
             --name=keeper-secrets-manager-servicenow-plugin \
             --version="${VERSION}" \
             --output=cyclonedx-json \
-            --file=servicenow-plugin-sbom.json \
             --api-key="${MANIFEST_TOKEN}" \
             --publish=true \
             --asset-label=ksm,integration,java,servicenow,secrets-manager
 
       - name: Archive SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: sbom-keeper-secrets-manager-servicenow-plugin-${{ github.run_number }}
           path: integration/servicenow-external-credential-resolver/servicenow-plugin-sbom.json
@@ -141,12 +138,12 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: false
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
@@ -176,7 +173,7 @@ jobs:
           ls -lh releases/
 
       - name: Upload JARs artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: servicenow-plugin-jars-${{ github.run_number }}
           path: integration/servicenow-external-credential-resolver/releases/
@@ -198,10 +195,10 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download JARs artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: servicenow-plugin-jars-${{ github.run_number }}
           path: integration/servicenow-external-credential-resolver/releases/
