@@ -7,7 +7,8 @@
 - KSM-883 - Automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `post_query` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus 0–25% jitter (one-sided, so the delay always meets or exceeds the floor), honoring `retry_after` from the response when present, and raises `ThrottledError` once retries are exhausted. Replaces the previous fixed 60-second sleep (which had no backoff, jitter, or retry cap). Existing key-rotation retry behavior is unchanged.
 
 ### Fixed
-- Fixed silent AES-CBC fallback in `decrypt_aes_gcm`: an AES-GCM authentication-tag failure now raises `DecryptionError` immediately rather than retrying decryption as AES-CBC. Previously, tampered or wrong-key ciphertext could produce output without any error.
+- **KSM-1090**: `base64` and `logger` are now declared as explicit runtime dependencies in the gemspec. Ruby 4.0 removed these from the default standard library; without this fix, any clean install on Ruby 4.0+ raises `LoadError` on `require 'keeper_secrets_manager'`. Also removed a dead `require 'ostruct'` from `dto.rb` — `OpenStruct` is never used.
+- **KSM-1070**: Fixed silent AES-CBC fallback in `decrypt_aes_gcm`: an AES-GCM authentication-tag failure now raises `DecryptionError` immediately rather than retrying decryption as AES-CBC. Previously, tampered or wrong-key ciphertext could produce output without any error.
 - **KSM-685**: `CreateOptions.subfolder_uid` parameter is now correctly sent to API when creating records
 - **KSM-686**: Implemented disaster recovery caching with `CachingPostFunction` to match other SDKs
   - API response caching now works for both `get_secret` and `get_folders` endpoints
@@ -22,6 +23,7 @@
   - `09_totp.rb`: Corrected class name from `Totp` to `TOTP` and method from `generate()` to `generate_code()`
   - `01_quick_start.rb`: Fixed field access to use dynamic getter (`secret.login`) instead of hash access
   - `10_custom_caching.rb`: Updated to use `Utils.bytes_to_base64` instead of `Base64.strict_encode64`
+- **KSM-1088**: `delete_secret` and `delete_folder` now log an error for each record/folder whose `responseCode` is not `"ok"`, surfacing partial-failure details that were previously silently discarded.
 - Fixed badly anchored regular expression in `test/integration/test_totp.rb` that could cause false positives in test validation
 
 ### Added
@@ -63,7 +65,6 @@
   - Added 5 new integration test files (test_pam_rotation.rb, test_proxy.rb, test_pam_linked_records.rb, test_caching.rb)
   - Added 27 unit tests for new features (CompleteTransactionPayload, QueryOptions, proxy configuration, convenience methods)
   - Enhanced test_file_operations.rb with thumbnail download and file link removal tests
-  - Total test suite: 302 examples, 0 failures
 - **Mock Infrastructure:** Implemented proper AES-256-GCM encryption in `mock_helper.rb`
   - Records now use proper AES-GCM encryption (was Base64 only)
   - Folders use correct AES-CBC encryption for data
