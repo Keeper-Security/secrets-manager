@@ -1,5 +1,4 @@
 require 'json'
-require 'ostruct'
 require_relative 'dto/payload'
 
 module KeeperSecretsManager
