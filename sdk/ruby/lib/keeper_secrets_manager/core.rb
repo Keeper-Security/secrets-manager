@@ -27,7 +27,7 @@ module KeeperSecretsManager
 
       def initialize(options = {})
         # Check Ruby version
-        raise Error, 'KSM SDK requires Ruby 2.6 or greater' if RUBY_VERSION < '2.6'
+        raise Error, 'KSM SDK requires Ruby 3.1 or greater' if RUBY_VERSION < '3.1'
 
         # Check AES-GCM support
         begin

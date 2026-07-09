@@ -6,6 +6,7 @@
 - KSM-883 - Automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `post_query` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus 0–25% jitter (one-sided, so the delay always meets or exceeds the floor), honoring `retry_after` from the response when present, and raises `ThrottledError` once retries are exhausted. Replaces the previous fixed 60-second sleep (which had no backoff, jitter, or retry cap). Existing key-rotation retry behavior is unchanged.
 
 ### Fixed
+- **KSM-1090**: `base64` and `logger` are now declared as explicit runtime dependencies in the gemspec. Ruby 4.0 removed these from the default standard library; without this fix, any clean install on Ruby 4.0+ raises `LoadError` on `require 'keeper_secrets_manager'`. Also removed a dead `require 'ostruct'` from `dto.rb` — `OpenStruct` is never used.
 - Fixed silent AES-CBC fallback in `decrypt_aes_gcm`: an AES-GCM authentication-tag failure now raises `DecryptionError` immediately rather than retrying decryption as AES-CBC. Previously, tampered or wrong-key ciphertext could produce output without any error.
 - KSM-685: `CreateOptions.subfolder_uid` parameter is now correctly sent to API when creating records
 - KSM-686: Implemented disaster recovery caching with `CachingPostFunction` to match other SDKs
