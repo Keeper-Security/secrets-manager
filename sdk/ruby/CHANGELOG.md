@@ -2,6 +2,11 @@
 
 ## [17.2.0]
 
+### Fixed
+- **KSM-824**: `to_h` now always includes `custom` in the V3 API payload, even when the array is empty, matching Commander and Vault behavior
+- **KSM-906**: Added IL5 region mapping (`IL5` → `il5.keepersecurity.us`) to `KEEPER_SERVERS`
+- **KSM-987**: `url_safe_str_to_bytes` and `base64_to_bytes` in `Utils` now raise `Error` when passed `nil`; all Base64 decoding in `core.rb` routes through `Utils`
+
 ### Added
 - KSM-883 - Automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `post_query` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus 0–25% jitter (one-sided, so the delay always meets or exceeds the floor), honoring `retry_after` from the response when present, and raises `ThrottledError` once retries are exhausted. Replaces the previous fixed 60-second sleep (which had no backoff, jitter, or retry cap). Existing key-rotation retry behavior is unchanged.
 
