@@ -30,7 +30,7 @@ module KeeperSecretsManager
 
       # Convert URL-safe base64 string to bytes
       def url_safe_str_to_bytes(str)
-        # Add padding if needed
+        raise CryptoError, 'url_safe_str_to_bytes: received nil' if str.nil?
         str += '=' * (4 - str.length % 4) if str.length % 4 != 0
         Base64.urlsafe_decode64(str)
       end
@@ -42,6 +42,7 @@ module KeeperSecretsManager
 
       # Convert base64 to bytes
       def base64_to_bytes(str)
+        raise CryptoError, 'base64_to_bytes: received nil' if str.nil?
         Base64.strict_decode64(str)
       end
 

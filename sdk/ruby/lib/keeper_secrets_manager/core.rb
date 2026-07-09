@@ -1198,7 +1198,7 @@ module KeeperSecretsManager
         @logger.debug("Generated transmission key: #{Utils.bytes_to_base64(key)[0..20]}...")
 
         # Encrypt key with server public key
-        server_public_key = Crypto.url_safe_str_to_bytes(server_public_key_str)
+        server_public_key = Utils.url_safe_str_to_bytes(server_public_key_str)
         @logger.debug("Server public key bytes length: #{server_public_key.bytesize}")
 
         encrypted_key = Crypto.encrypt_ec(key, server_public_key)
