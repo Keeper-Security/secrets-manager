@@ -7,7 +7,7 @@
 
 ### Fixed
 - **KSM-1090**: `base64` and `logger` are now declared as explicit runtime dependencies in the gemspec. Ruby 4.0 removed these from the default standard library; without this fix, any clean install on Ruby 4.0+ raises `LoadError` on `require 'keeper_secrets_manager'`. Also removed a dead `require 'ostruct'` from `dto.rb` — `OpenStruct` is never used.
-- Fixed silent AES-CBC fallback in `decrypt_aes_gcm`: an AES-GCM authentication-tag failure now raises `DecryptionError` immediately rather than retrying decryption as AES-CBC. Previously, tampered or wrong-key ciphertext could produce output without any error.
+- **KSM-1070**: Fixed silent AES-CBC fallback in `decrypt_aes_gcm`: an AES-GCM authentication-tag failure now raises `DecryptionError` immediately rather than retrying decryption as AES-CBC. Previously, tampered or wrong-key ciphertext could produce output without any error.
 - **KSM-685**: `CreateOptions.subfolder_uid` parameter is now correctly sent to API when creating records
 - **KSM-686**: Implemented disaster recovery caching with `CachingPostFunction` to match other SDKs
   - API response caching now works for both `get_secret` and `get_folders` endpoints
@@ -22,6 +22,7 @@
   - `09_totp.rb`: Corrected class name from `Totp` to `TOTP` and method from `generate()` to `generate_code()`
   - `01_quick_start.rb`: Fixed field access to use dynamic getter (`secret.login`) instead of hash access
   - `10_custom_caching.rb`: Updated to use `Utils.bytes_to_base64` instead of `Base64.strict_encode64`
+- **KSM-1088**: `delete_secret` and `delete_folder` now log an error for each record/folder whose `responseCode` is not `"ok"`, surfacing partial-failure details that were previously silently discarded.
 - Fixed badly anchored regular expression in `test/integration/test_totp.rb` that could cause false positives in test validation
 
 ### Added
