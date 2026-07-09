@@ -71,6 +71,7 @@ jobs:
           for release in libs/*/; do
             release=$(basename "$release")
             echo "Building for MID server release: ${release}"
+<<<<<<< HEAD
             # Xanadu and newer ship the FQCN-only variant; pre-Xanadu ships the legacy variant.
             case "${release}" in
               washingtondc|vancouver|utah) variant=legacy ;;
