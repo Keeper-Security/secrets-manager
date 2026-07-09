@@ -7,15 +7,15 @@ on:
         type: string
         required: true
         description: "New tag name for the release (e.g. servicenow-v1.0.0)"
-      dry_run:
+      publish:
         type: boolean
         required: false
-        default: false
-        description: "Skip creating the GitHub release (for testing the build and SBOM steps)"
+        default: true
+        description: "Create GitHub release (uncheck to build and SBOM only)"
 
 jobs:
-  generate-sbom:
-    name: Generate SBOM
+  check-version:
+    name: Check version
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -30,74 +30,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Detect version
-        id: detect-version
-        run: |
-          VERSION=$(grep '^version = ' build.gradle.kts | sed -r 's/^version = "(.*)"/\1/')
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-      - name: Build fat JAR for SBOM scan
-        run: |
-          chmod +x gradlew
-          # Build against the latest release — runtime deps are identical across all MID releases
-          LATEST=$(ls -d libs/*/ | sort | tail -1 | xargs basename)
-          ./gradlew jar -PmidRelease="${LATEST}" --no-daemon -q
-
-      - name: Install Syft and Manifest CLI
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
-          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.30.0
-
-      - name: Generate and publish SBOM
-        env:
-          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
-          VERSION: ${{ steps.detect-version.outputs.version }}
-          # Syft reads these to populate the root component in the SBOM
-          SYFT_SOURCE_NAME: keeper-secrets-manager-servicenow-plugin
-          SYFT_SOURCE_VERSION: ${{ steps.detect-version.outputs.version }}
-        run: |
-          BUILD_NAME=$(grep 'archivesName' build.gradle.kts | sed -r 's/.*archivesName = "(.*)".*/\1/')
-          # Scan the built fat JAR directly: captures actual bundled deps, not compileOnly MID server JARs
-          manifest sbom "build/libs/${BUILD_NAME}-${VERSION}.jar" \
-            --generator=syft \
-            --name=keeper-secrets-manager-servicenow-plugin \
-            --version="${VERSION}" \
-            --output=cyclonedx-json \
-            --file=servicenow-plugin-sbom.json \
-            --api-key="${MANIFEST_TOKEN}" \
-            --publish=true \
-            --asset-label=ksm,integration,java,servicenow,secrets-manager
-
-      - name: Archive SBOM
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom-keeper-secrets-manager-servicenow-plugin-${{ github.run_number }}
-          path: integration/servicenow-external-credential-resolver/servicenow-plugin-sbom.json
-          retention-days: 90
-
-  publish-servicenow-plugin:
-    needs: generate-sbom
-    permissions:
-      contents: write
-    environment: prod
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        shell: bash
-        working-directory: ./integration/servicenow-external-credential-resolver
-
-    steps:
-      - name: Get the source code
-        uses: actions/checkout@v4
-        with:
           fetch-depth: 0
           fetch-tags: true
 
@@ -127,6 +59,91 @@ jobs:
             echo "Tag '${TAG}' does not contain build version '${BUILD_VERSION}'"; exit 1
           fi
           echo "Tag ${TAG} contains build version ${BUILD_VERSION}"
+
+  generate-sbom:
+    name: Generate SBOM
+    needs: check-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./integration/servicenow-external-credential-resolver
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Detect version
+        id: detect-version
+        run: |
+          VERSION=$(grep '^version = ' build.gradle.kts | sed -r 's/^version = "(.*)"/\1/')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Gradle dependencies
+        run: |
+          chmod +x gradlew
+          LATEST=$(ls -d libs/*/ | sort | tail -1 | xargs basename)
+          ./gradlew dependencies --configuration runtimeClasspath -PmidRelease="${LATEST}" --no-daemon -q
+
+      - name: Install Syft and Manifest CLI
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.30.0
+
+      - name: Generate and publish SBOM
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+          VERSION: ${{ steps.detect-version.outputs.version }}
+          SYFT_SOURCE_NAME: keeper-secrets-manager-servicenow-plugin
+          SYFT_SOURCE_VERSION: ${{ steps.detect-version.outputs.version }}
+        run: |
+          # Scan the source directory so Syft reads build.gradle.kts for declared deps.
+          # The fat JAR merges class files and loses Maven coordinates for bundled deps.
+          manifest sbom . \
+            --generator=syft \
+            --name=keeper-secrets-manager-servicenow-plugin \
+            --version="${VERSION}" \
+            --output=cyclonedx-json \
+            --file=servicenow-plugin-sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --asset-label=ksm,integration,java,servicenow,secrets-manager
+
+      - name: Archive SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-keeper-secrets-manager-servicenow-plugin-${{ github.run_number }}
+          path: integration/servicenow-external-credential-resolver/servicenow-plugin-sbom.json
+          retention-days: 10
+
+  build-jars:
+    name: Build JARs
+    needs: check-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./integration/servicenow-external-credential-resolver
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -158,8 +175,38 @@ jobs:
           echo "Built JARs:"
           ls -lh releases/
 
+      - name: Upload JARs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: servicenow-plugin-jars-${{ github.run_number }}
+          path: integration/servicenow-external-credential-resolver/releases/
+          retention-days: 10
+
+  publish:
+    name: Publish GitHub Release
+    if: ${{ inputs.publish }}
+    needs: [generate-sbom, build-jars]
+    environment: prod
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./integration/servicenow-external-credential-resolver
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v4
+
+      - name: Download JARs artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: servicenow-plugin-jars-${{ github.run_number }}
+          path: integration/servicenow-external-credential-resolver/releases/
+
       - name: Create GitHub Release
-        if: ${{ !inputs.dry_run }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tagname }}
