@@ -376,6 +376,10 @@ RSpec.describe KeeperSecretsManager::Utils do
           described_class.base64_to_bytes('aGVs===')
         end.to raise_error(KeeperSecretsManager::Error, /Invalid base64/)
       end
+
+      it 'raises Error when given nil' do
+        expect { described_class.base64_to_bytes(nil) }.to raise_error(KeeperSecretsManager::Error, /nil/)
+      end
     end
 
     describe '.url_safe_str_to_bytes' do
@@ -404,6 +408,10 @@ RSpec.describe KeeperSecretsManager::Utils do
         # URL-safe base64 uses - and _ instead of + and /
         result = described_class.url_safe_str_to_bytes('_-_-')
         expect(result).to be_a(String)
+      end
+
+      it 'raises Error when given nil' do
+        expect { described_class.url_safe_str_to_bytes(nil) }.to raise_error(KeeperSecretsManager::Error, /nil/)
       end
     end
 
