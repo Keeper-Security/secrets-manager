@@ -13,8 +13,10 @@ import hashlib
 import json
 import logging
 import os
+import threading
 
 from json import JSONDecodeError
+from typing import Optional
 from keeper_secrets_manager_core.helpers import is_json
 
 from keeper_secrets_manager_core.storage import KeyValueStorage
@@ -66,7 +68,7 @@ class AzureKeyValueStorage(KeyValueStorage):
 
     default_config_file_location = "client-config.json"
 
-    def __init__(self, key_id: str, config_file_location: str = "", az_session_config: AzureSessionConfig | None = None):
+    def __init__(self, key_id: str, config_file_location: str = "", az_session_config: Optional[AzureSessionConfig] = None):
         """Initilaizes AzureKeyValueStorage
 
         key_id URI of the master key - if missing read from env KSM_AZ_KEY_ID
@@ -98,6 +100,7 @@ class AzureKeyValueStorage(KeyValueStorage):
 
         self.crypto_client = CryptographyClient(self.key_id, credential=self.az_credential)
 
+        self._lock = threading.RLock()
         self.last_saved_config_hash = ""
         self.config = {}
         self.__load_config()
@@ -107,14 +110,14 @@ class AzureKeyValueStorage(KeyValueStorage):
     def __encrypt_buffer(self, message: str) -> bytes:
         try:
             key = get_random_bytes(32)
-            cipher = AES.new(key, AES.MODE_GCM)
+            cipher = AES.new(key, AES.MODE_GCM, nonce=get_random_bytes(12))
             ciphertext, tag = cipher.encrypt_and_digest(message.encode())
             # response = self.crypto_client.encrypt(EncryptionAlgorithm.a256_gcm, message.encode()) # HSM Only
             try:
                 response = self.crypto_client.wrap_key(KeyWrapAlgorithm.rsa_oaep, key)
             except Exception as err:
                 logger.error("Azure crypto client failed to wrap key. %s", str(err))
-                return b""
+                raise
 
             blob = bytearray(BLOB_HEADER)
             for x in (response.encrypted_key, cipher.nonce, tag, ciphertext):
@@ -123,7 +126,7 @@ class AzureKeyValueStorage(KeyValueStorage):
             return blob
         except Exception as err:
             logger.error("Azure KeyVault Storage failed to encrypt. %s", str(err))
-            return b""
+            raise
 
     def __decrypt_buffer(self, ciphertext: bytes) -> str:
         try:
@@ -153,14 +156,14 @@ class AzureKeyValueStorage(KeyValueStorage):
                 key = response.key
             except Exception as err:
                 logger.error("Azure crypto client failed to unwrap key. %s", str(err))
-                return b""
+                raise
             cipher = AES.new(key, AES.MODE_GCM, nonce)
             data = cipher.decrypt_and_verify(encrypted_text, tag)
             plaintext = data.decode('utf8')
             return plaintext
         except Exception as err:
             logger.error("Azure KeyVault Storage failed to decrypt. %s", str(err))
-            return ""
+            raise
 
     def __load_config(self, module=0):
         self.create_config_file_if_missing()
@@ -187,7 +190,7 @@ class AzureKeyValueStorage(KeyValueStorage):
                         config = json.loads(config_data)
                     except UnicodeDecodeError:
                         logger.error("Config file is not utf-8 encoded.")
-                        raise Exception("{} is not a utf-8 encoded file".format(self.default_config_file_location))
+                        raise Exception("{} is not a valid encrypted config file".format(self.default_config_file_location))
                     except JSONDecodeError as err:
                         # If the JSON file was not empty, it's a legit JSON error. Throw an exception.
                         if config_data is not None and config_data.strip() != "":
@@ -203,18 +206,20 @@ class AzureKeyValueStorage(KeyValueStorage):
                             raise Exception("{} is not a utf-8 encoded file.".format(self.default_config_file_location))
                         raise err
 
-            if config:
+            if config is not None:
                 # detected plaintext JSON config -> encrypt
                 self.config = config
                 self.__save_config() # save encrypted
-                self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
+                self.last_saved_config_hash = hashlib.sha256(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
             else:
                 # Try to decrypt binary blob
                 config_json = self.__decrypt_buffer(contents)
+                if not config_json:
+                    raise Exception("{} is not a valid encrypted config file".format(self.default_config_file_location))
                 try:
                     config = json.loads(config_json)
                     self.config = config
-                    self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
+                    self.last_saved_config_hash = hashlib.sha256(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
                 except Exception as err:
                     logger.error("Config JSON has problems: {}".format(err))
                     raise err
@@ -224,28 +229,38 @@ class AzureKeyValueStorage(KeyValueStorage):
     def __save_config(self, updated_config:dict = {}, module=0, force=False):
         config = self.config if self.config else {}
         config_json:str = json.dumps(config, indent=4, sort_keys=True)
-        config_hash = hashlib.md5(config_json.encode()).hexdigest()
+        config_hash = hashlib.sha256(config_json.encode()).hexdigest()
 
+        pending_config = None
         if updated_config:
             ucfg_json:str = json.dumps(updated_config, indent=4, sort_keys=True)
-            ucfg_hash = hashlib.md5(ucfg_json.encode()).hexdigest()
+            ucfg_hash = hashlib.sha256(ucfg_json.encode()).hexdigest()
             if ucfg_hash != config_hash:
                 config_hash = ucfg_hash
                 config_json = ucfg_json
-                self.config = dict(updated_config)
-                # self.last_saved_config_hash = config_hash # update after save - to allow for retries
+                pending_config = dict(updated_config)
 
         if not force and config_hash == self.last_saved_config_hash:
             logger.warning("Skipped config JSON save. No changes detected.")
             return
 
-        self.create_config_file_if_missing()
         blob = self.__encrypt_buffer(config_json)
-        with open(self.default_config_file_location, "wb") as write_file:
-            write_file.write(blob)
+        tmp_path = self.default_config_file_location + ".tmp"
+        try:
+            with open(tmp_path, "wb") as write_file:
+                write_file.write(blob)
+            os.replace(tmp_path, self.default_config_file_location)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
         self.last_saved_config_hash = config_hash
+        if pending_config is not None:
+            self.config = pending_config
 
-    def decrypt_config(self, autosave: bool = True) -> str:
+    def decrypt_config(self, autosave: bool = False) -> str:
         ciphertext: bytes = bytes()
         plaintext: str = ""
         try:
@@ -271,55 +286,63 @@ class AzureKeyValueStorage(KeyValueStorage):
         return plaintext
 
     def change_key(self, new_key_id: str) -> bool:
-        old_key_id = self.key_id
-        old_crypto_client = self.crypto_client
-        try:
-            self.key_id = new_key_id
-            self.crypto_client = CryptographyClient(self.key_id, credential=self.az_credential)
-            self.__save_config(force=True)
-        except Exception as e:
-            self.key_id = old_key_id
-            self.crypto_client = old_crypto_client
-            logging.getLogger(logger_name).error(f"Failed to change the key to '{new_key_id}' for config '{self.default_config_file_location}'")
-            raise Exception("Failed to change the key for " + self.default_config_file_location)
-        return True
+        with self._lock:
+            old_key_id = self.key_id
+            old_crypto_client = self.crypto_client
+            try:
+                self.key_id = new_key_id
+                self.crypto_client = CryptographyClient(self.key_id, credential=self.az_credential)
+                self.__save_config(force=True)
+            except Exception as e:
+                self.key_id = old_key_id
+                self.crypto_client = old_crypto_client
+                logging.getLogger(logger_name).error(f"Failed to change the key to '{new_key_id}' for config '{self.default_config_file_location}'")
+                raise Exception("Failed to change the key for " + self.default_config_file_location)
+            return True
 
     def read_storage(self):
-        if not self.config:
-            self.__load_config()
-        return dict(self.config)
+        with self._lock:
+            if not self.config:
+                self.__load_config()
+            return dict(self.config)
 
     def save_storage(self, updated_config):
-        self.__save_config(updated_config)
+        with self._lock:
+            self.__save_config(updated_config)
 
     def get(self, key: ConfigKeys):
         config = self.read_storage()
         return config.get(key.value)
 
     def set(self, key: ConfigKeys, value):
-        config = self.read_storage()
-        config[key.value] = value
-        self.save_storage(config)
-        return config
+        with self._lock:
+            config = self.read_storage()
+            config[key.value] = value
+            self.save_storage(config)
+            return config
 
     def delete(self, key: ConfigKeys):
-        config = self.read_storage()
+        with self._lock:
+            config = self.read_storage()
 
-        kv = key.value
-        if kv in config:
-            del config[kv]
-            logger.debug("Removed key %s" % kv)
-        else:
-           logger.debug("No key %s was found in config" % kv)
+            kv = key.value
+            if kv in config:
+                del config[kv]
+                logger.debug("Removed key %s" % kv)
+            else:
+                logger.debug("No key %s was found in config" % kv)
 
-        self.save_storage(config)
-        return config
+            self.save_storage(config)
+            return config
 
     def delete_all(self):
-        self.read_storage()
-        self.config.clear()
-        self.save_storage(self.config)
-        return dict(self.config)
+        with self._lock:
+            self.read_storage()
+            self.config.clear()
+            if os.path.exists(self.default_config_file_location):
+                os.remove(self.default_config_file_location)
+            self.last_saved_config_hash = ""
+            return dict(self.config)
 
     def contains(self, key: ConfigKeys):
         config = self.read_storage()
@@ -327,9 +350,18 @@ class AzureKeyValueStorage(KeyValueStorage):
 
     def create_config_file_if_missing(self):
         if not os.path.exists(self.default_config_file_location):
-            with open(self.default_config_file_location, "wb") as fh:
+            tmp_path = self.default_config_file_location + ".tmp"
+            try:
                 blob = self.__encrypt_buffer("{}")
-                fh.write(blob)
+                with open(tmp_path, "wb") as fh:
+                    fh.write(blob)
+                os.replace(tmp_path, self.default_config_file_location)
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
 
     def is_empty(self):
         config = self.read_storage()
