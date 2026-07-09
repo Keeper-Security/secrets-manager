@@ -193,6 +193,12 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
           expect(hostname).to eq(KeeperSecretsManager::KeeperGlobals::KEEPER_SERVERS['CA'])
         end
 
+        it 'parses IL5 region token' do
+          manager.send(:process_token_binding, 'IL5:fake_token', nil)
+          hostname = manager.instance_variable_get(:@hostname)
+          expect(hostname).to eq(KeeperSecretsManager::KeeperGlobals::KEEPER_SERVERS['IL5'])
+        end
+
         it 'handles lowercase region code' do
           manager.send(:process_token_binding, 'us:fake_token', nil)
           hostname = manager.instance_variable_get(:@hostname)

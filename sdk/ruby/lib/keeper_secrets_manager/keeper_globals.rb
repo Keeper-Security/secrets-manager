@@ -39,7 +39,8 @@ module KeeperSecretsManager
       'AU' => 'keepersecurity.com.au',
       'GOV' => 'govcloud.keepersecurity.us',
       'JP' => 'keepersecurity.jp',
-      'CA' => 'keepersecurity.ca'
+      'CA' => 'keepersecurity.ca',
+      'IL5' => 'il5.keepersecurity.us'
     }.freeze
 
     # Default server (US)
