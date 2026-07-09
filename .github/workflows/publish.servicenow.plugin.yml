@@ -7,6 +7,11 @@ on:
         type: string
         required: true
         description: "New tag name for the release (e.g. servicenow-v1.0.0)"
+      dry_run:
+        type: boolean
+        required: false
+        default: false
+        description: "Skip creating the GitHub release (for testing the build and SBOM steps)"
 
 jobs:
   generate-sbom:
@@ -154,6 +159,7 @@ jobs:
           ls -lh releases/
 
       - name: Create GitHub Release
+        if: ${{ !inputs.dry_run }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tagname }}
