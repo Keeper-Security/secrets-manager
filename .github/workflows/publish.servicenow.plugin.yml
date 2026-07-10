@@ -99,8 +99,9 @@ jobs:
           LATEST=$(ls -d libs/*/ | sort | tail -1 | xargs basename)
           ./gradlew cyclonedxBom -PmidRelease="${LATEST}" --no-daemon
 
-      - name: Install Manifest CLI
+      - name: Install Syft and Manifest CLI
         run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
           curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.30.0
 
       - name: Publish SBOM to Manifest
