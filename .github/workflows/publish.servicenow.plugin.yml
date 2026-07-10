@@ -109,7 +109,7 @@ jobs:
               gradlew_return_code=0
               ./gradlew jar -PresolverVariant=${variant} || gradlew_return_code=$?
               if (( gradlew_return_code != 0 )); then
-                echo "Grade build failed with exit status $gradlew_return_code"
+                echo "Gradle build failed with exit status $gradlew_return_code"
                 exit $gradlew_return_code
               fi
               
