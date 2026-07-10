@@ -62,6 +62,12 @@ tasks.test {
     useJUnitPlatform()
 }
 
+tasks.named<org.cyclonedx.gradle.CycloneDxTask>("cyclonedxBom") {
+    // Only the runtimeClasspath is shipped inside the fat JAR. compileOnly MID server
+    // JARs and testImplementation/testRuntimeOnly JUnit deps must not appear in the SBOM.
+    includeConfigs.set(listOf("runtimeClasspath"))
+}
+
 // Resolver JAR variant (pass with -PresolverVariant=fqcn|legacy):
 //   fqcn   -> ServiceNow Xanadu+ : ships the unique com.snc.discovery.keeper.KeeperCredentialResolver
 //             and OMITS the shared com.snc.discovery.CredentialResolver, so Keeper coexists with
