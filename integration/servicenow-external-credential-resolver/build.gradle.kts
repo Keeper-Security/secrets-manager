@@ -1,5 +1,5 @@
-group "com.keepersecurity"
-version "1.0.0"
+group = "com.keepersecurity"
+version = "1.0.0"
 
 plugins {
     base
@@ -36,7 +36,10 @@ repositories {
 }
 
 dependencies {
-    implementation ("com.keepersecurity.secrets-manager:core:16.6.4+")
+    // Pinned (was 16.6.4+, a prefix wildcard that stuck at 16.6.4 and predated the pamSettings
+    // KeeperRecordField subtype). 17.x registers all PAM field types and skips unparseable
+    // records on a full fetch instead of failing the whole batch.
+    implementation("com.keepersecurity.secrets-manager:core:17.3.0")
 
     // MID server dependencies, not required to be uploaded
     // MID jar dependency for config APIs
@@ -50,12 +53,27 @@ dependencies {
     if (file("${midServerAgentDir}/mid-api.jar").exists()) {
         compileOnly("com.snc:mid-api")
     }
+
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.3")
 }
+
+tasks.test {
+    useJUnitPlatform()
+}
+
+// Resolver JAR variant (pass with -PresolverVariant=fqcn|legacy):
+//   fqcn   -> ServiceNow Xanadu+ : ships the unique com.snc.discovery.keeper.KeeperCredentialResolver
+//             and OMITS the shared com.snc.discovery.CredentialResolver, so Keeper coexists with
+//             other vendors' resolvers (which ship that shared class) on the same MID Server.
+//   legacy -> pre-Xanadu : keeps com.snc.discovery.CredentialResolver (required there).
+// Default "legacy" keeps both classes (also convenient for local dev/testing).
+val resolverVariant = (project.findProperty("resolverVariant") as String? ?: "legacy").lowercase()
 
 tasks.jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
-        attributes("Main-Class" to "com.snc.discovery.CredentialResolver")
+        attributes("Main-Class" to "com.snc.discovery.keeper.KeeperCredentialResolver")
     }
     from(configurations
         .runtimeClasspath
@@ -66,4 +84,9 @@ tasks.jar {
     exclude("META-INF/*.SF")
     exclude("META-INF/*.DSA")
     exclude("META-INF/*.RSA")
+    // Xanadu+ variant drops ONLY the shared legacy class (com.snc.discovery.CredentialResolver) so
+    // it doesn't clash with other vendors' JARs; the unique com.snc.discovery.keeper.* class stays.
+    if (resolverVariant == "fqcn") {
+        exclude("com/snc/discovery/CredentialResolver.class")
+    }
 }
