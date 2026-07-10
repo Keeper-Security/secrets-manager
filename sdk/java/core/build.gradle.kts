@@ -5,7 +5,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 group = "com.keepersecurity.secrets-manager"
 
 // During publishing, If version ends with '-SNAPSHOT' then it will be published to Maven snapshot repository
-version = "17.2.0"
+version = "17.3.0"
 
 plugins {
     `java-library`
@@ -13,6 +13,7 @@ plugins {
     kotlin("plugin.serialization") version "2.2.10"
     `maven-publish`
     id("org.jreleaser") version "1.20.0"
+    id("org.cyclonedx.bom") version "3.2.4"
 }
 
 java {
@@ -168,12 +169,14 @@ tasks.javadoc {
     }
 }
 
-// Task to copy all runtime dependencies for SBOM generation
-tasks.register<Copy>("copyDependencies") {
-    from(configurations.runtimeClasspath)
-    into(layout.buildDirectory.dir("sbom-deps"))
+tasks.named<org.cyclonedx.gradle.CyclonedxDirectTask>("cyclonedxDirectBom") {
+    includeConfigs.set(listOf("runtimeClasspath"))
+    componentName.set("keeper-secrets-manager-java")
 }
 
+tasks.named<org.cyclonedx.gradle.CyclonedxAggregateTask>("cyclonedxBom") {
+    componentName.set("keeper-secrets-manager-java")
+}
 
 // Configure JReleaser for Central Portal publishing
 jreleaser {
