@@ -45,7 +45,7 @@ jobs:
           TAG: ${{ github.event.inputs.tagname }}
         run: |
           GRADLE_CFG=./build.gradle.kts
-          BUILD_VERSION=`fgrep version $GRADLE_CFG | sed -r 's/^version[[:space:]]*=?[[:space:]]*//g' | sed 's/"//g'`
+          BUILD_VERSION=`grep '^version = ' $GRADLE_CFG | sed -r 's/^version[[:space:]]*=[[:space:]]*//g' | sed 's/"//g'`
           if [[ "$TAG" == *"$BUILD_VERSION"* ]]; then
             echo "Build version $BUILD_VERSION is included in the tag $TAG"
           else
@@ -82,8 +82,8 @@ jobs:
           gradlecfg=${buildroot}/build.gradle.kts
           
           buildname=`fgrep archivesName ${gradlecfg} | sed -r 's/^\s*archivesName\s*=\s*//g' | sed 's/"//g'`
-          buildversion=`fgrep version ${gradlecfg} | sed -r 's/^version[[:space:]]*=?[[:space:]]*//g' | sed 's/"//g'`
-          srcjarpath=$(ls ${buildroot}/build/libs/${buildname}*.jar | head -n1)
+          buildversion=`grep '^version = ' ${gradlecfg} | sed -r 's/^version[[:space:]]*=[[:space:]]*//g' | sed 's/"//g'`
+          srcjarpath=${buildroot}/build/libs/${buildname}-${buildversion}.jar
           
           IFS="," read -a urls <<< ${MID_SERVER_URLS}
           for url in "${urls[@]}"; do
@@ -134,6 +134,6 @@ jobs:
         run: |
           GRADLE_CFG=./build.gradle.kts
           BUILD_NAME=`fgrep archivesName $GRADLE_CFG | sed -r 's/^\s*archivesName\s*=\s*//g' | sed 's/"//g'`
-          BUILD_VERSION=`fgrep version $GRADLE_CFG | sed -r 's/^version[[:space:]]*=?[[:space:]]*//g' | sed 's/"//g'`
+          BUILD_VERSION=`grep '^version = ' $GRADLE_CFG | sed -r 's/^version[[:space:]]*=[[:space:]]*//g' | sed 's/"//g'`
           RELEASE_NAME=${BUILD_NAME}-${BUILD_VERSION}.jar
           gh release create ${TAG} `pwd`/releases/*.jar --repo="$GITHUB_REPOSITORY" --title="$RELEASE_NAME" --generate-notes
