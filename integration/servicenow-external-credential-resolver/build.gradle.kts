@@ -1,32 +1,35 @@
-group "com.keepersecurity"
-version "1.0.0"
+group = "com.keepersecurity"
+version = "1.0.0"
 
 plugins {
     base
     java
+    id("org.cyclonedx.bom") version "2.3.0"
 }
 
 base {
     archivesName = "keeper-external-credentials"
 }
 
-java {
-    toolchain {
-        // Vancouver-- built with OpenJDK 11.x
-        languageVersion = JavaLanguageVersion.of(11)
+// Pass -PmidRelease=<release> to select which libs/<release>/ to compile against.
+// Defaults to the newest release present under libs/.
+val midRelease = (project.findProperty("midRelease") as String?)
+    ?: file("libs").listFiles()?.map { it.name }?.sorted()?.lastOrNull()
+    ?: error("No MID server libs found under libs/. Run ./gradlew jar -PmidRelease=<release>.")
 
-        // Washington DC: A ServiceNow build of OpenJDK 17.0.8.1 is Supported and Included (17.0.8.1-sncmid1)
-        // Administrators will need to make sure any 3rd party JAR files for Credential resolvers, JDBC drivers, etc.
-        // are compatible with Java 17 and 'strong encapsulation', before upgrading.
-        // More information: KB1273036 MID Server - JRE 17 Upgrade
+val midServerAgentDir = file("libs/$midRelease")
 
-        // Washington DC, Xanadu++ built with OpenJDK 17.x
-        //languageVersion = JavaLanguageVersion.of(17)
-    }
+// Utah and Vancouver ship OpenJDK 11; Washington DC and newer ship OpenJDK 17.
+val javaVersion = when (midRelease) {
+    "utah", "vancouver" -> JavaLanguageVersion.of(11)
+    else -> JavaLanguageVersion.of(17)
 }
 
-// This must point to the MID Server installation location (agent directory path).
-val midServerAgentDir = "/opt/servicenow/mid/agent/lib"
+java {
+    toolchain {
+        languageVersion = javaVersion
+    }
+}
 
 repositories {
     mavenCentral()
@@ -36,26 +39,47 @@ repositories {
 }
 
 dependencies {
-    implementation ("com.keepersecurity.secrets-manager:core:16.6.4+")
+    // Pinned (was 16.6.4+, a prefix wildcard that stuck at 16.6.4 and predated the pamSettings
+    // KeeperRecordField subtype). 17.x registers all PAM field types and skips unparseable
+    // records on a full fetch instead of failing the whole batch.
+    implementation("com.keepersecurity.secrets-manager:core:17.3.0")
 
-    // MID server dependencies, not required to be uploaded
-    // MID jar dependency for config APIs
     compileOnly("com.snc:mid")
     compileOnly("com.snc:commons-glide")
     compileOnly("com.snc:commons-core-automation")
     compileOnly("com.snc:snc-automation-api")
 
-    // NB! JDK16+/Vancouver+ may require: export _JAVA_OPTIONS="--add-opens=java.base/sun.security.util=ALL-UNNAMED"
-    // Vancouver and newer: IFileSystem is in the new mid-api.jar
-    if (file("${midServerAgentDir}/mid-api.jar").exists()) {
+    // mid-api.jar was introduced in Vancouver; absent in Utah.
+    if (file("$midServerAgentDir/mid-api.jar").exists()) {
         compileOnly("com.snc:mid-api")
     }
+
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.3")
 }
+
+tasks.test {
+    useJUnitPlatform()
+}
+
+tasks.named<org.cyclonedx.gradle.CycloneDxTask>("cyclonedxBom") {
+    // Only the runtimeClasspath is shipped inside the fat JAR. compileOnly MID server
+    // JARs and testImplementation/testRuntimeOnly JUnit deps must not appear in the SBOM.
+    includeConfigs.set(listOf("runtimeClasspath"))
+}
+
+// Resolver JAR variant (pass with -PresolverVariant=fqcn|legacy):
+//   fqcn   -> ServiceNow Xanadu+ : ships the unique com.snc.discovery.keeper.KeeperCredentialResolver
+//             and OMITS the shared com.snc.discovery.CredentialResolver, so Keeper coexists with
+//             other vendors' resolvers (which ship that shared class) on the same MID Server.
+//   legacy -> pre-Xanadu : keeps com.snc.discovery.CredentialResolver (required there).
+// Default "legacy" keeps both classes (also convenient for local dev/testing).
+val resolverVariant = (project.findProperty("resolverVariant") as String? ?: "legacy").lowercase()
 
 tasks.jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
-        attributes("Main-Class" to "com.snc.discovery.CredentialResolver")
+        attributes("Main-Class" to "com.snc.discovery.keeper.KeeperCredentialResolver")
     }
     from(configurations
         .runtimeClasspath
@@ -66,4 +90,9 @@ tasks.jar {
     exclude("META-INF/*.SF")
     exclude("META-INF/*.DSA")
     exclude("META-INF/*.RSA")
+    // Xanadu+ variant drops ONLY the shared legacy class (com.snc.discovery.CredentialResolver) so
+    // it doesn't clash with other vendors' JARs; the unique com.snc.discovery.keeper.* class stays.
+    if (resolverVariant == "fqcn") {
+        exclude("com/snc/discovery/CredentialResolver.class")
+    }
 }

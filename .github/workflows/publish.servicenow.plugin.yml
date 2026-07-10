@@ -6,12 +6,19 @@ on:
       tagname:
         type: string
         required: true
-        description: New tag name for the release
+        description: "New tag name for the release (e.g. servicenow-v1.0.0)"
+      publish:
+        type: boolean
+        required: false
+        default: true
+        description: "Create GitHub release (uncheck to build and SBOM only)"
 
 jobs:
-  publish-servicenow-plugin:
-    environment: prod
+  check-version:
+    name: Check version
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     defaults:
       run:
@@ -20,110 +27,243 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
+          persist-credentials: false
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Validate Release Tag
+      - name: Validate release tag format
         env:
-          TAG: ${{ github.event.inputs.tagname }}
+          TAG: ${{ inputs.tagname }}
         run: |
-          git check-ref-format "tags/${TAG}" && echo "Valid release tag ${TAG}" || echo "Invalid release tag ${TAG}"
-          git check-ref-format "tags/${TAG}"
+          git check-ref-format "tags/${TAG}" || { echo "Invalid tag format: ${TAG}"; exit 1; }
+          echo "Tag format is valid: ${TAG}"
 
-      - name: Check if new release tag already exists
+      - name: Check release tag does not already exist
         env:
-          TAG: ${{ github.event.inputs.tagname }}
+          TAG: ${{ inputs.tagname }}
         run: |
           git fetch --tags --quiet
-          git show-ref --tags --verify --quiet "refs/tags/${TAG}" && echo "The new release tag already exists" || echo "The new release tag does not exist"
-          ! git show-ref --tags --verify --quiet "refs/tags/${TAG}"
-
-      - name: Check if version is included in the new release tag
-        env:
-          TAG: ${{ github.event.inputs.tagname }}
-        if: ${{ false }} # disable for now
-        run: |
-          GRADLE_CFG=./build.gradle.kts
-          BUILD_VERSION=`fgrep version $GRADLE_CFG | sed -r 's/^version\s+//g' | sed 's/"//g'`
-          if [[ "$TAG" == *"-$BUILD_VERSION"* ]]; then
-            echo "Build version $BUILD_VERSION is included in the tag $TAG"
-          else
-            echo "Build version $BUILD_VERSION is not included in the tag $TAG"
-            exit 1
+          if git show-ref --tags --verify --quiet "refs/tags/${TAG}"; then
+            echo "Tag ${TAG} already exists"; exit 1
           fi
+          echo "Tag ${TAG} is new"
 
-      - name: Create Shell Script
+      - name: Check version matches tag
+        env:
+          TAG: ${{ inputs.tagname }}
         run: |
-          cat <<'EOF' > build.sh
-          #!/usr/bin/env bash
-          MID_SERVER_URLS=''
-          MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2024/09/01/mid.xanadu-07-02-2024__patch1-08-24-2024_09-01-2024_1853.linux.x86-64.zip
-          MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2024/08/31/mid.washingtondc-12-20-2023__patch7-08-21-2024_08-31-2024_1809.linux.x86-64.zip
-          MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2023/07/26/mid.vancouver-07-06-2023__patch0-07-18-2023_07-26-2023_1029.linux.x86-64.zip
-          MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2023/08/20/mid.utah-12-21-2022__patch6-08-09-2023_08-20-2023_0545.linux.x86-64.zip
-          MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2023/06/23/mid.tokyo-07-08-2022__patch9-hotfix2-06-07-2023_06-23-2023_1740.linux.x86-64.zip
-          MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2023/03/07/mid.sandiego-12-22-2021__patch10-hotfix2-03-06-2023_03-07-2023_0439.linux.x86-64.zip
-          MID_SERVER_URLS=${MID_SERVER_URLS},https://install.service-now.com/glide/distribution/builds/package/mid/2022/07/21/mid.rome-06-23-2021__patch10-07-13-2022_07-21-2022_1153.linux.x86-64.zip
-          
-          releasedir=`pwd`/releases
-          mkdir -p ${releasedir}
-          midsdir=`pwd`/mids
-          mkdir -p ${midsdir}
-          buildroot=`pwd`
-          
-          chmod u+x ${buildroot}/gradlew
-          gradlecfg=${buildroot}/build.gradle.kts
-          
-          buildname=`fgrep archivesName ${gradlecfg} | sed -r 's/^\s*archivesName\s*=\s*//g' | sed 's/"//g'`
-          buildversion=`fgrep version ${gradlecfg} | sed -r 's/^version\s+//g' | sed 's/"//g'`
-          srcjarpath=${buildroot}/build/libs/${buildname}.jar
-          
-          IFS="," read -a urls <<< ${MID_SERVER_URLS}
-          for url in "${urls[@]}"; do
-            if [[ -n "${url// }" ]] ; then
-              cd ${midsdir}
-              filename=${url##*/}
-              tmp=${url##*/mid.}
-              version=${tmp%%-*}
-              
-              curl -L -O -C - ${url}
-              unzip -qq -o -d ${midsdir}/${version} ${filename}
-              
-              libpath=${midsdir}/${version}/agent/lib
-              elibpath=${libpath//\//\\/}
-              sed -i "s/val midServerAgentDir =.*/val midServerAgentDir = \"${elibpath}\"/" ${gradlecfg}
-              
-              cd ${buildroot}
-              gradlew_return_code=0
-              ./gradlew jar || gradlew_return_code=$?
-              if (( gradlew_return_code != 0 )); then
-                echo "Grade build failed with exit status $gradlew_return_code"
-                exit $gradlew_return_code
-              fi
-              
-              dstjarpath=${releasedir}/${buildname}-${version}-${buildversion}.jar
-              echo "JAR src path: ${srcjarpath} JAR destination: ${dstjarpath}"
-              ls -la ${srcjarpath}
-              ls -la ${releasedir}
-              mv ${srcjarpath} ${dstjarpath} || { echo "File Copy Failed!" && exit 2; }
-            fi
+          BUILD_VERSION=$(grep '^version = ' build.gradle.kts | sed -r 's/^version = "(.*)"/\1/')
+          if [[ "${TAG}" != *"${BUILD_VERSION}"* ]]; then
+            echo "Tag '${TAG}' does not contain build version '${BUILD_VERSION}'"; exit 1
+          fi
+          echo "Tag ${TAG} contains build version ${BUILD_VERSION}"
+
+  generate-sbom:
+    name: Generate SBOM
+    needs: check-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./integration/servicenow-external-credential-resolver
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Restore MID server JARs cache
+        id: cache-mid
+        uses: actions/cache@v6
+        with:
+          path: integration/servicenow-external-credential-resolver/libs
+          key: servicenow-mid-all-v1
+
+      - name: Download MID server JARs
+        if: steps.cache-mid.outputs.cache-hit != 'true'
+        run: |
+          declare -A URLS
+          URLS[utah]="https://install.service-now.com/glide/distribution/builds/package/mid/2023/08/20/mid.utah-12-21-2022__patch6-08-09-2023_08-20-2023_0545.linux.x86-64.zip"
+          URLS[vancouver]="https://install.service-now.com/glide/distribution/builds/package/mid/2023/07/26/mid.vancouver-07-06-2023__patch0-07-18-2023_07-26-2023_1029.linux.x86-64.zip"
+          URLS[washingtondc]="https://install.service-now.com/glide/distribution/builds/package/mid/2024/08/31/mid.washingtondc-12-20-2023__patch7-08-21-2024_08-31-2024_1809.linux.x86-64.zip"
+          URLS[xanadu]="https://install.service-now.com/glide/distribution/builds/package/mid/2024/09/01/mid.xanadu-07-02-2024__patch1-08-24-2024_09-01-2024_1853.linux.x86-64.zip"
+          URLS[zurich]="https://install.service-now.com/glide/distribution/builds/package/mid/2026/03/04/mid.zurich-07-01-2025__patch7-02-19-2026_03-04-2026_1012.linux.x86-64.zip"
+          URLS[australia]="https://install.service-now.com/glide/distribution/builds/package/mid/2026/04/29/mid.australia-02-11-2026__patch2-04-17-2026_04-29-2026_2044.linux.x86-64.zip"
+          URLS[yokohama]="https://install.service-now.com/glide/distribution/builds/package/mid/2026/04/29/mid.yokohama-12-18-2024__patch13-04-21-2026_04-29-2026_0346.linux.x86-64.zip"
+          mkdir -p libs
+          for release in "${!URLS[@]}"; do
+            echo "Downloading MID server: $release"
+            mkdir -p "libs/$release"
+            curl -fsSL "${URLS[$release]}" -o mid.zip
+            for jar in mid.jar commons-glide.jar commons-core-automation.jar snc-automation-api.jar mid-api.jar; do
+              unzip -j mid.zip "agent/lib/$jar" -d "libs/$release/" 2>/dev/null || true
+            done
+            rm mid.zip
           done
-          EOF
 
-      - name: Run Shell Script
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Detect version
+        id: detect-version
         run: |
-          chmod u+x build.sh
-          ./build.sh
+          VERSION=$(grep '^version = ' build.gradle.kts | sed -r 's/^version = "(.*)"/\1/')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Create Release
+      - name: Generate SBOM via CycloneDX Gradle plugin
+        run: |
+          chmod +x gradlew
+          # Build against the latest release — runtime deps are identical across all MID releases.
+          # cyclonedxBom resolves runtimeClasspath through Gradle, capturing the KSM SDK and all
+          # transitive deps while correctly excluding compileOnly MID server JARs.
+          LATEST=$(ls -d libs/*/ | sort | tail -1 | xargs basename)
+          ./gradlew cyclonedxBom -PmidRelease="${LATEST}" --no-daemon
+
+      - name: Install Manifest CLI
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.30.0
+
+      - name: Publish SBOM to Manifest
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+          VERSION: ${{ steps.detect-version.outputs.version }}
+        run: |
+          cp build/reports/bom.json servicenow-plugin-sbom.json
+          manifest publish servicenow-plugin-sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --asset-label=ksm,integration,java,servicenow,secrets-manager
+
+      - name: Archive SBOM
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom-keeper-secrets-manager-servicenow-plugin-${{ github.run_number }}
+          path: integration/servicenow-external-credential-resolver/servicenow-plugin-sbom.json
+          retention-days: 10
+
+  build-jars:
+    name: Build JARs
+    needs: check-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./integration/servicenow-external-credential-resolver
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Restore MID server JARs cache
+        id: cache-mid
+        uses: actions/cache@v6
+        with:
+          path: integration/servicenow-external-credential-resolver/libs
+          key: servicenow-mid-all-v1
+
+      - name: Download MID server JARs
+        if: steps.cache-mid.outputs.cache-hit != 'true'
+        run: |
+          declare -A URLS
+          URLS[utah]="https://install.service-now.com/glide/distribution/builds/package/mid/2023/08/20/mid.utah-12-21-2022__patch6-08-09-2023_08-20-2023_0545.linux.x86-64.zip"
+          URLS[vancouver]="https://install.service-now.com/glide/distribution/builds/package/mid/2023/07/26/mid.vancouver-07-06-2023__patch0-07-18-2023_07-26-2023_1029.linux.x86-64.zip"
+          URLS[washingtondc]="https://install.service-now.com/glide/distribution/builds/package/mid/2024/08/31/mid.washingtondc-12-20-2023__patch7-08-21-2024_08-31-2024_1809.linux.x86-64.zip"
+          URLS[xanadu]="https://install.service-now.com/glide/distribution/builds/package/mid/2024/09/01/mid.xanadu-07-02-2024__patch1-08-24-2024_09-01-2024_1853.linux.x86-64.zip"
+          URLS[zurich]="https://install.service-now.com/glide/distribution/builds/package/mid/2026/03/04/mid.zurich-07-01-2025__patch7-02-19-2026_03-04-2026_1012.linux.x86-64.zip"
+          URLS[australia]="https://install.service-now.com/glide/distribution/builds/package/mid/2026/04/29/mid.australia-02-11-2026__patch2-04-17-2026_04-29-2026_2044.linux.x86-64.zip"
+          URLS[yokohama]="https://install.service-now.com/glide/distribution/builds/package/mid/2026/04/29/mid.yokohama-12-18-2024__patch13-04-21-2026_04-29-2026_0346.linux.x86-64.zip"
+          mkdir -p libs
+          for release in "${!URLS[@]}"; do
+            echo "Downloading MID server: $release"
+            mkdir -p "libs/$release"
+            curl -fsSL "${URLS[$release]}" -o mid.zip
+            for jar in mid.jar commons-glide.jar commons-core-automation.jar snc-automation-api.jar mid-api.jar; do
+              unzip -j mid.zip "agent/lib/$jar" -d "libs/$release/" 2>/dev/null || true
+            done
+            rm mid.zip
+          done
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build JARs for all supported MID server releases
+        run: |
+          chmod u+x gradlew
+          mkdir -p releases
+
+          BUILD_NAME=$(grep 'archivesName' build.gradle.kts | sed -r 's/.*archivesName = "(.*)".*/\1/')
+          BUILD_VERSION=$(grep '^version = ' build.gradle.kts | sed -r 's/^version = "(.*)"/\1/')
+
+          for release in libs/*/; do
+            release=$(basename "$release")
+            echo "Building for MID server release: ${release}"
+            # Xanadu and newer ship the FQCN-only variant; pre-Xanadu ships the legacy variant.
+            case "${release}" in
+              washingtondc|vancouver|utah) variant=legacy ;;
+              *) variant=fqcn ;;
+            esac
+            ./gradlew jar -PmidRelease="${release}" -PresolverVariant="${variant}" --no-daemon
+            cp "build/libs/${BUILD_NAME}-${BUILD_VERSION}.jar" "releases/${BUILD_NAME}-${release}-${BUILD_VERSION}.jar"
+          done
+
+          echo "Built JARs:"
+          ls -lh releases/
+
+      - name: Upload JARs artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: servicenow-plugin-jars-${{ github.run_number }}
+          path: integration/servicenow-external-credential-resolver/releases/
+          retention-days: 10
+
+  publish:
+    name: Publish GitHub Release
+    if: ${{ inputs.publish }}
+    needs: [generate-sbom, build-jars]
+    environment: prod
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./integration/servicenow-external-credential-resolver
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@v5
+
+      - name: Download JARs artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: servicenow-plugin-jars-${{ github.run_number }}
+          path: integration/servicenow-external-credential-resolver/releases/
+
+      - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.inputs.tagname }}
+          TAG: ${{ inputs.tagname }}
         run: |
-          GRADLE_CFG=./build.gradle.kts
-          BUILD_NAME=`fgrep archivesName $GRADLE_CFG | sed -r 's/^\s*archivesName\s*=\s*//g' | sed 's/"//g'`
-          BUILD_VERSION=`fgrep version $GRADLE_CFG | sed -r 's/^version\s+//g' | sed 's/"//g'`
-          RELEASE_NAME=${BUILD_NAME}-${BUILD_VERSION}.jar
-          gh release create ${TAG} `pwd`/releases/*.jar --repo="$GITHUB_REPOSITORY" --title="$RELEASE_NAME" --generate-notes
+          BUILD_NAME=$(grep 'archivesName' build.gradle.kts | sed -r 's/.*archivesName = "(.*)".*/\1/')
+          BUILD_VERSION=$(grep '^version = ' build.gradle.kts | sed -r 's/^version = "(.*)"/\1/')
+          gh release create "${TAG}" releases/*.jar \
+            --repo="${GITHUB_REPOSITORY}" \
+            --title="${BUILD_NAME}-${BUILD_VERSION}" \
+            --generate-notes
