@@ -30,10 +30,6 @@ val midServerAgentDir = "/opt/servicenow/mid/agent/lib"
 
 repositories {
     mavenCentral()
-    // mavenLocal() lets the build resolve a pre-release KSM SDK from ~/.m2 (after
-    // `publishToMavenLocal` on sdk/java/core) - e.g. to validate 17.3.0 before it ships to
-    // Maven Central. mavenCentral() is listed first, so it is a no-op for versions on Central.
-    mavenLocal()
     flatDir {
         dirs(midServerAgentDir)
     }
@@ -43,8 +39,7 @@ dependencies {
     // Pinned (was 16.6.4+, a prefix wildcard that stuck at 16.6.4 and predated the pamSettings
     // KeeperRecordField subtype). 17.x registers all PAM field types and skips unparseable
     // records on a full fetch instead of failing the whole batch.
-    // Using 17.2.0 (already on Maven Central) for now; bump to 17.3.0 once it publishes to Central.
-    implementation("com.keepersecurity.secrets-manager:core:17.2.0")
+    implementation("com.keepersecurity.secrets-manager:core:17.3.0")
 
     // MID server dependencies, not required to be uploaded
     // MID jar dependency for config APIs
