@@ -90,7 +90,7 @@ The credential map returned from the resolve method is expected to have keys mat
 # Throttles and cache
 The plugin will try to resolve _"throttled"_ errors by default by adding a random delays and retrying later, which works well for up to 1000-3000 requests per 10 sec interval (throttles start after 300-600 requests/10 sec) If you expect 5000+ requests in less than 10 seconds we recommend to enable caching by setting `ext.cred.keeper.use_ksm_cache` parameter to `"true"` in _config.xml_ and restarting the MID Server. Cached data is stored in an encrypted file `ksm_cache.dat` in MID Server's work folder. Cache is updated at most once every 5 minutes or with the next request.
 
-> ️ⓘ Enabling the cache (or using the `type:title` credential ID form) makes the resolver fetch **all** records shared to the Keeper Secrets Manager application, not just the target record. To minimize what is fetched, prefer **record-UID** credential IDs (a UID lookup is filtered server-side). The resolver tolerates PAM and other record types shared to the same application - the bundled SDK (0.2.0+ / KSM SDK 17.x) skips records it cannot parse instead of failing the whole fetch.
+> ️ⓘ Enabling the cache (or using the `type:title` credential ID form) makes the resolver fetch **all** records shared to the Keeper Secrets Manager application, not just the target record. To minimize what is fetched, prefer **record-UID** credential IDs (a UID lookup is filtered server-side). The resolver tolerates PAM and other record types shared to the same application - the bundled SDK (resolver 1.0.0+ / KSM SDK 17.x) skips records it cannot parse instead of failing the whole fetch.
 
 # Troubleshooting
 ### Check the logs
@@ -101,7 +101,7 @@ If a particular credential ID is failing, search for that ID in the logs, and ch
 You will also find any exceptions that the resolver throws in the logs, including errors locating a record or finding fields, or if it couldn't communicate with Keeper vault.
 
 ### `Serializer for subclass 'pamSettings' is not found` (or a similar polymorphic error)
-This error in the MID Server logs means the deployed resolver JAR bundles an old Keeper Secrets Manager SDK that predates newer field/record types (such as PAM records) shared to the same application. Upgrade to resolver JAR **0.2.0 or newer** (which bundles a current KSM SDK). As an interim workaround you can remove PAM records from the application's shared folder, disable the cache, and use record-UID credential IDs.
+This error in the MID Server logs means the deployed resolver JAR bundles an old Keeper Secrets Manager SDK that predates newer field/record types (such as PAM records) shared to the same application. Upgrade to resolver JAR **1.0.0 or newer** (which bundles a current KSM SDK). As an interim workaround you can remove PAM records from the application's shared folder, disable the cache, and use record-UID credential IDs.
 
 ### Use the Test credential feature
 When creating or configuring a credential in the ServiceNow UI, you should be able to click "Test credential" to perform a quick targeted test. Select the MID server that should query Keeper vault, and select a target that the credential should work for to check that everything works as expected. If it doesn't, check the logs for errors and debug information as detailed above.
