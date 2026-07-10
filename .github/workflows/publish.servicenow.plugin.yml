@@ -99,9 +99,8 @@ jobs:
           LATEST=$(ls -d libs/*/ | sort | tail -1 | xargs basename)
           ./gradlew cyclonedxBom -PmidRelease="${LATEST}" --no-daemon
 
-      - name: Install Syft and Manifest CLI
+      - name: Install Manifest CLI
         run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
           curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.30.0
 
       - name: Publish SBOM to Manifest
@@ -110,12 +109,8 @@ jobs:
           VERSION: ${{ steps.detect-version.outputs.version }}
         run: |
           cp build/reports/bom.json servicenow-plugin-sbom.json
-          manifest sbom servicenow-plugin-sbom.json \
-            --name=keeper-secrets-manager-servicenow-plugin \
-            --version="${VERSION}" \
-            --output=cyclonedx-json \
+          manifest publish servicenow-plugin-sbom.json \
             --api-key="${MANIFEST_TOKEN}" \
-            --publish=true \
             --asset-label=ksm,integration,java,servicenow,secrets-manager
 
       - name: Archive SBOM
@@ -160,7 +155,6 @@ jobs:
           for release in libs/*/; do
             release=$(basename "$release")
             echo "Building for MID server release: ${release}"
-<<<<<<< HEAD
             # Xanadu and newer ship the FQCN-only variant; pre-Xanadu ships the legacy variant.
             case "${release}" in
               washingtondc|vancouver|utah) variant=legacy ;;
