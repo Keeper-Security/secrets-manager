@@ -12,7 +12,6 @@
 
 # Package Files #
 *.jar
-!libs/**/*.jar
 *.war
 *.nar
 *.ear
@@ -24,6 +23,7 @@
 hs_err_pid*
 
 build/
+libs/
 .gradle/
 .idea/
 .DS_Store

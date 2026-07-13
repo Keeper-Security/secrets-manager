@@ -28,6 +28,30 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.java-version }}
+
+      - name: Restore MID server JARs cache
+        id: cache-mid
+        uses: actions/cache@v4
+        with:
+          path: integration/servicenow-external-credential-resolver/libs/${{ matrix.mid-release }}
+          key: servicenow-mid-${{ matrix.mid-release }}-v1
+
+      - name: Download MID server JARs
+        if: steps.cache-mid.outputs.cache-hit != 'true'
+        env:
+          MID_URL_UTAH: "https://install.service-now.com/glide/distribution/builds/package/mid/2023/08/20/mid.utah-12-21-2022__patch6-08-09-2023_08-20-2023_0545.linux.x86-64.zip"
+          MID_URL_ZURICH: "https://install.service-now.com/glide/distribution/builds/package/mid/2026/03/04/mid.zurich-07-01-2025__patch7-02-19-2026_03-04-2026_1012.linux.x86-64.zip"
+        run: |
+          release="${{ matrix.mid-release }}"
+          url_var="MID_URL_${release^^}"
+          url="${!url_var}"
+          mkdir -p "libs/$release"
+          curl -fsSL "$url" -o mid.zip
+          for jar in mid.jar commons-glide.jar commons-core-automation.jar snc-automation-api.jar mid-api.jar; do
+            unzip -j mid.zip "agent/lib/$jar" -d "libs/$release/" 2>/dev/null || true
+          done
+          rm mid.zip
+
       - name: Build and test
         run: |
           chmod u+x gradlew

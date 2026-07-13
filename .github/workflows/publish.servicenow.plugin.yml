@@ -78,6 +78,35 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Restore MID server JARs cache
+        id: cache-mid
+        uses: actions/cache@v4
+        with:
+          path: integration/servicenow-external-credential-resolver/libs
+          key: servicenow-mid-all-v1
+
+      - name: Download MID server JARs
+        if: steps.cache-mid.outputs.cache-hit != 'true'
+        run: |
+          declare -A URLS
+          URLS[utah]="https://install.service-now.com/glide/distribution/builds/package/mid/2023/08/20/mid.utah-12-21-2022__patch6-08-09-2023_08-20-2023_0545.linux.x86-64.zip"
+          URLS[vancouver]="https://install.service-now.com/glide/distribution/builds/package/mid/2023/07/26/mid.vancouver-07-06-2023__patch0-07-18-2023_07-26-2023_1029.linux.x86-64.zip"
+          URLS[washingtondc]="https://install.service-now.com/glide/distribution/builds/package/mid/2024/08/31/mid.washingtondc-12-20-2023__patch7-08-21-2024_08-31-2024_1809.linux.x86-64.zip"
+          URLS[xanadu]="https://install.service-now.com/glide/distribution/builds/package/mid/2024/09/01/mid.xanadu-07-02-2024__patch1-08-24-2024_09-01-2024_1853.linux.x86-64.zip"
+          URLS[zurich]="https://install.service-now.com/glide/distribution/builds/package/mid/2026/03/04/mid.zurich-07-01-2025__patch7-02-19-2026_03-04-2026_1012.linux.x86-64.zip"
+          URLS[australia]="https://install.service-now.com/glide/distribution/builds/package/mid/2026/04/29/mid.australia-02-11-2026__patch2-04-17-2026_04-29-2026_2044.linux.x86-64.zip"
+          URLS[yokohama]="https://install.service-now.com/glide/distribution/builds/package/mid/2026/04/29/mid.yokohama-12-18-2024__patch13-04-21-2026_04-29-2026_0346.linux.x86-64.zip"
+          mkdir -p libs
+          for release in "${!URLS[@]}"; do
+            echo "Downloading MID server: $release"
+            mkdir -p "libs/$release"
+            curl -fsSL "${URLS[$release]}" -o mid.zip
+            for jar in mid.jar commons-glide.jar commons-core-automation.jar snc-automation-api.jar mid-api.jar; do
+              unzip -j mid.zip "agent/lib/$jar" -d "libs/$release/" 2>/dev/null || true
+            done
+            rm mid.zip
+          done
+
       - name: Set up Java
         uses: actions/setup-java@v5
         with:
@@ -137,6 +166,35 @@ jobs:
         uses: actions/checkout@v5
         with:
           persist-credentials: false
+
+      - name: Restore MID server JARs cache
+        id: cache-mid
+        uses: actions/cache@v4
+        with:
+          path: integration/servicenow-external-credential-resolver/libs
+          key: servicenow-mid-all-v1
+
+      - name: Download MID server JARs
+        if: steps.cache-mid.outputs.cache-hit != 'true'
+        run: |
+          declare -A URLS
+          URLS[utah]="https://install.service-now.com/glide/distribution/builds/package/mid/2023/08/20/mid.utah-12-21-2022__patch6-08-09-2023_08-20-2023_0545.linux.x86-64.zip"
+          URLS[vancouver]="https://install.service-now.com/glide/distribution/builds/package/mid/2023/07/26/mid.vancouver-07-06-2023__patch0-07-18-2023_07-26-2023_1029.linux.x86-64.zip"
+          URLS[washingtondc]="https://install.service-now.com/glide/distribution/builds/package/mid/2024/08/31/mid.washingtondc-12-20-2023__patch7-08-21-2024_08-31-2024_1809.linux.x86-64.zip"
+          URLS[xanadu]="https://install.service-now.com/glide/distribution/builds/package/mid/2024/09/01/mid.xanadu-07-02-2024__patch1-08-24-2024_09-01-2024_1853.linux.x86-64.zip"
+          URLS[zurich]="https://install.service-now.com/glide/distribution/builds/package/mid/2026/03/04/mid.zurich-07-01-2025__patch7-02-19-2026_03-04-2026_1012.linux.x86-64.zip"
+          URLS[australia]="https://install.service-now.com/glide/distribution/builds/package/mid/2026/04/29/mid.australia-02-11-2026__patch2-04-17-2026_04-29-2026_2044.linux.x86-64.zip"
+          URLS[yokohama]="https://install.service-now.com/glide/distribution/builds/package/mid/2026/04/29/mid.yokohama-12-18-2024__patch13-04-21-2026_04-29-2026_0346.linux.x86-64.zip"
+          mkdir -p libs
+          for release in "${!URLS[@]}"; do
+            echo "Downloading MID server: $release"
+            mkdir -p "libs/$release"
+            curl -fsSL "${URLS[$release]}" -o mid.zip
+            for jar in mid.jar commons-glide.jar commons-core-automation.jar snc-automation-api.jar mid-api.jar; do
+              unzip -j mid.zip "agent/lib/$jar" -d "libs/$release/" 2>/dev/null || true
+            done
+            rm mid.zip
+          done
 
       - name: Set up Java
         uses: actions/setup-java@v5
