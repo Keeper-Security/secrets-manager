@@ -50,6 +50,18 @@ module KeeperSecretsManager
         # Priority: explicit proxy_url parameter > HTTPS_PROXY env var > no proxy
         @proxy_url = options[:proxy_url] || ENV['HTTPS_PROXY'] || ENV['https_proxy']
 
+        if @proxy_url
+          begin
+            proxy_uri = URI.parse(@proxy_url)
+            unless proxy_uri.is_a?(URI::HTTP) && !proxy_uri.host.to_s.empty?
+              raise ArgumentError,
+                    "Invalid proxy_url '#{@proxy_url}': must be a valid http or https URL with a host (e.g., http://proxy.example.com:8080)"
+            end
+          rescue URI::InvalidURIError => e
+            raise ArgumentError, "Invalid proxy_url '#{@proxy_url}': #{e.message}"
+          end
+        end
+
         # Set up logging
         @logger = options[:logger] || Logger.new(STDOUT)
         @logger.level = options[:log_level] || Logger::WARN
