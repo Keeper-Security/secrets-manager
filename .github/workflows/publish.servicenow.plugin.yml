@@ -58,8 +58,8 @@ jobs:
           cat <<'EOF' > build.sh
           #!/usr/bin/env bash
           MID_SERVER_URLS=''
-          # MID Server build zip per supported ServiceNow release (Xanadu+ build the fqcn variant;
-          # Washington DC and older build the legacy variant - see the per-target case below).
+          # MID Server build zip per supported ServiceNow release (one JAR per release, compiled
+          # against that release's MID Server libraries).
           # To add a release: open its release-notes "Available versions" page, take the target
           # patch's "Build tag" and "Build date", replace the "glide-" prefix with "mid.", append
           # "_<Build date>.linux.x86-64.zip", and use the Build date as the yyyy/MM/dd URL path.
@@ -92,11 +92,6 @@ jobs:
               filename=${url##*/}
               tmp=${url##*/mid.}
               version=${tmp%%-*}
-              # Xanadu and newer ship the FQCN-only variant; pre-Xanadu ships the legacy-class variant.
-              case "${version}" in
-                washingtondc|vancouver|utah|tokyo|sandiego|rome) variant=legacy ;;
-                *) variant=fqcn ;;
-              esac
 
               curl -L -O -C - ${url}
               unzip -qq -o -d ${midsdir}/${version} ${filename}
@@ -107,7 +102,7 @@ jobs:
               
               cd ${buildroot}
               gradlew_return_code=0
-              ./gradlew jar -PresolverVariant=${variant} || gradlew_return_code=$?
+              ./gradlew jar || gradlew_return_code=$?
               if (( gradlew_return_code != 0 )); then
                 echo "Grade build failed with exit status $gradlew_return_code"
                 exit $gradlew_return_code
