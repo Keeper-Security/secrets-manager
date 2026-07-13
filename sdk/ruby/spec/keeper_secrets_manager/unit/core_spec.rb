@@ -414,5 +414,17 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
       expect(manager).to receive(:get_secrets).with(['test-uid-1094']).and_return([])
       manager.update_secret(record)
     end
+
+    it 'calls complete_transaction with the record uid to finalize the staged update' do
+      expect(manager).to receive(:complete_transaction).with('test-uid-1094')
+      manager.update_secret(record)
+    end
+
+    it 'calls complete_transaction when record is a plain hash' do
+      hash_record = { 'uid' => 'hash-uid-1095' }
+      allow(manager).to receive(:update_secret_with_options)
+      expect(manager).to receive(:complete_transaction).with('hash-uid-1095')
+      manager.update_secret(hash_record)
+    end
   end
 end

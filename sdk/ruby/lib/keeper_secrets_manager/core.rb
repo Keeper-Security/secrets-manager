@@ -315,9 +315,9 @@ module KeeperSecretsManager
         update_options = Dto::UpdateOptions.new(transaction_type: transaction_type)
         update_secret_with_options(record, update_options)
 
-        # Update local record's revision to reflect server state
-        # Since the server doesn't return the new revision in the response,
-        # we need to refetch the record to get the actual revision
+        uid = record.is_a?(Dto::KeeperRecord) ? record.uid : (record['uid'] || record[:uid])
+        complete_transaction(uid) if uid
+
         if record.is_a?(Dto::KeeperRecord)
           updated_record = get_secrets([record.uid]).first
           if updated_record
