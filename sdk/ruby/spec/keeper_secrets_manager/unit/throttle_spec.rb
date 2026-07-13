@@ -46,11 +46,11 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
       expect(sm.send(:throttle_delay, 1, -5)).to eq(22)
     end
 
-    it 'keeps the first delay within the +/-25% jitter bounds' do
-      allow(sm).to receive(:rand).and_return(-0.25)
-      expect(sm.send(:throttle_delay, 0, 0)).to be_within(0.001).of(8.25)
+    it 'keeps the first delay within the one-sided 0..+25% jitter bounds' do
+      allow(sm).to receive(:rand).and_return(0.0)
+      expect(sm.send(:throttle_delay, 0, 0)).to be_within(0.001).of(11.0)  # floor: no jitter added
       allow(sm).to receive(:rand).and_return(0.25)
-      expect(sm.send(:throttle_delay, 0, 0)).to be_within(0.001).of(13.75)
+      expect(sm.send(:throttle_delay, 0, 0)).to be_within(0.001).of(13.75) # ceiling: +25%
     end
   end
 
@@ -115,8 +115,8 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
       allow(manager).to receive(:sleep) { |seconds| captured << seconds }
 
       expect { manager.get_secrets }.to raise_error(KeeperSecretsManager::ThrottledError)
-      # retry_after = 3s with +/-25% jitter -> [2.25s, 3.75s]
-      expect(captured.first).to be_between(2.25, 3.75)
+      # retry_after = 3s with one-sided 0..+25% jitter -> [3.0s, 3.75s]
+      expect(captured.first).to be_between(3.0, 3.75)
     end
 
     it 'does not retry a non-throttle 403' do
