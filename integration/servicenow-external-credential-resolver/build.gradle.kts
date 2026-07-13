@@ -68,18 +68,10 @@ tasks.named<org.cyclonedx.gradle.CycloneDxTask>("cyclonedxBom") {
     includeConfigs.set(listOf("runtimeClasspath"))
 }
 
-// Resolver JAR variant (pass with -PresolverVariant=fqcn|legacy):
-//   fqcn   -> ServiceNow Xanadu+ : ships the unique com.snc.discovery.keeper.KeeperCredentialResolver
-//             and OMITS the shared com.snc.discovery.CredentialResolver, so Keeper coexists with
-//             other vendors' resolvers (which ship that shared class) on the same MID Server.
-//   legacy -> pre-Xanadu : keeps com.snc.discovery.CredentialResolver (required there).
-// Default "legacy" keeps both classes (also convenient for local dev/testing).
-val resolverVariant = (project.findProperty("resolverVariant") as String? ?: "legacy").lowercase()
-
 tasks.jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
-        attributes("Main-Class" to "com.snc.discovery.keeper.KeeperCredentialResolver")
+        attributes("Main-Class" to "com.snc.discovery.CredentialResolver")
     }
     from(configurations
         .runtimeClasspath
@@ -90,9 +82,4 @@ tasks.jar {
     exclude("META-INF/*.SF")
     exclude("META-INF/*.DSA")
     exclude("META-INF/*.RSA")
-    // Xanadu+ variant drops ONLY the shared legacy class (com.snc.discovery.CredentialResolver) so
-    // it doesn't clash with other vendors' JARs; the unique com.snc.discovery.keeper.* class stays.
-    if (resolverVariant == "fqcn") {
-        exclude("com/snc/discovery/CredentialResolver.class")
-    }
 }
