@@ -3,6 +3,7 @@
 ## [17.2.0]
 
 ### Fixed
+- **KSM-1094**: `update_secret` no longer raises `NameError: undefined local variable 'record_uid'` when called with a `KeeperRecord` object; the revision refresh now correctly references `record.uid`
 - **KSM-824**: `to_h` now always includes `custom` in the V3 API payload, even when the array is empty, matching Commander and Vault behavior
 - **KSM-906**: Added IL5 region mapping (`IL5` → `il5.keepersecurity.us`) to `KEEPER_SERVERS`
 - **KSM-987**: `url_safe_str_to_bytes` and `base64_to_bytes` in `Utils` now raise `Error` when passed `nil`; all Base64 decoding in `core.rb` routes through `Utils`

@@ -319,7 +319,7 @@ module KeeperSecretsManager
         # Since the server doesn't return the new revision in the response,
         # we need to refetch the record to get the actual revision
         if record.is_a?(Dto::KeeperRecord)
-          updated_record = get_secrets([record_uid]).first
+          updated_record = get_secrets([record.uid]).first
           if updated_record
             record.revision = updated_record.revision
             @logger&.debug("update_secret: updated local revision to #{record.revision}")
