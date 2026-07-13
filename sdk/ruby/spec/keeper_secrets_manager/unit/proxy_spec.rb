@@ -94,5 +94,41 @@ RSpec.describe 'Proxy Configuration' do
 
       expect(sm.instance_variable_get(:@proxy_url)).to eq('http://user:pass@proxy.example.com:8080')
     end
+
+    it 'raises ArgumentError for an empty proxy_url' do
+      storage = KeeperSecretsManager::Storage::InMemoryStorage.new({
+        'hostname' => 'keepersecurity.com',
+        'clientId' => Base64.strict_encode64('test-client'),
+        'appKey' => Base64.strict_encode64(SecureRandom.random_bytes(32))
+      })
+
+      expect {
+        KeeperSecretsManager.new(config: storage, proxy_url: '')
+      }.to raise_error(ArgumentError, /proxy_url/)
+    end
+
+    it 'raises ArgumentError for a proxy_url with no host' do
+      storage = KeeperSecretsManager::Storage::InMemoryStorage.new({
+        'hostname' => 'keepersecurity.com',
+        'clientId' => Base64.strict_encode64('test-client'),
+        'appKey' => Base64.strict_encode64(SecureRandom.random_bytes(32))
+      })
+
+      expect {
+        KeeperSecretsManager.new(config: storage, proxy_url: 'http://')
+      }.to raise_error(ArgumentError, /proxy_url/)
+    end
+
+    it 'raises ArgumentError for a proxy_url that is not an HTTP/HTTPS URL' do
+      storage = KeeperSecretsManager::Storage::InMemoryStorage.new({
+        'hostname' => 'keepersecurity.com',
+        'clientId' => Base64.strict_encode64('test-client'),
+        'appKey' => Base64.strict_encode64(SecureRandom.random_bytes(32))
+      })
+
+      expect {
+        KeeperSecretsManager.new(config: storage, proxy_url: 'not_a_url')
+      }.to raise_error(ArgumentError, /proxy_url/)
+    end
   end
 end
