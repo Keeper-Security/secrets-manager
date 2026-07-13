@@ -660,26 +660,24 @@ module KeeperSecretsManager
 
       # Download file thumbnail
       def download_thumbnail(file_data)
-        # Extract thumbnail metadata
-        file_uid = file_data['fileUid'] || file_data['uid'] || (file_data.respond_to?(:uid) ? file_data.uid : nil)
-        thumbnail_url = file_data['thumbnailUrl'] || file_data['thumbnail_url'] || (file_data.respond_to?(:thumbnail_url) ? file_data.thumbnail_url : nil)
+        if file_data.is_a?(Dto::KeeperFile)
+          file_uid      = file_data.uid
+          thumbnail_url = file_data.thumbnail_url
+          file_key_str  = file_data.file_key
+        else
+          file_uid      = file_data['fileUid'] || file_data['uid']
+          thumbnail_url = file_data['thumbnailUrl'] || file_data['thumbnail_url']
+          file_key_str  = file_data['fileKey'] || file_data['file_key']
+        end
 
         raise ArgumentError, 'File UID is required' unless file_uid
         raise Error, "No thumbnail URL available for file #{file_uid}" unless thumbnail_url
-
-        # The file key should already be decrypted (base64 encoded)
-        file_key_str = file_data['fileKey'] || file_data['file_key']
         raise Error, "File key not available for #{file_uid}" unless file_key_str
 
         file_key = Utils.base64_to_bytes(file_key_str)
-
-        # Download the encrypted thumbnail content
         encrypted_content = download_encrypted_file(thumbnail_url)
-
-        # Decrypt the thumbnail content with the file key
         decrypted_content = Crypto.decrypt_aes_gcm(encrypted_content, file_key)
 
-        # Return thumbnail data
         {
           'file_uid' => file_uid,
           'data' => decrypted_content,

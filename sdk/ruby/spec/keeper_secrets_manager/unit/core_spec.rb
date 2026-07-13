@@ -427,4 +427,48 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
       manager.update_secret(hash_record)
     end
   end
+
+  describe '#download_thumbnail' do
+    let(:manager) { described_class.new(config: mock_config) }
+    let(:thumbnail_url) { 'https://example.com/thumb.jpg' }
+    let(:file_key_bytes) { KeeperSecretsManager::Crypto.generate_encryption_key_bytes }
+    let(:file_key_b64) { KeeperSecretsManager::Utils.bytes_to_base64(file_key_bytes) }
+    let(:decrypted_thumb) { 'thumb-content' }
+
+    before do
+      allow(manager).to receive(:download_encrypted_file).and_return('encrypted-bytes')
+      allow(KeeperSecretsManager::Crypto).to receive(:decrypt_aes_gcm).and_return(decrypted_thumb)
+    end
+
+    it 'does not raise NoMethodError when passed a KeeperFile object' do
+      file = KeeperSecretsManager::Dto::KeeperFile.new(
+        'fileUid' => 'file-uid-1096',
+        'thumbnailUrl' => thumbnail_url,
+        'fileKey' => file_key_b64
+      )
+      expect { manager.download_thumbnail(file) }.not_to raise_error
+    end
+
+    it 'returns the correct uid and data when passed a KeeperFile object' do
+      file = KeeperSecretsManager::Dto::KeeperFile.new(
+        'fileUid' => 'file-uid-1096',
+        'thumbnailUrl' => thumbnail_url,
+        'fileKey' => file_key_b64
+      )
+      result = manager.download_thumbnail(file)
+      expect(result['file_uid']).to eq('file-uid-1096')
+      expect(result['data']).to eq(decrypted_thumb)
+    end
+
+    it 'still works with a plain hash' do
+      file_hash = {
+        'fileUid' => 'file-uid-hash',
+        'thumbnailUrl' => thumbnail_url,
+        'fileKey' => file_key_b64
+      }
+      result = manager.download_thumbnail(file_hash)
+      expect(result['file_uid']).to eq('file-uid-hash')
+      expect(result['data']).to eq(decrypted_thumb)
+    end
+  end
 end
