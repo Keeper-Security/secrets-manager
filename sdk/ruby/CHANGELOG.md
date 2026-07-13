@@ -3,6 +3,7 @@
 ## [17.2.0]
 
 ### Fixed
+- **KSM-1095**: `update_secret` now calls `complete_transaction` after staging the update, so changes are committed to the server rather than remaining in a staged state indefinitely; works for both `KeeperRecord` objects and plain hash inputs
 - **KSM-1094**: `update_secret` no longer raises `NameError: undefined local variable 'record_uid'` when called with a `KeeperRecord` object; the revision refresh now correctly references `record.uid`
 - **KSM-824**: `to_h` now always includes `custom` in the V3 API payload, even when the array is empty, matching Commander and Vault behavior
 - **KSM-906**: Added IL5 region mapping (`IL5` → `il5.keepersecurity.us`) to `KEEPER_SERVERS`
