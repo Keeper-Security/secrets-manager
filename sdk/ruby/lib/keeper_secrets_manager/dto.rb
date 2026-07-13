@@ -482,7 +482,7 @@ module KeeperSecretsManager
 
     # File attachment representation
     class KeeperFile
-      attr_accessor :uid, :name, :title, :mime_type, :size, :data, :url, :thumbnail_url, :last_modified
+      attr_accessor :uid, :name, :title, :mime_type, :size, :data, :url, :thumbnail_url, :last_modified, :file_key
 
       def initialize(attrs = {})
         @uid = attrs['fileUid'] || attrs['uid'] || attrs[:uid]
@@ -494,6 +494,7 @@ module KeeperSecretsManager
         @url = attrs['url'] || attrs[:url]
         @thumbnail_url = attrs['thumbnailUrl'] || attrs['thumbnail_url'] || attrs[:thumbnail_url]
         @last_modified = attrs['lastModified'] || attrs['last_modified'] || attrs[:last_modified]
+        @file_key = attrs['fileKey'] || attrs['file_key'] || attrs[:file_key]
       end
 
       def to_h

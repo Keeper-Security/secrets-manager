@@ -5,6 +5,7 @@
 ### Fixed
 - **KSM-1095**: `update_secret` now calls `complete_transaction` after staging the update, so changes are committed to the server rather than remaining in a staged state indefinitely; works for both `KeeperRecord` objects and plain hash inputs
 - **KSM-1094**: `update_secret` no longer raises `NameError: undefined local variable 'record_uid'` when called with a `KeeperRecord` object; the revision refresh now correctly references `record.uid`
+- **KSM-1096**: `download_thumbnail` no longer raises `NoMethodError` when passed a `KeeperFile` object; `KeeperFile` now exposes a `file_key` attribute and the method dispatches on type before attempting hash access
 - **KSM-824**: `to_h` now always includes `custom` in the V3 API payload, even when the array is empty, matching Commander and Vault behavior
 - **KSM-906**: Added IL5 region mapping (`IL5` → `il5.keepersecurity.us`) to `KEEPER_SERVERS`
 - **KSM-987**: `url_safe_str_to_bytes` and `base64_to_bytes` in `Utils` now raise `Error` when passed `nil`; all Base64 decoding in `core.rb` routes through `Utils`
