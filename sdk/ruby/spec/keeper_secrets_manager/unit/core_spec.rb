@@ -390,4 +390,29 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
       expect(described_class::INFLATE_REF_TYPES['cardRef']).to include('paymentCard')
     end
   end
+
+  describe '#update_secret' do
+    let(:manager) { described_class.new(config: mock_config) }
+    let(:record) do
+      KeeperSecretsManager::Dto::KeeperRecord.new(
+        'recordUid' => 'test-uid-1094',
+        'data' => { 'title' => 'Test', 'type' => 'login', 'fields' => [], 'custom' => [] }
+      )
+    end
+
+    before do
+      allow(manager).to receive(:update_secret_with_options)
+      allow(manager).to receive(:complete_transaction)
+      allow(manager).to receive(:get_secrets).and_return([])
+    end
+
+    it 'does not raise NameError when called with a KeeperRecord' do
+      expect { manager.update_secret(record) }.not_to raise_error
+    end
+
+    it 'passes the record uid to get_secrets when refreshing the revision' do
+      expect(manager).to receive(:get_secrets).with(['test-uid-1094']).and_return([])
+      manager.update_secret(record)
+    end
+  end
 end
