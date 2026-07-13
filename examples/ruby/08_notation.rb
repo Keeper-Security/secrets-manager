@@ -100,9 +100,9 @@ begin
   uid = secrets.first&.uid
 
   if uid
-    # Valid notation - returns value
+    # Valid notation - always returns an Array (single-value fields wrap as [value])
     password = secrets_manager.try_get_notation("keeper://#{uid}/field/password")
-    puts "  [OK] Valid notation returned value (#{password.class})"
+    puts "  [OK] Valid notation returned #{password.class}: #{password.first.inspect}"
 
     # Invalid notation - returns empty array instead of raising exception
     invalid = secrets_manager.try_get_notation('keeper://INVALID_UID/field/password')

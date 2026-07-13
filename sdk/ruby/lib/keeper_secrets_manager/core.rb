@@ -372,7 +372,7 @@ module KeeperSecretsManager
       # Returns empty array if notation is invalid or record not found
       def try_get_notation(notation_uri)
         parser = Notation::Parser.new(self)
-        parser.parse(notation_uri)
+        Array(parser.parse(notation_uri))
       rescue NotationError, RecordNotFoundError, StandardError => e
         @logger.debug("try_get_notation failed for '#{notation_uri}': #{e.message}")
         []

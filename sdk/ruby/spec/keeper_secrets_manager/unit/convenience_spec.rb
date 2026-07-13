@@ -114,7 +114,7 @@ RSpec.describe 'Convenience Methods' do
 
       result = sm.try_get_notation('keeper://test-uid/field/password')
 
-      expect(result).to eq('secret-value')
+      expect(result).to eq(['secret-value'])
     end
 
     it 'returns empty array when notation is invalid' do
