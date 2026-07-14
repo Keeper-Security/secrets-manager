@@ -122,12 +122,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: read
-      packages: write
-
-    defaults:
-      run:
-        working-directory: ./sdk/ruby
+      id-token: write  # OIDC trusted publishing
+      contents: write  # rake release pushes the version tag
 
     steps:
       - name: Get the source code
@@ -138,27 +134,9 @@ jobs:
         with:
           ruby-version: '3.3'
           working-directory: ./sdk/ruby
-
-      - name: Retrieve secrets from KSM
-        id: ksmsecrets
-        uses: Keeper-Security/ksm-action@37abbada28637b6478ba845e73d3f8b9676572fe
-        with:
-          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
-          secrets: |
-            RQ7jXJ-r7WT2Cnq1nlFa6g/custom_field/RUBYGEMS_API_KEY > RUBYGEMS_API_KEY
-
-      - name: Install dependencies
-        run: |
-          gem install bundler
-          bundle install
-
-      - name: Build and verify gem
-        run: |
-          gem build keeper_secrets_manager.gemspec
-          gem spec keeper_secrets_manager-*.gem
+          bundler-cache: true
 
       - name: Publish to RubyGems
-        env:
-          GEM_HOST_API_KEY: ${{ steps.ksmsecrets.outputs.RUBYGEMS_API_KEY }}
-        run: |
-          gem push keeper_secrets_manager-*.gem
+        uses: rubygems/release-gem@052cc82692552de3ef2b81fd670e41d13cba8092  # v1.4.0
+        with:
+          working-directory: sdk/ruby
