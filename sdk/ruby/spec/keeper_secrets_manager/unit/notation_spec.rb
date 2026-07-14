@@ -211,6 +211,28 @@ RSpec.describe KeeperSecretsManager::Notation::Parser do
     end
   end
 
+  describe '#get_value' do
+    context 'with nil or invalid notation' do
+      it 'returns nil without raising when notation is nil' do
+        expect(parser.get_value(nil, auto_process: true)).to be_nil
+      end
+
+      it 'returns nil without raising when notation is empty string' do
+        expect(parser.get_value('', auto_process: true)).to be_nil
+      end
+
+      it 'returns nil without raising when notation is not a string' do
+        expect(parser.get_value(42, auto_process: true)).to be_nil
+      end
+    end
+
+    context 'without auto_process' do
+      it 'returns nil for nil notation' do
+        expect(parser.get_value(nil)).to be_nil
+      end
+    end
+  end
+
   describe 'private methods' do
     describe '#parse_notation' do
       xit 'correctly parses all sections of a notation' do

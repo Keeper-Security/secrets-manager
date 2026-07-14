@@ -33,6 +33,7 @@
   - `10_custom_caching.rb`: Updated to use `Utils.bytes_to_base64` instead of `Base64.strict_encode64`
 - **KSM-1088**: `delete_secret` and `delete_folder` now log an error for each record/folder whose `responseCode` is not `"ok"`, surfacing partial-failure details that were previously silently discarded.
 - **KSM-1091**: Invalid `proxy_url` now raises `ArgumentError` at initialization with a descriptive message. Previously, a URL with no host (e.g., `"http://"`) silently bypassed the proxy, and a fully malformed URL raised `NetworkError` at request time instead.
+- **KSM-1098**: `get_value`, `get_totp_code`, and `download_file` in `notation_enhancements` no longer raise `NoMethodError` when passed `nil`, an empty string, or a non-String value; they return `nil` immediately. Also fixed `parse` itself, which called `empty?` before the `is_a?(String)` check, causing `NoMethodError` for non-String inputs instead of `NotationError`. `notation_enhancements` is now properly required from the main entry point.
 - Fixed badly anchored regular expression in `test/integration/test_totp.rb` that could cause false positives in test validation
 
 ### Added

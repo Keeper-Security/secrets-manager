@@ -13,10 +13,9 @@ module KeeperSecretsManager
 
       # Parse notation and return value
       def parse(notation)
-        return nil if notation.nil? || notation.empty?
-
-        # Validate notation format before parsing
+        return nil if notation.nil?
         raise NotationError, 'Invalid notation format: must be a string' unless notation.is_a?(String)
+        return nil if notation.empty?
 
         # Parse notation URI
         begin

@@ -6,6 +6,8 @@ module KeeperSecretsManager
       # Get value with enhanced functionality
       # This method extends the basic parse method to handle special cases
       def get_value(notation, options = {})
+        return nil if notation.nil? || !notation.is_a?(String) || notation.empty?
+
         value = parse(notation)
 
         # Check if we should process special types
