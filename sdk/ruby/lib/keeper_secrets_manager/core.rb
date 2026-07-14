@@ -46,7 +46,7 @@ module KeeperSecretsManager
         @verify_ssl_certs = options.fetch(:verify_ssl_certs, true)
         @custom_post_function = options[:custom_post_function]
 
-        # optional custom server public key overrides (isolated deployments / IL5).
+        # optional custom server public key overrides (isolated deployments).
         # Precedence, highest first: these programmatic params > OTT segments > pre-existing config.
         @server_public_key_override    = options[:server_public_key]
         @server_public_key_id_override = options[:server_public_key_id]
