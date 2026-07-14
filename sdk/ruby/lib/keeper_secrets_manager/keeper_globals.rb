@@ -5,9 +5,7 @@ module KeeperSecretsManager
     CLIENT_VERSION_PREFIX = 'mb'.freeze
 
     def self.client_version
-      # allow overriding the wire client-version if a deployment (e.g. IL5) has not yet
-      # registered "mb<version>". Opt-in only; default is the genuine registered value.
-      ENV['KSM_CLIENT_VERSION'] || "#{CLIENT_VERSION_PREFIX}#{KeeperSecretsManager::VERSION}"
+      "#{CLIENT_VERSION_PREFIX}#{KeeperSecretsManager::VERSION}"
     end
 
     # Keeper public keys by ID
