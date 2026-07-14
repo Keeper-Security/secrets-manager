@@ -2,12 +2,16 @@ name: Test Ruby SDK
 
 on:
   pull_request:
-    branches: [master]
+    branches:
+      - master
+      - 'release/sdk/ruby/**'
     paths:
       - 'sdk/ruby/**'
       - '.github/workflows/test.ruby.yml'
   push:
-    branches: [master]
+    branches:
+      - master
+      - 'release/sdk/ruby/**'
     paths:
       - 'sdk/ruby/**'
       - '.github/workflows/test.ruby.yml'
@@ -28,7 +32,7 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Ruby ${{ matrix.ruby-version }}
         uses: ruby/setup-ruby@v1
