@@ -32,7 +32,6 @@ begin
   folder_uid = folders.first&.uid
   raise 'No folders available. Please create a folder in your vault first.' unless folder_uid
 
-  # Create the record with CreateOptions, passing pre-fetched folders to skip a second network call
   options = KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: folder_uid)
   record_uid = secrets_manager.create_secret_with_options(options, new_record, folders: folders)
 
@@ -122,6 +121,24 @@ begin
       puts "  (No files attached to record)"
     end
 
+  rescue StandardError => e
+    puts "✗ Error: #{e.message}"
+  end
+
+  # 3.7. Non-finalizing save
+  puts "\n3.7. Non-finalizing save..."
+  begin
+    secret = secrets_manager.get_secrets([record_uid]).first
+    secret.notes = "Saved without finalizing on #{Time.now}"
+
+    # save() posts the update but does not call complete_transaction
+    secrets_manager.save(secret)
+    puts '✓ Saved without completing a transaction'
+
+    # save() with transaction_type starts a PAM rotation; caller must finalize separately
+    secret.notes = "Staged rotation on #{Time.now}"
+    secrets_manager.save(secret, transaction_type: 'rotation')
+    puts '✓ Staged rotation — call complete_transaction(uid) to finalize'
   rescue StandardError => e
     puts "✗ Error: #{e.message}"
   end

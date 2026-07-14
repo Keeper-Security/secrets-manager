@@ -337,6 +337,39 @@ module KeeperSecretsManager
         true
       end
 
+      def save_with_options(record, update_options = nil)
+        if record.is_a?(Dto::KeeperRecord)
+          record_uid  = record.uid
+          record_data = record.to_h
+          record_key  = record.record_key
+          revision    = record.revision
+        else
+          record_uid  = record['uid'] || record[:uid]
+          record_data = record
+          record_key  = record['record_key'] || record[:record_key]
+          revision    = record['revision']   || record[:revision] || 0
+        end
+
+        raise ArgumentError, 'Record UID is required' unless record_uid
+        raise Error, "Record key not available for #{record_uid} - record must be obtained via get_secrets" unless record_key
+
+        payload = prepare_update_payload(
+          record_uid:     record_uid,
+          record_data:    record_data,
+          record_key:     record_key,
+          revision:       revision,
+          update_options: update_options
+        )
+
+        post_query('update_secret', payload)
+        true
+      end
+
+      def save(record, transaction_type: nil, links_to_remove: nil)
+        update_options = Dto::UpdateOptions.new(transaction_type: transaction_type, links_to_remove: links_to_remove)
+        save_with_options(record, update_options)
+      end
+
       # Complete transaction - commit or rollback
       # Used after update_secret with transaction_type to finalize PAM rotation
       def complete_transaction(record_uid, rollback: false)
@@ -1599,10 +1632,9 @@ module KeeperSecretsManager
         payload.record_uid = record_uid
         payload.revision = revision
 
-        # Handle UpdateOptions
-        transaction_type = 'general'
         if update_options
-          transaction_type = update_options.transaction_type if update_options.transaction_type
+          # nil clears UpdatePayload's 'general' default (BasePayload#to_h skips nil fields).
+          payload.transaction_type = update_options.transaction_type
 
           # Handle links_to_remove
           if update_options.links_to_remove && !update_options.links_to_remove.empty?
@@ -1618,8 +1650,7 @@ module KeeperSecretsManager
             end
           end
         end
-
-        payload.transaction_type = transaction_type
+        # When update_options is nil: UpdatePayload keeps its default 'general' from #initialize.
 
         # Encrypt record data
         json_data = Utils.dict_to_json(record_data)

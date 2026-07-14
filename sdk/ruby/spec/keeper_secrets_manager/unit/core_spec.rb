@@ -578,6 +578,112 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
     end
   end
 
+  describe '#save_with_options' do
+    let(:manager) { described_class.new(config: mock_config) }
+    let(:record_key) { KeeperSecretsManager::Crypto.generate_encryption_key_bytes }
+    let(:record) do
+      r = KeeperSecretsManager::Dto::KeeperRecord.new(
+        'recordUid' => 'save-uid-001',
+        'data'      => { 'title' => 'Save Test', 'type' => 'login', 'fields' => [], 'custom' => [] },
+        'revision'  => 42
+      )
+      r.instance_variable_set(:@record_key, record_key)
+      r.define_singleton_method(:record_key) { @record_key }
+      r
+    end
+
+    it 'POSTs to update_secret and returns true' do
+      allow(manager).to receive(:post_query).with('update_secret', anything).and_return('')
+      expect(manager.save_with_options(record)).to be true
+    end
+
+    it 'does NOT call finalize_secret_update' do
+      allow(manager).to receive(:post_query).with('update_secret', anything).and_return('')
+      manager.save_with_options(record)
+      expect(manager).not_to have_received(:post_query).with('finalize_secret_update', anything)
+    end
+
+    it 'does NOT re-fetch the record via get_secrets' do
+      allow(manager).to receive(:post_query).with('update_secret', anything).and_return('')
+      allow(manager).to receive(:get_secrets)
+      manager.save_with_options(record)
+      expect(manager).not_to have_received(:get_secrets)
+    end
+
+    it 'includes transaction_type in payload when UpdateOptions has one' do
+      allow(manager).to receive(:post_query).with('update_secret', anything).and_return('')
+      opts = KeeperSecretsManager::Dto::UpdateOptions.new(transaction_type: 'rotation')
+      manager.save_with_options(record, opts)
+      expect(manager).to have_received(:post_query) do |_path, payload|
+        expect(payload.transaction_type).to eq('rotation')
+      end
+    end
+
+    it 'raises ArgumentError when record has no UID' do
+      bad = KeeperSecretsManager::Dto::KeeperRecord.new('data' => { 'title' => 'No UID', 'type' => 'login', 'fields' => [] })
+      bad.instance_variable_set(:@record_key, record_key)
+      bad.define_singleton_method(:record_key) { @record_key }
+      bad.uid = nil
+      expect { manager.save_with_options(bad) }.to raise_error(ArgumentError, /Record UID is required/)
+    end
+
+    it 'raises Error when record has no record_key' do
+      keyless = KeeperSecretsManager::Dto::KeeperRecord.new(
+        'recordUid' => 'keyless-uid',
+        'data' => { 'title' => 'Keyless', 'type' => 'login', 'fields' => [] }
+      )
+      expect { manager.save_with_options(keyless) }.to raise_error(KeeperSecretsManager::Error, /Record key not available/)
+    end
+  end
+
+  describe '#save' do
+    let(:manager) { described_class.new(config: mock_config) }
+    let(:record_key) { KeeperSecretsManager::Crypto.generate_encryption_key_bytes }
+    let(:record) do
+      r = KeeperSecretsManager::Dto::KeeperRecord.new(
+        'recordUid' => 'save-uid-002',
+        'data'      => { 'title' => 'Save', 'type' => 'login', 'fields' => [], 'custom' => [] },
+        'revision'  => 1
+      )
+      r.instance_variable_set(:@record_key, record_key)
+      r.define_singleton_method(:record_key) { @record_key }
+      r
+    end
+
+    it 'POSTs to update_secret' do
+      allow(manager).to receive(:post_query).with('update_secret', anything).and_return('')
+      expect(manager.save(record)).to be true
+    end
+
+    it 'omits transactionType from payload when no transaction_type given' do
+      captured = nil
+      allow(manager).to receive(:post_query) do |_path, payload|
+        captured = payload
+        ''
+      end
+      manager.save(record)
+      expect(captured).not_to be_nil
+      expect(captured.to_h.key?('transactionType')).to be false
+    end
+
+    it 'includes transactionType in payload when transaction_type is given' do
+      captured = nil
+      allow(manager).to receive(:post_query) do |_path, payload|
+        captured = payload
+        ''
+      end
+      manager.save(record, transaction_type: 'rotation')
+      expect(captured.to_h['transactionType']).to eq('rotation')
+    end
+
+    it 'does not call finalize_secret_update or rollback_secret_update' do
+      allow(manager).to receive(:post_query).with('update_secret', anything).and_return('')
+      allow(manager).to receive(:post_query).with('finalize_secret_update', anything).and_return('')
+      manager.save(record)
+      expect(manager).not_to have_received(:post_query).with('finalize_secret_update', anything)
+    end
+  end
+
   describe '#update_secret' do
     let(:manager) { described_class.new(config: mock_config) }
     let(:record) do
