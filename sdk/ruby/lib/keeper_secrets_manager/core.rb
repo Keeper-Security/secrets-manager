@@ -376,6 +376,18 @@ module KeeperSecretsManager
         parser.parse(notation_uri)
       end
 
+      def get_notation_results(notation_uri)
+        Notation::Parser.new(self).get_notation_results(notation_uri)
+      end
+
+      # Like get_notation_results but never raises; logs errors and returns [].
+      def try_get_notation_results(notation_uri)
+        get_notation_results(notation_uri)
+      rescue NotationError, RecordNotFoundError, StandardError => e
+        @logger.error("try_get_notation_results failed for '#{notation_uri}': #{e.message}")
+        []
+      end
+
       # Get notation value without raising exceptions (convenience method)
       # Returns empty array if notation is invalid or record not found
       def try_get_notation(notation_uri)

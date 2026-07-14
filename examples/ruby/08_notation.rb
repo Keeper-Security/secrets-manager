@@ -134,10 +134,34 @@ rescue StandardError => e
   puts "  [FAIL] #{e.message}"
 end
 
+# 10. get_notation_results
+puts "\n10. get_notation_results — list-returning notation:"
+begin
+  secrets = secrets_manager.get_secrets
+  uid = secrets.first&.uid
+
+  if uid
+    # Returns Array[String]: all field values, no first-element shortcut
+    urls = secrets_manager.get_notation_results("keeper://#{uid}/field/url")
+    puts "  All URL values: #{urls.inspect}"
+
+    # Complex values (Hash) are JSON-serialized automatically
+    host = secrets_manager.get_notation_results("keeper://#{uid}/field/host")
+    puts "  Host (JSON): #{host.first}" if host.any?
+
+    # try_get_notation_results never raises; returns [] on any error
+    bad = secrets_manager.try_get_notation_results('keeper://INVALID/field/login')
+    puts "  Bad notation returned: #{bad.inspect}"
+  end
+rescue StandardError => e
+  puts "  Error: #{e.message}"
+end
+
 puts "\n=== Notation Tips ==="
 puts '- Use UIDs for exact matching (no ambiguity)'
 puts '- Titles are easier to read but must be unique'
 puts '- Notation is great for configuration files'
 puts "- get_notation() returns nil if field doesn't exist"
 puts '- get_notation() throws exception if record not found'
-puts '- try_get_notation() returns [] on any error (safe for optional fields)'
+puts '- get_notation_results() always returns Array[String] with all values'
+puts '- try_get_notation_results() returns [] on any error (safe for optional fields)'

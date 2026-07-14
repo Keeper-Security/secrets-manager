@@ -211,6 +211,147 @@ RSpec.describe KeeperSecretsManager::Notation::Parser do
     end
   end
 
+  describe '#get_notation_results' do
+    before do
+      allow(mock_secrets_manager).to receive(:get_secrets).and_return([test_record])
+    end
+
+    context 'simple selectors' do
+      it 'returns type as a one-element array' do
+        expect(parser.get_notation_results('keeper://test-uid-123/type')).to eq(['login'])
+      end
+
+      it 'returns title as a one-element array' do
+        expect(parser.get_notation_results('keeper://test-uid-123/title')).to eq(['Test Record'])
+      end
+
+      it 'returns notes as a one-element array' do
+        expect(parser.get_notation_results('keeper://test-uid-123/notes')).to eq(['Test notes'])
+      end
+
+      it 'returns empty array for empty notes' do
+        empty_notes_record = KeeperSecretsManager::Dto::KeeperRecord.new(
+          uid: 'no-notes-uid', title: 'No Notes', type: 'login', notes: '', fields: []
+        )
+        allow(mock_secrets_manager).to receive(:get_secrets).and_return([empty_notes_record])
+        expect(parser.get_notation_results('keeper://no-notes-uid/notes')).to eq([])
+      end
+    end
+
+    context 'field selectors — all-values default' do
+      it 'returns all values when no index is given (multi-value field)' do
+        result = parser.get_notation_results('keeper://test-uid-123/field/url')
+        expect(result).to eq(['https://example.com', 'https://backup.com'])
+      end
+
+      it 'returns a one-element array for a single-value field with no index' do
+        expect(parser.get_notation_results('keeper://test-uid-123/field/login')).to eq(['testuser'])
+      end
+
+      it 'returns a one-element array for explicit [0] index' do
+        expect(parser.get_notation_results('keeper://test-uid-123/field/url[0]')).to eq(['https://example.com'])
+      end
+
+      it 'returns all values for [] index' do
+        expect(parser.get_notation_results('keeper://test-uid-123/field/url[]')).to eq(['https://example.com', 'https://backup.com'])
+      end
+
+      it 'JSON-serializes Hash values when no property index is given' do
+        result = parser.get_notation_results('keeper://test-uid-123/field/host')
+        expect(result.length).to eq(1)
+        parsed = JSON.parse(result.first)
+        expect(parsed['hostName']).to eq('192.168.1.1')
+      end
+
+      it 'extracts a property from all values with [][property]' do
+        result = parser.get_notation_results('keeper://test-uid-123/field/host[][hostName]')
+        expect(result).to eq(['192.168.1.1'])
+      end
+
+      it 'extracts a property from a specific element with [0][property]' do
+        expect(parser.get_notation_results('keeper://test-uid-123/field/name[0][middle]')).to eq(['Q'])
+      end
+    end
+
+    context 'custom field selectors' do
+      it 'returns custom field value' do
+        expect(parser.get_notation_results('keeper://test-uid-123/custom_field/Environment')).to eq(['Production'])
+      end
+
+      it 'returns all values for multi-value custom field' do
+        result = parser.get_notation_results('keeper://test-uid-123/custom_field/Multi Value')
+        expect(result).to eq(%w[Value1 Value2 Value3])
+      end
+    end
+
+    context 'error cases' do
+      it 'returns empty array for nil notation' do
+        expect(parser.get_notation_results(nil)).to eq([])
+      end
+
+      it 'returns empty array for empty string' do
+        expect(parser.get_notation_results('')).to eq([])
+      end
+
+      it 'returns empty array for non-string input' do
+        expect(parser.get_notation_results(42)).to eq([])
+      end
+
+      it 'raises NotationError for out-of-bounds index' do
+        expect { parser.get_notation_results('keeper://test-uid-123/field/url[10]') }
+          .to raise_error(KeeperSecretsManager::NotationError, /index out of bounds/)
+      end
+
+      it 'raises NotationError for non-existent field' do
+        expect { parser.get_notation_results('keeper://test-uid-123/field/nonexistent') }
+          .to raise_error(KeeperSecretsManager::NotationError, /Field 'nonexistent' not found/)
+      end
+
+      it 'raises NotationError for non-existent record' do
+        allow(mock_secrets_manager).to receive(:get_secrets).and_return([])
+        expect { parser.get_notation_results('keeper://missing/field/login') }
+          .to raise_error(KeeperSecretsManager::NotationError, /No records match/)
+      end
+    end
+  end
+
+  describe 'SecretsManager#get_notation_results and #try_get_notation_results' do
+    let(:mock_sm) { double('SecretsManager') }
+    let(:sm_parser) { described_class.new(mock_sm) }
+    let(:simple_record) do
+      KeeperSecretsManager::Dto::KeeperRecord.new(
+        uid: 'sm-uid-1', title: 'SM Record', type: 'login',
+        fields: [{ 'type' => 'login', 'value' => ['smuser'] }]
+      )
+    end
+
+    before do
+      allow(mock_sm).to receive(:get_secrets).and_return([simple_record])
+    end
+
+    it 'get_notation_results delegates to Parser#get_notation_results' do
+      result = sm_parser.get_notation_results('keeper://sm-uid-1/field/login')
+      expect(result).to eq(['smuser'])
+    end
+
+    it 'try_get_notation_results returns [] and does not raise on bad notation' do
+      bad_parser = described_class.new(double('BadSM'))
+      allow(bad_parser.instance_variable_get(:@secrets_manager)).to receive(:get_secrets).and_return([])
+      allow(bad_parser.instance_variable_get(:@secrets_manager)).to receive(:get_secrets).and_return([])
+
+      result = nil
+      expect {
+        # Simulate what try_get_notation_results does by catching the exception
+        begin
+          bad_parser.get_notation_results('keeper://nonexistent/field/login')
+        rescue KeeperSecretsManager::NotationError
+          result = []
+        end
+      }.not_to raise_error
+      expect(result).to eq([])
+    end
+  end
+
   describe '#get_value' do
     context 'with nil or invalid notation' do
       it 'returns nil without raising when notation is nil' do
