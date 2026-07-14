@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
 
       - name: Set up Ruby 3.3
         uses: ruby/setup-ruby@v1
@@ -43,13 +43,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
-    defaults:
-      run:
-        working-directory: ./sdk/ruby
-
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
 
       - name: Set up Ruby 3.3
         uses: ruby/setup-ruby@v1
@@ -57,16 +53,18 @@ jobs:
           ruby-version: '3.3'
           working-directory: ./sdk/ruby
 
-      - name: Install dependencies
-        run: |
-          gem install bundler
-          bundle install
-
       - name: Detect Ruby SDK version
         id: detect-version
+        working-directory: ./sdk/ruby
         run: |
           VERSION=$(ruby -r ./lib/keeper_secrets_manager/version.rb -e "puts KeeperSecretsManager::VERSION")
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build gem and install runtime deps to scan target
+        working-directory: ./sdk/ruby
+        run: |
+          gem build keeper_secrets_manager.gemspec
+          gem install --install-dir /tmp/ruby-scan-target --no-document keeper_secrets_manager-*.gem
 
       - name: Install Syft and Manifest CLI
         run: |
@@ -78,25 +76,7 @@ jobs:
           MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
           PROJECT_VERSION: ${{ steps.detect-version.outputs.version }}
         run: |
-          cat > syft-config.yaml << 'EOF'
-          package:
-            search:
-              scope: all-layers
-            cataloger:
-              enabled: true
-              java:
-                enabled: false
-              python:
-                enabled: false
-              nodejs:
-                enabled: false
-              ruby:
-                enabled: true
-                search-unindexed-archives: true
-                search-indexed-archives: true
-          EOF
-
-          manifest sbom . \
+          manifest sbom /tmp/ruby-scan-target \
             --generator=syft \
             --name=keeper-secrets-manager-ruby-sdk \
             --version="${PROJECT_VERSION}" \
@@ -104,15 +84,14 @@ jobs:
             --file=ruby-sdk-sbom.json \
             --api-key="${MANIFEST_TOKEN}" \
             --publish=true \
-            --asset-label=application,sbom-generated,ruby-gem,secrets-manager \
-            --generator-config=syft-config.yaml
+            --asset-label=application,sbom-generated,ruby-gem,secrets-manager
 
       - name: Archive SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: sbom-ruby-sdk-${{ steps.detect-version.outputs.version }}
-          path: ./sdk/ruby/ruby-sdk-sbom.json
-          retention-days: 90
+          path: ruby-sdk-sbom.json
+          retention-days: 10
 
   publish-rubygems:
     name: Publish Ruby SDK to RubyGems
@@ -127,7 +106,7 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v4
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
 
       - name: Set up Ruby 3.3
         uses: ruby/setup-ruby@v1
