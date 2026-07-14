@@ -38,6 +38,7 @@
 - Fixed badly anchored regular expression in `test/integration/test_totp.rb` that could cause false positives in test validation
 
 ### Added
+- KSM-1101: Added `inflate_field_value(uids, replace_fields)` and `get_inflate_ref_types(field_type)` for field-reference resolution; `addressRef` resolves to address fields, `cardRef` resolves to paymentCard/text/pinCode/address fields with recursive inflate
 - KSM-1100: Added `get_notation_results` and `try_get_notation_results` — list-returning notation lookup that always returns `Array[String]`, returns all field values by default (no first-element shortcut), and JSON-serializes complex values
 - KSM-1099: Added `create_secret_with_options(create_options, record_data, folders: nil)` — explicit options-based creation that accepts a pre-fetched folders list to avoid an extra `get_folders` network call; `create_secret` is unchanged
 - KSM-743: Added transmission public key #18 for Gov Cloud Dev environment support

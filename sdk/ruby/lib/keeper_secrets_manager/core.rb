@@ -370,6 +370,47 @@ module KeeperSecretsManager
         records
       end
 
+      def get_inflate_ref_types(field_type)
+        INFLATE_REF_TYPES.fetch(field_type, [])
+      end
+
+      def inflate_field_value(uids, replace_fields)
+        records = get_secrets(uids)
+        lookup  = records.each_with_object({}) { |r, h| h[r.uid] = r }
+
+        uids.filter_map do |uid|
+          record    = lookup[uid]
+          next nil unless record
+
+          new_value = nil
+          replace_fields.each do |field_type|
+            field = record.get_field(field_type)
+            next unless field
+
+            raw_values = field['value'] || []
+            next if raw_values.empty?
+
+            real_value = raw_values.first
+
+            if INFLATE_REF_TYPES.key?(field_type)
+              inflated   = inflate_field_value([real_value], INFLATE_REF_TYPES[field_type])
+              real_value = inflated.first unless inflated.empty?
+            end
+
+            label = field['label'] || field_type
+            if new_value.nil?
+              new_value = real_value
+            elsif new_value.is_a?(Hash) && real_value.is_a?(Hash)
+              new_value[label] = real_value
+            else
+              new_value = { label => new_value, field_type => real_value }
+            end
+          end
+
+          new_value
+        end
+      end
+
       # Get notation value
       def get_notation(notation_uri)
         parser = Notation::Parser.new(self)

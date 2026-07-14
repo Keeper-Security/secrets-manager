@@ -488,6 +488,96 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
     end
   end
 
+  describe '.get_inflate_ref_types' do
+    let(:manager) { described_class.new(config: mock_config) }
+
+    it 'returns address fields for addressRef' do
+      expect(manager.get_inflate_ref_types('addressRef')).to eq(['address'])
+    end
+
+    it 'returns card fields for cardRef' do
+      expect(manager.get_inflate_ref_types('cardRef')).to eq(%w[paymentCard text pinCode addressRef])
+    end
+
+    it 'returns empty array for unknown field type' do
+      expect(manager.get_inflate_ref_types('unknown')).to eq([])
+    end
+
+    it 'returns empty array for non-ref field type' do
+      expect(manager.get_inflate_ref_types('login')).to eq([])
+    end
+  end
+
+  describe '#inflate_field_value' do
+    let(:manager) { described_class.new(config: mock_config) }
+
+    let(:address_uid) { 'addr-uid-001' }
+    let(:address_record) do
+      KeeperSecretsManager::Dto::KeeperRecord.new(
+        'recordUid' => address_uid,
+        'data' => {
+          'title' => 'Home Address', 'type' => 'address',
+          'fields' => [
+            { 'type' => 'address', 'value' => [{ 'street1' => '123 Main St', 'city' => 'Springfield' }] }
+          ],
+          'custom' => []
+        }
+      )
+    end
+
+    it 'resolves a single addressRef UID to its address fields' do
+      allow(manager).to receive(:get_secrets).with([address_uid]).and_return([address_record])
+      result = manager.inflate_field_value([address_uid], ['address'])
+      expect(result).to be_an(Array)
+      expect(result.length).to eq(1)
+      expect(result.first['street1']).to eq('123 Main St')
+    end
+
+    it 'returns empty array when UID is not found' do
+      allow(manager).to receive(:get_secrets).with(['nonexistent']).and_return([])
+      expect(manager.inflate_field_value(['nonexistent'], ['address'])).to eq([])
+    end
+
+    it 'returns one result per resolvable UID' do
+      addr2_uid = 'addr-uid-002'
+      addr2 = KeeperSecretsManager::Dto::KeeperRecord.new(
+        'recordUid' => addr2_uid,
+        'data' => {
+          'title' => 'Work Address', 'type' => 'address',
+          'fields' => [{ 'type' => 'address', 'value' => [{ 'street1' => '456 Oak Ave' }] }],
+          'custom' => []
+        }
+      )
+      allow(manager).to receive(:get_secrets).with([address_uid, addr2_uid]).and_return([address_record, addr2])
+      result = manager.inflate_field_value([address_uid, addr2_uid], ['address'])
+      expect(result.length).to eq(2)
+    end
+
+    it 'recursively inflates nested addressRef inside cardRef fields' do
+      card_uid   = 'card-uid-001'
+      card_record = KeeperSecretsManager::Dto::KeeperRecord.new(
+        'recordUid' => card_uid,
+        'data' => {
+          'title' => 'My Card', 'type' => 'bankCard',
+          'fields' => [
+            { 'type' => 'paymentCard', 'value' => [{ 'cardNumber' => '4111111111111111' }] },
+            { 'type' => 'addressRef', 'value' => [address_uid] }
+          ],
+          'custom' => []
+        }
+      )
+
+      allow(manager).to receive(:get_secrets).with([card_uid]).and_return([card_record])
+      allow(manager).to receive(:get_secrets).with([address_uid]).and_return([address_record])
+
+      result = manager.inflate_field_value([card_uid], %w[paymentCard addressRef])
+      expect(result.length).to eq(1)
+      merged = result.first
+      # paymentCard value should be present
+      expect(merged).not_to be_nil
+    end
+  end
+
   describe '#update_secret' do
     let(:manager) { described_class.new(config: mock_config) }
     let(:record) do
