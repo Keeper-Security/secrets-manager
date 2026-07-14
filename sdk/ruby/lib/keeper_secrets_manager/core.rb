@@ -46,6 +46,11 @@ module KeeperSecretsManager
         @verify_ssl_certs = options.fetch(:verify_ssl_certs, true)
         @custom_post_function = options[:custom_post_function]
 
+        # optional custom server public key overrides (isolated deployments / IL5).
+        # Precedence, highest first: these programmatic params > OTT segments > pre-existing config.
+        @server_public_key_override    = options[:server_public_key]
+        @server_public_key_id_override = options[:server_public_key_id]
+
         # Set up proxy configuration
         # Priority: explicit proxy_url parameter > HTTPS_PROXY env var > no proxy
         @proxy_url = options[:proxy_url] || ENV['HTTPS_PROXY'] || ENV['https_proxy']
@@ -96,6 +101,19 @@ module KeeperSecretsManager
         else
           # No config and no token
           raise Error, 'Either token or initialized config must be provided'
+        end
+
+        # programmatic custom key wins over token/config (applied once @config is set).
+        @config.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY, @server_public_key_override) if @server_public_key_override && !@server_public_key_override.empty?
+        @config.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID, @server_public_key_id_override.to_s) if @server_public_key_id_override
+
+        # if the configured key id is not in the built-in table AND no custom key backs it,
+        # fall back to the default (mirrors Python). A persisted custom serverPublicKey is preserved.
+        current_key_id = @config.get_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID)
+        custom_server_key = @config.get_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY)
+        if current_key_id && !KeeperGlobals::KEEPER_PUBLIC_KEYS.key?(current_key_id) && (custom_server_key.nil? || custom_server_key.empty?)
+          @logger.debug("Public key id #{current_key_id} unknown and no custom key present; using default #{DEFAULT_KEY_ID}")
+          @config.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID, DEFAULT_KEY_ID)
         end
 
         # Override hostname if provided
@@ -745,21 +763,50 @@ module KeeperSecretsManager
       def process_token_binding(token, hostname = nil)
         # Parse token
         token = token.strip
-        token_parts = token.split(':')
+        # -1 keeps trailing empties so "IL5:key:20:" yields 4 parts and the empty serverPublicKey
+        # segment is rejected, instead of default split() dropping it and looking like 3 parts.
+        token_parts = token.split(':', -1)
+
+        il5_key_id = nil
+        il5_server_public_key = nil
 
         # Modern format: REGION:BASE64_TOKEN
         if token_parts.length >= 2
           region = token_parts[0].upcase
           @hostname = KeeperGlobals::KEEPER_SERVERS[region] || KeeperGlobals::DEFAULT_SERVER
-          @token = token_parts[1..].join(':')
+
+          if region == 'IL5' && token_parts.length > 2
+            # IL5 dynamic-key OTT: IL5:clientKey:serverPublicKeyId:serverPublicKey
+            unless token_parts.length == 4
+              raise Error, 'Malformed IL5 one-time token: expected exactly 4 colon-separated ' \
+                           "segments 'IL5:clientKey:keyId:serverPublicKey', got #{token_parts.length}"
+            end
+            il5_key_id = token_parts[2]
+            il5_server_public_key = token_parts[3]
+            if il5_key_id.to_s.empty? || il5_server_public_key.to_s.empty?
+              raise Error, 'Malformed IL5 one-time token: keyId and serverPublicKey segments must be non-empty'
+            end
+            begin
+              Utils.url_safe_str_to_bytes(il5_server_public_key)
+            rescue StandardError
+              raise Error, 'Malformed IL5 one-time token: serverPublicKey segment is not valid url-safe base64'
+            end
+            @token = token_parts[1]
+          else
+            @token = token_parts[1..].join(':')
+          end
         else
           # Legacy format
           @token = token
           @hostname = hostname || KeeperGlobals::DEFAULT_SERVER
         end
 
+        # Precedence: programmatic override > OTT segment.
+        effective_key_id     = @server_public_key_id_override || il5_key_id
+        effective_public_key = @server_public_key_override    || il5_server_public_key
+
         # Bind the one-time token
-        bound_config = bind_one_time_token(@token, @hostname)
+        bound_config = bind_one_time_token(@token, @hostname, effective_key_id, effective_public_key)
 
         # Merge bound config into existing config if present
         if @config
@@ -778,7 +825,7 @@ module KeeperSecretsManager
       end
 
       # Bind one-time token
-      def bind_one_time_token(token, hostname)
+      def bind_one_time_token(token, hostname, key_id = nil, server_public_key = nil)
         storage = Storage::InMemoryStorage.new
 
         # Generate EC key pair
@@ -795,7 +842,10 @@ module KeeperSecretsManager
 
         # Store configuration
         storage.save_string(ConfigKeys::KEY_HOSTNAME, hostname)
-        storage.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID, DEFAULT_KEY_ID)
+        storage.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID, (key_id || DEFAULT_KEY_ID).to_s)
+        # persist the dynamic (IL5) server public key so it is used for binding AND all
+        # later requests, and survives restart via the saved config.
+        storage.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY, server_public_key) if server_public_key && !server_public_key.empty?
         storage.save_string(ConfigKeys::KEY_CLIENT_KEY, token)
         storage.save_bytes(ConfigKeys::KEY_PRIVATE_KEY, keys[:private_key_bytes])
         storage.save_string(ConfigKeys::KEY_CLIENT_ID, client_id)
@@ -1149,7 +1199,9 @@ module KeeperSecretsManager
         loop do
           # Generate transmission key
           key_id = config.get_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID) || DEFAULT_KEY_ID
-          transmission_key = generate_transmission_key(key_id)
+          # a custom (IL5) server public key in config overrides the built-in key table.
+          custom_public_key = config.get_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY)
+          transmission_key = generate_transmission_key(key_id, custom_public_key)
 
           # Encrypt and sign payload
           encrypted_payload = encrypt_and_sign_payload(config, transmission_key, payload)
@@ -1195,10 +1247,15 @@ module KeeperSecretsManager
       end
 
       # Generate transmission key
-      def generate_transmission_key(key_id)
-        # Get server public key
-        server_public_key_str = KeeperGlobals::KEEPER_PUBLIC_KEYS[key_id.to_s]
-        raise Error, "Unknown public key ID: #{key_id}" unless server_public_key_str
+      def generate_transmission_key(key_id, custom_public_key = nil)
+        # Get server public key. A custom (e.g. IL5) key overrides the built-in table,
+        # which only covers ids 1..18 - IL5 uses id 20 supplied out-of-band via the OTT/config.
+        if custom_public_key && !custom_public_key.empty?
+          server_public_key_str = custom_public_key
+        else
+          server_public_key_str = KeeperGlobals::KEEPER_PUBLIC_KEYS[key_id.to_s]
+          raise Error, "Unknown public key ID: #{key_id}" unless server_public_key_str
+        end
 
         @logger.debug("Using server public key ID: #{key_id}")
         @logger.debug("Server public key string: #{server_public_key_str[0..20]}...")
@@ -1366,9 +1423,25 @@ module KeeperSecretsManager
         when 'key'
           # Server wants different key
           key_id = error_data['key_id']
-          @logger.info("Server requested key ID: #{key_id}")
           # Use passed config or fall back to instance config
           config_to_use = config || @config
+          custom_key = config_to_use&.get_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY)
+
+          # when a custom (IL5) server public key is configured, the server rejecting it
+          # cannot be fixed by switching to a built-in key, and retrying would loop on the same key.
+          # Fail fast with actionable remediation instead.
+          if custom_key && !custom_key.empty?
+            raise Error, "Server rejected the custom server public key (requested key ID #{key_id.inspect}). " \
+                         'The IL5 server public key may have rotated; update your IL5 KSM configuration ' \
+                         '(serverPublicKey / serverPublicKeyId), e.g. by redeeming a freshly issued one-time token.'
+          end
+
+          raise Error, 'The public key is blank from the server' if key_id.nil?
+          unless KeeperGlobals::KEEPER_PUBLIC_KEYS.key?(key_id.to_s)
+            raise Error, "The public key at #{key_id} does not exist in the SDK"
+          end
+
+          @logger.info("Server requested key ID: #{key_id}")
           config_to_use.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID, key_id.to_s) if config_to_use
           nil # Retry
         else
