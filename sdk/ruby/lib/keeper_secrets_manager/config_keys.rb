@@ -6,7 +6,7 @@ module KeeperSecretsManager
     KEY_CLIENT_KEY              = 'clientKey'.freeze
     KEY_HOSTNAME                = 'hostname'.freeze
     KEY_SERVER_PUBLIC_KEY_ID    = 'serverPublicKeyId'.freeze
-    KEY_SERVER_PUBLIC_KEY       = 'serverPublicKey'.freeze # dynamic EC P-256 server public key (url-safe b64) for IL5
+    KEY_SERVER_PUBLIC_KEY       = 'serverPublicKey'.freeze
     KEY_PRIVATE_KEY             = 'privateKey'.freeze
     KEY_APP_KEY                 = 'appKey'.freeze
     KEY_OWNER_PUBLIC_KEY        = 'appOwnerPublicKey'.freeze
