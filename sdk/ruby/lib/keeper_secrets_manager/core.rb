@@ -242,56 +242,46 @@ module KeeperSecretsManager
         get_secrets_by_title(title).first
       end
 
-      # Create a new secret
-      def create_secret(record_data, options = nil)
-        options ||= Dto::CreateOptions.new
+      def create_secret_with_options(create_options, record_data, folders: nil)
+        raise ArgumentError, 'folder_uid is required to create a record' unless create_options&.folder_uid
 
-        # Validate folder UID is provided
-        raise ArgumentError, 'folder_uid is required to create a record' unless options.folder_uid
+        folders ||= get_folders
 
-        # Get folders from dedicated endpoint to find folder key
-        folders = get_folders
+        folder = folders.find { |f| f.uid == create_options.folder_uid }
+        raise Error, "Folder #{create_options.folder_uid} not found or not accessible" unless folder
 
-        # Find the folder
-        folder = folders.find { |f| f.uid == options.folder_uid }
-        raise Error, "Folder #{options.folder_uid} not found or not accessible" unless folder
-
-        # Get folder key
         folder_key = folder.folder_key
-        raise Error, "Unable to create record - folder key for #{options.folder_uid} is missing" unless folder_key
+        raise Error, "Unable to create record - folder key for #{create_options.folder_uid} is missing" unless folder_key
 
-        # Generate UIDs and keys
         record_uid = Utils.generate_uid
         record_key = Crypto.generate_encryption_key_bytes
 
-        # Prepare record data
-        record = if record_data.is_a?(Dto::KeeperRecord)
-                   record_data.to_h
-                 else
-                   record_data
-                 end
+        record = record_data.is_a?(Dto::KeeperRecord) ? record_data.to_h : record_data
 
-        # Encrypt record data
-        encrypted_data = Crypto.encrypt_aes_gcm(
-          Utils.dict_to_json(record),
-          record_key
-        )
+        encrypted_data = Crypto.encrypt_aes_gcm(Utils.dict_to_json(record), record_key)
 
-        # Prepare payload
         payload = prepare_create_payload(
-          record_uid: record_uid,
-          record_key: record_key,
-          folder_uid: options.folder_uid,
-          folder_key: folder_key,
-          data: encrypted_data,
-          subfolder_uid: options.subfolder_uid
+          record_uid:    record_uid,
+          record_key:    record_key,
+          folder_uid:    create_options.folder_uid,
+          folder_key:    folder_key,
+          data:          encrypted_data,
+          subfolder_uid: create_options.subfolder_uid
         )
 
-        # Send request
-        response = post_query('create_secret', payload)
-
-        # Return created record UID
+        post_query('create_secret', payload)
         record_uid
+      end
+
+      def create_secret(record_data, options = nil)
+        create_options = if options.is_a?(Dto::CreateOptions)
+                           options
+                         elsif options.is_a?(String)
+                           Dto::CreateOptions.new(folder_uid: options)
+                         else
+                           Dto::CreateOptions.new
+                         end
+        create_secret_with_options(create_options, record_data)
       end
 
       # Update existing secret with UpdateOptions

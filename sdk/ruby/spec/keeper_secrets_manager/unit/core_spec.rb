@@ -344,6 +344,103 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
     end
   end
 
+  describe '#create_secret_with_options' do
+    let(:manager) { described_class.new(config: mock_config) }
+    let(:record_data) { { 'title' => 'Test', 'type' => 'login', 'fields' => [] } }
+    let(:folder_key) { KeeperSecretsManager::Crypto.generate_encryption_key_bytes }
+    let(:folder) do
+      f = KeeperSecretsManager::Dto::KeeperFolder.new('folderUid' => 'folder-uid-123', 'name' => 'Test Folder')
+      f.instance_variable_set(:@folder_key, folder_key)
+      f
+    end
+    let(:create_options) { KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: 'folder-uid-123') }
+
+    it 'raises ArgumentError when create_options has no folder_uid' do
+      expect {
+        manager.create_secret_with_options(KeeperSecretsManager::Dto::CreateOptions.new, record_data)
+      }.to raise_error(ArgumentError, /folder_uid is required/)
+    end
+
+    it 'raises ArgumentError when create_options is nil' do
+      expect {
+        manager.create_secret_with_options(nil, record_data)
+      }.to raise_error(ArgumentError, /folder_uid is required/)
+    end
+
+    it 'raises Error when folder not found in provided folders list' do
+      expect {
+        manager.create_secret_with_options(create_options, record_data, folders: [])
+      }.to raise_error(KeeperSecretsManager::Error, /Folder folder-uid-123 not found/)
+    end
+
+    it 'raises Error when folder key is missing' do
+      bad_folder = KeeperSecretsManager::Dto::KeeperFolder.new('folderUid' => 'folder-uid-123', 'name' => 'No Key')
+      expect {
+        manager.create_secret_with_options(create_options, record_data, folders: [bad_folder])
+      }.to raise_error(KeeperSecretsManager::Error, /folder key.*missing/i)
+    end
+
+    it 'posts to create_secret and returns a UID when given pre-fetched folders' do
+      allow(manager).to receive(:get_folders)
+      allow(manager).to receive(:post_query).with('create_secret', anything).and_return('')
+      uid = manager.create_secret_with_options(create_options, record_data, folders: [folder])
+      expect(uid).to be_a(String)
+      expect(uid.length).to be > 0
+      expect(manager).not_to have_received(:get_folders)
+    end
+
+    it 'calls get_folders when folders keyword is not provided' do
+      allow(manager).to receive(:get_folders).and_return([folder])
+      allow(manager).to receive(:post_query).with('create_secret', anything).and_return('')
+      manager.create_secret_with_options(create_options, record_data)
+      expect(manager).to have_received(:get_folders)
+    end
+
+    it 'accepts a KeeperRecord as record_data' do
+      keeper_record = KeeperSecretsManager::Dto::KeeperRecord.new(
+        'title' => 'My Record', 'type' => 'login', 'fields' => []
+      )
+      allow(manager).to receive(:post_query).with('create_secret', anything).and_return('')
+      uid = manager.create_secret_with_options(create_options, keeper_record, folders: [folder])
+      expect(uid).to be_a(String)
+    end
+
+    it 'passes subfolder_uid through to the payload' do
+      opts = KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: 'folder-uid-123', subfolder_uid: 'sub-123')
+      captured_payload = nil
+      allow(manager).to receive(:post_query) do |_path, payload|
+        captured_payload = payload
+        ''
+      end
+      manager.create_secret_with_options(opts, record_data, folders: [folder])
+      expect(captured_payload.sub_folder_uid).to eq('sub-123')
+    end
+  end
+
+  describe '#create_secret (backward compat)' do
+    let(:manager) { described_class.new(config: mock_config) }
+    let(:folder_key) { KeeperSecretsManager::Crypto.generate_encryption_key_bytes }
+    let(:folder) do
+      f = KeeperSecretsManager::Dto::KeeperFolder.new('folderUid' => 'folder-abc', 'name' => 'Test')
+      f.instance_variable_set(:@folder_key, folder_key)
+      f
+    end
+
+    it 'still works when called with CreateOptions' do
+      allow(manager).to receive(:get_folders).and_return([folder])
+      allow(manager).to receive(:post_query).with('create_secret', anything).and_return('')
+      uid = manager.create_secret({ 'title' => 'T', 'type' => 'login' },
+                                   KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: 'folder-abc'))
+      expect(uid).to be_a(String)
+    end
+
+    it 'raises ArgumentError when no folder_uid provided' do
+      expect {
+        manager.create_secret({ 'title' => 'T' }, KeeperSecretsManager::Dto::CreateOptions.new)
+      }.to raise_error(ArgumentError, /folder_uid is required/)
+    end
+  end
+
   describe 'error handling' do
     describe 'validation errors' do
       let(:manager) { described_class.new(config: mock_config) }

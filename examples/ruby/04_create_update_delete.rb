@@ -32,9 +32,9 @@ begin
   folder_uid = folders.first&.uid
   raise 'No folders available. Please create a folder in your vault first.' unless folder_uid
 
-  # Create the record with CreateOptions
+  # Create the record with CreateOptions, passing pre-fetched folders to skip a second network call
   options = KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: folder_uid)
-  record_uid = secrets_manager.create_secret(new_record, options)
+  record_uid = secrets_manager.create_secret_with_options(options, new_record, folders: folders)
 
   puts "✓ Created record with UID: #{record_uid}"
   puts "  Folder: #{folder_uid}"

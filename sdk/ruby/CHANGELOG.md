@@ -38,6 +38,7 @@
 - Fixed badly anchored regular expression in `test/integration/test_totp.rb` that could cause false positives in test validation
 
 ### Added
+- KSM-1099: Added `create_secret_with_options(create_options, record_data, folders: nil)` — explicit options-based creation that accepts a pre-fetched folders list to avoid an extra `get_folders` network call; `create_secret` is unchanged
 - KSM-743: Added transmission public key #18 for Gov Cloud Dev environment support
 - `KeeperSecretsManager.from_config(config_base64, options = {})` - Convenience method for initializing from base64 config string
   - Complements existing `from_token()` and `from_file()` convenience methods
