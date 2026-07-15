@@ -5,8 +5,11 @@ All notable changes to the KSM ServiceNow External Credential Resolver are docum
 ## [1.0.0] - Unreleased
 
 ### Added
-- JUnit test suite covering credential-resolution logic, including a regression test for the PAM (`pamSettings`) record fix.
-- Yokohama, Zurich, and Australia MID Server support in the release build.
+- FQCN resolver class `com.snc.discovery.keeper.KeeperCredentialResolver` for Xanadu and newer MID Servers. Setting the FQCN on the External Credential Resolver configuration allows the Keeper JAR to coexist with other vendors' resolvers (CyberArk, HashiCorp, Delinea, etc.) on the same MID Server — which is not possible when every resolver JAR ships the shared `com.snc.discovery.CredentialResolver` class name.
+- Two JAR variants per ServiceNow release: `fqcn` (Xanadu/Yokohama/Zurich/Australia — ships only `KeeperCredentialResolver`) and `legacy` (Utah/Vancouver/Washington DC — ships `com.snc.discovery.CredentialResolver`).
+- JUnit test suite (13 tests) covering credential resolution logic and a PAM record regression.
+- Compatibility matrix and FQCN registration guide in README.
+- Yokohama (Patch 7+), Zurich, and Australia MID Server support.
 
 ### Fixed
 - PAM records shared to the KSM application caused the resolver to fail with `Serializer for subclass 'pamSettings' is not found in the polymorphic scope of 'KeeperRecordField'`. Root cause: the SDK dependency was pinned as `16.6.4+` — a Gradle prefix wildcard that resolved to 16.6.4, which predates the `pamSettings` field type. The dependency is now pinned to `17.3.0`, which registers all PAM field types and skips unparseable records instead of failing the whole batch. (KSM-610, IMP-3033)

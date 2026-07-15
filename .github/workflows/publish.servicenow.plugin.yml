@@ -213,7 +213,12 @@ jobs:
           for release in libs/*/; do
             release=$(basename "$release")
             echo "Building for MID server release: ${release}"
-            ./gradlew jar -PmidRelease="${release}" --no-daemon
+            # Xanadu and newer ship the FQCN-only variant; pre-Xanadu ships the legacy variant.
+            case "${release}" in
+              washingtondc|vancouver|utah) variant=legacy ;;
+              *) variant=fqcn ;;
+            esac
+            ./gradlew jar -PmidRelease="${release}" -PresolverVariant="${variant}" --no-daemon
             cp "build/libs/${BUILD_NAME}-${BUILD_VERSION}.jar" "releases/${BUILD_NAME}-${release}-${BUILD_VERSION}.jar"
           done
 

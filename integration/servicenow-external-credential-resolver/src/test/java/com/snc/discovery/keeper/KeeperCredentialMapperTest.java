@@ -1,4 +1,4 @@
-package com.snc.discovery;
+package com.snc.discovery.keeper;
 
 import com.keepersecurity.secretsManager.core.HiddenField;
 import com.keepersecurity.secretsManager.core.KeeperRecord;

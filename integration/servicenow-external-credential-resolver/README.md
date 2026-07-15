@@ -15,7 +15,7 @@ Latest versions of JRE have strong cryptography enabled [by default](https://bug
 * Update the code in CredentialResolver.java to customize anything.
 * Use the following gradle command or IDE (IntelliJ or Eclipse) gradle build option to build the jar:
   > gradle jar  
-* keeper-external-credentials-1.0.0.jar will be generated under the build/libs folder. The release publishes one JAR per supported ServiceNow release, each compiled against that release's MID Server libraries (see "Registering the resolver" below).
+* keeper-external-credentials-1.0.0.jar will be generated under the build/libs folder. (A local `gradle jar` includes both resolver class names; the published per-ServiceNow-release JARs are split into `fqcn`/`legacy` variants - see "Registering the resolver" below. Pass `-PresolverVariant=fqcn` or `-PresolverVariant=legacy` to reproduce a specific variant locally.)
 
 # Steps to install and use Keeper Secrets Manager as external credential resolver
 
@@ -32,23 +32,24 @@ Latest versions of JRE have strong cryptography enabled [by default](https://bug
 * Ensure that the "Credential ID" matches a record UID in your Keeper vault.
 * Ensure that the record in the vault contains fields matching the ServiceNow credential record fields - ex. record _type=login_ or any record type with custom fields of _type=hidden_ or _type=text_ with labels matching with the column names in discovery_credential table, where each label is prefixed with  "mid_" (ex. GCP Credential requires a record with two custom fields labelled: mid_email and mid_secret_key)
 
-# Registering the resolver
-The release publishes one JAR per supported ServiceNow version, each compiled against that release's MID Server libraries. ServiceNow's MID Server loads a custom external credential resolver by the fixed class name `com.snc.discovery.CredentialResolver`.
+# Registering the resolver (class name / FQCN)
+Each release publishes one JAR per supported ServiceNow version, in one of two variants depending on the release:
 
-> ⚠️ **Only one custom external credential resolver JAR can run per MID Server.** Every vendor's resolver JAR (Keeper, CyberArk's downloadable resolver, HashiCorp, Delinea, Thycotic, …) uses that same `com.snc.discovery.CredentialResolver` class name, so before deploying the Keeper JAR, remove any other credential-resolver JAR from that MID Server (**MID Server → JAR Files**) - otherwise the MID Server may load the wrong vendor's class. ServiceNow's built-in CyberArk vault (bundled in the MID Server, not an uploaded JAR) is separate and does not need to be removed.
+* **Pre-Xanadu (Utah, Vancouver, Washington DC)** select the resolver by the shared credential-resolver class name `com.snc.discovery.CredentialResolver` (the default; only one such resolver JAR can be used per MID Server).
+* **Xanadu and newer (Xanadu, Yokohama Patch 7+, Zurich, Australia)** let you set a **Fully Qualified Class Name (FQCN)** on the External Credential Resolver configuration. Set it to `com.snc.discovery.keeper.KeeperCredentialResolver`. These (`fqcn`-variant) JARs ship **only** that class - not the shared `com.snc.discovery.CredentialResolver` - so the Keeper resolver can coexist with other vendors' resolvers (CyberArk, HashiCorp, Delinea, …) on the same MID Server, which is not possible when every resolver JAR ships `com.snc.discovery.CredentialResolver`.
 
 ### Compatibility matrix
-| ServiceNow release | MID Server JRE | Resolver class |
+| ServiceNow release | MID Server JRE | Resolver class / FQCN to configure |
 | --- | --- | --- |
 | Utah | JRE 11 | `com.snc.discovery.CredentialResolver` |
 | Vancouver | JRE 11 | `com.snc.discovery.CredentialResolver` |
 | Washington DC | JRE 17 | `com.snc.discovery.CredentialResolver` |
-| Xanadu | JRE 17 | `com.snc.discovery.CredentialResolver` |
-| Yokohama | JRE 17 | `com.snc.discovery.CredentialResolver` |
-| Zurich | JRE 17 | `com.snc.discovery.CredentialResolver` |
-| Australia | JRE 17 | `com.snc.discovery.CredentialResolver` |
+| Xanadu | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
+| Yokohama (Patch 7+) | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
+| Zurich | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
+| Australia | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
 
-ServiceNow releases older than Utah (Tokyo, San Diego, Rome) are past support and are not built for this release.
+Each JAR is built with the Java 11 toolchain, so it runs on both JRE 11 (Vancouver) and JRE 17 (Washington DC and newer). ServiceNow releases older than Utah (Tokyo, San Diego, Rome) are past support and are not built for this release.
 
 # Finding records
 Credential ID (credId parameter) passed from MID Server to Credential Resolver must be either a valid record UID (22 alphanumeric characters incl. "-" and "_") or in the following format type:title. The second format allows searches by type only or by title only (or both, but single ":" is invalid combination)
