@@ -44,6 +44,13 @@ class KeeperCredentialMapperTest {
         return new KeeperRecordData(title, "login", fields, new ArrayList<>(custom));
     }
 
+    private static KeeperRecordData pamUserData(String title, String user, String pass, List<KeeperRecordField> custom) {
+        List<KeeperRecordField> fields = new ArrayList<>();
+        fields.add(new Login(user));
+        fields.add(new Password(pass));
+        return new KeeperRecordData(title, "pamUser", fields, new ArrayList<>(custom));
+    }
+
     @Test
     void parsesRecordUid() {
         KeeperCredentialMapper.CredId id = KeeperCredentialMapper.parseCredId(UID);
@@ -91,6 +98,27 @@ class KeeperCredentialMapperTest {
         Map<String, String> out = KeeperCredentialMapper.mapRecordToCredential(rec, "mid_", NOOP);
         assertEquals("alice", out.get("user"));
         assertEquals("s3cret", out.get("pswd"));
+    }
+
+    @Test
+    void mapsPamUserUserAndPassword() {
+        KeeperRecord rec = record(UID, pamUserData("MyPamUser", "svc_acct", "p@mP4ss", Collections.emptyList()));
+        Map<String, String> out = KeeperCredentialMapper.mapRecordToCredential(rec, "mid_", NOOP);
+        assertEquals("svc_acct", out.get("user"));
+        assertEquals("p@mP4ss", out.get("pswd"));
+    }
+
+    @Test
+    void mapsPamUserStandardFieldsAndPrefixedCustomFields() {
+        List<KeeperRecordField> custom = new ArrayList<>();
+        custom.add(new HiddenField("mid_pkey", null, null, new ArrayList<>(Arrays.asList("PRIVATEKEY"))));
+        KeeperRecord rec = record(UID, pamUserData("MyPamUser", "svc_acct", "p@mP4ss", custom));
+
+        Map<String, String> out = KeeperCredentialMapper.mapRecordToCredential(rec, "mid_", NOOP);
+
+        assertEquals("svc_acct", out.get("user"));
+        assertEquals("p@mP4ss", out.get("pswd"));
+        assertEquals("PRIVATEKEY", out.get("pkey"));
     }
 
     @Test

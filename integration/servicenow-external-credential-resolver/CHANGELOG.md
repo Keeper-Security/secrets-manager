@@ -7,7 +7,8 @@ All notable changes to the KSM ServiceNow External Credential Resolver are docum
 ### Added
 - FQCN resolver class `com.keepersecurity.secretsManager.CredentialResolver` for Yokohama (Patch 7+) and newer MID Servers. Setting the FQCN on the External Credential Resolver configuration allows the Keeper JAR to coexist with other vendors' resolvers (CyberArk, HashiCorp, Delinea, etc.) on the same MID Server — which is not possible when every resolver JAR ships the shared `com.snc.discovery.CredentialResolver` class name.
 - Two JAR variants per ServiceNow release: `fqcn` (Yokohama Patch 7+/Zurich/Australia — ships only `com.keepersecurity.secretsManager.CredentialResolver`) and `legacy` (Utah/Vancouver/Washington DC/Xanadu — ships `com.snc.discovery.CredentialResolver`).
-- JUnit test suite (13 tests) covering credential resolution logic and a PAM record regression.
+- **PAM User (`pamUser`) records**: username/password are read from the record's standard Login/Password fields, the same as Login records.
+- JUnit test suite (15 tests) covering credential resolution logic and a PAM record regression.
 - Compatibility matrix and FQCN registration guide in README.
 - Yokohama (Patch 7+), Zurich, and Australia MID Server support.
 

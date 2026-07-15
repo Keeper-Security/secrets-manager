@@ -130,7 +130,8 @@ public final class KeeperCredentialMapper {
     /**
      * Extract credential values from a record.
      * NB! Always gets all custom fields with labels matching the prefix.
-     * NB! Login records - always get user/pass from the corresponding standard fields ignoring any labels.
+     * NB! Login and PAM User (pamUser) records - always get user/pass from the corresponding standard
+     *     Login/Password fields, ignoring any labels.
      */
     public static Map<String, String> mapRecordToCredential(KeeperRecord record, String labelPrefix, Log log) {
         Map<String, String> result = new HashMap<>();
@@ -138,8 +139,10 @@ public final class KeeperCredentialMapper {
             return result;
         }
 
-        // for Login records user/pass always come from corresponding record fields
-        if ("login".equalsIgnoreCase(record.getType())) {
+        // Login and PAM User (pamUser) records carry username/password as standard Login/Password
+        // fields; read them directly (ignoring any custom labels), the same for both types.
+        String recordType = record.getType();
+        if ("login".equalsIgnoreCase(recordType) || "pamUser".equalsIgnoreCase(recordType)) {
             String password = record.getPassword();
             if (!isNullOrEmpty(password)) {
                 result.put(VAL_PSWD, password);

@@ -66,7 +66,7 @@ Find by type - `login:`
 
 # Mapping fields
 Keeper record types are dynamic and easy to customize, but there are no specific record types matching corresponding credential types in ServiceNow. Keeper External Credential Resolver uses custom field labels to match record data with MID Server's table columns (`discovery_credential` _table_) just label all required custom fields to match the table columns for a given credential type and prefix that label with "mid_" _(see below how to configure custom prefix)_  
-Credential types that require username/password should use Login records, and add any custom fields required by the credential type - ex. type=hidden label="mid_pkey"  
+Credential types that require username/password should use **Login** or **PAM User** (`pamUser`) records, and add any custom fields required by the credential type - ex. type=hidden label="mid_pkey"  
 Any other types that may not have username/password it is best to use File/Photo records which don't have any standard fields that makes it easier to navigate the custom fields.  
 
 To change the custom field labels prefix update the _config.xml_ in MID Server with the parameters below and restart the MID Server.
@@ -74,7 +74,7 @@ To change the custom field labels prefix update the _config.xml_ in MID Server w
 
 > ️ⓘ Use custom fields with type `text`, `multiline` or `hidden` depending on the visibility you want in your Keeper Vault.
 
-> ⚠️ When Login record type is used any custom fields for username/password are ignored _(even if properly labeled mid_user, mid_pswd)_ as these values always come from the Login record type standard fields - Login/Password.
+> ⚠️ For **Login** and **PAM User** (`pamUser`) records, username/password always come from the record's standard Login/Password fields; any custom fields labeled for username/password _(even mid_user, mid_pswd)_ are ignored.
 
 #### Examples:  
  + Credential type `jdbc` map to Keeper record type `Login` (using standard Login/Password field)
