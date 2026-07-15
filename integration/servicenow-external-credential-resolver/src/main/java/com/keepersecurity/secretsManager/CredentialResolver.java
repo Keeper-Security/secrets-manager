@@ -1,4 +1,4 @@
-package com.snc.discovery.keeper;
+package com.keepersecurity.secretsManager;
 
 import com.keepersecurity.secretsManager.core.*;
 import com.service_now.mid.services.FileSystem;
@@ -21,14 +21,14 @@ import static java.nio.file.StandardCopyOption.*;
 /**
  * Keeper Secrets Manager external credential resolver.
  *
- * <p>This is the canonical implementation. On ServiceNow Xanadu and newer, register the resolver
- * by its fully qualified class name {@code com.snc.discovery.keeper.KeeperCredentialResolver};
+ * <p>This is the canonical implementation. On ServiceNow Yokohama (Patch 7+) and newer, register
+ * the resolver by its fully qualified class name {@code com.keepersecurity.secretsManager.CredentialResolver};
  * using a Keeper-owned class name lets it coexist with other vendors' resolvers (CyberArk,
- * HashiCorp, Delinea, …) on the same MID Server. Pre-Xanadu MID Servers require the shared class
- * name {@code com.snc.discovery.CredentialResolver} (a thin subclass of this class), which ships
- * only in the pre-Xanadu ("legacy") JAR variant.</p>
+ * HashiCorp, Delinea, …) on the same MID Server. Xanadu and older MID Servers require the shared
+ * class name {@code com.snc.discovery.CredentialResolver} (a thin subclass of this class), which
+ * ships only in the ("legacy") JAR variant.</p>
  */
-public class KeeperCredentialResolver implements IExternalCredential {
+public class CredentialResolver implements IExternalCredential {
     // Required parameters that must be in the config file in order to use KSM.
     // Parameters used to access the vault / credentials
     // KSM Config as base64 string
@@ -45,7 +45,7 @@ public class KeeperCredentialResolver implements IExternalCredential {
     private boolean ksmCache = false; // The KSM cache flag to use as specified in the MID config.xml file
 
     // Logger object to log messages in agent.log
-    private static final Logger fLogger = LoggerFactory.getLogger(KeeperCredentialResolver.class);
+    private static final Logger fLogger = LoggerFactory.getLogger(CredentialResolver.class);
 
     // Bridges the MID-free KeeperCredentialMapper diagnostics to the MID Server logger.
     private final KeeperCredentialMapper.Log midLog = new KeeperCredentialMapper.Log() {
@@ -53,7 +53,7 @@ public class KeeperCredentialResolver implements IExternalCredential {
         @Override public void error(String message) { fLogger.error(message); }
     };
 
-    public KeeperCredentialResolver() {}
+    public CredentialResolver() {}
 
     /**
      * Return the API version supported by this class.
@@ -379,7 +379,7 @@ public class KeeperCredentialResolver implements IExternalCredential {
     // Note Java16+ needs following setup (Vancouver+ switched from Java11 to Java17)
     // export _JAVA_OPTIONS="--add-opens=java.base/sun.security.util=ALL-UNNAMED"
     public static void main(String[] args) {
-        KeeperCredentialResolver credResolver = new KeeperCredentialResolver();
+        CredentialResolver credResolver = new CredentialResolver();
         credResolver.ksmConfig = "[Base64_KSM_Config]";
         credResolver.ksmLabelPrefix = "mid_";
         credResolver.ksmCache = false;

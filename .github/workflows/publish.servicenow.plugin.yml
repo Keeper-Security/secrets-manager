@@ -213,9 +213,9 @@ jobs:
           for release in libs/*/; do
             release=$(basename "$release")
             echo "Building for MID server release: ${release}"
-            # Xanadu and newer ship the FQCN-only variant; pre-Xanadu ships the legacy variant.
+            # Yokohama (Patch 7+) and newer ship the FQCN-only variant; Xanadu and older ship the legacy variant.
             case "${release}" in
-              washingtondc|vancouver|utah) variant=legacy ;;
+              xanadu|washingtondc|vancouver|utah) variant=legacy ;;
               *) variant=fqcn ;;
             esac
             ./gradlew jar -PmidRelease="${release}" -PresolverVariant="${variant}" --no-daemon

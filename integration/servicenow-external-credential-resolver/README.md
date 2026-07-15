@@ -12,7 +12,7 @@ Latest versions of JRE have strong cryptography enabled [by default](https://bug
 * Clone this repository.
 * Import the project in IntelliJ IDEA or any IDE.
 * Update MID Server agent path in build.gradle to point to valid MID Server location.
-* Update the code in CredentialResolver.java to customize anything.
+* Update the code in `com/keepersecurity/secretsManager/CredentialResolver.java` to customize anything.
 * Use the following gradle command or IDE (IntelliJ or Eclipse) gradle build option to build the jar:
   > gradle jar  
 * keeper-external-credentials-1.0.0.jar will be generated under the build/libs folder. (A local `gradle jar` includes both resolver class names; the published per-ServiceNow-release JARs are split into `fqcn`/`legacy` variants - see "Registering the resolver" below. Pass `-PresolverVariant=fqcn` or `-PresolverVariant=legacy` to reproduce a specific variant locally.)
@@ -35,8 +35,8 @@ Latest versions of JRE have strong cryptography enabled [by default](https://bug
 # Registering the resolver (class name / FQCN)
 Each release publishes one JAR per supported ServiceNow version, in one of two variants depending on the release:
 
-* **Pre-Xanadu (Utah, Vancouver, Washington DC)** select the resolver by the shared credential-resolver class name `com.snc.discovery.CredentialResolver` (the default; only one such resolver JAR can be used per MID Server).
-* **Xanadu and newer (Xanadu, Yokohama Patch 7+, Zurich, Australia)** let you set a **Fully Qualified Class Name (FQCN)** on the External Credential Resolver configuration. Set it to `com.snc.discovery.keeper.KeeperCredentialResolver`. These (`fqcn`-variant) JARs ship **only** that class - not the shared `com.snc.discovery.CredentialResolver` - so the Keeper resolver can coexist with other vendors' resolvers (CyberArk, HashiCorp, Delinea, …) on the same MID Server, which is not possible when every resolver JAR ships `com.snc.discovery.CredentialResolver`.
+* **Xanadu and older (Utah, Vancouver, Washington DC, Xanadu)** select the resolver by the shared credential-resolver class name `com.snc.discovery.CredentialResolver` (the default; only one such resolver JAR can be used per MID Server).
+* **Yokohama (Patch 7+) and newer (Yokohama, Zurich, Australia)** let you set a **Fully Qualified Class Name (FQCN)** on the External Credential Resolver configuration. Set it to `com.keepersecurity.secretsManager.CredentialResolver`. These (`fqcn`-variant) JARs ship **only** that class - not the shared `com.snc.discovery.CredentialResolver` - so the Keeper resolver can coexist with other vendors' resolvers (CyberArk, HashiCorp, Delinea, …) on the same MID Server, which is not possible when every resolver JAR ships `com.snc.discovery.CredentialResolver`.
 
 ### Compatibility matrix
 | ServiceNow release | MID Server JRE | Resolver class / FQCN to configure |
@@ -44,10 +44,10 @@ Each release publishes one JAR per supported ServiceNow version, in one of two v
 | Utah | JRE 11 | `com.snc.discovery.CredentialResolver` |
 | Vancouver | JRE 11 | `com.snc.discovery.CredentialResolver` |
 | Washington DC | JRE 17 | `com.snc.discovery.CredentialResolver` |
-| Xanadu | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
-| Yokohama (Patch 7+) | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
-| Zurich | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
-| Australia | JRE 17 | `com.snc.discovery.keeper.KeeperCredentialResolver` |
+| Xanadu | JRE 17 | `com.snc.discovery.CredentialResolver` |
+| Yokohama (Patch 7+) | JRE 17 | `com.keepersecurity.secretsManager.CredentialResolver` |
+| Zurich | JRE 17 | `com.keepersecurity.secretsManager.CredentialResolver` |
+| Australia | JRE 17 | `com.keepersecurity.secretsManager.CredentialResolver` |
 
 Each JAR is built with the Java 11 toolchain, so it runs on both JRE 11 (Vancouver) and JRE 17 (Washington DC and newer). ServiceNow releases older than Utah (Tokyo, San Diego, Rome) are past support and are not built for this release.
 
