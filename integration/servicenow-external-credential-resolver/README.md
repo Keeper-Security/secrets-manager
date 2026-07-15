@@ -23,7 +23,7 @@ Latest versions of JRE have strong cryptography enabled [by default](https://bug
 * Import the keeper-external-credentials JAR for your ServiceNow release (see "Registering the resolver" below) into the ServiceNow instance. For a local build, use keeper-external-credentials-1.0.0.jar from the build/libs folder.
     - Navigate to MID Server – JAR Files
     - Create a New Record by clicking New
-    - Name it "KeeperCredentialResolver", version 1.0.0 and attach the JAR.
+    - Name it "Keeper External Credential Resolver", version 1.0.0 and attach the JAR.
     - Click Submit
 * Update the _config.xml_ in MID Server with following parameters and restart the MID Server.  
   `<parameter name="ext.cred.keeper.ksm_config" secure="true" value="<ksm-config-base64-string>"/>`  
