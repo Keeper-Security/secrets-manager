@@ -82,10 +82,17 @@ To change the custom field labels prefix update the _config.xml_ in MID Server w
  + Credential type `gcp` map to Keeper record type `File Attachment/Photo` and manually add the required custom fields `mid_email` - _text_, `mid_secret_key` - _hidden_.   
 
 When used with **"External credential store"** option output values must conform to IExternalCredential interface from `snc-automation-api.jar` (values start with VAL_ prefix).
-Currently supported values - should be prefixed with `mid_` in Keeper records to be extracted (Utah: _user, pswd, passphrase, pkey, authprotocol, authkey, privprotocol, privkey, secret_key, client_id, tenant_id, email_)
+Currently supported values - should be prefixed with `mid_` in Keeper records to be extracted (Utah: _user, pswd, passphrase, pkey, sshcert, authprotocol, authkey, privprotocol, privkey, secret_key, client_id, tenant_id, email_)
 
 When used as Custom External Credential Resolver any field could be mapped **if properly prefixed** in Keeper vault and present in corresponding credential type. 
 The credential map returned from the resolve method is expected to have keys matching with the column names in discovery_credential table _ex. sn_cfg_ansible, sn_disco_certmgmt_certificate_ca, cfg_chef_credentials, etc._
+
+### Diagnostics and error messages
+The resolver checks field labels and reports problems to help you correct a misconfigured record:
+* A `mid_`-prefixed custom field whose suffix looks like a typo of a supported value name (ex. `mid_authykey`) is **still mapped** - arbitrary `discovery_credential` columns are intentionally supported - and a warning suggesting the correct label (ex. `mid_authkey`) is written to `agent.log`. Custom columns that don't resemble a supported value name are mapped silently.
+* A custom field whose label **exactly matches** a supported value name but is **missing the prefix** (ex. `authkey` instead of `mid_authkey`) is ignored, with a warning telling you to rename it. For **Login**/**PAM User** records an unprefixed `user`/`pswd` is instead noted as coming from the standard Login/Password fields.
+* When a credential cannot be resolved at all - the Credential ID matches no record (or more than one), or a matched record yields no usable values - the resolver **throws an error that appears in the "Test credential" result** (and `ecc_queue`) listing the available labels, instead of silently returning an empty credential. Partial-but-usable credentials (ex. a password with no username) still resolve.
+* Field labels are **case-sensitive** (`mid_authkey`, not `mid_AuthKey`).
 
 # Throttles and cache
 The plugin will try to resolve _"throttled"_ errors by default by adding a random delays and retrying later, which works well for up to 1000-3000 requests per 10 sec interval (throttles start after 300-600 requests/10 sec) If you expect 5000+ requests in less than 10 seconds we recommend to enable caching by setting `ext.cred.keeper.use_ksm_cache` parameter to `"true"` in _config.xml_ and restarting the MID Server. Cached data is stored in an encrypted file `ksm_cache.dat` in MID Server's work folder. Cache is updated at most once every 5 minutes or with the next request.

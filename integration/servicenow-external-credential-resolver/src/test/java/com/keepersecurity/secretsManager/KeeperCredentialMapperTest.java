@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,6 +36,18 @@ class KeeperCredentialMapperTest {
 
     private static KeeperRecord record(String uid, KeeperRecordData data) {
         return new KeeperRecord(new byte[32], uid, null, null, null, data, 0L, null, null);
+    }
+
+    /** Log sink that records messages so tests can assert on the emitted diagnostics. */
+    private static final class CapturingLog implements KeeperCredentialMapper.Log {
+        final List<String> warns = new ArrayList<>();
+        final List<String> errors = new ArrayList<>();
+        @Override public void warn(String message) { warns.add(message); }
+        @Override public void error(String message) { errors.add(message); }
+    }
+
+    private static KeeperRecordData genericData(String type, List<KeeperRecordField> custom) {
+        return new KeeperRecordData("Rec", type, new ArrayList<>(), new ArrayList<>(custom));
     }
 
     private static KeeperRecordData loginData(String title, String user, String pass, List<KeeperRecordField> custom) {
@@ -194,5 +207,118 @@ class KeeperCredentialMapperTest {
         KeeperCredentialMapper.CredId id = KeeperCredentialMapper.parseCredId("login:Dup");
         assertThrows(RuntimeException.class, () -> KeeperCredentialMapper.selectRecord(
                 Arrays.asList(a, b), "login:Dup", id, NOOP));
+    }
+
+    @Test
+    void warnsOnUnrecognizedPrefixedLabelButStillMaps() {
+        List<KeeperRecordField> custom = new ArrayList<>();
+        custom.add(new Text("mid_authykey", null, null, new ArrayList<>(Arrays.asList("v"))));
+        KeeperRecord rec = record(UID, loginData("MyLogin", "alice", "s3cret", custom));
+        CapturingLog log = new CapturingLog();
+
+        Map<String, String> out = KeeperCredentialMapper.mapRecordToCredential(rec, "mid_", log);
+
+        assertEquals("v", out.get("authykey")); // unrecognized suffix is still mapped
+        assertTrue(log.warns.stream().anyMatch(w ->
+                w.contains("mid_authykey") && w.contains("did you mean") && w.contains("mid_authkey")));
+        // login record: user/pswd come from standard fields, so they are not offered as labels
+        assertTrue(log.warns.stream().noneMatch(w -> w.contains("mid_user")));
+    }
+
+    @Test
+    void doesNotWarnOnUnrelatedCustomColumn() {
+        List<KeeperRecordField> custom = new ArrayList<>();
+        custom.add(new Text("mid_sn_cfg_ansible", null, null, new ArrayList<>(Arrays.asList("v"))));
+        KeeperRecord rec = record(UID, loginData("MyLogin", "alice", "s3cret", custom));
+        CapturingLog log = new CapturingLog();
+
+        Map<String, String> out = KeeperCredentialMapper.mapRecordToCredential(rec, "mid_", log);
+
+        assertEquals("v", out.get("sn_cfg_ansible")); // still mapped (arbitrary columns are supported)
+        assertTrue(log.warns.isEmpty()); // far from any known name -> treated as an intentional column
+    }
+
+    @Test
+    void warnsOnUnprefixedKnownFieldWithRenameHint() {
+        List<KeeperRecordField> custom = new ArrayList<>();
+        custom.add(new Text("authkey", null, null, new ArrayList<>(Arrays.asList("v"))));
+        KeeperRecord rec = record(UID, genericData("file", custom));
+        CapturingLog log = new CapturingLog();
+
+        Map<String, String> out = KeeperCredentialMapper.mapRecordToCredential(rec, "mid_", log);
+
+        assertFalse(out.containsKey("authkey")); // unprefixed -> not mapped
+        assertTrue(log.warns.stream().anyMatch(w ->
+                w.contains("'authkey'") && w.contains("missing") && w.contains("mid_authkey")));
+    }
+
+    @Test
+    void warnsUnprefixedUserOnLoginPointsToStandardFields() {
+        List<KeeperRecordField> custom = new ArrayList<>();
+        custom.add(new Text("user", null, null, new ArrayList<>(Arrays.asList("bob"))));
+        KeeperRecord rec = record(UID, loginData("MyLogin", "alice", "s3cret", custom));
+        CapturingLog log = new CapturingLog();
+
+        Map<String, String> out = KeeperCredentialMapper.mapRecordToCredential(rec, "mid_", log);
+
+        assertEquals("alice", out.get("user")); // standard Login field wins
+        assertTrue(log.warns.stream().anyMatch(w ->
+                w.contains("standard Login") && !w.contains("Rename")));
+    }
+
+    @Test
+    void doesNotWarnOnUnrelatedUnprefixedField() {
+        List<KeeperRecordField> custom = new ArrayList<>();
+        custom.add(new Text("client_secret", null, null, new ArrayList<>(Arrays.asList("x"))));
+        KeeperRecord rec = record(UID, loginData("MyLogin", "alice", "s3cret", custom));
+        CapturingLog log = new CapturingLog();
+
+        KeeperCredentialMapper.mapRecordToCredential(rec, "mid_", log);
+
+        assertTrue(log.warns.isEmpty()); // client_secret is not a known value name -> silent
+    }
+
+    @Test
+    void validPrefixedFieldMapsWithoutWarning() {
+        List<KeeperRecordField> custom = new ArrayList<>();
+        custom.add(new HiddenField("mid_authkey", null, null, new ArrayList<>(Arrays.asList("KEY"))));
+        KeeperRecord rec = record(UID, genericData("file", custom));
+        CapturingLog log = new CapturingLog();
+
+        Map<String, String> out = KeeperCredentialMapper.mapRecordToCredential(rec, "mid_", log);
+
+        assertEquals("KEY", out.get("authkey"));
+        assertTrue(log.warns.isEmpty());
+        assertTrue(log.errors.isEmpty());
+    }
+
+    @Test
+    void requireUsableThrowsAndLogsWhenEmpty() {
+        KeeperRecord rec = record(UID, loginData("MyLogin", "", "", Collections.emptyList()));
+        CapturingLog log = new CapturingLog();
+        Map<String, String> empty = KeeperCredentialMapper.mapRecordToCredential(rec, "mid_", NOOP);
+        assertTrue(empty.isEmpty());
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> KeeperCredentialMapper.requireUsable(empty, rec, UID, "mid_", log));
+        assertTrue(ex.getMessage().contains("no usable values"));
+        assertTrue(ex.getMessage().contains("standard Login")); // login-aware hint
+        assertFalse(ex.getMessage().contains("mid_user"));
+        assertEquals(1, log.errors.size()); // hybrid: logged once, then thrown
+    }
+
+    @Test
+    void requireUsableReturnsMapWhenNonEmpty() {
+        Map<String, String> m = new HashMap<>();
+        m.put("pkey", "K");
+        KeeperRecord rec = record(UID, genericData("file", Collections.emptyList()));
+        assertSame(m, KeeperCredentialMapper.requireUsable(m, rec, UID, "mid_", NOOP)); // partial is OK
+    }
+
+    @Test
+    void noUsableFieldsMessageListsMidLabelsForNonLogin() {
+        KeeperRecord rec = record(UID, genericData("file", Collections.emptyList()));
+        String msg = KeeperCredentialMapper.buildNoUsableFieldsMessage(rec, UID, "mid_");
+        assertTrue(msg.contains("mid_user") && msg.contains("mid_secret_key"));
     }
 }

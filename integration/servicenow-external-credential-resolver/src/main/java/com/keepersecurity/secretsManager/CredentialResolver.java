@@ -153,6 +153,7 @@ public class CredentialResolver implements IExternalCredential {
             throw e;
         }
 
+        KeeperRecord record = null; // hoisted so it's readable after the try (for diagnostics)
         try {
             // Connect to vault and retrieve credential
             List<KeeperRecord> records = Collections.<KeeperRecord> emptyList();
@@ -167,13 +168,25 @@ public class CredentialResolver implements IExternalCredential {
 
             // find matching record (validates a single match); a full fetch may include unrelated
             // records (e.g. PAM records shared to the app) which are ignored during selection/mapping
-            KeeperRecord record = KeeperCredentialMapper.selectRecord(records, credId, id, midLog);
+            record = KeeperCredentialMapper.selectRecord(records, credId, id, midLog);
 
             // Grab the field values from the returned object
             result.putAll(KeeperCredentialMapper.mapRecordToCredential(record, ksmLabelPrefix, midLog));
         } catch (Exception e) {
-            fLogger.error("### Unable to find credential from KSM App.", e);
+            // A fetch/throttle/selection failure leaves result empty -> the credential is unusable.
+            // Surface the cause (previously swallowed) so it reaches the "Test credential" result.
+            String msg = "Unable to resolve credential '" + credId + "' from Keeper Secrets Manager: "
+                    + e.getMessage() + ". Verify the Credential ID matches exactly one record shared to the "
+                    + "KSM application. "
+                    + KeeperCredentialMapper.describeAvailableCredentials(
+                            id.isUidLookup() ? null : id.recType, ksmLabelPrefix) + ".";
+            fLogger.error("### " + msg, e);
+            throw new RuntimeException(msg, e);
         }
+
+        // A record matched but produced zero usable values -> unusable: log and throw. A partial-but-usable
+        // map (e.g. password with no username) passes through unchanged.
+        result = KeeperCredentialMapper.requireUsable(result, record, credId, ksmLabelPrefix, midLog);
 
         if (!result.containsKey(VAL_USER))
             fLogger.warn("### No value for username in credential: " + credId);

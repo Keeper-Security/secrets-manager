@@ -8,10 +8,13 @@ import com.keepersecurity.secretsManager.core.Multiline;
 import com.keepersecurity.secretsManager.core.Text;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -28,6 +31,17 @@ public final class KeeperCredentialMapper {
     // Values must match IExternalCredential.VAL_USER / VAL_PSWD (kept as literals to stay MID-free).
     static final String VAL_USER = "user";
     static final String VAL_PSWD = "pswd";
+
+    // Authoritative supported value names - must match the IExternalCredential VAL_* constants (kept as
+    // literals to stay MID-free, same pattern as VAL_USER/VAL_PSWD above). Ordered + immutable so the
+    // diagnostic messages below are deterministic.
+    static final Set<String> KNOWN_VALUE_NAMES = Collections.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(
+            VAL_USER, VAL_PSWD, "passphrase", "pkey", "sshcert",
+            "authprotocol", "authkey", "privprotocol", "privkey",
+            "secret_key", "client_id", "tenant_id", "email")));
+
+    // Max edit distance for treating an unrecognized prefixed suffix as a likely typo of a known name.
+    private static final int MAX_TYPO_DISTANCE = 2;
 
     // credId is either a record UID (without ':') or type:title
     private static final String DEF_CREDID_SPLIT = ":";
@@ -142,7 +156,8 @@ public final class KeeperCredentialMapper {
         // Login and PAM User (pamUser) records carry username/password as standard Login/Password
         // fields; read them directly (ignoring any custom labels), the same for both types.
         String recordType = record.getType();
-        if ("login".equalsIgnoreCase(recordType) || "pamUser".equalsIgnoreCase(recordType)) {
+        boolean loginOrPamUser = "login".equalsIgnoreCase(recordType) || "pamUser".equalsIgnoreCase(recordType);
+        if (loginOrPamUser) {
             String password = record.getPassword();
             if (!isNullOrEmpty(password)) {
                 result.put(VAL_PSWD, password);
@@ -161,7 +176,24 @@ public final class KeeperCredentialMapper {
         fields = (fields != null ? fields : new ArrayList<KeeperRecordField>());
         for (KeeperRecordField field : fields) {
             String label = field.getLabel();
-            if (isNullOrEmpty(label) || !label.startsWith(labelPrefix)) {
+            if (isNullOrEmpty(label)) {
+                continue;
+            }
+            if (!label.startsWith(labelPrefix)) {
+                // Unprefixed field: only flag it when its bare label exactly matches a known value name
+                // (ex. "authkey" without the prefix). Unrelated custom fields stay silent - no noise.
+                if (KNOWN_VALUE_NAMES.contains(label)) {
+                    if (loginOrPamUser && (VAL_USER.equals(label) || VAL_PSWD.equals(label))) {
+                        log.warn("### Custom field label '" + label + "' is ignored: for " + recordType
+                                + " records the username and password come from the record's standard Login and "
+                                + "Password fields, not custom labels.");
+                    } else {
+                        log.warn("### Custom field label '" + label + "' matches ServiceNow value name '" + label
+                                + "' but is missing the '" + labelPrefix + "' prefix, so it is ignored. Rename it to '"
+                                + labelPrefix + label + "' to map it. "
+                                + describeAvailableCredentials(recordType, labelPrefix) + ".");
+                    }
+                }
                 continue;
             }
             String key = label.substring(labelPrefix.length());
@@ -191,10 +223,102 @@ public final class KeeperCredentialMapper {
             if (isNullOrEmpty(val)) {
                 log.warn("### Skipped empty field value for field: " + label);
             } else {
+                // Prefixed but the stripped suffix is not a known value name: still map it (arbitrary
+                // discovery_credential columns are intentionally supported), but warn on a likely typo.
+                if (!KNOWN_VALUE_NAMES.contains(key)) {
+                    String suggestion = closestKnownName(key);
+                    if (suggestion != null) {
+                        log.warn("### Custom field label '" + label + "' maps to '" + key + "', which is not a "
+                                + "recognized ServiceNow value name - did you mean '" + labelPrefix + suggestion
+                                + "'? It will still be mapped in case it matches a discovery_credential column. "
+                                + describeAvailableCredentials(recordType, labelPrefix) + ".");
+                    }
+                }
                 result.put(key, val);
             }
         }
         return result;
+    }
+
+    /**
+     * Human-readable list of the credential labels the user can add, used in diagnostics. Record-type
+     * aware: for login/pamUser records username/password come from the standard Login/Password fields,
+     * so user/pswd are described separately and omitted from the prefixed-label list.
+     */
+    public static String describeAvailableCredentials(String recordType, String labelPrefix) {
+        boolean loginOrPamUser = "login".equalsIgnoreCase(recordType) || "pamUser".equalsIgnoreCase(recordType);
+        String prefix = (labelPrefix != null) ? labelPrefix : "";
+        List<String> labels = new ArrayList<>();
+        for (String name : KNOWN_VALUE_NAMES) {
+            if (loginOrPamUser && (VAL_USER.equals(name) || VAL_PSWD.equals(name))) {
+                continue;
+            }
+            labels.add(prefix + name);
+        }
+        String lead = loginOrPamUser
+                ? "For login and pamUser records the username and password come from the record's standard "
+                        + "Login and Password fields; the available credential labels are: "
+                : "The available credential labels are: ";
+        return lead + String.join(", ", labels);
+    }
+
+    /** Message for a record that matched the Credential ID but yielded no usable credential values. */
+    static String buildNoUsableFieldsMessage(KeeperRecord record, String credId, String labelPrefix) {
+        String type = (record != null) ? record.getType() : null;
+        String title = (record != null) ? record.getTitle() : null;
+        return "Credential '" + credId + "' matched a record (type '" + type + "', title '" + title
+                + "') but no usable values were resolved from it. "
+                + describeAvailableCredentials(type, labelPrefix) + ".";
+    }
+
+    /**
+     * Enforce that at least one credential value was resolved. An empty result means the credential is
+     * unusable (no matching record data, or nothing correctly labeled); log the actionable message and
+     * throw so it surfaces in the ServiceNow "Test credential" result. A non-empty (even partial) map is
+     * returned unchanged.
+     */
+    public static Map<String, String> requireUsable(Map<String, String> result, KeeperRecord record,
+                                                     String credId, String labelPrefix, Log log) {
+        if (result.isEmpty()) {
+            String msg = buildNoUsableFieldsMessage(record, credId, labelPrefix);
+            log.error("### " + msg);
+            throw new RuntimeException(msg);
+        }
+        return result;
+    }
+
+    /** Nearest known value name within MAX_TYPO_DISTANCE edits of the given key, or null if none. */
+    private static String closestKnownName(String key) {
+        String best = null;
+        int bestDistance = Integer.MAX_VALUE;
+        for (String name : KNOWN_VALUE_NAMES) {
+            int distance = editDistance(key, name);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = name;
+            }
+        }
+        return (bestDistance <= MAX_TYPO_DISTANCE) ? best : null;
+    }
+
+    /** Standard iterative Levenshtein edit distance. */
+    private static int editDistance(String a, String b) {
+        int[] prev = new int[b.length() + 1];
+        int[] curr = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) {
+            prev[j] = j;
+        }
+        for (int i = 1; i <= a.length(); i++) {
+            curr[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int cost = (a.charAt(i - 1) == b.charAt(j - 1)) ? 0 : 1;
+                curr[j] = Math.min(Math.min(curr[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+            }
+            int[] tmp = prev;
+            prev = curr;
+            curr = tmp;
+        }
+        return prev[b.length()];
     }
 
     private static boolean isNullOrEmpty(String str) {
