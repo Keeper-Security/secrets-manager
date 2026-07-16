@@ -74,10 +74,15 @@ public class CredentialResolver implements IExternalCredential {
         //propValue = Config.get().getProperty("<Parameter Name>")
 
         ksmConfig = configMap.get(KSM_CONFIG);
-        if(isNullOrEmpty(ksmConfig))
-            fLogger.error("[Vault] ERROR - CredentialResolver ksmConfig not set!");
-        String configMask = new String(new char[ksmConfig.length()]).replace('\0', '*');
-        fLogger.info("ksmConfig: " + configMask);
+        if (isNullOrEmpty(ksmConfig)) {
+            // Do not fall through to the mask below: ksmConfig is null/empty, so new char[length()]
+            // would throw a raw NullPointerException and hide this actionable message. resolve() will
+            // then fail cleanly per request when it tries to load the (missing) config.
+            fLogger.error("[Vault] ERROR - CredentialResolver ksmConfig (" + KSM_CONFIG + ") not set!");
+        } else {
+            String configMask = new String(new char[ksmConfig.length()]).replace('\0', '*');
+            fLogger.info("ksmConfig: " + configMask);
+        }
 
         ksmLabelPrefix = configMap.get(KSM_LABEL_PREFIX);
         if(isNullOrEmpty(ksmLabelPrefix))
