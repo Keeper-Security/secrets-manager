@@ -28,20 +28,35 @@ import java.util.stream.Collectors;
  */
 public final class KeeperCredentialMapper {
 
-    // Values must match IExternalCredential.VAL_USER / VAL_PSWD (kept as literals to stay MID-free).
+    // The IExternalCredential VAL_* value names, one named constant each (kept as literals so this class
+    // stays MID-free / unit-testable without snc-automation-api.jar). Constant names and values mirror the
+    // interface exactly. This is the static fallback and sanity check; at runtime CredentialResolver
+    // resolves the authoritative set from IExternalCredential and passes it into the overloads below.
     static final String VAL_USER = "user";
     static final String VAL_PSWD = "pswd";
+    static final String VAL_PASSPHRASE = "passphrase";
+    static final String VAL_PKEY = "pkey";
+    static final String VAL_SSHCERT = "sshcert";
+    static final String VAL_AUTHPROTO = "authprotocol";
+    static final String VAL_AUTHKEY = "authkey";
+    static final String VAL_PRIVPROTO = "privprotocol";
+    static final String VAL_PRIVKEY = "privkey";
+    static final String VAL_SECRET_KEY = "secret_key";
+    static final String VAL_CLIENT_ID = "client_id";
+    static final String VAL_TENANT_ID = "tenant_id";
+    static final String VAL_EMAIL = "email";
 
-    // Authoritative supported value names - must match the IExternalCredential VAL_* constants (kept as
-    // literals to stay MID-free, same pattern as VAL_USER/VAL_PSWD above). Ordered + immutable so the
-    // diagnostic messages below are deterministic.
+    // Ordered + immutable so diagnostic messages are deterministic.
     static final Set<String> KNOWN_VALUE_NAMES = Collections.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(
-            VAL_USER, VAL_PSWD, "passphrase", "pkey", "sshcert",
-            "authprotocol", "authkey", "privprotocol", "privkey",
-            "secret_key", "client_id", "tenant_id", "email")));
+            VAL_USER, VAL_PSWD, VAL_PASSPHRASE, VAL_PKEY, VAL_SSHCERT, VAL_AUTHPROTO, VAL_AUTHKEY,
+            VAL_PRIVPROTO, VAL_PRIVKEY, VAL_SECRET_KEY, VAL_CLIENT_ID, VAL_TENANT_ID, VAL_EMAIL)));
 
     // Max edit distance for treating an unrecognized prefixed suffix as a likely typo of a known name.
     private static final int MAX_TYPO_DISTANCE = 2;
+
+    // Cited in diagnostics so an admin can verify the valid labels against the authoritative source.
+    private static final String VALUE_NAMES_SOURCE =
+            "the VAL_* value names defined in the IExternalCredential interface, snc-automation-api.jar";
 
     // credId is either a record UID (without ':') or type:title
     private static final String DEF_CREDID_SPLIT = ":";
@@ -148,6 +163,17 @@ public final class KeeperCredentialMapper {
      *     Login/Password fields, ignoring any labels.
      */
     public static Map<String, String> mapRecordToCredential(KeeperRecord record, String labelPrefix, Log log) {
+        return mapRecordToCredential(record, labelPrefix, KNOWN_VALUE_NAMES, log);
+    }
+
+    /**
+     * As {@link #mapRecordToCredential(KeeperRecord, String, Log)} but validates prefixed labels against
+     * the supplied value-name set (which CredentialResolver resolves at runtime from IExternalCredential).
+     * A null/empty set falls back to the static {@link #KNOWN_VALUE_NAMES}.
+     */
+    public static Map<String, String> mapRecordToCredential(KeeperRecord record, String labelPrefix,
+                                                            Set<String> valueNames, Log log) {
+        Set<String> valid = (valueNames == null || valueNames.isEmpty()) ? KNOWN_VALUE_NAMES : valueNames;
         Map<String, String> result = new HashMap<>();
         if (record == null) {
             return result;
@@ -180,20 +206,8 @@ public final class KeeperCredentialMapper {
                 continue;
             }
             if (!label.startsWith(labelPrefix)) {
-                // Unprefixed field: only flag it when its bare label exactly matches a known value name
-                // (ex. "authkey" without the prefix). Unrelated custom fields stay silent - no noise.
-                if (KNOWN_VALUE_NAMES.contains(label)) {
-                    if (loginOrPamUser && (VAL_USER.equals(label) || VAL_PSWD.equals(label))) {
-                        log.warn("### Custom field label '" + label + "' is ignored: for " + recordType
-                                + " records the username and password come from the record's standard Login and "
-                                + "Password fields, not custom labels.");
-                    } else {
-                        log.warn("### Custom field label '" + label + "' matches ServiceNow value name '" + label
-                                + "' but is missing the '" + labelPrefix + "' prefix, so it is ignored. Rename it to '"
-                                + labelPrefix + label + "' to map it. "
-                                + describeAvailableCredentials(recordType, labelPrefix) + ".");
-                    }
-                }
+                // Unprefixed field: flag it (non-fatal) only when its bare label matches a value name.
+                diagnoseUnprefixedLabel(label, recordType, labelPrefix, valid, loginOrPamUser, log);
                 continue;
             }
             String key = label.substring(labelPrefix.length());
@@ -223,18 +237,8 @@ public final class KeeperCredentialMapper {
             if (isNullOrEmpty(val)) {
                 log.warn("### Skipped empty field value for field: " + label);
             } else {
-                // Prefixed but the stripped suffix is not a known value name: still map it (arbitrary
-                // discovery_credential columns are intentionally supported), but warn on a likely typo.
-                if (!KNOWN_VALUE_NAMES.contains(key)) {
-                    String suggestion = closestKnownName(key);
-                    if (suggestion != null) {
-                        log.warn("### Custom field label '" + label + "' maps to '" + key + "', which is not a "
-                                + "recognized ServiceNow value name - did you mean '" + labelPrefix + suggestion
-                                + "'? It will still be mapped in case it matches a discovery_credential column. "
-                                + describeAvailableCredentials(recordType, labelPrefix) + ".");
-                    }
-                }
-                result.put(key, val);
+                result.put(key, val); // map first - the diagnostic below is non-fatal and never blocks this
+                diagnoseUnrecognizedPrefixedLabel(label, key, recordType, labelPrefix, valid, log);
             }
         }
         return result;
@@ -246,10 +250,15 @@ public final class KeeperCredentialMapper {
      * so user/pswd are described separately and omitted from the prefixed-label list.
      */
     public static String describeAvailableCredentials(String recordType, String labelPrefix) {
+        return describeAvailableCredentials(recordType, labelPrefix, KNOWN_VALUE_NAMES);
+    }
+
+    public static String describeAvailableCredentials(String recordType, String labelPrefix, Set<String> valueNames) {
+        Set<String> valid = (valueNames == null || valueNames.isEmpty()) ? KNOWN_VALUE_NAMES : valueNames;
         boolean loginOrPamUser = "login".equalsIgnoreCase(recordType) || "pamUser".equalsIgnoreCase(recordType);
         String prefix = (labelPrefix != null) ? labelPrefix : "";
         List<String> labels = new ArrayList<>();
-        for (String name : KNOWN_VALUE_NAMES) {
+        for (String name : valid) {
             if (loginOrPamUser && (VAL_USER.equals(name) || VAL_PSWD.equals(name))) {
                 continue;
             }
@@ -257,41 +266,75 @@ public final class KeeperCredentialMapper {
         }
         String lead = loginOrPamUser
                 ? "For login and pamUser records the username and password come from the record's standard "
-                        + "Login and Password fields; the available credential labels are: "
-                : "The available credential labels are: ";
+                        + "Login and Password fields; the other available credential labels (" + VALUE_NAMES_SOURCE + ") are: "
+                : "The available credential labels (" + VALUE_NAMES_SOURCE + ") are: ";
         return lead + String.join(", ", labels);
     }
 
     /** Message for a record that matched the Credential ID but yielded no usable credential values. */
     static String buildNoUsableFieldsMessage(KeeperRecord record, String credId, String labelPrefix) {
+        return buildNoUsableFieldsMessage(record, credId, labelPrefix, KNOWN_VALUE_NAMES);
+    }
+
+    static String buildNoUsableFieldsMessage(KeeperRecord record, String credId, String labelPrefix,
+                                             Set<String> valueNames) {
         String type = (record != null) ? record.getType() : null;
         String title = (record != null) ? record.getTitle() : null;
         return "Credential '" + credId + "' matched a record (type '" + type + "', title '" + title
                 + "') but no usable values were resolved from it. "
-                + describeAvailableCredentials(type, labelPrefix) + ".";
+                + describeAvailableCredentials(type, labelPrefix, valueNames) + ".";
     }
 
-    /**
-     * Enforce that at least one credential value was resolved. An empty result means the credential is
-     * unusable (no matching record data, or nothing correctly labeled); log the actionable message and
-     * throw so it surfaces in the ServiceNow "Test credential" result. A non-empty (even partial) map is
-     * returned unchanged.
-     */
-    public static Map<String, String> requireUsable(Map<String, String> result, KeeperRecord record,
-                                                     String credId, String labelPrefix, Log log) {
-        if (result.isEmpty()) {
-            String msg = buildNoUsableFieldsMessage(record, credId, labelPrefix);
-            log.error("### " + msg);
-            throw new RuntimeException(msg);
+    // The label diagnostics below are strictly informational: each is wrapped so a bug in the check can
+    // never propagate, and they never prevent a (possibly partial) credential from resolving.
+
+    /** Non-fatal: flag an unprefixed custom field whose bare label matches a known value name. */
+    private static void diagnoseUnprefixedLabel(String label, String recordType, String labelPrefix,
+                                                Set<String> valid, boolean loginOrPamUser, Log log) {
+        try {
+            if (!valid.contains(label)) {
+                return; // unrelated custom field - stay silent, no noise
+            }
+            if (loginOrPamUser && (VAL_USER.equals(label) || VAL_PSWD.equals(label))) {
+                log.warn("### Custom field label '" + label + "' is ignored: for " + recordType
+                        + " records the username and password come from the record's standard Login and "
+                        + "Password fields, not custom labels.");
+            } else {
+                log.warn("### Custom field label '" + label + "' matches ServiceNow value name '" + label
+                        + "' but is missing the '" + labelPrefix + "' prefix, so it is ignored. Rename it to '"
+                        + labelPrefix + label + "' to map it. "
+                        + describeAvailableCredentials(recordType, labelPrefix, valid) + ".");
+            }
+        } catch (Exception diagEx) {
+            log.warn("### Label diagnostic skipped for '" + label + "': " + diagEx.getMessage());
         }
-        return result;
     }
 
-    /** Nearest known value name within MAX_TYPO_DISTANCE edits of the given key, or null if none. */
-    private static String closestKnownName(String key) {
+    /** Non-fatal: flag a prefixed label whose suffix is not a known value name (the value is still mapped). */
+    private static void diagnoseUnrecognizedPrefixedLabel(String label, String key, String recordType,
+                                                          String labelPrefix, Set<String> valid, Log log) {
+        try {
+            if (valid.contains(key)) {
+                return;
+            }
+            // Almost always a wrong label copied from the ServiceNow form/column name (e.g. mid_private_key
+            // or mid_password) instead of the interface value (mid_privkey / VAL_PRIVKEY, mid_pswd /
+            // VAL_PSWD), which then silently never maps. A "did you mean" hint is added for a close typo.
+            String suggestion = closestKnownName(key, valid);
+            String didYouMean = (suggestion != null) ? " (did you mean '" + labelPrefix + suggestion + "'?)" : "";
+            log.warn("### Custom field label '" + label + "' maps to '" + key + "', which is not a recognized "
+                    + "ServiceNow value name" + didYouMean + ". It is still passed through in case it is a custom "
+                    + "discovery_credential column. " + describeAvailableCredentials(recordType, labelPrefix, valid) + ".");
+        } catch (Exception diagEx) {
+            log.warn("### Label diagnostic skipped for '" + label + "': " + diagEx.getMessage());
+        }
+    }
+
+    /** Nearest value name within MAX_TYPO_DISTANCE edits of the given key, or null if none. */
+    private static String closestKnownName(String key, Set<String> valueNames) {
         String best = null;
         int bestDistance = Integer.MAX_VALUE;
-        for (String name : KNOWN_VALUE_NAMES) {
+        for (String name : valueNames) {
             int distance = editDistance(key, name);
             if (distance < bestDistance) {
                 bestDistance = distance;

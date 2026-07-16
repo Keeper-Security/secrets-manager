@@ -15,9 +15,10 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -226,16 +227,23 @@ class KeeperCredentialMapperTest {
     }
 
     @Test
-    void doesNotWarnOnUnrelatedCustomColumn() {
+    void warnsOnFormStyleMislabeledFieldAndListsValidLabels() {
+        // The common mistake: copying the ServiceNow form/column name (private_key) into the label
+        // instead of the IExternalCredential value name (VAL_PRIVKEY = "privkey"). It is too far from
+        // any known name to be a "did you mean" typo, but must still be flagged with the valid labels.
         List<KeeperRecordField> custom = new ArrayList<>();
-        custom.add(new Text("mid_sn_cfg_ansible", null, null, new ArrayList<>(Arrays.asList("v"))));
-        KeeperRecord rec = record(UID, loginData("MyLogin", "alice", "s3cret", custom));
+        custom.add(new Text("mid_private_key", null, null, new ArrayList<>(Arrays.asList("v"))));
+        KeeperRecord rec = record(UID, genericData("file", custom));
         CapturingLog log = new CapturingLog();
 
         Map<String, String> out = KeeperCredentialMapper.mapRecordToCredential(rec, "mid_", log);
 
-        assertEquals("v", out.get("sn_cfg_ansible")); // still mapped (arbitrary columns are supported)
-        assertTrue(log.warns.isEmpty()); // far from any known name -> treated as an intentional column
+        assertEquals("v", out.get("private_key")); // still passed through
+        assertEquals(1, log.warns.size());
+        String w = log.warns.get(0);
+        assertTrue(w.contains("mid_private_key") && w.contains("not a recognized"));
+        assertTrue(w.contains("mid_privkey") && w.contains("mid_pkey")); // valid labels are listed
+        assertFalse(w.contains("did you mean")); // too far from any known name for a typo suggestion
     }
 
     @Test
@@ -293,26 +301,22 @@ class KeeperCredentialMapperTest {
     }
 
     @Test
-    void requireUsableThrowsAndLogsWhenEmpty() {
-        KeeperRecord rec = record(UID, loginData("MyLogin", "", "", Collections.emptyList()));
+    void usesSuppliedValueNamesOverStaticDefault() {
+        // CredentialResolver resolves the value-name set at runtime and passes it in; the mapper must
+        // validate against that set, not only the static default.
+        Set<String> custom = new LinkedHashSet<>(Arrays.asList("user", "pswd", "widget"));
+        List<KeeperRecordField> fields = new ArrayList<>();
+        fields.add(new Text("mid_widget", null, null, new ArrayList<>(Arrays.asList("w"))));   // valid per custom set
+        fields.add(new Text("mid_authkey", null, null, new ArrayList<>(Arrays.asList("a"))));  // NOT in custom set
+        KeeperRecord rec = record(UID, genericData("file", fields));
         CapturingLog log = new CapturingLog();
-        Map<String, String> empty = KeeperCredentialMapper.mapRecordToCredential(rec, "mid_", NOOP);
-        assertTrue(empty.isEmpty());
 
-        RuntimeException ex = assertThrows(RuntimeException.class,
-                () -> KeeperCredentialMapper.requireUsable(empty, rec, UID, "mid_", log));
-        assertTrue(ex.getMessage().contains("no usable values"));
-        assertTrue(ex.getMessage().contains("standard Login")); // login-aware hint
-        assertFalse(ex.getMessage().contains("mid_user"));
-        assertEquals(1, log.errors.size()); // hybrid: logged once, then thrown
-    }
+        Map<String, String> out = KeeperCredentialMapper.mapRecordToCredential(rec, "mid_", custom, log);
 
-    @Test
-    void requireUsableReturnsMapWhenNonEmpty() {
-        Map<String, String> m = new HashMap<>();
-        m.put("pkey", "K");
-        KeeperRecord rec = record(UID, genericData("file", Collections.emptyList()));
-        assertSame(m, KeeperCredentialMapper.requireUsable(m, rec, UID, "mid_", NOOP)); // partial is OK
+        assertEquals("w", out.get("widget"));
+        assertEquals("a", out.get("authkey")); // still passed through even though flagged
+        assertTrue(log.warns.stream().noneMatch(w -> w.contains("'mid_widget'")));  // widget is valid here
+        assertTrue(log.warns.stream().anyMatch(w -> w.contains("'mid_authkey'"))); // authkey not in the custom set
     }
 
     @Test
