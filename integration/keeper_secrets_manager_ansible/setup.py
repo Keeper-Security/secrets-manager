@@ -9,14 +9,14 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
 install_requires = [
-    'keeper-secrets-manager-core>=17.2.0',
-    'keeper-secrets-manager-helper>=1.1.0',
+    'keeper-secrets-manager-core>=17.3.0',
+    'keeper-secrets-manager-helper>=1.1.2',
     'ansible-core>=2.12.0'  # Use ansible-core instead of ansible to avoid community collections
 ]
 
 setup(
     name="keeper-secrets-manager-ansible",
-    version='1.4.0',
+    version='1.5.0',
     description="Keeper Secrets Manager plugins for Ansible.",
     long_description=long_description,
     long_description_content_type="text/markdown",
