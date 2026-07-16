@@ -15,7 +15,7 @@ puts "\n1. Retrieving PAM resources with linked credentials..."
 begin
   # Enable request_links to fetch linked records
   query_options = KeeperSecretsManager::Dto::QueryOptions.new(request_links: true)
-  records = secrets_manager.get_secrets([], query_options)
+  records = secrets_manager.get_secrets_with_options(query_options)
 
   # Find PAM resources (types starting with 'pam')
   pam_resources = records.select { |r| r.type.start_with?('pam') }

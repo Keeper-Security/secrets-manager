@@ -54,6 +54,10 @@ begin
       next unless totp_field && totp_field['value']
 
       seed = totp_field['value'].first
+      next unless seed
+
+      # otpauth:// URIs store the full URL; extract the raw secret before generating
+      seed = KeeperSecretsManager::TOTP.parse_url(seed)['secret'] if seed.start_with?('otpauth://')
 
       # Generate current code
       code = KeeperSecretsManager::TOTP.generate_code(seed)

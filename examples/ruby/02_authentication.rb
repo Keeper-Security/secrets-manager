@@ -22,7 +22,7 @@ begin
   sm = KeeperSecretsManager.new(token: token, config: storage)
 
   # Get the configuration as base64 for future use
-  config_base64 = storage.to_base64
+  config_base64 = Base64.strict_encode64(storage.to_json)
   puts '✓ Configuration saved. Use this for future connections:'
   puts "  export KSM_CONFIG='#{config_base64}'"
 rescue StandardError => e

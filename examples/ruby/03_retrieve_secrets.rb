@@ -20,10 +20,10 @@ end
 puts "\n2. Get secret by UID:"
 if secrets.any?
   uid = secrets.first.uid
-  secret = secrets_manager.get_secret_by_uid(uid)
+  secret = secrets_manager.get_secrets([uid]).first
   puts "  Title: #{secret.title}"
   puts "  Type: #{secret.type}"
-  puts "  Fields: #{secret.fields.keys.join(', ')}"
+  puts "  Fields: #{secret.fields.map { |f| f['type'] }.join(', ')}"
 end
 
 # 3. Get secret by title
@@ -51,8 +51,8 @@ if secrets.any?
   secret = secrets.first
   
   # Common fields
-  puts "  Login: #{secret.fields['login']}" if secret.fields['login']
-  puts "  URL: #{secret.fields['url']}" if secret.fields['url']
+  puts "  Login: #{secret.login}" if secret.login
+  puts "  URL: #{secret.url}" if secret.url
   
   # Using dynamic field access
   puts "  Password: #{secret.password}" if secret.respond_to?(:password)
@@ -88,7 +88,7 @@ puts "   Access new metadata fields on records"
 
 begin
   query_options = KeeperSecretsManager::Dto::QueryOptions.new(request_links: true)
-  records_with_metadata = secrets_manager.get_secrets([], query_options)
+  records_with_metadata = secrets_manager.get_secrets_with_options(query_options)
 
   records_with_metadata.first(3).each do |record|
     puts "\n  #{record.title}"

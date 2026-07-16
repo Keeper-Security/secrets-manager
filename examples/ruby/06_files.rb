@@ -164,12 +164,7 @@ cert_example = <<~CERT
 CERT
 
 puts '  # Upload a certificate'
-puts '  file_uid = secrets_manager.upload_file('
-puts '    owner_record_uid: record.uid,'
-puts "    file_name: 'server.crt',"
-puts '    file_data: cert_content,'
-puts "    mime_type: 'application/x-x509-ca-cert'"
-puts '  )'
+puts "  file_uid = secrets_manager.upload_file(record.uid, cert_content, 'server.crt', 'Server Certificate')"
 
 puts "\n=== Tips ==="
 puts '- Files are attached to records (you need a record first)'

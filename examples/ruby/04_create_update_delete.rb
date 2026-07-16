@@ -40,7 +40,7 @@ begin
 
   # 2. READ - Retrieve the created secret
   puts "\n2. Reading the secret..."
-  secret = secrets_manager.get_secret_by_uid(record_uid)
+  secret = secrets_manager.get_secrets([record_uid]).first
   puts "✓ Retrieved: #{secret.title}"
   puts "  Login: #{secret.login}"
   puts "  URL: #{secret.url}"
@@ -67,7 +67,7 @@ begin
   puts '✓ Updated successfully'
 
   # Verify the update
-  updated = secrets_manager.get_secret_by_uid(record_uid)
+  updated = secrets_manager.get_secrets([record_uid]).first
   puts "  New URL: #{updated.url}"
   puts "  Notes: #{updated.notes}"
 
@@ -135,6 +135,8 @@ begin
     secrets_manager.save(secret)
     puts '✓ Saved without completing a transaction'
 
+    # Re-fetch before second save; the object is stale after the first save
+    secret = secrets_manager.get_secrets([record_uid]).first
     # save() with transaction_type starts a PAM rotation; caller must finalize separately
     secret.notes = "Staged rotation on #{Time.now}"
     secrets_manager.save(secret, transaction_type: 'rotation')
@@ -151,12 +153,12 @@ begin
   secrets_manager.delete_secret(record_uid)
   puts "✓ Deleted record: #{record_uid}"
 
-  # Verify deletion
-  begin
-    secrets_manager.get_secret_by_uid(record_uid)
-    puts '✗ Record still exists!'
-  rescue StandardError
+  # Verify deletion — get_secrets returns nil for a deleted record, it does not raise
+  deleted = secrets_manager.get_secrets([record_uid]).first
+  if deleted.nil?
     puts '✓ Confirmed: Record no longer exists'
+  else
+    puts '✗ Record still exists!'
   end
 rescue StandardError => e
   puts "Error: #{e.message}"

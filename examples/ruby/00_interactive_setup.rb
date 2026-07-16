@@ -137,7 +137,7 @@ when '2'
     puts "\n✓ Token bound successfully!"
 
     # Get config as base64
-    config_base64 = storage.to_base64
+    config_base64 = Base64.strict_encode64(storage.to_json)
 
     # Test connection
     secrets = sm.get_secrets
@@ -177,7 +177,7 @@ when '3'
     puts "\n✓ Token bound successfully!"
 
     # Get config as base64
-    config_base64 = storage.to_base64
+    config_base64 = Base64.strict_encode64(storage.to_json)
 
     # Test connection
     secrets = sm.get_secrets
