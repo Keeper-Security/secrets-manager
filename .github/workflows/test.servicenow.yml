@@ -7,6 +7,9 @@ on:
       - 'integration/servicenow-external-credential-resolver/**'
       - '.github/workflows/test.servicenow.yml'
 
+permissions:
+  contents: read
+
 jobs:
   test-servicenow:
     runs-on: ubuntu-latest

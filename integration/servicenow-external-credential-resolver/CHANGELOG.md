@@ -17,6 +17,7 @@ All notable changes to the KSM ServiceNow External Credential Resolver are docum
 
 ### Security
 - Hardened the GHA publish workflow against shell injection via `workflow_dispatch` tag inputs: expression values are now passed through intermediate `env:` variables instead of being inlined directly in `run:` shell blocks. (KSM-680)
+- Restricted the Test-ServiceNow CI workflow's `GITHUB_TOKEN` to least privilege (`contents: read`).
 
 ### Dropped
 - Rome, San Diego, and Tokyo ServiceNow release support (past end of life).
