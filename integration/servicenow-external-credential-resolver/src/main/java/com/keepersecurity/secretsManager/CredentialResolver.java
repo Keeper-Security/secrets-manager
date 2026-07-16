@@ -183,7 +183,6 @@ public class CredentialResolver implements IExternalCredential {
             throw e;
         }
 
-        KeeperRecord record = null; // hoisted so it's readable after the try (for diagnostics)
         try {
             // Connect to vault and retrieve credential
             List<KeeperRecord> records = Collections.<KeeperRecord> emptyList();
@@ -198,7 +197,7 @@ public class CredentialResolver implements IExternalCredential {
 
             // find matching record (validates a single match); a full fetch may include unrelated
             // records (e.g. PAM records shared to the app) which are ignored during selection/mapping
-            record = KeeperCredentialMapper.selectRecord(records, credId, id, midLog);
+            KeeperRecord record = KeeperCredentialMapper.selectRecord(records, credId, id, midLog);
 
             // Grab the field values from the returned object
             result.putAll(KeeperCredentialMapper.mapRecordToCredential(record, ksmLabelPrefix, KNOWN_VALUE_NAMES, midLog));
@@ -208,23 +207,14 @@ public class CredentialResolver implements IExternalCredential {
             fLogger.error("### Unable to resolve credential '" + credId + "' from Keeper Secrets Manager: "
                     + e.getMessage(), e);
         }
-
-        // Informational only (never throws): a matched record that yields nothing usable is almost always a
-        // labeling mistake - log the actionable message (with the valid labels) for troubleshooting.
-        if (result.isEmpty() && record != null) {
-            try {
-                fLogger.error("### " + KeeperCredentialMapper.buildNoUsableFieldsMessage(
-                        record, credId, ksmLabelPrefix, KNOWN_VALUE_NAMES));
-            } catch (Exception diagEx) {
-                fLogger.error("### Diagnostic message build failed (ignored): " + diagEx.getMessage());
-            }
-        }
+        // Note: the mapper logs the available value names once (and a "no values resolved" note when empty);
+        // resolve() never throws on a labeling/lookup problem - it returns whatever it resolved.
 
         if (!result.containsKey(VAL_USER))
             fLogger.warn("### No value for username in credential: " + credId);
         if (!result.containsKey(VAL_PSWD))
             fLogger.warn("### No value for password in credential: " + credId);
-        fLogger.info("### Credential: " + credId + " Resolved keys: " + result.keySet() + " UseCache: " + ksmCache);
+        fLogger.info("### Credential: " + credId + " Resolved " + result.size() + " keys: " + result.keySet() + " UseCache: " + ksmCache);
 
         return result;
     }

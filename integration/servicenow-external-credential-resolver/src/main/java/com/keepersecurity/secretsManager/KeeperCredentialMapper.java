@@ -200,6 +200,7 @@ public final class KeeperCredentialMapper {
         // find fields by label prefix
         List<KeeperRecordField> fields = record.getData().getCustom();
         fields = (fields != null ? fields : new ArrayList<KeeperRecordField>());
+        boolean labelIssue = false; // whether any label warranted a warning (drives the single names line)
         for (KeeperRecordField field : fields) {
             String label = field.getLabel();
             if (isNullOrEmpty(label)) {
@@ -207,7 +208,7 @@ public final class KeeperCredentialMapper {
             }
             if (!label.startsWith(labelPrefix)) {
                 // Unprefixed field: flag it (non-fatal) only when its bare label matches a value name.
-                diagnoseUnprefixedLabel(label, recordType, labelPrefix, valid, loginOrPamUser, log);
+                labelIssue |= diagnoseUnprefixedLabel(label, recordType, labelPrefix, valid, loginOrPamUser, log);
                 continue;
             }
             String key = label.substring(labelPrefix.length());
@@ -238,62 +239,62 @@ public final class KeeperCredentialMapper {
                 log.warn("### Skipped empty field value for field: " + label);
             } else {
                 result.put(key, val); // map first - the diagnostic below is non-fatal and never blocks this
-                diagnoseUnrecognizedPrefixedLabel(label, key, recordType, labelPrefix, valid, log);
+                labelIssue |= diagnoseUnrecognizedPrefixedLabel(label, key, labelPrefix, valid, log);
             }
+        }
+
+        // Print the list of valid value names at most once per resolve (review feedback): when any label
+        // was flagged, or when nothing resolved. Bare names + the configured prefix stated once. Non-fatal.
+        if (labelIssue || result.isEmpty()) {
+            logAvailableValueNames(recordType, labelPrefix, valid, result.isEmpty(), log);
         }
         return result;
     }
 
     /**
-     * Human-readable list of the credential labels the user can add, used in diagnostics. Record-type
-     * aware: for login/pamUser records username/password come from the standard Login/Password fields,
-     * so user/pswd are described separately and omitted from the prefixed-label list.
+     * The valid value names the user can map, for diagnostics. Bare names - the label prefix is
+     * configurable, so it is stated once rather than applied to each name. Record-type aware: for
+     * login/pamUser, user/pswd come from the standard Login/Password fields and are omitted here.
      */
-    public static String describeAvailableCredentials(String recordType, String labelPrefix) {
-        return describeAvailableCredentials(recordType, labelPrefix, KNOWN_VALUE_NAMES);
-    }
-
-    public static String describeAvailableCredentials(String recordType, String labelPrefix, Set<String> valueNames) {
+    static String availableValueNamesSentence(String recordType, String labelPrefix, Set<String> valueNames) {
         Set<String> valid = (valueNames == null || valueNames.isEmpty()) ? KNOWN_VALUE_NAMES : valueNames;
         boolean loginOrPamUser = "login".equalsIgnoreCase(recordType) || "pamUser".equalsIgnoreCase(recordType);
         String prefix = (labelPrefix != null) ? labelPrefix : "";
-        List<String> labels = new ArrayList<>();
+        List<String> names = new ArrayList<>();
         for (String name : valid) {
             if (loginOrPamUser && (VAL_USER.equals(name) || VAL_PSWD.equals(name))) {
                 continue;
             }
-            labels.add(prefix + name);
+            names.add(name);
         }
         String lead = loginOrPamUser
                 ? "For login and pamUser records the username and password come from the record's standard "
-                        + "Login and Password fields; the other available credential labels (" + VALUE_NAMES_SOURCE + ") are: "
-                : "The available credential labels (" + VALUE_NAMES_SOURCE + ") are: ";
-        return lead + String.join(", ", labels);
+                        + "Login and Password fields; other available credential value names (prefix each with '"
+                        + prefix + "'): "
+                : "Available credential value names (prefix each with '" + prefix + "'): ";
+        return lead + String.join(", ", names) + " (" + VALUE_NAMES_SOURCE + ")";
     }
 
-    /** Message for a record that matched the Credential ID but yielded no usable credential values. */
-    static String buildNoUsableFieldsMessage(KeeperRecord record, String credId, String labelPrefix) {
-        return buildNoUsableFieldsMessage(record, credId, labelPrefix, KNOWN_VALUE_NAMES);
-    }
-
-    static String buildNoUsableFieldsMessage(KeeperRecord record, String credId, String labelPrefix,
-                                             Set<String> valueNames) {
-        String type = (record != null) ? record.getType() : null;
-        String title = (record != null) ? record.getTitle() : null;
-        return "Credential '" + credId + "' matched a record (type '" + type + "', title '" + title
-                + "') but no usable values were resolved from it. "
-                + describeAvailableCredentials(type, labelPrefix, valueNames) + ".";
+    /** Emit the available value names line once (non-fatal); prefixes a note when nothing resolved. */
+    private static void logAvailableValueNames(String recordType, String labelPrefix, Set<String> valid,
+                                               boolean resultEmpty, Log log) {
+        try {
+            String lead = resultEmpty ? "No credential values were resolved from this record. " : "";
+            log.warn("### " + lead + availableValueNamesSentence(recordType, labelPrefix, valid));
+        } catch (Exception diagEx) {
+            log.warn("### Available value names diagnostic skipped: " + diagEx.getMessage());
+        }
     }
 
     // The label diagnostics below are strictly informational: each is wrapped so a bug in the check can
     // never propagate, and they never prevent a (possibly partial) credential from resolving.
 
-    /** Non-fatal: flag an unprefixed custom field whose bare label matches a known value name. */
-    private static void diagnoseUnprefixedLabel(String label, String recordType, String labelPrefix,
-                                                Set<String> valid, boolean loginOrPamUser, Log log) {
+    /** Non-fatal: flag an unprefixed custom field whose bare label matches a value name. Returns true if flagged. */
+    private static boolean diagnoseUnprefixedLabel(String label, String recordType, String labelPrefix,
+                                                   Set<String> valid, boolean loginOrPamUser, Log log) {
         try {
             if (!valid.contains(label)) {
-                return; // unrelated custom field - stay silent, no noise
+                return false; // unrelated custom field - stay silent, no noise
             }
             if (loginOrPamUser && (VAL_USER.equals(label) || VAL_PSWD.equals(label))) {
                 log.warn("### Custom field label '" + label + "' is ignored: for " + recordType
@@ -302,20 +303,21 @@ public final class KeeperCredentialMapper {
             } else {
                 log.warn("### Custom field label '" + label + "' matches ServiceNow value name '" + label
                         + "' but is missing the '" + labelPrefix + "' prefix, so it is ignored. Rename it to '"
-                        + labelPrefix + label + "' to map it. "
-                        + describeAvailableCredentials(recordType, labelPrefix, valid) + ".");
+                        + labelPrefix + label + "' to map it.");
             }
+            return true;
         } catch (Exception diagEx) {
             log.warn("### Label diagnostic skipped for '" + label + "': " + diagEx.getMessage());
+            return false;
         }
     }
 
-    /** Non-fatal: flag a prefixed label whose suffix is not a known value name (the value is still mapped). */
-    private static void diagnoseUnrecognizedPrefixedLabel(String label, String key, String recordType,
-                                                          String labelPrefix, Set<String> valid, Log log) {
+    /** Non-fatal: flag a prefixed label whose suffix is not a known value name (still mapped). Returns true if flagged. */
+    private static boolean diagnoseUnrecognizedPrefixedLabel(String label, String key, String labelPrefix,
+                                                             Set<String> valid, Log log) {
         try {
             if (valid.contains(key)) {
-                return;
+                return false;
             }
             // Almost always a wrong label copied from the ServiceNow form/column name (e.g. mid_private_key
             // or mid_password) instead of the interface value (mid_privkey / VAL_PRIVKEY, mid_pswd /
@@ -324,9 +326,11 @@ public final class KeeperCredentialMapper {
             String didYouMean = (suggestion != null) ? " (did you mean '" + labelPrefix + suggestion + "'?)" : "";
             log.warn("### Custom field label '" + label + "' maps to '" + key + "', which is not a recognized "
                     + "ServiceNow value name" + didYouMean + ". It is still passed through in case it is a custom "
-                    + "discovery_credential column. " + describeAvailableCredentials(recordType, labelPrefix, valid) + ".");
+                    + "discovery_credential column.");
+            return true;
         } catch (Exception diagEx) {
             log.warn("### Label diagnostic skipped for '" + label + "': " + diagEx.getMessage());
+            return false;
         }
     }
 
