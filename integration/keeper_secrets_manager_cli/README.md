@@ -6,6 +6,8 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.5.0
+
 ## 1.4.0
 - **Fix**: KSM-975 - Binary install keyring warning gave pip install advice that does not apply to a frozen binary; bracket syntax in the pip advice also caused zsh glob errors. Now detects `sys.frozen` to show binary-appropriate help text and single-quotes the bracket expression for zsh compatibility.
 - **Fix**: KSM-1014 - The frozen-binary keyring-unavailable warning told users to download a non-existent `-keyring` version of the binary. Keyring ships as the selectable "OS Keyring Support" component inside the single installer on every OS, so the warning now directs users to re-run the installer and enable that component.
