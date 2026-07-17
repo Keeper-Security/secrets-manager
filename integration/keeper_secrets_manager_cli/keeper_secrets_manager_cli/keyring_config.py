@@ -30,7 +30,7 @@ from keeper_secrets_manager_core.storage import KeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core import exceptions
 from keeper_secrets_manager_core.utils import is_base64, url_safe_str_to_bytes
-from keeper_secrets_manager_cli.exception import KsmCliException, KsmCliIntegrityException
+from keeper_secrets_manager_cli.exception import KsmCliException, KsmCliIntegrityException, KsmCliKeyringLockedException
 
 
 # Profile name validation: alphanumeric, hyphens, underscores, max 64 chars
@@ -104,6 +104,12 @@ class KeyringUtilityStorage(KeyValueStorage):
     def __load_config(self, skip_integrity_check: bool = False):
         _integrity_mismatch = False
         try:
+            import keyring
+            keyring_locked_exc = keyring.errors.KeyringLocked
+        except ImportError:
+            keyring_locked_exc = ()  # matches nothing; keyring isn't installed
+
+        try:
             from keeper_secrets_manager_core.helpers import is_json
 
             contents = self.__get_keyring_value(self.secret_name)
@@ -129,6 +135,11 @@ class KeyringUtilityStorage(KeyValueStorage):
                 self.__fatal(
                     "Unable to parse keyring output as JSON: '%s'" % contents
                 )
+        except keyring_locked_exc as e:
+            raise KsmCliKeyringLockedException(
+                "OS keyring is locked and cannot be unlocked in this session "
+                "(no interactive session available). Use --ini-file or KSM_CONFIG instead."
+            ) from e
         except Exception as e:
             self.logger.debug("No existing config in keyring: %s", str(e))
 
@@ -250,6 +261,8 @@ class KeyringConfigStorage:
             )
         except KsmCliIntegrityException:
             raise
+        except KsmCliKeyringLockedException:
+            raise
         except (ValueError, TypeError, OSError) as e:
             raise KsmCliException("Failed to initialize keyring storage: %s" % e)
         except Exception as e:
@@ -289,6 +302,8 @@ class KeyringConfigStorage:
             self.logger.warning("Invalid JSON in common config: %s", e)
             return None
         except KsmCliIntegrityException:
+            raise
+        except KsmCliKeyringLockedException:
             raise
         except KsmCliException:
             return None
@@ -333,6 +348,8 @@ class KeyringConfigStorage:
             self.logger.warning("Invalid JSON in profile config: %s", e)
             return None
         except KsmCliIntegrityException:
+            raise
+        except KsmCliKeyringLockedException:
             raise
         except KsmCliException:
             return None

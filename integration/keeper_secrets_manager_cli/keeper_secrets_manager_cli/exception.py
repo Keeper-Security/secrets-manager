@@ -41,5 +41,11 @@ class KsmCliIntegrityException(KsmCliException):
     """
 
 
+class KsmCliKeyringLockedException(KsmCliException):
+    """Raised when the OS keyring is reachable but locked and cannot be
+    unlocked without an interactive session (e.g. gnome-keyring over SSH
+    with no display server available)."""
+
+
 class KsmRecordSyntaxException:
     pass
