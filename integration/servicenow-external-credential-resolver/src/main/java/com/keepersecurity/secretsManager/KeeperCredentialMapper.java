@@ -56,7 +56,7 @@ public final class KeeperCredentialMapper {
 
     // Cited in diagnostics so an admin can verify the valid labels against the authoritative source.
     private static final String VALUE_NAMES_SOURCE =
-            "the VAL_* value names defined in the IExternalCredential interface, snc-automation-api.jar";
+            "defined by the VAL_* constants in the IExternalCredential interface, snc-automation-api.jar";
 
     // credId is either a record UID (without ':') or type:title
     private static final String DEF_CREDID_SPLIT = ":";
@@ -246,17 +246,17 @@ public final class KeeperCredentialMapper {
         // Print the list of valid value names at most once per resolve (review feedback): when any label
         // was flagged, or when nothing resolved. Bare names + the configured prefix stated once. Non-fatal.
         if (labelIssue || result.isEmpty()) {
-            logAvailableValueNames(recordType, labelPrefix, valid, result.isEmpty(), log);
+            logRecognizedKeyNames(recordType, labelPrefix, valid, result.isEmpty(), log);
         }
         return result;
     }
 
     /**
-     * The valid value names the user can map, for diagnostics. Bare names - the label prefix is
-     * configurable, so it is stated once rather than applied to each name. Record-type aware: for
-     * login/pamUser, user/pswd come from the standard Login/Password fields and are omitted here.
+     * The recognized key names for CredentialResolver's response map, for diagnostics. Bare names - the
+     * label prefix is configurable, so it is stated once rather than applied to each name. Record-type
+     * aware: for login/pamUser, user/pswd come from the standard Login/Password fields and are omitted.
      */
-    static String availableValueNamesSentence(String recordType, String labelPrefix, Set<String> valueNames) {
+    static String recognizedKeyNamesSentence(String recordType, String labelPrefix, Set<String> valueNames) {
         Set<String> valid = (valueNames == null || valueNames.isEmpty()) ? KNOWN_VALUE_NAMES : valueNames;
         boolean loginOrPamUser = "login".equalsIgnoreCase(recordType) || "pamUser".equalsIgnoreCase(recordType);
         String prefix = (labelPrefix != null) ? labelPrefix : "";
@@ -269,20 +269,20 @@ public final class KeeperCredentialMapper {
         }
         String lead = loginOrPamUser
                 ? "For login and pamUser records the username and password come from the record's standard "
-                        + "Login and Password fields; other available credential value names (prefix each with '"
-                        + prefix + "'): "
-                : "Available credential value names (prefix each with '" + prefix + "'): ";
+                        + "Login and Password fields; other recognized key names in CredentialResolver's response "
+                        + "map (prefix each with '" + prefix + "'): "
+                : "Recognized key names in CredentialResolver's response map (prefix each with '" + prefix + "'): ";
         return lead + String.join(", ", names) + " (" + VALUE_NAMES_SOURCE + ")";
     }
 
-    /** Emit the available value names line once (non-fatal); prefixes a note when nothing resolved. */
-    private static void logAvailableValueNames(String recordType, String labelPrefix, Set<String> valid,
-                                               boolean resultEmpty, Log log) {
+    /** Emit the recognized key names line once (non-fatal); prefixes a note when nothing resolved. */
+    private static void logRecognizedKeyNames(String recordType, String labelPrefix, Set<String> valid,
+                                              boolean resultEmpty, Log log) {
         try {
             String lead = resultEmpty ? "No credential values were resolved from this record. " : "";
-            log.warn("### " + lead + availableValueNamesSentence(recordType, labelPrefix, valid));
+            log.warn("### " + lead + recognizedKeyNamesSentence(recordType, labelPrefix, valid));
         } catch (Exception diagEx) {
-            log.warn("### Available value names diagnostic skipped: " + diagEx.getMessage());
+            log.warn("### Recognized key names diagnostic skipped: " + diagEx.getMessage());
         }
     }
 
@@ -301,7 +301,7 @@ public final class KeeperCredentialMapper {
                         + " records the username and password come from the record's standard Login and "
                         + "Password fields, not custom labels.");
             } else {
-                log.warn("### Custom field label '" + label + "' matches ServiceNow value name '" + label
+                log.warn("### Custom field label '" + label + "' matches a recognized key name '" + label
                         + "' but is missing the '" + labelPrefix + "' prefix, so it is ignored. Rename it to '"
                         + labelPrefix + label + "' to map it.");
             }
@@ -325,8 +325,8 @@ public final class KeeperCredentialMapper {
             String suggestion = closestKnownName(key, valid);
             String didYouMean = (suggestion != null) ? " (did you mean '" + labelPrefix + suggestion + "'?)" : "";
             log.warn("### Custom field label '" + label + "' maps to '" + key + "', which is not a recognized "
-                    + "ServiceNow value name" + didYouMean + ". It is still passed through in case it is a custom "
-                    + "discovery_credential column.");
+                    + "key name in CredentialResolver's response map" + didYouMean + ". It is still passed through "
+                    + "in case it is a custom discovery_credential column.");
             return true;
         } catch (Exception diagEx) {
             log.warn("### Label diagnostic skipped for '" + label + "': " + diagEx.getMessage());
