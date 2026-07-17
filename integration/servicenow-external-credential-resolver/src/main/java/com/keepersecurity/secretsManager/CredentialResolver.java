@@ -7,6 +7,7 @@ import com.snc.core_automation_common.logging.Logger;
 import com.snc.core_automation_common.logging.LoggerFactory;
 
 import java.io.*;
+import java.lang.reflect.Field;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.file.*;
@@ -47,6 +48,30 @@ public class CredentialResolver implements IExternalCredential {
     // Logger object to log messages in agent.log
     private static final Logger fLogger = LoggerFactory.getLogger(CredentialResolver.class);
 
+    // Value names ServiceNow recognizes, resolved once at load time from the IExternalCredential interface
+    // so the resolver tracks any VAL_* values ServiceNow adds without a code change. Passed into the mapper,
+    // which falls back to its own static list when this is empty. Resolution is fully guarded: a failure
+    // here must never prevent the (rock-solid) resolver from loading or resolving credentials.
+    private static final Set<String> KNOWN_VALUE_NAMES = resolveKnownValueNames();
+
+    private static Set<String> resolveKnownValueNames() {
+        Set<String> names = new LinkedHashSet<>();
+        try {
+            for (Field f : IExternalCredential.class.getFields()) {
+                if (f.getName().startsWith("VAL_") && f.getType() == String.class) {
+                    Object value = f.get(null);
+                    if (value != null) {
+                        names.add((String) value);
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            fLogger.warn("[Vault] Could not resolve VAL_* names from IExternalCredential (" + t.getMessage()
+                    + "); the resolver's built-in list will be used.");
+        }
+        return names;
+    }
+
     // Bridges the MID-free KeeperCredentialMapper diagnostics to the MID Server logger.
     private final KeeperCredentialMapper.Log midLog = new KeeperCredentialMapper.Log() {
         @Override public void warn(String message) { fLogger.warn(message); }
@@ -74,10 +99,15 @@ public class CredentialResolver implements IExternalCredential {
         //propValue = Config.get().getProperty("<Parameter Name>")
 
         ksmConfig = configMap.get(KSM_CONFIG);
-        if(isNullOrEmpty(ksmConfig))
-            fLogger.error("[Vault] ERROR - CredentialResolver ksmConfig not set!");
-        String configMask = new String(new char[ksmConfig.length()]).replace('\0', '*');
-        fLogger.info("ksmConfig: " + configMask);
+        if (isNullOrEmpty(ksmConfig)) {
+            // Do not fall through to the mask below: ksmConfig is null/empty, so new char[length()]
+            // would throw a raw NullPointerException and hide this actionable message. resolve() will
+            // then fail cleanly per request when it tries to load the (missing) config.
+            fLogger.error("[Vault] ERROR - CredentialResolver ksmConfig (" + KSM_CONFIG + ") not set!");
+        } else {
+            String configMask = new String(new char[ksmConfig.length()]).replace('\0', '*');
+            fLogger.info("ksmConfig: " + configMask);
+        }
 
         ksmLabelPrefix = configMap.get(KSM_LABEL_PREFIX);
         if(isNullOrEmpty(ksmLabelPrefix))
@@ -170,16 +200,21 @@ public class CredentialResolver implements IExternalCredential {
             KeeperRecord record = KeeperCredentialMapper.selectRecord(records, credId, id, midLog);
 
             // Grab the field values from the returned object
-            result.putAll(KeeperCredentialMapper.mapRecordToCredential(record, ksmLabelPrefix, midLog));
+            result.putAll(KeeperCredentialMapper.mapRecordToCredential(record, ksmLabelPrefix, KNOWN_VALUE_NAMES, midLog));
         } catch (Exception e) {
-            fLogger.error("### Unable to find credential from KSM App.", e);
+            // Log and continue - never rethrow: a lookup/fetch failure must not prevent the resolver from
+            // returning whatever it could resolve. The cause is in agent.log for troubleshooting.
+            fLogger.error("### Unable to resolve credential '" + credId + "' from Keeper Secrets Manager: "
+                    + e.getMessage(), e);
         }
+        // Note: the mapper logs the available value names once (and a "no values resolved" note when empty);
+        // resolve() never throws on a labeling/lookup problem - it returns whatever it resolved.
 
         if (!result.containsKey(VAL_USER))
             fLogger.warn("### No value for username in credential: " + credId);
         if (!result.containsKey(VAL_PSWD))
             fLogger.warn("### No value for password in credential: " + credId);
-        fLogger.info("### Credential: " + credId + " Resolved keys: " + result.keySet() + " UseCache: " + ksmCache);
+        fLogger.info("### Credential: " + credId + " Resolved " + result.size() + " keys: " + result.keySet() + " UseCache: " + ksmCache);
 
         return result;
     }
