@@ -2,7 +2,7 @@
 
 All notable changes to the KSM ServiceNow External Credential Resolver are documented here.
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-07-17
 
 ### Added
 - FQCN resolver class `com.keepersecurity.secretsManager.CredentialResolver` for Yokohama (Patch 7+) and newer MID Servers. Setting the FQCN on the External Credential Resolver configuration allows the Keeper JAR to coexist with other vendors' resolvers (CyberArk, HashiCorp, Delinea, etc.) on the same MID Server — which is not possible when every resolver JAR ships the shared `com.snc.discovery.CredentialResolver` class name.
