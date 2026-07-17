@@ -440,7 +440,7 @@ active_profile = _default
 
 
 class KeyringIntegrityTest(unittest.TestCase):
-    """Tests for SHA-256 cross-session integrity verification (KSM-805)."""
+    """Tests for SHA-256 cross-session integrity verification."""
 
     def setUp(self):
         self.orig_dir = os.getcwd()
@@ -497,12 +497,13 @@ class KeyringIntegrityTest(unittest.TestCase):
             storage.load_profile("_default")
 
     def test_integrity_check_skipped_when_no_hash_stored(self):
-        """Pre-KSM-805 entries (no integrity key) load silently without raising."""
+        """Entries with no integrity key (written before integrity verification existed)
+        load silently without raising."""
         import json as _json
         from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage, KeyringUtilityStorage
 
         # Write config directly to mock keyring, bypassing KeyringUtilityStorage
-        # (simulates an entry created before KSM-805 — no integrity key present)
+        # (simulates an entry written before the integrity key existed)
         profile_data = {"clientId": "legacy-id", "hostname": "keepersecurity.com"}
         inner_payload = _json.dumps({"data": _json.dumps(profile_data)}, indent=4, sort_keys=True)
         _mock_keyring._storage["KSM-cli:ksm-cli-profile-_default"] = inner_payload

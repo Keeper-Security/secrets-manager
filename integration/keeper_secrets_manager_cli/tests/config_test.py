@@ -245,7 +245,7 @@ class ConfigSavePermissionsWindowsTest(unittest.TestCase):
 
 
 class DefaultIniFileLocationTest(unittest.TestCase):
-    """KSM-980: binary installs must use HOME, not CWD, for keeper.ini default path."""
+    """Binary installs must use HOME, not CWD, for keeper.ini default path."""
 
     def test_pip_install_uses_cwd(self):
         """Non-frozen (pip) install uses CWD as default ini directory."""
@@ -259,7 +259,7 @@ class DefaultIniFileLocationTest(unittest.TestCase):
             pass
 
     def test_binary_install_uses_home(self):
-        """KSM-980: frozen (binary) install must use HOME instead of CWD."""
+        """Frozen (binary) install must use HOME instead of CWD."""
         home = os.environ.get("HOME") or os.environ.get("USERPROFILE", "")
         had_frozen = hasattr(sys, 'frozen')
         try:

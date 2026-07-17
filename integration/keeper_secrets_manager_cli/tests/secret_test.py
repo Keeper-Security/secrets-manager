@@ -853,8 +853,7 @@ class SecretTest(unittest.TestCase):
 
     def test_custom_fields_json_key(self):
 
-        """Regression test for KSM-820: JSON output must use 'custom' key, not 'custom_fields'.
-        """
+        """Regression test: JSON output must use 'custom' key, not 'custom_fields'."""
 
         mock_config = MockConfig.make_config()
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
@@ -1152,7 +1151,7 @@ class SecretTest(unittest.TestCase):
 
 
 class LinkedRecordsTest(unittest.TestCase):
-    """KSM-981: linked records must be surfaced in secret get output."""
+    """Linked records must be surfaced in secret get output."""
 
     def setUp(self):
         self.orig_dir = os.getcwd()
@@ -1190,8 +1189,8 @@ class LinkedRecordsTest(unittest.TestCase):
 
     @staticmethod
     def _live_shape_links(parent_uid, linked_uid):
-        """Link fixtures matching the live backend shapes (see KSM-1007 epic):
-        a meta self-link, a credential link with flags, and a data-less reference."""
+        """Link fixtures matching the live backend shapes: a meta self-link, a
+        credential link with flags, and a data-less reference."""
         meta_payload = {
             "allowedSettings": {"rotation": True, "connections": True},
             "rotateOnTermination": False,
@@ -1207,7 +1206,7 @@ class LinkedRecordsTest(unittest.TestCase):
         ], meta_payload, cred_payload
 
     def test_links_populated_in_json_output(self):
-        """secret get --json keeps raw link fields and adds decoded data (KSM-1015)."""
+        """secret get --json keeps raw link fields and adds decoded data."""
         mock_config = MockConfig.make_config()
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
@@ -1244,7 +1243,7 @@ class LinkedRecordsTest(unittest.TestCase):
             self.assertEqual(links[0]['data'], meta_link['data'])
             self.assertEqual(linked_uid, cred_link['recordUid'])
 
-            # Decoded data is added per link (KSM-1015)
+            # Decoded data is added per link
             self.assertEqual(meta_payload, meta_link['decoded'],
                              "meta self-link data must be decoded")
             self.assertEqual(cred_payload, cred_link['decoded'],
@@ -1253,7 +1252,7 @@ class LinkedRecordsTest(unittest.TestCase):
                               "data-less reference decodes to None")
 
     def test_links_shown_in_text_output(self):
-        """secret get text output labels self-links and shows decoded link data (KSM-1015)."""
+        """secret get text output labels self-links and shows decoded link data."""
         mock_config = MockConfig.make_config()
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
