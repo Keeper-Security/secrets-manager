@@ -408,23 +408,4 @@ public class CredentialResolver implements IExternalCredential {
         return Paths.get(getCacheDir(), "ksm_cache.tmp").toString();
     }
 
-    //main method to test locally, provide KSM config and test it
-    // TODO: Remove this before moving to production
-    /*
-    // Note Java16+ needs following setup (Vancouver+ switched from Java11 to Java17)
-    // export _JAVA_OPTIONS="--add-opens=java.base/sun.security.util=ALL-UNNAMED"
-    public static void main(String[] args) {
-        CredentialResolver credResolver = new CredentialResolver();
-        credResolver.ksmConfig = "[Base64_KSM_Config]";
-        credResolver.ksmLabelPrefix = "mid_";
-        credResolver.ksmCache = false;
-
-        Map<String, String> map = new HashMap<>();
-        map.put(ARG_ID, "[RecordUid]");
-        map.put(ARG_TYPE, "ssh_password");
-
-        Map<String, String> result = credResolver.resolve(map);
-        fLogger.info(result.toString());
-    }
-    */
 }
