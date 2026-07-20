@@ -76,7 +76,11 @@ jobs:
           MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
           PROJECT_VERSION: ${{ steps.detect-version.outputs.version }}
         run: |
-          manifest sbom /tmp/ruby-scan-target \
+          # Scan only the installed gemspec rather than the full install dir.
+          # Ruby 4.0 extracts stdlib gems (racc, bigdecimal, reline) into any
+          # --install-dir target even when the gem has zero runtime deps; scanning
+          # the whole dir picks them up as false-positive license findings.
+          manifest sbom /tmp/ruby-scan-target/specifications/keeper_secrets_manager-${PROJECT_VERSION}.gemspec \
             --generator=syft \
             --name=keeper-secrets-manager-ruby-sdk \
             --version="${PROJECT_VERSION}" \
