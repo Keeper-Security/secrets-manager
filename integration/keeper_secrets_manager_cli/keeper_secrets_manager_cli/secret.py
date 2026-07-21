@@ -981,7 +981,7 @@ class Secret:
                 else:
                     print(f"Unable to find the parent shared folder for record {uid} - individually shared records cannot be cloned.", file=sys.stderr)
             else:
-                print(f"Record UID not found {uid}", file=sys.stderr)
+                raise KsmCliException(f"Record UID not found {uid}")
         except Exception as err:
             raise KsmCliException(f"{err}")
 

@@ -1098,6 +1098,36 @@ class SecretTest(unittest.TestCase):
             self.assertTrue(lines, "did not get back a record uid")  # empty
             self.assertRegex(lines[0], r'^[\w_-]{22}$', "did not get back a record uid")
 
+    def test_clone_nonexistent_uid_exits_nonzero(self):
+        from unittest.mock import patch as _patch
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        profile_init_res = mock.Response()
+        profile_init_res.add_folder(uid="FAKEUID")
+        profile_init_res.add_record(title="Profile Init")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+
+        with _patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             _patch.object(secrets_manager, 'get_secrets', return_value=[]), \
+             _patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                    return_value=False):
+            mock_client.return_value = secrets_manager
+            Profile.init(token='MY_TOKEN')
+
+            runner = CliRunner()
+            result = runner.invoke(cli, ['secret', 'add', 'clone',
+                                         '--uid', 'NONEXISTENT1234567890'],
+                                   catch_exceptions=False)
+
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertIn("Record UID not found", result.output)
+
     def test_create_record_custom_field_empty_list(self):
         """record create payload always includes custom=[] when no custom fields are set"""
 
