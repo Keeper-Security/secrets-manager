@@ -7,9 +7,13 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change History
 
 ## 1.5.0
-- **Fix**: KSM-859 - `ksm profile setup -t aws` (EC2 instance credentials) stalled for several seconds on non-EC2 machines, since region lookup used botocore's default IMDS timeout, then surfaced a raw botocore error with no indication of the cause. Now fails fast with a 1-second IMDS timeout and a clear message naming the non-EC2 cause and pointing at `--fallback`.
 - **Fix**: KSM-929 - CLI keyring detection silently returned no profiles when the OS keyring (e.g. gnome-keyring) was running but locked with no interactive session available to unlock it (e.g. over SSH). Now raises an actionable error naming the cause and pointing at `--ini-file`/`KSM_CONFIG` as a fallback.
-- **Dependency**: KSM-1114 - Removed the unmaintained `colorama` package. Terminal coloring now uses `click` (already a direct dependency via `click-help-colors`), so no new dependency is introduced.
+- **Fix**: KSM-1113 - Windows config search looked for `%APPDIR%\Keeper` (a Linux AppImage variable, not a Windows one), so `keeper.ini` placed in `%APPDATA%\Keeper` was never found; on Linux, the `/etc` search entry also resolved relative to the current working directory instead of `/etc`. Both paths are now resolved correctly.
+- **Fix**: KSM-1107 - `ksm secret add clone` exited 0 even when the source UID did not exist, masking the failure from scripts. Now exits non-zero with an error message.
+- **Dependency**: KSM-1114 - Removed the unmaintained `colorama` package. Terminal coloring now uses `click` (already a direct dependency via `click-help-colors`), so no new dependency is introduced. The Windows-only config-permission warning (which duck-types its color argument against colorama's `Fore`/`Style` shape) is now colored via a small `click.style()`-backed shim instead.
+- **Fix**: KSM-1018 - The macOS installer crashed on every `ksm` command (`ImportError: Symbol not found: _SSL_get0_group_name`) because the bundled `libssl.3.dylib` predated OpenSSL 3.2.0, which `cryptography` now requires. Both x64 and arm64 macOS builds now bundle an up-to-date libssl, and the `cryptography` version pin used as a stopgap is no longer needed.
+- **Fix**: KSM-1105 - Windows installer's post-install launch of `ksm.exe` was blocked by endpoint security (EDR/AV) because InnoSetup's extracted Setup engine parent process in `%TEMP%` was unsigned. The post-install launch no longer trips endpoint security.
+- **Fix**: KSM-1106 - macOS PKG installer ignored the Keyring and Cloud Sync component checkboxes in GUI mode, always installing both regardless of what the user selected. The installer now respects the selected components.
 
 ## 1.4.0
 - **Fix**: KSM-975 - Binary install keyring warning gave pip install advice that does not apply to a frozen binary; bracket syntax in the pip advice also caused zsh glob errors. Now detects `sys.frozen` to show binary-appropriate help text and single-quotes the bracket expression for zsh compatibility.
