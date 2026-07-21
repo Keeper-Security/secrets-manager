@@ -10,7 +10,9 @@ from keeper_secrets_manager_cli.config import Config, ConfigProfile
 from keeper_secrets_manager_cli.export import Export
 from keeper_secrets_manager_core.mock import MockConfig
 import tempfile
-from colorama import Fore
+import click
+
+ANSI_YELLOW = click.style("", fg="yellow", reset=False)
 
 
 class ConfigTest(unittest.TestCase):
@@ -41,18 +43,18 @@ class ConfigTest(unittest.TestCase):
         result = runner.invoke(cli, ['config', 'color', "--enable"], catch_exceptions=False)
         self.assertEqual(0, result.exit_code, "did not get a success on color enable")
 
-        result = runner.invoke(cli, ['profile', 'list'], catch_exceptions=False)
+        result = runner.invoke(cli, ['profile', 'list'], catch_exceptions=False, color=True)
         self.assertEqual(0, result.exit_code, "did not get a success on profile list")
 
-        assert(Fore.YELLOW in result.output)
+        assert(ANSI_YELLOW in result.output)
 
         result = runner.invoke(cli, ['config', 'color', "--disable"], catch_exceptions=False)
         self.assertEqual(0, result.exit_code, "did not get a success on color disable")
 
-        result = runner.invoke(cli, ['profile', 'list'], catch_exceptions=False)
+        result = runner.invoke(cli, ['profile', 'list'], catch_exceptions=False, color=True)
         self.assertEqual(0, result.exit_code, "did not get a success on profile list")
 
-        assert(Fore.YELLOW not in result.output)
+        assert(ANSI_YELLOW not in result.output)
 
     def test_config_cache(self):
 

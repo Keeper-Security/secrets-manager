@@ -14,7 +14,6 @@ install_requires = [
     'keeper-secrets-manager-storage>=1.0.2',
     'prompt-toolkit>=3.0',
     'jsonpath-rw-ext',
-    'colorama',
     'click',
     'click_help_colors',
     # KSM-818: click-repl 0.3.0 crashes with click>=8.2 (protected_args became read-only).

@@ -11,7 +11,6 @@
 #
 
 import base64
-import colorama
 import configparser
 import json
 import logging
@@ -140,7 +139,7 @@ class Config:
             raise FileNotFoundError("Keeper INI files does not exists at {}".format(self.ini_file))
 
         # Make sure the user is allowed to access the configuration.
-        check_config_mode(self.ini_file, color_mod=colorama, logger=self.logger)
+        check_config_mode(self.ini_file, logger=self.logger)
 
         try:
             config = configparser.ConfigParser(allow_no_value=True)
