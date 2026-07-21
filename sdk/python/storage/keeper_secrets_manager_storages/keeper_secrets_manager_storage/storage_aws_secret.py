@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import threading
 
 from enum import Enum
 from keeper_secrets_manager_core.helpers import is_json
@@ -32,7 +33,7 @@ try:
     import boto3
     from boto3.session import Session
     from botocore.credentials import InstanceMetadataProvider
-    from botocore.exceptions import ClientError, EndpointResolutionError, NoRegionError
+    from botocore.exceptions import ClientError
     from botocore.session import get_session
     from botocore.utils import (InstanceMetadataFetcher, IMDSFetcher, IMDSRegionProvider)
 except ImportError:
@@ -188,15 +189,12 @@ class AwsConfigProvider(IConfigProvider):
             arn_region = match.group('region')
             region = arn_region if arn_region else ""
 
-        # Use Instance Metadata Service (IMDS) to retrieve the region.
-        # On a non-EC2 host, 169.254.169.254 is unreachable; a short timeout
-        # keeps the four IMDS attempts below from stalling the CLI for minutes.
+        # Use Instance Metadata Service (IMDS) to retrieve the region
         # 2. Fetch meta-data placement: placement/region released 2020-08-24
         if not region:
             try:
-                imds_data = IMDSFetcher(timeout=1, num_attempts=1)._get_request(
-                    "/latest/meta-data/placement/region", None)
-                if imds_data is not None:
+                imds_data = IMDSFetcher()._get_request("/latest/meta-data/placement/region", None)
+                if imds_data:
                     region = str(imds_data.text)
             except Exception:
                 pass
@@ -204,9 +202,8 @@ class AwsConfigProvider(IConfigProvider):
         # 3. Fetch dynamic instance-identity document
         if not region:
             try:
-                imds_data = IMDSFetcher(timeout=1, num_attempts=1)._get_request(
-                    "/latest/dynamic/instance-identity/document", None)
-                if imds_data is not None:
+                imds_data = IMDSFetcher()._get_request("/latest/dynamic/instance-identity/document", None)
+                if imds_data:
                     doc = imds_data.text
                     rdic = json.loads(doc)
                     region = rdic.get("region", "") or ""
@@ -220,9 +217,8 @@ class AwsConfigProvider(IConfigProvider):
         # ex. ip-10-24-34-0.ec2.internal, i-0123456789abcdef.ec2.internal
         if not region:
             try:
-                imds_data = IMDSFetcher(timeout=1, num_attempts=1)._get_request(
-                    "/latest/meta-data/hostname", None)
-                if imds_data is not None:
+                imds_data = IMDSFetcher()._get_request("/latest/meta-data/hostname", None).text
+                if imds_data:
                     hostname = str(imds_data.text)
                     match = re.search(r'\.(?P<region>[^.]*)\.compute\.', hostname, re.IGNORECASE)
                     if match:
@@ -241,6 +237,13 @@ class AwsConfigProvider(IConfigProvider):
                     region = rgn
             except Exception:
                 pass
+
+        if not region:
+            logger.error("Failed to auto-detect AWS region from IMDS")
+            raise Exception(
+                f"Failed to determine AWS region for EC2 instance. "
+                f"Use a full ARN as the key name or configure the region via environment."
+            )
 
         return region
 
@@ -274,18 +277,8 @@ class AwsConfigProvider(IConfigProvider):
                 secretsmanager = session.client('secretsmanager')
             else:
                 secretsmanager = boto3.client('secretsmanager')  # default profile
-        except (NoRegionError, EndpointResolutionError) as ex:
-            if self.fallback:
-                secretsmanager = boto3.client('secretsmanager')  # default session
-            elif self.config_type == AwsConfigType.EC2INSTANCE:
-                raise Exception(
-                    "Could not determine an AWS region - this machine does not appear"
-                    " to be an EC2 instance with IMDS access. 'ksm profile setup -t aws'"
-                    " with EC2 instance credentials requires a running EC2 instance,"
-                    " or pass --fallback to use the default AWS session/profile instead."
-                ) from ex
-            else:
-                raise ex  # rethrow
+            # When run outside of EC2 VM on an unconfigured machine it fails
+            # with "Invalid endpoint: https://secretsmanager..amazonaws.com"
         except Exception as ex:
             if self.fallback:
                 secretsmanager = boto3.client('secretsmanager')  # default session
@@ -301,19 +294,20 @@ class AwsConfigProvider(IConfigProvider):
 
         try:
             res = self._get_secret_aws(secretsmanager, self.key_name)
-            if res.get("error"):
-                logger.warning(f"Failed to read AWS secret '{self.key_name}': {res['error']}")
-        except Exception as ex:
-            logger.warning(f"Failed to read AWS secret '{self.key_name}': {ex}")
+        except Exception:
+            pass
 
         # if provided credentials failed try using default session/creds
         if (not res or res.get("not_found", False) or res.get("error", "")) and self.fallback is True:
             secretsmanager = boto3.client('secretsmanager')  # default session
             res = self._get_secret_aws(secretsmanager, self.key_name)
-            if res.get("error"):
-                logger.warning(f"Failed to read AWS secret '{self.key_name}' using default session/profile: {res['error']}")
 
         result = res.get("value", "") or "" if res else ""
+        if not result:
+            error = (res.get("error", "") if res else "") or ""
+            if error:
+                logger.error("Failed to read config from AWS secret")
+                raise Exception(f"Failed to read config from AWS secret '{self.key_name}': {error}")
         return result
 
     def write_config(self, config: str) -> str:
@@ -417,9 +411,10 @@ class AwsSecretStorage(KeyValueStorage):
         self.provider = AwsConfigProvider(aws_key)
         self.provider.from_ec2instance_config(aws_key, fallback_to_default_profile)
 
+        self._lock = threading.RLock()
         self.config = {}
         self.last_saved_config_hash = ""
-        # self.__load_config()  # don't initialize here - use helpers
+        self.__load_config()
 
     def from_default_config(self, aws_key: str, fallback_to_default_profile: bool = True):
         self.provider = AwsConfigProvider(aws_key)
@@ -471,15 +466,15 @@ class AwsSecretStorage(KeyValueStorage):
             if is_json(contents):
                 config = json.loads(contents)
 
-            # AWS secret should be plaintext, but if it is JSON
-            # we must make sure it is (valid) KSM JSON - check for privateKey
-            if config and config.get("privateKey", ""):
+            # Accept any valid JSON object; downstream SDK validates required fields
+            if config is not None and isinstance(config, dict):
                 self.config = config
-                self.last_saved_config_hash = hashlib.md5(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
+                self.last_saved_config_hash = hashlib.sha256(json.dumps(config, indent=4, sort_keys=True).encode()).hexdigest()
             else:
-                err = f"Failed to load/parse config JSON from AWS secret '{self.provider.key_name}' - the value must be a valid JSON, value='{contents}'"
+                err = f"Failed to load/parse config JSON from AWS secret '{self.provider.key_name}' - the value must be a valid JSON object, value='{contents}'"
         except Exception as e:
-            logger.error(f"Failed to load config JSON from AWS secret '{self.provider.key_name}', Error: {str(e)}")
+            err = f"Failed to load config JSON from AWS secret '{self.provider.key_name}', Error: {str(e)}"
+            logger.error(err)
 
         if err:
             raise ValueError(err)
@@ -487,17 +482,16 @@ class AwsSecretStorage(KeyValueStorage):
     def __save_config(self, updated_config: dict = {}, module=0, force=False):
         config = self.config if self.config else {}
         config_json: str = json.dumps(config, indent=4, sort_keys=True)
-        config_hash = hashlib.md5(config_json.encode()).hexdigest()
+        config_hash = hashlib.sha256(config_json.encode()).hexdigest()
 
+        pending_config = None
         if updated_config:
             ucfg_json: str = json.dumps(updated_config, indent=4, sort_keys=True)
-            ucfg_hash = hashlib.md5(ucfg_json.encode()).hexdigest()
+            ucfg_hash = hashlib.sha256(ucfg_json.encode()).hexdigest()
             if ucfg_hash != config_hash:
                 config_hash = ucfg_hash
                 config_json = ucfg_json
-                self.config = dict(updated_config)
-                # update after save - to allow for retries
-                # self.last_saved_config_hash = config_hash
+                pending_config = dict(updated_config)
 
         if not force and config_hash == self.last_saved_config_hash:
             logger.warning("Skipped config JSON save. No changes detected.")
@@ -506,44 +500,51 @@ class AwsSecretStorage(KeyValueStorage):
         # self.create_config_if_missing() # secret must exist in AWS
         self.provider.write_config(config_json)
         self.last_saved_config_hash = config_hash
+        if pending_config is not None:
+            self.config = pending_config
 
     # Interface methods implementation
     def read_storage(self):
-        if not self.config:
-            self.__load_config()
-        return dict(self.config)
+        with self._lock:
+            if not self.config:
+                self.__load_config()
+            return dict(self.config)
 
     def save_storage(self, updated_config):
-        self.__save_config(updated_config)
+        with self._lock:
+            self.__save_config(updated_config)
 
     def get(self, key: ConfigKeys):
         config = self.read_storage()
         return config.get(key.value)
 
     def set(self, key: ConfigKeys, value):
-        config = self.read_storage()
-        config[key.value] = value
-        self.save_storage(config)
-        return config
+        with self._lock:
+            config = self.read_storage()
+            config[key.value] = value
+            self.save_storage(config)
+            return config
 
     def delete(self, key: ConfigKeys):
-        config = self.read_storage()
+        with self._lock:
+            config = self.read_storage()
 
-        kv = key.value
-        if kv in config:
-            del config[kv]
-            logger.debug(f"Removed key {kv}")
-        else:
-            logger.debug(f"No key {kv} was found in config")
+            kv = key.value
+            if kv in config:
+                del config[kv]
+                logger.debug(f"Removed key {kv}")
+            else:
+                logger.debug(f"No key {kv} was found in config")
 
-        self.save_storage(config)
-        return config
+            self.save_storage(config)
+            return config
 
     def delete_all(self):
-        self.read_storage()
-        self.config.clear()
-        self.save_storage(self.config)
-        return dict(self.config)
+        with self._lock:
+            self.read_storage()
+            self.config.clear()
+            self.save_storage(self.config)
+            return dict(self.config)
 
     def contains(self, key: ConfigKeys):
         config = self.read_storage()
