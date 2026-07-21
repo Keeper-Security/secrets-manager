@@ -33,7 +33,7 @@ try:
     import boto3
     from boto3.session import Session
     from botocore.credentials import InstanceMetadataProvider
-    from botocore.exceptions import ClientError
+    from botocore.exceptions import ClientError, EndpointResolutionError, NoRegionError
     from botocore.session import get_session
     from botocore.utils import (InstanceMetadataFetcher, IMDSFetcher, IMDSRegionProvider)
 except ImportError:
@@ -189,12 +189,15 @@ class AwsConfigProvider(IConfigProvider):
             arn_region = match.group('region')
             region = arn_region if arn_region else ""
 
-        # Use Instance Metadata Service (IMDS) to retrieve the region
+        # Use Instance Metadata Service (IMDS) to retrieve the region.
+        # On a non-EC2 host, 169.254.169.254 is unreachable; a short timeout
+        # keeps the four IMDS attempts below from stalling the CLI for minutes.
         # 2. Fetch meta-data placement: placement/region released 2020-08-24
         if not region:
             try:
-                imds_data = IMDSFetcher()._get_request("/latest/meta-data/placement/region", None)
-                if imds_data:
+                imds_data = IMDSFetcher(timeout=1, num_attempts=1)._get_request(
+                    "/latest/meta-data/placement/region", None)
+                if imds_data is not None:
                     region = str(imds_data.text)
             except Exception:
                 pass
@@ -202,8 +205,9 @@ class AwsConfigProvider(IConfigProvider):
         # 3. Fetch dynamic instance-identity document
         if not region:
             try:
-                imds_data = IMDSFetcher()._get_request("/latest/dynamic/instance-identity/document", None)
-                if imds_data:
+                imds_data = IMDSFetcher(timeout=1, num_attempts=1)._get_request(
+                    "/latest/dynamic/instance-identity/document", None)
+                if imds_data is not None:
                     doc = imds_data.text
                     rdic = json.loads(doc)
                     region = rdic.get("region", "") or ""
@@ -217,8 +221,9 @@ class AwsConfigProvider(IConfigProvider):
         # ex. ip-10-24-34-0.ec2.internal, i-0123456789abcdef.ec2.internal
         if not region:
             try:
-                imds_data = IMDSFetcher()._get_request("/latest/meta-data/hostname", None).text
-                if imds_data:
+                imds_data = IMDSFetcher(timeout=1, num_attempts=1)._get_request(
+                    "/latest/meta-data/hostname", None)
+                if imds_data is not None:
                     hostname = str(imds_data.text)
                     match = re.search(r'\.(?P<region>[^.]*)\.compute\.', hostname, re.IGNORECASE)
                     if match:
@@ -277,8 +282,18 @@ class AwsConfigProvider(IConfigProvider):
                 secretsmanager = session.client('secretsmanager')
             else:
                 secretsmanager = boto3.client('secretsmanager')  # default profile
-            # When run outside of EC2 VM on an unconfigured machine it fails
-            # with "Invalid endpoint: https://secretsmanager..amazonaws.com"
+        except (NoRegionError, EndpointResolutionError) as ex:
+            if self.fallback:
+                secretsmanager = boto3.client('secretsmanager')  # default session
+            elif self.config_type == AwsConfigType.EC2INSTANCE:
+                raise Exception(
+                    "Could not determine an AWS region - this machine does not appear"
+                    " to be an EC2 instance with IMDS access. 'ksm profile setup -t aws'"
+                    " with EC2 instance credentials requires a running EC2 instance,"
+                    " or pass --fallback to use the default AWS session/profile instead."
+                ) from ex
+            else:
+                raise ex  # rethrow
         except Exception as ex:
             if self.fallback:
                 secretsmanager = boto3.client('secretsmanager')  # default session
@@ -294,13 +309,17 @@ class AwsConfigProvider(IConfigProvider):
 
         try:
             res = self._get_secret_aws(secretsmanager, self.key_name)
+            if res.get("error"):
+                logger.warning(f"Failed to read AWS secret '{self.key_name}'")
         except Exception:
-            pass
+            logger.warning(f"Failed to read AWS secret '{self.key_name}'")
 
         # if provided credentials failed try using default session/creds
         if (not res or res.get("not_found", False) or res.get("error", "")) and self.fallback is True:
             secretsmanager = boto3.client('secretsmanager')  # default session
             res = self._get_secret_aws(secretsmanager, self.key_name)
+            if res.get("error"):
+                logger.warning(f"Failed to read AWS secret '{self.key_name}' using default session/profile")
 
         result = res.get("value", "") or "" if res else ""
         if not result:
