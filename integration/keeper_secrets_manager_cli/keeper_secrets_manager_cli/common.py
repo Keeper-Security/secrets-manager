@@ -41,7 +41,7 @@ def find_ksm_path(find_path, is_file=True):
 
         # Windows
         [os.environ.get("USERPROFILE", not_set)],
-        [os.environ.get("APPDIR", not_set)],
+        [os.environ.get("APPDATA", not_set), "Keeper"],
         [os.environ.get("PROGRAMDATA", not_set), "Keeper"],
         [os.environ.get("PROGRAMFILES", not_set), "Keeper"],
     ]
