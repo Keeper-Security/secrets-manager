@@ -9,6 +9,7 @@ For more information see our official documentation page https://docs.keeper.io/
 ## 1.5.0
 - **Fix**: KSM-859 - `ksm profile setup -t aws` (EC2 instance credentials) stalled for several seconds on non-EC2 machines, since region lookup used botocore's default IMDS timeout, then surfaced a raw botocore error with no indication of the cause. Now fails fast with a 1-second IMDS timeout and a clear message naming the non-EC2 cause and pointing at `--fallback`.
 - **Fix**: KSM-929 - CLI keyring detection silently returned no profiles when the OS keyring (e.g. gnome-keyring) was running but locked with no interactive session available to unlock it (e.g. over SSH). Now raises an actionable error naming the cause and pointing at `--ini-file`/`KSM_CONFIG` as a fallback.
+- **Dependency**: KSM-1114 - Removed the unmaintained `colorama` package. Terminal coloring now uses `click` (already a direct dependency via `click-help-colors`), so no new dependency is introduced.
 
 ## 1.4.0
 - **Fix**: KSM-975 - Binary install keyring warning gave pip install advice that does not apply to a frozen binary; bracket syntax in the pip advice also caused zsh glob errors. Now detects `sys.frozen` to show binary-appropriate help text and single-quotes the bracket expression for zsh compatibility.
