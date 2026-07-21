@@ -11,6 +11,7 @@
 #
 
 import base64
+import click
 import configparser
 import json
 import logging
@@ -24,6 +25,22 @@ from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import set_config_mode, check_config_mode
 from keeper_secrets_manager_cli.common import find_ksm_path
 from keeper_secrets_manager_cli.exception import KsmCliException
+
+
+class _ClickColorMod:
+    """Stands in for the colorama module as check_config_mode's color_mod arg.
+
+    check_config_mode() (keeper_secrets_manager_core.utils) is duck-typed against
+    colorama's module shape (color_mod.Fore.RED / color_mod.Style.RESET_ALL) and
+    lives in a separate package we don't want to touch for this CLI-only fix.
+    This gives it the same shape without adding colorama back as a dependency.
+    """
+
+    class Fore:
+        RED = click.style("", fg="red", reset=False)
+
+    class Style:
+        RESET_ALL = click.style("")
 
 
 class Config:
@@ -139,7 +156,7 @@ class Config:
             raise FileNotFoundError("Keeper INI files does not exists at {}".format(self.ini_file))
 
         # Make sure the user is allowed to access the configuration.
-        check_config_mode(self.ini_file, logger=self.logger)
+        check_config_mode(self.ini_file, color_mod=_ClickColorMod, logger=self.logger)
 
         try:
             config = configparser.ConfigParser(allow_no_value=True)
