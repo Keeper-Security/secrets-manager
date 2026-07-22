@@ -13,9 +13,11 @@ import hmac
 import json
 import logging
 import os
+import random
 import re
 import requests
 import sys
+import time
 from base64 import urlsafe_b64decode
 from http import HTTPStatus
 from typing import List, Tuple, Optional
@@ -31,9 +33,10 @@ from keeper_secrets_manager_core.dto.payload import GetPayload, \
     EncryptedPayload, KSMHttpResponse, CreatePayload, FileUploadPayload, \
     DeletePayload, CreateFolderPayload, UpdateFolderPayload, \
     DeleteFolderPayload, CreateOptions, QueryOptions
-from keeper_secrets_manager_core.exceptions import KeeperError
+from keeper_secrets_manager_core.exceptions import KeeperError, KeeperThrottleError
 from keeper_secrets_manager_core.keeper_globals import keeper_public_keys, \
-    keeper_secrets_manager_sdk_client_id, logger_name, keeper_servers
+    keeper_secrets_manager_sdk_client_id, logger_name, keeper_servers, \
+    MAX_THROTTLE_RETRIES, BASE_THROTTLE_DELAY_SEC
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, \
     KeyValueStorage, InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
@@ -85,13 +88,35 @@ class SecretsManager:
                  config=None,
                  log_level=None,
                  custom_post_function=None,
-                 proxy_url=None
+                 proxy_url=None,
+                 server_public_key=None,
+                 server_public_key_id=None,
                  ):
+        """Construct a SecretsManager client.
 
-        # Make sure the Python is 3.6 or higher. We'll handle Python 4 in the future :)
+        Custom-server-key parameters (KSM-932) — both optional, intended for
+        isolated deployments where the server public key is not shipped with
+        the SDK. Unused for standard Keeper deployments.
+
+        :param server_public_key: Url-safe base64 of an EC P-256 public key
+            to override the SDK's built-in server public key table. When
+            provided, this key is persisted to config under
+            ``serverPublicKey`` and used for all subsequent transmission-key
+            encryption.
+        :param server_public_key_id: Optional public key id to pair with
+            ``server_public_key``. Persisted to config under
+            ``serverPublicKeyId``. If omitted, an existing value in config
+            is preserved.
+
+        Precedence when multiple provisioning paths supply a custom key:
+        programmatic params (this constructor) > one-time-token segments
+        > pre-existing config file values.
+        """
+
+        # Make sure the Python is 3.9 or higher. We'll handle Python 4 in the future :)
         python_version = sys.version_info
-        if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 6):
-            raise Exception("KSM SDK requires Python 3.6 or greater")
+        if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 9):
+            raise Exception("KSM SDK requires Python 3.9 or greater")
 
         self.token = None
         self.hostname = None
@@ -124,6 +149,24 @@ class SecretsManager:
 
                 self.token = token_parts[1]
 
+                # Layer 2: IL5 OTT carries embedded key material as extra segments
+                # Format: IL5:[clientKey]:[keyId]:[serverPublicKeyBase64]
+                if token_parts[0].upper() == 'IL5' and len(token_parts) > 2:
+                    if len(token_parts) != 4:
+                        raise ValueError(
+                            "Malformed IL5 one-time token: expected exactly 4 segments "
+                            "'IL5:clientKey:keyId:serverPublicKeyBase64', got {}".format(len(token_parts)))
+                    if not token_parts[2] or not token_parts[3]:
+                        raise ValueError(
+                            "Malformed IL5 one-time token: keyId and serverPublicKey segments must be non-empty")
+                    try:
+                        url_safe_str_to_bytes(token_parts[3])
+                    except Exception:
+                        raise ValueError(
+                            "Malformed IL5 one-time token: serverPublicKey segment is not valid url-safe base64")
+                    self._il5_key_id = token_parts[2]
+                    self._il5_server_public_key = token_parts[3]
+
         # Init the log, create a logger for the core.
         self._init_logger(log_level=log_level)
         self.logger = logging.getLogger(logger_name)
@@ -146,15 +189,27 @@ class SecretsManager:
         if self.hostname is not None:
             config.set(ConfigKeys.KEY_HOSTNAME, self.hostname)
 
+        # Layer 2: IL5 OTT with embedded key material — write before key ID validation runs
+        if hasattr(self, '_il5_key_id'):
+            config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, self._il5_key_id)
+            config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY, self._il5_server_public_key)
+
+        # Layer 3: programmatic injection — takes precedence over config file, written before validation
+        if server_public_key:
+            config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY, server_public_key)
+        if server_public_key_id:
+            config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, server_public_key_id)
+
         # Make sure our public key id is set and pointing an existing key.
         if config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID) is None:
             self.logger.debug("Setting public key id to the default: {}".format(SecretsManager.default_key_id))
             config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, SecretsManager.default_key_id)
         elif config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID) not in keeper_public_keys:
-            self.logger.debug("Public key id {} does not exists, set to default : {}".format(
-                config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID),
-                SecretsManager.default_key_id))
-            config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, SecretsManager.default_key_id)
+            if not config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY):
+                self.logger.debug("Public key id {} does not exists, set to default : {}".format(
+                    config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID),
+                    SecretsManager.default_key_id))
+                config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, SecretsManager.default_key_id)
 
         self.config: KeyValueStorage = config
 
@@ -287,13 +342,27 @@ class SecretsManager:
         return current_secret_key
 
     @staticmethod
-    def generate_transmission_key(key_id):
+    def generate_transmission_key(key_id, custom_public_key_b64=None):
+        """Generate a per-request transmission key wrapped with the server public key.
+
+        :param key_id: Public key id used to look up the wrapping key in the
+            built-in ``keeper_public_keys`` registry. When
+            ``custom_public_key_b64`` is provided, ``key_id`` is treated as
+            opaque metadata and not looked up.
+        :param custom_public_key_b64: Optional url-safe base64 of an EC P-256
+            public key (KSM-932). When supplied, this key wraps the
+            transmission key instead of the built-in registry — supports
+            isolated deployments where the server public key is not shipped
+            with the SDK.
+        """
         transmission_key = utils.generate_random_bytes(32)
 
-        if key_id not in keeper_public_keys:
-            ValueError("The public key id {} does not exist.".format(key_id))
-
-        server_public_raw_key_bytes = url_safe_str_to_bytes(keeper_public_keys[key_id])
+        if custom_public_key_b64:
+            server_public_raw_key_bytes = url_safe_str_to_bytes(custom_public_key_b64)
+        elif key_id not in keeper_public_keys:
+            raise ValueError("The public key id {} does not exist.".format(key_id))
+        else:
+            server_public_raw_key_bytes = url_safe_str_to_bytes(keeper_public_keys[key_id])
 
         encrypted_key = CryptoUtils.public_encrypt(transmission_key, server_public_raw_key_bytes)
 
@@ -587,10 +656,13 @@ class SecretsManager:
         keeper_server = helpers.get_server(self.hostname, self.config)
         url = "https://%s/api/rest/sm/v1/%s" % (keeper_server, path)
 
+        throttle_attempt = 0
+
         while True:
 
             transmission_key_id = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID)
-            transmission_key = self.generate_transmission_key(transmission_key_id)
+            custom_key = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY)
+            transmission_key = self.generate_transmission_key(transmission_key_id, custom_key)
             encrypted_payload_and_signature = self.encrypt_and_sign_payload(self.config, transmission_key, payload)
 
             if self.custom_post_function and path == 'get_secret':
@@ -601,6 +673,26 @@ class SecretsManager:
             # If we are ok, then break out of the while loop
             if ksm_rs.status_code == 200:
                 break
+
+            # The backend throttles with HTTP 403 {"error":"throttled"}. Retry with exponential
+            # backoff + jitter before falling through to generic error handling. Checked before
+            # handler_http_error so the existing key-rotation retry path is left untouched.
+            # Gated on the 403 status so a non-403 response (e.g. 500/502) that happens to carry
+            # a {"error":"throttled"} body is not mistaken for a throttle and retried.
+            if ksm_rs.status_code == 403:
+                retry_after = self._parse_throttle(ksm_rs.http_response)
+                if retry_after is not None:
+                    if throttle_attempt >= MAX_THROTTLE_RETRIES:
+                        raise KeeperThrottleError(
+                            "Request throttled by Keeper backend; exhausted %d retries"
+                            % MAX_THROTTLE_RETRIES)
+                    delay = self._throttle_delay(throttle_attempt, retry_after)
+                    self.logger.warning(
+                        "Request throttled (attempt %d/%d); retrying in %.1fs"
+                        % (throttle_attempt + 1, MAX_THROTTLE_RETRIES, delay))
+                    time.sleep(delay)
+                    throttle_attempt += 1
+                    continue
 
             # Handle the error. Handling will throw an exception if it doesn't want us to retry.
             self.handler_http_error(ksm_rs.http_response)
@@ -661,6 +753,42 @@ class SecretsManager:
         else:
             return None
 
+    @staticmethod
+    def _parse_throttle(http_response):
+        """If the response is a backend throttle error, return its retry_after (>= 0), else None.
+
+        Throttle responses are HTTP 403 with a JSON body {"error":"throttled", ...} and an
+        optional numeric "retry_after" field (seconds). Returns None for any non-throttle
+        response (including non-JSON bodies) so the caller falls through to normal error handling.
+        """
+        try:
+            response_dict = utils.json_to_dict(http_response.text)
+        except Exception:
+            return None
+        if not response_dict:
+            return None
+        if response_dict.get('result_code', response_dict.get('error')) != 'throttled':
+            return None
+        try:
+            retry_after = float(response_dict.get('retry_after', 0) or 0)
+        except (TypeError, ValueError):
+            retry_after = 0.0
+        return max(retry_after, 0.0)
+
+    @staticmethod
+    def _throttle_delay(attempt, retry_after=0.0):
+        """Compute the throttle backoff delay in seconds for a 0-based attempt number.
+
+        Uses retry_after when the server provides one (> 0), otherwise exponential backoff
+        (BASE_THROTTLE_DELAY_SEC * 2**attempt -> 11s, 22s, 44s, 88s, 176s). A +/- 25% jitter is
+        then applied to desynchronize concurrent clients retrying at the same time.
+        """
+        if retry_after and retry_after > 0:
+            delay = retry_after
+        else:
+            delay = BASE_THROTTLE_DELAY_SEC * (2 ** attempt)
+        delay += delay * random.uniform(-0.25, 0.25)
+        return delay
 
     def handler_http_error(self, rs):
 
@@ -686,7 +814,9 @@ class SecretsManager:
 
                 if key_id is None:
                     raise ValueError("The public key is blank from the server")
-                elif str(key_id) not in keeper_public_keys:
+
+                custom_key = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY)
+                if str(key_id) not in keeper_public_keys and not custom_key:
                     raise ValueError("The public key at {} does not exist in the SDK".format(key_id))
 
                 self.config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, str(key_id))
@@ -742,7 +872,13 @@ class SecretsManager:
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
         decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
 
-        app_key = base64_to_bytes(self.config.get(ConfigKeys.KEY_APP_KEY))
+        app_key_b64 = self.config.get(ConfigKeys.KEY_APP_KEY)
+        if app_key_b64 is None:
+            raise KeeperError(
+                "Required config key 'appKey' is missing. Reinitialize the SDK "
+                "with a fresh One-Time Token to repair the configuration."
+            )
+        app_key = base64_to_bytes(app_key_b64)
         response_folders = decrypted_response_dict.get("folders", []) or []
         if not response_folders:
             return []
@@ -774,10 +910,22 @@ class SecretsManager:
     def fetch_and_decrypt_secrets(self, query_options: QueryOptions):
         payload = SecretsManager.prepare_get_payload(self.config, query_options=query_options)
 
-        decrypted_response_bytes = self._post_query(
-            'get_secret',
-            payload
-        )
+        try:
+            decrypted_response_bytes = self._post_query('get_secret', payload)
+        except Exception as e:
+            if self.config.get(ConfigKeys.KEY_APP_KEY) is None:
+                if isinstance(self.config, FileKeyValueStorage):
+                    try:
+                        os.remove(self.config.default_config_file_location)
+                    except OSError:
+                        pass
+                    raise KeeperError(
+                        "Initialization failed: '{}' has been removed. "
+                        "Please generate a new One-Time Token and try again.".format(
+                            self.config.default_config_file_location
+                        )
+                    ) from e
+            raise
 
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
         decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
@@ -791,7 +939,13 @@ class SecretsManager:
             just_bound = True
 
             encrypted_master_key = url_safe_str_to_bytes(decrypted_response_dict.get('encryptedAppKey'))
-            client_key = url_safe_str_to_bytes(self.config.get(ConfigKeys.KEY_CLIENT_KEY))
+            client_key_b64 = self.config.get(ConfigKeys.KEY_CLIENT_KEY)
+            if client_key_b64 is None:
+                raise KeeperError(
+                    "Required config key 'clientKey' is missing. Reinitialize the SDK "
+                    "with a fresh One-Time Token to repair the configuration."
+                )
+            client_key = url_safe_str_to_bytes(client_key_b64)
             secret_key = CryptoUtils.decrypt_aes(encrypted_master_key, client_key)
             self.config.set(ConfigKeys.KEY_APP_KEY, bytes_to_base64(secret_key))
 
@@ -802,7 +956,13 @@ class SecretsManager:
                 self.config.set(ConfigKeys.KEY_OWNER_PUBLIC_KEY, bytes_to_base64(appOwnerPublicKeyBytes))
 
         else:
-            secret_key = base64_to_bytes(self.config.get(ConfigKeys.KEY_APP_KEY))
+            app_key_b64 = self.config.get(ConfigKeys.KEY_APP_KEY)
+            if app_key_b64 is None:
+                raise KeeperError(
+                    "Required config key 'appKey' is missing. Reinitialize the SDK "
+                    "with a fresh One-Time Token to repair the configuration."
+                )
+            secret_key = base64_to_bytes(app_key_b64)
 
         records_resp = decrypted_response_dict.get('records')
         folders_resp = decrypted_response_dict.get('folders')
@@ -1744,27 +1904,34 @@ class SecretsManager:
 
 
 class KSMCache:
-    # Allow the directory that will contain the cache to be set with environment variables. If not set, the
-    # cache file will be create in the current working directory.
+    # Default cache file name, kept for backward compatibility. The directory is read
+    # lazily from KSM_CACHE_DIR at call time (see get_cache_file_path), so setting the
+    # env var after import is honored. If not set, the cache file is created in the
+    # current working directory.
     kms_cache_file_name = os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
+
+    @classmethod
+    def get_cache_file_path(cls):
+        return os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
 
     @staticmethod
     def save_cache(data):
-        cache_file = open(KSMCache.kms_cache_file_name, 'wb')
+        cache_file = open(KSMCache.get_cache_file_path(), 'wb')
         cache_file.write(data)
         cache_file.close()
 
     @staticmethod
     def get_cached_data():
-        cache_file = open(KSMCache.kms_cache_file_name, 'rb')
+        cache_file = open(KSMCache.get_cache_file_path(), 'rb')
         cache_data = cache_file.read()
         cache_file.close()
         return cache_data
 
     @staticmethod
     def remove_cache_file():
-        if os.path.exists(KSMCache.kms_cache_file_name) is True:
-            os.unlink(KSMCache.kms_cache_file_name)
+        cache_file_path = KSMCache.get_cache_file_path()
+        if os.path.exists(cache_file_path) is True:
+            os.unlink(cache_file_path)
 
     @staticmethod
     def caching_post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True, proxy_url=None):
