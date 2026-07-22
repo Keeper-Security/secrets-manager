@@ -4,9 +4,8 @@
 
 require 'keeper_secrets_manager'
 
-# Initialize
-config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
-secrets_manager = KeeperSecretsManager.from_config(config)
+# Initialize from saved configuration file
+secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
 
 puts '=== Folder Operations Example ==='
 
@@ -62,21 +61,26 @@ rescue StandardError => e
   puts "✗ Error creating folder: #{e.message}"
 end
 
-# 4. Move records to folders
-puts "\n4. Organizing records in folders..."
-begin
-  # Get a record to move
-  record = secrets_manager.get_secrets.first
-
-  if record && defined?(folder_uid)
-    # Move record to folder
-    record.folder_uid = folder_uid
-    secrets_manager.update_secret(record)
-
-    puts "✓ Moved '#{record.title}' to folder"
+# 4. Create a record directly inside a folder
+puts "\n4. Creating a record inside a folder..."
+puts "   (Records are assigned to a folder at creation time via CreateOptions."
+puts "    update_secret cannot move a record between folders.)"
+if defined?(folder_uid)
+  begin
+    new_record = {
+      type: 'login',
+      title: "Folder Record #{Time.now.strftime('%H%M%S')}",
+      fields: [
+        { type: 'login', value: ['user@example.com'] },
+        { type: 'password', value: ['example-password'] }
+      ]
+    }
+    opts = KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: folder_uid)
+    new_uid = secrets_manager.create_secret_with_options(opts, new_record)
+    puts "✓ Created record #{new_uid} inside folder #{folder_uid}"
+  rescue StandardError => e
+    puts "✗ Error: #{e.message}"
   end
-rescue StandardError => e
-  puts "✗ Error moving record: #{e.message}"
 end
 
 # 5. Find folders

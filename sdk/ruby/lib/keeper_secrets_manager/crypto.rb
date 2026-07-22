@@ -30,7 +30,7 @@ module KeeperSecretsManager
 
       # Convert URL-safe base64 string to bytes
       def url_safe_str_to_bytes(str)
-        # Add padding if needed
+        raise CryptoError, 'url_safe_str_to_bytes: received nil' if str.nil?
         str += '=' * (4 - str.length % 4) if str.length % 4 != 0
         Base64.urlsafe_decode64(str)
       end
@@ -42,6 +42,7 @@ module KeeperSecretsManager
 
       # Convert base64 to bytes
       def base64_to_bytes(str)
+        raise CryptoError, 'base64_to_bytes: received nil' if str.nil?
         Base64.strict_decode64(str)
       end
 
@@ -116,10 +117,7 @@ module KeeperSecretsManager
         end
       end
 
-      # Decrypt with AES-GCM or fallback to CBC
       def decrypt_aes_gcm(encrypted_data, key)
-        # Try GCM first
-        # Extract components
         iv = encrypted_data[0...GCM_IV_LENGTH]
         tag = encrypted_data[-GCM_TAG_LENGTH..]
         ciphertext = encrypted_data[GCM_IV_LENGTH...-GCM_TAG_LENGTH]
@@ -133,18 +131,12 @@ module KeeperSecretsManager
         cipher.update(ciphertext) + cipher.final
       rescue RuntimeError => e
         if e.message.include?('unsupported cipher')
-          # Fallback to AES-CBC
           decrypt_aes_cbc(encrypted_data, key)
         else
           raise e
         end
       rescue OpenSSL::Cipher::CipherError => e
-        # Maybe it's CBC encrypted?
-        begin
-          decrypt_aes_cbc(encrypted_data, key)
-        rescue StandardError
-          raise DecryptionError, "Failed to decrypt data: #{e.message}"
-        end
+        raise DecryptionError, "Failed to decrypt data: #{e.message}"
       end
 
       # Legacy AES-CBC encryption (for compatibility)

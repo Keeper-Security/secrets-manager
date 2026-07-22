@@ -11,12 +11,52 @@ module KeeperSecretsManager
         @secrets_manager = secrets_manager
       end
 
+      def get_notation_results(notation)
+        return [] if notation.nil? || !notation.is_a?(String) || notation.empty?
+
+        parsed = parse_notation(notation)
+        raise NotationError, "Invalid notation: #{notation}" if parsed.length < 3
+
+        record_token = parsed[1].text&.first
+        selector     = parsed[2].text&.first
+        raise NotationError, 'Invalid notation: missing record' unless record_token
+        raise NotationError, 'Invalid notation: missing selector' unless selector
+
+        records = @secrets_manager.get_secrets([record_token])
+        if records.empty?
+          all     = @secrets_manager.get_secrets
+          records = all.select { |r| r.title == record_token }
+        end
+        records = records.uniq { |r| r.uid } if records.size > 1
+        raise NotationError, "Multiple records match '#{record_token}'" if records.size > 1
+        raise NotationError, "No records match '#{record_token}'"       if records.empty?
+
+        record    = records.first
+        parameter = parsed[2].parameter&.first
+        index1    = parsed[2].index1&.first
+        index2    = parsed[2].index2&.first
+
+        case selector.downcase
+        when 'type'
+          record.type ? [record.type] : []
+        when 'title'
+          record.title ? [record.title] : []
+        when 'notes'
+          (record.notes && !record.notes.empty?) ? [record.notes] : []
+        when 'file'
+          notation_results_file(record, parameter, record_token)
+        when 'field', 'custom_field'
+          notation_results_field(record, parameter, index1, index2, parsed[2])
+        else
+          raise NotationError, "Invalid selector: #{selector}"
+        end
+      end
+
       # Parse notation and return value
       def parse(notation)
-        return nil if notation.nil? || notation.empty?
-
-        # Validate notation format before parsing
+        return nil if notation.nil?
         raise NotationError, 'Invalid notation format: must be a string' unless notation.is_a?(String)
+        return nil if notation.empty?
 
         # Parse notation URI
         begin
@@ -44,6 +84,10 @@ module KeeperSecretsManager
           records = all_records.select { |r| r.title == record_token }
         end
 
+        # Remove duplicate UIDs - shortcuts/linked records both shared to same KSM App
+        records = records.uniq { |r| r.uid } if records.size > 1
+
+        # Now check for genuine ambiguity (different records with same title)
         raise NotationError, "Multiple records match '#{record_token}'" if records.size > 1
         raise NotationError, "No records match '#{record_token}'" if records.empty?
 
@@ -72,6 +116,64 @@ module KeeperSecretsManager
       end
 
       private
+
+      def value_to_string(v)
+        v.is_a?(String) ? v : v.to_json
+      end
+
+      # Unlike handle_field_selector: no first-element shortcut when no index is given.
+      def notation_results_field(record, parameter, index1, index2, parsed_section)
+        raise NotationError, 'Missing required parameter for field' unless parameter
+
+        field = record.get_field(parameter)
+        raise NotationError, "Field '#{parameter}' not found" unless field
+
+        values = field['value'] || []
+        idx    = parse_index(index1)
+
+        if idx == -1 && index1 && !index1.empty?
+          # index1 is a property name (e.g. [hostName])
+          if values.first.is_a?(Hash)
+            raise NotationError, "Property '#{index1}' not found" unless values.first.key?(index1)
+
+            return [value_to_string(values.first[index1])]
+          else
+            raise NotationError, 'Cannot extract property from non-object value'
+          end
+        end
+
+        raise NotationError, "Field index out of bounds: #{idx} >= #{values.size}" if idx != -1 && idx >= values.size
+
+        selected = idx >= 0 ? [values[idx]] : values
+
+        if index2 && !index2.empty? && index2 != '[]'
+          selected.filter_map do |v|
+            next nil unless v.is_a?(Hash) && v.key?(index2)
+
+            value_to_string(v[index2])
+          end
+        else
+          selected.map { |v| value_to_string(v) }
+        end
+      end
+
+      def notation_results_file(record, parameter, record_token)
+        file = handle_file_selector(record, parameter, record_token)
+
+        file_hash = if file.is_a?(KeeperSecretsManager::Dto::KeeperFile)
+                      {
+                        'fileUid' => file.uid,
+                        'url'     => file.url,
+                        'fileKey' => file.file_key,
+                        'name'    => file.name
+                      }
+                    else
+                      file
+                    end
+
+        content = @secrets_manager.download_file(file_hash)
+        [KeeperSecretsManager::Utils.bytes_to_url_safe_str(content['data'])]
+      end
 
       # Handle file selector
       def handle_file_selector(record, parameter, record_token)

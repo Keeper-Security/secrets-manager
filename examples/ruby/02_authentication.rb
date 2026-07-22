@@ -22,7 +22,7 @@ begin
   sm = KeeperSecretsManager.new(token: token, config: storage)
 
   # Get the configuration as base64 for future use
-  config_base64 = storage.to_base64
+  config_base64 = Base64.strict_encode64(storage.to_json)
   puts '✓ Configuration saved. Use this for future connections:'
   puts "  export KSM_CONFIG='#{config_base64}'"
 rescue StandardError => e
@@ -45,16 +45,17 @@ rescue StandardError => e
   puts "✗ Error: #{e.message}"
 end
 
-# Method 3: Using configuration file
-puts "\n3. Using Configuration File:"
+# Method 3: Using configuration file (RECOMMENDED)
+puts "\n3. Using Configuration File (Recommended):"
 begin
-  # Save configuration to a file
-  config_file = 'keeper-config.json'
+  # This is the recommended approach for most applications
+  config_file = 'keeper_config.json'
 
-  # Initialize with file storage
+  # Initialize from file storage
   sm = KeeperSecretsManager.from_file(config_file)
 
   puts "✓ Connected using config file: #{config_file}"
+  puts "  (This is the recommended method after initial token binding)"
 rescue StandardError => e
   puts "✗ Error: #{e.message}"
 end

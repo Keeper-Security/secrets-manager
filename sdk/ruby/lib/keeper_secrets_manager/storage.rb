@@ -160,14 +160,15 @@ module KeeperSecretsManager
 
         # Write atomically to avoid corruption
         temp_file = "#{@filename}.tmp"
-        File.open(temp_file, 'w') do |f|
+        # Create temp file with secure permissions (0600)
+        File.open(temp_file, 'w', 0o600) do |f|
           f.write(JSON.pretty_generate(@data))
         end
 
         # Move atomically
         File.rename(temp_file, @filename)
 
-        # Set restrictive permissions (owner read/write only)
+        # Ensure final file has restrictive permissions (owner read/write only)
         File.chmod(0o600, @filename)
       rescue StandardError => e
         raise Error, "Failed to save config file: #{e.message}"

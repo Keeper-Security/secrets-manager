@@ -12,6 +12,13 @@ module KeeperSecretsManager
       NOTATION_PREFIX = 'keeper'.freeze
       DEFAULT_KEY_ID = '7'.freeze
 
+      # Throttle retry (KSM-876 / KSM-883). The backend throttles HTTP 403 {"error":"throttled"}
+      # per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
+      # request, so the counter only clears after 10s of silence).
+      MAX_THROTTLE_RETRIES = 5
+      BASE_THROTTLE_DELAY_SEC = 11  # 1s safety margin over the backend's 10s memcached TTL
+      MAX_THROTTLE_DELAY_SEC = 176  # cap on server-supplied retry_after (BASE * 2**4)
+
       # Field types that can be inflated
       INFLATE_REF_TYPES = {
         'addressRef' => ['address'],
@@ -20,7 +27,7 @@ module KeeperSecretsManager
 
       def initialize(options = {})
         # Check Ruby version
-        raise Error, 'KSM SDK requires Ruby 2.6 or greater' if RUBY_VERSION < '2.6'
+        raise Error, 'KSM SDK requires Ruby 3.1 or greater' if RUBY_VERSION < '3.1'
 
         # Check AES-GCM support
         begin
@@ -39,9 +46,32 @@ module KeeperSecretsManager
         @verify_ssl_certs = options.fetch(:verify_ssl_certs, true)
         @custom_post_function = options[:custom_post_function]
 
+        # optional custom server public key overrides (isolated deployments).
+        # Precedence, highest first: these programmatic params > OTT segments > pre-existing config.
+        @server_public_key_override    = options[:server_public_key]
+        @server_public_key_id_override = options[:server_public_key_id]
+
+        # Set up proxy configuration
+        # Priority: explicit proxy_url parameter > HTTPS_PROXY env var > no proxy
+        @proxy_url = options[:proxy_url] || ENV['HTTPS_PROXY'] || ENV['https_proxy']
+
+        if @proxy_url
+          begin
+            proxy_uri = URI.parse(@proxy_url)
+            unless proxy_uri.is_a?(URI::HTTP) && !proxy_uri.host.to_s.empty?
+              raise ArgumentError,
+                    "Invalid proxy_url '#{@proxy_url}': must be a valid http or https URL with a host (e.g., http://proxy.example.com:8080)"
+            end
+          rescue URI::InvalidURIError => e
+            raise ArgumentError, "Invalid proxy_url '#{@proxy_url}': #{e.message}"
+          end
+        end
+
         # Set up logging
         @logger = options[:logger] || Logger.new(STDOUT)
         @logger.level = options[:log_level] || Logger::WARN
+
+        @logger.debug("Proxy configuration: #{@proxy_url ? @proxy_url : 'none'}") if @proxy_url
 
         # Handle configuration
         config = options[:config]
@@ -73,6 +103,19 @@ module KeeperSecretsManager
           raise Error, 'Either token or initialized config must be provided'
         end
 
+        # programmatic custom key wins over token/config (applied once @config is set).
+        @config.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY, @server_public_key_override) if @server_public_key_override && !@server_public_key_override.empty?
+        @config.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID, @server_public_key_id_override.to_s) if @server_public_key_id_override
+
+        # if the configured key id is not in the built-in table AND no custom key backs it,
+        # fall back to the default (mirrors Python). A persisted custom serverPublicKey is preserved.
+        current_key_id = @config.get_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID)
+        custom_server_key = @config.get_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY)
+        if current_key_id && !KeeperGlobals::KEEPER_PUBLIC_KEYS.key?(current_key_id) && (custom_server_key.nil? || custom_server_key.empty?)
+          @logger.debug("Public key id #{current_key_id} unknown and no custom key present; using default #{DEFAULT_KEY_ID}")
+          @config.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID, DEFAULT_KEY_ID)
+        end
+
         # Override hostname if provided
         if options[:hostname]
           @hostname = options[:hostname]
@@ -81,16 +124,13 @@ module KeeperSecretsManager
           @hostname = @config.get_string(ConfigKeys::KEY_HOSTNAME) || KeeperGlobals::DEFAULT_SERVER
         end
 
-        # Cache configuration
-        @cache = {}
-        @cache_expiry = {}
       end
 
       # Get secrets with optional filtering
-      def get_secrets(uids = nil, full_response: false)
+      def get_secrets(uids = nil, full_response: false, request_links: false)
         uids = [uids] if uids.is_a?(String)
 
-        query_options = Dto::QueryOptions.new(records: uids, folders: nil)
+        query_options = Dto::QueryOptions.new(records: uids, folders: nil, request_links: request_links)
         get_secrets_with_options(query_options, full_response: full_response)
       end
 
@@ -202,59 +242,50 @@ module KeeperSecretsManager
         get_secrets_by_title(title).first
       end
 
-      # Create a new secret
-      def create_secret(record_data, options = nil)
-        options ||= Dto::CreateOptions.new
+      def create_secret_with_options(create_options, record_data, folders: nil)
+        raise ArgumentError, 'folder_uid is required to create a record' unless create_options&.folder_uid
 
-        # Validate folder UID is provided
-        raise ArgumentError, 'folder_uid is required to create a record' unless options.folder_uid
+        folders ||= get_folders
 
-        # Get folders from dedicated endpoint to find folder key
-        folders = get_folders
+        folder = folders.find { |f| f.uid == create_options.folder_uid }
+        raise Error, "Folder #{create_options.folder_uid} not found or not accessible" unless folder
 
-        # Find the folder
-        folder = folders.find { |f| f.uid == options.folder_uid }
-        raise Error, "Folder #{options.folder_uid} not found or not accessible" unless folder
-
-        # Get folder key
         folder_key = folder.folder_key
-        raise Error, "Unable to create record - folder key for #{options.folder_uid} is missing" unless folder_key
+        raise Error, "Unable to create record - folder key for #{create_options.folder_uid} is missing" unless folder_key
 
-        # Generate UIDs and keys
         record_uid = Utils.generate_uid
         record_key = Crypto.generate_encryption_key_bytes
 
-        # Prepare record data
-        record = if record_data.is_a?(Dto::KeeperRecord)
-                   record_data.to_h
-                 else
-                   record_data
-                 end
+        record = record_data.is_a?(Dto::KeeperRecord) ? record_data.to_h : record_data
 
-        # Encrypt record data
-        encrypted_data = Crypto.encrypt_aes_gcm(
-          Utils.dict_to_json(record),
-          record_key
-        )
+        encrypted_data = Crypto.encrypt_aes_gcm(Utils.dict_to_json(record), record_key)
 
-        # Prepare payload
         payload = prepare_create_payload(
-          record_uid: record_uid,
-          record_key: record_key,
-          folder_uid: options.folder_uid,
-          folder_key: folder_key,
-          data: encrypted_data
+          record_uid:    record_uid,
+          record_key:    record_key,
+          folder_uid:    create_options.folder_uid,
+          folder_key:    folder_key,
+          data:          encrypted_data,
+          subfolder_uid: create_options.subfolder_uid
         )
 
-        # Send request
-        response = post_query('create_secret', payload)
-
-        # Return created record UID
+        post_query('create_secret', payload)
         record_uid
       end
 
-      # Update existing secret
-      def update_secret(record, transaction_type: 'general')
+      def create_secret(record_data, options = nil)
+        create_options = if options.is_a?(Dto::CreateOptions)
+                           options
+                         elsif options.is_a?(String)
+                           Dto::CreateOptions.new(folder_uid: options)
+                         else
+                           Dto::CreateOptions.new
+                         end
+        create_secret_with_options(create_options, record_data)
+      end
+
+      # Update existing secret with UpdateOptions
+      def update_secret_with_options(record, update_options = nil)
         # Handle both record object and hash
         if record.is_a?(Dto::KeeperRecord)
           record_uid = record.uid
@@ -274,61 +305,84 @@ module KeeperSecretsManager
         record_key = existing.record_key
         raise Error, "Record key not available for #{record_uid}" unless record_key
 
-        # Record key is already raw bytes (stored during decryption)
-        # No conversion needed - use directly for encryption
-
-        # Debug: Log record data before encryption
-        @logger&.debug("update_secret: record_uid=#{record_uid}")
-        @logger&.debug("update_secret: record_data keys=#{record_data.keys.inspect}")
-        @logger&.debug("update_secret: record_data=#{record_data.inspect[0..200]}...")
-        @logger&.debug("update_secret: record_key present=#{!record_key.nil?}, length=#{record_key&.bytesize}")
-
-        # Encrypt record data with record key (same as create_secret)
-        json_data = Utils.dict_to_json(record_data)
-        @logger&.debug("update_secret: json_data length=#{json_data.bytesize}")
-        @logger&.debug("update_secret: json_data=#{json_data[0..200]}...")
-
-        encrypted_data = Crypto.encrypt_aes_gcm(json_data, record_key)
-        @logger&.debug("update_secret: encrypted_data length=#{encrypted_data.bytesize}")
-        @logger&.debug("update_secret: encrypted_data (base64)=#{Base64.strict_encode64(encrypted_data)[0..50]}...")
-
-        # Prepare payload
+        # Prepare payload (handles UpdateOptions internally)
         payload = prepare_update_payload(
           record_uid: record_uid,
-          data: encrypted_data,
+          record_data: record_data,
+          record_key: record_key,
           revision: existing.revision,
-          transaction_type: transaction_type
+          update_options: update_options
         )
 
-        @logger&.debug("update_secret: payload revision=#{existing.revision}")
-        @logger&.debug("update_secret: payload transaction_type=#{transaction_type}")
-
         # Send request
-        @logger&.debug("update_secret: sending post_query to update_secret endpoint")
-        response = post_query('update_secret', payload)
-        @logger&.debug("update_secret: response received")
-        @logger&.debug("update_secret: response class=#{response.class}")
-        @logger&.debug("update_secret: response=#{response.inspect[0..500]}...")
+        post_query('update_secret', payload)
+      end
 
-        # Always finalize the update (required for changes to persist)
-        # This applies to both 'general' and 'rotation' transaction types
-        complete_payload = Dto::CompleteTransactionPayload.new
-        complete_payload.client_version = KeeperGlobals.client_version
-        complete_payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
-        complete_payload.record_uid = record_uid
+      # Update existing secret (convenience wrapper)
+      def update_secret(record, transaction_type: 'general')
+        update_options = Dto::UpdateOptions.new(transaction_type: transaction_type)
+        update_secret_with_options(record, update_options)
 
-        post_query('finalize_secret_update', complete_payload)
+        uid = record.is_a?(Dto::KeeperRecord) ? record.uid : (record['uid'] || record[:uid])
+        complete_transaction(uid) if uid
 
-        # Update local record's revision to reflect server state
-        # Since the server doesn't return the new revision in the response,
-        # we need to refetch the record to get the actual revision
         if record.is_a?(Dto::KeeperRecord)
-          updated_record = get_secrets([record_uid]).first
+          updated_record = get_secrets([record.uid]).first
           if updated_record
             record.revision = updated_record.revision
             @logger&.debug("update_secret: updated local revision to #{record.revision}")
           end
         end
+
+        true
+      end
+
+      def save_with_options(record, update_options = nil)
+        if record.is_a?(Dto::KeeperRecord)
+          record_uid  = record.uid
+          record_data = record.to_h
+          record_key  = record.record_key
+          revision    = record.revision
+        else
+          record_uid  = record['uid'] || record[:uid]
+          record_data = record
+          record_key  = record['record_key'] || record[:record_key]
+          revision    = record['revision']   || record[:revision] || 0
+        end
+
+        raise ArgumentError, 'Record UID is required' unless record_uid
+        raise Error, "Record key not available for #{record_uid} - record must be obtained via get_secrets" unless record_key
+
+        payload = prepare_update_payload(
+          record_uid:     record_uid,
+          record_data:    record_data,
+          record_key:     record_key,
+          revision:       revision,
+          update_options: update_options
+        )
+
+        post_query('update_secret', payload)
+        true
+      end
+
+      def save(record, transaction_type: nil, links_to_remove: nil)
+        update_options = Dto::UpdateOptions.new(transaction_type: transaction_type, links_to_remove: links_to_remove)
+        save_with_options(record, update_options)
+      end
+
+      # Complete transaction - commit or rollback
+      # Used after update_secret with transaction_type to finalize PAM rotation
+      def complete_transaction(record_uid, rollback: false)
+        @logger.debug("Completing transaction for record #{record_uid}, rollback: #{rollback}")
+
+        # Prepare payload
+        payload = prepare_complete_transaction_payload(record_uid)
+
+        # Route to different endpoints based on rollback parameter
+        endpoint = rollback ? 'rollback_secret_update' : 'finalize_secret_update'
+
+        # Send request
+        post_query(endpoint, payload)
 
         true
       end
@@ -341,13 +395,81 @@ module KeeperSecretsManager
         response = post_query('delete_secret', payload)
 
         result = JSON.parse(response)
-        result['records']
+        records = result['records'] || []
+        records.each do |r|
+          next if r['responseCode'] == 'ok'
+          @logger.error("Failed to delete record #{r['recordUid']}: #{r['responseCode']} #{r['errorMessage']}")
+        end
+        records
+      end
+
+      def get_inflate_ref_types(field_type)
+        INFLATE_REF_TYPES.fetch(field_type, [])
+      end
+
+      def inflate_field_value(uids, replace_fields)
+        records = get_secrets(uids)
+        lookup  = records.each_with_object({}) { |r, h| h[r.uid] = r }
+
+        uids.filter_map do |uid|
+          record    = lookup[uid]
+          next nil unless record
+
+          new_value = nil
+          replace_fields.each do |field_type|
+            field = record.get_field(field_type)
+            next unless field
+
+            raw_values = field['value'] || []
+            next if raw_values.empty?
+
+            real_value = raw_values.first
+
+            if INFLATE_REF_TYPES.key?(field_type)
+              inflated   = inflate_field_value([real_value], INFLATE_REF_TYPES[field_type])
+              real_value = inflated.first unless inflated.empty?
+            end
+
+            label = field['label'] || field_type
+            if new_value.nil?
+              new_value = real_value
+            elsif new_value.is_a?(Hash) && real_value.is_a?(Hash)
+              new_value[label] = real_value
+            else
+              new_value = { label => new_value, field_type => real_value }
+            end
+          end
+
+          new_value
+        end
       end
 
       # Get notation value
       def get_notation(notation_uri)
         parser = Notation::Parser.new(self)
         parser.parse(notation_uri)
+      end
+
+      def get_notation_results(notation_uri)
+        Notation::Parser.new(self).get_notation_results(notation_uri)
+      end
+
+      # Like get_notation_results but never raises; logs errors and returns [].
+      def try_get_notation_results(notation_uri)
+        get_notation_results(notation_uri)
+      rescue NotationError, RecordNotFoundError, StandardError => e
+        @logger.error("try_get_notation_results failed for '#{notation_uri}': #{e.message}")
+        []
+      end
+
+      # Get notation value without raising exceptions (convenience method)
+      # Returns empty array if notation is invalid or record not found
+      def try_get_notation(notation_uri)
+        parser = Notation::Parser.new(self)
+        Array(parser.parse(notation_uri))
+      rescue NotationError, RecordNotFoundError, StandardError => e
+        @logger.debug("try_get_notation failed for '#{notation_uri}': #{e.message}")
+        []
       end
 
       # Create folder
@@ -461,7 +583,12 @@ module KeeperSecretsManager
         response = post_query('delete_folder', payload)
 
         result = JSON.parse(response)
-        result['folders']
+        folders = result['folders'] || []
+        folders.each do |f|
+          next if f['responseCode'] == 'ok'
+          @logger.error("Failed to delete folder #{f['folderUid']}: #{f['responseCode']} #{f['errorMessage']}")
+        end
+        folders
       end
 
       # Get folder hierarchy manager
@@ -576,6 +703,27 @@ module KeeperSecretsManager
         file_uid
       end
 
+      # Upload file from disk path (convenience method)
+      # Reads file from disk and uploads to specified record
+      def upload_file_from_path(owner_record_uid, file_path, file_title: nil)
+        raise ArgumentError, "File not found: #{file_path}" unless File.exist?(file_path)
+        raise ArgumentError, "Path is a directory: #{file_path}" if File.directory?(file_path)
+
+        # Read file data
+        file_data = File.binread(file_path)
+
+        # Extract filename from path
+        file_name = File.basename(file_path)
+
+        # Use file_title if provided, otherwise use filename
+        file_title ||= file_name
+
+        @logger.debug("Uploading file from path: #{file_path} (#{file_data.bytesize} bytes)")
+
+        # Delegate to existing upload_file method
+        upload_file(owner_record_uid, file_data, file_name, file_title)
+      end
+
       # Download file from record's file data
       def download_file(file_data)
         # Extract file metadata (already decrypted)
@@ -601,6 +749,33 @@ module KeeperSecretsManager
           'type' => file_data['type'],
           'size' => file_data['size'] || decrypted_content.bytesize,
           'data' => decrypted_content
+        }
+      end
+
+      # Download file thumbnail
+      def download_thumbnail(file_data)
+        if file_data.is_a?(Dto::KeeperFile)
+          file_uid      = file_data.uid
+          thumbnail_url = file_data.thumbnail_url
+          file_key_str  = file_data.file_key
+        else
+          file_uid      = file_data['fileUid'] || file_data['uid']
+          thumbnail_url = file_data['thumbnailUrl'] || file_data['thumbnail_url']
+          file_key_str  = file_data['fileKey'] || file_data['file_key']
+        end
+
+        raise ArgumentError, 'File UID is required' unless file_uid
+        raise Error, "No thumbnail URL available for file #{file_uid}" unless thumbnail_url
+        raise Error, "File key not available for #{file_uid}" unless file_key_str
+
+        file_key = Utils.base64_to_bytes(file_key_str)
+        encrypted_content = download_encrypted_file(thumbnail_url)
+        decrypted_content = Crypto.decrypt_aes_gcm(encrypted_content, file_key)
+
+        {
+          'file_uid' => file_uid,
+          'data' => decrypted_content,
+          'size' => decrypted_content.bytesize
         }
       end
 
@@ -644,7 +819,7 @@ module KeeperSecretsManager
 
         request = Net::HTTP::Get.new(uri)
 
-        http = Net::HTTP.new(uri.host, uri.port)
+        http = create_http_client(uri)
         configure_http_ssl(http)
 
         response = http.request(request)
@@ -664,21 +839,50 @@ module KeeperSecretsManager
       def process_token_binding(token, hostname = nil)
         # Parse token
         token = token.strip
-        token_parts = token.split(':')
+        # -1 keeps trailing empties so "IL5:key:20:" yields 4 parts and the empty serverPublicKey
+        # segment is rejected, instead of default split() dropping it and looking like 3 parts.
+        token_parts = token.split(':', -1)
+
+        il5_key_id = nil
+        il5_server_public_key = nil
 
         # Modern format: REGION:BASE64_TOKEN
         if token_parts.length >= 2
           region = token_parts[0].upcase
           @hostname = KeeperGlobals::KEEPER_SERVERS[region] || KeeperGlobals::DEFAULT_SERVER
-          @token = token_parts[1..].join(':')
+
+          if region == 'IL5' && token_parts.length > 2
+            # IL5 dynamic-key OTT: IL5:clientKey:serverPublicKeyId:serverPublicKey
+            unless token_parts.length == 4
+              raise Error, 'Malformed IL5 one-time token: expected exactly 4 colon-separated ' \
+                           "segments 'IL5:clientKey:keyId:serverPublicKey', got #{token_parts.length}"
+            end
+            il5_key_id = token_parts[2]
+            il5_server_public_key = token_parts[3]
+            if il5_key_id.to_s.empty? || il5_server_public_key.to_s.empty?
+              raise Error, 'Malformed IL5 one-time token: keyId and serverPublicKey segments must be non-empty'
+            end
+            begin
+              Utils.url_safe_str_to_bytes(il5_server_public_key)
+            rescue StandardError
+              raise Error, 'Malformed IL5 one-time token: serverPublicKey segment is not valid url-safe base64'
+            end
+            @token = token_parts[1]
+          else
+            @token = token_parts[1..].join(':')
+          end
         else
           # Legacy format
           @token = token
           @hostname = hostname || KeeperGlobals::DEFAULT_SERVER
         end
 
+        # Precedence: programmatic override > OTT segment.
+        effective_key_id     = @server_public_key_id_override || il5_key_id
+        effective_public_key = @server_public_key_override    || il5_server_public_key
+
         # Bind the one-time token
-        bound_config = bind_one_time_token(@token, @hostname)
+        bound_config = bind_one_time_token(@token, @hostname, effective_key_id, effective_public_key)
 
         # Merge bound config into existing config if present
         if @config
@@ -697,7 +901,7 @@ module KeeperSecretsManager
       end
 
       # Bind one-time token
-      def bind_one_time_token(token, hostname)
+      def bind_one_time_token(token, hostname, key_id = nil, server_public_key = nil)
         storage = Storage::InMemoryStorage.new
 
         # Generate EC key pair
@@ -714,7 +918,10 @@ module KeeperSecretsManager
 
         # Store configuration
         storage.save_string(ConfigKeys::KEY_HOSTNAME, hostname)
-        storage.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID, DEFAULT_KEY_ID)
+        storage.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID, (key_id || DEFAULT_KEY_ID).to_s)
+        # persist the dynamic (IL5) server public key so it is used for binding AND all
+        # later requests, and survives restart via the saved config.
+        storage.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY, server_public_key) if server_public_key && !server_public_key.empty?
         storage.save_string(ConfigKeys::KEY_CLIENT_KEY, token)
         storage.save_bytes(ConfigKeys::KEY_PRIVATE_KEY, keys[:private_key_bytes])
         storage.save_string(ConfigKeys::KEY_CLIENT_ID, client_id)
@@ -878,9 +1085,13 @@ module KeeperSecretsManager
         # Create record object
         record = Dto::KeeperRecord.new(
           'recordUid' => record_uid,
+          'folderUid' => encrypted_record['folderUid'],
+          'innerFolderUid' => encrypted_record['innerFolderUid'],
+          'isEditable' => encrypted_record['isEditable'],
           'data' => data,
           'revision' => encrypted_record['revision'],
-          'files' => decrypted_files
+          'files' => decrypted_files,
+          'links' => encrypted_record['links'] || []
         )
 
         # Store record key for later use (e.g., file downloads)
@@ -1026,19 +1237,21 @@ module KeeperSecretsManager
         if query_options
           payload.requested_records = query_options.records_filter
           payload.requested_folders = query_options.folders_filter
+          payload.request_links = query_options.request_links if query_options.request_links
         end
 
         payload
       end
 
       # Prepare create payload
-      def prepare_create_payload(record_uid:, record_key:, folder_uid:, folder_key:, data:)
+      def prepare_create_payload(record_uid:, record_key:, folder_uid:, folder_key:, data:, subfolder_uid: nil)
         payload = Dto::CreatePayload.new
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.record_uid = record_uid
         payload.record_key = Utils.bytes_to_base64(record_key)
         payload.folder_uid = folder_uid
+        payload.sub_folder_uid = subfolder_uid
         payload.data = Utils.bytes_to_base64(data)
 
         # Encrypt the record key with the folder key
@@ -1058,16 +1271,21 @@ module KeeperSecretsManager
         server = get_server(@hostname)
         url = "https://#{server}/api/rest/sm/v1/#{path}"
 
+        throttle_attempt = 0
         loop do
           # Generate transmission key
           key_id = config.get_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID) || DEFAULT_KEY_ID
-          transmission_key = generate_transmission_key(key_id)
+          # a custom (IL5) server public key in config overrides the built-in key table.
+          custom_public_key = config.get_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY)
+          transmission_key = generate_transmission_key(key_id, custom_public_key)
 
           # Encrypt and sign payload
           encrypted_payload = encrypt_and_sign_payload(config, transmission_key, payload)
 
           # Make request
-          response = if @custom_post_function && path == 'get_secret'
+          # Use custom post function for read-only operations (get_secret, get_folders)
+          # This enables caching for disaster recovery
+          response = if @custom_post_function && (path == 'get_secret' || path == 'get_folders')
                        @custom_post_function.call(url, transmission_key, encrypted_payload, @verify_ssl_certs)
                      else
                        post_function(url, transmission_key, encrypted_payload)
@@ -1082,16 +1300,38 @@ module KeeperSecretsManager
               return response.data
             end
           else
+            # Throttle retry with exponential backoff + jitter (KSM-876 / KSM-883). Checked before
+            # handle_http_error (which still drives key-rotation retry), and gated on the 403 status
+            # so a non-403 response carrying a {"error":"throttled"} body is not retried.
+            retry_after = parse_throttle(response)
+            if response.status_code == 403 && !retry_after.nil?
+              if throttle_attempt >= MAX_THROTTLE_RETRIES
+                raise ThrottledError.new('throttled',
+                                         "Request throttled by Keeper backend; exhausted #{MAX_THROTTLE_RETRIES} retries")
+              end
+              delay = throttle_delay(throttle_attempt, retry_after)
+              @logger.warn("Request throttled (attempt #{throttle_attempt + 1}/#{MAX_THROTTLE_RETRIES}); " \
+                           "retrying in #{delay.round(1)}s")
+              sleep(delay)
+              throttle_attempt += 1
+              next
+            end
+
             handle_http_error(response, config)
           end
         end
       end
 
       # Generate transmission key
-      def generate_transmission_key(key_id)
-        # Get server public key
-        server_public_key_str = KeeperGlobals::KEEPER_PUBLIC_KEYS[key_id.to_s]
-        raise Error, "Unknown public key ID: #{key_id}" unless server_public_key_str
+      def generate_transmission_key(key_id, custom_public_key = nil)
+        # Get server public key. A custom (e.g. IL5) key overrides the built-in table,
+        # which only covers ids 1..18 - IL5 uses id 20 supplied out-of-band via the OTT/config.
+        if custom_public_key && !custom_public_key.empty?
+          server_public_key_str = custom_public_key
+        else
+          server_public_key_str = KeeperGlobals::KEEPER_PUBLIC_KEYS[key_id.to_s]
+          raise Error, "Unknown public key ID: #{key_id}" unless server_public_key_str
+        end
 
         @logger.debug("Using server public key ID: #{key_id}")
         @logger.debug("Server public key string: #{server_public_key_str[0..20]}...")
@@ -1101,7 +1341,7 @@ module KeeperSecretsManager
         @logger.debug("Generated transmission key: #{Utils.bytes_to_base64(key)[0..20]}...")
 
         # Encrypt key with server public key
-        server_public_key = Crypto.url_safe_str_to_bytes(server_public_key_str)
+        server_public_key = Utils.url_safe_str_to_bytes(server_public_key_str)
         @logger.debug("Server public key bytes length: #{server_public_key.bytesize}")
 
         encrypted_key = Crypto.encrypt_ec(key, server_public_key)
@@ -1154,6 +1394,33 @@ module KeeperSecretsManager
         )
       end
 
+      # Create Net::HTTP instance with proxy support
+      # Configures proxy if @proxy_url is set
+      def create_http_client(uri)
+        if @proxy_url
+          # Parse proxy URL
+          proxy_uri = URI(@proxy_url)
+
+          # Create HTTP client with proxy
+          http = Net::HTTP.new(
+            uri.host,
+            uri.port,
+            proxy_uri.host,
+            proxy_uri.port,
+            proxy_uri.user,
+            proxy_uri.password
+          )
+
+          @logger.debug("Using HTTP proxy: #{proxy_uri.host}:#{proxy_uri.port}")
+          @logger.debug("Proxy authentication: #{proxy_uri.user ? 'yes' : 'no'}")
+        else
+          # Create HTTP client without proxy
+          http = Net::HTTP.new(uri.host, uri.port)
+        end
+
+        http
+      end
+
       # Configure SSL for HTTP connection
       # Sets up certificate store and verification mode
       def configure_http_ssl(http)
@@ -1201,7 +1468,7 @@ module KeeperSecretsManager
         request['Content-Length'] = encrypted_payload.encrypted_payload.bytesize.to_s
         request.body = encrypted_payload.encrypted_payload
 
-        http = Net::HTTP.new(uri.host, uri.port)
+        http = create_http_client(uri)
         configure_http_ssl(http)
 
         response = http.request(request)
@@ -1232,15 +1499,26 @@ module KeeperSecretsManager
         when 'key'
           # Server wants different key
           key_id = error_data['key_id']
-          @logger.info("Server requested key ID: #{key_id}")
           # Use passed config or fall back to instance config
           config_to_use = config || @config
+          custom_key = config_to_use&.get_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY)
+
+          # when a custom (IL5) server public key is configured, the server rejecting it
+          # cannot be fixed by switching to a built-in key, and retrying would loop on the same key.
+          # Fail fast with actionable remediation instead.
+          if custom_key && !custom_key.empty?
+            raise Error, "Server rejected the custom server public key (requested key ID #{key_id.inspect}). " \
+                         'The IL5 server public key may have rotated; update your IL5 KSM configuration ' \
+                         '(serverPublicKey / serverPublicKeyId), e.g. by redeeming a freshly issued one-time token.'
+          end
+
+          raise Error, 'The public key is blank from the server' if key_id.nil?
+          unless KeeperGlobals::KEEPER_PUBLIC_KEYS.key?(key_id.to_s)
+            raise Error, "The public key at #{key_id} does not exist in the SDK"
+          end
+
+          @logger.info("Server requested key ID: #{key_id}")
           config_to_use.save_string(ConfigKeys::KEY_SERVER_PUBLIC_KEY_ID, key_id.to_s) if config_to_use
-          nil # Retry
-        when 'throttled'
-          sleep_time = error_data['retry_after'] || 60
-          @logger.warn("Request throttled, waiting #{sleep_time} seconds")
-          sleep(sleep_time)
           nil # Retry
         else
           raise ErrorFactory.from_server_response(result_code, message)
@@ -1249,6 +1527,37 @@ module KeeperSecretsManager
         raise NetworkError.new("Server error: HTTP #{response.status_code}",
                                status_code: response.status_code,
                                response_body: response.data)
+      end
+
+      # Returns the throttle retry_after (>= 0) when +response+ is a backend throttle error
+      # (result_code/error == "throttled"), otherwise nil so the caller falls through to
+      # handle_http_error. Non-JSON / non-object bodies return nil. (KSM-876 / KSM-883)
+      def parse_throttle(response)
+        data = JSON.parse(response.data)
+        return nil unless data.is_a?(Hash)
+
+        result_code = data['result_code'] || data['error']
+        return nil unless result_code == 'throttled'
+
+        retry_after = begin
+          Float(data['retry_after'])
+        rescue ArgumentError, TypeError
+          0.0
+        end
+        retry_after.negative? ? 0.0 : retry_after
+      rescue JSON::ParserError
+        nil
+      end
+
+      # Backoff delay (seconds) for a 0-based attempt: retry_after when > 0, otherwise exponential
+      # backoff (BASE_THROTTLE_DELAY_SEC * 2**attempt -> 11, 22, 44, 88, 176s). A 0 to +25% jitter
+      # is applied (one-sided so delay is always >= floor, preventing a retry before the backend's
+      # 10s memcached window expires).
+      def throttle_delay(attempt, retry_after = 0)
+        base = retry_after.to_f.positive? ? retry_after.to_f : BASE_THROTTLE_DELAY_SEC * (2**attempt)
+        base = MAX_THROTTLE_DELAY_SEC if base > MAX_THROTTLE_DELAY_SEC
+        delay = base + base * rand(0.0..0.25)
+        delay.negative? ? 0.0 : delay
       end
 
       # Get server hostname
@@ -1316,14 +1625,38 @@ module KeeperSecretsManager
       end
 
       # Other helper methods...
-      def prepare_update_payload(record_uid:, data:, revision:, transaction_type:)
+      def prepare_update_payload(record_uid:, record_data:, record_key:, revision:, update_options: nil)
         payload = Dto::UpdatePayload.new
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.record_uid = record_uid
-        payload.data = Utils.bytes_to_base64(data)
         payload.revision = revision
-        payload.transaction_type = transaction_type
+
+        if update_options
+          # nil clears UpdatePayload's 'general' default (BasePayload#to_h skips nil fields).
+          payload.transaction_type = update_options.transaction_type
+
+          # Handle links_to_remove
+          if update_options.links_to_remove && !update_options.links_to_remove.empty?
+            payload.links2_remove = update_options.links_to_remove
+
+            # Filter fileRef field values - remove specified link UIDs from record data
+            # This modifies the data hash before encryption (matches Python SDK behavior)
+            fileref_field = record_data['fields']&.find { |f| f['type'] == 'fileRef' }
+            if fileref_field && fileref_field['value'].is_a?(Array)
+              original_values = fileref_field['value']
+              filtered_values = original_values.reject { |uid| update_options.links_to_remove.include?(uid) }
+              fileref_field['value'] = filtered_values if filtered_values.length != original_values.length
+            end
+          end
+        end
+        # When update_options is nil: UpdatePayload keeps its default 'general' from #initialize.
+
+        # Encrypt record data
+        json_data = Utils.dict_to_json(record_data)
+        encrypted_data = Crypto.encrypt_aes_gcm(json_data, record_key)
+        payload.data = Utils.bytes_to_base64(encrypted_data)
+
         payload
       end
 
@@ -1332,6 +1665,14 @@ module KeeperSecretsManager
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.record_uids = record_uids
+        payload
+      end
+
+      def prepare_complete_transaction_payload(record_uid)
+        payload = Dto::CompleteTransactionPayload.new
+        payload.client_version = KeeperGlobals.client_version
+        payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
+        payload.record_uid = record_uid
         payload
       end
 
@@ -1417,7 +1758,7 @@ module KeeperSecretsManager
         request.body = body.join
         request['Content-Type'] = "multipart/form-data; boundary=#{boundary}"
 
-        http = Net::HTTP.new(uri.host, uri.port)
+        http = create_http_client(uri)
         configure_http_ssl(http)
 
         response = http.request(request)

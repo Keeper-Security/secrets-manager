@@ -4,9 +4,8 @@
 
 require 'keeper_secrets_manager'
 
-# Initialize
-config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
-secrets_manager = KeeperSecretsManager.from_config(config)
+# Initialize from saved configuration file
+secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
 
 puts '=== CRUD Operations Example ==='
 
@@ -33,16 +32,15 @@ begin
   folder_uid = folders.first&.uid
   raise 'No folders available. Please create a folder in your vault first.' unless folder_uid
 
-  # Create the record with CreateOptions
   options = KeeperSecretsManager::Dto::CreateOptions.new(folder_uid: folder_uid)
-  record_uid = secrets_manager.create_secret(new_record, options)
+  record_uid = secrets_manager.create_secret_with_options(options, new_record, folders: folders)
 
   puts "✓ Created record with UID: #{record_uid}"
   puts "  Folder: #{folder_uid}"
 
   # 2. READ - Retrieve the created secret
   puts "\n2. Reading the secret..."
-  secret = secrets_manager.get_secret_by_uid(record_uid)
+  secret = secrets_manager.get_secrets([record_uid]).first
   puts "✓ Retrieved: #{secret.title}"
   puts "  Login: #{secret.login}"
   puts "  URL: #{secret.url}"
@@ -69,9 +67,83 @@ begin
   puts '✓ Updated successfully'
 
   # Verify the update
-  updated = secrets_manager.get_secret_by_uid(record_uid)
+  updated = secrets_manager.get_secrets([record_uid]).first
   puts "  New URL: #{updated.url}"
   puts "  Notes: #{updated.notes}"
+
+  # 3.5. Advanced Update - Password Rotation with Transaction Type
+  puts "\n3.5. Password rotation with transaction type..."
+  begin
+    # Get a fresh copy of the record
+    secret = secrets_manager.get_secrets([record_uid]).first
+
+    # Generate new password
+    new_password = KeeperSecretsManager::Utils.generate_password(length: 32)
+    secret.password = new_password
+
+    # Update with rotation transaction type
+    update_options = KeeperSecretsManager::Dto::UpdateOptions.new(
+      transaction_type: 'rotation'
+    )
+
+    secrets_manager.update_secret_with_options(secret, update_options)
+    puts '✓ Password rotated with transaction tracking'
+    puts "  New password: #{new_password[0..5]}..." # Show first 6 chars only
+
+  rescue StandardError => e
+    puts "✗ Error: #{e.message}"
+  end
+
+  # 3.6. Advanced Update - Remove File Links
+  puts "\n3.6. Removing file attachments (if any)..."
+  begin
+    # Refresh the record
+    secret = secrets_manager.get_secrets([record_uid]).first
+
+    if secret.files && secret.files.any?
+      # Find files to remove (e.g., files starting with "old_")
+      file_uids_to_remove = secret.files
+        .select { |f| f['name'] =~ /^old_/ }
+        .map { |f| f['fileUid'] }
+
+      if file_uids_to_remove.any?
+        update_options = KeeperSecretsManager::Dto::UpdateOptions.new(
+          transaction_type: 'general',
+          links_to_remove: file_uids_to_remove
+        )
+
+        secrets_manager.update_secret_with_options(secret, update_options)
+        puts "✓ Removed #{file_uids_to_remove.length} file link(s)"
+      else
+        puts "  (No old files to remove)"
+      end
+    else
+      puts "  (No files attached to record)"
+    end
+
+  rescue StandardError => e
+    puts "✗ Error: #{e.message}"
+  end
+
+  # 3.7. Non-finalizing save
+  puts "\n3.7. Non-finalizing save..."
+  begin
+    secret = secrets_manager.get_secrets([record_uid]).first
+    secret.notes = "Saved without finalizing on #{Time.now}"
+
+    # save() posts the update but does not call complete_transaction
+    secrets_manager.save(secret)
+    puts '✓ Saved without completing a transaction'
+
+    # Re-fetch before second save; the object is stale after the first save
+    secret = secrets_manager.get_secrets([record_uid]).first
+    # save() with transaction_type starts a PAM rotation; caller must finalize separately
+    secret.notes = "Staged rotation on #{Time.now}"
+    secrets_manager.save(secret, transaction_type: 'rotation')
+    puts '✓ Staged rotation — call complete_transaction(uid) to finalize'
+  rescue StandardError => e
+    puts "✗ Error: #{e.message}"
+  end
 
   # 4. DELETE - Remove the secret
   puts "\n4. Deleting the secret..."
@@ -81,12 +153,12 @@ begin
   secrets_manager.delete_secret(record_uid)
   puts "✓ Deleted record: #{record_uid}"
 
-  # Verify deletion
-  begin
-    secrets_manager.get_secret_by_uid(record_uid)
-    puts '✗ Record still exists!'
-  rescue StandardError
+  # Verify deletion — get_secrets returns nil for a deleted record, it does not raise
+  deleted = secrets_manager.get_secrets([record_uid]).first
+  if deleted.nil?
     puts '✓ Confirmed: Record no longer exists'
+  else
+    puts '✗ Record still exists!'
   end
 rescue StandardError => e
   puts "Error: #{e.message}"

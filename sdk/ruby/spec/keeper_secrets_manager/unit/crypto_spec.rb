@@ -72,6 +72,16 @@ RSpec.describe KeeperSecretsManager::Crypto do
       # Should be at least IV (12) + ciphertext + tag (16)
       expect(encrypted.length).to be >= (12 + plaintext.length + 16)
     end
+
+    it 'does not fall back to CBC when the GCM auth tag is invalid' do
+      encrypted = described_class.encrypt_aes_gcm(plaintext, key)
+      tampered = encrypted.dup
+      tampered.setbyte(-1, tampered.getbyte(-1) ^ 0xff)
+
+      expect(described_class).not_to receive(:decrypt_aes_cbc)
+      expect { described_class.decrypt_aes_gcm(tampered, key) }
+        .to raise_error(KeeperSecretsManager::DecryptionError)
+    end
   end
 
   describe 'PKCS7 padding' do
