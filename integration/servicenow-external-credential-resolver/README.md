@@ -2,7 +2,7 @@
 This is the ServiceNow MID Server custom external credential resolver for the Keeper vault credential storage.
 
 # Pre-requisites:
-Keeper External Credential Resolver requires JDK 1.8 or newer  
+Keeper External Credential Resolver requires JDK 11 to build. The published JAR is built with the Java 11 toolchain and runs on the MID Server JRE (JRE 11 for Vancouver; JRE 17 for Washington DC and newer).  
 IntelliJ IDEA or any equivalent IDE
 
 > ⚠️ JRE 8 versions prior to u161 require strong cryptography (JCE) to be enabled.
@@ -12,18 +12,18 @@ Latest versions of JRE have strong cryptography enabled [by default](https://bug
 * Clone this repository.
 * Import the project in IntelliJ IDEA or any IDE.
 * Update MID Server agent path in build.gradle to point to valid MID Server location.
-* Update the code in CredentialResolver.java to customize anything.
+* Update the code in `com/keepersecurity/secretsManager/CredentialResolver.java` to customize anything.
 * Use the following gradle command or IDE (IntelliJ or Eclipse) gradle build option to build the jar:
   > gradle jar  
-* keeper-external-credentials-0.1.0.jar will be generated under target folder.
+* keeper-external-credentials-1.0.0.jar will be generated under the build/libs folder. (A local `gradle jar` includes both resolver class names; the published per-ServiceNow-release JARs are split into `fqcn`/`legacy` variants - see "Registering the resolver" below. Pass `-PresolverVariant=fqcn` or `-PresolverVariant=legacy` to reproduce a specific variant locally.)
 
 # Steps to install and use Keeper Secrets Manager as external credential resolver
 
 * Make sure that "External Credential Storage" plugin (com.snc.discovery.external_credentials) is installed in your ServiceNow instance.
-* Import the keeper-external-credentials-0.1.0.jar file from target folder in ServiceNow instance.
+* Import the keeper-external-credentials JAR for your ServiceNow release (see "Registering the resolver" below) into the ServiceNow instance. For a local build, use keeper-external-credentials-1.0.0.jar from the build/libs folder.
     - Navigate to MID Server – JAR Files
     - Create a New Record by clicking New
-    - Name it "KeeperCredentialResolver", version 0.1.0 and attach keeper-external-credentials-0.1.0.jar from target folder.
+    - Name it "Keeper External Credential Resolver", version 1.0.0 and attach the JAR.
     - Click Submit
 * Update the _config.xml_ in MID Server with following parameters and restart the MID Server.  
   `<parameter name="ext.cred.keeper.ksm_config" secure="true" value="<ksm-config-base64-string>"/>`  
@@ -31,6 +31,25 @@ Latest versions of JRE have strong cryptography enabled [by default](https://bug
 * Create Credential in the instance with "External credential store" flag activated.
 * Ensure that the "Credential ID" matches a record UID in your Keeper vault.
 * Ensure that the record in the vault contains fields matching the ServiceNow credential record fields - ex. record _type=login_ or any record type with custom fields of _type=hidden_ or _type=text_ with labels matching with the column names in discovery_credential table, where each label is prefixed with  "mid_" (ex. GCP Credential requires a record with two custom fields labelled: mid_email and mid_secret_key)
+
+# Registering the resolver (class name / FQCN)
+Each release publishes one JAR per supported ServiceNow version, in one of two variants depending on the release:
+
+* **Xanadu and older (Utah, Vancouver, Washington DC, Xanadu)** select the resolver by the shared credential-resolver class name `com.snc.discovery.CredentialResolver` (the default; only one such resolver JAR can be used per MID Server).
+* **Yokohama (Patch 7+) and newer (Yokohama, Zurich, Australia)** let you set a **Fully Qualified Class Name (FQCN)** on the External Credential Resolver configuration. Set it to `com.keepersecurity.secretsManager.CredentialResolver`. These (`fqcn`-variant) JARs ship **only** that class - not the shared `com.snc.discovery.CredentialResolver` - so the Keeper resolver can coexist with other vendors' resolvers (CyberArk, HashiCorp, Delinea, …) on the same MID Server, which is not possible when every resolver JAR ships `com.snc.discovery.CredentialResolver`.
+
+### Compatibility matrix
+| ServiceNow release | MID Server JRE | Resolver class / FQCN to configure |
+| --- | --- | --- |
+| Utah | JRE 11 | `com.snc.discovery.CredentialResolver` |
+| Vancouver | JRE 11 | `com.snc.discovery.CredentialResolver` |
+| Washington DC | JRE 17 | `com.snc.discovery.CredentialResolver` |
+| Xanadu | JRE 17 | `com.snc.discovery.CredentialResolver` |
+| Yokohama (Patch 7+) | JRE 17 | `com.keepersecurity.secretsManager.CredentialResolver` |
+| Zurich | JRE 17 | `com.keepersecurity.secretsManager.CredentialResolver` |
+| Australia | JRE 17 | `com.keepersecurity.secretsManager.CredentialResolver` |
+
+Each JAR is built with the Java 11 toolchain, so it runs on both JRE 11 (Vancouver) and JRE 17 (Washington DC and newer). ServiceNow releases older than Utah (Tokyo, San Diego, Rome) are past support and are not built for this release.
 
 # Finding records
 Credential ID (credId parameter) passed from MID Server to Credential Resolver must be either a valid record UID (22 alphanumeric characters incl. "-" and "_") or in the following format type:title. The second format allows searches by type only or by title only (or both, but single ":" is invalid combination)
@@ -47,7 +66,7 @@ Find by type - `login:`
 
 # Mapping fields
 Keeper record types are dynamic and easy to customize, but there are no specific record types matching corresponding credential types in ServiceNow. Keeper External Credential Resolver uses custom field labels to match record data with MID Server's table columns (`discovery_credential` _table_) just label all required custom fields to match the table columns for a given credential type and prefix that label with "mid_" _(see below how to configure custom prefix)_  
-Credential types that require username/password should use Login records, and add any custom fields required by the credential type - ex. type=hidden label="mid_pkey"  
+Credential types that require username/password should use **Login** or **PAM User** (`pamUser`) records, and add any custom fields required by the credential type - ex. type=hidden label="mid_pkey"  
 Any other types that may not have username/password it is best to use File/Photo records which don't have any standard fields that makes it easier to navigate the custom fields.  
 
 To change the custom field labels prefix update the _config.xml_ in MID Server with the parameters below and restart the MID Server.
@@ -55,7 +74,7 @@ To change the custom field labels prefix update the _config.xml_ in MID Server w
 
 > ️ⓘ Use custom fields with type `text`, `multiline` or `hidden` depending on the visibility you want in your Keeper Vault.
 
-> ⚠️ When Login record type is used any custom fields for username/password are ignored _(even if properly labeled mid_user, mid_pswd)_ as these values always come from the Login record type standard fields - Login/Password.
+> ⚠️ For **Login** and **PAM User** (`pamUser`) records, username/password always come from the record's standard Login/Password fields; any custom fields labeled for username/password _(even mid_user, mid_pswd)_ are ignored.
 
 #### Examples:  
  + Credential type `jdbc` map to Keeper record type `Login` (using standard Login/Password field)
@@ -63,13 +82,22 @@ To change the custom field labels prefix update the _config.xml_ in MID Server w
  + Credential type `gcp` map to Keeper record type `File Attachment/Photo` and manually add the required custom fields `mid_email` - _text_, `mid_secret_key` - _hidden_.   
 
 When used with **"External credential store"** option output values must conform to IExternalCredential interface from `snc-automation-api.jar` (values start with VAL_ prefix).
-Currently supported values - should be prefixed with `mid_` in Keeper records to be extracted (Utah: _user, pswd, passphrase, pkey, authprotocol, authkey, privprotocol, privkey, secret_key, client_id, tenant_id, email_)
+Currently supported values - should be prefixed with `mid_` in Keeper records to be extracted (Utah: _user, pswd, passphrase, pkey, sshcert, authprotocol, authkey, privprotocol, privkey, secret_key, client_id, tenant_id, email_)
 
 When used as Custom External Credential Resolver any field could be mapped **if properly prefixed** in Keeper vault and present in corresponding credential type. 
 The credential map returned from the resolve method is expected to have keys matching with the column names in discovery_credential table _ex. sn_cfg_ansible, sn_disco_certmgmt_certificate_ca, cfg_chef_credentials, etc._
 
+### Diagnostics and error messages
+The resolver checks field labels and logs problems to help you correct a misconfigured record. These checks are **informational only** - they go to `agent.log` and never throw or prevent a working credential from resolving:
+* A `mid_`-prefixed custom field whose suffix is **not** one of the recognized key names is **still passed through** (arbitrary `discovery_credential` columns are intentionally supported) but is flagged with a short warning; **once per lookup** the resolver also logs the **recognized key names without the prefix** (the prefix is configurable, so it is stated once) - the keys `CredentialResolver` returns, defined by the `VAL_*` constants in the `IExternalCredential` interface (`snc-automation-api.jar`). This catches the common mistake of copying a ServiceNow form/column name into the label (ex. `mid_private_key` or `mid_password`) instead of the interface's key name (`mid_privkey`, `mid_pswd`) - so the field silently never mapped. (ServiceNow shows its own form/table names and maps them internally to these keys.) A "did you mean ...?" suggestion is added when the suffix is a close typo (ex. `mid_authykey` → `mid_authkey`).
+* A custom field whose label **exactly matches** a supported value name but is **missing the prefix** (ex. `authkey` instead of `mid_authkey`) is ignored, with a warning telling you to rename it. For **Login**/**PAM User** records an unprefixed `user`/`pswd` is instead noted as coming from the standard Login/Password fields.
+* When the Credential ID matches no record (or more than one), or a matched record yields no usable values, the reason is logged (with the valid labels); the resolver returns whatever it could resolve rather than blocking. Check `agent.log` to troubleshoot.
+* Field labels are **case-sensitive** (`mid_authkey`, not `mid_AuthKey`).
+
 # Throttles and cache
 The plugin will try to resolve _"throttled"_ errors by default by adding a random delays and retrying later, which works well for up to 1000-3000 requests per 10 sec interval (throttles start after 300-600 requests/10 sec) If you expect 5000+ requests in less than 10 seconds we recommend to enable caching by setting `ext.cred.keeper.use_ksm_cache` parameter to `"true"` in _config.xml_ and restarting the MID Server. Cached data is stored in an encrypted file `ksm_cache.dat` in MID Server's work folder. Cache is updated at most once every 5 minutes or with the next request.
+
+> ️ⓘ Enabling the cache (or using the `type:title` credential ID form) makes the resolver fetch **all** records shared to the Keeper Secrets Manager application, not just the target record. To minimize what is fetched, prefer **record-UID** credential IDs (a UID lookup is filtered server-side). The resolver tolerates PAM and other record types shared to the same application - the bundled SDK (resolver 1.0.0+ / KSM SDK 17.x) skips records it cannot parse instead of failing the whole fetch.
 
 # Troubleshooting
 ### Check the logs
@@ -78,6 +106,9 @@ Check the log files inside `logs/` in the agent installation folder for logs and
 If a particular credential ID is failing, search for that ID in the logs, and check that it is successfully queried and that the credentials were extracted from the fields you expected.
 
 You will also find any exceptions that the resolver throws in the logs, including errors locating a record or finding fields, or if it couldn't communicate with Keeper vault.
+
+### `Serializer for subclass 'pamSettings' is not found` (or a similar polymorphic error)
+This error in the MID Server logs means the deployed resolver JAR bundles an old Keeper Secrets Manager SDK that predates newer field/record types (such as PAM records) shared to the same application. Upgrade to resolver JAR **1.0.0 or newer** (which bundles a current KSM SDK). As an interim workaround you can remove PAM records from the application's shared folder, disable the cache, and use record-UID credential IDs.
 
 ### Use the Test credential feature
 When creating or configuring a credential in the ServiceNow UI, you should be able to click "Test credential" to perform a quick targeted test. Select the MID server that should query Keeper vault, and select a target that the credential should work for to check that everything works as expected. If it doesn't, check the logs for errors and debug information as detailed above.

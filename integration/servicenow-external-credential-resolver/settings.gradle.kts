@@ -1,4 +1,4 @@
-rootProject.name = "keeper-external-credentials"
+rootProject.name = "keeper-secrets-manager-servicenow-plugin"
 
 plugins {
     id("org.gradle.toolchains.foojay-resolver") version "0.8.0"
