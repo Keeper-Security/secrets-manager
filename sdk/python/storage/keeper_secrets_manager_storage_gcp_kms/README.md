@@ -13,6 +13,7 @@ Keeper Secrets Manager integrates with GCP KMS in order to provide protection fo
   * Cloud KMS CryptoKey Decrypter
   * Cloud KMS CryptoKey Encrypter
   * Cloud KMS CryptoKey Public Key Viewer
+  * Cloud KMS Viewer (provides `cloudkms.cryptoKeys.get`, required for key introspection on init)
 
 ## Setup
 
@@ -21,6 +22,8 @@ Keeper Secrets Manager integrates with GCP KMS in order to provide protection fo
 The Secrets Manager GCP KSM module can be installed using pip
 
 > `pip3 install keeper-secrets-manager-storage-gcp-kms`
+
+> **Note**: v1.1.0+ requires Python 3.9.2+ (effective floor; `cryptography>=46.0.5` excludes 3.9.0 and 3.9.1). Users on Python 3.6–3.8 should pin to `keeper-secrets-manager-storage-gcp-kms<1.1.0`.
 
 2. Configure GCP Connection
 
@@ -68,3 +71,38 @@ You're ready to use the KSM integration 👍
 Using the GCP KMS Integration
 
 Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager Python SDK functionality. Your code will need to be able to access the GCP KMS APIs in order to manage the decryption of the configuration file when run.
+
+## Change Log
+
+### 1.1.0
+
+**Requirements:**
+- Minimum Python version raised to 3.9.2 (effective floor; `cryptography>=46.0.5` excludes 3.9.0 and 3.9.1 — users on exactly those patch versions will hit a pip resolver error); users on Python 3.6–3.8 should pin to `<1.1.0`
+- Minimum `keeper-secrets-manager-core` dependency raised to 17.2.1
+
+**Security:**
+- Fixed CVE-2026-0994: upgraded `protobuf` to ≥6.33.5 (JSON recursion DoS)
+- Fixed CVE-2026-26007: upgraded `cryptography` to ≥46.0.5 (subgroup attack)
+- Fixed AES-GCM nonce from 128-bit (PyCryptodome default) to 96-bit per NIST SP 800-38D; existing encrypted blobs remain readable
+- Replaced MD5 with SHA-256 for config change detection
+
+**Bug fixes:**
+- `GCPKeyValueStorage` now raises on init when `cloudkms.cryptoKeys.get` is denied, instead of proceeding with the config file left unencrypted on disk
+- KMS errors (permission denials, network failures, decryption failures) now propagate as exceptions instead of being silently swallowed or reported as misleading JSON parse errors
+- `decrypt_config()` no longer writes plaintext credentials to disk when called without arguments (`autosave` default changed from `True` to `False`)
+- `read_storage()` now returns a copy; mutations to the returned dict no longer silently corrupt internal state
+- `delete()` of the last config key now persists correctly to disk
+- `delete_all()` now removes the config file from disk; previously it attempted to re-encrypt an empty config, leaving credentials readable if KMS was unavailable
+- `set()` now propagates `PermissionError` when the config file is read-only, preventing silent in-memory/on-disk state divergence
+- `change_key()` rolls back cleanly on failure; a failed rotation no longer leaves the storage in an inconsistent state
+- `GCPKeyValueStorage` is now thread-safe for concurrent `set()`, `delete()`, `change_key()`, and `decrypt_config()` calls (KSM-946)
+- `key_version` on `GCPKeyConfig` applies only to encrypt and asymmetric operations; symmetric `client.decrypt` uses the unversioned CryptoKey name as required by the GCP API (the server selects the version from the ciphertext envelope)
+- `load_config()` now always leaves `self.config` as a dict (never `None`) after parsing a plaintext `{}` bootstrap config; previously every subsequent `read`/`set`/`delete` crashed with `TypeError: 'NoneType' object is not iterable` (KSM-948)
+
+### 1.0.1
+
+- Fixed installation and import instructions in README
+
+### 1.0.0
+
+- Initial release

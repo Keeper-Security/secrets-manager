@@ -1,0 +1,41 @@
+name: Test Python Storage - GCP KMS
+
+on:
+  push:
+    branches:
+      - 'release/storage/python/gcp-kms/**'
+    paths:
+      - 'sdk/python/storage/keeper_secrets_manager_storage_gcp_kms/**'
+      - '.github/workflows/test.python.storage.gcp.kms.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'sdk/python/storage/keeper_secrets_manager_storage_gcp_kms/**'
+      - '.github/workflows/test.python.storage.gcp.kms.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_gcp_kms
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt pytest pytest-cov
+          python3 -m pip install -e .
+      - name: Run tests
+        run: pytest tests/

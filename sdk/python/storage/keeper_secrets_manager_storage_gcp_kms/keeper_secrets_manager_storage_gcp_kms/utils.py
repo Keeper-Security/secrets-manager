@@ -36,8 +36,8 @@ def encrypt_buffer(is_asymmetric, message, crypto_client, key_properties,encrypt
         # Generate a random 32-byte key
         key = get_random_bytes(32)
 
-        # Create AES-GCM cipher instance
-        cipher = AES.new(key, AES.MODE_GCM)
+        # Create AES-GCM cipher instance with 96-bit nonce (NIST SP 800-38D recommended)
+        cipher = AES.new(key, AES.MODE_GCM, nonce=get_random_bytes(12))
 
         # Encrypt the message
         ciphertext, tag = cipher.encrypt_and_digest(
@@ -72,8 +72,8 @@ def encrypt_buffer(is_asymmetric, message, crypto_client, key_properties,encrypt
 
         return buffers
     except Exception as err:
-        logger.warning(f"KCP KMS Storage failed to encrypt: {err}")
-        return b''  # Return empty buffer in case of an error
+        logger.error(f"GCP KMS Storage failed to encrypt: {err}")
+        raise
 
 
 def encrypt_data_and_validate_crc_asymmetric(options):
@@ -213,8 +213,8 @@ def decrypt_buffer(is_asymmetric, ciphertext, crypto_client, key_properties,logg
         # Convert decrypted data to a UTF-8 string
         return decrypted.decode()
     except Exception as err:
-        logger.warning(f"Google KMS KeyVault Storage failed to decrypt: {err}")
-        return ""  # Return empty string in case of an error
+        logger.error(f"Google KMS KeyVault Storage failed to decrypt: {err}")
+        raise
 
 
 def decrypt_data_and_validate_crc(options):
@@ -235,7 +235,11 @@ def decrypt_data_and_validate_crc(options):
         if options.get("token"):
             plaintext = decrypt_data_symmetric_raw(options, options['logger'])
             return plaintext
-            
+
+        # GCP cryptoKeys.decrypt requires the unversioned CryptoKey name; the
+        # server selects the version from the ciphertext envelope (required
+        # for rotation). A versioned CryptoKeyVersion path is rejected with
+        # INVALID_ARGUMENT. Only asymmetric_decrypt (above) takes a version.
         key_name = options['key_properties'].to_key_name()
         input = DecryptRequest(name=key_name, ciphertext=cipher_data,
                                ciphertext_crc32c=cipher_data_crc)
