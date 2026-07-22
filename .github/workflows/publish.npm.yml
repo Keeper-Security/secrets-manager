@@ -8,131 +8,201 @@ on:
         default: 'true'
         type: boolean
 
+permissions:
+  contents: read
+
 jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Extract version
+        id: extract-version
+        run: |
+          VERSION=$(grep -o '"version": "[^"]*"' sdk/javascript/packages/core/package.json | cut -d'"' -f4)
+          echo "Version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Test on Node.js ${{ matrix.node-version }}
+    needs: validate-version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['22', '24']
+    defaults:
+      run:
+        working-directory: ./sdk/javascript/packages/core
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - run: npm install
+        env:
+          NPM_TOKEN: ""
+
+      - run: npm test
+        env:
+          NPM_TOKEN: ""
+
+  validate-version:
+    name: Validate version not yet published
+    needs: get-version
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check version not on npm
+        env:
+          VERSION: ${{ needs.get-version.outputs.version }}
+        run: |
+          PACKAGE="@keeper-security%2Fsecrets-manager-core"
+          CHECK_URL="https://registry.npmjs.org/${PACKAGE}/${VERSION}"
+          echo "Checking npm for @keeper-security/secrets-manager-core $VERSION..."
+          STATUS=$(curl -sS --retry 3 --retry-delay 2 -o /dev/null -w "%{http_code}" "$CHECK_URL")
+          case "$STATUS" in
+            404) echo "@keeper-security/secrets-manager-core $VERSION not yet on npm - ok to proceed" ;;
+            200) echo "::error::@keeper-security/secrets-manager-core ${VERSION} is already on npm. Aborting."; exit 1 ;;
+            *)   echo "::error::Unexpected status $STATUS from npm registry. Aborting."; exit 1 ;;
+          esac
+
   generate-sbom:
+    needs: [build-npm, get-version]
     runs-on: ubuntu-latest
     steps:
-      - name: Get the source code
-        uses: actions/checkout@v3
+      - name: Download dist artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: npm-dist-${{ github.run_number }}
+          path: ./sbom-target
 
-      - name: Install Syft
+      - name: Install Syft and Manifest CLI
         run: |
-          echo "Installing Syft v1.18.1..."
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /tmp/bin v1.18.1
-          echo "/tmp/bin" >> $GITHUB_PATH
-
-      - name: Install Manifest CLI
-        run: |
-          echo "Installing Manifest CLI v0.18.3..."
-          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /tmp/bin v0.18.3
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.32.0
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.35.0
 
       - name: Create Syft configuration
         run: |
           cat > syft-config.yaml << 'EOF'
-          package:
-            search:
-              scope: all-layers
-            cataloger:
-              enabled: true
-              java:
-                enabled: false
-              python:
-                enabled: false
-              nodejs:
-                enabled: true
+          select-catalogers:
+            - "-github-action-workflow-usage-cataloger"
+            - "-github-actions-usage-cataloger"
           EOF
 
       - name: Generate and upload SBOM
         env:
           MANIFEST_API_KEY: ${{ secrets.MANIFEST_TOKEN }}
+          VERSION: ${{ needs.get-version.outputs.version }}
         run: |
-          JAVASCRIPT_SDK_DIR="./sdk/javascript/packages/core"
+          echo "Generating SBOM for @keeper-security/secrets-manager-core $VERSION..."
+          NAMESPACE="https://spdx.org/spdxdocs/keeper-secrets-manager-js-sdk-${VERSION}-$(cat /proc/sys/kernel/random/uuid)"
 
-          # Get version from package.json
-          echo "Detecting JavaScript SDK version..."
-          if [ -f "${JAVASCRIPT_SDK_DIR}/package.json" ]; then
-            VERSION=$(grep -o '"version": "[^"]*"' "${JAVASCRIPT_SDK_DIR}/package.json" | cut -d'"' -f4)
-            echo "Detected version: ${VERSION}"
-          else
-            VERSION="1.0.0"
-            echo "Could not detect version, using default: ${VERSION}"
-          fi
-
-          echo "Generating SBOM with Manifest CLI..."
-          /tmp/bin/manifest sbom "${JAVASCRIPT_SDK_DIR}" \
+          manifest sbom "./sbom-target" \
             --generator=syft \
             --name=keeper-secrets-manager-js-sdk \
-            --version=${VERSION} \
+            --version="${VERSION}" \
+            --namespace="${NAMESPACE}" \
             --output=spdx-json \
             --file=js-sdk-sbom.json \
-            --api-key=${MANIFEST_API_KEY} \
+            --api-key="${MANIFEST_API_KEY}" \
             --publish=true \
             --asset-label=application,sbom-generated,nodejs \
-            --generator-config=syft-config.yaml
+            --generator-config=syft-config.yaml \
+            -- --source-name="keeper-secrets-manager-js-sdk" --source-version="${VERSION}" 2>&1 || \
+          manifest sbom "./sbom-target" \
+            --generator=syft \
+            --name=keeper-secrets-manager-js-sdk \
+            --version="${VERSION}" \
+            --namespace="${NAMESPACE}" \
+            --output=spdx-json \
+            --file=js-sdk-sbom.json \
+            --api-key="${MANIFEST_API_KEY}" \
+            --publish=true \
+            --label=application,sbom-generated,nodejs \
+            --generator-config=syft-config.yaml \
+            -- --source-name="keeper-secrets-manager-js-sdk" --source-version="${VERSION}"
 
-          echo "SBOM generated and uploaded successfully: js-sdk-sbom.json"
+          jq '(.packages[] | select(.SPDXID == "SPDXRef-Package-keeper-secrets-manager-js-sdk")) |=
+            (.filesAnalyzed = false) | del(.packageVerificationCode)' js-sdk-sbom.json \
+            > js-sdk-sbom-fixed.json && mv js-sdk-sbom-fixed.json js-sdk-sbom.json
+
           echo "---------- SBOM Preview (first 20 lines) ----------"
           head -n 20 js-sdk-sbom.json
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-keeper-secrets-manager-js-sdk-${{ github.run_number }}
           path: js-sdk-sbom.json
-          retention-days: 90
+          retention-days: 10
 
   build-npm:
-    needs: generate-sbom
+    needs: [test, validate-version]
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: ./sdk/javascript/packages/core
-
     steps:
-      - name: Get the source code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: '18'
+          node-version: '22'
 
       - name: Install dependencies
         run: npm install
 
-      - name: Run tests
-        run: npm test
-
       - name: Build package
         run: npm run prepublishOnly
 
-      - name: Upload NPM package
-        uses: actions/upload-artifact@v4
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: npm-package-${{ github.run_number }}
+          name: npm-dist-${{ github.run_number }}
           path: |
-            ${{ github.workspace }}/sdk/javascript/packages/core/dist/
-            ${{ github.workspace }}/sdk/javascript/packages/core/package.json
+            sdk/javascript/packages/core/dist/
+            sdk/javascript/packages/core/package.json
+            sdk/javascript/packages/core/package-lock.json
+          retention-days: 1
 
   publish-npm:
-    needs: build-npm
+    needs: [generate-sbom, validate-version]
     if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: ./sdk/javascript/packages/core
-
     steps:
-      - name: Get the source code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: '18'
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Upgrade npm
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: npm ci
@@ -140,13 +210,5 @@ jobs:
       - name: Build package
         run: npm run prepublishOnly
 
-      - name: Retrieve secrets from KSM
-        id: ksmsecrets
-        uses: Keeper-Security/ksm-action@master
-        with:
-          keeper-secret-config: ${{ secrets.KSM_KSM_CONFIG }}
-          secrets: |
-            NScQiZwrHJFCPv1gL8TX6Q/field/password > env:NPM_TOKEN
-
       - name: Publish package
-        run: npm publish --ignore-scripts
+        run: npm publish --ignore-scripts --provenance

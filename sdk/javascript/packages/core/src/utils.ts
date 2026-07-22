@@ -1,8 +1,12 @@
 import {platform} from './platform'
+import {KeeperError} from './errors'
 
 export const webSafe64 = (source: string): string => source.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-export const webSafe64ToRegular = (source: string): string => source.replace(/-/g, '+').replace(/_/g, '/') + '=='.substring(0, (3 * source.length) % 4);
+export const webSafe64ToRegular = (source: string): string => {
+    if (source == null) throw new KeeperError(`webSafe64ToRegular: received ${source === null ? 'null' : 'undefined'}`)
+    return source.replace(/-/g, '+').replace(/_/g, '/') + '=='.substring(0, (3 * source.length) % 4)
+}
 
 export const webSafe64ToBytes = (source: string): Uint8Array => platform.base64ToBytes(webSafe64ToRegular(source));
 
