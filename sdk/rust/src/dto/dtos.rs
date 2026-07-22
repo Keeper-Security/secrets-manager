@@ -21,7 +21,7 @@ use std::{
     fmt::{self},
     fs::{self, File},
     io::{Read, Write as _},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use crate::{
@@ -990,7 +990,7 @@ impl Record {
 
         match found_file {
             Some(file) => {
-                let file_status = file.save_file(path.to_string(), false)?;
+                let file_status = file.save_file(path, false)?;
                 Ok(file_status)
             }
             None => Err(KSMRError::FileError(format!(
@@ -1005,7 +1005,7 @@ impl Record {
 
         match found_file {
             Some(file) => {
-                let file_status = file.save_file(path.to_string(), false)?;
+                let file_status = file.save_file(path, false)?;
                 Ok(file_status)
             }
             None => {
@@ -1029,6 +1029,375 @@ impl fmt::Display for Record {
             self.title,
             self.files.len()
         )
+    }
+}
+
+impl Record {
+    /// Returns the record's linked credentials (GraphSync links, v16.7.0+) as typed
+    /// [`KeeperRecordLink`] values instead of raw maps.
+    ///
+    /// This is the ergonomic, typed accessor for the raw [`Record::links`] field — it
+    /// matches the Python SDK's `KeeperRecordLink` reference implementation (KSM-992).
+    /// The raw `links` field remains available unchanged for backward compatibility;
+    /// entries without a `recordUid` string are skipped here.
+    pub fn get_links(&self) -> Vec<KeeperRecordLink> {
+        self.links
+            .iter()
+            .filter_map(KeeperRecordLink::from_map)
+            .collect()
+    }
+}
+
+/// A typed view over a single linked-credential entry on a [`Record`].
+///
+/// A link entry carries `recordUid`, optional base64 `data`, and an optional `path`
+/// discriminator. Observed payload shapes (verified against the live backend):
+///
+/// - path `"meta"` (self-link, `record_uid` == owning record): plain base64 JSON with
+///   `allowedSettings` (rotation, connections, portForwards, sessionRecording,
+///   typescriptRecording, aiEnabled, aiSessionTerminate, remoteBrowserIsolation),
+///   plus `rotateOnTermination`, `version` and `no_update_services`.
+/// - path `None` (credential link to another record): plain base64 JSON with
+///   `is_admin`, `is_launch_credential`, `is_iam_user`, `belongs_to` and
+///   `rotation_settings`; or no data at all (pure record reference).
+/// - path `"ai_settings"` / `"jit_settings"` (self-links): data is AES-256-GCM
+///   encrypted under the owning record's key — see [`Self::get_decrypted_data`].
+///
+/// The accessors never fail loudly: parse, decode or decryption failures yield
+/// `None`/`false`. The original link entry is kept untouched in [`Self::raw`], and
+/// [`Self::get_link_data`] returns the complete parsed payload, so fields unknown to
+/// this SDK version are always preserved.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeeperRecordLink {
+    /// UID of the linked record.
+    pub record_uid: String,
+    /// Base64-encoded link metadata (plain JSON or encrypted), if present.
+    pub data: Option<String>,
+    /// Link path discriminator (e.g. `meta`, `ai_settings`, `jit_settings`), if present.
+    pub path: Option<String>,
+    /// The untouched original link entry (lossless retention of every key the server
+    /// sent, including ones this SDK version doesn't know about yet).
+    #[serde(skip)]
+    pub raw: HashMap<String, Value>,
+}
+
+impl KeeperRecordLink {
+    /// Build a typed link from its parts; `raw` is synthesized from them. Prefer
+    /// [`Record::get_links`] for links coming from the server, which keeps the
+    /// complete original entry in `raw`.
+    pub fn new(record_uid: impl Into<String>, data: Option<String>, path: Option<String>) -> Self {
+        let record_uid = record_uid.into();
+        let mut raw = HashMap::new();
+        raw.insert("recordUid".to_string(), Value::String(record_uid.clone()));
+        raw.insert(
+            "data".to_string(),
+            data.clone().map(Value::String).unwrap_or(Value::Null),
+        );
+        raw.insert(
+            "path".to_string(),
+            path.clone().map(Value::String).unwrap_or(Value::Null),
+        );
+        Self {
+            record_uid,
+            data,
+            path,
+            raw,
+        }
+    }
+
+    /// Build a typed link from a raw `links` entry. Returns `None` if the entry has no
+    /// `recordUid` string. The full original entry is kept in `raw`.
+    fn from_map(map: &HashMap<String, Value>) -> Option<Self> {
+        let record_uid = map.get("recordUid").and_then(Value::as_str)?.to_string();
+        let data = map.get("data").and_then(Value::as_str).map(str::to_string);
+        let path = map.get("path").and_then(Value::as_str).map(str::to_string);
+        Some(Self {
+            record_uid,
+            data,
+            path,
+            raw: map.clone(),
+        })
+    }
+
+    /// Base64-decode `data` and parse it as a JSON object. Returns `None` when `data` is
+    /// absent, not valid base64, or not a JSON object (e.g. encrypted bytes).
+    fn parse_json_data(&self) -> Option<serde_json::Map<String, Value>> {
+        let decoded = self.get_decoded_data()?;
+        match serde_json::from_str::<Value>(&decoded) {
+            Ok(Value::Object(map)) => Some(map),
+            _ => None,
+        }
+    }
+
+    /// Read a strict boolean from the link data; missing or non-bool values are `false`.
+    ///
+    /// With `check_allowed_settings` the nested `allowedSettings` object is consulted
+    /// when the key is absent (or non-bool) at the top level — a top-level boolean wins.
+    /// The backend nests permission flags under `allowedSettings` in `meta` links.
+    fn bool_value(&self, key: &str, check_allowed_settings: bool) -> bool {
+        let Some(map) = self.parse_json_data() else {
+            return false;
+        };
+        if let Some(value) = map.get(key).and_then(Value::as_bool) {
+            return value;
+        }
+        if check_allowed_settings {
+            if let Some(value) = map
+                .get("allowedSettings")
+                .and_then(Value::as_object)
+                .and_then(|allowed| allowed.get(key))
+                .and_then(Value::as_bool)
+            {
+                return value;
+            }
+        }
+        false
+    }
+
+    /// Whether the linked user is an admin (`is_admin`).
+    pub fn is_admin_user(&self) -> bool {
+        self.bool_value("is_admin", false)
+    }
+
+    /// Whether this is a launch credential link (`is_launch_credential`).
+    pub fn is_launch_credential(&self) -> bool {
+        self.bool_value("is_launch_credential", false)
+    }
+
+    /// Whether the linked user is an IAM user (`is_iam_user`).
+    pub fn is_iam_user(&self) -> bool {
+        self.bool_value("is_iam_user", false)
+    }
+
+    /// Whether the linked credential belongs to the record (`belongs_to`).
+    pub fn belongs_to(&self) -> bool {
+        self.bool_value("belongs_to", false)
+    }
+
+    /// Whether service updates are disabled for this link (`no_update_services`).
+    pub fn no_update_services(&self) -> bool {
+        self.bool_value("no_update_services", false)
+    }
+
+    /// Whether rotation is allowed (`rotation`, top-level or in `allowedSettings`).
+    pub fn allows_rotation(&self) -> bool {
+        self.bool_value("rotation", true)
+    }
+
+    /// Whether connections are allowed (`connections`, top-level or in `allowedSettings`).
+    pub fn allows_connections(&self) -> bool {
+        self.bool_value("connections", true)
+    }
+
+    /// Whether port forwards are allowed (`portForwards`, top-level or in
+    /// `allowedSettings`).
+    pub fn allows_port_forwards(&self) -> bool {
+        self.bool_value("portForwards", true)
+    }
+
+    /// Whether session recording is enabled (`sessionRecording`, top-level or in
+    /// `allowedSettings`).
+    pub fn allows_session_recording(&self) -> bool {
+        self.bool_value("sessionRecording", true)
+    }
+
+    /// Whether TypeScript recording is enabled (`typescriptRecording`, top-level or in
+    /// `allowedSettings`).
+    pub fn allows_typescript_recording(&self) -> bool {
+        self.bool_value("typescriptRecording", true)
+    }
+
+    /// Whether remote browser isolation is enabled (`remoteBrowserIsolation`, top-level
+    /// or in `allowedSettings`).
+    pub fn allows_remote_browser_isolation(&self) -> bool {
+        self.bool_value("remoteBrowserIsolation", true)
+    }
+
+    /// Whether AI features are enabled (`aiEnabled`, top-level or in `allowedSettings`).
+    pub fn ai_enabled(&self) -> bool {
+        self.bool_value("aiEnabled", true)
+    }
+
+    /// Whether AI session termination is enabled (`aiSessionTerminate`, top-level or in
+    /// `allowedSettings`).
+    pub fn ai_session_terminate(&self) -> bool {
+        self.bool_value("aiSessionTerminate", true)
+    }
+
+    /// Whether rotation on termination is enabled (`rotateOnTermination`).
+    pub fn rotates_on_termination(&self) -> bool {
+        self.bool_value("rotateOnTermination", false)
+    }
+
+    /// The link data schema version (`version`) when it is an integer, else `None`
+    /// (e.g. `ai_settings` carries a string version such as `"v1.0.0"`).
+    pub fn get_link_data_version(&self) -> Option<i64> {
+        self.parse_json_data()
+            .and_then(|m| m.get("version").and_then(Value::as_i64))
+    }
+
+    /// The `allowedSettings` object from the link data (empty map when absent).
+    pub fn get_allowed_settings(&self) -> serde_json::Map<String, Value> {
+        self.parse_json_data()
+            .and_then(|map| match map.get("allowedSettings") {
+                Some(Value::Object(allowed)) => Some(allowed.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    /// The `rotation_settings` object from the link data (schedule, pwd_complexity,
+    /// disabled, noop, saas_record_uid_list), or `None` when absent.
+    pub fn get_rotation_settings(&self) -> Option<serde_json::Map<String, Value>> {
+        match self.parse_json_data()?.get("rotation_settings") {
+            Some(Value::Object(settings)) => Some(settings.clone()),
+            _ => None,
+        }
+    }
+
+    /// Base64-decode `data` to a UTF-8 string (lossy). Returns `None` if `data` is absent
+    /// or not valid base64.
+    pub fn get_decoded_data(&self) -> Option<String> {
+        let data = self.data.as_ref()?;
+        utils::base64_to_bytes(data)
+            .ok()
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    /// Whether the decoded data looks like readable JSON (starts with `{` or `[`).
+    pub fn has_readable_data(&self) -> bool {
+        match self.get_decoded_data() {
+            Some(decoded) => decoded.starts_with('{') || decoded.starts_with('['),
+            None => false,
+        }
+    }
+
+    /// Whether this link's `path` is a known potentially-encrypted path
+    /// (`ai_settings` or `jit_settings`). Other paths, including `meta`, carry
+    /// plain base64 JSON.
+    pub fn might_be_encrypted(&self) -> bool {
+        matches!(
+            self.path.as_deref(),
+            Some("ai_settings") | Some("jit_settings")
+        )
+    }
+
+    /// Whether the data appears encrypted by inspecting the decoded bytes (not JSON and
+    /// not mostly printable text).
+    pub fn has_encrypted_data(&self) -> bool {
+        match self.get_decoded_data() {
+            Some(decoded) => {
+                !decoded.starts_with('{')
+                    && !decoded.starts_with('[')
+                    && !Self::is_printable_text(&decoded)
+            }
+            None => false,
+        }
+    }
+
+    /// Decrypt `data` with the provided record key using AES-256-GCM. Returns `None` if
+    /// `data`/`record_key` is absent or decryption fails.
+    pub fn get_decrypted_data(&self, record_key: Option<&[u8]>) -> Option<String> {
+        let data = self.data.as_ref()?;
+        let key = record_key?;
+        let encrypted = utils::base64_to_bytes(data).ok()?;
+        let decrypted = CryptoUtils::decrypt_aes(&encrypted, key).ok()?;
+        Some(String::from_utf8_lossy(&decrypted).into_owned())
+    }
+
+    /// Get link data as a JSON object, auto-handling plain JSON or encrypted data.
+    /// Plain JSON parses without a key; encrypted data requires `record_key`.
+    /// Ciphertext can coincidentally start with `{` or `[`, so a failed plain-JSON
+    /// parse falls through to decryption rather than giving up.
+    pub fn get_link_data(
+        &self,
+        record_key: Option<&[u8]>,
+    ) -> Option<serde_json::Map<String, Value>> {
+        let decoded = self.get_decoded_data()?;
+        if decoded.starts_with('{') || decoded.starts_with('[') {
+            if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(&decoded) {
+                return Some(map);
+            }
+            // Leading {/[ was coincidental ciphertext - fall through to decryption.
+        }
+        // Not plain JSON — try decryption if a key is available.
+        let decrypted = self.get_decrypted_data(record_key)?;
+        match serde_json::from_str::<Value>(&decrypted) {
+            Ok(Value::Object(map)) => Some(map),
+            _ => None,
+        }
+    }
+
+    /// Get PAM settings data from this link — only when `path == "meta"`.
+    ///
+    /// Meta links are self-links (`record_uid` == owning record) carrying the record's
+    /// own PAM settings: `allowedSettings`, `rotateOnTermination`, `version`,
+    /// `no_update_services`. Plain JSON today; the key is accepted for forward
+    /// compatibility.
+    pub fn get_meta_data(
+        &self,
+        record_key: Option<&[u8]>,
+    ) -> Option<serde_json::Map<String, Value>> {
+        self.get_settings_for_path("meta", record_key)
+    }
+
+    /// Get AI settings data — only when `path == "ai_settings"`.
+    ///
+    /// Encrypted under the owning record's key. Known fields: `version` (string, e.g.
+    /// `"v1.0.0"`) and `riskLevels` (critical/high/medium/low, each with `tags`
+    /// allow/deny lists and `aiSessionTerminate`). Additional fields may be present in
+    /// newer versions; the returned map preserves all of them.
+    pub fn get_ai_settings_data(
+        &self,
+        record_key: &[u8],
+    ) -> Option<serde_json::Map<String, Value>> {
+        if self.path.as_deref() != Some("ai_settings") {
+            return None;
+        }
+        self.get_link_data(Some(record_key))
+    }
+
+    /// Get JIT (Just-In-Time) settings data — only when `path == "jit_settings"`.
+    ///
+    /// Encrypted under the owning record's key. Known fields: `createEphemeral`,
+    /// `elevate`, `elevationMethod`, `elevationString`, `baseDistinguishedName`.
+    /// Additional fields may be present in newer versions; the returned map preserves
+    /// all of them.
+    pub fn get_jit_settings_data(
+        &self,
+        record_key: &[u8],
+    ) -> Option<serde_json::Map<String, Value>> {
+        if self.path.as_deref() != Some("jit_settings") {
+            return None;
+        }
+        self.get_link_data(Some(record_key))
+    }
+
+    /// Get settings data for any `path` — returns `None` unless the link's `path` matches
+    /// `settings_path`.
+    pub fn get_settings_for_path(
+        &self,
+        settings_path: &str,
+        record_key: Option<&[u8]>,
+    ) -> Option<serde_json::Map<String, Value>> {
+        if self.path.as_deref() != Some(settings_path) {
+            return None;
+        }
+        self.get_link_data(record_key)
+    }
+
+    /// Whether a string is mostly printable text (>90% of the first 100 chars printable),
+    /// used to distinguish encrypted bytes from text.
+    fn is_printable_text(s: &str) -> bool {
+        if s.is_empty() {
+            return false;
+        }
+        let sample: Vec<char> = s.chars().take(100).collect();
+        let printable = sample
+            .iter()
+            .filter(|&&c| (' '..='~').contains(&c) || c == '\n' || c == '\r' || c == '\t')
+            .count();
+        (printable as f32 / sample.len() as f32) > 0.9
     }
 }
 
@@ -1346,18 +1715,23 @@ impl KeeperFile {
         Ok(file)
     }
 
-    pub fn save_file(&mut self, path: String, create_folders: bool) -> Result<bool, KSMRError> {
+    pub fn save_file(
+        &mut self,
+        path: impl AsRef<Path>,
+        create_folders: bool,
+    ) -> Result<bool, KSMRError> {
+        let path = path.as_ref();
         // Resolve the absolute path
-        let abs_path = match fs::canonicalize(&path) {
+        let abs_path = match fs::canonicalize(path) {
             Ok(p) => p,
-            Err(_) => PathBuf::from(&path), // Fallback to given path if canonicalization fails
+            Err(_) => path.to_path_buf(), // Fallback to given path if canonicalization fails
         };
 
         // Get the parent directory
         let dir_path = abs_path.parent().ok_or_else(|| {
             KSMRError::PathError(format!(
                 "Failed to determine parent directory for path: {}",
-                path
+                path.display()
             ))
         })?;
 
@@ -1399,6 +1773,14 @@ impl KeeperFile {
         })?;
 
         Ok(true)
+    }
+
+    /// Download (if not already cached) and write the file's decrypted bytes to `path`.
+    ///
+    /// Convenience wrapper over [`save_file`](Self::save_file) that accepts any path type
+    /// (`&str`, `String`, `&Path`, `PathBuf`) and does not create parent directories.
+    pub fn save_to_file(&mut self, path: impl AsRef<Path>) -> Result<bool, KSMRError> {
+        self.save_file(path, false)
     }
 
     pub fn to_string(&self) -> String {
@@ -1717,10 +2099,14 @@ pub const VALID_RECORD_FIELDS: [&str; 45] = [
 ];
 
 impl RecordCreate {
-    pub fn new(record_type: String, title: String, notes: Option<String>) -> Self {
+    pub fn new(
+        record_type: impl Into<String>,
+        title: impl Into<String>,
+        notes: Option<String>,
+    ) -> Self {
         Self {
-            record_type,
-            title,
+            record_type: record_type.into(),
+            title: title.into(),
             notes,
             fields: None,
             custom: None,

@@ -14,7 +14,9 @@ pub mod dtos;
 pub mod field_structs;
 pub mod payload;
 
-pub use crate::dto::dtos::{AppData, Folder, KeeperFile, Record, SecretsManagerResponse};
+pub use crate::dto::dtos::{
+    AppData, Folder, KeeperFile, KeeperRecordLink, Record, SecretsManagerResponse,
+};
 pub use crate::dto::payload::{
     validate_payload, CompleteTransactionPayload, Context, CreateFolderPayload, CreateOptions,
     CreatePayload, DeleteFolderPayload, DeletePayload, EncryptedPayload, FileUploadPayload,

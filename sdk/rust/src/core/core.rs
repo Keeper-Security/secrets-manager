@@ -12,6 +12,7 @@
 
 use std::env;
 use std::str::FromStr;
+use std::time::Duration;
 
 use crate::cache::{self, KSMCache};
 use crate::dto::dtos::{KeeperFileUpload, KeeperFolder, RecordCreate};
@@ -43,7 +44,9 @@ use crate::dto::{
     TransmissionKey, UpdateFolderPayload, UpdatePayload, UpdateTransactionType,
 };
 use crate::helpers::get_servers;
-use crate::keeper_globals::KEEPER_SECRETS_MANAGER_SDK_CLIENT_ID;
+use crate::keeper_globals::{
+    BASE_THROTTLE_DELAY_SEC, KEEPER_SECRETS_MANAGER_SDK_CLIENT_ID, MAX_THROTTLE_RETRIES,
+};
 use crate::utils::{base64_to_bytes, bytes_to_base64, json_to_dict, string_to_bytes};
 use log::{debug, error, info, warn};
 use regex::Regex;
@@ -52,7 +55,7 @@ use serde_json::Value;
 
 /// Custom post function type for HTTP request injection (used for testing and mocking).
 ///
-/// Changed in v17.2.0 (KSM-931) from `fn(...)` to `Arc<dyn Fn(...) + Send + Sync>` to allow
+/// Changed in v17.2.0 from `fn(...)` to `Arc<dyn Fn(...) + Send + Sync>` to allow
 /// closures that capture state (e.g. a shared `reqwest::blocking::Client`). Existing call
 /// sites using `options.set_custom_post_function(my_fn)` continue to compile unchanged
 /// because bare `fn` pointers implement `Fn + Send + Sync + 'static`.
@@ -62,6 +65,51 @@ pub type CustomPostFunction = std::sync::Arc<
         + Sync,
 >;
 
+/// Optional sleep override used between throttle retries (primarily for testing/mocking).
+/// When unset, `std::thread::sleep` is used. Mirrors [`CustomPostFunction`].
+pub type CustomSleepFunction = std::sync::Arc<dyn Fn(Duration) + Send + Sync>;
+
+/// Returns a jitter multiplier in `[-0.25, 0.25)`. Kept separate so concurrent clients
+/// desynchronize their retries; unit tests exercise [`throttle_delay`] with a pinned jitter.
+fn throttle_jitter() -> f64 {
+    use rand::Rng;
+    rand::thread_rng().gen_range(-0.25..0.25)
+}
+
+/// Reports whether `body` is a backend throttle error (`result_code`/`error` == "throttled")
+/// and, if so, returns its optional `retry_after` (seconds, `>= 0`). Returns `None` for any
+/// non-throttle response (including non-JSON or empty bodies) so the caller falls through to
+/// normal error handling.
+fn parse_throttle(body: Option<&str>) -> Option<f64> {
+    let dict = json_to_dict(body?)?;
+    let rc = dict
+        .get("result_code")
+        .or_else(|| dict.get("error"))
+        .and_then(|v| v.as_str())?;
+    if rc != "throttled" {
+        return None;
+    }
+    let retry_after = match dict.get("retry_after") {
+        Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0),
+        Some(Value::String(s)) => s.parse::<f64>().unwrap_or(0.0),
+        _ => 0.0,
+    };
+    Some(retry_after.max(0.0))
+}
+
+/// Computes the backoff delay for a 0-based `attempt`: `retry_after` when provided (`> 0`),
+/// otherwise exponential backoff (`BASE_THROTTLE_DELAY_SEC * 2**attempt` -> 11, 22, 44, 88,
+/// 176s). The `jitter` fraction (typically in `[-0.25, 0.25)`) is then applied.
+fn throttle_delay(attempt: u32, retry_after: f64, jitter: f64) -> Duration {
+    let base = if retry_after > 0.0 {
+        retry_after
+    } else {
+        (BASE_THROTTLE_DELAY_SEC as f64) * 2f64.powi(attempt as i32)
+    };
+    let secs = (base + base * jitter).max(0.0);
+    Duration::from_secs_f64(secs)
+}
+
 pub struct ClientOptions {
     pub token: String,
     pub insecure_skip_verify: Option<bool>,
@@ -69,6 +117,8 @@ pub struct ClientOptions {
     pub log_level: Level,
     pub hostname: Option<String>,
     pub proxy_url: Option<String>,
+    pub server_public_key: Option<String>,
+    pub server_public_key_id: Option<String>,
     cache: KSMCache,
     custom_post_function: Option<CustomPostFunction>,
 }
@@ -92,7 +142,7 @@ impl ClientOptions {
     ///
     /// * `ClientOptions` - Configured options ready for `SecretsManager::new()`
     pub fn new(
-        token: String,
+        token: impl Into<String>,
         config: KvStoreType,
         log_level: Level,
         hostname: Option<String>,
@@ -101,12 +151,14 @@ impl ClientOptions {
         cache: KSMCache,
     ) -> Self {
         Self {
-            token,
+            token: token.into(),
             config,
             log_level,
             hostname,
             insecure_skip_verify,
             proxy_url,
+            server_public_key: None,
+            server_public_key_id: None,
             cache,
             custom_post_function: None,
         }
@@ -186,6 +238,112 @@ impl ClientOptions {
     pub fn set_log_level(&mut self, log_level: Level) {
         self.log_level = log_level;
     }
+
+    /// Inject a custom EC public key (base64url) for isolated deployments (e.g. IL5).
+    /// Takes precedence over keys derived from the OTT or stored config.
+    pub fn set_server_public_key(&mut self, key_b64: &str) {
+        self.server_public_key = Some(key_b64.to_string());
+    }
+
+    /// Set the server public key ID to use alongside a custom public key.
+    pub fn set_server_public_key_id(&mut self, key_id: &str) {
+        self.server_public_key_id = Some(key_id.to_string());
+    }
+}
+
+/// Builder for [`ClientOptions`].
+///
+/// Use this instead of the verbose `ClientOptions::new()` constructor when you
+/// only need to set a subset of options.
+///
+/// # Example
+///
+/// ```no_run
+/// use keeper_secrets_manager_core::core::core::{ClientOptionsBuilder};
+/// use keeper_secrets_manager_core::enums::KvStoreType;
+/// use keeper_secrets_manager_core::storage::InMemoryKeyValueStorage;
+/// use keeper_secrets_manager_core::custom_error::KSMRError;
+///
+/// fn example() -> Result<(), KSMRError> {
+///     let storage = InMemoryKeyValueStorage::new(Some(std::env::var("KSM_CONFIG").unwrap()))?;
+///     let options = ClientOptionsBuilder::new(KvStoreType::InMemory(storage))
+///         .token("US:YOUR_ONE_TIME_TOKEN")
+///         .build();
+///     Ok(())
+/// }
+/// ```
+pub struct ClientOptionsBuilder {
+    token: String,
+    config: KvStoreType,
+    cache: cache::KSMCache,
+    proxy_url: Option<String>,
+    hostname: Option<String>,
+    log_level: Level,
+    insecure_skip_verify: Option<bool>,
+}
+
+impl ClientOptionsBuilder {
+    /// Create a builder with the required storage backend.
+    pub fn new(config: KvStoreType) -> Self {
+        Self {
+            token: String::new(),
+            config,
+            cache: cache::KSMCache::None,
+            proxy_url: None,
+            hostname: None,
+            log_level: Level::Error,
+            insecure_skip_verify: None,
+        }
+    }
+
+    /// Set the one-time token (required when initialising for the first time).
+    pub fn token(mut self, token: &str) -> Self {
+        self.token = token.to_string();
+        self
+    }
+
+    /// Set a cache backend for performance optimisation.
+    pub fn cache(mut self, cache: cache::KSMCache) -> Self {
+        self.cache = cache;
+        self
+    }
+
+    /// Set an HTTP/HTTPS proxy URL (supports `http://user:pass@host:port`).
+    pub fn proxy_url(mut self, url: &str) -> Self {
+        self.proxy_url = Some(url.to_string());
+        self
+    }
+
+    /// Override the Keeper server hostname.
+    pub fn hostname(mut self, hostname: &str) -> Self {
+        self.hostname = Some(hostname.to_string());
+        self
+    }
+
+    /// Set the logging level.
+    pub fn log_level(mut self, level: Level) -> Self {
+        self.log_level = level;
+        self
+    }
+
+    /// Skip SSL certificate verification (not recommended for production).
+    pub fn insecure_skip_verify(mut self, skip: bool) -> Self {
+        self.insecure_skip_verify = Some(skip);
+        self
+    }
+
+    /// Consume the builder and produce a [`ClientOptions`].
+    pub fn build(self) -> ClientOptions {
+        ClientOptions::new(
+            self.token,
+            self.config,
+            self.log_level,
+            self.hostname,
+            self.insecure_skip_verify,
+            self.proxy_url,
+            self.cache,
+        )
+    }
 }
 
 const DEFAULT_KEY_ID: &str = "10";
@@ -200,6 +358,9 @@ pub struct SecretsManager {
     pub cache: KSMCache,
     pub proxy_url: Option<String>,
     custom_post_function: Option<CustomPostFunction>,
+    /// Optional sleep override for throttle backoff (defaults to `std::thread::sleep`); tests
+    /// inject a no-op/recording sleeper via [`SecretsManager::set_custom_sleep_function`].
+    custom_sleep_function: Option<CustomSleepFunction>,
     /// Pre-built HTTP client shared across all operations (API calls + file downloads).
     /// Built once during init to avoid constructing reqwest::blocking::Client inside
     /// tokio::spawn_blocking, which fails due to nested runtime conflicts.
@@ -218,33 +379,38 @@ impl Clone for SecretsManager {
             cache: self.cache.clone(),
             proxy_url: self.proxy_url.clone(),
             custom_post_function: self.custom_post_function.clone(),
+            custom_sleep_function: self.custom_sleep_function.clone(),
             http_client: self.http_client.clone(),
         }
     }
 }
 
 impl SecretsManager {
-    /// Creates a new `SecretsManager` instance and initializes it with the provided configuration.
+    /// Creates a new `SecretsManager` instance and initialises it with the provided configuration.
     ///
-    /// This method performs token binding (if using a one-time token), sets up storage,
-    /// and validates the configuration. The SDK never panics - all errors are returned as `Result`.
+    /// # ⚠️ Deferred bind — this constructor makes NO network calls
     ///
-    /// # Arguments
+    /// `new()` only sets up local state: it generates the key-pair, stores the token and
+    /// hostname in the configured storage backend, and builds the HTTP client. The
+    /// one-time token is **not** redeemed here.
     ///
-    /// * `client_options` - Configuration options including token, storage backend, hostname, and cache settings
+    /// The token is redeemed on the **first method call that contacts Keeper Cloud**
+    /// (typically `get_secrets`). Until that call completes successfully the configured
+    /// storage is **unbound**: it contains `clientId`, `privateKey`, `hostname`, and
+    /// `serverPublicKeyId`, but is **missing `appKey` and `appOwnerPublicKey`**. An
+    /// unbound config cannot be loaded into a new `SecretsManager` on a future run.
     ///
-    /// # Returns
-    ///
-    /// * `Result<Self, KSMRError>` - Initialized `SecretsManager` instance or an error
-    ///
-    /// # Errors
-    ///
-    /// * `SecretManagerCreationError` - If initialization fails (invalid token, storage error, missing config)
-    ///
-    /// # Example
+    /// **If you intend to persist the config to an external store** (OS keychain,
+    /// AWS Secrets Manager, HashiCorp Vault, …), call `get_secrets(vec![])` immediately
+    /// after `new()` to force the bind, then export from the storage backend:
     ///
     /// ```no_run
-    /// use keeper_secrets_manager_core::{core::{ClientOptions, SecretsManager}, enums::KvStoreType, storage::FileKeyValueStorage, custom_error::KSMRError};
+    /// use keeper_secrets_manager_core::{
+    ///     core::{ClientOptions, SecretsManager},
+    ///     enums::KvStoreType,
+    ///     storage::FileKeyValueStorage,
+    ///     custom_error::KSMRError,
+    /// };
     ///
     /// fn example() -> Result<(), KSMRError> {
     ///     let storage = FileKeyValueStorage::new(Some("config.json".to_string()))?;
@@ -252,10 +418,28 @@ impl SecretsManager {
     ///     let token = "US:YOUR_TOKEN".to_string();
     ///     let options = ClientOptions::new_client_options_with_token(token, config);
     ///     let mut secrets_manager = SecretsManager::new(options)?;
+    ///
+    ///     // IMPORTANT: the one-time token is redeemed on the FIRST network call.
+    ///     // After this line the storage is fully bound (appKey + appOwnerPublicKey
+    ///     // are written) and safe to persist to an external store.
+    ///     secrets_manager.get_secrets(vec![])?;
+    ///
     ///     Ok(())
     /// }
     /// ```
-    pub fn new(client_options: ClientOptions) -> Result<Self, KSMRError> {
+    ///
+    /// # Arguments
+    ///
+    /// * `client_options` - Configuration options including token, storage backend, hostname, and cache settings
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, KSMRError>` - Initialised `SecretsManager` instance or an error
+    ///
+    /// # Errors
+    ///
+    /// * `SecretManagerCreationError` - If initialisation fails (invalid token, storage error, missing config)
+    pub fn new(mut client_options: ClientOptions) -> Result<Self, KSMRError> {
         let mut secrets_manager = SecretsManager {
             token: String::new(),
             hostname: String::new(),
@@ -265,6 +449,7 @@ impl SecretsManager {
             cache: KSMCache::None,
             proxy_url: client_options.proxy_url.clone(),
             custom_post_function: client_options.custom_post_function,
+            custom_sleep_function: None,
             http_client: None, // built after SSL/proxy config is resolved
         };
 
@@ -303,6 +488,29 @@ impl SecretsManager {
                         KSMRError::SecretManagerCreationError("Hostname is required".to_owned())
                     })?
                     .clone();
+            } else if token_parts[0].to_uppercase() == "IL5" && token_parts.len() == 4 {
+                // Layer 2: 4-segment IL5 OTT — IL5:clientKey:keyId:serverPublicKeyBase64
+                let il5_client_key = token_parts[1];
+                let il5_key_id = token_parts[2];
+                let il5_public_key = token_parts[3];
+                if il5_client_key.is_empty() || il5_key_id.is_empty() || il5_public_key.is_empty() {
+                    return Err(KSMRError::SecretManagerCreationError(
+                        "IL5 token segments must not be empty".to_owned(),
+                    ));
+                }
+                url_safe_str_to_bytes(il5_public_key).map_err(|_| {
+                    KSMRError::SecretManagerCreationError(
+                        "IL5 token serverPublicKey segment is not valid base64".to_owned(),
+                    )
+                })?;
+                let keeper_servers = get_keeper_servers();
+                secrets_manager.hostname = keeper_servers
+                    .get("IL5")
+                    .map(|h| h.to_string())
+                    .unwrap_or_else(|| "il5.keepersecurity.us".to_string());
+                secrets_manager.token = il5_client_key.to_string();
+                client_options.server_public_key = Some(il5_public_key.to_string());
+                client_options.server_public_key_id = Some(il5_key_id.to_string());
             } else {
                 let token_host_key = token_parts[0].to_uppercase();
                 let keeper_servers = get_keeper_servers();
@@ -362,6 +570,28 @@ impl SecretsManager {
                 })?;
         }
 
+        // Layer 3: programmatic key injection (takes precedence over token-derived values)
+        if let Some(ref spk) = client_options.server_public_key {
+            config
+                .set(ConfigKeys::KeyServerPublicKey, spk.clone())
+                .map_err(|e| {
+                    KSMRError::SecretManagerCreationError(format!(
+                        "Error setting server public key in config: {}",
+                        e
+                    ))
+                })?;
+        }
+        if let Some(ref spk_id) = client_options.server_public_key_id {
+            config
+                .set(ConfigKeys::KeyServerPublicKeyId, spk_id.clone())
+                .map_err(|e| {
+                    KSMRError::SecretManagerCreationError(format!(
+                        "Error setting server public key id in config: {}",
+                        e
+                    ))
+                })?;
+        }
+
         info!("Initializing SecretsManager and values are set");
 
         let server_public_key_id: Option<String> =
@@ -372,6 +602,11 @@ impl SecretsManager {
                 ))
             })?;
         let keeper_public_keys = get_keeper_public_keys();
+        let has_custom_public_key = config
+            .get(ConfigKeys::KeyServerPublicKey)
+            .ok()
+            .flatten()
+            .is_some();
         if server_public_key_id.is_none() {
             debug!("Setting public key id to the default: {}", DEFAULT_KEY_ID);
             config
@@ -383,7 +618,7 @@ impl SecretsManager {
                     ))
                 })?;
         } else if let Some(key_id) = &server_public_key_id {
-            if !keeper_public_keys.contains_key(key_id.as_str()) {
+            if !keeper_public_keys.contains_key(key_id.as_str()) && !has_custom_public_key {
                 debug!(
                     "Public key id {} does not exists, set to default : {}",
                     key_id, DEFAULT_KEY_ID
@@ -656,18 +891,27 @@ impl SecretsManager {
         Ok(current_secret_key)
     }
 
-    pub fn generate_transmission_key(key_id: &str) -> Result<TransmissionKey, KSMRError> {
+    pub fn generate_transmission_key(
+        key_id: &str,
+        custom_public_key_b64: Option<&str>,
+    ) -> Result<TransmissionKey, KSMRError> {
         let transmission_key = generate_random_bytes(32);
-        let keeper_public_keys = get_keeper_public_keys();
-        if !keeper_public_keys.contains_key(key_id) {
-            return Err(KSMRError::SecretManagerCreationError(format!(
-                "Public key not found for key id: {}",
-                key_id
-            )));
-        }
-
-        let server_public_key = keeper_public_keys.get(key_id).unwrap();
-        let server_public_key_raw_key_bytes = url_safe_str_to_bytes(server_public_key).unwrap();
+        let server_public_key_b64 = if let Some(custom_key) = custom_public_key_b64 {
+            custom_key.to_string()
+        } else {
+            let keeper_public_keys = get_keeper_public_keys();
+            if !keeper_public_keys.contains_key(key_id) {
+                return Err(KSMRError::SecretManagerCreationError(format!(
+                    "Public key not found for key id: {}",
+                    key_id
+                )));
+            }
+            keeper_public_keys.get(key_id).unwrap().clone()
+        };
+        let server_public_key_raw_key_bytes = url_safe_str_to_bytes(&server_public_key_b64)
+            .map_err(|e| {
+                KSMRError::CryptoError(format!("Failed to decode server public key: {}", e))
+            })?;
         let encrypted_key =
             CryptoUtils::public_encrypt(&transmission_key, &server_public_key_raw_key_bytes, None)?;
 
@@ -750,7 +994,7 @@ impl SecretsManager {
         Ok(proxy)
     }
 
-    /// `_verify_ssl_certificates` is accepted for API compatibility but ignored since KSM-926;
+    /// `_verify_ssl_certificates` is accepted for API compatibility but ignored;
     /// TLS verification is controlled by `verify_ssl_certs` set in `SecretsManager::new()`.
     pub fn post_function(
         self,
@@ -879,7 +1123,7 @@ impl SecretsManager {
     }
 
     fn handle_http_error(
-        mut self,
+        &mut self,
         status_code: u16,
         response: Option<String>,
     ) -> Result<bool, KSMRError> {
@@ -963,8 +1207,23 @@ impl SecretsManager {
             if let Some(key_id) = key_id_str {
                 info!("Server has requested we use public key {}", key_id);
                 let keeper_public_keys = get_keeper_public_keys();
+                let has_custom_key = self
+                    .config
+                    .get(ConfigKeys::KeyServerPublicKey)
+                    .ok()
+                    .flatten()
+                    .is_some();
                 if key_id.is_empty() {
                     msg = "The public key is blank from the server".to_string();
+                } else if has_custom_key {
+                    // Custom key mode (IL5/isolated): ignore server-pushed key rotation to prevent
+                    // the server overwriting our injected key with a standard one. Retry as-is.
+                    info!(
+                        "Custom key mode: suppressing server key rotation hint (key_id={})",
+                        key_id
+                    );
+                    _retry = true;
+                    return Ok(_retry);
                 } else if keeper_public_keys.contains_key(&key_id) {
                     let _ = self
                         .config
@@ -1064,6 +1323,15 @@ impl SecretsManager {
         Ok(ksp)
     }
 
+    /// Override the sleep used between throttle retries (primarily for tests/mocking). When
+    /// unset, `std::thread::sleep` is used. Accepts any `Fn(Duration) + Send + Sync + 'static`.
+    pub fn set_custom_sleep_function<F>(&mut self, f: F)
+    where
+        F: Fn(Duration) + Send + Sync + 'static,
+    {
+        self.custom_sleep_function = Some(std::sync::Arc::new(f));
+    }
+
     fn post_query(&mut self, path: String, payload: &dyn Payload) -> Result<Vec<u8>, KSMRError> {
         let keeper_server = get_servers(self.hostname.clone(), self.config.clone())
             .map_err(|e| KSMRError::StorageError(e.to_string()))?;
@@ -1072,6 +1340,10 @@ impl SecretsManager {
         let mut keeper_response: KsmHttpResponse;
         let mut transmission_key: TransmissionKey;
         let mut retry = true;
+        // Cloned once so the throttle sleeper can be invoked without borrowing `self` across
+        // the later `&mut self` call to `handle_http_error`.
+        let throttle_sleeper = self.custom_sleep_function.clone();
+        let mut throttle_attempt: u32 = 0;
         while retry {
             let transmission_key_id = self
                 .config
@@ -1081,9 +1353,17 @@ impl SecretsManager {
                     "Error finding public key id in storage".to_string(),
                 ))?;
 
-            transmission_key =
-                SecretsManager::generate_transmission_key(transmission_key_id.as_str())
-                    .map_err(|e| KSMRError::SecretManagerCreationError(e.to_string()))?;
+            let custom_key = self
+                .config
+                .get(ConfigKeys::KeyServerPublicKey)
+                .ok()
+                .flatten();
+
+            transmission_key = SecretsManager::generate_transmission_key(
+                transmission_key_id.as_str(),
+                custom_key.as_deref(),
+            )
+            .map_err(|e| KSMRError::SecretManagerCreationError(e.to_string()))?;
 
             let encrypted_payload_and_signature = Self::encrypt_and_sign_payload(
                 self.config.clone(),
@@ -1119,10 +1399,46 @@ impl SecretsManager {
                 return Ok(keeper_result);
             }
 
+            // Throttle retry with exponential backoff + jitter. Detected
+            // before handle_http_error so the existing key-rotation retry path is untouched.
+            // Gated on the 403 status so a non-403 response carrying a {"error":"throttled"}
+            // body is not mistaken for a throttle and retried.
+            if keeper_response.status_code == 403 {
+                if let Some(retry_after) = parse_throttle(keeper_response.http_response.as_deref())
+                {
+                    if throttle_attempt >= MAX_THROTTLE_RETRIES {
+                        error!(
+                            "Request throttled; exhausted {} retries",
+                            MAX_THROTTLE_RETRIES
+                        );
+                        return Err(KSMRError::Throttled(format!(
+                            "Request throttled by Keeper backend; exhausted {} retries",
+                            MAX_THROTTLE_RETRIES
+                        )));
+                    }
+                    let delay = throttle_delay(throttle_attempt, retry_after, throttle_jitter());
+                    warn!(
+                        "Request throttled (attempt {}/{}); retrying in {:.1}s",
+                        throttle_attempt + 1,
+                        MAX_THROTTLE_RETRIES,
+                        delay.as_secs_f64()
+                    );
+                    match &throttle_sleeper {
+                        Some(sleeper) => sleeper(delay),
+                        None => std::thread::sleep(delay),
+                    }
+                    throttle_attempt += 1;
+                    continue;
+                }
+            }
+
             // Handle the error. Handling will throw an exception if it doesn't want us to retry.
-            let handle_error_result: bool = self
-                .clone()
-                .handle_http_error(keeper_response.status_code, keeper_response.http_response)?;
+            // Must borrow &mut self (not self.clone()) so a server-requested key
+            // rotation (`result_code: "key"`) persists KeyServerPublicKeyId on the
+            // real config; cloning here discarded the update and looped forever
+            // against any data center whose active key != DEFAULT_KEY_ID.
+            let handle_error_result: bool =
+                self.handle_http_error(keeper_response.status_code, keeper_response.http_response)?;
             retry = handle_error_result
         }
         Err(KSMRError::SecretManagerCreationError(
@@ -1972,10 +2288,11 @@ impl SecretsManager {
     /// * `CryptoError` - If encryption fails
     pub fn update_folder(
         &mut self,
-        folder_uid: String,
+        folder_uid: impl AsRef<str>,
         folder_name: String,
         folders: Vec<KeeperFolder>,
     ) -> Result<String, KSMRError> {
+        let folder_uid = folder_uid.as_ref();
         let folders_copy = match folders.is_empty() {
             true => self.get_folders()?,
             false => folders,
@@ -1997,7 +2314,7 @@ impl SecretsManager {
         };
 
         let update_payload = self.prepare_update_payload(
-            folder_uid.clone(),
+            folder_uid.to_string(),
             folder_name.clone(),
             folder_key.clone(),
         )?;
@@ -2474,7 +2791,7 @@ impl SecretsManager {
     /// ```
     pub fn complete_transaction(
         &mut self,
-        record_uid: String,
+        record_uid: impl Into<String>,
         rollback: bool,
     ) -> Result<(), KSMRError> {
         let endpoint = if rollback {
@@ -2483,7 +2800,8 @@ impl SecretsManager {
             "finalize_secret_update"
         };
 
-        let payload = Self::prepare_complete_transaction_payload(self.config.clone(), record_uid)?;
+        let payload =
+            Self::prepare_complete_transaction_payload(self.config.clone(), record_uid.into())?;
 
         let _result = self.post_query(endpoint.to_string(), &payload)?;
         Ok(())
@@ -2812,14 +3130,14 @@ impl SecretsManager {
     /// * `SerializationError` - If record data is invalid
     pub fn create_secret(
         &mut self,
-        parent_folder_uid: String,
+        parent_folder_uid: impl AsRef<str>,
         record_create_object: RecordCreate,
     ) -> Result<String, KSMRError> {
         let record_json_str = record_create_object.to_json()?;
 
         let folders = self.get_folders()?;
 
-        let mut parent_uid = parent_folder_uid.clone();
+        let mut parent_uid = parent_folder_uid.as_ref().to_string();
         let mut sub_folder_uid: Option<String> = None;
         let mut shared_folder: Option<&KeeperFolder> = None;
 
@@ -2844,7 +3162,7 @@ impl SecretsManager {
             None => {
                 return Err(KSMRError::SecretManagerCreationError(format!(
                     "Could not find a shared folder in the ancestry of folder uid '{}'.",
-                    parent_folder_uid
+                    parent_folder_uid.as_ref()
                 )))
             }
         };
@@ -2938,7 +3256,7 @@ impl SecretsManager {
     }
 
     pub fn try_get_notation_results(&mut self, notation: &str) -> Result<Vec<String>, KSMRError> {
-        let tried_results = self.get_notation_result(notation.to_string());
+        let tried_results = self.get_notation_result(notation);
         let results = match tried_results {
             Ok(results) => results,
             Err(err) => {
@@ -2978,8 +3296,8 @@ impl SecretsManager {
     ///     Ok(())
     /// }
     /// ```
-    pub fn get_notation(&mut self, url: String) -> Result<serde_json::Value, KSMRError> {
-        let result = self._get_notation(url)?;
+    pub fn get_notation(&mut self, url: impl AsRef<str>) -> Result<serde_json::Value, KSMRError> {
+        let result = self._get_notation(url.as_ref())?;
         match &result {
             serde_json::Value::String(s) => {
                 // Try to parse as JSON, otherwise return as string
@@ -3008,7 +3326,7 @@ impl SecretsManager {
         }
     }
 
-    fn _get_notation(&mut self, url: String) -> Result<serde_json::Value, KSMRError> {
+    fn _get_notation(&mut self, url: &str) -> Result<serde_json::Value, KSMRError> {
         let values = self.get_notation_result(url)?;
         if values.len() == 1 {
             Ok(serde_json::Value::String(values[0].clone()))
@@ -3391,9 +3709,13 @@ impl SecretsManager {
         Ok(vec![prefix, record, selector, footer])
     }
 
-    pub fn get_notation_result(&mut self, notation: String) -> Result<Vec<String>, KSMRError> {
+    pub fn get_notation_result(
+        &mut self,
+        notation: impl AsRef<str>,
+    ) -> Result<Vec<String>, KSMRError> {
+        let notation = notation.as_ref();
         let mut result = Vec::new();
-        let parsed = SecretsManager::parse_notation(&notation, false)
+        let parsed = SecretsManager::parse_notation(notation, false)
             .map_err(|e| KSMRError::NotationError(e.to_string()))?;
 
         if parsed.len() < 3 {
@@ -3773,5 +4095,141 @@ impl NotationSection {
             index1: None,
             index2: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod key_rotation_regression {
+    use super::*;
+    use crate::config_keys::ConfigKeys;
+    use crate::enums::KvStoreType;
+    use crate::storage::{InMemoryKeyValueStorage, KeyValueStorage};
+
+    /// Build a minimally "already bound" SecretsManager without any network
+    /// or live keypair: a non-empty `clientId` plus an empty token makes
+    /// `_init` take the already-bound early-return path. Enough to exercise
+    /// `handle_http_error`, which needs only the config.
+    fn bound_sm(server_key_id: &str) -> SecretsManager {
+        let json =
+            format!(r#"{{"clientId":"dGVzdENsaWVudElk","serverPublicKeyId":"{server_key_id}"}}"#);
+        let storage = InMemoryKeyValueStorage::new(Some(json)).unwrap();
+        let opts = ClientOptions::new_client_options(KvStoreType::InMemory(storage));
+        SecretsManager::new(opts).unwrap()
+    }
+
+    /// Regression: a server key-rotation response (`error: "key"`) must
+    /// persist the server-requested `serverPublicKeyId` on the live config.
+    ///
+    /// Previously `post_query` invoked `self.clone().handle_http_error(...)`,
+    /// so the rotation was written to a discarded clone. `post_query`'s
+    /// `while retry` loop then re-read the original (default) key id every
+    /// iteration and looped forever against any data center whose active
+    /// transmission key id != DEFAULT_KEY_ID (e.g. a token whose region
+    /// expects key 9 while the default is 10).
+    #[test]
+    fn key_rotation_persists_on_live_config() {
+        let mut sm = bound_sm("10");
+        assert_eq!(
+            sm.config
+                .get(ConfigKeys::KeyServerPublicKeyId)
+                .unwrap()
+                .as_deref(),
+            Some("10"),
+            "precondition: starts on the default key id"
+        );
+
+        let body = r#"{"key_id":9,"error":"key","message":"invalid key id"}"#.to_string();
+        let retry = sm
+            .handle_http_error(401, Some(body))
+            .expect("a key-rotation response should request a retry");
+
+        assert!(retry, "server key error must request a retry");
+        assert_eq!(
+            sm.config
+                .get(ConfigKeys::KeyServerPublicKeyId)
+                .unwrap()
+                .as_deref(),
+            Some("9"),
+            "rotated key id must persist on the live config (not a clone)"
+        );
+    }
+
+    /// A non-rotation error must NOT request a retry (guards against turning
+    /// every error into a retry loop).
+    #[test]
+    fn non_key_error_does_not_retry() {
+        let mut sm = bound_sm("10");
+        let body = r#"{"error":"access_denied","message":"nope"}"#.to_string();
+        let result = sm.handle_http_error(403, Some(body));
+        assert!(
+            result.is_err(),
+            "a non-key error should surface as an error, not a retry"
+        );
+    }
+}
+
+#[cfg(test)]
+mod throttle_unit {
+    use super::{parse_throttle, throttle_delay};
+
+    // throttle_delay with zero jitter yields the exact exponential sequence.
+    #[test]
+    fn delay_exponential_sequence_no_jitter() {
+        let expected = [11.0, 22.0, 44.0, 88.0, 176.0];
+        for (attempt, want) in expected.iter().enumerate() {
+            let got = throttle_delay(attempt as u32, 0.0, 0.0).as_secs_f64();
+            assert!(
+                (got - want).abs() < 1e-9,
+                "attempt {attempt}: got {got}, want {want}"
+            );
+        }
+    }
+
+    // retry_after (> 0) takes precedence over the exponential backoff.
+    #[test]
+    fn delay_retry_after_precedence() {
+        assert!((throttle_delay(3, 7.0, 0.0).as_secs_f64() - 7.0).abs() < 1e-9);
+    }
+
+    // A non-positive retry_after is ignored in favor of exponential backoff.
+    #[test]
+    fn delay_non_positive_retry_after_ignored() {
+        assert!((throttle_delay(0, 0.0, 0.0).as_secs_f64() - 11.0).abs() < 1e-9);
+        assert!((throttle_delay(1, -5.0, 0.0).as_secs_f64() - 22.0).abs() < 1e-9);
+    }
+
+    // +/-25% jitter keeps the first delay within [8.25, 13.75] (still > the 10s TTL at +0%).
+    #[test]
+    fn delay_jitter_bounds() {
+        assert!((throttle_delay(0, 0.0, -0.25).as_secs_f64() - 8.25).abs() < 1e-9);
+        assert!((throttle_delay(0, 0.0, 0.25).as_secs_f64() - 13.75).abs() < 1e-9);
+    }
+
+    #[test]
+    fn parse_throttle_table() {
+        // throttled via "error"
+        assert_eq!(parse_throttle(Some(r#"{"error":"throttled"}"#)), Some(0.0));
+        // throttled via "result_code" with numeric retry_after
+        assert_eq!(
+            parse_throttle(Some(r#"{"result_code":"throttled","retry_after":5}"#)),
+            Some(5.0)
+        );
+        // string retry_after is parsed
+        assert_eq!(
+            parse_throttle(Some(r#"{"error":"throttled","retry_after":"3"}"#)),
+            Some(3.0)
+        );
+        // negative retry_after is clamped to 0
+        assert_eq!(
+            parse_throttle(Some(r#"{"error":"throttled","retry_after":-2}"#)),
+            Some(0.0)
+        );
+        // other error -> not throttled
+        assert_eq!(parse_throttle(Some(r#"{"error":"key"}"#)), None);
+        // non-JSON -> not throttled
+        assert_eq!(parse_throttle(Some("not json")), None);
+        // empty / none -> not throttled
+        assert_eq!(parse_throttle(Some("")), None);
+        assert_eq!(parse_throttle(None), None);
     }
 }

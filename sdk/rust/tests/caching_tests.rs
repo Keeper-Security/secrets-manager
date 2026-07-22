@@ -450,7 +450,7 @@ mod caching_tests {
 
         let post_fn = make_caching_post_function(client);
 
-        let rt = tokio::runtime::Builder::new_multi_thread()
+        let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("build tokio runtime");

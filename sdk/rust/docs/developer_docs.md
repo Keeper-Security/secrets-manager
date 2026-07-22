@@ -276,9 +276,8 @@ the value or values of the field.  It will be a single value only if the `singl
     let client_options = ClientOptions::new_client_options(config);
     let mut secrets_manager = SecretsManager::new(client_options)?;
 
-    // get all secrets matching the notation
-    let mut notation = "HDQTnxkTcPSOsHNAlbI4aQ/field/login".to_string();
-    let mut result = secrets_manager.get_notation(notation)?;
+    // get all secrets matching the notation (accepts &str or String as of v17.3.0)
+    let mut result = secrets_manager.get_notation("HDQTnxkTcPSOsHNAlbI4aQ/field/login")?;
 ```
   
 

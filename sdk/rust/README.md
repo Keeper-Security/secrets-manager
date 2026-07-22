@@ -20,7 +20,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-keeper-secrets-manager-core = "17.2.0"
+keeper-secrets-manager-core = "17.3.0"
 ```
 
 ## Quick Start
@@ -127,12 +127,32 @@ let query = QueryOptions::with_links(
 
 let secrets = secrets_manager.get_secrets_with_options(query)?;
 
-// Access linked records
-for secret in secrets {
-    if !secret.links.is_empty() {
-        println!("{} has {} linked records", secret.title, secret.links.len());
+// Access linked records via the typed accessor (v17.3.0+)
+for secret in &secrets {
+    for link in secret.get_links() {
+        println!(
+            "{} -> {} (admin={}, rotation={})",
+            secret.title,
+            link.record_uid,
+            link.is_admin_user(),
+            link.allows_rotation(), // reads top-level keys and the nested allowedSettings
+        );
+
+        // "meta" self-links carry the record's own PAM settings as plain JSON
+        if let Some(meta) = link.get_meta_data(None) {
+            println!("  meta: {meta:?}, allowed: {:?}", link.get_allowed_settings());
+        }
+
+        // ai_settings / jit_settings link data is decrypted with the record key
+        if let Some(settings) = link.get_ai_settings_data(&secret.record_key_bytes) {
+            println!("  ai_settings: {settings:?}");
+        }
     }
 }
+
+// The raw `secret.links` field (Vec<HashMap<String, Value>>) remains available for
+// backward compatibility, and each typed link keeps its untouched original entry
+// in `link.raw`.
 ```
 
 ## Accessing Field Values
