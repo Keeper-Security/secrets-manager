@@ -1,0 +1,43 @@
+name: Test Python Storage - Oracle KMS
+
+on:
+  push:
+    branches:
+      - 'release/storage/python/oracle-kms/**'
+    paths:
+      - 'sdk/python/storage/keeper_secrets_manager_storage_oracle_kms/**'
+      - '.github/workflows/test.python.storage.oracle.kms.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'sdk/python/storage/keeper_secrets_manager_storage_oracle_kms/**'
+      - '.github/workflows/test.python.storage.oracle.kms.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: ./sdk/python/storage/keeper_secrets_manager_storage_oracle_kms
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt pytest pytest-cov
+          python3 -m pip install -e .
+      - name: Run tests
+        run: pytest tests/
