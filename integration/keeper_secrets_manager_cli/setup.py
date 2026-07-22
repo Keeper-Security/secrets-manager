@@ -9,7 +9,7 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 
 install_requires = [
     'pip>=24.3.1',
-    'keeper-secrets-manager-core>=17.2.0',
+    'keeper-secrets-manager-core>=17.3.0',
     'keeper-secrets-manager-helper>=1.1.0',
     'keeper-secrets-manager-storage>=1.0.2',
     'prompt-toolkit>=3.0',
@@ -33,7 +33,7 @@ extras_require = {
 # Version set in the keeper_secrets_manager_cli.version file.
 setup(
     name="keeper-secrets-manager-cli",
-    version="1.3.0",
+    version="1.4.0",
     description="Command line tool for Keeper Secrets Manager",
     long_description=long_description,
     long_description_content_type="text/markdown",

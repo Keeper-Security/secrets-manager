@@ -6,6 +6,15 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change History
 
+## 1.4.0
+- **Fix**: KSM-975 - Binary install keyring warning gave pip install advice that does not apply to a frozen binary; bracket syntax in the pip advice also caused zsh glob errors. Now detects `sys.frozen` to show binary-appropriate help text and single-quotes the bracket expression for zsh compatibility.
+- **Fix**: KSM-1014 - The frozen-binary keyring-unavailable warning told users to download a non-existent `-keyring` version of the binary. Keyring ships as the selectable "OS Keyring Support" component inside the single installer on every OS, so the warning now directs users to re-run the installer and enable that component.
+- **Fix**: KSM-980 - Binary install created `keeper.ini` in the current working directory instead of the user's home directory. Now detects `sys.frozen` in `Config.get_default_ini_file()` and uses `$HOME`/`%USERPROFILE%` for binary installs, matching the existing `launched_from_app` behaviour.
+- **Fix**: KSM-981 - `ksm secret get` did not surface linked records (PAM credential records were invisible). Now passes `request_links=True` to the server so linked record UIDs are returned, includes a `links` array in JSON output, and shows a Links table in text output.
+- **Fix**: KSM-1015 - links output made interpretable. Each link entry in JSON output gains a `decoded` object (plain link data parsed; `ai_settings`/`jit_settings` decrypted with the record key via the SDK's `KeeperRecordLink`), while the raw `recordUid`/`data`/`path` fields are preserved untouched. The text Links table now shows three columns - Linked Record UID (self-links labeled `(self)`), Path, and decoded Link Data - so PAM `meta` settings and AI/JIT configuration are distinguishable from links to other records. Requires keeper-secrets-manager-core >= 17.3.0.
+- **Fix**: KSM-1003 - Binary install wrote `ksm_cache.bin` to the current working directory when caching was enabled (sibling to KSM-980). The CLI now sets `KSM_CACHE_DIR` to the same directory it resolves for `keeper.ini` before loading the SDK core, so the cache co-locates with the ini in `$HOME`/`%USERPROFILE%` for binary installs; pip/source installs are unchanged.
+- **Fix**: KSM-1005 - `ksm shell` crashed on launch (`UpdateChecker.check() takes 1 positional argument but 3 were given`) on any fresh install after the `update-checker` 1.0.0 release made `check()` keyword-only. The CLI now calls it with keyword arguments (compatible with both 0.18.0 and 1.0.0, no version pin needed), and the `shell` startup update check is wrapped in try/except so a failed update check can never block the shell from starting.
+
 ## 1.3.0
 - **Feature**: KSM-800 - OS-native keyring storage for CLI configuration
   - New profiles store configuration in the OS keyring by default (macOS Keychain, Windows Credential Manager, Linux Secret Service)

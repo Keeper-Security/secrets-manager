@@ -305,7 +305,15 @@ class Profile:
         if not use_keyring and not use_config_file and ini_file is None:
             logger.debug("Keyring not available, falling back to INI file storage")
             print(Fore.YELLOW + "Warning: Keyring not available, using keeper.ini file instead" + Style.RESET_ALL, file=sys.stderr)
-            print(Fore.YELLOW + "Warning: For better security, install: pip install keeper-secrets-manager-cli[keyring]" + Style.RESET_ALL, file=sys.stderr)
+            if getattr(sys, 'frozen', False):
+                # Running from a standalone binary install — pip is not applicable.
+                # Keyring ships as the selectable "OS Keyring Support" component in
+                # the installer (every OS); there is no separate "-keyring" binary.
+                print(Fore.YELLOW + "Warning: For keyring support, re-run the installer and enable the 'OS Keyring Support' component." + Style.RESET_ALL, file=sys.stderr)
+            else:
+                # Running from pip install — quote the package name for zsh compatibility
+                # (unquoted [] is a glob pattern in zsh and causes "no matches found").
+                print(Fore.YELLOW + "Warning: For better security, install: pip install 'keeper-secrets-manager-cli[keyring]'" + Style.RESET_ALL, file=sys.stderr)
             use_config_file = True
             ini_file = Config.get_default_ini_file(launched_from_app)
 

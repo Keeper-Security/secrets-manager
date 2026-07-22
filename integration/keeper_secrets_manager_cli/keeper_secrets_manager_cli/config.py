@@ -17,6 +17,7 @@ import json
 import logging
 import platform
 import os
+import sys
 
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.keeper_globals import logger_name
@@ -82,7 +83,7 @@ class Config:
 
         # If launched from an application, the current working directory
         # might not be writeable. Use the user's "HOME" directory.
-        if launched_from_app is True:
+        if launched_from_app is True or getattr(sys, 'frozen', False):
             if Config.is_windows() is True:
                 working_directory = os.environ["USERPROFILE"]
             else:
