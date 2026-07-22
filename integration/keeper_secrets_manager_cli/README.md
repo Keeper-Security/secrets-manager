@@ -14,6 +14,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - **Fix**: KSM-1018 - The macOS installer crashed on every `ksm` command (`ImportError: Symbol not found: _SSL_get0_group_name`) because the bundled `libssl.3.dylib` predated OpenSSL 3.2.0, which `cryptography` now requires. Both x64 and arm64 macOS builds now bundle an up-to-date libssl, and the `cryptography` version pin used as a stopgap is no longer needed.
 - **Fix**: KSM-1105 - Windows installer's post-install launch of `ksm.exe` was blocked by endpoint security (EDR/AV) because InnoSetup's extracted Setup engine parent process in `%TEMP%` was unsigned. The post-install launch no longer trips endpoint security.
 - **Fix**: KSM-1106 - macOS PKG installer ignored the Keyring and Cloud Sync component checkboxes in GUI mode, always installing both regardless of what the user selected. The installer now respects the selected components.
+- **Fix**: KSM-1116 - Windows installer placed the CLI in `Program Files (x86)` on 64-bit systems instead of `Program Files`. The installer now correctly targets the 64-bit program directory.
 
 ## 1.4.0
 - **Fix**: KSM-975 - Binary install keyring warning gave pip install advice that does not apply to a frozen binary; bracket syntax in the pip advice also caused zsh glob errors. Now detects `sys.frozen` to show binary-appropriate help text and single-quotes the bracket expression for zsh compatibility.
