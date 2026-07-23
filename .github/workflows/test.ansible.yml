@@ -3,6 +3,10 @@ name: Test-Ansible
 on:
   pull_request:
     branches: [ master ]
+    paths:
+      - 'integration/keeper_secrets_manager_ansible/**'
+      - 'sdk/python/core/**'
+      - '.github/workflows/test.ansible.yml'
 
 jobs:
   test-ansible:
