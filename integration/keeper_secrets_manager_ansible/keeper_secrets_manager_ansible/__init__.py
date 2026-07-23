@@ -21,8 +21,6 @@ import json
 import random
 from enum import Enum
 import traceback
-import pickle
-import io
 import base64
 import socket
 
@@ -37,6 +35,8 @@ else:
     from keeper_secrets_manager_core.core import KSMCache, CreateOptions
     from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
     from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password, strtobool
+    from keeper_secrets_manager_core.dto.dtos import Record, KeeperFile
+    from keeper_secrets_manager_core import utils as ksm_utils
 
     # If keeper_secrets_manager_core is installed, then these will be installed. They are deps.
     from cryptography.fernet import Fernet
@@ -306,16 +306,130 @@ class KeeperAnsible:
 
         return base64.urlsafe_b64encode(kdf.derive(cache_secret.encode()))
 
-    def encrypt(self, data):
+    @staticmethod
+    def _serialize_records(records):
+        """Serialize Record objects to JSON-safe dicts for the encrypted cache.
 
+        Uses JSON instead of pickle to avoid insecure deserialization (CWE-502 / VM-1452).
+        """
+        if isinstance(records, list) is False:
+            records = [records]
+
+        serialized = []
+        for record in records:
+            record_key_bytes = getattr(record, "record_key_bytes", None)
+            if record_key_bytes is None:
+                raise ValueError("Cannot serialize cache record without record_key_bytes.")
+            if isinstance(record_key_bytes, bytes) is False:
+                raise ValueError("record_key_bytes must be bytes for cache serialization.")
+
+            files = []
+            for keeper_file in getattr(record, "files", None) or []:
+                file_desc = getattr(keeper_file, "f", None)
+                if file_desc is not None:
+                    files.append(file_desc)
+
+            record_dict = getattr(record, "dict", None)
+            if record_dict is None:
+                raise ValueError("Cannot serialize cache record without dict.")
+
+            serialized.append({
+                "uid": record.uid,
+                "title": record.title,
+                "type": getattr(record, "type", None) or "",
+                "dict": record_dict,
+                "raw_json": getattr(record, "raw_json", None),
+                "record_key_bytes": base64.b64encode(record_key_bytes).decode("ascii"),
+                "folder_uid": getattr(record, "folder_uid", "") or "",
+                "inner_folder_uid": getattr(record, "inner_folder_uid", "") or "",
+                "revision": getattr(record, "revision", None),
+                "is_editable": getattr(record, "is_editable", None),
+                "password": getattr(record, "password", None),
+                "links": getattr(record, "links", None) or [],
+                "files": files,
+            })
+        return serialized
+
+    @staticmethod
+    def _deserialize_records(payload):
+        """Rebuild Record objects from JSON cache payload."""
+        if isinstance(payload, list) is False:
+            raise ValueError(
+                "Unable to deserialize the record cache. Expected a list of records. "
+                "Regenerate the cache with keeper_cache_records."
+            )
+
+        records = []
+        required_keys = ("uid", "title", "dict", "record_key_bytes")
+        for item in payload:
+            if isinstance(item, dict) is False:
+                raise ValueError(
+                    "Unable to deserialize the record cache. Invalid record entry. "
+                    "Regenerate the cache with keeper_cache_records."
+                )
+            for key in required_keys:
+                if key not in item:
+                    raise ValueError(
+                        "Unable to deserialize the record cache. Missing required fields. "
+                        "Regenerate the cache with keeper_cache_records."
+                    )
+
+            try:
+                record_key_bytes = base64.b64decode(item["record_key_bytes"])
+            except Exception as err:
+                raise ValueError(
+                    "Unable to deserialize the record cache. Invalid record key encoding. "
+                    "Regenerate the cache with keeper_cache_records."
+                ) from err
+
+            record = Record.__new__(Record)
+            record.uid = item["uid"]
+            record.title = item["title"]
+            record.type = item.get("type") or ""
+            record.dict = item["dict"]
+            record.raw_json = item.get("raw_json")
+            if record.raw_json is None and record.dict is not None:
+                record.raw_json = ksm_utils.dict_to_json(record.dict)
+            record.record_key_bytes = record_key_bytes
+            record.folder_uid = item.get("folder_uid") or ""
+            record.inner_folder_uid = item.get("inner_folder_uid") or ""
+            record.revision = item.get("revision")
+            record.is_editable = item.get("is_editable")
+            record.password = item.get("password")
+            record.links = item.get("links") or []
+            record.files = []
+            for file_desc in item.get("files") or []:
+                if isinstance(file_desc, dict) is False:
+                    raise ValueError(
+                        "Unable to deserialize the record cache. Invalid file entry. "
+                        "Regenerate the cache with keeper_cache_records."
+                    )
+                record.files.append(KeeperFile(file_desc, record_key_bytes))
+            records.append(record)
+        return records
+
+    def encrypt(self, data):
         secret_key = self.get_encryption_key()
-        record_fh = io.BytesIO()
-        pickle.dump(data, record_fh)
-        return Fernet(secret_key).encrypt(record_fh.getvalue())
+        json_bytes = json.dumps(self._serialize_records(data)).encode("utf-8")
+        return Fernet(secret_key).encrypt(json_bytes)
 
     def decrypt(self, ciphertext):
         secret_key = self.get_encryption_key()
-        return pickle.loads(Fernet(secret_key).decrypt(ciphertext))
+        try:
+            plaintext = Fernet(secret_key).decrypt(ciphertext)
+        except Exception as err:
+            raise ValueError(
+                "Unable to decrypt the record cache. Check keeper_record_cache_secret "
+                "or regenerate the cache with keeper_cache_records."
+            ) from err
+        try:
+            payload = json.loads(plaintext.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as err:
+            raise ValueError(
+                "Unable to deserialize the record cache. The cache may be from an older "
+                "plugin version or is invalid. Regenerate the cache with keeper_cache_records."
+            ) from err
+        return self._deserialize_records(payload)
 
     @staticmethod
     def convert_records_into_dict(records):
