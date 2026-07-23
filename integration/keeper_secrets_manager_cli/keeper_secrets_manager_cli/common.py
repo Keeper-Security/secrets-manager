@@ -35,13 +35,13 @@ def find_ksm_path(find_path, is_file=True):
         [os.environ.get("HOME", not_set), ".config", "ksm"],
 
         [os.environ.get("HOME", not_set), ".keeper"],
-        ["etc"],
-        ["etc", "ksm"],
-        ["etc", "keeper"],
+        ["/etc"],
+        ["/etc", "ksm"],
+        ["/etc", "keeper"],
 
         # Windows
         [os.environ.get("USERPROFILE", not_set)],
-        [os.environ.get("APPDIR", not_set)],
+        [os.environ.get("APPDATA", not_set), "Keeper"],
         [os.environ.get("PROGRAMDATA", not_set), "Keeper"],
         [os.environ.get("PROGRAMFILES", not_set), "Keeper"],
     ]

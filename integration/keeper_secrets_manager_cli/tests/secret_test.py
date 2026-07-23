@@ -853,8 +853,7 @@ class SecretTest(unittest.TestCase):
 
     def test_custom_fields_json_key(self):
 
-        """Regression test for KSM-820: JSON output must use 'custom' key, not 'custom_fields'.
-        """
+        """Regression test: JSON output must use 'custom' key, not 'custom_fields'."""
 
         mock_config = MockConfig.make_config()
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
@@ -1099,6 +1098,36 @@ class SecretTest(unittest.TestCase):
             self.assertTrue(lines, "did not get back a record uid")  # empty
             self.assertRegex(lines[0], r'^[\w_-]{22}$', "did not get back a record uid")
 
+    def test_clone_nonexistent_uid_exits_nonzero(self):
+        from unittest.mock import patch as _patch
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        profile_init_res = mock.Response()
+        profile_init_res.add_folder(uid="FAKEUID")
+        profile_init_res.add_record(title="Profile Init")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+
+        with _patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             _patch.object(secrets_manager, 'get_secrets', return_value=[]), \
+             _patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                    return_value=False):
+            mock_client.return_value = secrets_manager
+            Profile.init(token='MY_TOKEN')
+
+            runner = CliRunner()
+            result = runner.invoke(cli, ['secret', 'add', 'clone',
+                                         '--uid', 'NONEXISTENT1234567890'],
+                                   catch_exceptions=False)
+
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertIn("Record UID not found", result.output)
+
     def test_create_record_custom_field_empty_list(self):
         """record create payload always includes custom=[] when no custom fields are set"""
 
@@ -1152,7 +1181,7 @@ class SecretTest(unittest.TestCase):
 
 
 class LinkedRecordsTest(unittest.TestCase):
-    """KSM-981: linked records must be surfaced in secret get output."""
+    """Linked records must be surfaced in secret get output."""
 
     def setUp(self):
         self.orig_dir = os.getcwd()
@@ -1190,8 +1219,8 @@ class LinkedRecordsTest(unittest.TestCase):
 
     @staticmethod
     def _live_shape_links(parent_uid, linked_uid):
-        """Link fixtures matching the live backend shapes (see KSM-1007 epic):
-        a meta self-link, a credential link with flags, and a data-less reference."""
+        """Link fixtures matching the live backend shapes: a meta self-link, a
+        credential link with flags, and a data-less reference."""
         meta_payload = {
             "allowedSettings": {"rotation": True, "connections": True},
             "rotateOnTermination": False,
@@ -1207,7 +1236,7 @@ class LinkedRecordsTest(unittest.TestCase):
         ], meta_payload, cred_payload
 
     def test_links_populated_in_json_output(self):
-        """secret get --json keeps raw link fields and adds decoded data (KSM-1015)."""
+        """secret get --json keeps raw link fields and adds decoded data."""
         mock_config = MockConfig.make_config()
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
@@ -1244,7 +1273,7 @@ class LinkedRecordsTest(unittest.TestCase):
             self.assertEqual(links[0]['data'], meta_link['data'])
             self.assertEqual(linked_uid, cred_link['recordUid'])
 
-            # Decoded data is added per link (KSM-1015)
+            # Decoded data is added per link
             self.assertEqual(meta_payload, meta_link['decoded'],
                              "meta self-link data must be decoded")
             self.assertEqual(cred_payload, cred_link['decoded'],
@@ -1253,7 +1282,7 @@ class LinkedRecordsTest(unittest.TestCase):
                               "data-less reference decodes to None")
 
     def test_links_shown_in_text_output(self):
-        """secret get text output labels self-links and shows decoded link data (KSM-1015)."""
+        """secret get text output labels self-links and shows decoded link data."""
         mock_config = MockConfig.make_config()
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 

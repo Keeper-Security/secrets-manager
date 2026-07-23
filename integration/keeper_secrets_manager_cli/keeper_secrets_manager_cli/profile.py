@@ -19,7 +19,7 @@ from .table import Table, ColumnAlign
 from .export import Export
 from .config import Config
 from .common import find_ksm_path
-from colorama import Fore, Style
+import click
 import sys
 import json
 import base64
@@ -78,10 +78,10 @@ class Profile:
                         self._load_from_keyring()
                     except KsmCliException as e:
                         self.logger.warning("Could not load from keyring: %s", e)
-                        print(Fore.YELLOW + "Warning: Failed to load profiles from keyring: {}".format(e) + Style.RESET_ALL, file=sys.stderr)
+                        click.echo(click.style("Warning: Failed to load profiles from keyring: {}".format(e), fg="yellow"), file=sys.stderr)
                     except Exception as e:
                         self.logger.debug("Unexpected keyring error: %s", e, exc_info=True)
-                        print(Fore.YELLOW + "Warning: Keyring access failed (see debug logs)" + Style.RESET_ALL, file=sys.stderr)
+                        click.echo(click.style("Warning: Keyring access failed (see debug logs)", fg="yellow"), file=sys.stderr)
                 else:
                     found_ini_file = self._find_ini_file()
                     if found_ini_file is not None:
@@ -95,18 +95,18 @@ class Profile:
                     self._load_from_keyring()
                 except KsmCliException as e:
                     self.logger.warning("Could not load from keyring: %s", e)
-                    print(Fore.YELLOW + "Warning: Failed to load profiles from keyring: {}".format(e) + Style.RESET_ALL, file=sys.stderr)
+                    click.echo(click.style("Warning: Failed to load profiles from keyring: {}".format(e), fg="yellow"), file=sys.stderr)
                 except Exception as e:
                     self.logger.debug("Unexpected keyring error: %s", e, exc_info=True)
-                    print(Fore.YELLOW + "Warning: Keyring access failed (see debug logs)" + Style.RESET_ALL, file=sys.stderr)
+                    click.echo(click.style("Warning: Keyring access failed (see debug logs)", fg="yellow"), file=sys.stderr)
                 # Upgrade-path warning: keyring is empty but a legacy keeper.ini exists
                 if len(self._config.profile_list()) == 0:
                     found_ini_file = self._find_ini_file()
                     if found_ini_file is not None:
-                        print(Fore.YELLOW + "Warning: Keyring has no profiles, but a keeper.ini file was "
-                              "found at: " + found_ini_file + Style.RESET_ALL, file=sys.stderr)
-                        print(Fore.YELLOW + "  To use it: ksm --ini-file \"" + found_ini_file
-                              + "\" profile list" + Style.RESET_ALL, file=sys.stderr)
+                        click.echo(click.style("Warning: Keyring has no profiles, but a keeper.ini file was "
+                              "found at: " + found_ini_file, fg="yellow"), file=sys.stderr)
+                        click.echo(click.style("  To use it: ksm --ini-file \"" + found_ini_file
+                              + "\" profile list", fg="yellow"), file=sys.stderr)
                         self.logger.warning(
                             "Keyring active but empty; existing keeper.ini at %s will not be used",
                             found_ini_file
@@ -304,16 +304,16 @@ class Profile:
         
         if not use_keyring and not use_config_file and ini_file is None:
             logger.debug("Keyring not available, falling back to INI file storage")
-            print(Fore.YELLOW + "Warning: Keyring not available, using keeper.ini file instead" + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Warning: Keyring not available, using keeper.ini file instead", fg="yellow"), file=sys.stderr)
             if getattr(sys, 'frozen', False):
                 # Running from a standalone binary install — pip is not applicable.
                 # Keyring ships as the selectable "OS Keyring Support" component in
                 # the installer (every OS); there is no separate "-keyring" binary.
-                print(Fore.YELLOW + "Warning: For keyring support, re-run the installer and enable the 'OS Keyring Support' component." + Style.RESET_ALL, file=sys.stderr)
+                click.echo(click.style("Warning: For keyring support, re-run the installer and enable the 'OS Keyring Support' component.", fg="yellow"), file=sys.stderr)
             else:
                 # Running from pip install — quote the package name for zsh compatibility
                 # (unquoted [] is a glob pattern in zsh and causes "no matches found").
-                print(Fore.YELLOW + "Warning: For better security, install: pip install 'keeper-secrets-manager-cli[keyring]'" + Style.RESET_ALL, file=sys.stderr)
+                click.echo(click.style("Warning: For better security, install: pip install 'keeper-secrets-manager-cli[keyring]'", fg="yellow"), file=sys.stderr)
             use_config_file = True
             ini_file = Config.get_default_ini_file(launched_from_app)
 
@@ -662,8 +662,8 @@ class Profile:
 
             if output == 'text':
                 table = Table(use_color=use_color)
-                table.add_column("Active", align=ColumnAlign.CENTER, data_color=Fore.RED)
-                table.add_column("Profile", data_color=Fore.YELLOW)
+                table.add_column("Active", align=ColumnAlign.CENTER, data_color="red")
+                table.add_column("Profile", data_color="yellow")
 
                 for profile in profiles:
                     table.add_row(["*" if profile["active"] is True else " ", profile["name"]])
@@ -865,8 +865,8 @@ class Profile:
         common_config = self._config.config
 
         table = Table(use_color=self.cli.use_color)
-        table.add_column("Config Item", data_color=Fore.GREEN)
-        table.add_column("Value", data_color=Fore.YELLOW, allow_wrap=True)
+        table.add_column("Config Item", data_color="green")
+        table.add_column("Value", data_color="yellow", allow_wrap=True)
 
         table.add_row(["Active Profile", _check_set(common_config.active_profile)])
         table.add_row(["Cache Enabled", _check_set(common_config.cache)])

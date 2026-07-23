@@ -404,9 +404,9 @@ color = True
                 ('my profile',  'space in name'),
                 ('a' * 65,      '65-char name'),
                 ('my\tprofile', 'tab in name'),
-                ('../escape',   'path traversal'),   # KSM-829
-                ('/path',       'leading slash'),    # KSM-829
-                ('abc!@#',      'special chars'),    # KSM-829
+                ('../escape',   'path traversal'),
+                ('/path',       'leading slash'),
+                ('abc!@#',      'special chars'),
             ]:
                 result = runner.invoke(
                     cli, ['profile', 'init', '-t', 'XX:YY', '-p', invalid_name],
@@ -474,7 +474,7 @@ color = True
             )
 
     def test_ini_file_flag_respected_by_profile_list(self):
-        """Regression test for KSM-814: --ini-file flag must be respected by profile subcommands.
+        """Regression test: --ini-file flag must be respected by profile subcommands.
 
         Before the fix, profile_list_command created a fresh Profile() ignoring the --ini-file
         value, so it fell back to default discovery (finding no profiles in the temp cwd).
@@ -519,7 +519,7 @@ color = True
             profiles = json.loads(result.output)
             profile_names = [p["name"] for p in profiles]
             self.assertIn(custom_profile_name, profile_names,
-                          "--ini-file was ignored by 'profile list' (KSM-814 regression)")
+                          "--ini-file was ignored by 'profile list'")
 
 
     def test_ini_file_flag_respected_by_profile_init(self):
@@ -578,7 +578,7 @@ color = True
             config.read(ini_path)
             self.assertIn('ini-global-profile', config.sections(),
                           "global --ini-file was ignored by 'profile init'; "
-                          "new profile was routed to default keeper.ini instead (KSM-814 regression)")
+                          "new profile was routed to default keeper.ini instead")
             # The existing profile must still be present — we're adding, not overwriting.
             self.assertIn(existing_profile, config.sections(),
                           "existing ini file profile was lost after profile init")
@@ -627,7 +627,7 @@ color = True
                              "global --ini-file profile export failed: " + str(result.output))
             self.assertIn(unique_client_id, result.output,
                           "global --ini-file was ignored by 'profile export'; "
-                          "exported credentials do not match the ini file profile (KSM-814 regression)")
+                          "exported credentials do not match the ini file profile")
 
 
     def test_ini_file_flag_respected_by_profile_setup(self):
@@ -1004,12 +1004,12 @@ color = True
 
 
 class KeyringWarningMessageTest(unittest.TestCase):
-    """KSM-975: keyring fallback warning must give context-appropriate advice.
+    """The keyring fallback warning must give context-appropriate advice.
 
     When keyring is unavailable the warning should:
     - Direct *pip* users to install with quoted brackets (zsh-safe).
     - Direct *binary* users (sys.frozen=True) to the installer's
-      'OS Keyring Support' component, not pip (KSM-1014).
+      'OS Keyring Support' component, not pip.
     """
 
     def setUp(self):
@@ -1072,7 +1072,7 @@ class KeyringWarningMessageTest(unittest.TestCase):
         return res_queue.get('result')
 
     def test_pip_warning_uses_quoted_brackets(self):
-        """KSM-975: pip path warning must quote brackets — unquoted [] fails on zsh."""
+        """pip path warning must quote brackets; unquoted [] fails on zsh."""
         runner = CliRunner()
         with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
                    return_value=False):
@@ -1083,7 +1083,7 @@ class KeyringWarningMessageTest(unittest.TestCase):
                     del _sys.frozen  # ensure we're in pip path
                 result = runner.invoke(
                     cli,
-                    ['profile', 'init', '-t', 'US:FAKE_TOKEN_KSM975'],
+                    ['profile', 'init', '-t', 'US:FAKE_TOKEN_PIP_WARNING'],
                     catch_exceptions=True,
                 )
             finally:
@@ -1100,11 +1100,11 @@ class KeyringWarningMessageTest(unittest.TestCase):
         self.assertNotIn(
             "pip install keeper-secrets-manager-cli[keyring]\n",
             combined,
-            "unquoted pip command found — will fail on zsh"
+            "unquoted pip command found, will fail on zsh"
         )
 
     def test_binary_warning_points_to_installer_component_not_pip(self):
-        """KSM-1014: binary path (sys.frozen=True) must direct users to the installer's
+        """binary path (sys.frozen=True) must direct users to the installer's
         'OS Keyring Support' component, not a non-existent '-keyring' binary or pip."""
         runner = CliRunner()
         import sys as _sys
@@ -1115,7 +1115,7 @@ class KeyringWarningMessageTest(unittest.TestCase):
                        return_value=False):
                 result = runner.invoke(
                     cli,
-                    ['profile', 'init', '-t', 'US:FAKE_TOKEN_KSM1014_BINARY'],
+                    ['profile', 'init', '-t', 'US:FAKE_TOKEN_BINARY_WARNING'],
                     catch_exceptions=True,
                 )
         finally:

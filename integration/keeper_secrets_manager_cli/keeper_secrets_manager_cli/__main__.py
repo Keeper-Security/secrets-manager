@@ -20,7 +20,6 @@ import click
 import keeper_secrets_manager_core
 from click_help_colors import HelpColorsGroup, HelpColorsCommand
 from click_repl import repl, exit as repl_exit
-from colorama import Fore, Style, init
 from update_checker import UpdateChecker
 from . import KeeperCli
 from .exception import KsmCliException
@@ -208,8 +207,8 @@ def base_command_help(f):
     sdk_version = versions.get("keeper-secrets-manager-core", "")
 
     doc = "{} Version: {} ".format(
-        Fore.RED + doc + Style.RESET_ALL,
-        Fore.YELLOW + cli_version + Style.RESET_ALL
+        click.style(doc, fg="red"),
+        click.style(cli_version, fg="yellow")
     )
     try:
         # The __doc__ stuff gets formatted so new line don't work, however long spaces will.
@@ -1428,15 +1427,16 @@ def shell_command(app):
 ██║  ██╗███████║██║ ╚═╝ ██║    ╚██████╗███████╗██║
 ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝     ╚═════╝╚══════╝╚═╝                                                                          
     """
-    print(Fore.BLUE + logo + Style.RESET_ALL)
+    click.echo(click.style(logo, fg="blue"))
 
     versions = get_versions()
 
-    print(Fore.CYAN + "Current Version: " + Fore.GREEN + versions.get("keeper-secrets-manager-cli", "") + Style.RESET_ALL)
+    click.echo(click.style("Current Version: ", fg="cyan") +
+               click.style(versions.get("keeper-secrets-manager-cli", ""), fg="green"))
     try:
         update = update_available("keeper-secrets-manager-cli", versions)
         if update is not None:
-            print(Fore.YELLOW + "Version {} is available.".format(update.available_version) + Style.RESET_ALL)
+            click.echo(click.style("Version {} is available.".format(update.available_version), fg="yellow"))
     except (Exception,):
         # A failed update check must never block the shell from starting.
         pass
@@ -1505,7 +1505,7 @@ def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, r
             raise KsmCliException("--folder-recursive/-fr option is only supported with type=aws")
 
         if raw_json and sync_type != 'aws':
-            print(Fore.YELLOW + "Warning: --raw-json/-rj flag is only supported with type=aws, ignoring..." + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Warning: --raw-json/-rj flag is only supported with type=aws, ignoring...", fg="yellow"), file=sys.stderr)
             raw_json = False
 
     # Validate that required options are provided based on type
@@ -1537,9 +1537,6 @@ cli.add_command(help_command)
 
 def main():
     try:
-        # This init colors for Windows. CMD looks great. PS has no yellow :(
-        init()
-
         program_name = "ksm"
         # If we are running in the shell mode, there is no program name for the usage. Blank it out.
         if "shell" in sys.argv:

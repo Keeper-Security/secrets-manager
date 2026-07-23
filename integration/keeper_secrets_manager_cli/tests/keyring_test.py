@@ -440,7 +440,7 @@ active_profile = _default
 
 
 class KeyringIntegrityTest(unittest.TestCase):
-    """Tests for SHA-256 cross-session integrity verification (KSM-805)."""
+    """Tests for SHA-256 cross-session integrity verification."""
 
     def setUp(self):
         self.orig_dir = os.getcwd()
@@ -497,12 +497,13 @@ class KeyringIntegrityTest(unittest.TestCase):
             storage.load_profile("_default")
 
     def test_integrity_check_skipped_when_no_hash_stored(self):
-        """Pre-KSM-805 entries (no integrity key) load silently without raising."""
+        """Entries with no integrity key (written before integrity verification existed)
+        load silently without raising."""
         import json as _json
         from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage, KeyringUtilityStorage
 
         # Write config directly to mock keyring, bypassing KeyringUtilityStorage
-        # (simulates an entry created before KSM-805 — no integrity key present)
+        # (simulates an entry written before the integrity key existed)
         profile_data = {"clientId": "legacy-id", "hostname": "keepersecurity.com"}
         inner_payload = _json.dumps({"data": _json.dumps(profile_data)}, indent=4, sort_keys=True)
         _mock_keyring._storage["KSM-cli:ksm-cli-profile-_default"] = inner_payload
@@ -528,6 +529,87 @@ class KeyringIntegrityTest(unittest.TestCase):
         storage.delete_profile("_default")
 
         self.assertNotIn(integrity_key, _mock_keyring._storage)
+
+
+class KeyringLockedError(Exception):
+    """Stand-in for keyring.errors.KeyringLocked."""
+
+
+class LockableMockKeyring:
+    """Mock for the keyring module where get_password can simulate a locked collection."""
+
+    def __init__(self):
+        self._storage = {}
+        self.locked = False
+        self.errors = MagicMock()
+        self.errors.PasswordDeleteError = Exception
+        self.errors.KeyringLocked = KeyringLockedError
+
+    def get_password(self, service, username):
+        if self.locked:
+            raise KeyringLockedError("Failed to unlock the collection!")
+        return self._storage.get(f"{service}:{username}")
+
+    def set_password(self, service, username, password):
+        self._storage[f"{service}:{username}"] = password
+
+    def delete_password(self, service, username):
+        key = f"{service}:{username}"
+        if key in self._storage:
+            del self._storage[key]
+
+    def get_keyring(self):
+        mock_backend = MagicMock()
+        mock_backend.__class__.__module__ = 'keyring.backends.SecretService'
+        return mock_backend
+
+    def clear(self):
+        self._storage.clear()
+        self.locked = False
+
+
+_lockable_mock_keyring = LockableMockKeyring()
+
+
+class LockedKeyringTest(unittest.TestCase):
+    """A locked OS keyring must be surfaced to the caller, not silently treated as empty."""
+
+    def setUp(self):
+        self.orig_dir = os.getcwd()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        os.chdir(self.temp_dir.name)
+
+        _lockable_mock_keyring.clear()
+        self.patcher = patch.dict('sys.modules', {'keyring': _lockable_mock_keyring})
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        os.chdir(self.orig_dir)
+
+    def test_load_profile_raises_on_locked_keyring(self):
+        from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage
+
+        storage = KeyringConfigStorage()
+        storage.save_profile("_default", {"clientId": "test-id", "hostname": "keepersecurity.com"})
+
+        _lockable_mock_keyring.locked = True
+
+        with self.assertRaises(KsmCliException) as ctx:
+            storage.load_profile("_default")
+        self.assertIn("locked", str(ctx.exception).lower())
+
+    def test_load_common_config_raises_on_locked_keyring(self):
+        from keeper_secrets_manager_cli.keyring_config import KeyringConfigStorage
+
+        storage = KeyringConfigStorage()
+        storage.save_common_config({"color": True})
+
+        _lockable_mock_keyring.locked = True
+
+        with self.assertRaises(KsmCliException) as ctx:
+            storage.load_common_config()
+        self.assertIn("locked", str(ctx.exception).lower())
 
 
 if __name__ == '__main__':

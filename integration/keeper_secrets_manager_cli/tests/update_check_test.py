@@ -8,8 +8,7 @@ from keeper_secrets_manager_cli import __main__
 class UpdateCheckTest(unittest.TestCase):
 
     def test_update_available_calls_check_with_keywords(self):
-        """KSM-1005 regression: update_available() must call UpdateChecker.check()
-        with keyword arguments.
+        """update_available() must call UpdateChecker.check() with keyword arguments.
 
         update_checker 1.0.0 (published to PyPI 2026-06-08, first release since
         0.18.0) made UpdateChecker.check() keyword-only:
@@ -26,8 +25,6 @@ class UpdateCheckTest(unittest.TestCase):
         keyword-argument fix passes. setup.py leaves update-checker unpinned, and
         0.18.0 uses the same parameter names, so the keyword call is compatible
         with both versions.
-
-        See: https://keeper.atlassian.net/browse/KSM-1005
         """
         captured = {}
 
@@ -47,16 +44,13 @@ class UpdateCheckTest(unittest.TestCase):
         self.assertEqual(captured["package_version"], "1.4.0")
 
     def test_shell_start_survives_update_check_failure(self):
-        """KSM-1005 hardening: a failing update check must not stop `ksm shell`
-        from starting.
+        """A failing update check must not stop `ksm shell` from starting.
 
         version_command (__main__.py:1393) and base_command_help (__main__.py:214)
         already wrap their update check in try/except; shell_command (1436) called
-        it bare, so the KSM-1005 TypeError escaped to the top-level handler and the
-        CLI exited before the shell opened. This test forces the update check to
-        raise and asserts the shell still reaches the REPL.
-
-        See: https://keeper.atlassian.net/browse/KSM-1005
+        it bare, so a TypeError from the update check escaped to the top-level
+        handler and the CLI exited before the shell opened. This test forces the
+        update check to raise and asserts the shell still reaches the REPL.
         """
         def boom(*args, **kwargs):
             raise TypeError(

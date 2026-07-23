@@ -10,12 +10,12 @@ from keeper_secrets_manager_cli import _default_cache_dir
 
 
 class DefaultCacheDirTest(unittest.TestCase):
-    """KSM-1003: the CLI co-locates ksm_cache.bin with keeper.ini.
+    """The CLI co-locates ksm_cache.bin with keeper.ini.
 
     _default_cache_dir() is a pure function of os.environ + sys.frozen. It returns
     the directory the cache should live in, or None to leave the core's default
     (current working directory) in place. The directory policy mirrors
-    Config.get_default_ini_file() (KSM-980) so the cache and the ini stay together.
+    Config.get_default_ini_file() so the cache and the ini stay together.
     """
 
     def setUp(self):
@@ -42,7 +42,7 @@ class DefaultCacheDirTest(unittest.TestCase):
 
     def test_frozen_binary_uses_home_posix(self):
         # The bug: a frozen binary dumped the cache in CWD. Now it resolves to
-        # $HOME, matching where keeper.ini lands (KSM-980).
+        # $HOME, matching where keeper.ini lands.
         sys.frozen = True
         with mock.patch.object(os, "name", "posix"), \
                 mock.patch.dict(os.environ, {"HOME": "/home/tester"}):

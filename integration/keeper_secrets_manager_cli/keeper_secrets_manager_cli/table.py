@@ -10,7 +10,7 @@
 # Contact: ops@keepersecurity.com
 #
 
-from colorama import Style
+import click
 from enum import Enum
 import textwrap
 import platform
@@ -36,7 +36,7 @@ class Table:
         self.max_width, _ = self._terminal_width()
 
     def add_column(self, title, allow_wrap=None,
-                   data_color=Style.RESET_ALL, title_color=Style.RESET_ALL,
+                   data_color=None, title_color=None,
                    title_align=ColumnAlign.LEFT, data_align=ColumnAlign.LEFT, align=None):
 
         if align is not None:
@@ -240,8 +240,8 @@ class Table:
                 row_str += self.indent
                 for column in self.columns:
                     value = col_rows[column["index"]][row_index]
-                    if self.use_color is True:
-                        value = column["data_color"] + value + Style.RESET_ALL
+                    if self.use_color is True and column["data_color"] is not None:
+                        value = click.style(value, fg=column["data_color"])
                     row_str += value
                 row_str += "\n"
 

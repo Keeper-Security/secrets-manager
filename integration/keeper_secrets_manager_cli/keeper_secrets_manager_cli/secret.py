@@ -15,7 +15,7 @@ import yaml
 import os
 import re
 import sys
-from colorama import Fore, Style
+import click
 from pathlib import Path
 from jsonpath_rw_ext import parse
 from keeper_secrets_manager_cli.exception import KsmCliException
@@ -204,29 +204,32 @@ class Secret:
         return links
 
     @staticmethod
-    def _color_it(value, color=Style.RESET_ALL, use_color=True):
-        if use_color is True:
-            value = color + value + Style.RESET_ALL
+    def _color_it(value, color=None, use_color=True):
+        if use_color is True and color is not None:
+            value = click.style(value, fg=color)
         return value
 
     @staticmethod
-    def _replace_redact_placeholder(value, use_color=True, reset_color=Style.RESET_ALL):
+    def _replace_redact_placeholder(value, use_color=True, reset_color=None):
         redact_str = Secret.redact_str
         if use_color is True:
-            redact_str = Fore.RED + redact_str + reset_color
+            # reset_color resumes the color of the text surrounding the redacted
+            # segment (e.g. the table cell's color) instead of fully clearing it.
+            redact_str = click.style(redact_str, fg="red", reset=False) + \
+                click.style("", fg=reset_color, reset=(reset_color is None))
         return value.replace(Secret.redact_placeholder, redact_str)
 
     @staticmethod
     def _format_record(record_dict, use_color=True):
         ret = "\n"
-        ret += " Record: {}\n".format(Secret._color_it(record_dict["uid"], Fore.YELLOW, use_color))
-        ret += " Title: {}\n".format(Secret._color_it(record_dict["title"], Fore.YELLOW, use_color))
-        ret += " Record Type: {}\n".format(Secret._color_it(record_dict["type"], Fore.YELLOW, use_color))
+        ret += " Record: {}\n".format(Secret._color_it(record_dict["uid"], "yellow", use_color))
+        ret += " Title: {}\n".format(Secret._color_it(record_dict["title"], "yellow", use_color))
+        ret += " Record Type: {}\n".format(Secret._color_it(record_dict["type"], "yellow", use_color))
         ret += "\n"
 
         table = Table(use_color=use_color)
-        table.add_column("Field", data_color=Fore.GREEN)
-        table.add_column("Value", data_color=Fore.YELLOW, allow_wrap=True)
+        table.add_column("Field", data_color="green")
+        table.add_column("Value", data_color="yellow", allow_wrap=True)
         for field in record_dict["fields"]:
             value = field["value"]
             if len(value) == 0:
@@ -237,7 +240,7 @@ class Secret:
                 value = value[0]
                 value = value.replace('\n', '\\n')
 
-            value = Secret._replace_redact_placeholder(value, use_color=use_color, reset_color=Fore.YELLOW)
+            value = Secret._replace_redact_placeholder(value, use_color=use_color, reset_color="yellow")
 
             # Don't show blank value pairs
             if value == "":
@@ -250,9 +253,9 @@ class Secret:
         if len(record_dict["custom"]) > 0:
             ret += "\n"
             table = Table(use_color=use_color)
-            table.add_column("Custom Field", data_color=Fore.GREEN)
+            table.add_column("Custom Field", data_color="green")
             table.add_column("Type")
-            table.add_column("Value", data_color=Fore.YELLOW, allow_wrap=True)
+            table.add_column("Value", data_color="yellow", allow_wrap=True)
 
             problems = []
             seen = {}
@@ -270,7 +273,7 @@ class Secret:
                 if value == "":
                     continue
 
-                value = Secret._replace_redact_placeholder(value, use_color=use_color, reset_color=Fore.YELLOW)
+                value = Secret._replace_redact_placeholder(value, use_color=use_color, reset_color="yellow")
 
                 label = field["label"]
                 if field["label"] in seen:
@@ -288,7 +291,7 @@ class Secret:
         if len(record_dict["files"]) > 0:
             ret += "\n"
             table = Table(use_color=use_color)
-            table.add_column("File Name", allow_wrap=True, data_color=Fore.GREEN)
+            table.add_column("File Name", allow_wrap=True, data_color="green")
             table.add_column("Type")
             table.add_column("Size", align=ColumnAlign.RIGHT)
             table.add_column("File UID")
@@ -305,9 +308,9 @@ class Secret:
         if len(record_dict.get("links", [])) > 0:
             ret += "\n"
             table = Table(use_color=use_color)
-            table.add_column("Linked Record UID", data_color=Fore.GREEN)
-            table.add_column("Path", data_color=Fore.YELLOW)
-            table.add_column("Link Data", allow_wrap=True, data_color=Fore.YELLOW)
+            table.add_column("Linked Record UID", data_color="green")
+            table.add_column("Path", data_color="yellow")
+            table.add_column("Link Data", allow_wrap=True, data_color="yellow")
             for link in record_dict["links"]:
                 # Self-links (recordUid == this record) carry the record's own
                 # settings: "meta" (PAM settings), "ai_settings", "jit_settings".
@@ -522,9 +525,9 @@ class Secret:
             for record in record_dict:
                 table.add_row([record.get(x[0], "") for x in columns])
         else:
-            table.add_column("UID", data_color=Fore.GREEN)
+            table.add_column("UID", data_color="green")
             table.add_column("Record Type")
-            table.add_column("Title", data_color=Fore.YELLOW)
+            table.add_column("Title", data_color="yellow")
             for record in record_dict:
                 table.add_row([record["uid"], record["type"], record["title"]])
         return "\n" + table.get_string() + "\n"
@@ -545,7 +548,7 @@ class Secret:
         if query:
             items = self._query_jsonpath_list(query, record_dict)
             if output_format == 'text':
-                columns = [("uid", "UID", Fore.GREEN), ("type", "Record Type", Style.RESET_ALL), ("query_result", "Value", Fore.YELLOW)] if show_value else []
+                columns = [("uid", "UID", "green"), ("type", "Record Type", None), ("query_result", "Value", "yellow")] if show_value else []
                 self.cli.output(self._format_list(items, use_color=use_color, columns=columns))
             elif output_format == 'json':
                 records = [{
@@ -790,9 +793,9 @@ class Secret:
                 if use_color is None:
                     use_color = self.cli.use_color
                 table = Table(use_color=use_color)
-                table.add_column("UID", data_color=Fore.GREEN)
-                table.add_column("Response Code", data_color=Fore.YELLOW)
-                table.add_column("Error", data_color=Fore.RED, allow_wrap=True)
+                table.add_column("UID", data_color="green")
+                table.add_column("Response Code", data_color="yellow")
+                table.add_column("Error", data_color="red", allow_wrap=True)
                 for x in output:
                     table.add_row([x["uid"], x["responseCode"], x["error"]])
                 self.cli.output(f"\n{table.get_string()}\n")
@@ -857,9 +860,11 @@ class Secret:
                     record_data = fh.read()
                     fh.close()
                     if re.search(r'<#ADD', record_data, re.MULTILINE) is not None:
-                        print(Fore.RED + "Found template markers (#ADD) still in the record data. Either " +
-                              "add a value or remove the line completely. Enter 'r' to recheck " +
-                              "the file if the file was processed before you finished editing. " + Style.RESET_ALL)
+                        click.echo(click.style(
+                            "Found template markers (#ADD) still in the record data. Either "
+                            "add a value or remove the line completely. Enter 'r' to recheck "
+                            "the file if the file was processed before you finished editing. ",
+                            fg="red"))
                         ynq = input("Do you wish to edit? Y/n/r/q: ")
                         if ynq == "" or ynq[0].lower() == "y":
                             launch_the_editor = True
@@ -882,10 +887,10 @@ class Secret:
                     # All is good break out of the loop
                     break
                 except FileSyntaxException as err:
-                    ynq = input(Fore.RED + str(err) + Style.RESET_ALL +
+                    ynq = input(click.style(str(err), fg="red") +
                                 "Do you wish to edit and try again? Y/n/q: ")
                 except Exception as err:
-                    ynq = input(Fore.RED + f"Could not create the record: {err}. " + Style.RESET_ALL +
+                    ynq = input(click.style(f"Could not create the record: {err}. ", fg="red") +
                                 "Do you wish to edit and try again? Y/n/q: ")
 
                 if ynq == "" or ynq[0].lower() == "y":
@@ -981,7 +986,7 @@ class Secret:
                 else:
                     print(f"Unable to find the parent shared folder for record {uid} - individually shared records cannot be cloned.", file=sys.stderr)
             else:
-                print(f"Record UID not found {uid}", file=sys.stderr)
+                raise KsmCliException(f"Record UID not found {uid}")
         except Exception as err:
             raise KsmCliException(f"{err}")
 
@@ -1035,7 +1040,7 @@ class Secret:
         record_type_list = Record(version).get_template_list()
 
         table = Table(use_color=self.cli.use_color)
-        table.add_column("Record Type", allow_wrap=True, data_color=Fore.GREEN)
+        table.add_column("Record Type", allow_wrap=True, data_color="green")
 
         for record_type in record_type_list:
             table.add_row([record_type])
@@ -1046,7 +1051,7 @@ class Secret:
         field_type_list = FieldType.get_field_type_list(version)
 
         table = Table(use_color=self.cli.use_color)
-        table.add_column("Field Type", allow_wrap=True, data_color=Fore.GREEN)
+        table.add_column("Field Type", allow_wrap=True, data_color="green")
 
         for field_type in field_type_list:
             table.add_row([field_type])
