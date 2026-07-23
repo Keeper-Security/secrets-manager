@@ -119,6 +119,11 @@ configuration file or even a playbook.
 
 # Changes
 
+## 1.4.1
+* **Security**: VM-1452 / CWE-502 — Replaced pickle with JSON for encrypted record cache serialization
+  - Cache encrypt/decrypt no longer uses `pickle.loads`, removing insecure deserialization risk
+  - Existing playbook-registered caches are ephemeral; regenerate with `keeper_cache_records` after upgrade
+
 ## 1.4.0
 * KSM-827: Fixed Tower Execution Environment Docker image missing system packages required by AAP
   - Added `openssh-clients`, `sshpass`, `rsync`, and `git` to the EE image
