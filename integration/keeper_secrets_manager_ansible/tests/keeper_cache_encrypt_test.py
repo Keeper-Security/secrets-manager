@@ -186,7 +186,12 @@ class KeeperCacheEncryptTest(unittest.TestCase):
 
         with self.assertRaises(Exception) as ctx:
             keeper.get_records(uids=["missing-uid"], cache=legacy_cache)
-        self.assertIn("missing-uid", str(ctx.exception))
+
+        # Prefer args over str()/ .message — newer ansible-core AnsibleError.__str__
+        # can recurse when formatting the exception message.
+        detail = ctx.exception.args[0] if ctx.exception.args else ""
+        self.assertIn("missing-uid", detail)
+        keeper.client.get_secrets.assert_called_once_with(["missing-uid"])
 
 
 if __name__ == "__main__":
