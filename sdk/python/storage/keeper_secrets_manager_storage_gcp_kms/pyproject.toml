@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "keeper-secrets-manager-storage-gcp-kms"
-version = "1.1.0"
+version = "1.1.1"
 description = "Keeper Secrets Manager SDK storage integration with Google Cloud KMS for encrypted key-value storage."
 readme = "README.md"
-requires-python = ">=3.9.2"
+requires-python = ">=3.10"
 license = {file = "LICENSE"}
 authors = [
     {name = "Keeper Security", email = "sm@keepersecurity.com"},
@@ -29,7 +29,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
