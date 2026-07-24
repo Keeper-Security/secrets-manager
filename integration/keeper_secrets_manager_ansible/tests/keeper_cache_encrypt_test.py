@@ -16,7 +16,12 @@ from unittest.mock import MagicMock, patch
 try:
     import fcntl  # noqa: F401
 except ImportError:
+    class _FakeAnsibleError(Exception):
+        pass
+
     _ansible_stub = MagicMock()
+    _ansible_stub.AnsibleError = _FakeAnsibleError
+    _ansible_stub.errors.AnsibleError = _FakeAnsibleError
     sys.modules.setdefault("ansible", _ansible_stub)
     sys.modules.setdefault("ansible.utils", _ansible_stub)
     sys.modules.setdefault("ansible.utils.display", _ansible_stub)
@@ -26,7 +31,6 @@ except ImportError:
     sys.modules.setdefault("ansible.module_utils.common", _ansible_stub)
     sys.modules.setdefault("ansible.module_utils.common.text", _ansible_stub)
     sys.modules.setdefault("ansible.module_utils.common.text.converters", _ansible_stub)
-    _ansible_stub.errors.AnsibleError = Exception
     _ansible_stub.module_utils.basic.missing_required_lib = lambda name: name
     _ansible_stub.module_utils.common.text.converters.jsonify = lambda x: str(x)
     _ansible_stub.utils.display.Display = MagicMock
@@ -36,7 +40,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from keeper_secrets_manager_core.dto.dtos import Record
 
-from keeper_secrets_manager_ansible import KeeperAnsible
+from keeper_secrets_manager_ansible import CacheUnusableError, KeeperAnsible
 
 
 def _make_record(uid="uid123", title="Test Record", password="secret-pass"):
@@ -123,7 +127,7 @@ class KeeperCacheEncryptTest(unittest.TestCase):
             malicious = Fernet(key).encrypt(buf.getvalue())
 
             keeper = _stub_keeper(cache_secret=cache_secret)
-            with self.assertRaises(ValueError):
+            with self.assertRaises(CacheUnusableError):
                 keeper.decrypt(malicious)
 
             self.assertFalse(
@@ -138,9 +142,51 @@ class KeeperCacheEncryptTest(unittest.TestCase):
         keeper = _stub_keeper()
         secret_key = keeper.get_encryption_key()
         bad = Fernet(secret_key).encrypt(b'{"not": "a list"}')
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(CacheUnusableError) as ctx:
             keeper.decrypt(bad)
         self.assertIn("keeper_cache_records", str(ctx.exception))
+
+    def test_get_records_falls_back_to_vault_on_legacy_cache(self):
+        """Unusable cache is ignored; records are fetched from the vault."""
+        keeper = _stub_keeper()
+        vault_record = _make_record(uid="from-vault", title="Vault Record")
+        keeper.client.get_secrets.return_value = [vault_record]
+
+        secret_key = keeper.get_encryption_key()
+        legacy_cache = Fernet(secret_key).encrypt(b"\x80\x04legacy-pickle-bytes")
+
+        with patch("keeper_secrets_manager_ansible.display.warning") as mock_warn:
+            records = keeper.get_records(uids=["from-vault"], cache=legacy_cache)
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].uid, "from-vault")
+        keeper.client.get_secrets.assert_called_once_with(["from-vault"])
+        mock_warn.assert_called_once()
+        self.assertIn("ignored", mock_warn.call_args[0][0])
+
+    def test_get_records_falls_back_to_vault_on_invalid_json_cache(self):
+        keeper = _stub_keeper()
+        vault_record = _make_record(uid="from-vault")
+        keeper.client.get_secrets.return_value = [vault_record]
+
+        secret_key = keeper.get_encryption_key()
+        bad_cache = Fernet(secret_key).encrypt(b'{"not": "a list"}')
+
+        records = keeper.get_records(uids=["from-vault"], cache=bad_cache)
+        self.assertEqual(records[0].uid, "from-vault")
+        keeper.client.get_secrets.assert_called_once_with(["from-vault"])
+
+    def test_get_records_legacy_cache_vault_miss_still_fails(self):
+        """After cache invalidate, missing vault records still raise."""
+        keeper = _stub_keeper()
+        keeper.client.get_secrets.return_value = []
+
+        secret_key = keeper.get_encryption_key()
+        legacy_cache = Fernet(secret_key).encrypt(b"\x80\x04legacy")
+
+        with self.assertRaises(Exception) as ctx:
+            keeper.get_records(uids=["missing-uid"], cache=legacy_cache)
+        self.assertIn("missing-uid", str(ctx.exception))
 
 
 if __name__ == "__main__":

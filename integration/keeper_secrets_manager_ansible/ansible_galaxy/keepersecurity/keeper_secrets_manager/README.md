@@ -122,6 +122,8 @@ configuration file or even a playbook.
 ## 1.4.1
 * **Security**: VM-1452 / CWE-502 — Replaced pickle with JSON for encrypted record cache serialization
   - Cache encrypt/decrypt no longer uses `pickle.loads`, removing insecure deserialization risk
+  - Legacy or invalid registered caches are ignored; records are fetched from the vault until
+    `keeper_cache_records` rebuilds a JSON cache
   - Existing playbook-registered caches are ephemeral; regenerate with `keeper_cache_records` after upgrade
 
 ## 1.4.0

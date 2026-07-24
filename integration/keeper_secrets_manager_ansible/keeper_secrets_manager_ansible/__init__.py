@@ -46,6 +46,10 @@ else:
 display = Display()
 
 
+class CacheUnusableError(ValueError):
+    """Encrypted record cache cannot be decrypted or deserialized; treat as a cache miss."""
+
+
 class KeeperFieldType(Enum):
     FIELD = "field"
     CUSTOM_FIELD = "custom_field"
@@ -391,9 +395,39 @@ class KeeperAnsible:
 
     def decrypt(self, ciphertext):
         secret_key = self.get_encryption_key()
-        json_bytes = Fernet(secret_key).decrypt(ciphertext)
-        record_dicts = json.loads(json_bytes)
-        return [KeeperAnsible._record_from_dict(d) for d in record_dicts]
+        try:
+            plaintext = Fernet(secret_key).decrypt(ciphertext)
+        except Exception as err:
+            raise CacheUnusableError(
+                "Unable to decrypt the record cache. Check keeper_record_cache_secret "
+                "or regenerate the cache with keeper_cache_records."
+            ) from err
+
+        # Pickle protocol markers (e.g. 0x80) -- never call pickle.loads (CWE-502 / VM-1452).
+        if plaintext.startswith(b"\x80"):
+            raise CacheUnusableError(
+                "Unable to deserialize the record cache. The cache may be from an older "
+                "plugin version or is invalid. Regenerate the cache with keeper_cache_records."
+            )
+
+        try:
+            payload = json.loads(plaintext.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as err:
+            raise CacheUnusableError(
+                "Unable to deserialize the record cache. The cache may be from an older "
+                "plugin version or is invalid. Regenerate the cache with keeper_cache_records."
+            ) from err
+
+        if not isinstance(payload, list):
+            raise CacheUnusableError(
+                "Unable to deserialize the record cache. Expected a list of records. "
+                "Regenerate the cache with keeper_cache_records."
+            )
+
+        try:
+            return [KeeperAnsible._record_from_dict(d) for d in payload]
+        except (KeyError, TypeError, ValueError) as err:
+            raise CacheUnusableError(str(err)) from err
 
     @staticmethod
     def convert_records_into_dict(records):
@@ -538,7 +572,15 @@ class KeeperAnsible:
     def get_records(self, uids=None, titles=None, cache=None, encrypt=False):
 
         if cache is not None:
-            records = self.get_records_from_cache(cache, uids=uids, titles=titles)
+            try:
+                records = self.get_records_from_cache(cache, uids=uids, titles=titles)
+            except CacheUnusableError:
+                # Invalidate legacy/invalid cache and start from scratch via the vault.
+                display.warning(
+                    "Keeper record cache is unusable (legacy or invalid format) and was ignored. "
+                    "Fetching records from the vault. Regenerate the cache with keeper_cache_records."
+                )
+                records = self.get_records_from_vault(uids=uids, titles=titles, encrypt=encrypt)
         else:
             records = self.get_records_from_vault(uids=uids, titles=titles, encrypt=encrypt)
 
