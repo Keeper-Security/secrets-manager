@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "keeper-secrets-manager-storage-oracle-kms"
-version = "1.1.0"
+version = "1.1.1"
 description = "Keeper Secrets Manager SDK storage integration with Oracle Cloud KMS for encrypted key-value storage."
 readme = "README.md"
-requires-python = ">=3.9.2"
+requires-python = ">=3.10"
 license = {file = "LICENSE"}
 authors = [
     {name = "Keeper Security", email = "sm@keepersecurity.com"},
@@ -30,7 +30,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -40,12 +39,7 @@ classifiers = [
 ]
 dependencies = [
     "keeper-secrets-manager-core>=17.2.1",
-    # oci pins urllib3==1.26.x on Python 3.9 starting in 2.168.2, which conflicts
-    # with keeper-secrets-manager-core's urllib3>=2.6.3. On 3.10+, oci uses urllib3>=2.6.3
-    # so we can pull the latest. 2.167.3 is the oldest oci that allows cryptography>=46.0.5
-    # (needed for CVE-2026-26007); earlier oci versions cap cryptography<46.0.0.
-    "oci>=2.167.3,<2.168.2 ; python_version < '3.10'",
-    "oci>=2.174.0 ; python_version >= '3.10'",
+    "oci>=2.174.0",
     "pycryptodome>=3.21.0",
     "requests>=2.32.0",
     "cryptography>=46.0.5",
