@@ -15,6 +15,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - **Fix**: KSM-1105 - Windows installer's post-install launch of `ksm.exe` was blocked by endpoint security (EDR/AV) because InnoSetup's extracted Setup engine parent process in `%TEMP%` was unsigned. The post-install launch no longer trips endpoint security.
 - **Fix**: KSM-1106 - macOS PKG installer ignored the Keyring and Cloud Sync component checkboxes in GUI mode, always installing both regardless of what the user selected. The installer now respects the selected components.
 - **Fix**: KSM-1116 - Windows installer placed the CLI in `Program Files (x86)` on 64-bit systems instead of `Program Files`. The installer now correctly targets the 64-bit program directory.
+- **Fix**: KSM-1118 - `ksm secret add clone` crashed with "list index out of range" when the source record contained any unpopulated complex field (name, address, host, etc.) — fields the server legitimately returns as `value: []`. Empty-value fields are now skipped before the create payload is assembled, so the clone completes correctly. Root cause in the Python helper library is tracked as KSM-1119.
 
 ## 1.4.0
 - **Fix**: KSM-975 - Binary install keyring warning gave pip install advice that does not apply to a frozen binary; bracket syntax in the pip advice also caused zsh glob errors. Now detects `sys.frozen` to show binary-appropriate help text and single-quotes the bracket expression for zsh compatibility.
