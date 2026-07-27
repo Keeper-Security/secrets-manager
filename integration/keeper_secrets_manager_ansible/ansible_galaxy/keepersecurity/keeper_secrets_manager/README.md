@@ -119,7 +119,7 @@ configuration file or even a playbook.
 
 # Changes
 
-## 1.4.1
+## 1.5.0
 * **Security**: VM-1452 / CWE-502 — Replaced pickle with JSON for encrypted record cache serialization
   - Cache encrypt/decrypt no longer uses `pickle.loads`, removing insecure deserialization risk
   - Legacy or invalid registered caches are ignored; records are fetched from the vault until
