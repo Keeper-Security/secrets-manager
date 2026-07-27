@@ -973,8 +973,8 @@ class Secret:
                             "recordType": rec.type,
                             "title": title if title else rec.title,
                             "notes": rec.dict.get("notes", ""),
-                            "fields": rec.dict.get("fields", []),
-                            "customFields": rec.dict.get("custom", [])
+                            "fields": [f for f in rec.dict.get("fields", []) if f.get("value")],
+                            "customFields": [f for f in rec.dict.get("custom", []) if f.get("value")]
                         }]
                     }
                     records = RecordV3.create_from_data(record_data)

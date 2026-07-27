@@ -1128,6 +1128,59 @@ class SecretTest(unittest.TestCase):
             self.assertNotEqual(result.exit_code, 0)
             self.assertIn("Record UID not found", result.output)
 
+    def test_clone_record_with_empty_complex_field(self):
+        """secret add clone must not crash when source record has complex fields with value: []"""
+        from unittest.mock import patch as _patch, MagicMock
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        profile_init_res = mock.Response()
+        profile_init_res.add_folder(uid="FAKEUID")
+        profile_init_res.add_record(title="Profile Init")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+
+        fake_record = MagicMock()
+        fake_record.uid = "BANKACCT0000000000001"
+        fake_record.folder_uid = "FAKEUID"
+        fake_record.inner_folder_uid = None
+        fake_record.type = "bankAccount"
+        fake_record.title = "My Bank Account"
+        fake_record.dict = {
+            "notes": "",
+            "fields": [
+                {
+                    "type": "bankAccount",
+                    "value": [{"accountType": "Checking", "routingNumber": "111000025",
+                               "accountNumber": "1234567890", "otherType": ""}],
+                },
+                {"type": "name", "value": []},     # unpopulated complex field
+                {"type": "address", "value": []},  # unpopulated complex field
+            ],
+            "custom": [],
+        }
+
+        with _patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             _patch.object(secrets_manager, 'get_secrets', return_value=[fake_record]), \
+             _patch.object(secrets_manager, 'create_secret_with_options',
+                           return_value='NEWUID0000000000000000') as mock_create, \
+             _patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                    return_value=False):
+            mock_client.return_value = secrets_manager
+            Profile.init(token='MY_TOKEN')
+
+            runner = CliRunner()
+            result = runner.invoke(cli, ['secret', 'add', 'clone',
+                                         '--uid', 'BANKACCT0000000000001'],
+                                   catch_exceptions=False)
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue(mock_create.called, "create_secret_with_options was not called")
+
     def test_create_record_custom_field_empty_list(self):
         """record create payload always includes custom=[] when no custom fields are set"""
 
