@@ -13,11 +13,14 @@ import logging
 import os
 import hashlib
 import json
+import threading
 
 from typing import Optional,Dict
 
 from keeper_secrets_manager_core.storage import KeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
+
+from google.cloud.kms_v1 import CryptoKey
 
 from .constants import SUPPORTED_KEY_PURPOSE, KeyPurpose
 from .utils import decrypt_buffer, encrypt_buffer
@@ -31,14 +34,15 @@ class GCPKeyValueStorage(KeyValueStorage):
     
     default_config_file_location: str = "client-config.json"
     crypto_client: KMSClient
-    config: Dict[str, str] = {}
+    config: Optional[Dict[str, str]] = None
     last_saved_config_hash: str
     logger: Logger
     gcp_key_config: GCPKeyConfig
     config_file_location: str
     gcp_session_config: GCPKMSClientConfig
     is_asymmetric: bool = False
-    key_purpose_details: str
+    key_purpose_details: Optional[CryptoKey.CryptoKeyPurpose] = None
+    _lock: threading.RLock
     
     def __init__(self, key_vault_config_file_location: str , gcp_key_config: GCPKeyConfig, gcp_session_config: GCPKMSClientConfig, logger: Logger = None):
         self.config_file_location = os.path.abspath(key_vault_config_file_location) or os.getenv('KSM_CONFIG_FILE') or os.path.abspath(self.default_config_file_location)
@@ -47,7 +51,7 @@ class GCPKeyValueStorage(KeyValueStorage):
         self.gcp_session_config = gcp_session_config
         self.gcp_key_config = gcp_key_config
         self.crypto_client = self.gcp_session_config.get_crypto_client()
-        
+        self._lock = threading.RLock()
         self.last_saved_config_hash = ""
         self.get_key_details()
         self.load_config()
@@ -80,8 +84,9 @@ class GCPKeyValueStorage(KeyValueStorage):
 
         except Exception as err:
             self.logger.error(f"Failed to get key details: {err}")
-            
-            
+            raise
+
+
     def create_config_file_if_missing(self):
         try:
             self.logger.info(f"config file path {self.config_file_location}")
@@ -91,9 +96,6 @@ class GCPKeyValueStorage(KeyValueStorage):
                 dir_path = os.path.dirname(self.config_file_location)
                 if not os.path.exists(dir_path):
                     os.makedirs(dir_path, exist_ok=True)
-                with open(self.config_file_location, 'wb') as config_file:
-                    config_file.write(b"{}")
-                    self.logger.info(f"Config file created at: {self.config_file_location}")
                 token=None
                 if self.key_purpose_details == KeyPurpose.RAW_ENCRYPT_DECRYPT:
                     token = self.gcp_session_config.getToken()
@@ -108,81 +110,89 @@ class GCPKeyValueStorage(KeyValueStorage):
                     token=token,
                     logger = self.logger
                 )
-                if len(blob) != 0:
-                    with open(self.config_file_location, 'wb') as config_file:
-                        config_file.write(blob)
+                with open(self.config_file_location, 'wb') as config_file:
+                    config_file.write(blob)
+                self.logger.info(f"Config file created at: {self.config_file_location}")
             else:
                 self.logger.info(f"Config file already exists at: {self.config_file_location}")
         except Exception as err:
             self.logger.error(f"Error creating config file: {err}")
+            raise
             
-    def decrypt_config(self, autosave: bool = True) -> str:
-        ciphertext : bytes = bytes()
-        plaintext : str= ""
+    def decrypt_config(self, autosave: bool = False) -> str:
+        with self._lock:
+            ciphertext : bytes = bytes()
+            plaintext : str= ""
 
-        try:
-            # Read the config file
-            with open(self.config_file_location, 'rb') as config_file:
-                ciphertext = config_file.read()
-            if len(ciphertext) == 0:
-                self.logger.warning(f"Empty config file {self.config_file_location}")
-                return ""
-        except Exception as err:
-            self.logger.error(f"Failed to load config file {self.config_file_location}: {err}")
-            raise Exception(f"Failed to load config file {self.config_file_location}")
+            try:
+                # Read the config file
+                with open(self.config_file_location, 'rb') as config_file:
+                    ciphertext = config_file.read()
+                if len(ciphertext) == 0:
+                    self.logger.warning(f"Empty config file {self.config_file_location}")
+                    return ""
+            except Exception as err:
+                self.logger.error(f"Failed to load config file {self.config_file_location}: {err}")
+                raise Exception(f"Failed to load config file {self.config_file_location}")
 
-        try:
-            token=None
-            if self.key_purpose_details == KeyPurpose.RAW_ENCRYPT_DECRYPT:
-                token = self.gcp_session_config.getToken()
-            # Decrypt the file contents
-            plaintext = decrypt_buffer(
-                is_asymmetric=self.is_asymmetric,
-                ciphertext=ciphertext,
-                crypto_client=self.crypto_client,
-                key_properties=self.gcp_key_config,
-                token=token,
-                logger = self.logger
-            )
+            try:
+                token = None
+                if self.key_purpose_details == KeyPurpose.RAW_ENCRYPT_DECRYPT:
+                    token = self.gcp_session_config.getToken()
+                plaintext = decrypt_buffer(
+                    is_asymmetric=self.is_asymmetric,
+                    ciphertext=ciphertext,
+                    crypto_client=self.crypto_client,
+                    key_properties=self.gcp_key_config,
+                    token=token,
+                    logger=self.logger
+                )
+            except Exception as err:
+                self.logger.error(f"Failed to decrypt config file {self.config_file_location}: {err}")
+                raise Exception(f"Failed to decrypt config file {self.config_file_location}") from err
+
             if len(plaintext) == 0:
                 self.logger.error(f"Failed to decrypt config file {self.config_file_location}")
             elif autosave:
-                # Optionally autosave the decrypted content
-                with open(self.config_file_location, 'w') as config_file:
-                    config_file.write(plaintext)
-        except Exception as err:
-            self.logger.error(f"Failed to write decrypted config file {self.config_file_location}: {err}")
-            raise Exception(f"Failed to write decrypted config file {self.config_file_location}")
+                try:
+                    with open(self.config_file_location, 'w') as config_file:
+                        config_file.write(plaintext)
+                except Exception as err:
+                    self.logger.error(f"Failed to write decrypted config file {self.config_file_location}: {err}")
+                    raise Exception(f"Failed to write decrypted config file {self.config_file_location}") from err
 
-        return plaintext
+            return plaintext
     
-    def __save_config(self, updated_config: Dict[str, str] = {}, force: bool = False) -> None:
+    def __save_config(self, updated_config: Optional[Dict[str, str]] = None, force: bool = False) -> None:
         try:
             # Retrieve current config
             config = self.config or {}
             config_json = json.dumps(config, sort_keys=True, indent=4)
-            config_hash = hashlib.md5(config_json.encode()).hexdigest()
+            config_hash = hashlib.sha256(config_json.encode()).hexdigest()
 
-            # Compare updated_config hash with current config hash
-            if updated_config:
-                updated_config_json = json.dumps(updated_config, sort_keys=True, indent=4)
-                updated_config_hash = hashlib.md5(updated_config_json.encode()).hexdigest()
-
-                if updated_config_hash != config_hash:
-                    config_hash = updated_config_hash
-                    config_json = updated_config_json
-                    self.config = dict(updated_config)  # Update the current config
+            # Resolve the candidate config without mutating self.config yet. self.config is
+            # only committed after the encrypted blob is successfully written to disk so a
+            # KMS or I/O failure cannot leave in-memory state ahead of the on-disk file.
+            # `updated_config is None` means "re-encrypt the current self.config"; an empty
+            # dict {} is a legitimate override (e.g. delete-of-last-key).
+            if updated_config is not None:
+                new_config = dict(updated_config)
+                new_config_json = json.dumps(new_config, sort_keys=True, indent=4)
+                new_config_hash = hashlib.sha256(new_config_json.encode()).hexdigest()
+            else:
+                new_config = config
+                new_config_hash = config_hash
 
             # Check if saving is necessary
-            if not force and config_hash == self.last_saved_config_hash:
+            if not force and new_config_hash == self.last_saved_config_hash:
                 self.logger.warning("Skipped config JSON save. No changes detected.")
                 return
 
             # Ensure the config file exists
             self.create_config_file_if_missing()
 
-            # Encrypt the config JSON and write to the file
-            stringified_value = json.dumps(self.config, sort_keys=True, indent=4)
+            # Encrypt the candidate config JSON and write to the file
+            stringified_value = json.dumps(new_config, sort_keys=True, indent=4)
             token=None
             if self.key_purpose_details == KeyPurpose.RAW_ENCRYPT_DECRYPT:
                 token = self.gcp_session_config.getToken()
@@ -195,16 +205,17 @@ class GCPKeyValueStorage(KeyValueStorage):
                 token=token,
                 logger = self.logger
             )
-            if len(blob)!=0:
-                with open(self.config_file_location, 'wb') as config_file:
-                    config_file.write(blob)
+            with open(self.config_file_location, 'wb') as config_file:
+                config_file.write(blob)
 
-            # Update the last saved config hash
-            self.last_saved_config_hash = config_hash
+            # Commit the new state only after the disk write succeeded
+            self.config = new_config
+            self.last_saved_config_hash = new_config_hash
 
         except Exception as err:
             self.logger.error(f"Error saving config: {err}")
-            
+            raise
+
     def load_config(self) -> None:
         self.create_config_file_if_missing()
 
@@ -226,18 +237,20 @@ class GCPKeyValueStorage(KeyValueStorage):
             # Check if the content is plain JSON
             config = None
             json_error = None
-            decryption_error = False
             try:
                 config_data = contents.decode()
                 config = json.loads(config_data)
-                # Encrypt and save the config if it's plain JSON
+                # `{}` is a legitimate empty state from the documented fresh-install
+                # bootstrap, so self.config must be assigned even when the parsed dict
+                # is empty — leaving it as None crashes every subsequent read/set/delete.
+                self.config = config
+                # Re-encrypt any plaintext content to migrate a legacy on-disk config.
                 if config:
-                    self.config = config
                     self.__save_config(config)
-                    self.last_saved_config_hash = hashlib.md5(
-                        json.dumps(config, sort_keys=True, indent=4).encode()
-                    ).hexdigest()
-            except Exception as err:
+                self.last_saved_config_hash = hashlib.sha256(
+                    json.dumps(config, sort_keys=True, indent=4).encode()
+                ).hexdigest()
+            except (json.JSONDecodeError, UnicodeDecodeError) as err:
                 json_error = err
 
             if json_error:
@@ -255,81 +268,85 @@ class GCPKeyValueStorage(KeyValueStorage):
                 try:
                     config = json.loads(config_json)
                     self.config = config or {}
-                    self.last_saved_config_hash = hashlib.md5(
+                    self.last_saved_config_hash = hashlib.sha256(
                         json.dumps(config, sort_keys=True, indent=4).encode()
                     ).hexdigest()
                 except Exception as err:
-                    decryption_error = True
                     self.logger.error(f"Failed to parse decrypted config file: {err}")
                     raise Exception(f"Failed to parse decrypted config file {self.config_file_location}")
-
-            if json_error and decryption_error:
-                self.logger.info(f"Config file is not a valid JSON file: {json_error}")
-                raise Exception(f"{self.config_file_location} may contain JSON format problems")
 
         except Exception as err:
             self.logger.error(f"Error loading config: {err}")
             raise err
         
     def change_key(self, new_gcp_key_config: GCPKeyConfig) -> bool:
-        old_key_configuration = self.gcp_key_config
-        old_crypto_client = self.crypto_client
+        with self._lock:
+            old_key_configuration = self.gcp_key_config
+            old_key_purpose_details = self.key_purpose_details
+            old_encryption_algorithm = self.encryption_algorithm
+            old_is_asymmetric = self.is_asymmetric
 
-        try:
-            # Update the key and reinitialize the CryptographyClient
-            config = self.config
-            if not config:
-                self.load_config()
-            self.gcp_key_config = new_gcp_key_config
-            self.get_key_details()
-            self.__save_config({}, force=True)
-        except Exception as error:
-            # Restore the previous key and crypto client if the operation fails
-            self.gcp_key_config = old_key_configuration
-            self.crypto_client = old_crypto_client
-            self.logger.error(
-                f"Failed to change the key to '{new_gcp_key_config.to_key_name()}' for config '{self.config_file_location}': {error}"
-            )
-            raise Exception(f"Failed to change the key for {self.config_file_location}")
+            try:
+                # Update the key and reinitialize the CryptographyClient
+                config = self.config
+                if config is None:
+                    self.load_config()
+                self.gcp_key_config = new_gcp_key_config
+                self.get_key_details()
+                self.__save_config(force=True)
+            except Exception as error:
+                # Restore all key-related state if the operation fails
+                self.gcp_key_config = old_key_configuration
+                self.key_purpose_details = old_key_purpose_details
+                self.encryption_algorithm = old_encryption_algorithm
+                self.is_asymmetric = old_is_asymmetric
+                self.logger.error(
+                    f"Failed to change the key to '{new_gcp_key_config.to_key_name()}' for config '{self.config_file_location}': {error}"
+                )
+                raise Exception(f"Failed to change the key for {self.config_file_location}")
 
-        return True
+            return True
     
     def read_storage(self) -> Dict[str, str]:
-        if not self.config:
-            self.load_config()
-        return self.config
-    
+        with self._lock:
+            if self.config is None:
+                self.load_config()
+            return dict(self.config)
+
     def save_storage(self, updated_config: Dict[str, str]) -> None:
-        self.__save_config(updated_config)
-        
+        with self._lock:
+            self.__save_config(updated_config)
+
     def get(self, key: ConfigKeys) -> str:
         config = self.read_storage()
         return config.get(key.value)
-    
+
     def set(self, key: ConfigKeys, value):
-        config = self.read_storage()
-        config[key.value] = value
-        self.save_storage(config)
-        return config
+        with self._lock:
+            config = self.read_storage()
+            config[key.value] = value
+            self.save_storage(config)
+            return config
 
     def delete(self, key: ConfigKeys):
-        config = self.read_storage()
-
-        kv = key.value
-        if kv in config:
-            del config[kv]
-            self.logger.debug("Removed key %s" % kv)
-        else:
-           self.logger.debug("No key %s was found in config" % kv)
-
-        self.save_storage(config)
-        return config
+        with self._lock:
+            kv = key.value
+            new_config = dict(self.config)
+            if kv in new_config:
+                del new_config[kv]
+                self.logger.debug("Removed key %s" % kv)
+            else:
+                self.logger.debug("No key %s was found in config" % kv)
+            self.save_storage(new_config)
+            return dict(self.config)
 
     def delete_all(self):
-        self.read_storage()
-        self.config.clear()
-        self.save_storage(self.config)
-        return dict(self.config)
+        with self._lock:
+            if os.path.exists(self.config_file_location):
+                os.remove(self.config_file_location)
+            self.config = {}
+            self.last_saved_config_hash = ""
+            return {}
 
     def contains(self, key: ConfigKeys):
         config = self.read_storage()

@@ -4,136 +4,79 @@ This directory contains comprehensive tests for the Keeper Secrets Manager Ruby 
 
 ## Test Organization
 
-```
-test/
-├── README.md                       # This file
-├── test_all_features.rb           # Comprehensive feature test
-├── integration/                    # Integration tests with API
-│   ├── live_api_test.rb          # Live API testing
-│   └── capture_responses.rb      # Capture real API responses for mocks
-└── run_basic_tests.rb            # Basic unit test runner
+The Ruby SDK has two parallel test systems:
 
-spec/                              # RSpec tests (Ruby standard)
-├── spec_helper.rb                 # RSpec configuration
-├── fixtures/                      # Test data and mock responses
-├── support/                       # Test helpers
-│   └── mock_helpers.rb           # Mock data generators
-└── keeper_secrets_manager/
-    ├── unit/                      # Unit tests
-    │   ├── dto_spec.rb           # DTO tests
-    │   ├── storage_spec.rb       # Storage tests
-    │   ├── crypto_spec.rb        # Crypto tests
-    │   └── notation_spec.rb      # Notation parser tests
-    └── integration/               # Integration tests
-        └── secrets_manager_spec.rb # Full SDK integration tests
-```
+### 1. RSpec Tests (spec/) - **Automated CI/CD Testing**
+Fast, repeatable tests that run on every commit
+
+### 2. Manual Test Scripts (test/integration/) - **Developer Tools**
+Interactive scripts for manual testing, debugging, and demonstration
 
 ## Running Tests
 
-### Unit Tests (No Dependencies)
-
-```bash
-# Run comprehensive feature tests
-ruby -I lib test/test_all_features.rb
-
-# Run basic unit tests
-ruby -I lib test/run_basic_tests.rb
-```
-
-### RSpec Tests (Requires Bundle)
+### Quick Start (Recommended)
 
 ```bash
 # Install dependencies
 bundle install
 
-# Run all RSpec tests
-bundle exec rspec
+# Run all automated tests (unit + integration)
+bundle exec rspec                    # 282 examples, ~3 seconds
 
-# Run only unit tests
-bundle exec rspec spec/keeper_secrets_manager/unit
-
-# Run specific test file
-bundle exec rspec spec/keeper_secrets_manager/unit/dto_spec.rb
+# Run offline mock test (no config.base64 needed)
+export KEEPER_MOCK_MODE=true
+ruby -I lib test/integration/test_offline_mock.rb
 ```
 
-### Integration Tests
+### RSpec Tests (Automated)
 
 ```bash
-# Run with real API (requires config.base64)
-ruby -I lib test/integration/live_api_test.rb
+# Run all RSpec tests (unit + integration)
+bundle exec rspec                    # 282 examples
 
-# Capture API responses for offline testing
-ruby -I lib test/integration/capture_responses.rb
+# Run only unit tests
+bundle exec rspec spec/keeper_secrets_manager/unit      # 191 examples
+
+# Run only integration tests
+bundle exec rspec spec/keeper_secrets_manager/integration   # 91 examples
+
+# Run specific test file
+bundle exec rspec spec/keeper_secrets_manager/integration/totp_spec.rb
 ```
 
-## Test Coverage
+### Manual Integration Tests (Developer Tools)
 
-The test suite covers:
+```bash
+# Offline testing (no config.base64 required)
+export KEEPER_MOCK_MODE=true
+ruby -I lib test/integration/test_offline_mock.rb
 
-1. **DTOs and Field Operations**
-   - Record creation and manipulation
-   - Dynamic field access
-   - Complex field types
-   - Custom fields
+# Online testing (requires config.base64)
+ruby -I lib test/integration/full_crud_test.rb
+ruby -I lib test/integration/test_totp.rb
+ruby -I lib test/integration/test_file_operations.rb
 
-2. **Storage Implementations**
-   - In-memory storage
-   - File-based storage
-   - Environment storage
-   - Caching storage
-
-3. **Notation Parser**
-   - Simple selectors (type, title, notes)
-   - Field selectors with arrays
-   - Complex field property access
-   - Custom field access
-   - Escaped characters
-
-4. **Field Type Helpers**
-   - All standard field types
-   - Complex object fields
-   - Custom field creation
-
-5. **Utilities**
-   - Base64 encoding/decoding
-   - URL-safe encoding
-   - UID generation and validation
-   - String conversions
-
-6. **Crypto Functions**
-   - Random byte generation
-   - HMAC generation and verification
-   - PKCS7 padding/unpadding
-   - AES encryption (with CBC fallback for older Ruby)
+# Multi-version testing
+ruby test/integration/docker_multi_version_test.rb
+```
 
 ## Mock Testing
 
-The SDK supports both online and offline testing:
+The SDK now supports comprehensive offline testing with proper AES-256-GCM encryption:
 
-- **Online**: Tests run against real Keeper API
-- **Offline**: Tests use mock data from `spec/fixtures/`
-
-To run tests offline:
+### RSpec Tests (Always Mock)
 ```bash
-# Don't set KSM_TEST_LIVE environment variable
-bundle exec rspec
+# RSpec tests use mock data by default (no config.base64 needed)
+bundle exec rspec                     # All 282 examples run in mock mode
 ```
 
-To run tests online:
+### Manual Integration Tests
 ```bash
-# Set environment variable
-KSM_TEST_LIVE=1 bundle exec rspec
+# Offline mode (no config.base64 required)
+export KEEPER_MOCK_MODE=true
+ruby -I lib test/integration/test_offline_mock.rb
+
+# Online mode (requires config.base64)
+ruby -I lib test/integration/full_crud_test.rb
+ruby -I lib test/integration/test_totp.rb
 ```
-
-## Creating Test Data
-
-Use the `capture_responses.rb` script to:
-1. Create test records in various formats
-2. Test all CRUD operations
-3. Save responses for offline mock testing
-
-## Ruby Version Compatibility
-
-- Tests pass on Ruby 2.6+
-- Full API functionality requires Ruby 2.7+ (for AES-GCM)
-- SDK includes AES-CBC fallback for older Ruby versions

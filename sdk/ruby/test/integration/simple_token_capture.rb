@@ -26,6 +26,7 @@ hostname = case region.upcase
            when 'GOV' then 'govcloud.keepersecurity.us'
            when 'JP' then 'keepersecurity.jp'
            when 'CA' then 'keepersecurity.ca'
+           when 'IL5' then 'il5.keepersecurity.us'
            else 'keepersecurity.com'
            end
 

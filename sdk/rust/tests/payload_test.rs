@@ -23,7 +23,7 @@ mod payload_test {
 
         for &key_num in key_nums.iter() {
             let transmission_key =
-                SecretsManager::generate_transmission_key(&key_num.to_string()).unwrap();
+                SecretsManager::generate_transmission_key(&key_num.to_string(), None).unwrap();
 
             assert_eq!(
                 key_num.to_string(),

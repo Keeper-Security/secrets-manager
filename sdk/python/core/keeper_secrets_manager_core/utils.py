@@ -88,8 +88,15 @@ def base64_to_bytes(s):
         Decoded bytes
 
     Raises:
-        KeeperError: If the base64 string is malformed or has incorrect padding
+        KeeperError: If the base64 string is None, malformed, or has incorrect padding
     """
+    if s is None:
+        raise exceptions.KeeperError(
+            "base64_to_bytes received None. A required configuration value is "
+            "missing, or a server response field was empty. Verify your "
+            "configuration is complete, or reinitialize with a fresh "
+            "One-Time Token if the local config was lost."
+        )
     try:
         return base64.urlsafe_b64decode(s)
     except binascii.Error as e:
@@ -101,7 +108,21 @@ def base64_to_bytes(s):
 
 
 def base64_to_string(b64s):
-    return base64.b64decode(b64s).decode('UTF-8')
+    if b64s is None:
+        raise exceptions.KeeperError(
+            "base64_to_string received None. A required configuration value is "
+            "missing, or a server response field was empty. Verify your "
+            "configuration is complete, or reinitialize with a fresh "
+            "One-Time Token if the local config was lost."
+        )
+    try:
+        return base64.b64decode(b64s).decode('UTF-8')
+    except binascii.Error as e:
+        raise exceptions.KeeperError(
+            f"Failed to decode base64 data: {str(e)}. "
+            "This may indicate a malformed or corrupted value in your configuration. "
+            "Please verify your configuration file is valid and has not been truncated."
+        )
 
 
 def is_base64(s):
@@ -116,6 +137,13 @@ def string_to_bytes(s):
 
 
 def url_safe_str_to_bytes(s):
+    if s is None:
+        raise exceptions.KeeperError(
+            "url_safe_str_to_bytes received None. A required configuration value is "
+            "missing, or a server response field was empty. Verify your "
+            "configuration is complete, or reinitialize with a fresh "
+            "One-Time Token if the local config was lost."
+        )
     b = base64.urlsafe_b64decode(s + '==')
     return b
 
@@ -293,7 +321,7 @@ def set_config_mode(file, logger=None):
                 commands = [
                     'icacls.exe "{}" /reset'.format(file),
                     'icacls.exe "{}" /inheritance:r'.format(file),
-                    'icacls.exe "{}" /remove:g Everyone:F'.format(file),
+                    'icacls.exe "{}" /remove Everyone'.format(file),
                     'icacls.exe "{}" /grant:r Administrators:F'.format(file),
                     'icacls.exe "{}" /grant:r *{}:F'.format(file, sid),
                 ]
@@ -448,7 +476,7 @@ def check_config_mode(file, color_mod=None, logger=None) -> bool:
                                             "for other users and groups.\n\n".format(file)
                                     message += '> icacls.exe "{}" /reset\n'.format(file)
                                     message += '> icacls.exe "{}" /inheritance:r\n'.format(file)
-                                    message += '> icacls.exe "{}" /remove:g Everyone:F\n'.format(file)
+                                    message += '> icacls.exe "{}" /remove Everyone\n'.format(file)
                                     message += '> icacls.exe "{}" /grant:r Administrators:F\n'.format(file)
                                     message += '> icacls.exe "{}" /grant:r *{}:F\n'.format(file, sid)
                                     message += "\nTo disable this check, set the environmental variable " \

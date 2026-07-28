@@ -21,6 +21,7 @@ pub fn get_keeper_servers() -> HashMap<&'static str, &'static str> {
         ("GOV", "govcloud.keepersecurity.us"),
         ("JP", "keepersecurity.jp"),
         ("CA", "keepersecurity.ca"),
+        ("IL5", "il5.keepersecurity.us"),
     ];
 
     // Build the HashMap at runtime using the array

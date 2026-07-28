@@ -1,17 +1,25 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey} from './platform'
 import {webSafe64FromBytes, webSafe64ToBytes, tryParseInt} from './utils'
 import {parseNotation} from './notation'
+import {KeeperThrottleError} from './errors'
 
 export {KeyValueStorage} from './platform'
 
 let packageVersion = '[VI]{version}[/VI]'
 const KEY_HOSTNAME = 'hostname' // base url for the Secrets Manager service
 const KEY_SERVER_PUBLIC_KEY_ID = 'serverPublicKeyId'
+const KEY_SERVER_PUBLIC_KEY = 'serverPublicKey'
 const KEY_CLIENT_ID = 'clientId'
 const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the client before public key
 const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
 const KEY_OWNER_PUBLIC_KEY = 'appOwnerPublicKey' // The application owner public key, to create records
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
+
+// Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
+// per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
+// request, so the counter only clears after 10s of silence).
+const MAX_THROTTLE_RETRIES = 5
+const BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
 
 let keeperPublicKeys: Record<number, Uint8Array>
@@ -44,6 +52,52 @@ export type SecretManagerOptions = {
     storage: KeyValueStorage
     queryFunction?: (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean) => Promise<KeeperHttpResponse>
     allowUnverifiedCertificate?: boolean
+    serverPublicKey?: string
+    serverPublicKeyId?: string
+    // Override the sleep between throttle retries (primarily for tests). Defaults to setTimeout.
+    throttleSleep?: (milliseconds: number) => Promise<void>
+}
+
+// Error classes live in a dependency-free module (errors.ts) to avoid a circular import with
+// utils.ts/platform code that throws them; re-exported here so the public API is unchanged.
+export {KeeperError, KeeperThrottleError} from './errors'
+
+// Returns a jitter multiplier in [-0.25, 0.25). Kept separate so concurrent clients
+// desynchronize their retries; unit tests exercise throttleDelay with a pinned jitter.
+export const throttleJitter = (): number => Math.random() * 0.5 - 0.25
+
+/**
+ * If `body` is a backend throttle error (`result_code`/`error` === "throttled") returns its
+ * `retry_after` in seconds (>= 0); otherwise returns `null` so the caller falls through to
+ * normal error handling. Non-JSON / non-object bodies return `null`.
+ */
+export const parseThrottle = (body: string): number | null => {
+    let obj: any
+    try {
+        obj = JSON.parse(body)
+    } catch {
+        return null
+    }
+    if (!obj || typeof obj !== 'object') {
+        return null
+    }
+    const resultCode = obj.result_code ?? obj.error
+    if (resultCode !== 'throttled') {
+        return null
+    }
+    const retryAfter = Number(obj.retry_after)
+    return Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 0
+}
+
+/**
+ * Computes the backoff delay (milliseconds) for a 0-based `attempt`: `retryAfter` seconds when
+ * provided (> 0), otherwise exponential backoff (BASE_THROTTLE_DELAY_SEC * 2**attempt -> 11, 22,
+ * 44, 88, 176s). The `jitter` fraction (typically in [-0.25, 0.25)) is then applied.
+ */
+export const throttleDelay = (attempt: number, retryAfter: number, jitter: number = throttleJitter()): number => {
+    const baseSec = retryAfter > 0 ? retryAfter : BASE_THROTTLE_DELAY_SEC * Math.pow(2, attempt)
+    const sec = baseSec + baseSec * jitter
+    return Math.max(sec, 0) * 1000
 }
 
 export type QueryOptions = {
@@ -172,10 +226,10 @@ type SecretsManagerResponseRecord = {
     revision: number
     files: SecretsManagerResponseFile[]
     innerFolderUid: string
-    links?: KeeperRecordLink[]
+    links?: KeeperRecordLinkRaw[]
 }
 
-type KeeperRecordLink = {
+type KeeperRecordLinkRaw = {
     recordUid: string
     data?: string
     path?: string
@@ -229,7 +283,7 @@ export type KeeperRecord = {
     data: any
     revision: number
     files?: KeeperFile[]
-    links?: KeeperRecordLink[]
+    links?: KeeperRecordLinkRaw[]
 }
 
 export type KeeperFolder = {
@@ -252,9 +306,196 @@ export type KeeperFileUpload = {
     data: Uint8Array
 }
 
-type KeeperError = {
+type KeeperApiError = {
     error?: string
     key_id?: number
+}
+
+export class KeeperRecordLink {
+    readonly recordUid: string
+    readonly data: string | undefined
+    readonly path: string | undefined
+    private readonly ownerRecordUid: string
+
+    constructor(raw: KeeperRecordLinkRaw, ownerRecordUid: string) {
+        this.recordUid = raw.recordUid
+        this.data = raw.data
+        this.path = raw.path
+        this.ownerRecordUid = ownerRecordUid
+    }
+
+    toString(): string {
+        return `[KeeperRecordLink: recordUid=${this.recordUid}, path=${this.path}]`
+    }
+
+    private _parseJsonData(): Record<string, unknown> | null {
+        const decoded = this.getDecodedData()
+        if (decoded == null) return null
+        if (!decoded.startsWith('{') && !decoded.startsWith('[')) return null
+        try {
+            const parsed = JSON.parse(decoded)
+            return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+                ? parsed as Record<string, unknown>
+                : null
+        } catch {
+            return null
+        }
+    }
+
+    private _getBooleanValue(key: string, checkAllowedSettings = false): boolean {
+        const parsed = this._parseJsonData()
+        if (parsed == null) return false
+        const value = parsed[key]
+        if (typeof value === 'boolean') return value
+        if (checkAllowedSettings) {
+            const allowedSettings = parsed['allowedSettings']
+            if (typeof allowedSettings === 'object' && allowedSettings !== null) {
+                const nested = (allowedSettings as Record<string, unknown>)[key]
+                if (typeof nested === 'boolean') return nested
+            }
+        }
+        return false
+    }
+
+    private _getIntValue(key: string): number | null {
+        const parsed = this._parseJsonData()
+        const value = parsed ? parsed[key] : undefined
+        return typeof value === 'number' && !Number.isNaN(value) ? Math.trunc(value) : null
+    }
+
+    private static _isReadableJson(text: string): boolean {
+        return text.startsWith('{') || text.startsWith('[')
+    }
+
+    private static _isPrintableText(text: string): boolean {
+        if (!text) return false
+        const sample = text.slice(0, 100)
+        let printable = 0
+        for (const c of sample) {
+            const code = c.charCodeAt(0)
+            if ((code >= 0x20 && code <= 0x7e) || c === '\n' || c === '\r' || c === '\t') printable++
+        }
+        return printable / sample.length > 0.9
+    }
+
+    private static _parseJsonToRecord(jsonStr: string): Record<string, unknown> | null {
+        try {
+            const parsed = JSON.parse(jsonStr)
+            return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+                ? parsed as Record<string, unknown>
+                : null
+        } catch {
+            return null
+        }
+    }
+
+    isAdminUser(): boolean { return this._getBooleanValue('is_admin') }
+    isLaunchCredential(): boolean { return this._getBooleanValue('is_launch_credential') }
+    isIamUser(): boolean { return this._getBooleanValue('is_iam_user') }
+    belongsTo(): boolean { return this._getBooleanValue('belongs_to') }
+    noUpdateServices(): boolean { return this._getBooleanValue('no_update_services') }
+    allowsRotation(): boolean { return this._getBooleanValue('rotation', true) }
+    allowsConnections(): boolean { return this._getBooleanValue('connections', true) }
+    allowsPortForwards(): boolean { return this._getBooleanValue('portForwards', true) }
+    allowsSessionRecording(): boolean { return this._getBooleanValue('sessionRecording', true) }
+    allowsTypescriptRecording(): boolean { return this._getBooleanValue('typescriptRecording', true) }
+    allowsRemoteBrowserIsolation(): boolean { return this._getBooleanValue('remoteBrowserIsolation', true) }
+    aiEnabled(): boolean { return this._getBooleanValue('aiEnabled', true) }
+    aiSessionTerminate(): boolean { return this._getBooleanValue('aiSessionTerminate', true) }
+    rotatesOnTermination(): boolean { return this._getBooleanValue('rotateOnTermination') }
+
+    getLinkDataVersion(): number | null { return this._getIntValue('version') }
+
+    getDecodedData(): string | null {
+        if (this.data == null) return null
+        if (!/^[A-Za-z0-9+/]*={0,2}$/.test(this.data)) return null
+        try {
+            return platform.bytesToString(platform.base64ToBytes(this.data))
+        } catch {
+            return null
+        }
+    }
+
+    hasReadableData(): boolean {
+        const decoded = this.getDecodedData()
+        return decoded != null && KeeperRecordLink._isReadableJson(decoded)
+    }
+
+    mightBeEncrypted(): boolean {
+        return this.path === 'ai_settings' || this.path === 'jit_settings'
+    }
+
+    hasEncryptedData(): boolean {
+        const decoded = this.getDecodedData()
+        if (decoded == null) return false
+        if (KeeperRecordLink._isReadableJson(decoded)) return false
+        return !KeeperRecordLink._isPrintableText(decoded)
+    }
+
+    async getDecryptedData(recordKey?: Uint8Array): Promise<string | null> {
+        if (this.data == null) return null
+        try {
+            const encrypted = platform.base64ToBytes(this.data)
+            const decrypted = recordKey
+                ? await platform.decryptWithKey(encrypted, recordKey)
+                : await platform.decrypt(encrypted, this.ownerRecordUid)
+            return platform.bytesToString(decrypted)
+        } catch {
+            return null
+        }
+    }
+
+    async getLinkData(recordKey?: Uint8Array): Promise<Record<string, unknown> | null> {
+        const decoded = this.getDecodedData()
+        if (decoded == null) return null
+        if (KeeperRecordLink._isReadableJson(decoded)) {
+            const parsed = KeeperRecordLink._parseJsonToRecord(decoded)
+            if (parsed != null) return parsed
+        }
+        const decrypted = await this.getDecryptedData(recordKey)
+        if (decrypted == null) return null
+        return KeeperRecordLink._parseJsonToRecord(decrypted)
+    }
+
+    async getAiSettingsData(recordKey?: Uint8Array): Promise<Record<string, unknown> | null> {
+        return this.getSettingsForPath('ai_settings', recordKey)
+    }
+
+    async getJitSettingsData(recordKey?: Uint8Array): Promise<Record<string, unknown> | null> {
+        return this.getSettingsForPath('jit_settings', recordKey)
+    }
+
+    async getMetaData(recordKey?: Uint8Array): Promise<Record<string, unknown> | null> {
+        return this.getSettingsForPath('meta', recordKey)
+    }
+
+    async getSettingsForPath(settingsPath: string, recordKey?: Uint8Array): Promise<Record<string, unknown> | null> {
+        if (this.path !== settingsPath) return null
+        return this.getLinkData(recordKey)
+    }
+
+    getAllowedSettings(): Record<string, unknown> {
+        const parsed = this._parseJsonData()
+        const s = parsed ? parsed['allowedSettings'] : undefined
+        return (typeof s === 'object' && s !== null && !Array.isArray(s))
+            ? s as Record<string, unknown>
+            : {}
+    }
+
+    getRotationSettings(): Record<string, unknown> | null {
+        const parsed = this._parseJsonData()
+        const s = parsed ? parsed['rotation_settings'] : undefined
+        return (typeof s === 'object' && s !== null && !Array.isArray(s))
+            ? s as Record<string, unknown>
+            : null
+    }
+}
+
+export function getLinks(record: KeeperRecord): KeeperRecordLink[] {
+    const raw = record.links || []
+    return raw
+        .filter(link => typeof link.recordUid === 'string' && link.recordUid.length > 0)
+        .map(link => new KeeperRecordLink(link, record.recordUid))
 }
 
 const getUidBytes = (): Uint8Array => {
@@ -502,6 +743,12 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
     const transmissionKey = platform.getRandomBytes(32)
     const keyNumberString = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
     const keyNumber = keyNumberString ? Number(keyNumberString) : 7
+    const customPublicKeyB64 = await storage.getString(KEY_SERVER_PUBLIC_KEY)
+    if (customPublicKeyB64) {
+        const customPublicKey = webSafe64ToBytes(customPublicKeyB64)
+        const encryptedKey = await platform.publicEncrypt(transmissionKey, customPublicKey)
+        return { publicKeyId: keyNumber, key: transmissionKey, encryptedKey }
+    }
     const keeperPublicKey = keeperPublicKeys[keyNumber]
     if (!keeperPublicKey) {
         throw new Error(`Key number ${keyNumber} is not supported`)
@@ -524,11 +771,19 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     return {payload: encryptedPayload, signature}
 }
 const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
+    if (options.serverPublicKey) {
+        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
+    }
+    if (options.serverPublicKeyId) {
+        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
+    }
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
         throw new Error('hostname is missing from the configuration')
     }
     const url = `https://${hostName}/api/rest/sm/v1/${path}`
+    const sleep = options.throttleSleep || ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)))
+    let throttleAttempt = 0
     while (true) {
         const transmissionKey = await generateTransmissionKey(options.storage)
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
@@ -537,13 +792,32 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
             let errorMessage
             if (response.data) {
                 errorMessage = platform.bytesToString(response.data.slice(0, 1000))
-                try {
-                    const errorObj: KeeperError = JSON.parse(errorMessage)
-                    if (errorObj.error === 'key') {
-                        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, errorObj.key_id!.toString())
+                // Throttle retry with exponential backoff + jitter. Checked
+                // before key-rotation so that path is untouched, and gated on the 403 status so a
+                // non-403 response carrying a {"error":"throttled"} body is not retried.
+                if (response.statusCode === 403) {
+                    const retryAfter = parseThrottle(errorMessage)
+                    if (retryAfter !== null) {
+                        if (throttleAttempt >= MAX_THROTTLE_RETRIES) {
+                            throw new KeeperThrottleError(`Request throttled by Keeper backend; exhausted ${MAX_THROTTLE_RETRIES} retries`)
+                        }
+                        const delay = throttleDelay(throttleAttempt, retryAfter)
+                        console.error(`WARNING: Request throttled (attempt ${throttleAttempt + 1}/${MAX_THROTTLE_RETRIES}); retrying in ${(delay / 1000).toFixed(1)}s`)
+                        await sleep(delay)
+                        throttleAttempt++
                         continue
                     }
-                } catch {
+                }
+                let errorObj: KeeperApiError | null = null
+                try { errorObj = JSON.parse(errorMessage) } catch {}
+                if (errorObj?.error === 'key') {
+                    const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
+                    if (customKey) {
+                        const currentKeyId = await options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+                        throw new Error(`Server rejected the custom server public key (id ${currentKeyId}). The server suggested key id ${errorObj.key_id}. Please update your IL5 KSM configuration.`)
+                    }
+                    await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, errorObj.key_id!.toString())
+                    continue
                 }
             } else {
                 errorMessage = `unknown ksm error, code ${response.statusCode}`
@@ -591,6 +865,12 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
 
 const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
     const storage = options.storage
+    if (options.serverPublicKey) {
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
+    }
+    if (options.serverPublicKeyId) {
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
+    }
     const payload = await prepareGetPayload(storage, queryOptions)
     const responseData = await postQuery(options, 'get_secret', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
@@ -619,9 +899,11 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
     if (response.folders) {
         for (const folder of response.folders) {
             try {
+                if (!folder.folderKey) throw new Error(`Folder key missing for UID ${folder.folderUid} — reinitialize with a fresh One-Time Token`)
                 await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
                 for (const record of folder.records) {
                     try {
+                        if (!record.recordKey) throw new Error(`Record key missing for UID ${record.recordUid} in folder ${folder.folderUid}`)
                         await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, folder.folderUid)
                         const decryptedRecord = await decryptRecord(record)
                         decryptedRecord.folderUid = folder.folderUid
@@ -723,13 +1005,30 @@ export const initializeStorage = async (
             AU: 'keepersecurity.com.au',
             GOV: 'govcloud.keepersecurity.us',
             JP: 'keepersecurity.jp',
-            CA: 'keepersecurity.ca'
+            CA: 'keepersecurity.ca',
+            IL5: 'il5.keepersecurity.us'
 
         }[tokenParts[0].toUpperCase()]
         if (!host) {
             host = tokenParts[0]
         }
         clientKey = tokenParts[1]
+        if (tokenParts[0].toUpperCase() === 'IL5') {
+            if (tokenParts.length > 4) {
+                throw new Error(`IL5 token has unexpected extra segments (${tokenParts.length} parts, expected 2 or 4)`)
+            }
+            if (tokenParts.length === 4) {
+                const keyId = tokenParts[2]
+                if (!/^\d+$/.test(keyId)) {
+                    throw new Error(`IL5 token: serverPublicKeyId '${keyId}' must be a positive integer`)
+                }
+                if (tokenParts[3].length < 80) {
+                    throw new Error(`IL5 token: serverPublicKey appears malformed`)
+                }
+                await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, keyId)
+                await storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
+            }
+        }
     }
     const clientKeyBytes = webSafe64ToBytes(clientKey)
     const clientKeyHash = await platform.hash(clientKeyBytes, CLIENT_ID_HASH_TAG)

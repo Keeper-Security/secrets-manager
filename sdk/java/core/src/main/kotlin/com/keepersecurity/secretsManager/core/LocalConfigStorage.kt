@@ -14,9 +14,7 @@ import kotlin.collections.HashMap
 
 fun saveCachedValue(data: ByteArray) {
     val file = File("cache.dat")
-    val fos = FileOutputStream(file)
-    fos.write(data)
-    fos.close()
+    FileOutputStream(file).use { fos -> fos.write(data) } // KSM-855: .use{} closes on exception
 
     // Set file permissions to 0600 (owner read/write only)
     try {
@@ -34,12 +32,9 @@ fun saveCachedValue(data: ByteArray) {
 
 fun getCachedValue(): ByteArray {
     try {
-        val fis = FileInputStream("cache.dat")
-        val bytes = fis.readBytes()
-        fis.close()
-        return bytes
+        return FileInputStream("cache.dat").use { it.readBytes() } // KSM-855: .use{} closes on exception
     } catch (e: Exception) {
-        throw Exception("Cached value does not exist")
+        throw SecretsManagerException("Cached value does not exist")
     }
 }
 
@@ -54,7 +49,8 @@ class InMemoryStorage(configJson: String? = null) : KeyValueStorage {
         var clientKey: String? = null,
         var appKey: String? = null,
         var appOwnerPublicKey: String? = null,
-        var serverPublicKeyId: String? = null
+        var serverPublicKeyId: String? = null,
+        var serverPublicKey: String? = null
     )
 
     private val strings: MutableMap<String, String> = HashMap()
@@ -74,7 +70,8 @@ class InMemoryStorage(configJson: String? = null) : KeyValueStorage {
             optSetFn(KEY_CLIENT_KEY, config.clientKey)
             optSetFn(KEY_APP_KEY, config.appKey)
             optSetFn(KEY_OWNER_PUBLIC_KEY, config.appOwnerPublicKey)
-            optSetFn(KEY_SERVER_PUBIC_KEY_ID, config.serverPublicKeyId)
+            optSetFn(KEY_SERVER_PUBLIC_KEY_ID, config.serverPublicKeyId)
+            optSetFn(KEY_SERVER_PUBLIC_KEY, config.serverPublicKey)
         }
     }
 
@@ -112,13 +109,14 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         var clientKey: String? = null,
         var appKey: String? = null,
         var appOwnerPublicKey: String? = null,
-        var serverPublicKeyId: String? = null
+        var serverPublicKeyId: String? = null,
+        var serverPublicKey: String? = null
     )
 
     private val file = configName?.let { File(it) }
     private var storage: InMemoryStorage = if (file != null && file.exists()) {
-        val inputStream = BufferedReader(FileReader(file))
-        InMemoryStorage(inputStream.readText())
+        val content = BufferedReader(FileReader(file)).use { it.readText() } // KSM-855: was never closed
+        InMemoryStorage(content)
     } else {
         InMemoryStorage()
     }
@@ -134,11 +132,10 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         config.clientKey = storage.getString(KEY_CLIENT_KEY)
         config.appKey = storage.getString(KEY_APP_KEY)
         config.appOwnerPublicKey = storage.getString(KEY_OWNER_PUBLIC_KEY)
-        config.serverPublicKeyId = storage.getString(KEY_SERVER_PUBIC_KEY_ID)
+        config.serverPublicKeyId = storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+        config.serverPublicKey = storage.getString(KEY_SERVER_PUBLIC_KEY)
         val json = prettyJson.encodeToString(config)
-        val outputStream = BufferedWriter(FileWriter(file))
-        outputStream.write(json)
-        outputStream.close()
+        BufferedWriter(FileWriter(file)).use { it.write(json) } // KSM-855: .use{} closes on exception
 
         // Set file permissions to 0600 (owner read/write only)
         try {

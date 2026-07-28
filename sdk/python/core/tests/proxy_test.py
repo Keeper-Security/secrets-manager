@@ -139,9 +139,8 @@ class ProxyTest(unittest.TestCase):
         with open(ksm_cache_path, "wb") as cache_file:
             cache_file.write(b"")
 
-        # Reload the KSMCache module to ensure KSM_CACHE_DIR is set
-        import importlib, keeper_secrets_manager_core.core
-        importlib.reload(keeper_secrets_manager_core.core)
+        # KSM_CACHE_DIR is resolved lazily at call time (KSM-1004), so setting it
+        # above is enough; no module reload is needed.
         from keeper_secrets_manager_core.core import KSMCache
 
         with patch("requests.post", mocked_post):

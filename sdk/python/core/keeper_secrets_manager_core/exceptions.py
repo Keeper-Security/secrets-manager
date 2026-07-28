@@ -25,3 +25,16 @@ class KeeperAccessDenied(Exception):
         self.message = message
 
         super().__init__(self.message)
+
+
+class KeeperThrottleError(KeeperError):
+
+    """Raised when the Keeper backend throttles requests and the SDK has
+    exhausted its automatic retries (see MAX_THROTTLE_RETRIES).
+
+    Subclasses KeeperError so existing ``except KeeperError`` handlers keep
+    working; callers that want to react specifically to throttling can catch
+    this type instead.
+    """
+
+    pass

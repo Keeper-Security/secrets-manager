@@ -21,6 +21,7 @@ class ConfigKeys(Enum):
     KEY_OWNER_PUBLIC_KEY = 'appOwnerPublicKey'  # The application owner public key, to create records
     KEY_PRIVATE_KEY = 'privateKey'  # The client's private key
     KEY_SERVER_PUBLIC_KEY_ID = 'serverPublicKeyId'  # Which public key should be using?
+    KEY_SERVER_PUBLIC_KEY = 'serverPublicKey'        # Custom server EC public key (base64) for IL5 / isolated deployments
 
     KEY_BINDING_TOKEN = 'bat'
     KEY_BINDING_KEY = 'bindingKey'

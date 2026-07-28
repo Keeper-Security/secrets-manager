@@ -13,7 +13,6 @@ require 'json'
 require 'time'
 require 'net/http'
 require 'uri'
-require 'base64'
 
 puts '=== Custom Caching and HTTP Handling Examples ==='
 
@@ -21,14 +20,69 @@ puts '=== Custom Caching and HTTP Handling Examples ==='
 config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
 storage = KeeperSecretsManager::Storage::InMemoryStorage.new(config)
 
+# ============================================================================
+# Example 0: Built-in Disaster Recovery Caching (New in v17.2.0)
+# ============================================================================
+puts "\n0. Built-in CachingPostFunction (Recommended for Production):"
+puts "   Use the built-in disaster recovery caching for production apps"
+puts
+
+begin
+  # For production use, initialize from file with caching enabled
+  # sm = KeeperSecretsManager.from_file('keeper_config.json',
+  #                                     custom_post_function: KeeperSecretsManager::CachingPostFunction)
+
+  # For this example, we use InMemoryStorage to demonstrate the concept
+  sm = KeeperSecretsManager.new(
+    config: storage,
+    verify_ssl_certs: false,
+    custom_post_function: KeeperSecretsManager::CachingPostFunction
+  )
+
+  # First call - caches response to disk (ksm_cache.bin)
+  secrets = sm.get_secrets
+  puts "✓ Retrieved #{secrets.length} secrets (cached for disaster recovery)"
+
+  # Check if cache exists
+  if KeeperSecretsManager::Cache.cache_exists?
+    cache_path = KeeperSecretsManager::Cache.cache_file_path
+    cache_size = File.size(cache_path)
+    puts "  Cache saved: #{cache_path} (#{cache_size} bytes)"
+  end
+
+  # Customize cache location (optional)
+  puts "\n  To customize cache location, set environment variable:"
+  puts "    export KSM_CACHE_DIR='/var/cache/keeper'"
+
+  # Cache management
+  puts "\n  Cache Management:"
+  puts "    - KeeperSecretsManager::Cache.cache_exists?  # Check if cache exists"
+  puts "    - KeeperSecretsManager::Cache.cache_file_path # Get cache file path"
+  puts "    - KeeperSecretsManager::Cache.clear_cache     # Clear cache"
+
+  puts "\n  How it works:"
+  puts "    - Network requests are cached to disk automatically"
+  puts "    - On network failure, cached data is used automatically"
+  puts "    - Always tries network first (disaster recovery fallback)"
+  puts "    - Cache is encrypted for security"
+
+rescue => e
+  puts "✗ Error: #{e.message}"
+end
+
+puts "\n" + "="*80
+puts "The examples below show custom caching patterns for advanced use cases"
+puts "For most applications, use the built-in CachingPostFunction shown above"
+puts "="*80
+
 # Helper method to make HTTP requests (reusable across examples)
 def make_http_request(url, transmission_key, encrypted_payload, verify_ssl)
   uri = URI(url)
   request = Net::HTTP::Post.new(uri)
   request['Content-Type'] = 'application/octet-stream'
   request['PublicKeyId'] = transmission_key.public_key_id.to_s
-  request['TransmissionKey'] = Base64.strict_encode64(transmission_key.encrypted_key)
-  request['Authorization'] = "Signature #{Base64.strict_encode64(encrypted_payload.signature)}"
+  request['TransmissionKey'] = KeeperSecretsManager::Utils.bytes_to_base64(transmission_key.encrypted_key)
+  request['Authorization'] = "Signature #{KeeperSecretsManager::Utils.bytes_to_base64(encrypted_payload.signature)}"
   request.body = encrypted_payload.encrypted_payload
 
   http = Net::HTTP.new(uri.host, uri.port)
@@ -374,6 +428,39 @@ rescue => e
 end
 
 # ============================================================================
+# Example 6: Built-in Disaster Recovery Caching
+# ============================================================================
+puts "\n6. Built-in CachingPostFunction (Recommended):"
+puts "   File-based disaster recovery caching"
+puts
+
+begin
+  # Use built-in caching function
+  sm = KeeperSecretsManager.new(
+    config: storage,
+    verify_ssl_certs: false,
+    custom_post_function: KeeperSecretsManager::CachingPostFunction
+  )
+
+  puts "  Making request with built-in caching..."
+  secrets = sm.get_secrets
+  puts "  ✓ Retrieved #{secrets.length} secrets"
+
+  if KeeperSecretsManager::Cache.cache_exists?
+    cache_path = KeeperSecretsManager::Cache.cache_file_path
+    cache_size = File.size(cache_path)
+    puts "  ✓ Cache created: #{cache_path} (#{cache_size} bytes)"
+    puts "  ✓ Encrypted secrets saved for disaster recovery"
+
+    # Clean up
+    KeeperSecretsManager::Cache.clear_cache
+    puts "  ✓ Cache cleared"
+  end
+rescue => e
+  puts "  ✗ Error: #{e.message}"
+end
+
+# ============================================================================
 # Summary
 # ============================================================================
 puts "\n" + "=" * 80
@@ -385,6 +472,12 @@ puts "2. Response Caching - Reduce API calls with TTL-based cache"
 puts "3. Offline Fallback - Gracefully handle network failures"
 puts "4. Rate Limiting - Prevent excessive API usage"
 puts "5. Combined Pattern - Production-ready implementation"
+puts "6. Built-in CachingPostFunction - Disaster recovery (RECOMMENDED)"
+puts
+puts "Recommended Patterns:"
+puts "  ✓ For disaster recovery: Use built-in CachingPostFunction"
+puts "  ✓ For TTL-based caching: Implement custom function (see Example 2)"
+puts "  ✓ For production: Combine caching + logging + rate limiting (see Example 5)"
 puts
 puts "Tips:"
 puts "  - Use caching for read-heavy workloads"
@@ -392,5 +485,6 @@ puts "  - Implement offline fallback for resilient applications"
 puts "  - Add request logging for debugging and auditing"
 puts "  - Consider Redis/Memcached for distributed caching"
 puts "  - Always include error handling in custom functions"
+puts "  - Set KSM_CACHE_DIR environment variable to control cache location"
 puts
 puts "=" * 80

@@ -4,6 +4,57 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.3.0
+**Breaking Changes**
+- `KeeperFile.url` changed from `String` to `String?` — callers that access `url` directly must now handle null; `downloadFile()` already does this with a typed exception
+- `KeeperRecordData.custom` changed from `MutableList<KeeperRecordField>?` to `MutableList<KeeperRecordField>` — assigning `null` to this field will no longer compile; use an empty list instead
+- `KEY_SERVER_PUBIC_KEY_ID` is deprecated — replace with `KEY_SERVER_PUBLIC_KEY_ID` (corrected spelling); the old name is retained as a `@Deprecated` alias for back-compatibility
+
+- KSM-878 - Throttle retry with exponential backoff
+  - Automatically retries HTTP 403 `{"error":"throttled"}` responses up to 5 times (`MAX_THROTTLE_RETRIES`)
+  - Exponential backoff starting at 11s (1s margin over the backend's 10s memcached TTL), with one-sided 0-25% jitter (delay never undercuts the server's requested `retry_after`); uses `retry_after` from the response body when present, capped at 176s (`MAX_THROTTLE_DELAY_SEC`)
+  - Warning logged to stderr on each retry (gated on `loggingEnabled`)
+  - Exhausted retries throw `KeeperThrottleException` (public; catchable separately from generic `Exception`)
+  - Injectable `throttleSleepMillis` hook in `SecretsManagerOptions` for test overrides
+- KSM-1008 - Align `KeeperRecordLink` accessors with Python reference
+  - Recursive `jsonElementToValue`/`jsonObjectToMap` helpers preserve JSON nulls (lossless, matching Python SDK)
+  - `getLinkData()` now returns `Map<String, Any?>` with typed scalars (String/Boolean/Int/Long/Double); nested objects and arrays are preserved
+  - `getBooleanValue` checks the nested `allowedSettings` object for permission flags in `path:"meta"` links when `checkAllowedSettings = true`; accessors for `allowsRotation()`, `allowsConnections()`, etc. updated accordingly
+  - Added `KeeperRecordLinkTest` suite covering all accessors, nested structures, and null preservation
+- KSM-1066 - Fix IL5 custom server public key not persisted by LocalConfigStorage
+  - `serverPublicKey` is now saved to and loaded from the on-disk config alongside `serverPublicKeyId`
+  - Without this fix, a second run after IL5 bind failed with "Key number X is not supported" because the key ID was stored but the key bytes were not
+- KSM-1067 - Fix IL5 stale-key diagnostic message swallowed by bare catch
+  - The actionable "Server rejected the custom server public key" error now propagates to callers instead of being swallowed
+- KSM-902 - Add IL5 (DoD Impact Level 5) region mapping and dynamic server public key injection
+  - Region: `IL5` OTT prefix maps to `il5.keepersecurity.us`
+  - Layer 1 (config field): `serverPublicKey` in storage config overrides the embedded key table
+  - Layer 2 (extended OTT): 4-segment `REGION:clientKey:keyId:serverPublicKey` saves key and ID on bind
+  - Layer 3 (constructor param): `SecretsManagerOptions(serverPublicKey = "...", serverPublicKeyId = "...")` persists both to storage
+  - When a custom key is configured, a server key-rotation hint throws a clear error rather than silently overwriting the custom key ID
+  - Note: the storage constant for the key ID is `KEY_SERVER_PUBLIC_KEY_ID`
+- KSM-823 - Fix `custom` field omitted from record create payload when no custom fields are set
+  - `KeeperRecordData.custom` now defaults to `mutableListOf()` instead of `null` — `kotlinx-serialization` previously skipped null fields, causing `"custom"` to be absent from the V3 API payload
+  - Consistent with Commander and Vault which always include `"custom": []`
+- KSM-854 - Fix `KeeperFileData` crash when `lastModified` field is absent from file metadata
+  - Files uploaded by non-SDK Keeper clients (iOS, Android, Web Vault) may omit `lastModified`
+  - Previously threw `MissingFieldException` and silently skipped the file attachment
+  - Now defaults to `0` when the field is absent, consistent with .NET SDK behavior (KSM-674)
+- KSM-753 - Fix record key decryption for shared folder records in flat `response.records[]`
+  - Records created via Commander/PowerShell in shared folders have their key encrypted with the folder key, not the app key
+  - SDK previously always used the app key for flat records, causing all field values to return null
+  - Now detects `innerFolderUid` and decrypts using the correct folder key
+- KSM-765 - Fix NPE crash when `url` field is absent from file response
+  - `KeeperFile.url` is now `String?` (nullable); server may omit it for files without a download URL
+- KSM-855 - Fix file descriptor leaks in `LocalConfigStorage` and HTTP connections
+  - `LocalConfigStorage`: replaced manual `stream.close()` calls with Kotlin `.use { }` in 4 locations — streams previously leaked on any I/O exception, and the init block never closed its reader at all
+  - `downloadFile`, `uploadFile`, `postFunction`: `HttpsURLConnection` is now explicitly disconnected in a `finally` block; `with()` is not try-with-resources and did not guarantee cleanup on exception
+- KSM-985 - Add typed empty-string guard to internal Base64 decoders (KSM-808 parity)
+  - `base64ToBytes("")` and `webSafe64ToBytes("")` now throw a `Keeper` exception instead of an opaque NPE from inside `java.util.Base64`
+- KSM-1026 - Make `SecretsManagerException` public
+  - Java consumers can now `catch (SecretsManagerException e)` to handle SDK-level errors by type instead of catching bare `Exception`
+  - `SecureRandomException` / `SecureRandomSlowGenerationException` remain internal (no public use case)
+
 ## 17.2.0
 - **SECURITY (KSM-699)** - Fix file permissions for config.json and cache.dat
   - Config and cache files now created with 0600 permissions (owner read/write only)

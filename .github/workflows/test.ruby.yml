@@ -2,12 +2,16 @@ name: Test Ruby SDK
 
 on:
   pull_request:
-    branches: [master]
+    branches:
+      - master
+      - 'release/sdk/ruby/**'
     paths:
       - 'sdk/ruby/**'
       - '.github/workflows/test.ruby.yml'
   push:
-    branches: [master]
+    branches:
+      - master
+      - 'release/sdk/ruby/**'
     paths:
       - 'sdk/ruby/**'
       - '.github/workflows/test.ruby.yml'
@@ -28,7 +32,7 @@ jobs:
 
     steps:
       - name: Get the source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
 
       - name: Set up Ruby ${{ matrix.ruby-version }}
         uses: ruby/setup-ruby@v1
@@ -41,12 +45,12 @@ jobs:
         run: |
           bundle exec rubocop || true  # Don't fail on linting for now
 
-      - name: Run unit tests
+      - name: Run RSpec tests (unit + integration)
         run: |
           bundle exec rspec spec/
 
-      - name: Run integration tests (mock mode)
+      - name: Run offline mock test
         env:
           KEEPER_MOCK_MODE: 'true'
         run: |
-          ruby -I lib test/integration/test_offline_mock.rb || true  # Don't fail if file doesn't exist yet
+          ruby -I lib test/integration/test_offline_mock.rb

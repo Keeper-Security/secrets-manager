@@ -1,305 +1,110 @@
-# Keeper Secrets Manager Ruby SDK
+## Keeper Secrets Manager Ruby SDK
 
-The Ruby SDK for Keeper Secrets Manager provides a flexible, dynamic interface for accessing and managing secrets stored in Keeper's zero-knowledge vault.
+For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/ruby-sdk
 
-## Features
+# Change Log
 
-- **Ruby 3.1+ Compatible**: Works with Chef, Puppet, and modern Ruby applications
-- **Dynamic Record Handling**: JavaScript-style flexible records with no rigid class hierarchies
-- **Minimal Dependencies**: Uses only Ruby standard library (no external runtime dependencies)
-- **Comprehensive Crypto**: Full encryption/decryption support using OpenSSL
-- **Multiple Storage Options**: In-memory, file-based, environment variables, and caching
-- **Notation Support**: Access specific fields using `keeper://` URI notation
-- **Field Helpers**: Optional convenience methods for common field types
+## 17.2.0 - 2025-11-14
+- KSM-685 - Fixed `CreateOptions.subfolder_uid` parameter API transmission
+- KSM-686 - Implemented disaster recovery caching with `CachingPostFunction`
+- KSM-687 - Added missing DTO fields for complete SDK parity (links, is_editable, inner_folder_uid, thumbnail_url, last_modified, expires_on)
+- KSM-1013 - Added typed linked-credential accessors (`KeeperRecordLink` via `record.get_links`) and a `request_links:` option on `get_secrets`
+- KSM-692 - Added HTTP proxy support for enterprise environments
+- KSM-694 - Added convenience methods (`upload_file_from_path`, `try_get_notation`)
+- KSM-696 - Fixed file permissions for Ruby SDK config files
+- KSM-697 - Comprehensive unit test coverage improvements (+358 tests, 63.3% coverage)
+- KSM-734 - Fixed notation lookup to handle duplicate UIDs from record shortcuts
+- KSM-743 - Added transmission public key #18 for Gov Cloud Dev environment support
+- Added `from_config()` convenience method for base64 config initialization
+- Added `update_secret_with_options()` method for removing file links
+- Added `download_thumbnail()` method for file thumbnails
+- Added development console (`bin/console`) for interactive SDK exploration
+- Fixed example files to use correct SDK APIs
+- Improved mock infrastructure with proper AES-256-GCM encryption
+
+## 17.1.0 - 2025-01-06
+- **BREAKING**: Minimum Ruby version increased to 3.1.0 (from 2.6.0)
+- Fixed ECC key generation to return 32-byte raw private keys
+- Fixed `update_secret` to correctly encrypt and persist changes
+- Fixed `download_file` SSL certificate verification
+- Fixed `upload_file` to use correct endpoint
+- Fixed `create_folder` encryption and parent_uid handling
+
+For full version history, see [CHANGELOG.md](CHANGELOG.md)
+
+# Quick Start
 
 ## Installation
 
-Add this line to your application's Gemfile:
-
-```ruby
-gem 'keeper_secrets_manager'
-```
-
-And then execute:
-
 ```bash
-$ bundle install
+gem install keeper_secrets_manager
 ```
 
-Or install it yourself as:
-
-```bash
-$ gem install keeper_secrets_manager
-```
-
-## Quick Start
-
-### Initialize with One-Time Token
+## Basic Usage
 
 ```ruby
 require 'keeper_secrets_manager'
 
-# Initialize with one-time token
-token = "US:ONE_TIME_TOKEN_HERE"
-secrets_manager = KeeperSecretsManager.from_token(token)
-
-# Retrieve secrets
-records = secrets_manager.get_secrets
-records.each do |record|
-  puts "#{record.title}: #{record.get_field_value_single('login')}"
-end
-```
-
-### Initialize with Existing Configuration
-
-```ruby
-# From config file
+# Initialize from config file
 secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
 
-# From environment (reads KSM_* variables)
-config = KeeperSecretsManager::Storage::EnvironmentStorage.new('KSM_')
-secrets_manager = KeeperSecretsManager.new(config: config)
+# Get all secrets
+records = secrets_manager.get_secrets
+
+# Access secret fields
+record = records.first
+puts "Password: #{record.password}"
 ```
 
-## Dynamic Record Creation
+## Linked Credentials (PAM)
 
-The Ruby SDK uses a flexible, JavaScript-style approach to records:
-
-```ruby
-# Create record with hash syntax
-record = KeeperSecretsManager::Dto::KeeperRecord.new(
-  title: 'My Server',
-  type: 'login',
-  fields: [
-    { 'type' => 'login', 'value' => ['admin'] },
-    { 'type' => 'password', 'value' => ['SecurePass123!'] },
-    { 'type' => 'url', 'value' => ['https://example.com'] },
-    { 
-      'type' => 'host', 
-      'value' => [{ 'hostName' => '192.168.1.1', 'port' => '22' }],
-      'label' => 'SSH Server'
-    }
-  ],
-  custom: [
-    { 'type' => 'text', 'label' => 'Environment', 'value' => ['Production'] }
-  ]
-)
-
-# Dynamic field access
-puts record.login          # => "admin"
-record.password = 'NewPassword123!'
-
-# Set complex fields
-record.set_field('address', {
-  'street1' => '123 Main St',
-  'city' => 'New York',
-  'state' => 'NY',
-  'zip' => '10001'
-})
-```
-
-## Notation Support
-
-Access specific field values using Keeper notation:
+PAM records can carry linked credentials. Request them with `request_links: true`, then use the typed `KeeperRecordLink` accessors returned by `record.get_links` (the raw entries remain available on `record.links`):
 
 ```ruby
-# Get password from record
-password = secrets_manager.get_notation("keeper://RECORD_UID/field/password")
+records = secrets_manager.get_secrets(request_links: true)
 
-# Get specific property from complex field
-hostname = secrets_manager.get_notation("keeper://RECORD_UID/field/host[hostName]")
-port = secrets_manager.get_notation("keeper://RECORD_UID/field/host[port]")
+records.each do |record|
+  record.get_links.each do |link|
+    puts "-> #{link.record_uid} (path: #{link.path.inspect})"
 
-# Get custom field by label
-env = secrets_manager.get_notation("keeper://RECORD_UID/custom_field/Environment")
+    # Permission booleans read allowedSettings when nested (e.g. on "meta" links)
+    puts "  rotation allowed: #{link.allows_rotation?}"
+    puts "  admin user: #{link.admin_user?}"
 
-# Access by record title
-url = secrets_manager.get_notation("keeper://My Login/field/url")
-```
-
-## Field Type Helpers
-
-Optional convenience methods for creating typed fields:
-
-```ruby
-# Using field helpers
-fields = [
-  KeeperSecretsManager::FieldTypes::Helpers.login('username'),
-  KeeperSecretsManager::FieldTypes::Helpers.password('SecurePass123!'),
-  KeeperSecretsManager::FieldTypes::Helpers.host(
-    hostname: '192.168.1.100',
-    port: 22
-  ),
-  KeeperSecretsManager::FieldTypes::Helpers.name(
-    first: 'John',
-    last: 'Doe',
-    middle: 'Q'
-  )
-]
-
-record = KeeperSecretsManager::Dto::KeeperRecord.new(
-  title: 'Server with Helpers',
-  type: 'login',
-  fields: fields.map(&:to_h)
-)
-```
-
-## Storage Options
-
-### In-Memory Storage
-```ruby
-storage = KeeperSecretsManager::Storage::InMemoryStorage.new
-```
-
-### File Storage
-```ruby
-storage = KeeperSecretsManager::Storage::FileStorage.new('keeper_config.json')
-```
-
-### Environment Variables
-```ruby
-# Reads from KSM_* environment variables (read-only)
-storage = KeeperSecretsManager::Storage::EnvironmentStorage.new('KSM_')
-```
-
-### Caching Storage
-```ruby
-# Wrap any storage with caching (600 second TTL)
-base_storage = KeeperSecretsManager::Storage::FileStorage.new('config.json')
-storage = KeeperSecretsManager::Storage::CachingStorage.new(base_storage, 600)
-```
-
-## CRUD Operations
-
-### Create Record
-```ruby
-record = KeeperSecretsManager::Dto::KeeperRecord.new(
-  title: 'New Record',
-  type: 'login',
-  fields: [
-    { 'type' => 'login', 'value' => ['user'] },
-    { 'type' => 'password', 'value' => ['pass'] }
-  ]
-)
-
-record_uid = secrets_manager.create_secret(record)
-```
-
-### Update Record
-```ruby
-# Get existing record
-record = secrets_manager.get_secret_by_title("My Record")
-
-# Update fields
-record.set_field('password', 'NewPassword123!')
-record.notes = "Updated on #{Time.now}"
-
-# Save changes
-secrets_manager.update_secret(record)
-```
-
-### Delete Records
-```ruby
-# Delete single record
-secrets_manager.delete_secret('RECORD_UID')
-
-# Delete multiple records
-secrets_manager.delete_secret(['UID1', 'UID2', 'UID3'])
-```
-
-### Folder Operations
-```ruby
-# Get all folders
-folders = secrets_manager.get_folders
-
-# Create folder
-folder_uid = secrets_manager.create_folder('New Folder', parent_uid: 'PARENT_UID')
-
-# Update folder
-secrets_manager.update_folder(folder_uid, 'Renamed Folder')
-
-# Delete folder
-secrets_manager.delete_folder(folder_uid, force: true)
-
-# Folder hierarchy features
-fm = secrets_manager.folder_manager
-
-# Build folder tree structure
-tree = fm.build_folder_tree
-
-# Get folder path from root
-path = secrets_manager.get_folder_path(folder_uid)  # "Parent/Child/Grandchild"
-
-# Find folder by name
-folder = secrets_manager.find_folder_by_name("Finance")
-folder = secrets_manager.find_folder_by_name("Finance", parent_uid: "parent_uid")
-
-# Get folder relationships
-ancestors = fm.get_ancestors(folder_uid)    # [parent, grandparent, ...]
-descendants = fm.get_descendants(folder_uid) # [children, grandchildren, ...]
-
-# Print folder tree to console
-fm.print_tree
-```
-
-## Error Handling
-
-```ruby
-begin
-  records = secrets_manager.get_secrets
-rescue KeeperSecretsManager::AuthenticationError => e
-  puts "Authentication failed: #{e.message}"
-rescue KeeperSecretsManager::NetworkError => e
-  puts "Network error: #{e.message}"
-rescue KeeperSecretsManager::Error => e
-  puts "General error: #{e.message}"
+    # Encrypted ai_settings / jit_settings decrypt with the owning record's key
+    ai = link.get_ai_settings_data(record.record_key)
+    puts "  ai settings: #{ai.inspect}" if ai
+  end
 end
 ```
 
-## Configuration
+Accessors never raise — decode or decryption failures return `nil`/`false`.
 
-The SDK can be configured through various options:
+## Proxy Support
+
+For enterprise environments behind HTTP proxies:
 
 ```ruby
-secrets_manager = KeeperSecretsManager.new(
-  config: storage,
-  hostname: 'keepersecurity.eu',    # EU datacenter
-  verify_ssl_certs: true,           # Verify SSL certificates
-  logger: Logger.new(STDOUT),       # Custom logger
-  log_level: Logger::DEBUG          # Log level
+# Method 1: Explicit proxy_url parameter
+secrets_manager = KeeperSecretsManager.from_file(
+  'keeper_config.json',
+  proxy_url: 'http://proxy.company.com:8080'
 )
+
+# Method 2: Authenticated proxy
+secrets_manager = KeeperSecretsManager.from_file(
+  'keeper_config.json',
+  proxy_url: 'http://username:password@proxy.company.com:8080'
+)
+
+# Method 3: HTTPS_PROXY environment variable (recommended)
+# export HTTPS_PROXY=http://proxy.company.com:8080
+secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
+# Proxy auto-detected from environment
 ```
 
-## Development
+See `examples/ruby/12_proxy_usage.rb` for complete examples.
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests.
+# Documentation
 
-To install this gem onto your local machine, run `bundle exec rake install`.
-
-## Testing
-
-```bash
-# Run all tests
-bundle exec rake spec
-
-# Run unit tests only
-bundle exec rake unit
-
-# Run with coverage
-bundle exec rake coverage
-
-# Run linter
-bundle exec rubocop
-```
-
-## Contributing
-
-Bug reports and pull requests are welcome on GitHub at https://github.com/Keeper-Security/secrets-manager.
-
-## License
-
-The gem is available as open source under the terms of the MIT License.
-
-## Support
-
-For support, please visit https://docs.keeper.io/secrets-manager/ or contact sm@keepersecurity.com
+For complete documentation, see: https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/ruby-sdk

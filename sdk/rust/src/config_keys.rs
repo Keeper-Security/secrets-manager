@@ -33,6 +33,8 @@ pub enum ConfigKeys {
     KeyPrivateKey, // The client's private key
     #[serde(rename = "serverPublicKeyId")]
     KeyServerPublicKeyId, // Which public key should be using?
+    #[serde(rename = "serverPublicKey")]
+    KeyServerPublicKey, // Custom EC public key (base64) for IL5 / isolated deployments
 
     #[serde(rename = "bat")]
     KeyBindingToken,
@@ -66,6 +68,7 @@ impl ConfigKeys {
             ConfigKeys::KeyOwnerPublicKey => "appOwnerPublicKey",
             ConfigKeys::KeyPrivateKey => "privateKey",
             ConfigKeys::KeyServerPublicKeyId => "serverPublicKeyId",
+            ConfigKeys::KeyServerPublicKey => "serverPublicKey",
             ConfigKeys::KeyBindingToken => "bat",
             ConfigKeys::KeyBindingKey => "bindingKey",
             ConfigKeys::KeyHostname => "hostname",
@@ -100,6 +103,7 @@ impl ConfigKeys {
             "appOwnerPublicKey" => Some(ConfigKeys::KeyOwnerPublicKey),
             "privateKey" => Some(ConfigKeys::KeyPrivateKey),
             "serverPublicKeyId" => Some(ConfigKeys::KeyServerPublicKeyId),
+            "serverPublicKey" => Some(ConfigKeys::KeyServerPublicKey),
             "bat" => Some(ConfigKeys::KeyBindingToken),
             "bindingKey" => Some(ConfigKeys::KeyBindingKey),
             "hostname" => Some(ConfigKeys::KeyHostname),
@@ -136,6 +140,7 @@ impl ConfigKeys {
             "appOwnerPublicKey" => Some(ConfigKeys::KeyOwnerPublicKey),
             "privateKey" => Some(ConfigKeys::KeyPrivateKey),
             "serverPublicKeyId" => Some(ConfigKeys::KeyServerPublicKeyId),
+            "serverPublicKey" => Some(ConfigKeys::KeyServerPublicKey),
             "bat" => Some(ConfigKeys::KeyBindingToken),
             "bindingKey" => Some(ConfigKeys::KeyBindingKey),
             "hostname" => Some(ConfigKeys::KeyHostname),

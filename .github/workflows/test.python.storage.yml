@@ -1,0 +1,56 @@
+name: Test Python Storage - Main
+
+on:
+  push:
+    branches:
+      - 'release/sdk/python/storage/**'
+    paths:
+      - 'sdk/python/storage/keeper_secrets_manager_storages/**'
+      - '.github/workflows/test.python.storage.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'sdk/python/storage/keeper_secrets_manager_storages/**'
+      - '.github/workflows/test.python.storage.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: ./sdk/python/storage/keeper_secrets_manager_storages
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt
+          python3 -m pip install boto3 azure-identity azure-keyvault-keys pycryptodomex
+          python3 -m pip install -e .
+      - name: Import smoke test (4 backends; HSM nfpython excluded — vendor-only SDK)
+        run: |
+          python3 -c "from keeper_secrets_manager_storage.config_provider import IConfigProvider; print('IConfigProvider OK')"
+          python3 -c "from keeper_secrets_manager_storage.storage_aws_secret import AwsSecretStorage, AwsConfigProvider; print('AwsSecretStorage OK')"
+          python3 -c "from keeper_secrets_manager_storage.storage_azure_keyvault import AzureKeyValueStorage, AzureSessionConfig; print('AzureKeyValueStorage OK')"
+          python3 -c "from keeper_secrets_manager_hsm.storage_aws_kms import AwsKmsKeyValueStorage, AwsSessionConfig; print('AwsKmsKeyValueStorage OK')"
+      - name: Run tests (if any)
+        run: |
+          if [ -d tests ]; then
+            python3 -m pip install pytest pytest-cov
+            pytest tests/
+          else
+            echo "No tests/ directory yet — skipping pytest. See KSM-959..967 for test additions."
+          fi

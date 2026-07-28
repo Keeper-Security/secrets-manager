@@ -1,5 +1,6 @@
 import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
 import {privateDerToPublicRaw} from '../utils'
+import {KeeperError} from '../errors'
 
 const bytesToBase64 = (data: Uint8Array): string => {
     const chunkSize = 0x8000 // String.fromCharCode has limitations
@@ -13,7 +14,10 @@ const bytesToBase64 = (data: Uint8Array): string => {
     return btoa(chunks.join(''))
 }
 
-const base64ToBytes = (data: string): Uint8Array => Uint8Array.from(atob(data), c => c.charCodeAt(0))
+const base64ToBytes = (data: string): Uint8Array => {
+    if (data == null) throw new KeeperError(`base64ToBytes: received ${data === null ? 'null' : 'undefined'}`)
+    return Uint8Array.from(atob(data), c => c.charCodeAt(0))
+}
 
 const bytesToString = (data: Uint8Array): string => new TextDecoder().decode(data)
 

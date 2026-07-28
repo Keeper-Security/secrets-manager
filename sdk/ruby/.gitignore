@@ -46,6 +46,9 @@ config.base64
 *.config.json
 keeper_config.json
 
+# Cache files (contain encrypted secrets)
+ksm_cache.bin
+
 # Test artifacts and temporary files
 /test/results/
 /test/fixtures/generated/

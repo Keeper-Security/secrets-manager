@@ -31,12 +31,15 @@ def encrypt_buffer(key_id, message, crypto_client, key_version_id=None, is_asymm
         logger.debug("Encrypting data using encrypt_buffer")
         key = get_random_bytes(32)
 
-        cipher = AES.new(key, AES.MODE_GCM)
+        # AES-GCM with 96-bit nonce (NIST SP 800-38D recommended). Pycryptodome's
+        # default nonce length is 128-bit, which is non-standard and reduces the
+        # birthday-bound margin for nonce reuse.
+        cipher = AES.new(key, AES.MODE_GCM, nonce=get_random_bytes(12))
 
         ciphertext, tag = cipher.encrypt_and_digest(
             message.encode())
         logger.debug("symmetric encryption using generated AES key is successful")
-    
+
         logger.debug("generating encrypt data details payload")
         encrypt_data_details= EncryptDataDetails(
                 key_id= key_id,
@@ -52,8 +55,8 @@ def encrypt_buffer(key_id, message, crypto_client, key_version_id=None, is_asymm
 
         encrypt_response = crypto_client.encrypt(encrypt_data_details)
         encrypted_key = base64.b64decode(encrypt_response.data.ciphertext)
-        logger.debug("symmetric encryption using generated AES key is successful")
-        
+        logger.debug("KMS-wrapped AES key returned successfully")
+
         parts = [encrypted_key, cipher.nonce, tag, ciphertext]
 
         buffers = bytearray()
@@ -65,8 +68,8 @@ def encrypt_buffer(key_id, message, crypto_client, key_version_id=None, is_asymm
 
         return buffers
     except Exception as err:
-        logger.warning(f"KCP KMS Storage failed to encrypt: {err}")
-        return b''  # Return empty buffer in case of an error
+        logger.error(f"Oracle KMS Storage failed to encrypt: {err}")
+        raise
 
 def decrypt_buffer(key_id : str, ciphertext : str,  crypto_client: KmsCryptoClient, key_version_id: str, is_asymmetric=False,logger=None):
     try:
@@ -91,26 +94,28 @@ def decrypt_buffer(key_id : str, ciphertext : str,  crypto_client: KmsCryptoClie
                 if len(buf) == buflen:
                     parts.append(buf)
                 else:
-                    logger.error("Decryption buffer contains incomplete data.")
                     raise ValueError("Decryption buffer contains incomplete data.")
+
+        if len(parts) != 4:
+            raise ValueError("Decryption buffer is missing one or more sections.")
 
         encrypted_key, nonce, tag, encrypted_text = parts
         logger.debug(" extracted encrypted key from encrypted buffer data")
 
         decrpt_data  = DecryptDataDetails(key_id= key_id, ciphertext= base64.b64encode(encrypted_key).decode())
-        
+
         if key_version_id:
             logger.debug("key version id is set for decryption")
             decrpt_data.key_version_id = key_version_id
-        
+
         if is_asymmetric:
             logger.debug("asymmetric decryption is being used for decryption")
             decrpt_data.encryption_algorithm = DecryptDataDetails.ENCRYPTION_ALGORITHM_RSA_OAEP_SHA_256
-        
+
         encrypt_response = crypto_client.decrypt(decrypt_data_details=decrpt_data)
         key = base64.b64decode(encrypt_response.data.plaintext)
         logger.info("decryption successful, key is to be extracted")
-        
+
         # Decrypt the message using AES-GCM
         cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
         decrypted = cipher.decrypt_and_verify(encrypted_text, tag)
@@ -118,5 +123,5 @@ def decrypt_buffer(key_id : str, ciphertext : str,  crypto_client: KmsCryptoClie
         # Convert decrypted data to a UTF-8 string
         return decrypted.decode()
     except Exception as err:
-        logger.warning(f"Oracle KMS KeyVault Storage failed to decrypt: {err}")
-        return ""  # Return empty string in case of an error
+        logger.error(f"Oracle KMS KeyVault Storage failed to decrypt: {err}")
+        raise

@@ -21,40 +21,40 @@ fun getValue(secrets: KeeperSecrets, notation: String): String {
         "notes" -> { return record.data.notes ?: "" }
         "file" -> {
             if (parameter == null)
-                throw Exception("Notation error - Missing required parameter: filename or file UID for files in record '$recordToken'")
+                throw SecretsManagerException("Notation error - Missing required parameter: filename or file UID for files in record '$recordToken'")
             if (record.files.isNullOrEmpty())
-                throw Exception("Notation error - Record $recordToken has no file attachments.")
+                throw SecretsManagerException("Notation error - Record $recordToken has no file attachments.")
             // file searches do not use indexes and rely on unique file names or fileUid
             val files = record.files.filter { (it.data.name == parameter) || (it.data.title == parameter) || (it.fileUid == parameter) }
             if (files.size > 1)
-                throw Exception("Notation error - Record $recordToken has multiple files matching the search criteria '$parameter'")
+                throw SecretsManagerException("Notation error - Record $recordToken has multiple files matching the search criteria '$parameter'")
             if (files.isEmpty())
-                throw Exception("Notation error - Record $recordToken has no files matching the search criteria '$parameter'")
+                throw SecretsManagerException("Notation error - Record $recordToken has no files matching the search criteria '$parameter'")
             val contents = downloadFile(files[0])
             return webSafe64FromBytes(contents)
         }
         "field", "custom_field" -> {
             if (parameter == null)
-                throw Exception("Notation error - Missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel")
+                throw SecretsManagerException("Notation error - Missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel")
 
             val fields = when(selector.lowercase()) {
                 "field" -> record.data.fields
                 "custom_field" -> record.data.custom ?: mutableListOf()
-                else -> throw Exception("Notation error - Expected /field or /custom_field but found /$selector")
+                else -> throw SecretsManagerException("Notation error - Expected /field or /custom_field but found /$selector")
             }
 
             val field = fields.find { parameter == fieldType(it) || parameter == it.label } ?:
-                throw Exception("Field $parameter not found in the record ${record.recordUid}")
+                throw SecretsManagerException("Field $parameter not found in the record ${record.recordUid}")
 
             // /<type|label>[index1][index2], ex. /url == /url[] == /url[][] == full value
             val idx = index1?.toIntOrNull() ?: -1 // -1 full value
             // valid only if [] or missing - ex. /field/phone or /field/phone[]
             if (idx == -1 && !(parsedNotation[2].index1?.second.isNullOrEmpty() || parsedNotation[2].index1?.second == "[]"))
-                throw Exception("Notation error - Invalid field index $idx")
+                throw SecretsManagerException("Notation error - Invalid field index $idx")
 
             val valuesCount = getFieldValuesCount(field)
             if (idx >= valuesCount)
-                throw Exception("Notation error - Field index out of bounds $idx >= $valuesCount for field $parameter")
+                throw SecretsManagerException("Notation error - Field index out of bounds $idx >= $valuesCount for field $parameter")
 
             //val fullObjValue = (parsedNotation[2].index2?.second.isNullOrEmpty() || parsedNotation[2].index2?.second == "[]")
             val objPropertyName = parsedNotation[2].index2?.first
@@ -83,7 +83,7 @@ fun getValue(secrets: KeeperSecrets, notation: String): String {
             }
             return ""
         }
-        else -> throw Exception("Invalid notation $notation")
+        else -> throw SecretsManagerException("Invalid notation $notation")
     }
 }
 
@@ -93,9 +93,9 @@ fun getFile(secrets: KeeperSecrets, notation: String): KeeperFile {
     if (selector == "file") {
         val fileId = parsedNotation[2].parameter?.first
         return record.files?.find { x -> x.data.name == fileId || x.data.title == fileId || x.fileUid == fileId }
-            ?: throw Exception("File $fileId not found in the record ${record.recordUid}")
+            ?: throw SecretsManagerException("File $fileId not found in the record ${record.recordUid}")
     } else {
-        throw Exception("Notation should include file tag")
+        throw SecretsManagerException("Notation should include file tag")
     }
 }
 
@@ -104,15 +104,15 @@ private data class RecordAndNotation(val record: KeeperRecord, val queryParts: L
 private fun getRecord(secrets: KeeperSecrets, notation: String): RecordAndNotation {
     val parsedNotation = parseNotation(notation, true) // prefix, record, selector, footer
     if (parsedNotation.size < 3) {
-        throw Exception("Invalid notation $notation")
+        throw SecretsManagerException("Invalid notation $notation")
     }
 
     val selector = parsedNotation[2].text?.first ?: // type|title|notes or file|field|custom_field
-        throw Exception("Invalid notation $notation")
+        throw SecretsManagerException("Invalid notation $notation")
     val recordToken = parsedNotation[1].text?.first ?: // UID or Title
-        throw Exception("Invalid notation $notation")
+        throw SecretsManagerException("Invalid notation $notation")
     val record = secrets.records.find { (it.recordUid == recordToken) || (it.data.title == recordToken) } ?:
-        throw Exception("Record '$recordToken' not found")
+        throw SecretsManagerException("Record '$recordToken' not found")
 
     return RecordAndNotation(record, parsedNotation, selector, recordToken)
 }
@@ -438,7 +438,7 @@ private fun getFieldValueProperty(field: KeeperRecordField, valueIdx: Int, prope
         is Schedules -> getObjectProperty(field.value[valueIdx], propertyName)
         is Scripts -> getObjectProperty(field.value[valueIdx], propertyName)
         is SecurityQuestions -> getObjectProperty(field.value[valueIdx], propertyName)
-        else -> throw Exception("Property name notation is not supported for ${fieldType(field)}")
+        else -> throw SecretsManagerException("Property name notation is not supported for ${fieldType(field)}")
     }
 }
 
@@ -521,7 +521,7 @@ private fun parseSubsection(text: String, position: Int, delimiters: String, esc
     if (text.isEmpty() || pos < 0 || pos >= text.length)
         return null
     if (delimiters.isEmpty() || delimiters.length > 2)
-        throw Exception("Notation parser: Internal error - Incorrect delimiters count. Delimiters: '$delimiters'")
+        throw SecretsManagerException("Notation parser: Internal error - Incorrect delimiters count. Delimiters: '$delimiters'")
 
     var token = ""
     var raw = ""
@@ -530,7 +530,7 @@ private fun parseSubsection(text: String, position: Int, delimiters: String, esc
             // notation cannot end in single char incomplete escape sequence
             // and only escape_chars should be escaped
             if (((pos + 1) >= text.length) || !ESCAPE_CHARS.contains(text[pos + 1]))
-                throw Exception("Notation parser: Incorrect escape sequence at position $pos")
+                throw SecretsManagerException("Notation parser: Incorrect escape sequence at position $pos")
             // copy the properly escaped character
             token += text[pos + 1]
             raw += "" + text[pos] + text[pos + 1]
@@ -544,9 +544,9 @@ private fun parseSubsection(text: String, position: Int, delimiters: String, esc
                     token += text[pos]
             } else { // 2 delimiters
                 if (raw[0] != delimiters[0])
-                    throw Exception("Notation parser: Index sections must start with '['")
+                    throw SecretsManagerException("Notation parser: Index sections must start with '['")
                 if (raw.length > 1 && text[pos] == delimiters[0])
-                    throw Exception("Notation parser: Index sections do not allow extra '[' inside.")
+                    throw SecretsManagerException("Notation parser: Index sections do not allow extra '[' inside.")
                 if (!delimiters.contains(text[pos]))
                     token += text[pos]
                 else if (text[pos] == delimiters[1])
@@ -559,19 +559,19 @@ private fun parseSubsection(text: String, position: Int, delimiters: String, esc
     if (delimiters.length == 2 && (
             (raw.length < 2 || raw[0] != delimiters[0] || raw[raw.length - 1] != delimiters[1]) ||
             (escaped && raw[raw.length - 2] == ESCAPE_CHAR)))
-        throw Exception("Notation parser: Index sections must be enclosed in '[' and ']'")
+        throw SecretsManagerException("Notation parser: Index sections must be enclosed in '[' and ']'")
 
     return Pair(token, raw)
 }
 
 private fun parseSection(notation: String, section: String, pos: Int): NotationSection {
     if (notation.isEmpty())
-        throw Exception("Keeper notation parsing error - missing notation URI")
+        throw SecretsManagerException("Keeper notation parsing error - missing notation URI")
 
     val sectionName = section.lowercase()
     val sections: List<String> = listOf("prefix", "record", "selector", "footer")
     if (!sections.contains(sectionName))
-        throw Exception("Keeper notation parsing error - unknown section: '$sectionName'")
+        throw SecretsManagerException("Keeper notation parsing error - unknown section: '$sectionName'")
 
     val result = NotationSection(section)
     result.startPos = pos
@@ -646,7 +646,7 @@ private fun parseSection(notation: String, section: String, pos: Int): NotationS
                 }
             }
         }
-        else -> throw Exception("Keeper notation parsing error - unknown section: '$sectionName'")
+        else -> throw SecretsManagerException("Keeper notation parsing error - unknown section: '$sectionName'")
     }
     return result
 }
@@ -654,7 +654,7 @@ private fun parseSection(notation: String, section: String, pos: Int): NotationS
 fun parseNotation(notationUri: String, legacyMode: Boolean = false): List<NotationSection> {
     var notation = notationUri
     if (notation.isEmpty())
-        throw Exception("Keeper notation is missing or invalid.")
+        throw SecretsManagerException("Keeper notation is missing or invalid.")
 
     // Notation is either plaintext keeper URI format or URL safe base64 string (UTF-8)
     // auto-detect format - '/' is not part of base64 URL safe alphabet
@@ -664,7 +664,7 @@ fun parseNotation(notationUri: String, legacyMode: Boolean = false): List<Notati
             val plaintext = bytes.decodeToString(0, bytes.size, true)
             notation = plaintext
         } catch (e: Exception) {
-            throw Exception("Keeper notation is in invalid format - plaintext URI or URL safe base64 string expected.")
+            throw SecretsManagerException("Keeper notation is in invalid format - plaintext URI or URL safe base64 string expected.")
         }
     }
 
@@ -682,23 +682,23 @@ fun parseNotation(notationUri: String, legacyMode: Boolean = false): List<Notati
     val fullSelectors: List<String> = listOf("field", "custom_field", "file")
     val selectors: List<String> = listOf("type", "title", "notes", "field", "custom_field", "file")
     if (!record.isPresent || !selector.isPresent)
-        throw Exception("Keeper notation URI missing information about the uid, file, field type, or field key.")
+        throw SecretsManagerException("Keeper notation URI missing information about the uid, file, field type, or field key.")
     if (footer.isPresent)
-        throw Exception("Keeper notation is invalid - extra characters after last section.")
+        throw SecretsManagerException("Keeper notation is invalid - extra characters after last section.")
     if (!selectors.contains(selector.text?.first?.lowercase() ?: ""))
-        throw Exception("Keeper notation is invalid - bad selector, must be one of (type, title, notes, field, custom_field, file).")
+        throw SecretsManagerException("Keeper notation is invalid - bad selector, must be one of (type, title, notes, field, custom_field, file).")
     if (shortSelectors.contains(selector.text?.first?.lowercase() ?: "") && selector.parameter != null)
-        throw Exception("Keeper notation is invalid - selectors (type, title, notes) do not have parameters.")
+        throw SecretsManagerException("Keeper notation is invalid - selectors (type, title, notes) do not have parameters.")
     if (fullSelectors.contains(selector.text?.first?.lowercase() ?: "")) {
         if (selector.parameter == null)
-            throw Exception("Keeper notation is invalid - selectors (field, custom_field, file) require parameters.")
+            throw SecretsManagerException("Keeper notation is invalid - selectors (field, custom_field, file) require parameters.")
         if ("file" == (selector.text?.first?.lowercase() ?: "") && (selector.index1 != null || selector.index2 != null))
-            throw Exception("Keeper notation is invalid - file selectors don't accept indexes.")
+            throw SecretsManagerException("Keeper notation is invalid - file selectors don't accept indexes.")
         if ("file" != (selector.text?.first?.lowercase() ?: "") && selector.index1 == null && selector.index2 != null)
-            throw Exception("Keeper notation is invalid - two indexes required.")
+            throw SecretsManagerException("Keeper notation is invalid - two indexes required.")
         if (selector.index1 != null && !(selector.index1?.second ?: "").matches(Regex("""^\[\d*\]$"""))) {
             if (!legacyMode)
-                throw Exception("Keeper notation is invalid - first index must be numeric: [n] or [].")
+                throw SecretsManagerException("Keeper notation is invalid - first index must be numeric: [n] or [].")
             if (selector.index2 == null) {   // in legacy mode convert /name[middle] to name[][middle]
                 selector.index2 = selector.index1
                 selector.index1 = Pair("", "[]")

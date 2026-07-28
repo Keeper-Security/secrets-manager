@@ -4,9 +4,8 @@
 
 require 'keeper_secrets_manager'
 
-# Initialize
-config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
-secrets_manager = KeeperSecretsManager.from_config(config)
+# Initialize from saved configuration file
+secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
 
 puts '=== Keeper Notation Example ==='
 
@@ -93,9 +92,76 @@ rescue StandardError
 end
 puts "  Processed: #{result}"
 
+# 8. Error-safe notation access (NEW in v17.2.0)
+puts "\n8. Error-safe notation with try_get_notation:"
+begin
+  # try_get_notation never raises exceptions - returns empty array on error
+  secrets = secrets_manager.get_secrets
+  uid = secrets.first&.uid
+
+  if uid
+    # Valid notation - always returns an Array (single-value fields wrap as [value])
+    password = secrets_manager.try_get_notation("keeper://#{uid}/field/password")
+    puts "  [OK] Valid notation returned #{password.class}: #{password.first.inspect}"
+
+    # Invalid notation - returns empty array instead of raising exception
+    invalid = secrets_manager.try_get_notation('keeper://INVALID_UID/field/password')
+    puts "  [OK] Invalid notation returned: #{invalid.inspect}"
+    puts '       (No exception raised - safe for optional fields)'
+  end
+rescue StandardError => e
+  puts "  [FAIL] #{e.message}"
+end
+
+# 9. Use case: Configuration with fallbacks
+puts "\n9. Safe configuration access with fallbacks:"
+begin
+  secrets = secrets_manager.get_secrets
+  uid = secrets.first&.uid
+
+  if uid
+    # Get values with fallbacks (no error handling needed)
+    host = secrets_manager.try_get_notation("keeper://#{uid}/field/host[hostName]").first || 'localhost'
+    port = secrets_manager.try_get_notation("keeper://#{uid}/custom_field/Port").first || '5432'
+    env = secrets_manager.try_get_notation("keeper://#{uid}/custom_field/Environment").first || 'development'
+
+    puts "  Database Host: #{host}"
+    puts "  Database Port: #{port}"
+    puts "  Environment: #{env}"
+    puts '  [OK] Fallback values used when fields missing'
+  end
+rescue StandardError => e
+  puts "  [FAIL] #{e.message}"
+end
+
+# 10. get_notation_results
+puts "\n10. get_notation_results — list-returning notation:"
+begin
+  secrets = secrets_manager.get_secrets
+  uid = secrets.first&.uid
+
+  if uid
+    # Returns Array[String]: all field values, no first-element shortcut
+    urls = secrets_manager.get_notation_results("keeper://#{uid}/field/url")
+    puts "  All URL values: #{urls.inspect}"
+
+    # Complex values (Hash) are JSON-serialized automatically
+    host = secrets_manager.get_notation_results("keeper://#{uid}/field/host")
+    puts "  Host (JSON): #{host.first}" if host.any?
+
+    # try_get_notation_results never raises; returns [] on any error
+    bad = secrets_manager.try_get_notation_results('keeper://INVALID/field/login')
+    puts "  Bad notation returned: #{bad.inspect}"
+  end
+rescue StandardError => e
+  puts "  Error: #{e.message}"
+end
+
 puts "\n=== Notation Tips ==="
 puts '- Use UIDs for exact matching (no ambiguity)'
 puts '- Titles are easier to read but must be unique'
 puts '- Notation is great for configuration files'
-puts "- Returns nil if field doesn't exist"
-puts '- Throws exception if record not found'
+puts "- get_notation() returns nil if field doesn't exist"
+puts '- get_notation() throws exception if record not found'
+puts '- get_notation_results() always returns Array[String] with all values'
+puts '- try_get_notation_results() returns [] on any error (safe for optional fields)'

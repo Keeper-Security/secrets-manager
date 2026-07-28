@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [17.3.0]
+
+### Added
+
+- **KSM-882**: Automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `post_query` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus ±25% jitter, honoring `retry_after` from the response when present; returns the new `KSMRError::Throttled` once retries are exhausted. Existing key-rotation retry behavior is unchanged.
+- **KSM-904**: Connect to isolated deployments whose server uses a non-standard public key that is not built into the SDK. Supply the custom key in any of three ways: an extended one-time token in the 4-segment format `<region>:clientKey:keyId:serverPublicKeyBase64`, the `serverPublicKey` config field, or programmatically with `ClientOptions::set_server_public_key()` / `set_server_public_key_id()` (programmatic values take precedence). Region keywords for isolated deployments are now recognized server identifiers. While a custom key is in use, server-pushed key-rotation hints are ignored so the custom key is preserved.
+- **KSM-997 / KSM-1009**: Typed access to a record's linked PAM credentials through `Record::get_links()`, which returns `KeeperRecordLink` values; the raw `links` field remains available unchanged. Each link exposes permission flags (`allows_rotation`, `allows_connections`, `allows_port_forwards`, `allows_session_recording`, `allows_typescript_recording`, `allows_remote_browser_isolation`, `ai_enabled`, `ai_session_terminate`), credential flags (`is_admin_user`, `is_launch_credential`, `is_iam_user`, `belongs_to`, `no_update_services`, `rotates_on_termination`), and structured settings (`get_allowed_settings`, `get_rotation_settings`, `get_meta_data`, `get_ai_settings_data`, `get_jit_settings_data`, `get_link_data`). Encrypted AI/JIT settings are decrypted with the record key, and the complete original payload is preserved so fields newer than this release are never dropped.
+- **KSM-999**: `KeeperFile::save_to_file(path)` — downloads (if needed) and writes a decrypted file to disk in one call; accepts `&str`, `String`, `&Path`, or `PathBuf`.
+
+### Fixed
+
+- **KSM-998**: Connecting to an environment whose active server key is not the default could hang in an infinite 401 retry loop. The rotated key is now applied on retry, so the connection succeeds.
+
+### Changed
+
+- **KSM-999**: Read-only string parameters now accept `impl AsRef<str>` (`get_notation`, `get_notation_result`, `create_secret`, `update_folder`) and `KeeperFile::save_file` accepts `impl AsRef<Path>`; constructors accept `impl Into<String>` (`ClientOptions::new`, `RecordCreate::new`, `KeeperField::new`, `complete_transaction`). You can now pass a `&str` where a `String` was previously required; existing `String` callers compile unchanged.
+- **KSM-891/892/893**: Optional functionality moved behind Cargo features — log initialization is now the `tracing-init` feature and blocking HTTP is the `blocking` feature (both still included in `default`). Building with `default-features = false` no longer pulls them in.
+- **KSM-1000**: The `totp` feature can now be turned off. It was previously impossible to disable because core functionality depended on it; that dependency has been removed.
+
+### Documentation
+
+- **KSM-973**: `SecretsManager::new()` now documents the deferred bind contract — the one-time token is redeemed on the first network call, not in the constructor. Callers that persist config to external storage (OS keychain, AWS Secrets Manager, etc.) should call `get_secrets(vec![])` immediately after `new()` to force the bind before exporting.
+
 ## [17.2.0]
 
 ### Security

@@ -3,6 +3,8 @@
 
 package com.keepersecurity.secretsManager.core
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -12,20 +14,21 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class KeeperRecordData @JvmOverloads constructor(
     var title: String,
     val type: String,
     val fields: MutableList<KeeperRecordField>,
-    var custom: MutableList<KeeperRecordField>? = null,
+    @EncodeDefault var custom: MutableList<KeeperRecordField> = mutableListOf(), // KSM-823: always serialize "custom":[] even when empty
     var notes: String? = null
 ) {
     inline fun <reified T> getField(): T? {
-        return (fields + (custom ?: listOf())).find { x -> x is T } as? T
+        return (fields + custom).find { x -> x is T } as? T
     }
 
     fun getField(clazz: Class<out KeeperRecordField>): KeeperRecordField? {
-        return (fields + (custom ?: listOf())).find { x -> x.javaClass == clazz }
+        return (fields + custom).find { x -> x.javaClass == clazz }
     }
 }
 
@@ -51,13 +54,13 @@ object FlexibleLongSerializer : KSerializer<Long> {
 }
 
 @Serializable
-data class KeeperFileData(
+data class KeeperFileData @JvmOverloads constructor(
     val title: String,
     val name: String,
     val type: String? = null,
     val size: Long,
-    @Serializable(with = FlexibleLongSerializer::class)
-    val lastModified: Long
+    @Serializable(with = FlexibleLongSerializer::class) // KSM-673: iOS/Android clients send fractional epoch seconds
+    val lastModified: Long = 0 // KSM-854: non-SDK clients omit this field; default 0 matches .NET behavior
 )
 
 @Serializable
@@ -681,6 +684,7 @@ data class PamSettingsConnection @JvmOverloads constructor(
 
     // Database-specific fields
     val database: String? = null,
+    val dbConnectionMethod: String? = null,
     val disableCsvExport: Boolean? = null,
     val disableCsvImport: Boolean? = null,
 

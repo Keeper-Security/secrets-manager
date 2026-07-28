@@ -4,9 +4,8 @@
 
 require 'keeper_secrets_manager'
 
-# Initialize
-config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
-secrets_manager = KeeperSecretsManager.from_config(config)
+# Initialize from saved configuration file
+secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
 
 puts '=== Field Types Example ==='
 
@@ -125,6 +124,35 @@ puts "\n4. TOTP Fields:"
 puts '  TOTP fields store the secret key for 2FA'
 puts "  Install 'base32' gem to generate TOTP codes:"
 puts "  - { type: 'oneTimeCode', value: ['JBSWY3DPEHPK3PXP'] }"
+
+# Example: Inflate field references (addressRef, cardRef)
+puts "\n5. Field Reference Inflation:"
+puts '  inflate_field_value resolves addressRef/cardRef UIDs to their underlying field data'
+begin
+  secrets = secrets_manager.get_secrets
+  address_ref_records = secrets.select { |r| r.get_field('addressRef') }
+
+  if address_ref_records.any?
+    record = address_ref_records.first
+    ref_uids = record.get_field('addressRef')['value'] || []
+
+    unless ref_uids.empty?
+      inflated = secrets_manager.inflate_field_value(
+        ref_uids,
+        secrets_manager.get_inflate_ref_types('addressRef')
+      )
+      puts "  Inflated address: #{inflated.first.inspect}"
+    end
+  else
+    puts '  (No records with addressRef found — create one to test inflation)'
+  end
+
+  puts "  addressRef inflates to: #{secrets_manager.get_inflate_ref_types('addressRef').inspect}"
+  puts "  cardRef inflates to:    #{secrets_manager.get_inflate_ref_types('cardRef').inspect}"
+  puts "  unknown type returns:   #{secrets_manager.get_inflate_ref_types('login').inspect}"
+rescue StandardError => e
+  puts "  Error: #{e.message}"
+end
 
 # Tips
 puts "\n=== Field Type Tips ==="

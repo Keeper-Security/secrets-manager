@@ -1,3 +1,21 @@
+# Configure SimpleCov for test coverage
+if ENV['COVERAGE']
+  require 'simplecov'
+  SimpleCov.start do
+    add_filter '/spec/'
+    add_filter '/test/'
+    add_group 'Core', 'lib/keeper_secrets_manager/core.rb'
+    add_group 'Crypto', 'lib/keeper_secrets_manager/crypto.rb'
+    add_group 'Storage', 'lib/keeper_secrets_manager/storage.rb'
+    add_group 'DTO', 'lib/keeper_secrets_manager/dto.rb'
+    add_group 'Notation', 'lib/keeper_secrets_manager/notation.rb'
+    add_group 'Utilities', 'lib/keeper_secrets_manager/utils.rb'
+    add_group 'Errors', 'lib/keeper_secrets_manager/errors.rb'
+    add_group 'Field Types', 'lib/keeper_secrets_manager/field_types.rb'
+    add_group 'Other', 'lib/keeper_secrets_manager'
+  end
+end
+
 begin
   require 'bundler/setup'
 rescue StandardError

@@ -27,8 +27,10 @@ Gem::Specification.new do |spec|
   spec.executables   = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ['lib']
 
-  # Runtime dependencies
-  # No required runtime dependencies - base32 is optional for TOTP support
+  # base64 and logger were default gems through Ruby 3.x; Ruby 4.0 unbundled them.
+  # Both are maintained by the Ruby core team — declaring them makes the implicit explicit.
+  spec.add_runtime_dependency 'base64'
+  spec.add_runtime_dependency 'logger'
 
   # All development dependencies are in Gemfile
 end

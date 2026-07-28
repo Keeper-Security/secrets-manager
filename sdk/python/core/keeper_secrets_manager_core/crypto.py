@@ -70,6 +70,13 @@ class CryptoUtils:
 
     @staticmethod
     def url_safe_str_to_bytes(s):
+        if s is None:
+            raise exceptions.KeeperError(
+                "CryptoUtils.url_safe_str_to_bytes received None. A required "
+                "configuration value is missing, or a server response field was empty. "
+                "Verify your configuration is complete, or reinitialize with a fresh "
+                "One-Time Token if the local config was lost."
+            )
         b = base64.urlsafe_b64decode(s + '==')
         return b
 

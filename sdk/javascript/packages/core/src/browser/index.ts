@@ -9,6 +9,6 @@ export * from '../keeper'
 export {loadJsonConfig, inMemoryStorage} from '../platform'
 export * from '../notation'
 export {getTotpCode, generatePassword} from '../utils'
-export * from './localConfigStorage'
+export {localConfigStorage, secureStorage, createCachingFunction} from './localConfigStorage'
 
 

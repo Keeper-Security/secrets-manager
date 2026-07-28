@@ -1,5 +1,6 @@
 import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
 import {privateDerToPublicRaw} from '../utils'
+import {KeeperError} from '../errors'
 import {request, RequestOptions} from 'https'
 import {
     createCipheriv,
@@ -21,7 +22,10 @@ const setCustomProxyAgent = (proxyAgent: https.Agent) => {
 
 const bytesToBase64 = (data: Uint8Array): string => Buffer.from(data).toString('base64')
 
-const base64ToBytes = (data: string): Uint8Array => Buffer.from(data, 'base64')
+const base64ToBytes = (data: string): Uint8Array => {
+    if (data == null) throw new KeeperError(`base64ToBytes: received ${data === null ? 'null' : 'undefined'}`)
+    return Buffer.from(data, 'base64')
+}
 
 const bytesToString = (data: Uint8Array): string => Buffer.from(data).toString()
 

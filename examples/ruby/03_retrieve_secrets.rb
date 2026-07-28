@@ -4,9 +4,8 @@
 
 require 'keeper_secrets_manager'
 
-# Initialize (use your preferred method)
-config = ENV['KSM_CONFIG'] || 'YOUR_BASE64_CONFIG'
-secrets_manager = KeeperSecretsManager.from_config(config)
+# Initialize from saved configuration file
+secrets_manager = KeeperSecretsManager.from_file('keeper_config.json')
 
 puts "=== Retrieving Secrets ==="
 
@@ -21,10 +20,10 @@ end
 puts "\n2. Get secret by UID:"
 if secrets.any?
   uid = secrets.first.uid
-  secret = secrets_manager.get_secret_by_uid(uid)
+  secret = secrets_manager.get_secrets([uid]).first
   puts "  Title: #{secret.title}"
   puts "  Type: #{secret.type}"
-  puts "  Fields: #{secret.fields.keys.join(', ')}"
+  puts "  Fields: #{secret.fields.map { |f| f['type'] }.join(', ')}"
 end
 
 # 3. Get secret by title
@@ -52,8 +51,8 @@ if secrets.any?
   secret = secrets.first
   
   # Common fields
-  puts "  Login: #{secret.fields['login']}" if secret.fields['login']
-  puts "  URL: #{secret.fields['url']}" if secret.fields['url']
+  puts "  Login: #{secret.login}" if secret.login
+  puts "  URL: #{secret.url}" if secret.url
   
   # Using dynamic field access
   puts "  Password: #{secret.password}" if secret.respond_to?(:password)
@@ -82,3 +81,38 @@ begin
 rescue => e
   puts "  Notation error: #{e.message}"
 end
+
+# 7. New DTO Fields (v17.2.0)
+puts "\n7. New DTO Fields:"
+puts "   Access new metadata fields on records"
+
+begin
+  query_options = KeeperSecretsManager::Dto::QueryOptions.new(request_links: true)
+  records_with_metadata = secrets_manager.get_secrets_with_options(query_options)
+
+  records_with_metadata.first(3).each do |record|
+    puts "\n  #{record.title}"
+    puts "    Editable: #{record.is_editable ? 'Yes' : 'No'}"
+    puts "    Folder UID: #{record.inner_folder_uid}" if record.inner_folder_uid
+    puts "    Has links: #{record.links && record.links.any? ? 'Yes' : 'No'}"
+
+    if record.files && record.files.any?
+      file = record.files.first
+      puts "    File metadata:"
+      puts "      Last modified: #{Time.at(file['lastModified'])}" if file['lastModified']
+      puts "      Has thumbnail: #{file['thumbnailUrl'] ? 'Yes' : 'No'}"
+    end
+  end
+rescue => e
+  puts "  Error: #{e.message}"
+end
+
+# Tips
+puts "\n=== Tips ==="
+puts '- Use get_secrets() without parameters to retrieve all secrets'
+puts '- Use get_secrets([uid]) to retrieve specific secrets by UID'
+puts '- Use get_secret_by_title() for quick lookups by name'
+puts '- Use notation for quick field access'
+puts '- Dynamic field access (record.password) is convenient for standard fields'
+puts '- Enable request_links: true to retrieve PAM linked credentials'
+puts '- Check is_editable before attempting to modify records'

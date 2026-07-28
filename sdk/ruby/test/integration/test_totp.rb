@@ -27,13 +27,12 @@ class TOTPTests
     storage = KeeperSecretsManager::Storage::InMemoryStorage.new(config_data)
     @sm = KeeperSecretsManager.new(config: storage)
 
-    # Get folder for testing
+    # Get folder for testing - use any available folder
     folders = @sm.get_folders
-    @test_folder = folders.find { |f| f.uid == 'khq76ez6vkTRj3MqUiEGRg' }
+    @test_folder = folders.first
 
     unless @test_folder
-      puts '❌ Test folder not found'
-      exit 1
+      puts '⚠️  No folders found, creating records in root'
     end
   end
 
@@ -66,7 +65,7 @@ class TOTPTests
     }
 
     options = KeeperSecretsManager::Dto::CreateOptions.new
-    options.folder_uid = @test_folder.uid
+    options.folder_uid = @test_folder.uid if @test_folder
 
     begin
       @totp_record_uid = @sm.create_secret(record_data, options)
@@ -120,24 +119,33 @@ class TOTPTests
   def test_totp_validation
     puts "\n3. Testing TOTP Validation..."
 
+    secret = 'JBSWY3DPEHPK3PXP'
+
+    # Generate a valid code for current time
+    valid_code = KeeperSecretsManager::TOTP.generate_code(secret)
+    puts "   ✅ Generated code: #{valid_code}"
+
+    # Test that validation accepts the current code
+    is_valid = KeeperSecretsManager::TOTP.validate_code(secret, valid_code, window: 1)
+    raise 'Current code should be valid' unless is_valid
+
+    puts '   ✅ Current code validated successfully'
+
+    # Test invalid code
+    invalid_code = '000000'
+    is_invalid = KeeperSecretsManager::TOTP.validate_code(secret, invalid_code, window: 1)
+    raise 'Invalid code should fail validation' if is_invalid
+
+    puts '   ✅ Invalid code rejected successfully'
+
     # Test validation window
-    valid_window = 1 # Allow 1 period before/after
+    # Generate code from 30 seconds ago (should still be valid with window=1)
+    past_time = Time.now - 30
+    past_code = KeeperSecretsManager::TOTP.generate_code(secret, time: past_time)
+    is_valid_past = KeeperSecretsManager::TOTP.validate_code(secret, past_code, window: 1)
+    puts "   ✅ Past code (30s ago) validation: #{is_valid_past ? 'PASS' : 'FAIL'}"
 
-    current_time = Time.now.to_i
-    periods_to_check = []
-
-    (-valid_window..valid_window).each do |offset|
-      period_time = current_time + (offset * 30)
-      periods_to_check << period_time / 30
-    end
-
-    puts "   ✅ Validation window: #{valid_window * 30} seconds"
-    puts "   ✅ Checking #{periods_to_check.length} time periods"
-
-    # TODO: Implement actual TOTP validation in SDK
-    # valid = @sm.validate_totp(@totp_record_uid, user_provided_code)
-
-    puts '   ⚠️  TOTP validation not yet implemented in SDK'
+    puts '   ✅ TOTP validation tests completed'
   end
 
   def test_totp_with_different_algorithms
@@ -151,11 +159,23 @@ class TOTPTests
       # Different TOTP URLs for each algorithm
       totp_url = "otpauth://totp/Test:user?secret=JBSWY3DPEHPK3PXP&algorithm=#{algo}"
 
-      # TODO: Test with different algorithms
-      # code = @sm.generate_totp(totp_url)
+      # Parse URL and generate TOTP code
+      totp_params = KeeperSecretsManager::TOTP.parse_url(totp_url)
+      code = KeeperSecretsManager::TOTP.generate_code(
+        totp_params['secret'],
+        algorithm: totp_params['algorithm'],
+        digits: totp_params['digits'],
+        period: totp_params['period']
+      )
 
-      puts "      ⚠️  #{algo} TOTP generation pending SDK implementation"
+      puts "      ✅ #{algo} TOTP code: #{code}"
+      puts "      ✅ Code length: #{code.length} digits"
+
+      # Verify code format
+      raise "Invalid TOTP code format for #{algo}" unless code =~ /\A\d{6}\z/
     end
+
+    puts "   ✅ All algorithms tested successfully"
   end
 
   def test_totp_with_different_periods
@@ -168,11 +188,26 @@ class TOTPTests
 
       totp_url = "otpauth://totp/Test:user?secret=JBSWY3DPEHPK3PXP&period=#{period}"
 
-      # TODO: Test with different periods
-      # code = @sm.generate_totp(totp_url)
+      # Parse URL and generate TOTP code
+      totp_params = KeeperSecretsManager::TOTP.parse_url(totp_url)
+      code = KeeperSecretsManager::TOTP.generate_code(
+        totp_params['secret'],
+        algorithm: totp_params['algorithm'],
+        digits: totp_params['digits'],
+        period: totp_params['period']
+      )
 
-      puts "      ⚠️  #{period}s period TOTP pending SDK implementation"
+      puts "      ✅ #{period}s period TOTP code: #{code}"
+      puts "      ✅ Time until next code: #{period - (Time.now.to_i % period)} seconds"
+
+      # Verify code format
+      raise "Invalid TOTP code format for #{period}s period" unless code =~ /\A\d{6}\z/
+
+      # Verify that the period was actually used
+      raise "Period mismatch" unless totp_params['period'] == period
     end
+
+    puts "   ✅ All time periods tested successfully"
   end
 
   def cleanup_test_records
