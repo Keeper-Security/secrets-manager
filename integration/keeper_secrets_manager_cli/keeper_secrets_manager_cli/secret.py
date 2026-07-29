@@ -28,6 +28,7 @@ from keeper_secrets_manager_helper.record import Record
 from keeper_secrets_manager_helper.v3.record import Record as RecordV3
 from keeper_secrets_manager_helper.field_type import FieldType
 from keeper_secrets_manager_helper.exception import FileSyntaxException
+from keeper_secrets_manager_helper.common import load_file
 from .table import Table, ColumnAlign
 from typing import List, Tuple
 import uuid
@@ -912,7 +913,18 @@ class Secret:
 
         try:
             folders = self.cli.client.get_folders()
-            records = Record.create_from_file(file, password_generate=password_generate_flag)
+            # Workaround: helper FieldType.__init__ crashes with IndexError when a dict-typed
+            # field (address, name, host, passkey, etc.) has value: []. Load the file and strip
+            # empty-value fields before passing to create_from_data so the helper never sees
+            # value: [] for a complex field. Remove once helper ships the "if self.value:"
+            # guard in FieldType.__init__.
+            record_data = load_file(file)
+            for rec in record_data.get("data", []):
+                rec["fields"] = [f for f in rec.get("fields", []) if f.get("value")]
+                for key in ("customFields", "custom_fields"):
+                    if key in rec:
+                        rec[key] = [f for f in rec[key] if f.get("value")]
+            records = RecordV3.create_from_data(record_data, password_generate=password_generate_flag)
             record_uids = []
             for record in records:
                 record_create_obj = record.get_record_create_obj()
@@ -973,6 +985,9 @@ class Secret:
                             "recordType": rec.type,
                             "title": title if title else rec.title,
                             "notes": rec.dict.get("notes", ""),
+                            # Workaround: strip value: [] fields before create_from_data to avoid
+                            # IndexError in helper FieldType.__init__. Remove once helper ships
+                            # the "if self.value:" guard in FieldType.__init__.
                             "fields": [f for f in rec.dict.get("fields", []) if f.get("value")],
                             "customFields": [f for f in rec.dict.get("custom", []) if f.get("value")]
                         }]
