@@ -292,20 +292,24 @@ class ActionModule(ActionBase):
 
         try:
             for field in self._task.args.get("fields", []):
+                # Workaround: convert value: [] to None so helper FieldType.__init__ skips the
+                # dict-field index (value[0]) that crashes on empty lists. Remove once helper
+                # ships the "if self.value:" guard in FieldType.__init__.
                 fields.append(Field(
                     field_section=FieldSectionEnum.STANDARD,
                     type=field.get("type"),
                     label=field.get("label"),
-                    value=field.get("value")
+                    value=field.get("value") or None
                 ))
                 keeper.stash_secret_value(str(field.get("value")))
 
             for field in self._task.args.get("custom_fields", []):
+                # Same workaround as above for custom fields.
                 fields.append(Field(
                     field_section=FieldSectionEnum.CUSTOM,
                     type=field.get("type"),
                     label=field.get("label"),
-                    value=field.get("value", "text")
+                    value=field.get("value", "text") or None
                 ))
                 keeper.stash_secret_value(str(field.get("value")))
 
