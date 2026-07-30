@@ -55,7 +55,13 @@ class KeyringUtilityStorage(KeyValueStorage):
             cls.logger.error(message, exc_info=error)
         else:
             cls.logger.error(message)
-        raise exceptions.KeeperError(message, error)
+        # KeeperError only accepts a message; chain the original error as the
+        # cause instead of passing it as a second positional argument. Chain
+        # only when there is a real cause: `from None` would suppress the
+        # implicit context Python adds when raising inside an except block.
+        if error is not None:
+            raise exceptions.KeeperError(message) from error
+        raise exceptions.KeeperError(message)
 
     def __init__(
         self,

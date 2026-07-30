@@ -612,6 +612,54 @@ class LockedKeyringTest(unittest.TestCase):
         self.assertIn("locked", str(ctx.exception).lower())
 
 
+class KeyringUtilityStorageFatalTest(unittest.TestCase):
+    """__fatal must raise KeeperError with the storage error message, not crash
+    with a TypeError that masks it (KeeperError only accepts a message arg)."""
+
+    def test_fatal_raises_keeper_error(self):
+        from keeper_secrets_manager_cli.keyring_config import KeyringUtilityStorage
+        from keeper_secrets_manager_core.exceptions import KeeperError
+
+        with self.assertRaises(KeeperError) as ctx:
+            KeyringUtilityStorage._KeyringUtilityStorage__fatal("something broke")
+        self.assertIn("KeyringUtilityStorage: something broke", str(ctx.exception))
+
+    def test_fatal_chains_original_error(self):
+        from keeper_secrets_manager_cli.keyring_config import KeyringUtilityStorage
+        from keeper_secrets_manager_core.exceptions import KeeperError
+
+        original = ValueError("backend exploded")
+        with self.assertRaises(KeeperError) as ctx:
+            KeyringUtilityStorage._KeyringUtilityStorage__fatal("something broke", original)
+        self.assertIs(ctx.exception.__cause__, original,
+                      "original error must be chained as the cause")
+
+    def test_missing_secret_name_raises_keeper_error(self):
+        from keeper_secrets_manager_cli.keyring_config import KeyringUtilityStorage
+        from keeper_secrets_manager_core.exceptions import KeeperError
+
+        with self.assertRaises(KeeperError) as ctx:
+            KeyringUtilityStorage(secret_name="")
+        self.assertIn("requires a secret name", str(ctx.exception))
+
+    def test_missing_keyring_backend_preserves_import_error_context(self):
+        """__fatal called with no cause inside `except ImportError` must not
+        suppress the implicit exception context (`raise ... from None` would),
+        so debug tracebacks keep showing the original ImportError."""
+        from keeper_secrets_manager_cli.keyring_config import KeyringUtilityStorage
+        from keeper_secrets_manager_core.exceptions import KeeperError
+
+        with patch.dict('sys.modules', {'keyring': None}):
+            with self.assertRaises(KeeperError) as ctx:
+                KeyringUtilityStorage(secret_name="some-secret")
+
+        self.assertIn("No keyring backend available", str(ctx.exception))
+        self.assertFalse(ctx.exception.__suppress_context__,
+                         "implicit exception context must not be suppressed")
+        self.assertIsInstance(ctx.exception.__context__, ImportError,
+                              "the original ImportError must remain visible as context")
+
+
 if __name__ == '__main__':
     unittest.main()
 
