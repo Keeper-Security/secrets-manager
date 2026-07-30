@@ -55,7 +55,9 @@ class KeyringUtilityStorage(KeyValueStorage):
             cls.logger.error(message, exc_info=error)
         else:
             cls.logger.error(message)
-        raise exceptions.KeeperError(message, error)
+        # KeeperError only accepts a message; chain the original error as the
+        # cause instead of passing it as a second positional argument.
+        raise exceptions.KeeperError(message) from error
 
     def __init__(
         self,
