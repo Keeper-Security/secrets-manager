@@ -54,6 +54,7 @@ class Profile:
         elif os.environ.get("KSM_CONFIG") is not None:
             self.use_keyring = False
             self.keyring_storage = None
+            self._warn_if_keyring_profiles_exist(KeyringConfigStorage)
             self._config.clear()
             self._config.set_profile_using_base64(Profile.default_profile, os.environ.get("KSM_CONFIG"))
         elif os.environ.get("KSM_CONFIG_BASE64_1") is not None:
@@ -125,6 +126,23 @@ class Profile:
 
         self.has_profiles = len(self._config.profile_list()) > 0
     
+    def _warn_if_keyring_profiles_exist(self, keyring_storage_class):
+        """Warn on stderr when KSM_CONFIG overrides an existing keyring setup (KSM-805).
+
+        KSM_CONFIG bypasses the keyring's integrity check entirely, since there is no
+        persistent hash to compare an env-var config against. Silent in CI/container
+        environments that never had a keyring profile.
+        """
+        try:
+            if not keyring_storage_class.is_available():
+                return
+            if keyring_storage_class().list_profiles():
+                click.echo(click.style(
+                    "Warning: KSM_CONFIG is set - keyring integrity verification is inactive "
+                    "for this session.", fg="yellow"), file=sys.stderr)
+        except Exception as e:
+            self.logger.debug("Keyring probe failed while checking for KSM_CONFIG override: %s", e, exc_info=True)
+
     def _find_ini_file(self):
         """Find keeper.ini file in current directory or standard locations."""
         if os.path.exists("keeper.ini"):

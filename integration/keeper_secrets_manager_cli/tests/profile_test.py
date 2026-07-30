@@ -1144,5 +1144,59 @@ class KeyringWarningMessageTest(unittest.TestCase):
         )
 
 
+class KsmConfigKeyringWarningTest(unittest.TestCase):
+    """KSM_CONFIG must warn when it overrides an existing keyring setup (KSM-805).
+
+    The warning fires only when a keyring profile exists — pure CI/container
+    environments that use KSM_CONFIG exclusively see no output.
+    """
+
+    def setUp(self):
+        self.orig_dir = os.getcwd()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        os.chdir(self.temp_dir.name)
+        os.environ.pop("KSM_CONFIG", None)
+
+    def tearDown(self):
+        os.chdir(self.orig_dir)
+        self.temp_dir.cleanup()
+        os.environ.pop("KSM_CONFIG", None)
+
+    def _make_ksm_config(self):
+        return MockConfig.make_base64(config=MockConfig.make_config())
+
+    def test_warns_when_keyring_profiles_exist(self):
+        os.environ["KSM_CONFIG"] = self._make_ksm_config()
+        runner = CliRunner()
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=True), \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.list_profiles',
+                   return_value=['_default']):
+            result = runner.invoke(cli, ['profile', 'list', '--json'], catch_exceptions=False)
+        combined = (result.output or '') + (result.stderr if hasattr(result, 'stderr') else '')
+        self.assertIn("KSM_CONFIG", combined)
+        self.assertIn("keyring integrity", combined)
+
+    def test_no_warn_when_keyring_is_empty(self):
+        os.environ["KSM_CONFIG"] = self._make_ksm_config()
+        runner = CliRunner()
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=True), \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.list_profiles',
+                   return_value=[]):
+            result = runner.invoke(cli, ['profile', 'list', '--json'], catch_exceptions=False)
+        combined = (result.output or '') + (result.stderr if hasattr(result, 'stderr') else '')
+        self.assertNotIn("keyring integrity", combined)
+
+    def test_no_warn_when_keyring_unavailable(self):
+        os.environ["KSM_CONFIG"] = self._make_ksm_config()
+        runner = CliRunner()
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            result = runner.invoke(cli, ['profile', 'list', '--json'], catch_exceptions=False)
+        combined = (result.output or '') + (result.stderr if hasattr(result, 'stderr') else '')
+        self.assertNotIn("keyring integrity", combined)
+
+
 if __name__ == '__main__':
     unittest.main()
