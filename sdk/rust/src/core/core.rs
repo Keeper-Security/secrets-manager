@@ -2072,13 +2072,16 @@ impl SecretsManager {
     ///
     /// # Returns
     ///
-    /// * `Result<String, KSMRError>` - JSON response from the server or an error
+    /// * `Result<Vec<HashMap<String, Value>>, KSMRError>` - Server response for each record deletion
     ///
     /// # Errors
     ///
     /// * `HTTPError` - If the API request fails
     /// * `AuthenticationError` - If credentials are invalid
-    pub fn delete_secret(&mut self, record_uid: Vec<String>) -> Result<String, KSMRError> {
+    pub fn delete_secret(
+        &mut self,
+        record_uid: Vec<String>,
+    ) -> Result<Vec<HashMap<String, Value>>, KSMRError> {
         let config_clone = self.config.clone();
         let delete_payload = Self::delete_payload(config_clone, record_uid)?;
         let response = self.post_query("delete_secret".to_string(), &delete_payload)?;
@@ -2099,42 +2102,16 @@ impl SecretsManager {
                 )
             })?;
 
-        let simplified_records = records
-            .into_iter()
-            .map(|record| {
-                record
-                    .into_iter()
-                    .map(|(k, v)| (k, v.to_string()))
-                    .collect::<HashMap<String, String>>()
-            })
-            .collect();
+        for record in &records {
+            let response_code = record.get("responseCode").and_then(|v| v.as_str()).unwrap_or("");
+            if response_code != "ok" {
+                let record_uid = record.get("recordUid").and_then(|v| v.as_str()).unwrap_or("?");
+                let error_msg = record.get("errorMessage").and_then(|v| v.as_str()).unwrap_or("");
+                error!("Failed to delete secret {}: {} {}", record_uid, response_code, error_msg);
+            }
+        }
 
-        self.clone()
-            .calculate_successful_deletes(simplified_records)
-    }
-
-    pub fn calculate_successful_deletes(
-        self,
-        dict: Vec<HashMap<String, String>>,
-    ) -> Result<String, KSMRError> {
-        let deleted_secrets: Vec<String> = dict
-            .into_iter()
-            .filter_map(|dict_value| {
-                if dict_value.get("responseCode") == Some(&"\"ok\"".to_string()) {
-                    dict_value.get("recordUid").cloned()
-                } else {
-                    if let Some(record_uid) = dict_value.get("recordUid") {
-                        error!("Failed to delete secret {}: {} {}",
-                            record_uid,
-                            dict_value.get("responseCode").map(|s| s.trim_matches('"')).unwrap_or(""),
-                            dict_value.get("errorMessage").map(|s| s.trim_matches('"')).unwrap_or(""));
-                    }
-                    None
-                }
-            })
-            .collect();
-
-        Ok(deleted_secrets.join(", "))
+        Ok(records)
     }
     fn prepare_delete_folder_payload(
         storage: KvStoreType,

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [17.4.0]
+
+### Fixed
+
+- **KSM-1089 / KSM-1129**: `delete_secret` now returns full per-item detail (`recordUid`, `responseCode`, `errorMessage`) for every UID passed in, success or failure, matching `delete_folder`'s existing shape. Previously it collapsed the response down to a comma-joined `String` of only the *successful* UIDs; a failed UID's `responseCode`/`errorMessage` were logged but not returned, so callers had no programmatic way to detect a partial-delete failure.
+  - **Note**: this is a breaking change. `delete_secret`'s return type changes from `Result<String, KSMRError>` to `Result<Vec<HashMap<String, Value>>, KSMRError>`. Callers that treated the return value as a joined string of successful UIDs must update to inspect the `Vec<HashMap>` instead (e.g. filter on `responseCode == "ok"` to recover the old "successful UIDs" list). The now-unused `calculate_successful_deletes` helper has been removed.
+
 ## [17.3.0]
 
 ### Added
