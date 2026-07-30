@@ -1403,6 +1403,16 @@ def version_command(ctx):
         pass
 
 
+def _stdout_can_encode(text):
+    """True when the active stdout encoding can represent every character in text."""
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        text.encode(encoding)
+    except (UnicodeEncodeError, LookupError):
+        return False
+    return True
+
+
 @click.command(
     name='shell',
     cls=HelpColorsCommand,
@@ -1425,8 +1435,13 @@ def shell_command(app):
 █████╔╝ ███████╗██╔████╔██║    ██║     ██║     ██║
 ██╔═██╗ ╚════██║██║╚██╔╝██║    ██║     ██║     ██║
 ██║  ██╗███████║██║ ╚═╝ ██║    ╚██████╗███████╗██║
-╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝     ╚═════╝╚══════╝╚═╝                                                                          
+╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝     ╚═════╝╚══════╝╚═╝
     """
+    if _stdout_can_encode(logo) is False:
+        # stdout cannot represent the box-drawing characters (e.g. the cp1252
+        # 'charmap' codec when output is piped or redirected on Windows); fall
+        # back to plain text so the shell still starts.
+        logo = "\nKeeper Secrets Manager CLI\n"
     click.echo(click.style(logo, fg="blue"))
 
     versions = get_versions()
