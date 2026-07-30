@@ -605,6 +605,17 @@ class Secret:
         if file is None:
             raise KsmCliException("Cannot find a file named {} for UID {}. Cannot download file".format(name, uid))
 
+        # KSM-1131: vault may not have propagated the download URL yet (upload→download race).
+        # The Python SDK fix will add this guard in get_file_data(); remove this workaround
+        # when the CLI bumps its SDK dependency past that fix.
+        if not file.f.get("url"):
+            raise KsmCliException(
+                "File '{}' does not have a download URL yet. "
+                "The vault may still be processing the upload. Please retry in a few seconds.".format(
+                    file.f.get("title") or file.f.get("fileUid") or name
+                )
+            )
+
         if file_output == 'stdout':
             sys.stdout.buffer.write(file.get_file_data())
         elif file_output == 'stderr':
