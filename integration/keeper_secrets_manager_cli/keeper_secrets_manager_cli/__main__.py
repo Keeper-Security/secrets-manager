@@ -17,6 +17,7 @@ import traceback
 import typing as t
 from importlib.metadata import version as pkg_version, PackageNotFoundError
 import click
+from click.core import ParameterSource
 import keeper_secrets_manager_core
 from click_help_colors import HelpColorsGroup, HelpColorsCommand
 from click_repl import repl, exit as repl_exit
@@ -305,6 +306,26 @@ class Mutex(click.Option):
 def cli(ctx, ini_file, profile_name, output, color, cache, log_level):
     """Keeper Secrets Manager CLI
     """
+
+    # Inside `ksm shell`, click-repl re-invokes this callback for every typed
+    # line with the shell session's context as the parent (top-level runs have
+    # no parent). Options absent from the inner line parse as their defaults,
+    # which would silently discard session globals like --ini-file, so fall
+    # back to the session's values for them; options typed on the inner line
+    # still win, for that line only.
+    session = ctx.parent.obj if ctx.parent is not None else None
+    if isinstance(session, dict) and "cli" in session:
+        def pick(param_name, inner_value, session_key):
+            if ctx.get_parameter_source(param_name) == ParameterSource.COMMANDLINE:
+                return inner_value
+            return session.get(session_key)
+
+        ini_file = pick("ini_file", ini_file, "ini_file")
+        profile_name = pick("profile_name", profile_name, "profile_name")
+        output = pick("output", output, "output")
+        color = pick("color", color, "use_color")
+        cache = pick("cache", cache, "use_cache")
+        log_level = pick("log_level", log_level, "log_level")
 
     ctx.obj = {
         "cli": _get_cli(
