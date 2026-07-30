@@ -802,4 +802,86 @@ mod feature_validation_tests {
         assert_eq!(folders[0].folder_uid, "good-uid");
         assert_eq!(folders[0].name, "Good Folder");
     }
+
+    /// delete_secret() must expose per-item failure detail to the caller,
+    /// not just log it.
+    ///
+    /// Before this fix, `delete_secret` collapsed the server's per-record
+    /// response down to a comma-joined `String` of only the *successful*
+    /// UIDs (`calculate_successful_deletes`), discarding `responseCode`/
+    /// `errorMessage` for any failed UID entirely except in a log line.
+    /// This drives `delete_secret` with a stubbed response containing one
+    /// successful and one failed record, and asserts the failure detail is
+    /// readable from the *returned value* itself.
+    ///
+    /// A pass proves the caller can programmatically detect and inspect a
+    /// partial-delete failure. A failure (or compile error, given the
+    /// return-type change) means the old string-only behavior persists.
+    #[test]
+    fn test_delete_secret_surfaces_per_item_failure_detail() {
+        let response = json!({
+            "records": [
+                { "recordUid": "good-uid", "responseCode": "ok" },
+                {
+                    "recordUid": "bad-uid",
+                    "responseCode": "fail_reason",
+                    "errorMessage": "Access denied"
+                }
+            ]
+        });
+        let response_bytes = response.to_string().into_bytes();
+
+        let storage = create_test_storage().expect("Failed to create storage");
+        let mut client_options = ClientOptions::new_client_options(storage);
+        client_options.set_custom_post_function(
+            move |_url: String,
+                  transmission_key: TransmissionKey,
+                  _payload: EncryptedPayload| {
+                let encrypted =
+                    CryptoUtils::encrypt_aes_gcm(&response_bytes, &transmission_key.key, None)?;
+                Ok(KsmHttpResponse {
+                    status_code: 200,
+                    data: encrypted,
+                    http_response: None,
+                })
+            },
+        );
+        let mut sm = SecretsManager::new(client_options).expect("Failed to create SecretsManager");
+
+        let result = sm.delete_secret(vec!["good-uid".to_string(), "bad-uid".to_string()]);
+        assert!(
+            result.is_ok(),
+            "delete_secret() must succeed when the server reports a per-item failure, got: {:?}",
+            result
+        );
+
+        let records = result.unwrap();
+        assert_eq!(
+            records.len(),
+            2,
+            "expected both records (success and failure) in the returned detail, got {:?}",
+            records
+        );
+
+        let bad = records
+            .iter()
+            .find(|r| r.get("recordUid").and_then(|v| v.as_str()) == Some("bad-uid"))
+            .expect("bad-uid must be present in the returned per-item detail");
+        assert_eq!(
+            bad.get("responseCode").and_then(|v| v.as_str()),
+            Some("fail_reason"),
+            "failed record's responseCode must be readable from the return value, not just logged"
+        );
+        assert_eq!(
+            bad.get("errorMessage").and_then(|v| v.as_str()),
+            Some("Access denied"),
+            "failed record's errorMessage must be readable from the return value, not just logged"
+        );
+
+        let good = records
+            .iter()
+            .find(|r| r.get("recordUid").and_then(|v| v.as_str()) == Some("good-uid"))
+            .expect("good-uid must be present in the returned per-item detail");
+        assert_eq!(good.get("responseCode").and_then(|v| v.as_str()), Some("ok"));
+    }
 }

@@ -724,12 +724,28 @@ Delete Secret
     let mut secrets_manager = SecretsManager::new(client_options)?;
 
     // delete a specific secret by UID
-    let secret_to_delete = secrets_manager.delete_secret(vec!["<RECORD UID>".to_string()])?;
+    let delete_results = secrets_manager.delete_secret(vec!["<RECORD UID>".to_string()])?;
+
+    for result in &delete_results {
+        let response_code = result.get("responseCode").and_then(|v| v.as_str()).unwrap_or("");
+        if response_code != "ok" {
+            println!("Failed to delete {:?}: {} {}",
+                result.get("recordUid"),
+                response_code,
+                result.get("errorMessage").and_then(|v| v.as_str()).unwrap_or(""));
+        }
+    }
 ```
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `record_uid` | `String` | Yes | None | The uid of the record to be deleted |
+
+#### Returns
+
+> Type: `Vec<HashMap<String, Value>>`
+
+One entry per requested UID, each with `recordUid`, `responseCode` (`"ok"` on success), and `errorMessage` (present on failure).
 
   
 
