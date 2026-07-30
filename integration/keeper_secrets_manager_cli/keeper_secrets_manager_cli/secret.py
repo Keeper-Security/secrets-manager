@@ -23,7 +23,7 @@ from keeper_secrets_manager_cli.common import launch_editor
 from keeper_secrets_manager_core.core import SecretsManager, CreateOptions, KeeperFolder, KeeperFileUpload, QueryOptions
 from keeper_secrets_manager_core.dto.payload import UpdateOptions
 from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
-from keeper_secrets_manager_core.dto.dtos import KeeperRecordLink, RecordCreate as _RecordCreate
+from keeper_secrets_manager_core.dto.dtos import KeeperRecordLink, RecordCreate as _RecordCreate, RecordField
 from keeper_secrets_manager_helper.record import Record
 from keeper_secrets_manager_helper.v3.record import Record as RecordV3
 from keeper_secrets_manager_helper.field_type import FieldType
@@ -998,7 +998,9 @@ class Secret:
                             "notes": rec.dict.get("notes", ""),
                             # Workaround: strip value: [] fields before create_from_data to avoid
                             # IndexError in helper FieldType.__init__. Remove once helper ships
-                            # the "if self.value:" guard in FieldType.__init__.
+                            # the "if self.value:" guard in FieldType.__init__. Stripped standard
+                            # fields are recreated empty from the record type schema; stripped
+                            # custom fields belong to no schema and are re-attached below.
                             "fields": [f for f in rec.dict.get("fields", []) if f.get("value")],
                             "customFields": [f for f in rec.dict.get("custom", []) if f.get("value")]
                         }]
@@ -1008,6 +1010,17 @@ class Secret:
                     record_create_obj = record.get_record_create_obj()
                     if record_create_obj.custom is None:   # KSM-702
                         record_create_obj.custom = []
+                    # Re-attach empty-value custom fields stripped above so the clone keeps
+                    # them (type/label/flags) instead of silently dropping them.
+                    for f in rec.dict.get("custom", []):
+                        if not f.get("value"):
+                            record_create_obj.custom.append(RecordField(
+                                field_type=f.get("type"),
+                                value=[],
+                                label=f.get("label"),
+                                required=f.get("required"),
+                                privacyScreen=f.get("privacyScreen"),
+                            ))
                     record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj)
                 else:
                     print(f"Unable to find the parent shared folder for record {uid} - individually shared records cannot be cloned.", file=sys.stderr)
