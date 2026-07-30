@@ -642,6 +642,23 @@ class KeyringUtilityStorageFatalTest(unittest.TestCase):
             KeyringUtilityStorage(secret_name="")
         self.assertIn("requires a secret name", str(ctx.exception))
 
+    def test_missing_keyring_backend_preserves_import_error_context(self):
+        """__fatal called with no cause inside `except ImportError` must not
+        suppress the implicit exception context (`raise ... from None` would),
+        so debug tracebacks keep showing the original ImportError."""
+        from keeper_secrets_manager_cli.keyring_config import KeyringUtilityStorage
+        from keeper_secrets_manager_core.exceptions import KeeperError
+
+        with patch.dict('sys.modules', {'keyring': None}):
+            with self.assertRaises(KeeperError) as ctx:
+                KeyringUtilityStorage(secret_name="some-secret")
+
+        self.assertIn("No keyring backend available", str(ctx.exception))
+        self.assertFalse(ctx.exception.__suppress_context__,
+                         "implicit exception context must not be suppressed")
+        self.assertIsInstance(ctx.exception.__context__, ImportError,
+                              "the original ImportError must remain visible as context")
+
 
 if __name__ == '__main__':
     unittest.main()
