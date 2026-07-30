@@ -1181,6 +1181,83 @@ class SecretTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertTrue(mock_create.called, "create_secret_with_options was not called")
 
+    def test_clone_preserves_empty_custom_fields(self):
+        """secret add clone must keep custom fields whose value is empty (field-faithful clone)"""
+        from unittest.mock import patch as _patch, MagicMock
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        profile_init_res = mock.Response()
+        profile_init_res.add_folder(uid="FAKEUID")
+        profile_init_res.add_record(title="Profile Init")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+
+        fake_record = MagicMock()
+        fake_record.uid = "LOGINRECORD0000000001"
+        fake_record.folder_uid = "FAKEUID"
+        fake_record.inner_folder_uid = None
+        fake_record.type = "login"
+        fake_record.title = "My Login"
+        fake_record.dict = {
+            "notes": "",
+            "fields": [
+                {"type": "login", "value": ["jsmith"]},
+                {"type": "password", "value": []},
+            ],
+            "custom": [
+                {"type": "text", "label": "Department", "value": ["Engineering"]},
+                {"type": "text", "label": "Cost Center", "value": []},
+                {"type": "name", "label": "Emergency Contact", "value": []},  # empty dict-typed
+                {"type": "secret", "label": "Backup Code", "value": [], "required": True},
+            ],
+        }
+
+        with _patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             _patch.object(secrets_manager, 'get_secrets', return_value=[fake_record]), \
+             _patch.object(secrets_manager, 'create_secret_with_options',
+                           return_value='NEWUID0000000000000000') as mock_create, \
+             _patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                    return_value=False):
+            mock_client.return_value = secrets_manager
+            Profile.init(token='MY_TOKEN')
+
+            runner = CliRunner()
+            result = runner.invoke(cli, ['secret', 'add', 'clone',
+                                         '--uid', 'LOGINRECORD0000000001'],
+                                   catch_exceptions=False)
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue(mock_create.called, "create_secret_with_options was not called")
+
+        record_create_obj = mock_create.call_args[0][1]
+        self.assertEqual(4, len(record_create_obj.custom),
+                         "clone must keep every source custom field")
+        custom_by_key = {(f.type, getattr(f, "label", None)): f
+                         for f in record_create_obj.custom}
+
+        # Non-empty custom field passes through with its value intact
+        self.assertEqual(["Engineering"], custom_by_key[("text", "Department")].value)
+
+        # Empty custom fields survive with type/label kept and value []
+        self.assertEqual([], custom_by_key[("text", "Cost Center")].value)
+        self.assertEqual([], custom_by_key[("name", "Emergency Contact")].value)
+        self.assertEqual([], custom_by_key[("secret", "Backup Code")].value)
+        self.assertTrue(custom_by_key[("secret", "Backup Code")].required,
+                        "required flag must be preserved on empty custom fields")
+
+        # Serialized payload sent to the server includes the empty custom fields
+        payload = record_create_obj.to_dict()
+        payload_by_key = {(f.get("type"), f.get("label")): f for f in payload["custom"]}
+        self.assertEqual(["Engineering"], payload_by_key[("text", "Department")]["value"])
+        self.assertEqual([], payload_by_key[("text", "Cost Center")]["value"])
+        self.assertEqual([], payload_by_key[("name", "Emergency Contact")]["value"])
+        self.assertEqual([], payload_by_key[("secret", "Backup Code")]["value"])
+
     def test_create_record_custom_field_empty_list(self):
         """record create payload always includes custom=[] when no custom fields are set"""
 
