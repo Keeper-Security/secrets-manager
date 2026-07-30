@@ -14,7 +14,9 @@ install_requires = [
     'keeper-secrets-manager-storage>=1.0.2',
     'prompt-toolkit>=3.0',
     'jsonpath-rw-ext',
-    'click',
+    # Context.get_parameter_source (used for shell session option inheritance)
+    # requires click 8.0+.
+    'click>=8.0',
     'click_help_colors',
     # KSM-818: click-repl 0.3.0 crashes with click>=8.2 (protected_args became read-only).
     # Pin to <0.3.0 until click-repl releases Click 8.2+ support (see click-repl PR #132).

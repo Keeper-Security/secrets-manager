@@ -5,6 +5,10 @@ import importlib.metadata
 from unittest.mock import patch
 
 from conftest import CliRunner
+from keeper_secrets_manager_core.core import SecretsManager
+from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
+from keeper_secrets_manager_core import mock
+from keeper_secrets_manager_core.mock import MockConfig
 from keeper_secrets_manager_cli.__main__ import cli
 from keeper_secrets_manager_cli.exception import KsmCliException
 
@@ -89,6 +93,83 @@ class ShellBannerEncodingTest(ShellInvocationTestCase):
 
         self.assertEqual(0, result.exit_code, result.output)
         self.assertIn("█", result.output, "UTF-8 stdout must keep the Unicode logo")
+
+
+class ShellSessionGlobalsTest(ShellInvocationTestCase):
+    """Global options passed at `ksm shell` launch (e.g. --ini-file) must apply
+    to commands run inside the shell. Options typed on an inner line still
+    override the session values, for that line only."""
+
+    def _make_client(self):
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        res = mock.Response()
+        res.add_record(title="Init Record")
+        queue = mock.ResponseQueue(client=secrets_manager)
+        for _ in range(6):
+            queue.add_response(res)
+        return secrets_manager
+
+    def _shell_patches(self, secrets_manager):
+        client_patch = patch('keeper_secrets_manager_cli.KeeperCli.get_client',
+                             return_value=secrets_manager)
+        keyring_patch = patch(
+            'keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+            return_value=False)
+        update_patch = patch('keeper_secrets_manager_cli.__main__.update_available',
+                             return_value=None)
+        return client_patch, keyring_patch, update_patch
+
+    def test_inner_commands_inherit_session_ini_file(self):
+        secrets_manager = self._make_client()
+        client_patch, keyring_patch, update_patch = self._shell_patches(secrets_manager)
+
+        with client_patch, keyring_patch, update_patch:
+            runner = CliRunner()
+
+            result = runner.invoke(cli, ['profile', 'init', '-t', 'TOKEN_ONE'],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, result.output)
+            # Move the ini out of the default search path so inner commands can
+            # only find it through the session --ini-file.
+            os.rename("keeper.ini", "custom.ini")
+
+            result = runner.invoke(cli, ['--ini-file', 'custom.ini', 'shell'],
+                                   input='profile list --json\nquit\n',
+                                   catch_exceptions=False)
+
+        self.assertEqual(0, result.exit_code, result.output)
+        self.assertIn('_default', result.output,
+                      "inner command must see the profiles from the session --ini-file")
+
+    def test_inner_explicit_ini_file_overrides_for_that_line_only(self):
+        secrets_manager = self._make_client()
+        client_patch, keyring_patch, update_patch = self._shell_patches(secrets_manager)
+
+        with client_patch, keyring_patch, update_patch:
+            runner = CliRunner()
+
+            result = runner.invoke(cli, ['profile', 'init', '-t', 'TOKEN_ONE'],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, result.output)
+            os.rename("keeper.ini", "custom.ini")
+
+            result = runner.invoke(cli, ['profile', 'init', '-p', 'other', '-t', 'TOKEN_TWO'],
+                                   catch_exceptions=False)
+            self.assertEqual(0, result.exit_code, result.output)
+            os.rename("keeper.ini", "other.ini")
+
+            result = runner.invoke(
+                cli, ['--ini-file', 'custom.ini', 'shell'],
+                input='--ini-file other.ini profile list --json\nprofile list --json\nquit\n',
+                catch_exceptions=False)
+
+        self.assertEqual(0, result.exit_code, result.output)
+        self.assertIn('other', result.output,
+                      "inner explicit --ini-file must win for that line")
+        self.assertIn('_default', result.output,
+                      "the line after an inner override must revert to the session --ini-file")
 
 
 if __name__ == '__main__':
