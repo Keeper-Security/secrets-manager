@@ -20,6 +20,7 @@ const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
 // request, so the counter only clears after 10s of silence).
 const MAX_THROTTLE_RETRIES = 5
 const BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
+const MAX_THROTTLE_DELAY_SEC = 176 // same ceiling the exponential branch reaches at the last retry (11 * 2**4)
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
 
 let keeperPublicKeys: Record<number, Uint8Array>
@@ -62,14 +63,17 @@ export type SecretManagerOptions = {
 // utils.ts/platform code that throws them; re-exported here so the public API is unchanged.
 export {KeeperError, KeeperThrottleError} from './errors'
 
-// Returns a jitter multiplier in [-0.25, 0.25). Kept separate so concurrent clients
-// desynchronize their retries; unit tests exercise throttleDelay with a pinned jitter.
-export const throttleJitter = (): number => Math.random() * 0.5 - 0.25
+// Returns a jitter multiplier in [0, 0.25). One-sided so the delay never drops below the
+// computed floor (retrying too soon just re-triggers the throttle); kept separate so
+// concurrent clients desynchronize their retries. Unit tests exercise throttleDelay with a
+// pinned jitter.
+export const throttleJitter = (): number => Math.random() * 0.25
 
 /**
  * If `body` is a backend throttle error (`result_code`/`error` === "throttled") returns its
- * `retry_after` in seconds (>= 0); otherwise returns `null` so the caller falls through to
- * normal error handling. Non-JSON / non-object bodies return `null`.
+ * `retry_after` in seconds (>= 0, capped at MAX_THROTTLE_DELAY_SEC); otherwise returns `null`
+ * so the caller falls through to normal error handling. Non-JSON / non-object bodies return
+ * `null`.
  */
 export const parseThrottle = (body: string): number | null => {
     let obj: any
@@ -86,7 +90,7 @@ export const parseThrottle = (body: string): number | null => {
         return null
     }
     const retryAfter = Number(obj.retry_after)
-    return Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 0
+    return Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, MAX_THROTTLE_DELAY_SEC) : 0
 }
 
 /**

@@ -9,6 +9,7 @@ import {
     KeeperThrottleError,
     parseThrottle,
     throttleDelay,
+    throttleJitter,
 } from '../'
 
 // A valid one-time token (same fixture the e2e suite uses) so initializeStorage produces a
@@ -65,6 +66,16 @@ describe('throttleDelay (unit)', () => {
     })
 })
 
+describe('throttleJitter (unit)', () => {
+    test('is one-sided: never pushes the delay below its floor', () => {
+        for (let i = 0; i < 200; i++) {
+            const jitter = throttleJitter()
+            expect(jitter).toBeGreaterThanOrEqual(0)
+            expect(jitter).toBeLessThan(0.25)
+        }
+    })
+})
+
 describe('parseThrottle (unit)', () => {
     test('throttled via error / result_code with retry_after variants', () => {
         expect(parseThrottle('{"error":"throttled"}')).toBe(0)
@@ -76,6 +87,13 @@ describe('parseThrottle (unit)', () => {
         expect(parseThrottle('{"error":"key"}')).toBeNull()
         expect(parseThrottle('not json')).toBeNull()
         expect(parseThrottle('')).toBeNull()
+    })
+    test('retry_after beyond the exponential ceiling is capped at 176s', () => {
+        // 176s = BASE_THROTTLE_DELAY_SEC * 2**(MAX_THROTTLE_RETRIES - 1) = 11 * 2**4, the same
+        // ceiling the exponential branch already reaches on the last retry attempt.
+        expect(parseThrottle('{"error":"throttled","retry_after":500}')).toBe(176)
+        expect(parseThrottle('{"error":"throttled","retry_after":176}')).toBe(176)
+        expect(parseThrottle('{"error":"throttled","retry_after":175}')).toBe(175)
     })
 })
 
@@ -118,8 +136,8 @@ describe('throttle retry (e2e via getSecrets)', () => {
             call++ === 0 ? throttle403(3) : throttle403()
         )
         await expect(getSecrets(options)).rejects.toBeInstanceOf(KeeperThrottleError)
-        // retry_after = 3s with +/-25% jitter -> [2.25s, 3.75s]
-        expect(sleeps[0]).toBeGreaterThanOrEqual(2250)
+        // retry_after = 3s with one-sided [0, +25%) jitter -> [3s, 3.75s]; never below the 3s floor
+        expect(sleeps[0]).toBeGreaterThanOrEqual(3000)
         expect(sleeps[0]).toBeLessThanOrEqual(3750)
     })
 
