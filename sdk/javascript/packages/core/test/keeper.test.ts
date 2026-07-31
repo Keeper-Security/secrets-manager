@@ -317,6 +317,33 @@ test('IL5 dynamic key - rotation suppression: server key_id hint ignored when se
     expect(await storage.getString('serverPublicKeyId')).toBe('20')
 })
 
+test('IL5 dynamic key - server key rotation retries are bounded, not infinite', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c', 'fake.keepersecurity.com')
+    let calls = 0
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => {
+            calls++
+            // Safety net only: without a bound, this branch never throws a matching error on its
+            // own and the loop would otherwise run until the test times out.
+            if (calls > 50) {
+                throw new Error('TEST_GUARD_UNBOUNDED_LOOP')
+            }
+            // key_id 7 is a real supported key number so the loop keeps re-entering the
+            // key-rotation branch itself, rather than tripping over an unrelated "unsupported
+            // key number" error from generateTransmissionKey.
+            return {
+                statusCode: 400,
+                data: new TextEncoder().encode(JSON.stringify({ error: 'key', key_id: 7 })),
+                headers: []
+            }
+        }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/key rotation exhausted/i)
+    expect(calls).toBeLessThanOrEqual(10)
+})
+
 test('stale pinned server key: diagnostic message propagates to caller, key preserved', async () => {
     const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
     const storage = inMemoryStorage({})

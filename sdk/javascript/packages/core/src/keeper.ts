@@ -19,6 +19,10 @@ const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
 // request, so the counter only clears after 10s of silence).
 const MAX_THROTTLE_RETRIES = 5
+// Bounds the server-key-rotation retry (postQuery's `error === 'key'` branch, no custom key
+// pinned): one legitimate rotation should resolve it, so this only needs to tolerate a little
+// slack, not act as a real retry budget.
+const MAX_KEY_ROTATION_RETRIES = 3
 const BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 const MAX_THROTTLE_DELAY_SEC = 176 // same ceiling the exponential branch reaches at the last retry (11 * 2**4)
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
@@ -788,6 +792,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
     const url = `https://${hostName}/api/rest/sm/v1/${path}`
     const sleep = options.throttleSleep || ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)))
     let throttleAttempt = 0
+    let keyRotationAttempt = 0
     while (true) {
         const transmissionKey = await generateTransmissionKey(options.storage)
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
@@ -820,7 +825,11 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                         const currentKeyId = await options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
                         throw new Error(`Server rejected the custom server public key (id ${currentKeyId}). The server suggested key id ${errorObj.key_id}. Please update your IL5 KSM configuration.`)
                     }
+                    if (keyRotationAttempt >= MAX_KEY_ROTATION_RETRIES) {
+                        throw new Error(`Server key rotation exhausted ${MAX_KEY_ROTATION_RETRIES} retries; suggested key id ${errorObj.key_id} was not accepted`)
+                    }
                     await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, errorObj.key_id!.toString())
+                    keyRotationAttempt++
                     continue
                 }
             } else {
