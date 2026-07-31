@@ -127,7 +127,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testIL5OttFourSegmentParsing() {
-        // KSM-902: 4-segment OTT IL5:clientKey:keyId:serverPublicKey stores key and ID in storage
+        // 4-segment OTT IL5:clientKey:keyId:serverPublicKey stores key and ID in storage
         val fakeServerPublicKey = "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"
         val storage = InMemoryStorage()
         initializeStorage(storage, "IL5:FAKE_CLIENT_KEY:20:$fakeServerPublicKey")
@@ -149,7 +149,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testIL5ConstructorParamPersistsToStorage() {
-        // KSM-902: serverPublicKey constructor param is saved to storage so generateTransmissionKey can use it
+        // serverPublicKey constructor param is saved to storage so generateTransmissionKey can use it
         val fakeServerPublicKey = "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"
         val storage = InMemoryStorage()
         SecretsManagerOptions(storage, serverPublicKey = fakeServerPublicKey)
@@ -158,7 +158,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testIL5ConfigFieldOverridesEmbeddedTable() {
-        // KSM-902: KEY_SERVER_PUBLIC_KEY in storage must be used instead of the embedded key table.
+        // KEY_SERVER_PUBLIC_KEY in storage must be used instead of the embedded key table.
         // Key ID 999 is not in the embedded table. With a custom key in storage, generateTransmissionKey
         // must use the storage key. If it falls through to the table, it throws
         // "Key number 999 is not supported" and the post function is never called.
@@ -182,7 +182,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testRecordCreateEmptyCustomSerialized() {
-        // KSM-823: RecordCreate with no custom fields must include "custom": [] in JSON payload
+        // RecordCreate with no custom fields must include "custom": [] in JSON payload
         val recordData = KeeperRecordData(
             title = "Test Record",
             type = "login",
@@ -195,7 +195,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testKeeperFileDataMissingLastModified() {
-        // GH-973 / KSM-854: lastModified entirely absent — must deserialize without throwing
+        // lastModified entirely absent; must deserialize without throwing
         val json = """{"title":"test.txt","name":"test.txt","type":"text/plain","size":1024}"""
         val result = Json.decodeFromString<KeeperFileData>(json)
         assertEquals(0L, result.lastModified)
@@ -212,7 +212,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testKeeperFileDataFractionalLastModified() {
-        // Regression guard for KSM-673: fractional lastModified (iOS client format)
+        // Regression guard: fractional lastModified (iOS client format)
         val json = """{"title":"test.txt","name":"test.txt","size":1024,"lastModified":1760646182.790214}"""
         val result = Json.decodeFromString<KeeperFileData>(json)
         assertEquals(1760646182L, result.lastModified)
@@ -220,7 +220,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testKeeperFileNullUrl() {
-        // KSM-765: KeeperFile.url must be nullable; server may omit url for files without a download link
+        // KeeperFile.url must be nullable; server may omit url for files without a download link
         val fileData = KeeperFileData("test.txt", "test.txt", "text/plain", 1024)
         val file = KeeperFile(ByteArray(32), "uid123", fileData, null, null)
         assertNull(file.url)
@@ -228,7 +228,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testBase64EmptyStringThrowsTypedException() {
-        // KSM-985: empty string must throw a typed Keeper exception, not an NPE from inside java.util.Base64
+        // Empty string must throw a typed Keeper exception, not an NPE from inside java.util.Base64
         val base64Ex = assertFailsWith<Exception> { base64ToBytes("") }
         assertTrue(base64Ex.message?.isNotEmpty() == true)
         val webSafe64Ex = assertFailsWith<Exception> { webSafe64ToBytes("") }
