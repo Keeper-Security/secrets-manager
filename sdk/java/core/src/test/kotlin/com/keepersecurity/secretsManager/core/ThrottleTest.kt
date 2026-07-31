@@ -5,7 +5,7 @@ import java.net.HttpURLConnection.HTTP_FORBIDDEN
 import java.net.HttpURLConnection.HTTP_OK
 import kotlin.test.*
 
-// Throttle retry with exponential backoff (KSM-876 / KSM-878). Unit tests exercise the internal
+// Throttle retry with exponential backoff. Unit tests exercise the internal
 // helpers; e2e tests drive getSecrets through postQuery with a mocked queryFunction returning
 // HTTP 403 {"error":"throttled"} responses and a recording throttleSleepMillis so retries never
 // actually wait.

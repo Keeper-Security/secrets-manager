@@ -30,7 +30,7 @@ import javax.net.ssl.*
 
 const val KEEPER_CLIENT_VERSION = "mj17.3.0"
 
-// Throttle retry (KSM-876 / KSM-878). The backend throttles HTTP 403 {"error":"throttled"}
+// Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
 // request, so the counter only clears after 10s of silence).
 const val MAX_THROTTLE_RETRIES = 5
@@ -238,7 +238,7 @@ private data class SecretsManagerResponseRecord(
  *   `is_launch_credential`, `is_iam_user`, `belongs_to` and `rotation_settings`; or no data at all
  *   (a pure record reference).
  * - path "ai_settings" / "jit_settings" (self-links): data is AES-256-GCM encrypted under the
- *   owning record's key — see [getDecryptedData].
+ *   owning record's key; see [getDecryptedData].
  *
  * Accessors never throw: parse, decode or decryption failures yield null/false. [getLinkData]
  * returns the complete parsed payload with nested objects and arrays preserved, so fields unknown
@@ -296,7 +296,7 @@ data class KeeperRecordLink(
      * Get a strict boolean value from the parsed JSON data; missing or non-boolean values are false.
      *
      * When [checkAllowedSettings] is true the nested `allowedSettings` object is consulted if the
-     * key is absent at the top level — a top-level boolean wins. The backend nests permission flags
+     * key is absent at the top level; a top-level boolean wins. The backend nests permission flags
      * under `allowedSettings` in `path:"meta"` links.
      */
     private fun getBooleanValue(key: String, checkAllowedSettings: Boolean = false): Boolean {
@@ -476,9 +476,8 @@ data class KeeperRecordLink(
     }
     
     /**
-     * Check if this link contains encrypted data by examining the actual content
-     * This method inspects the data to determine if it's encrypted, rather than
-     * relying on path naming conventions
+     * Check if this link contains encrypted data by examining the actual content, rather than
+     * relying on path naming conventions (see [mightBeEncrypted]).
      * @return true if the data appears to be encrypted
      */
     fun hasEncryptedData(): Boolean {
@@ -494,9 +493,8 @@ data class KeeperRecordLink(
     }
     
     /**
-     * Decrypt the link data using the provided record key
-     * This method attempts decryption only if the data appears to be encrypted
-     * 
+     * Decrypt the link data using the provided record key.
+     *
      * @param recordKey The record's encryption key
      * @return Decrypted string data, or null if decryption fails
      */
@@ -520,12 +518,11 @@ data class KeeperRecordLink(
     }
     
     /**
-     * Get link data - automatically handles both encrypted and plain JSON
-     * 
-     * This method is designed to be forward-compatible as Keeper evolves
-     * the data structures. Returns a Map to preserve all fields, even ones
-     * this SDK version doesn't know about yet.
-     * 
+     * Get link data - automatically handles both encrypted and plain JSON.
+     *
+     * Forward-compatible as Keeper evolves the data structures: returns a Map to preserve all
+     * fields, even ones this SDK version doesn't know about yet.
+     *
      * @param recordKey Optional key for decrypting encrypted link data
      * @return Parsed data as a Map, or null if parsing fails
      */
@@ -584,11 +581,7 @@ data class KeeperRecordLink(
         val sampleSize = minOf(str.length, 100)
         return (printableCount.toFloat() / sampleSize) > 0.9f
     }
-    
-    // ============================================================================
-    // Convenience Methods for Settings Access
-    // ============================================================================
-    
+
     /**
      * Get AI settings data from this link
      * 
@@ -630,12 +623,8 @@ data class KeeperRecordLink(
     }
     
     /**
-     * Get settings data for any path
-     * 
-     * This method works for current and future settings paths.
-     * It automatically detects whether the data is encrypted and
-     * handles it appropriately.
-     * 
+     * Get settings data for any current or future settings path.
+     *
      * @param settingsPath The path to check (e.g., "ai_settings", "security_settings")
      * @param recordKey The record's encryption key (required for encrypted data)
      * @return Settings data as a Map, or null if path doesn't match or parsing fails
@@ -647,7 +636,7 @@ data class KeeperRecordLink(
     }
 
     /**
-     * Get PAM settings data from this link — only when [path] == "meta".
+     * Get PAM settings data from this link; only valid when [path] == "meta".
      *
      * Meta links are self-links (recordUid == owning record) carrying the record's own PAM settings:
      * `allowedSettings`, `rotateOnTermination`, `version`, `no_update_services`. Plain JSON today;
@@ -662,7 +651,7 @@ private data class SecretsManagerResponseFile(
     val fileUid: String,
     val fileKey: String,
     val data: String,
-    val url: String?, // KSM-765: server may omit url; nullable prevents NPE on deserialization
+    val url: String?, // server may omit url; nullable prevents NPE on deserialization
     val thumbnailUrl: String?
 )
 
@@ -783,7 +772,7 @@ data class KeeperFile(
     val fileKey: ByteArray,
     val fileUid: String,
     val data: KeeperFileData,
-    val url: String?, // KSM-765: nullable; server may omit url for files without a download URL
+    val url: String?, // nullable; server may omit url for files without a download URL
     val thumbnailUrl: String?
 )
 
@@ -1194,7 +1183,7 @@ fun downloadThumbnail(file: KeeperFile): ByteArray {
 }
 
 private fun downloadFile(file: KeeperFile, url: String): ByteArray {
-    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection // KSM-855
+    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
     try {
         connection.requestMethod = "GET"
         val statusCode = connection.responseCode
@@ -1217,7 +1206,7 @@ private fun uploadFile(url: String, parameters: String, fileData: ByteArray): Ke
     val boundary = String.format("----------%x", Instant.now().epochSecond)
     val boundaryBytes: ByteArray = stringToBytes("\r\n--$boundary")
     val paramJson = Json.parseToJsonElement(parameters) as JsonObject
-    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection // KSM-855
+    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
     try {
         connection.requestMethod = "POST"
         connection.useCaches = false
@@ -1271,7 +1260,7 @@ private fun fetchAndDecryptSecrets(
     } else {
         appKey = storage.getBytes(KEY_APP_KEY) ?: throw SecretsManagerException("App key is missing from the storage")
     }
-    // KSM-753: records created via non-SDK clients in shared folders appear in response.records[]
+    // Records created via non-SDK clients in shared folders appear in response.records[]
     // with innerFolderUid set; their recordKey is encrypted with the folder key, not the app key.
     val folderKeyMap: Map<String, ByteArray> = response.folders
         ?.mapNotNull { f ->
@@ -1699,7 +1688,7 @@ fun postFunction(
 ): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
-    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection // KSM-855
+    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
     try {
         if (allowUnverifiedCertificate) {
             connection.sslSocketFactory = trustAllSocketFactory()
@@ -1780,7 +1769,7 @@ private inline fun <reified T> encryptAndSignPayload(
 @ExperimentalSerializationApi
 // Returns the throttle retry_after (>= 0) when [body] is a backend throttle error
 // (result_code/error == "throttled"), otherwise null so the caller falls through to normal
-// error handling. Non-JSON / non-object bodies return null. (KSM-876 / KSM-878)
+// error handling. Non-JSON / non-object bodies return null.
 internal fun parseThrottle(body: String): Double? {
     val obj = try {
         nonStrictJson.parseToJsonElement(body).jsonObject
@@ -1802,7 +1791,7 @@ internal fun throttleDelayMillis(attempt: Int, retryAfter: Double, jitter: Doubl
     return (sec * 1000).toLong()
 }
 
-// Random jitter multiplier in [0, 0.25) — one-sided so a delay is only ever padded, never
+// Random jitter multiplier in [0, 0.25); one-sided so a delay is only ever padded, never
 // undercuts the server-requested (or exponential-backoff) floor. Kept separate so unit tests
 // exercise throttleDelayMillis with a pinned jitter instead.
 internal fun throttleJitter(): Double = Random.nextDouble(0.0, 0.25)
@@ -1827,7 +1816,7 @@ private inline fun <reified T> postQuery(
         }
         if (response.statusCode != HTTP_OK) {
             val errorMessage = String(response.data)
-            // Throttle retry with exponential backoff + jitter (KSM-876 / KSM-878). Checked before
+            // Throttle retry with exponential backoff + jitter. Checked before
             // key-rotation so that path (incl. the IL5 custom-key suppression) is untouched, and
             // gated on the 403 status so a non-403 response carrying a {"error":"throttled"} body
             // is not mistaken for a throttle and retried.

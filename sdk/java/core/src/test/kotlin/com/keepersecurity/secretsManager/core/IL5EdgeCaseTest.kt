@@ -17,7 +17,7 @@ internal class IL5EdgeCaseTest {
 
     @Test
     fun localConfigStoragePersistsServerPublicKey() {
-        // Delete immediately — we only want the unique path, not an empty file that would fail JSON parse.
+        // Delete immediately; we only want the unique path, not an empty file that would fail JSON parse.
         val configFile = File.createTempFile("ksm-test-", ".json").also { it.delete() }
         try {
             initializeStorage(LocalConfigStorage(configFile.absolutePath), "IL5:FAKE_CLIENT_KEY:20:$fakeServerPublicKey")
