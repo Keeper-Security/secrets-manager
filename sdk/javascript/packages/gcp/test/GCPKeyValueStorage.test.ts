@@ -256,15 +256,15 @@ describe('GCPKeyValueStorage', () => {
         });
     });
 
-    // Regression: getKeyDetails() previously swallowed errors that init() should propagate
-    describe('init() propagates key-lookup errors', () => {
+    // KSM-867: getKeyDetails() silently swallows errors — init() should propagate
+    describe('init() error propagation — KSM-867 regression', () => {
         it('init() should throw when getCryptoKey fails (bad credentials)', async () => {
             const gcpKeyConfig = new GCPKeyConfig(
                 'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
             );
             const storage = new GCPKeyValueStorage(null, gcpKeyConfig, mockSessionConfig);
 
-            // Make getCryptoKey reject; simulates bad credentials or non-existent key
+            // Make getCryptoKey reject — simulates bad credentials or non-existent key
             const mockClient = mockSessionConfig.getCryptoClient();
             (mockClient.getCryptoKey as jest.Mock).mockRejectedValue(
                 new Error('PERMISSION_DENIED: The caller does not have permission')
@@ -289,8 +289,8 @@ describe('GCPKeyValueStorage', () => {
         });
     });
 
-    // Regression: contains() previously used an incorrect `in` operator check
-    describe('contains() uses correct key lookup', () => {
+    // KSM-837: Regression tests for contains() — incorrect `in` operator usage
+    describe('contains() — KSM-837 regression', () => {
         let storage: GCPKeyValueStorage;
         let mockConfig: Record<string, string>;
 
@@ -321,8 +321,8 @@ describe('GCPKeyValueStorage', () => {
         });
     });
 
-    // Regression: getBytes() must return empty Uint8Array for zero-length values
-    describe('getBytes() returns empty Uint8Array for zero-length values', () => {
+    // KSM-849: Regression tests — getBytes() must return empty Uint8Array for zero-length values
+    describe('getBytes() zero-length Uint8Array — KSM-849 regression', () => {
         let storage: GCPKeyValueStorage;
 
         beforeEach(() => {
@@ -374,8 +374,8 @@ describe('GCPKeyValueStorage', () => {
         });
     });
 
-    // Regression: a truthy check previously caused delete() to skip falsy values
-    describe('delete() does not skip falsy values', () => {
+    // KSM-840: Regression tests for delete() — truthy check skips falsy values
+    describe('delete() — KSM-840 regression', () => {
         let storage: GCPKeyValueStorage;
 
         beforeEach(() => {
