@@ -899,7 +899,7 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
     if (response.folders) {
         for (const folder of response.folders) {
             try {
-                if (!folder.folderKey) throw new Error(`Folder key missing for UID ${folder.folderUid} — reinitialize with a fresh One-Time Token`)
+                if (!folder.folderKey) throw new Error(`Folder key missing for UID ${folder.folderUid}; reinitialize with a fresh One-Time Token`)
                 await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
                 for (const record of folder.records) {
                     try {

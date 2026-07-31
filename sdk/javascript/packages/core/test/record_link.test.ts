@@ -1,7 +1,7 @@
 import {KeeperRecordLink, getLinks, KeeperRecord, platform} from '../'
 import {createCipheriv, randomBytes} from 'crypto'
 
-// KSM-1010: KeeperRecordLink typed accessor tests (mirrors Python record_link_test.py)
+// KeeperRecordLink typed accessor tests (mirrors Python record_link_test.py)
 
 const plainLink = (payload: object, path?: string, ownerRecordUid = 'RU_owner'): KeeperRecordLink => {
     const data = platform.bytesToBase64(platform.stringToBytes(JSON.stringify(payload)))
