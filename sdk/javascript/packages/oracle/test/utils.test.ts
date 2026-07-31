@@ -250,7 +250,7 @@ describe('utils', () => {
         });
     });
 
-    describe('checksum verification (KSM-866)', () => {
+    describe('checksum verification', () => {
         const { crc32: realCrc32 } = require('zlib');
 
         function buildValidBlob(encryptedKeyBase64: string, nonce: Buffer, tag: Buffer, ciphertext: Buffer): Buffer {
@@ -287,7 +287,7 @@ describe('utils', () => {
                 },
             } as any);
 
-            // Checksums match — this SHOULD succeed
+            // Checksums match; this SHOULD succeed
             await expect(decryptBuffer({
                 keyId: 'ocid1.key.oc1.phx.example',
                 ciphertext: validBlob,
@@ -314,11 +314,11 @@ describe('utils', () => {
             mockCryptoClient.decrypt.mockResolvedValue({
                 decryptedData: {
                     plaintext: plaintextBase64,
-                    plaintextChecksum: String(realChecksum + 1), // corrupted — off by one
+                    plaintextChecksum: String(realChecksum + 1), // corrupted, off by one
                 },
             } as any);
 
-            // Checksums don't match — this SHOULD throw
+            // Checksums don't match; this SHOULD throw
             await expect(decryptBuffer({
                 keyId: 'ocid1.key.oc1.phx.example',
                 ciphertext: validBlob,

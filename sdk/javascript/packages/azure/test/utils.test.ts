@@ -52,7 +52,7 @@ describe('utils', () => {
             const message = 'test message';
             mockCryptoClient.wrapKey.mockRejectedValue(new Error('Azure API error'));
 
-            // When/Then — KSM-844: errors must propagate, not be silently swallowed
+            // When/Then: errors must propagate, not be silently swallowed
             await expect(encryptBuffer(mockCryptoClient, message, mockLogger)).rejects.toThrow();
         });
 
@@ -113,7 +113,7 @@ describe('utils', () => {
             // Given - buffer without valid header
             const invalidBuffer = Buffer.from([0xFF, 0xFF, 0x00, 0x00]);
 
-            // When/Then — KSM-844: errors must propagate
+            // When/Then: errors must propagate
             await expect(decryptBuffer(mockCryptoClient, invalidBuffer, mockLogger)).rejects.toThrow();
         });
 
@@ -121,7 +121,7 @@ describe('utils', () => {
             // Given - buffer that's too short
             const shortBuffer = Buffer.from([0x01]);
 
-            // When/Then — KSM-844: errors must propagate
+            // When/Then: errors must propagate
             await expect(decryptBuffer(mockCryptoClient, shortBuffer, mockLogger)).rejects.toThrow();
         });
 
@@ -146,7 +146,7 @@ describe('utils', () => {
 
             mockCryptoClient.unwrapKey.mockRejectedValue(new Error('Azure API error'));
 
-            // When/Then — KSM-844: errors must propagate
+            // When/Then: errors must propagate
             await expect(decryptBuffer(mockCryptoClient, validBuffer, mockLogger)).rejects.toThrow();
         });
     });
@@ -187,7 +187,7 @@ describe('utils', () => {
                 throw new Error('Unexpected sync error');
             });
 
-            // When/Then — KSM-844: errors must propagate
+            // When/Then: errors must propagate
             await expect(encryptBuffer(mockCryptoClient, message, mockLogger)).rejects.toThrow();
         });
 
@@ -214,7 +214,7 @@ describe('utils', () => {
                 throw new Error('Unexpected sync error');
             });
 
-            // When/Then — KSM-844: errors must propagate
+            // When/Then: errors must propagate
             await expect(decryptBuffer(mockCryptoClient, validBuffer, mockLogger)).rejects.toThrow();
         });
     });

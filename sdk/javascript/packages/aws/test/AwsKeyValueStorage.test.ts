@@ -294,8 +294,8 @@ describe('AWSKeyValueStorage', () => {
         });
     });
 
-    // KSM-851: Regression tests — getBytes() must return empty Uint8Array for zero-length values
-    describe('getBytes() zero-length Uint8Array — KSM-851 regression', () => {
+    // Regression: getBytes() must return empty Uint8Array for zero-length values
+    describe('getBytes() returns empty Uint8Array for zero-length values', () => {
         let storage: AWSKeyValueStorage;
 
         beforeEach(() => {
@@ -346,8 +346,8 @@ describe('AWSKeyValueStorage', () => {
         });
     });
 
-    // KSM-839: Regression tests for delete() — truthy check skips falsy values
-    describe('delete() — KSM-839 regression', () => {
+    // Regression: a truthy check previously caused delete() to skip falsy values
+    describe('delete() does not skip falsy values', () => {
         let storage: AWSKeyValueStorage;
 
         beforeEach(() => {
@@ -390,8 +390,8 @@ describe('AWSKeyValueStorage', () => {
         });
     });
 
-    // KSM-836: Regression tests for contains() — incorrect `in` operator usage
-    describe('contains() — KSM-836 regression', () => {
+    // Regression: contains() previously used an incorrect `in` operator check
+    describe('contains() uses correct key lookup', () => {
         let storage: AWSKeyValueStorage;
         let mockConfig: Record<string, string>;
 

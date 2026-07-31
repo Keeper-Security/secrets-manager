@@ -259,8 +259,8 @@ describe('OciKeyValueStorage', () => {
         });
     });
 
-    // KSM-838: Regression tests for contains() — incorrect `in` operator usage
-    describe('contains() — KSM-838 regression', () => {
+    // Regression: contains() previously used an incorrect `in` operator check
+    describe('contains() uses correct key lookup', () => {
         let storage: OciKeyValueStorage;
         let mockConfig: Record<string, string>;
 
@@ -295,8 +295,8 @@ describe('OciKeyValueStorage', () => {
         });
     });
 
-    // KSM-852: Regression tests — getBytes() must return empty Uint8Array for zero-length values
-    describe('getBytes() zero-length Uint8Array — KSM-852 regression', () => {
+    // Regression: getBytes() must return empty Uint8Array for zero-length values
+    describe('getBytes() returns empty Uint8Array for zero-length values', () => {
         let storage: OciKeyValueStorage;
 
         beforeEach(() => {
@@ -352,8 +352,8 @@ describe('OciKeyValueStorage', () => {
         });
     });
 
-    // KSM-841: Regression tests for delete() — truthy check skips falsy values
-    describe('delete() — KSM-841 regression', () => {
+    // Regression: a truthy check previously caused delete() to skip falsy values
+    describe('delete() does not skip falsy values', () => {
         let storage: OciKeyValueStorage;
 
         beforeEach(() => {

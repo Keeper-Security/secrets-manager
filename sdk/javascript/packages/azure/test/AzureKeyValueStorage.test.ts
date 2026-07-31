@@ -208,8 +208,8 @@ describe('AzureKeyValueStorage', () => {
         });
     });
 
-    // KSM-844: Regression tests — saveConfig() must propagate encryption errors to callers
-    describe('saveConfig() error propagation — KSM-844 regression', () => {
+    // Regression: saveConfig() must propagate encryption errors to callers
+    describe('saveConfig() propagates encryption errors', () => {
         let storage: AzureKeyValueStorage;
 
         beforeEach(() => {
@@ -246,8 +246,8 @@ describe('AzureKeyValueStorage', () => {
         });
     });
 
-    // KSM-844: utils.ts error propagation — encryptBuffer() and decryptBuffer() must throw, not swallow
-    describe('utils.ts error propagation — KSM-844 regression', () => {
+    // Regression: encryptBuffer() and decryptBuffer() must throw, not swallow errors
+    describe('encryptBuffer()/decryptBuffer() propagate errors', () => {
         let mockLogger: any;
 
         beforeEach(() => {
@@ -292,8 +292,8 @@ describe('AzureKeyValueStorage', () => {
         });
     });
 
-    // KSM-850: Regression tests — getBytes() must return empty Uint8Array for zero-length values
-    describe('getBytes() zero-length Uint8Array — KSM-850 regression', () => {
+    // Regression: getBytes() must return empty Uint8Array for zero-length values
+    describe('getBytes() returns empty Uint8Array for zero-length values', () => {
         let storage: AzureKeyValueStorage;
 
         beforeEach(() => {
@@ -343,8 +343,8 @@ describe('AzureKeyValueStorage', () => {
         });
     });
 
-    // KSM-835: Regression tests for delete() and contains() — incorrect `in` operator usage
-    describe('delete() and contains() — KSM-835 regression', () => {
+    // Regression: delete() and contains() previously used an incorrect `in` operator check
+    describe('delete() and contains() use correct key lookup', () => {
         let storage: AzureKeyValueStorage;
         let mockConfig: Record<string, string>;
 
@@ -368,7 +368,7 @@ describe('AzureKeyValueStorage', () => {
             // When
             await storage.delete('clientId');
 
-            // Then — key must be gone from the config object
+            // Then: key must be gone from the config object
             expect('clientId' in mockConfig).toBe(false);
         });
 
