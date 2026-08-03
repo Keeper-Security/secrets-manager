@@ -10,6 +10,7 @@
 # Contact: ops@keepersecurity.com
 #
 
+import contextlib
 import difflib
 import os
 import sys
@@ -1434,6 +1435,41 @@ def _stdout_can_encode(text):
     return True
 
 
+@contextlib.contextmanager
+def _windows_safe_shlex():
+    """Patch click_repl's shlex tokenizer on Windows so backslash paths survive.
+
+    click_repl 0.2.0 calls shlex.split() in POSIX mode, where backslash is an
+    escape character. A Windows path like C:\\dir\\file.ini becomes C:dirfile.ini
+    before click ever sees it. This context manager replaces click_repl's shlex
+    reference for the duration of the shell REPL with a tokenizer that treats
+    backslashes as literal characters and still strips quotes in the normal way.
+    Non-Windows platforms are unaffected.
+    """
+    import click_repl as _cr
+    import shlex as _shlex
+
+    if sys.platform != 'win32':
+        yield
+        return
+
+    def _win_split(s, comments=False, posix=True):
+        lex = _shlex.shlex(s, posix=True)
+        lex.escape = ''
+        lex.whitespace_split = True
+        return list(lex)
+
+    _orig = _cr.shlex
+    _cr.shlex = type('_WinShlex', (), {
+        'split': staticmethod(_win_split),
+        '__getattr__': lambda self, name: getattr(_shlex, name),
+    })()
+    try:
+        yield
+    finally:
+        _cr.shlex = _orig
+
+
 @click.command(
     name='shell',
     cls=HelpColorsCommand,
@@ -1480,9 +1516,10 @@ def shell_command(app):
     print("\nRunning in shell mode. Type 'quit' to exit.\n")
 
     KsmCliException.in_a_shell = True
-    repl(click.get_current_context(), prompt_kwargs={
-        "message": u'\nKSM Shell (? for help) > '
-    })
+    with _windows_safe_shlex():
+        repl(click.get_current_context(), prompt_kwargs={
+            "message": u'\nKSM Shell (? for help) > '
+        })
 
 
 @click.command(
