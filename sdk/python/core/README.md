@@ -33,6 +33,13 @@ see the official docs link above.
 
 ## Change Log
 
+### 17.4.0
+* KSM-1080 - Fixed `get_folders()` crashing when any folder in the response contains a corrupted or missing key. Undecryptable folders are now skipped with a warning; the remaining folders are returned normally.
+* KSM-1085 - Fixed `delete_secret()` and `delete_folder()` silently succeeding on partial failures. Both methods now raise `KeeperError` listing the UIDs the server rejected, so callers know which records were not deleted.
+* KSM-1122 - Fixed the KSMCache cache file being created world-readable (mode 0644). The file contains the transmission key in cleartext; it is now written mode 0600 (owner read/write only). Existing files are corrected to 0600 on the next write.
+* KSM-1123 - Fixed `KSMCache` discarding a live HTTP 200 response when the cache write fails (e.g., the cache path points to a nonexistent directory). The live response is now always returned on success; cache write failures are non-fatal and do not affect the caller.
+* KSM-1152 - Fixed `RecordCreate.to_dict()` omitting `"custom"` from the serialized payload when no custom fields were set. The key is now always present as `[]`, matching the vault API's expectation.
+
 ### 17.3.0
 * KSM-992 - Added a typed `KeeperRecordLink` linked-credential accessor layer and `Record.get_links()`. Provides Java-parity accessors (`is_admin_user()`, `is_launch_credential()`, permission booleans such as `allows_rotation()`/`allows_connections()`, `get_link_data_version()`, `get_decoded_data()`, encryption detection, AES-256-GCM `get_decrypted_data()`, `get_link_data()`, and `get_ai_settings_data()`/`get_jit_settings_data()`/`get_settings_for_path()`) plus accessors for the current link payload shape verified against the live backend: `meta` self-links (`get_meta_data()`, `get_allowed_settings()`), `is_iam_user()`, `belongs_to()`, `no_update_services()`, `ai_enabled()`, `ai_session_terminate()` and `get_rotation_settings()`. Permission booleans read both top-level keys and the nested `allowedSettings`. Purely additive — the raw `record.links` list is unchanged, and each typed link keeps the untouched original dict in `.raw`.
 * KSM-877 - Added automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, requests are retried up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus ±25% jitter, honoring `retry_after` from the response when present; a typed `KeeperThrottleError` (subclass of `KeeperError`) is raised once retries are exhausted. Existing key-rotation retry behavior is unchanged.
