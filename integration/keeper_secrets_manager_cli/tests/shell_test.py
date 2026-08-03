@@ -175,7 +175,7 @@ class ShellSessionGlobalsTest(ShellInvocationTestCase):
 
 
 class ShellWindowsBackslashTest(ShellInvocationTestCase):
-    """ksm shell must pass backslash Windows paths to commands intact (KSM-1162).
+    """ksm shell must pass backslash Windows paths to commands intact.
 
     click_repl 0.2.0 calls shlex.split() in POSIX mode, which treats backslash
     as an escape character and corrupts Windows paths before click sees them.
@@ -192,26 +192,18 @@ class ShellWindowsBackslashTest(ShellInvocationTestCase):
         super().tearDown()
 
     def test_windows_safe_shlex_preserves_backslash_paths(self):
-        """_windows_safe_shlex() patches click_repl so backslash paths survive tokenization."""
         with patch('sys.platform', 'win32'):
             with _windows_safe_shlex():
                 tokens = click_repl.shlex.split(r'--ini-file C:\fake\path.ini profile list')
         self.assertEqual(['--ini-file', r'C:\fake\path.ini', 'profile', 'list'], tokens)
 
     def test_windows_safe_shlex_not_applied_on_non_windows(self):
-        """_windows_safe_shlex() is a no-op on non-Windows platforms."""
         with _windows_safe_shlex():
             self.assertIs(shlex, click_repl.shlex,
                           "click_repl.shlex must be unchanged on non-Windows platforms")
 
     def test_shell_backslash_path_error_shows_original_path(self):
-        """A backslash path typed inside ksm shell on Windows arrives at the command intact.
-
-        Without the fix, POSIX tokenization strips the backslashes and click
-        receives a corrupted path (C:fakepath.ini). With the fix, click receives
-        the original path (C:\\fake\\path.ini) and the FileNotFoundError message
-        confirms it.
-        """
+        """A backslash path typed inside ksm shell on Windows arrives at the command intact."""
         with patch('sys.platform', 'win32'), \
              patch('keeper_secrets_manager_cli.__main__.update_available', return_value=None):
             runner = CliRunner()
@@ -233,9 +225,7 @@ class ShellWindowsBackslashTest(ShellInvocationTestCase):
     def test_shell_quoted_path_with_spaces_on_windows(self):
         """Quoted paths with spaces survive tokenization on Windows.
 
-        posix=False alone keeps the quotes in the token (breaking click). The
-        fix uses posix=True + escape='' + whitespace_split=True, which strips
-        quotes normally while treating backslash as a literal character.
+        posix=False alone keeps the quotes in the token value, breaking click parsing.
         """
         with patch('sys.platform', 'win32'), \
              patch('keeper_secrets_manager_cli.__main__.update_available', return_value=None):
