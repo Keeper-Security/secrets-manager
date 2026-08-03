@@ -706,6 +706,13 @@ class KeeperFile:
         if not self.file_data:    # cached if nothing
             file_key = self.__decrypt_file_key()
             file_url = self.f.get('url')
+            if not file_url:
+                raise KeeperError(
+                    "File '{}' does not have a download URL. "
+                    "The vault may still be processing the upload; retry in a few seconds.".format(
+                        self.f.get('title') or self.f.get('fileUid', '')
+                    )
+                )
 
             proxies = {"https": proxy_url} if proxy_url else None
             rs = requests.get(file_url, verify=verify_ssl_certs, proxies=proxies)
