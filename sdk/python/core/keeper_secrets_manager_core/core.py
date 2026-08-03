@@ -1929,9 +1929,11 @@ class KSMCache:
 
     @staticmethod
     def save_cache(data):
-        cache_file = open(KSMCache.get_cache_file_path(), 'wb')
-        cache_file.write(data)
-        cache_file.close()
+        path = KSMCache.get_cache_file_path()
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+        os.chmod(path, 0o600)
 
     @staticmethod
     def get_cached_data():
