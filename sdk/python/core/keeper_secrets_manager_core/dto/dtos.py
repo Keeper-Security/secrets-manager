@@ -871,13 +871,11 @@ class RecordCreate:
             'type': self.record_type,
             'title': self.title,
             'fields': self.fields,
+            'custom': self.custom if self.custom is not None else [],
         }
 
         if self.notes:
             rec_dict['notes'] = self.notes
-
-        if self.custom is not None:
-            rec_dict['custom'] = self.custom
 
         return helpers.obj_to_dict(rec_dict)
 
