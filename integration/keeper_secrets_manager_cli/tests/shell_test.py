@@ -1,15 +1,17 @@
 import os
+import shlex
 import tempfile
 import unittest
 import importlib.metadata
 from unittest.mock import patch
 
+import click_repl
 from conftest import CliRunner
 from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core import mock
 from keeper_secrets_manager_core.mock import MockConfig
-from keeper_secrets_manager_cli.__main__ import cli
+from keeper_secrets_manager_cli.__main__ import cli, _windows_safe_shlex
 from keeper_secrets_manager_cli.exception import KsmCliException
 
 
@@ -170,6 +172,85 @@ class ShellSessionGlobalsTest(ShellInvocationTestCase):
                       "inner explicit --ini-file must win for that line")
         self.assertIn('_default', result.output,
                       "the line after an inner override must revert to the session --ini-file")
+
+
+class ShellWindowsBackslashTest(ShellInvocationTestCase):
+    """ksm shell must pass backslash Windows paths to commands intact (KSM-1162).
+
+    click_repl 0.2.0 calls shlex.split() in POSIX mode, which treats backslash
+    as an escape character and corrupts Windows paths before click sees them.
+    On Windows, _windows_safe_shlex() replaces click_repl's tokenizer with one
+    that preserves backslashes while still stripping quotes normally.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._orig_cr_shlex = click_repl.shlex
+
+    def tearDown(self):
+        click_repl.shlex = self._orig_cr_shlex
+        super().tearDown()
+
+    def test_windows_safe_shlex_preserves_backslash_paths(self):
+        """_windows_safe_shlex() patches click_repl so backslash paths survive tokenization."""
+        with patch('sys.platform', 'win32'):
+            with _windows_safe_shlex():
+                tokens = click_repl.shlex.split(r'--ini-file C:\fake\path.ini profile list')
+        self.assertEqual(['--ini-file', r'C:\fake\path.ini', 'profile', 'list'], tokens)
+
+    def test_windows_safe_shlex_not_applied_on_non_windows(self):
+        """_windows_safe_shlex() is a no-op on non-Windows platforms."""
+        with _windows_safe_shlex():
+            self.assertIs(shlex, click_repl.shlex,
+                          "click_repl.shlex must be unchanged on non-Windows platforms")
+
+    def test_shell_backslash_path_error_shows_original_path(self):
+        """A backslash path typed inside ksm shell on Windows arrives at the command intact.
+
+        Without the fix, POSIX tokenization strips the backslashes and click
+        receives a corrupted path (C:fakepath.ini). With the fix, click receives
+        the original path (C:\\fake\\path.ini) and the FileNotFoundError message
+        confirms it.
+        """
+        with patch('sys.platform', 'win32'), \
+             patch('keeper_secrets_manager_cli.__main__.update_available', return_value=None):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ['shell'],
+                input='--ini-file C:\\fake\\path.ini profile list\nquit\n'
+            )
+
+        self.assertIsInstance(
+            result.exception, FileNotFoundError,
+            f"expected FileNotFoundError from missing ini, got: {result.exception!r}"
+        )
+        self.assertIn(
+            r'C:\fake\path.ini', str(result.exception),
+            "error message must contain the original backslash path, not a POSIX-stripped version"
+        )
+
+    def test_shell_quoted_path_with_spaces_on_windows(self):
+        """Quoted paths with spaces survive tokenization on Windows.
+
+        posix=False alone keeps the quotes in the token (breaking click). The
+        fix uses posix=True + escape='' + whitespace_split=True, which strips
+        quotes normally while treating backslash as a literal character.
+        """
+        with patch('sys.platform', 'win32'), \
+             patch('keeper_secrets_manager_cli.__main__.update_available', return_value=None):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                ['shell'],
+                input='--ini-file "C:\\fake path\\keeper.ini" profile list\nquit\n'
+            )
+
+        self.assertIsInstance(result.exception, FileNotFoundError)
+        self.assertIn(
+            'C:\\fake path\\keeper.ini', str(result.exception),
+            "quoted path with spaces must arrive with quotes stripped and backslashes preserved"
+        )
 
 
 if __name__ == '__main__':
