@@ -233,3 +233,35 @@ class ProxyTest(unittest.TestCase):
 
             self.assertEqual(False, recorded_verify_ssl)
             self.assertEqual(MOCK_PROXY_URL, recorded_proxy_url)
+
+    def test_get_file_data_raises_on_missing_url(self):
+        from keeper_secrets_manager_core.dto.dtos import KeeperFile
+        from keeper_secrets_manager_core.exceptions import KeeperError
+        from unittest.mock import MagicMock
+
+        keeper_file = MagicMock(spec=KeeperFile)
+        keeper_file.file_data = None
+        keeper_file.f = {}
+        keeper_file._KeeperFile__decrypt_file_key = MagicMock(return_value=b'\x01' * 32)
+        keeper_file.get_file_data = KeeperFile.get_file_data.__get__(keeper_file, KeeperFile)
+
+        with self.assertRaises(KeeperError) as ctx:
+            keeper_file.get_file_data()
+
+        self.assertIn("download URL", str(ctx.exception))
+
+    def test_get_file_data_raises_on_null_url(self):
+        from keeper_secrets_manager_core.dto.dtos import KeeperFile
+        from keeper_secrets_manager_core.exceptions import KeeperError
+        from unittest.mock import MagicMock
+
+        keeper_file = MagicMock(spec=KeeperFile)
+        keeper_file.file_data = None
+        keeper_file.f = {'url': None}
+        keeper_file._KeeperFile__decrypt_file_key = MagicMock(return_value=b'\x01' * 32)
+        keeper_file.get_file_data = KeeperFile.get_file_data.__get__(keeper_file, KeeperFile)
+
+        with self.assertRaises(KeeperError) as ctx:
+            keeper_file.get_file_data()
+
+        self.assertIn("download URL", str(ctx.exception))
