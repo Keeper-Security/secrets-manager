@@ -1,8 +1,11 @@
 import os
 import tempfile
 import unittest
+import unittest.mock
+from http import HTTPStatus
 
-from keeper_secrets_manager_core.core import KSMCache
+from keeper_secrets_manager_core.core import KSMCache, SecretsManager
+from keeper_secrets_manager_core.dto.payload import KSMHttpResponse, TransmissionKey
 
 
 class CacheTest(unittest.TestCase):
@@ -82,6 +85,25 @@ class CacheTest(unittest.TestCase):
                     os.environ.pop("KSM_CACHE_DIR", None)
                 else:
                     os.environ["KSM_CACHE_DIR"] = original
+
+
+    def test_caching_post_function_returns_live_response_when_save_cache_fails(self):
+        original_key = b'\xab' * 32
+        transmission_key = TransmissionKey(1, original_key, b'')
+        live_data = b"live-response-data"
+        live_response = KSMHttpResponse(HTTPStatus.OK, live_data, None)
+
+        with unittest.mock.patch.object(SecretsManager, 'post_function', return_value=live_response), \
+             unittest.mock.patch.object(KSMCache, 'save_cache', side_effect=FileNotFoundError("bad path")):
+            result = KSMCache.caching_post_function(
+                "https://fake.url", transmission_key, b"payload"
+            )
+
+        self.assertEqual(result.status_code, HTTPStatus.OK)
+        self.assertEqual(result.data, live_data,
+                         "live response data must be returned even when save_cache raises")
+        self.assertEqual(transmission_key.key, original_key,
+                         "transmission_key.key must not be overwritten when the live request succeeds")
 
 
 if __name__ == "__main__":
