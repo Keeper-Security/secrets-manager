@@ -1237,7 +1237,7 @@ class IniDiscoveryTest(unittest.TestCase):
     # -- Defect A (failing before fix) ----------------------------------------
 
     def test_ini_dir_cwd_conflict_emits_warning(self):
-        # Both KSM_INI_DIR and CWD have a keeper.ini; CWD wins — warning required.
+        # Both KSM_INI_DIR and CWD have a keeper.ini; CWD wins but a warning must fire.
         ini_dir = os.path.join(self.temp_dir.name, "inidir")
         cwd_dir = os.path.join(self.temp_dir.name, "cwd")
         self._make_ini(ini_dir)
@@ -1280,7 +1280,7 @@ class IniDiscoveryTest(unittest.TestCase):
         )
 
     def test_ini_dir_no_file_there_no_warning(self):
-        # KSM_INI_DIR set but has no keeper.ini — CWD wins silently, no warning.
+        # KSM_INI_DIR set but has no keeper.ini; CWD wins silently with no warning.
         ini_dir = os.path.join(self.temp_dir.name, "inidir")
         cwd_dir = os.path.join(self.temp_dir.name, "cwd")
         os.makedirs(ini_dir)  # intentionally no keeper.ini

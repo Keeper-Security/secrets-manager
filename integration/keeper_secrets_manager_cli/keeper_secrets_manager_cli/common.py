@@ -20,7 +20,7 @@ import psutil
 
 def find_ksm_path(find_path, is_file=True):
 
-    # Directories to scan for the keeper INI file — both Linux and Windows paths.
+    # Directories to scan for the keeper INI file, covering Linux and Windows paths.
     # Entries that contain None (from an unset env var) are skipped entirely so
     # find_ksm_path never probes a relative path built from a missing variable.
     dir_locations = [
