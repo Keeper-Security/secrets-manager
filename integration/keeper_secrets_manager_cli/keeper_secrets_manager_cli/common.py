@@ -20,33 +20,31 @@ import psutil
 
 def find_ksm_path(find_path, is_file=True):
 
-    # Directories to scan for the keeper INI file. This both Linux and Windows paths. The os.path.join
-    # should create a path that the OS understands. The not_set stuff in case the environmental var is not set.
-    # The last entry is the current working directory.
-    not_set = "_NOTSET_"
+    # Directories to scan for the keeper INI file, covering Linux and Windows paths.
+    # Entries that contain None (from an unset env var) are skipped entirely so
+    # find_ksm_path never probes a relative path built from a missing variable.
     dir_locations = [
-        [os.environ.get("KSM_INI_DIR", not_set)],
+        [os.environ.get("KSM_INI_DIR")],
         [os.getcwd()],
 
-        # Linux
-        [os.environ.get("HOME", not_set)],
-
-        # This seems like where other applications like to store their configs.
-        [os.environ.get("HOME", not_set), ".config", "ksm"],
-
-        [os.environ.get("HOME", not_set), ".keeper"],
+        # Linux / macOS
+        [os.environ.get("HOME")],
+        [os.environ.get("HOME"), ".config", "ksm"],
+        [os.environ.get("HOME"), ".keeper"],
         ["/etc"],
         ["/etc", "ksm"],
         ["/etc", "keeper"],
 
         # Windows
-        [os.environ.get("USERPROFILE", not_set)],
-        [os.environ.get("APPDATA", not_set), "Keeper"],
-        [os.environ.get("PROGRAMDATA", not_set), "Keeper"],
-        [os.environ.get("PROGRAMFILES", not_set), "Keeper"],
+        [os.environ.get("USERPROFILE")],
+        [os.environ.get("APPDATA"), "Keeper"],
+        [os.environ.get("PROGRAMDATA"), "Keeper"],
+        [os.environ.get("PROGRAMFILES"), "Keeper"],
     ]
 
     for dir_location in dir_locations:
+        if any(part is None for part in dir_location):
+            continue
         path = os.path.join(*dir_location, find_path)
         if (is_file is True and os.path.exists(path) and os.path.isfile(path)) or os.path.exists(path):
             return path
