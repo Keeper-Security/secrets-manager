@@ -1929,9 +1929,11 @@ class KSMCache:
 
     @staticmethod
     def save_cache(data):
-        cache_file = open(KSMCache.get_cache_file_path(), 'wb')
-        cache_file.write(data)
-        cache_file.close()
+        path = KSMCache.get_cache_file_path()
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+        os.chmod(path, 0o600)
 
     @staticmethod
     def get_cached_data():
@@ -1950,18 +1952,17 @@ class KSMCache:
     def caching_post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True, proxy_url=None):
 
         try:
-
             ksm_rs = SecretsManager.post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs, proxy_url)
-
-            if ksm_rs.status_code == 200:
-                KSMCache.save_cache(transmission_key.key + ksm_rs.data)
-                return ksm_rs
-        except:
+        except Exception:
             cached_data = KSMCache.get_cached_data()
-            cached_transmission_key = cached_data[:32]
-            transmission_key.key = cached_transmission_key
-            data = cached_data[32:len(cached_data)]
+            transmission_key.key = cached_data[:32]
+            ksm_rs = KSMHttpResponse(HTTPStatus.OK, cached_data[32:], None)
+            return ksm_rs
 
-            ksm_rs = KSMHttpResponse(HTTPStatus.OK, data, None)
+        if ksm_rs.status_code == 200:
+            try:
+                KSMCache.save_cache(transmission_key.key + ksm_rs.data)
+            except Exception:
+                pass
 
         return ksm_rs

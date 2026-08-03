@@ -1,8 +1,11 @@
 import os
 import tempfile
 import unittest
+import unittest.mock
+from http import HTTPStatus
 
-from keeper_secrets_manager_core.core import KSMCache
+from keeper_secrets_manager_core.core import KSMCache, SecretsManager
+from keeper_secrets_manager_core.dto.payload import KSMHttpResponse, TransmissionKey
 
 
 class CacheTest(unittest.TestCase):
@@ -38,6 +41,69 @@ class CacheTest(unittest.TestCase):
                     os.environ.pop("KSM_CACHE_DIR", None)
                 else:
                     os.environ["KSM_CACHE_DIR"] = original
+
+
+    @unittest.skipIf(os.name == 'nt', "file permission bits are not meaningful on Windows")
+    def test_save_cache_creates_file_owner_readable_only(self):
+        original = os.environ.get("KSM_CACHE_DIR")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            os.environ["KSM_CACHE_DIR"] = temp_dir
+            try:
+                KSMCache.save_cache(b"secret")
+                path = os.path.join(temp_dir, "ksm_cache.bin")
+                self.assertEqual(
+                    os.stat(path).st_mode & 0o777,
+                    0o600,
+                    "cache file must be owner-read/write only (0600); world-readable cache exposes the transmission key",
+                )
+            finally:
+                if original is None:
+                    os.environ.pop("KSM_CACHE_DIR", None)
+                else:
+                    os.environ["KSM_CACHE_DIR"] = original
+
+    @unittest.skipIf(os.name == 'nt', "file permission bits are not meaningful on Windows")
+    def test_save_cache_fixes_permissions_on_existing_file(self):
+        original = os.environ.get("KSM_CACHE_DIR")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            os.environ["KSM_CACHE_DIR"] = temp_dir
+            try:
+                path = os.path.join(temp_dir, "ksm_cache.bin")
+                with open(path, 'wb') as f:
+                    f.write(b"old")
+                os.chmod(path, 0o644)
+
+                KSMCache.save_cache(b"new-secret")
+
+                self.assertEqual(
+                    os.stat(path).st_mode & 0o777,
+                    0o600,
+                    "save_cache must correct permissions even when overwriting an existing world-readable file",
+                )
+            finally:
+                if original is None:
+                    os.environ.pop("KSM_CACHE_DIR", None)
+                else:
+                    os.environ["KSM_CACHE_DIR"] = original
+
+
+    def test_caching_post_function_returns_live_response_when_save_cache_fails(self):
+        original_key = b'\xab' * 32
+        transmission_key = TransmissionKey(1, original_key, b'')
+        live_data = b"live-response-data"
+        live_response = KSMHttpResponse(HTTPStatus.OK, live_data, None)
+
+        with unittest.mock.patch.object(SecretsManager, 'post_function', return_value=live_response), \
+             unittest.mock.patch.object(KSMCache, 'save_cache', side_effect=FileNotFoundError("bad path")):
+            result = KSMCache.caching_post_function(
+                "https://fake.url", transmission_key, b"payload"
+            )
+
+        self.assertEqual(result.status_code, HTTPStatus.OK)
+        self.assertEqual(result.data, live_data,
+                         "live response data must be returned even when save_cache raises")
+        self.assertEqual(transmission_key.key, original_key,
+                         "transmission_key.key must not be overwritten when the live request succeeds")
 
 
 if __name__ == "__main__":
