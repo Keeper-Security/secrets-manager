@@ -1,4 +1,5 @@
 import base64
+import logging
 import os
 import unittest
 from unittest.mock import patch
@@ -1196,6 +1197,132 @@ class KsmConfigKeyringWarningTest(unittest.TestCase):
             result = runner.invoke(cli, ['profile', 'list', '--json'], catch_exceptions=False)
         combined = (result.output or '') + (result.stderr if hasattr(result, 'stderr') else '')
         self.assertNotIn("keyring integrity", combined)
+
+
+class IniDiscoveryTest(unittest.TestCase):
+    """Regression tests for keeper.ini discovery bugs (KSM-1163).
+
+    Defect A: KSM_INI_DIR is ignored when a keeper.ini exists in CWD.
+    Defect B: find_ksm_path probes _NOTSET_/ relative paths when Windows
+              env vars are unset on POSIX hosts.
+    """
+
+    def setUp(self):
+        self.orig_dir = os.getcwd()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        os.chdir(self.temp_dir.name)
+        for var in ("KSM_INI_DIR", "KSM_INI_DIR_SKIP_CONFLICT_WARNING"):
+            os.environ.pop(var, None)
+
+    def tearDown(self):
+        os.chdir(self.orig_dir)
+        self.temp_dir.cleanup()
+        for var in ("KSM_INI_DIR", "KSM_INI_DIR_SKIP_CONFLICT_WARNING"):
+            os.environ.pop(var, None)
+
+    def _make_ini(self, directory):
+        """Write a minimal keeper.ini in directory and return its path."""
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, "keeper.ini")
+        with open(path, "w") as f:
+            f.write("[ksm_config]\n[_default]\n")
+        return path
+
+    def _bare_profile(self):
+        """Profile instance with no __init__ side effects."""
+        p = object.__new__(Profile)
+        p.logger = logging.getLogger("test")
+        return p
+
+    # -- Defect A (failing before fix) ----------------------------------------
+
+    def test_ini_dir_cwd_conflict_emits_warning(self):
+        # Both KSM_INI_DIR and CWD have a keeper.ini; CWD wins — warning required.
+        ini_dir = os.path.join(self.temp_dir.name, "inidir")
+        cwd_dir = os.path.join(self.temp_dir.name, "cwd")
+        self._make_ini(ini_dir)
+        cwd_ini = self._make_ini(cwd_dir)
+
+        os.chdir(cwd_dir)
+        os.environ["KSM_INI_DIR"] = ini_dir
+
+        with patch("click.echo") as mock_echo:
+            result = self._bare_profile()._find_ini_file()
+
+        self.assertEqual(os.path.realpath(cwd_ini), os.path.realpath(result), "CWD keeper.ini must still be loaded")
+        warning_emitted = any(
+            "KSM_INI_DIR" in str(call) for call in mock_echo.call_args_list
+        )
+        self.assertTrue(warning_emitted, "Expected a KSM_INI_DIR conflict warning on stderr")
+
+    # -- Defect A opt-out + no-conflict (pass before and after fix) -----------
+
+    def test_ini_dir_cwd_conflict_warning_suppressed(self):
+        ini_dir = os.path.join(self.temp_dir.name, "inidir")
+        cwd_dir = os.path.join(self.temp_dir.name, "cwd")
+        self._make_ini(ini_dir)
+        cwd_ini = self._make_ini(cwd_dir)
+
+        os.chdir(cwd_dir)
+        os.environ["KSM_INI_DIR"] = ini_dir
+        os.environ["KSM_INI_DIR_SKIP_CONFLICT_WARNING"] = "TRUE"
+
+        with patch("click.echo") as mock_echo:
+            result = self._bare_profile()._find_ini_file()
+
+        self.assertEqual(os.path.realpath(cwd_ini), os.path.realpath(result), "CWD keeper.ini must still be loaded")
+        warning_emitted = any(
+            "KSM_INI_DIR" in str(call) for call in mock_echo.call_args_list
+        )
+        self.assertFalse(
+            warning_emitted,
+            "No warning expected when KSM_INI_DIR_SKIP_CONFLICT_WARNING=TRUE"
+        )
+
+    def test_ini_dir_no_file_there_no_warning(self):
+        # KSM_INI_DIR set but has no keeper.ini — CWD wins silently, no warning.
+        ini_dir = os.path.join(self.temp_dir.name, "inidir")
+        cwd_dir = os.path.join(self.temp_dir.name, "cwd")
+        os.makedirs(ini_dir)  # intentionally no keeper.ini
+        cwd_ini = self._make_ini(cwd_dir)
+
+        os.chdir(cwd_dir)
+        os.environ["KSM_INI_DIR"] = ini_dir
+
+        with patch("click.echo") as mock_echo:
+            result = self._bare_profile()._find_ini_file()
+
+        self.assertIsNotNone(result)
+        warning_emitted = any(
+            "KSM_INI_DIR" in str(call) for call in mock_echo.call_args_list
+        )
+        self.assertFalse(warning_emitted, "No warning expected when KSM_INI_DIR has no keeper.ini")
+
+    # -- Defect B (failing before fix) ----------------------------------------
+
+    def test_find_ksm_path_skips_notset_dirs(self):
+        from keeper_secrets_manager_cli.common import find_ksm_path
+
+        # Place keeper.ini only inside a literal _NOTSET_/ subdirectory of CWD.
+        notset_dir = os.path.join(self.temp_dir.name, "_NOTSET_")
+        os.makedirs(notset_dir)
+        with open(os.path.join(notset_dir, "keeper.ini"), "w") as f:
+            f.write("[ksm_config]\n[_default]\n")
+
+        os.chdir(self.temp_dir.name)
+
+        saved = {}
+        for var in ("KSM_INI_DIR", "HOME", "USERPROFILE", "APPDATA", "PROGRAMDATA", "PROGRAMFILES"):
+            saved[var] = os.environ.pop(var, None)
+
+        try:
+            result = find_ksm_path("keeper.ini")
+        finally:
+            for var, val in saved.items():
+                if val is not None:
+                    os.environ[var] = val
+
+        self.assertIsNone(result, "A literal _NOTSET_/ directory must never be probed by find_ksm_path")
 
 
 if __name__ == '__main__':

@@ -144,21 +144,32 @@ class Profile:
             self.logger.debug("Keyring probe failed while checking for KSM_CONFIG override: %s", e, exc_info=True)
 
     def _find_ini_file(self):
-        """Find keeper.ini file in current directory or standard locations."""
-        if os.path.exists("keeper.ini"):
-            return os.path.abspath("keeper.ini")
-        
-        # Check current working directory with absolute path
+        """Find keeper.ini file in the current directory or standard locations."""
         cwd_ini = os.path.join(os.getcwd(), "keeper.ini")
         if os.path.exists(cwd_ini):
+            ini_dir = os.environ.get("KSM_INI_DIR")
+            if ini_dir is not None:
+                ini_dir_path = os.path.join(ini_dir, Config.default_ini_file)
+                if (os.path.exists(ini_dir_path)
+                        and os.path.normcase(os.path.abspath(ini_dir_path))
+                            != os.path.normcase(os.path.abspath(cwd_ini))
+                        and os.environ.get(
+                            "KSM_INI_DIR_SKIP_CONFLICT_WARNING", ""
+                        ).upper() != "TRUE"):
+                    click.echo(click.style(
+                        "Warning: KSM_INI_DIR is set to '{}' but a keeper.ini in the "
+                        "current directory was loaded instead.\n"
+                        "  Loaded: {}\n"
+                        "  KSM_INI_DIR location: {}\n"
+                        "  To load the KSM_INI_DIR location: ksm --ini-file \"{}\" <command>\n"
+                        "  To suppress this warning: "
+                        "set KSM_INI_DIR_SKIP_CONFLICT_WARNING=TRUE".format(
+                            ini_dir, cwd_ini, ini_dir_path, ini_dir_path
+                        ), fg="yellow"), file=sys.stderr)
             return cwd_ini
-        
-        # Check standard locations
+
         found = find_ksm_path(Config.default_ini_file)
-        if found is not None:
-            return found
-        
-        return None
+        return found
     
     def _load_from_keyring(self):
         """Load configuration from keyring storage."""
