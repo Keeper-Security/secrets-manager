@@ -1456,6 +1456,8 @@ def _windows_safe_shlex():
     def _win_split(s, comments=False, posix=True):
         lex = _shlex.shlex(s, posix=True)
         lex.escape = ''
+        if not comments:
+            lex.commenters = ''
         lex.whitespace_split = True
         return list(lex)
 
