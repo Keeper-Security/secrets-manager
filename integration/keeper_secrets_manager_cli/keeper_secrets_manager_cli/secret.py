@@ -924,23 +924,37 @@ class Secret:
 
         try:
             folders = self.cli.client.get_folders()
+            record_data = load_file(file)
             # Workaround: helper FieldType.__init__ crashes with IndexError when a dict-typed
             # field (address, name, host, passkey, etc.) has value: []. Load the file and strip
             # empty-value fields before passing to create_from_data so the helper never sees
-            # value: [] for a complex field. Remove once helper ships the "if self.value:"
-            # guard in FieldType.__init__.
-            record_data = load_file(file)
+            # value: [] for a complex field. Stripped standard fields are recreated empty from
+            # the record type schema; stripped custom fields are re-attached below so the created
+            # record keeps them (type/label/flags) instead of silently dropping them.
+            # Remove once helper ships the "if self.value:" guard in FieldType.__init__.
+            stripped_custom_per_record = []
             for rec in record_data.get("data", []):
+                stripped = [f for key in ("customFields", "custom_fields")
+                            for f in rec.get(key, []) if not f.get("value")]
+                stripped_custom_per_record.append(stripped)
                 rec["fields"] = [f for f in rec.get("fields", []) if f.get("value")]
                 for key in ("customFields", "custom_fields"):
                     if key in rec:
                         rec[key] = [f for f in rec[key] if f.get("value")]
             records = RecordV3.create_from_data(record_data, password_generate=password_generate_flag)
             record_uids = []
-            for record in records:
+            for record, stripped_custom in zip(records, stripped_custom_per_record):
                 record_create_obj = record.get_record_create_obj()
                 if record_create_obj.custom is None:   # KSM-702: ensure custom: [] is always present
                     record_create_obj.custom = []
+                for f in stripped_custom:
+                    record_create_obj.custom.append(RecordField(
+                        field_type=f.get("type"),
+                        value=[],
+                        label=f.get("label"),
+                        required=f.get("required"),
+                        privacyScreen=f.get("privacyScreen"),
+                    ))
                 folder_options, folders = self.build_folder_options(folder_uid, folders)
                 record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj, folders)
                 record_uids.append(record_uid)
