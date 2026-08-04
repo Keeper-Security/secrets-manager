@@ -36,7 +36,8 @@ from keeper_secrets_manager_core.dto.payload import GetPayload, \
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperThrottleError
 from keeper_secrets_manager_core.keeper_globals import keeper_public_keys, \
     keeper_secrets_manager_sdk_client_id, logger_name, keeper_servers, \
-    MAX_THROTTLE_RETRIES, BASE_THROTTLE_DELAY_SEC, MAX_THROTTLE_DELAY_SEC
+    MAX_THROTTLE_RETRIES, BASE_THROTTLE_DELAY_SEC, MAX_THROTTLE_DELAY_SEC, \
+    MAX_KEY_ROTATION_RETRIES
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, \
     KeyValueStorage, InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
@@ -657,6 +658,7 @@ class SecretsManager:
         url = "https://%s/api/rest/sm/v1/%s" % (keeper_server, path)
 
         throttle_attempt = 0
+        key_rotation_attempt = 0
 
         while True:
 
@@ -693,6 +695,29 @@ class SecretsManager:
                     time.sleep(delay)
                     throttle_attempt += 1
                     continue
+
+            # Key-rotation guard. A custom server public key (IL5) must never be silently
+            # replaced by a standard key; raise immediately. For standard key rotation, bound
+            # the retry count so a persistently misbehaving backend cannot loop indefinitely.
+            key_id = self._parse_key_rotation(ksm_rs.http_response)
+            if key_id is not None:
+                custom_key = self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY)
+                if custom_key:
+                    raise KeeperError(
+                        "Server rejected the custom server public key (id %s); "
+                        "suggested key id %s is incompatible with this deployment. "
+                        "Update the KSM configuration with a valid server public key."
+                        % (self.config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID), key_id))
+                if key_rotation_attempt >= MAX_KEY_ROTATION_RETRIES:
+                    raise KeeperError(
+                        "Server key rotation exhausted %d retries; "
+                        "suggested key id %s was not accepted"
+                        % (MAX_KEY_ROTATION_RETRIES, key_id))
+                self.config.set(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID, str(key_id))
+                self.logger.info("Key rotation: switching to public key %s (attempt %d/%d)"
+                                 % (key_id, key_rotation_attempt + 1, MAX_KEY_ROTATION_RETRIES))
+                key_rotation_attempt += 1
+                continue
 
             # Handle the error. Handling will throw an exception if it doesn't want us to retry.
             self.handler_http_error(ksm_rs.http_response)
@@ -774,6 +799,23 @@ class SecretsManager:
         except (TypeError, ValueError):
             retry_after = 0.0
         return min(max(retry_after, 0.0), MAX_THROTTLE_DELAY_SEC)
+
+    @staticmethod
+    def _parse_key_rotation(http_response):
+        """If the response requests a public-key rotation, return the suggested key_id, else None.
+
+        Key-rotation responses carry {"error": "key", "key_id": N} (or "result_code": "key").
+        Returns None for any non-key-rotation response (including non-JSON bodies).
+        """
+        try:
+            response_dict = utils.json_to_dict(http_response.text)
+        except Exception:
+            return None
+        if not response_dict:
+            return None
+        if response_dict.get('result_code', response_dict.get('error')) != 'key':
+            return None
+        return response_dict.get('key_id')
 
     @staticmethod
     def _throttle_delay(attempt, retry_after=0.0):
