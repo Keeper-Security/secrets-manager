@@ -36,7 +36,7 @@ from keeper_secrets_manager_core.dto.payload import GetPayload, \
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperThrottleError
 from keeper_secrets_manager_core.keeper_globals import keeper_public_keys, \
     keeper_secrets_manager_sdk_client_id, logger_name, keeper_servers, \
-    MAX_THROTTLE_RETRIES, BASE_THROTTLE_DELAY_SEC
+    MAX_THROTTLE_RETRIES, BASE_THROTTLE_DELAY_SEC, MAX_THROTTLE_DELAY_SEC
 from keeper_secrets_manager_core.storage import FileKeyValueStorage, \
     KeyValueStorage, InMemoryKeyValueStorage
 from keeper_secrets_manager_core.utils import base64_to_bytes, dict_to_json, \
@@ -773,7 +773,7 @@ class SecretsManager:
             retry_after = float(response_dict.get('retry_after', 0) or 0)
         except (TypeError, ValueError):
             retry_after = 0.0
-        return max(retry_after, 0.0)
+        return min(max(retry_after, 0.0), MAX_THROTTLE_DELAY_SEC)
 
     @staticmethod
     def _throttle_delay(attempt, retry_after=0.0):
@@ -787,7 +787,7 @@ class SecretsManager:
             delay = retry_after
         else:
             delay = BASE_THROTTLE_DELAY_SEC * (2 ** attempt)
-        delay += delay * random.uniform(-0.25, 0.25)
+        delay += delay * random.uniform(0, 0.25)
         return delay
 
     def handler_http_error(self, rs):
