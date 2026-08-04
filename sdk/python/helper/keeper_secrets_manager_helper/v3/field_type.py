@@ -227,7 +227,7 @@ class FieldType:
             # Default to the passed in args for attribute variables. However if the value args exists, then use that
             # to get the attribute values.
             attr_dict = kwargs
-            if self.value is not None:
+            if self.value:
                 attr_dict = self.value[0]
 
             # This will create and set the attribute variables.
