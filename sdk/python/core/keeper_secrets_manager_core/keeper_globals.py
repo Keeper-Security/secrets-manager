@@ -107,3 +107,7 @@ keeper_servers = {
 MAX_THROTTLE_RETRIES = 5
 BASE_THROTTLE_DELAY_SEC = 11  # 1s safety margin over the backend's 10s memcached TTL
 MAX_THROTTLE_DELAY_SEC = 176  # ceiling for server-supplied retry_after (= BASE * 2**4, last retry)
+
+# Key-rotation retry (KSM-1069). One legitimate rotation resolves the mismatch; this only
+# needs to tolerate a small amount of slack, not act as a real retry budget.
+MAX_KEY_ROTATION_RETRIES = 3
