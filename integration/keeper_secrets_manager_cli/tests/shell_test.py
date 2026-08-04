@@ -197,6 +197,17 @@ class ShellWindowsBackslashTest(ShellInvocationTestCase):
                 tokens = click_repl.shlex.split(r'--ini-file C:\fake\path.ini profile list')
         self.assertEqual(['--ini-file', r'C:\fake\path.ini', 'profile', 'list'], tokens)
 
+    def test_windows_safe_shlex_preserves_hash_in_args(self):
+        """'#' must not be treated as a comment character on Windows.
+
+        shlex.shlex sets commenters='#' by default, so everything from '#' to
+        end-of-line is silently dropped unless commenters is cleared.
+        """
+        with patch('sys.platform', 'win32'):
+            with _windows_safe_shlex():
+                tokens = click_repl.shlex.split('secret get uid#tag extra')
+        self.assertEqual(['secret', 'get', 'uid#tag', 'extra'], tokens)
+
     def test_windows_safe_shlex_not_applied_on_non_windows(self):
         with _windows_safe_shlex():
             self.assertIs(shlex, click_repl.shlex,
