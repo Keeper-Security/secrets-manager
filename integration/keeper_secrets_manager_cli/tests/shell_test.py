@@ -208,6 +208,7 @@ class ShellWindowsBackslashTest(ShellInvocationTestCase):
                 tokens = click_repl.shlex.split('secret get uid#tag extra')
         self.assertEqual(['secret', 'get', 'uid#tag', 'extra'], tokens)
 
+    @patch('sys.platform', 'linux')
     def test_windows_safe_shlex_not_applied_on_non_windows(self):
         with _windows_safe_shlex():
             self.assertIs(shlex, click_repl.shlex,
