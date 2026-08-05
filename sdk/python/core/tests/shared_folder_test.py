@@ -86,5 +86,83 @@ class SharedFolderDecryptionTest(unittest.TestCase):
                          "Record landed in bad_records; folder key was not used for decryption")
 
 
+    def test_record_shared_both_flat_and_via_folder_is_not_duplicated(self):
+        """A record returned in both records[] and folders[].records[] must appear exactly once.
+
+        When a record has individual share access AND belongs to a shared folder, the backend
+        returns it in both response.records[] (with innerFolderUid) and response.folders[].records[].
+        Both copies decrypt correctly, so the SDK must deduplicate by recordUid before returning.
+        """
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(MockConfig.make_config()))
+        app_key = base64_to_bytes(secrets_manager.config.get(ConfigKeys.KEY_APP_KEY))
+
+        folder_key = os.urandom(32)
+        record_key = os.urandom(32)
+        folder_uid = "testFolderUid12345678"
+        record_uid = "testRecordUid1234567"
+
+        record_data = json.dumps({
+            "type": "login",
+            "title": "Dual Path Login",
+            "notes": "",
+            "fields": [{"type": "login", "value": ["user@example.com"]}],
+            "custom": []
+        }).encode()
+
+        encrypted_folder_key = base64.b64encode(CryptoUtils.encrypt_aes(folder_key, app_key)).decode()
+        encrypted_record_key = base64.b64encode(CryptoUtils.encrypt_aes(record_key, folder_key)).decode()
+        encrypted_data = base64.b64encode(CryptoUtils.encrypt_aes(record_data, record_key)).decode()
+
+        record_in_folder = {
+            "recordUid": record_uid,
+            "recordKey": encrypted_record_key,
+            "data": encrypted_data,
+            "isEditable": True,
+            "files": None,
+        }
+        record_flat = {
+            "recordUid": record_uid,
+            "recordKey": encrypted_record_key,
+            "data": encrypted_data,
+            "isEditable": True,
+            "files": None,
+            "innerFolderUid": folder_uid,
+        }
+
+        raw_response = {
+            "encryptedAppKey": None,
+            "folders": [{
+                "folderUid": folder_uid,
+                "folderKey": encrypted_folder_key,
+                "records": [record_in_folder],
+            }],
+            "records": [record_flat],
+        }
+
+        def post_function(url, transmission_key, encrypted_payload, verify_ssl_certs=True, proxy_url=None):
+            content = CryptoUtils.encrypt_aes(
+                json.dumps(raw_response).encode(),
+                transmission_key.key
+            )
+            res = RequestResponse()
+            res._content = content
+            res.status_code = 200
+            res.reason = "OK"
+            return KSMHttpResponse(res.status_code, res.content, res)
+
+        secrets_manager.post_function = post_function
+
+        sm_response = secrets_manager.get_secrets(full_response=True)
+
+        self.assertEqual(1, len(sm_response.records),
+                         "Record appeared twice; dedup by recordUid is missing")
+        self.assertEqual(record_uid, sm_response.records[0].uid,
+                         "Returned record has wrong UID")
+        self.assertEqual("Dual Path Login", sm_response.records[0].title,
+                         "Record title mismatch after dedup")
+        self.assertEqual(0, len(sm_response.bad_records),
+                         "Unexpected bad_records after dedup")
+
+
 if __name__ == '__main__':
     unittest.main()
