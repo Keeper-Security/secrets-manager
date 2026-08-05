@@ -887,7 +887,9 @@ class PamSettings(FieldType):
                             "security": {"value_type": str},
                             "ignoreCert": {"value_type": bool},
                             "resizeMethod": {"value_type": str},
-                            "colorScheme": {"value_type": str}
+                            "colorScheme": {"value_type": str},
+                            "database": {"value_type": str},
+                            "dbConnectionMethod": {"value_type": str},
                         }
                     },
                 }
