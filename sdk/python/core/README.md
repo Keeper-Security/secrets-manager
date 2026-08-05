@@ -34,6 +34,7 @@ see the official docs link above.
 ## Change Log
 
 ### 17.4.0
+* KSM-1145 - Fixed `get_secrets()` returning duplicate entries when a record is accessible both via a shared folder and as an individual share. Records are now deduplicated by UID before being returned.
 * KSM-747 - Fixed records created by non-SDK clients (Commander, Vault UI) inside shared folders silently disappearing from `get_secrets()` results. When a record is returned in the flat `records[]` array with `innerFolderUid` set, the SDK now decrypts its key using the folder key rather than the app key, matching the behavior already applied to records in `folders[].records[]`.
 * KSM-1080 - Fixed `get_folders()` crashing when any folder in the response contains a corrupted or missing key. Undecryptable folders are now skipped with a warning; the remaining folders are returned normally.
 * KSM-1085 - Fixed `delete_secret()` and `delete_folder()` silently succeeding on partial failures. Both methods now raise `KeeperError` listing the UIDs the server rejected, so callers know which records were not deleted.

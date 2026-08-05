@@ -1058,6 +1058,14 @@ class SecretsManager:
                         "err": msg
                     })
 
+        seen_uids = set()
+        deduped = []
+        for r in records:
+            if r.uid not in seen_uids:
+                seen_uids.add(r.uid)
+                deduped.append(r)
+        records = deduped
+
         self.logger.debug("Total record count: {}".format(len(records)))
 
         if 'appData' in decrypted_response_dict:
