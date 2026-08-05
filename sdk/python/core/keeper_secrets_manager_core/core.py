@@ -1965,8 +1965,8 @@ class KSMCache:
     # current working directory.
     kms_cache_file_name = os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
 
-    @classmethod
-    def get_cache_file_path(cls):
+    @staticmethod
+    def get_cache_file_path():
         return os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
 
     @staticmethod
