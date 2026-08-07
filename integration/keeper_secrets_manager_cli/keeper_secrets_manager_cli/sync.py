@@ -749,6 +749,37 @@ class Sync:
         error_msg = "; ".join(errors) if errors else None
         return name, error_msg
 
+    def _dst_status(self, current_value, src_value):
+        """Dry-run destination fields for a mapping, without exposing the live value.
+
+        current_value is what is stored at the destination now (or None); src_value is
+        what would be written. Returns only existence and difference, so a dry run cannot
+        be used to read a secret out of the sync output.
+        """
+        return {
+            "dstValue": None,
+            "dstExists": current_value is not None,
+            "dstDiffers": (current_value != src_value) if current_value is not None else None,
+        }
+
+    def _validate_azure_secret_name(self, name):
+        """Return an error message if name is not a valid Azure Key Vault secret name, else None.
+
+        Azure Key Vault permits only alphanumeric characters and dashes, 1 to 127 characters.
+        """
+        if not name or not re.match(r'^[0-9A-Za-z-]{1,127}$', name):
+            return "Azure Key Vault secret names may contain only alphanumeric characters and dashes (1 to 127 characters)"
+        return None
+
+    def _validate_gcp_secret_name(self, name):
+        """Return an error message if name is not a valid GCP Secret Manager secret id, else None.
+
+        GCP secret ids permit letters, digits, '-' and '_', 1 to 255 characters.
+        """
+        if not name or not re.match(r'^[0-9A-Za-z_-]{1,255}$', name):
+            return "GCP Secret Manager secret ids may contain only letters, digits, '-' and '_' (1 to 255 characters)"
+        return None
+
     def _resolve_records(self, record_tokens):
         """Resolve record tokens to actual records"""
         if not record_tokens:
@@ -1730,7 +1761,9 @@ class Sync:
                 key = m["mapKey"]
                 res = self._get_secret_az(client, key)
                 val = res.get("value", None)
-                m["dstValue"] = val.value if val else None
+                # Never place the live destination value in the output.
+                current = val.value if val else None
+                m.update(self._dst_status(current, m["srcValue"]))
                 if not res.get("not_found", False) and res.get("error", ""):
                     self.log.append(f"Error reading the value from Azure Vault for key={key}")
             self._output(maps)
@@ -1753,6 +1786,11 @@ class Sync:
                                 self.log.append(f"Failed to delete key={key}")
                                 self.logger.error("Failed to delete key=" + key)
                 else:
+                    name_error = self._validate_azure_secret_name(key)
+                    if name_error:
+                        m["error"] = f"Invalid Azure secret name: {name_error}"
+                        self.log.append(f"Invalid Azure secret name for key={key}: {name_error}")
+                        continue
                     res = self._set_secret_az(client, key, val)
                     if res.get("error", ""):
                         m["error"] = "Failed to set new value for the key."
@@ -2068,7 +2106,8 @@ class Sync:
                 key = m["mapKey"]
                 res = self._get_secret_gcp(client, project_id, key)
                 val = res.get("value", None)
-                m["dstValue"] = val if val else None
+                # Never place the live destination value in the output.
+                m.update(self._dst_status(val if val else None, m["srcValue"]))
                 if not res.get("not_found", False) and res.get("error", ""):
                     self.log.append(f"Error reading the value from GCP for key={key}")
             self._output(maps)
@@ -2092,6 +2131,11 @@ class Sync:
                                 self.log.append(f"Failed to delete key={key}")
                                 self.logger.error("Failed to delete key=" + key)
                 else:
+                    name_error = self._validate_gcp_secret_name(key)
+                    if name_error:
+                        m["error"] = f"Invalid GCP secret name: {name_error}"
+                        self.log.append(f"Invalid GCP secret name for key={key}: {name_error}")
+                        continue
                     res = self._set_secret_gcp(client, project_id, key, val)
                     if res.get("error", ""):
                         m["error"] = "Failed to set new value for the key."
