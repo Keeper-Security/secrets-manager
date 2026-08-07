@@ -172,3 +172,53 @@ class InitTest(unittest.TestCase):
                     self.assertEqual("keepersecurity.com", config.get("hostname"), "hostname is not correct")
                     self.assertEqual(mock_config.get("appKey"), config.get("appKey"),
                                      "app key is not correct")
+
+    def test_k8s_name_injection_is_neutralized(self):
+
+        """A newline in --name/--namespace cannot inject manifest content (KSM-1171)."""
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        init_config = InMemoryKeyValueStorage()
+        init_secrets_manager = SecretsManager(
+            config=init_config,
+            token="MY_TOKEN",
+            hostname="US",
+            verify_ssl_certs=False
+        )
+        init_config.set(ConfigKeys.KEY_APP_KEY, mock_config.get("appKey"))
+
+        res = mock.Response()
+        res.add_record(title="My Record 1")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(res)
+        queue.add_response(res)
+        init_queue = mock.ResponseQueue(client=init_secrets_manager)
+        init_queue.add_response(res)
+        init_queue.add_response(res)
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+            mock_client.return_value = secrets_manager
+            with patch('keeper_secrets_manager_cli.init.Init.get_client') as mock_init_client:
+                mock_init_client.return_value = init_secrets_manager
+                with patch('keeper_secrets_manager_cli.init.Init.init_config') as mock_init_config:
+                    mock_init_config.return_value = init_config
+
+                    token = "US:MY_TOKEN"
+                    malicious = "evil\ninjected: pwned"
+                    runner = CliRunner()
+                    result = runner.invoke(cli, [
+                        'init ', 'k8s', token,
+                        '--name', malicious,
+                        '--namespace', 'default'
+                    ], catch_exceptions=False)
+                    self.assertEqual(0, result.exit_code, "k8s init did not succeed")
+
+                    script = yaml.load(StringIO(result.output), yaml.Loader)
+                    # The injected key must not appear as manifest content.
+                    self.assertNotIn("injected", script)
+                    # The malicious name is preserved verbatim as a single scalar.
+                    self.assertEqual(malicious, script["metadata"]["name"])
+                    self.assertEqual("Secret", script.get("kind"))
