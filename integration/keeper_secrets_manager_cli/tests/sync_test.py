@@ -165,9 +165,9 @@ class SyncTest(unittest.TestCase):
         mock_client.get_secret_value.assert_called_with(SecretId='kms_key')
 
         self.assertEqual(len(output_data), 1)
-        self.assertNotIn("dstValue", output_data[0][0])
+        self.assertIsNone(output_data[0][0]["dstValue"])
         self.assertFalse(output_data[0][0]["dstExists"])
-        self.assertNotIn("dstValue", output_data[0][1])
+        self.assertIsNone(output_data[0][1]["dstValue"])
         self.assertFalse(output_data[0][1]["dstExists"])
 
     @requires_boto3
@@ -1187,11 +1187,75 @@ class SyncTest(unittest.TestCase):
 
             self.sync.sync_aws_with_client(mock_secretsmanager, dry_run=True, maps=maps)
 
-        self.assertNotIn("dstValue", maps[0])
+        self.assertIsNone(maps[0]["dstValue"])
         self.assertIn("dstExists", maps[0])
         self.assertIn("dstDiffers", maps[0])
         self.assertTrue(maps[0]["dstExists"])
         self.assertTrue(maps[0]["dstDiffers"])
+
+
+    def test_sanitize_title_strips_leading_slash(self):
+        result, error = self.sync._sanitize_title_for_prefix("/foo/bar")
+        self.assertEqual(result, "foo/bar")
+        self.assertIsNone(error)
+
+    def test_sanitize_title_rejects_dotdot(self):
+        _, error = self.sync._sanitize_title_for_prefix("../foo")
+        self.assertIsNotNone(error)
+        _, error2 = self.sync._sanitize_title_for_prefix("foo/../bar")
+        self.assertIsNotNone(error2)
+
+    @requires_boto3
+    def test_dry_run_record_based_does_not_disclose_dst_value(self):
+        mock_secretsmanager = Mock()
+        mock_secretsmanager.get_secret_value.return_value = {"SecretString": '{"password":"live-value"}'}
+
+        maps = [{"mapKey": "keeper/my-secret", "mapNotation": "record:rec_uid", "srcValue": '{"password":"new-value"}', "dstValue": None}]
+
+        with patch.object(self.sync, '_get_secret_aws') as mock_get:
+            mock_get.return_value = {"value": '{"password":"live-value"}'}
+
+            self.sync.sync_aws_json_with_client(mock_secretsmanager, dry_run=True, maps=maps)
+
+        self.assertIsNone(maps[0]["dstValue"])
+        self.assertTrue(maps[0]["dstExists"])
+        self.assertTrue(maps[0]["dstDiffers"])
+
+    def test_sync_prefix_prepended_to_folder_record(self):
+        mock_record = Mock()
+        mock_record.uid = "record_uid"
+        mock_record.title = "my-secret"
+        mock_record.inner_folder_uid = "folder_uid"
+        mock_record.folder_uid = "folder_uid"
+
+        mock_folder = Mock()
+        mock_folder.folder_uid = "folder_uid"
+        mock_folder.parent_uid = None
+
+        mock_full_response = Mock()
+        mock_full_response.records = [mock_record]
+
+        with patch.object(self.sync, '_resolve_folders') as mock_resolve_folders, \
+             patch.object(self.sync, '_validate_aws_secret_name') as mock_validate, \
+             patch.object(self.sync, '_generate_record_json'):
+
+            mock_resolve_folders.return_value = [mock_folder]
+            mock_validate.return_value = ("keeper/my-secret", None)
+            self.sync.cli.client.get_secrets = Mock(return_value=mock_full_response)
+            self.sync.cli.client.get_folders = Mock(return_value=[mock_folder])
+
+            result = []
+            self.sync._process_aws_records_and_folders(
+                result=result,
+                records=[],
+                folders=['folder_uid'],
+                folders_recursive=[],
+                raw_json=False,
+                maps=[],
+                prefix='keeper/'
+            )
+
+            mock_validate.assert_called_once_with("keeper/my-secret")
 
 
 if __name__ == '__main__':

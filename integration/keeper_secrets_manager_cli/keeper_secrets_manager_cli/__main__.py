@@ -1585,6 +1585,11 @@ def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, r
                 "--prefix/-px is required when using --record/-r, --folder/-f, or --folder-recursive/-fr with --type aws. "
                 "Provide a prefix to namespace the derived AWS secret names (e.g. --prefix keeper/)."
             )
+        if prefix and prefix[-1].isalnum():
+            raise KsmCliException(
+                f"--prefix must end with a separator character (e.g. keeper/ or myapp-), got '{prefix}'. "
+                "Without a separator the prefix runs directly into the record title with no delimiter."
+            )
 
         if raw_json and sync_type != 'aws':
             click.echo(click.style("Warning: --raw-json/-rj flag is only supported with type=aws, ignoring...", fg="yellow"), file=sys.stderr)

@@ -1915,7 +1915,7 @@ class Sync:
 
                 # Show what would be in the JSON
                 for mapping in json_mappings:
-                    mapping["original"].pop("dstValue", None)
+                    mapping["original"]["dstValue"] = None
                     if mapping["json_key"] is None:
                         # Full JSON content (record-based)
                         mapping["original"]["dstExists"] = current_value is not None
@@ -2047,7 +2047,7 @@ class Sync:
                 key = m["mapKey"]
                 res = self._get_secret_aws(secretsmanager, key)
                 val = res.get("value", None)
-                m.pop("dstValue", None)
+                m["dstValue"] = None
                 m["dstExists"] = val is not None
                 m["dstDiffers"] = (val != m["srcValue"]) if val is not None else None
                 if not res.get("not_found", False) and res.get("error", ""):
