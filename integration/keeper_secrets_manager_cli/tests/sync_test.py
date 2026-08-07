@@ -1061,6 +1061,98 @@ class SyncTest(unittest.TestCase):
             # Valid record should not appear in errors
             self.assertNotIn("uid1", error_msg)
 
+    def test_confine_to_prefix_joins_and_blocks_traversal(self):
+        """--prefix confines a title-derived name and rejects traversal segments."""
+        # No prefix configured: the name passes through unchanged.
+        self.sync.name_prefix = None
+        self.assertEqual(
+            self.sync._confine_to_prefix("prod/rds/master-password"),
+            ("prod/rds/master-password", None))
+
+        # Prefix configured: the derived name is placed under the prefix, and a
+        # leading slash on the title cannot escape it.
+        self.sync.name_prefix = "keeper"
+        self.assertEqual(
+            self.sync._confine_to_prefix("prod/rds/master-password"),
+            ("keeper/prod/rds/master-password", None))
+        self.assertEqual(
+            self.sync._confine_to_prefix("/prod/rds/master-password"),
+            ("keeper/prod/rds/master-password", None))
+
+        # A '..' segment is rejected rather than allowed to walk out of the prefix.
+        name, err = self.sync._confine_to_prefix("../../elsewhere")
+        self.assertIsNotNone(err)
+        self.assertIn("..", err)
+
+    def test_prefix_confines_record_title(self):
+        """A record title is confined under --prefix before it becomes the AWS SecretId."""
+        mock_record = Mock()
+        mock_record.uid = "rec_uid"
+        mock_record.title = "prod/rds/master-password"
+        mock_record.fields = []
+        mock_record.custom = []
+
+        with patch.object(self.sync, '_resolve_records') as mock_resolve, \
+             patch.object(self.sync, '_generate_record_json') as mock_generate, \
+             patch.object(self.sync, '_get_aws_client') as mock_get_client, \
+             patch.object(self.sync, '_output'), \
+             patch.object(self.sync, 'sync_aws_json_with_client') as mock_sync_json, \
+             patch.object(self.sync, 'sync_aws_with_client'):
+
+            mock_resolve.return_value = [mock_record]
+            mock_generate.return_value = {"password": "secret123"}
+            mock_get_client.return_value = Mock()
+
+            self.sync.sync_values(
+                sync_type='aws',
+                credentials='cred_uid',
+                dry_run=False,
+                preserve_missing=False,
+                maps=None,
+                records=['prod/rds/master-password'],
+                raw_json=False,
+                prefix='keeper',
+            )
+
+            call_maps = mock_sync_json.call_args[0][3]
+            self.assertEqual(len(call_maps), 1)
+            self.assertEqual(call_maps[0]["mapKey"], "keeper/prod/rds/master-password")
+
+    def test_dry_run_plain_does_not_disclose_destination_value(self):
+        """--dry-run must not place the live AWS secret value in the output (plain --map path)."""
+        secretsmanager = MagicMock()
+        with patch.object(self.sync, '_get_secret_aws',
+                          return_value={"value": "LIVE_SECRET_VALUE", "not_found": False, "error": ""}):
+            captured = []
+            self.sync._output = Mock(side_effect=lambda data, hide_data=False: captured.append(data))
+            maps = [{"mapKey": "prod/rds/master-password", "mapNotation": "keeper://r/f",
+                     "srcValue": "new_value", "dstValue": None}]
+            self.sync.sync_aws_with_client(secretsmanager, dry_run=True, preserve_missing=False, maps=maps)
+
+        m = captured[0][0]
+        self.assertIsNone(m["dstValue"])
+        self.assertTrue(m["dstExists"])
+        self.assertTrue(m["dstDiffers"])
+        # The live destination value must not appear anywhere in the serialized output.
+        self.assertNotIn("LIVE_SECRET_VALUE", json.dumps(captured[0]))
+
+    def test_dry_run_record_does_not_disclose_destination_value(self):
+        """--dry-run must not place the live AWS secret value in the output (record/folder JSON path)."""
+        secretsmanager = MagicMock()
+        live = json.dumps({"password": "LIVE_SECRET_VALUE"})
+        with patch.object(self.sync, '_get_secret_aws',
+                          return_value={"value": live, "not_found": False, "error": ""}):
+            captured = []
+            self.sync._output = Mock(side_effect=lambda data, hide_data=False: captured.append(data))
+            maps = [{"mapKey": "keeper/prod/db", "mapNotation": "record:REC1",
+                     "srcValue": {"password": "new"}, "dstValue": None}]
+            self.sync.sync_aws_json_with_client(secretsmanager, dry_run=True, preserve_missing=False, maps=maps)
+
+        m = captured[0][0]
+        self.assertIsNone(m["dstValue"])
+        self.assertTrue(m["dstExists"])
+        self.assertNotIn("LIVE_SECRET_VALUE", json.dumps(captured[0]))
+
 
 if __name__ == '__main__':
     unittest.main()

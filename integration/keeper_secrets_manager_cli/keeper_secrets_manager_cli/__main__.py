@@ -1564,8 +1564,9 @@ def help_command(ctx):
 @click.option('--folder', '-f', 'folders', type=str, multiple=True, metavar="<FOLDER>...", help='Folder UID, path, or title to sync all records from (only for type=aws).')
 @click.option('--folder-recursive', '-fr', 'folders_recursive', type=str, multiple=True, metavar="<FOLDER>...", help='Folder UID, path, or title to sync all records from recursively (only for type=aws).')
 @click.option('--raw-json', '-rj', is_flag=True, help='Store full JSON in KMS secret (only for type=aws).')
+@click.option('--prefix', type=str, default=None, help='Namespace prepended to every AWS secret name derived from a record title (--record/--folder/--folder-recursive). Required for those modes so a record title cannot address secrets outside the prefix. Example: --prefix keeper/')
 @click.pass_context
-def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, records, folders, folders_recursive, raw_json):
+def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, records, folders, folders_recursive, raw_json, prefix):
     """Sync selected keys from Keeper vault to secure cloud based key value store"""
 
     # Validation for AWS only options (unless type=json)
@@ -1591,8 +1592,19 @@ def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, r
         if not maps:
             raise KsmCliException(f"For type={sync_type}, --map/-m must be provided")
 
+    # A record title is set by anyone who can add a record to a synced shared folder.
+    # Require --prefix for the modes that derive the destination name from a title, so
+    # the derived name is always confined to a namespace the operator controls.
+    if sync_type == 'aws' and (records or folders or folders_recursive) and not prefix:
+        raise KsmCliException(
+            "--prefix is required when syncing records or folders to AWS "
+            "(--record/--folder/--folder-recursive). It confines every secret name "
+            "derived from a record title to a namespace you control (for example "
+            "--prefix keeper/), so a record title cannot address an arbitrary secret "
+            "in the account.")
+
     sync = Sync(cli=ctx.obj["cli"])
-    sync.sync_values(sync_type=sync_type, credentials=credentials, dry_run=dry_run, preserve_missing=preserve_missing, maps=maps, records=records, folders=folders, folders_recursive=folders_recursive, raw_json=raw_json)
+    sync.sync_values(sync_type=sync_type, credentials=credentials, dry_run=dry_run, preserve_missing=preserve_missing, maps=maps, records=records, folders=folders, folders_recursive=folders_recursive, raw_json=raw_json, prefix=prefix)
 
 
 # TOP LEVEL COMMANDS

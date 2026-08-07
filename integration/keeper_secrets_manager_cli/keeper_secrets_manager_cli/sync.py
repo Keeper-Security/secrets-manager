@@ -749,6 +749,21 @@ class Sync:
         error_msg = "; ".join(errors) if errors else None
         return name, error_msg
 
+    def _confine_to_prefix(self, name):
+        """Confine a title-derived AWS secret name to the operator-supplied --prefix subtree.
+
+        Returns (name, error_message). When no prefix is configured the name is returned
+        unchanged. The record title is untrusted input, so reject '..' path segments and
+        drop a leading slash before joining; a title such as '/foo' or '../foo' then
+        cannot resolve to anything outside the prefix.
+        """
+        prefix = getattr(self, "name_prefix", None)
+        if not prefix:
+            return name, None
+        if ".." in name.split("/"):
+            return name, "resolved name may not contain '..' path segments when --prefix is set"
+        return prefix + "/" + name.lstrip("/"), None
+
     def _resolve_records(self, record_tokens):
         """Resolve record tokens to actual records"""
         if not record_tokens:
@@ -1168,6 +1183,8 @@ class Sync:
             for record_obj in resolved_records:
                 # Validate record title for AWS compatibility
                 secret_name, error_msg = self._validate_aws_secret_name(record_obj.title)
+                if error_msg is None:
+                    secret_name, error_msg = self._confine_to_prefix(secret_name)
 
                 if error_msg:
                     validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}): {error_msg}")
@@ -1476,6 +1493,8 @@ class Sync:
 
                 # Validate record title for AWS compatibility
                 secret_name, error_msg = self._validate_aws_secret_name(record_obj.title)
+                if error_msg is None:
+                    secret_name, error_msg = self._confine_to_prefix(secret_name)
 
                 if error_msg:
                     folder_type = "-fr" if is_recursive else "-f"
@@ -1549,9 +1568,20 @@ class Sync:
                 if overlapping:
                     raise KsmCliException(f"Duplicate keys found between --map/--record and --folder/--folder-recursive: {', '.join(overlapping)}")
 
-    def sync_values(self, sync_type:str, credentials:str="", dry_run=False, preserve_missing=False, maps=None, records=None, folders=None, folders_recursive=None, raw_json=False):
+    def sync_values(self, sync_type:str, credentials:str="", dry_run=False, preserve_missing=False, maps=None, records=None, folders=None, folders_recursive=None, raw_json=False, prefix=None):
         maps = maps or []
         result = []
+
+        # A record title is attacker-controllable when the record lives in a shared
+        # folder, so a name derived from it must be confined to a namespace the
+        # operator controls. --prefix is prepended to every derived AWS secret name;
+        # validate it once here so an invalid prefix fails before any write.
+        self.name_prefix = None
+        if prefix:
+            normalized_prefix, prefix_error = self._validate_aws_secret_name(prefix)
+            if prefix_error:
+                raise KsmCliException(f"Invalid --prefix '{prefix}': {prefix_error}")
+            self.name_prefix = normalized_prefix.rstrip("/")
 
         # Validate AWS map keys early (for type=aws and type=json)
         # Both GCP/Azure don't allow + in key names so
@@ -1846,14 +1876,17 @@ class Sync:
                         # If it's not JSON, we'll preserve it under a special key
                         existing_json = {"_preserved_plaintext": current_value}
 
-                # Show what would be in the JSON
+                # Report existence and difference only. The live destination value is
+                # never placed in the output, so a dry run cannot read a secret out of
+                # the sync log.
                 for mapping in json_mappings:
                     if mapping["json_key"] is None:
-                        # Full JSON content (record-based)
-                        mapping["original"]["dstValue"] = current_value
+                        current = current_value
                     else:
-                        # Partial JSON content (map-based)
-                        mapping["original"]["dstValue"] = existing_json.get(mapping["json_key"])
+                        current = existing_json.get(mapping["json_key"])
+                    mapping["original"]["dstValue"] = None
+                    mapping["original"]["dstExists"] = current is not None
+                    mapping["original"]["dstDiffers"] = (current != mapping["srcValue"]) if current is not None else None
 
                 if not res.get("not_found", False) and res.get("error", ""):
                     for mapping in json_mappings:
@@ -1976,7 +2009,12 @@ class Sync:
                 key = m["mapKey"]
                 res = self._get_secret_aws(secretsmanager, key)
                 val = res.get("value", None)
-                m["dstValue"] = val if val else None
+                # Never place the live destination value in the output. Report only
+                # whether it exists and whether it differs from the value that would
+                # be written, so a dry run cannot read a secret out of the sync log.
+                m["dstValue"] = None
+                m["dstExists"] = val is not None
+                m["dstDiffers"] = (val != m["srcValue"]) if val is not None else None
                 if not res.get("not_found", False) and res.get("error", ""):
                     m["error"] = "Error reading the value from AWS Secrets Manager."
                     self.log.append(f"Error reading the value from AWS Secrets Manager for key={key}")
