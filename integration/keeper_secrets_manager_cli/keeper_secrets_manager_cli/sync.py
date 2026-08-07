@@ -825,7 +825,16 @@ class Sync:
                 match_info = [f"{m.title} (UID: {m.uid})" for m in matches]
                 resolution_errors.append(f"Multiple records found matching '{token}': {match_info}")
             else:
-                resolved_records.append(matches[0])
+                matched = matches[0]
+                # A title is mutable and settable by any shared-folder collaborator, so
+                # note when a token resolved by title rather than by UID. Prefer UIDs for
+                # scheduled syncs.
+                if matched.uid != token:
+                    msg = (f"record '{token}' resolved by title to UID {matched.uid}; "
+                           "titles are mutable, prefer the record UID for scheduled syncs")
+                    self.log.append("Warning: " + msg)
+                    click.echo(click.style("Warning: " + msg, fg="yellow"), file=sys.stderr)
+                resolved_records.append(matched)
 
         if resolution_errors:
             error_message = "Record resolution errors:\n"
@@ -958,7 +967,15 @@ class Sync:
                     match_info.append(f"{name} (UID: {m.folder_uid}, Path: {path})")
                 resolution_errors.append(f"Multiple folders found matching '{token}': {match_info}")
             else:
-                resolved_folders.append(matches[0])
+                matched = matches[0]
+                # Folder names and paths are mutable; note when a token resolved by name
+                # or path rather than by UID. Prefer folder UIDs for scheduled syncs.
+                if matched.folder_uid != token:
+                    msg = (f"folder '{token}' resolved by name or path to UID {matched.folder_uid}; "
+                           "names and paths are mutable, prefer the folder UID for scheduled syncs")
+                    self.log.append("Warning: " + msg)
+                    click.echo(click.style("Warning: " + msg, fg="yellow"), file=sys.stderr)
+                resolved_folders.append(matched)
 
         if resolution_errors:
             error_message = "Folder resolution errors:\n"

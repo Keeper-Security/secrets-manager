@@ -1101,6 +1101,33 @@ class SyncTest(unittest.TestCase):
         self.assertIsNotNone(self.sync._validate_gcp_secret_name("has.dot"))
         self.assertIsNotNone(self.sync._validate_gcp_secret_name(""))
 
+    def test_resolve_records_by_title_warns(self):
+        """Resolving a --record token by title (not UID) warns and still resolves."""
+        s1 = Mock(uid="AAAAAAAAAAAAAAAAAAAAAA", title="prod-db")
+        self.cli_mock.client.get_secrets.return_value = [s1]
+        with patch('keeper_secrets_manager_cli.sync.click.echo') as mock_echo:
+            by_title = self.sync._resolve_records(["prod-db"])
+            by_uid = self.sync._resolve_records(["AAAAAAAAAAAAAAAAAAAAAA"])
+        self.assertEqual(by_title[0].uid, "AAAAAAAAAAAAAAAAAAAAAA")
+        self.assertEqual(by_uid[0].uid, "AAAAAAAAAAAAAAAAAAAAAA")
+        warnings = " ".join(str(c) for c in mock_echo.call_args_list)
+        # One warning, from the by-title resolution only.
+        self.assertEqual(warnings.count("resolved by title"), 1)
+
+    def test_resolve_folders_by_name_warns(self):
+        """Resolving a --folder token by name/path (not UID) warns and still resolves."""
+        folder = Mock()
+        folder.folder_uid = "BBBBBBBBBBBBBBBBBBBBBB"
+        folder.name = "prod"
+        folder.parent_uid = ""
+        self.cli_mock.client.get_folders.return_value = [folder]
+        with patch('keeper_secrets_manager_cli.sync.click.echo') as mock_echo:
+            by_name = self.sync._resolve_folders(["prod"])
+        self.assertEqual(len(by_name), 1)
+        self.assertEqual(by_name[0].folder_uid, "BBBBBBBBBBBBBBBBBBBBBB")
+        warnings = " ".join(str(c) for c in mock_echo.call_args_list)
+        self.assertIn("resolved by name or path", warnings)
+
 
 if __name__ == '__main__':
     unittest.main()
