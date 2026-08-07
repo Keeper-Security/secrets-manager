@@ -1208,7 +1208,7 @@ class Sync:
         # Return True if we have JSON format keys
         return bool(json_format_kms_keys)
 
-    def _process_aws_records_and_folders(self, result, records, folders, folders_recursive, raw_json, maps):
+    def _process_aws_records_and_folders(self, result, records, folders, folders_recursive, raw_json, maps, prefix=""):
         """Process AWS-specific --record, --folder, and --folder-recursive options and update result list"""
         # Handle record option for AWS
         if records:
@@ -1220,7 +1220,7 @@ class Sync:
 
             for record_obj in resolved_records:
                 # Validate record title for AWS compatibility
-                secret_name, error_msg = self._validate_aws_secret_name(record_obj.title)
+                secret_name, error_msg = self._validate_aws_secret_name(prefix + record_obj.title)
 
                 if error_msg:
                     validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}): {error_msg}")
@@ -1528,7 +1528,7 @@ class Sync:
                 record_obj, source_folder_uid, is_recursive = rec_tuple
 
                 # Validate record title for AWS compatibility
-                secret_name, error_msg = self._validate_aws_secret_name(record_obj.title)
+                secret_name, error_msg = self._validate_aws_secret_name(prefix + record_obj.title)
 
                 if error_msg:
                     folder_type = "-fr" if is_recursive else "-f"
@@ -1602,7 +1602,7 @@ class Sync:
                 if overlapping:
                     raise KsmCliException(f"Duplicate keys found between --map/--record and --folder/--folder-recursive: {', '.join(overlapping)}")
 
-    def sync_values(self, sync_type:str, credentials:str="", dry_run=False, preserve_missing=False, maps=None, records=None, folders=None, folders_recursive=None, raw_json=False):
+    def sync_values(self, sync_type:str, credentials:str="", dry_run=False, preserve_missing=False, maps=None, records=None, folders=None, folders_recursive=None, prefix=None, raw_json=False):
         maps = maps or []
         result = []
 
@@ -1668,7 +1668,7 @@ class Sync:
         if (sync_type == 'aws' or sync_type == 'json') and (records or folders or folders_recursive):
             if sync_type == 'json':
                 click.echo(click.style("Warning: --record, --folder, and --folder-recursive options generate JSON format that is only valid for --type=aws", fg="yellow"), file=sys.stderr)
-            self._process_aws_records_and_folders(result, records, folders, folders_recursive, raw_json, maps)
+            self._process_aws_records_and_folders(result, records, folders, folders_recursive, raw_json, maps, prefix=prefix or "")
 
         if sync_type == 'json':
             # type=json always outputs the dict structure as-is (no stringification)
@@ -1908,12 +1908,16 @@ class Sync:
 
                 # Show what would be in the JSON
                 for mapping in json_mappings:
+                    mapping["original"].pop("dstValue", None)
                     if mapping["json_key"] is None:
                         # Full JSON content (record-based)
-                        mapping["original"]["dstValue"] = current_value
+                        mapping["original"]["dstExists"] = current_value is not None
+                        mapping["original"]["dstDiffers"] = (current_value != mapping["srcValue"]) if current_value is not None else None
                     else:
                         # Partial JSON content (map-based)
-                        mapping["original"]["dstValue"] = existing_json.get(mapping["json_key"])
+                        existing_val = existing_json.get(mapping["json_key"])
+                        mapping["original"]["dstExists"] = existing_val is not None
+                        mapping["original"]["dstDiffers"] = (existing_val != mapping["srcValue"]) if existing_val is not None else None
 
                 if not res.get("not_found", False) and res.get("error", ""):
                     for mapping in json_mappings:
@@ -2036,7 +2040,9 @@ class Sync:
                 key = m["mapKey"]
                 res = self._get_secret_aws(secretsmanager, key)
                 val = res.get("value", None)
-                m["dstValue"] = val if val else None
+                m.pop("dstValue", None)
+                m["dstExists"] = val is not None
+                m["dstDiffers"] = (val != m["srcValue"]) if val is not None else None
                 if not res.get("not_found", False) and res.get("error", ""):
                     m["error"] = "Error reading the value from AWS Secrets Manager."
                     self.log.append(f"Error reading the value from AWS Secrets Manager for key={key}")

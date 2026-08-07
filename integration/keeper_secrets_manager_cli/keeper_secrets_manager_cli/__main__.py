@@ -1563,9 +1563,10 @@ def help_command(ctx):
 @click.option('--record', '-r', 'records', type=str, multiple=True, metavar="<TITLE_OR_UID>...", help='Record title or UID to sync (only for type=aws).')
 @click.option('--folder', '-f', 'folders', type=str, multiple=True, metavar="<FOLDER>...", help='Folder UID, path, or title to sync all records from (only for type=aws).')
 @click.option('--folder-recursive', '-fr', 'folders_recursive', type=str, multiple=True, metavar="<FOLDER>...", help='Folder UID, path, or title to sync all records from recursively (only for type=aws).')
+@click.option('--prefix', '-px', 'prefix', type=str, default=None, metavar="<PREFIX>", help='Prefix prepended to every AWS secret name derived from a record title (required with --record/-r, --folder/-f, or --folder-recursive/-fr). Use a trailing slash to create a path namespace, e.g. keeper/.')
 @click.option('--raw-json', '-rj', is_flag=True, help='Store full JSON in KMS secret (only for type=aws).')
 @click.pass_context
-def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, records, folders, folders_recursive, raw_json):
+def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, records, folders, folders_recursive, prefix, raw_json):
     """Sync selected keys from Keeper vault to secure cloud based key value store"""
 
     # Validation for AWS only options (unless type=json)
@@ -1578,6 +1579,12 @@ def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, r
 
         if folders_recursive and sync_type != 'aws':
             raise KsmCliException("--folder-recursive/-fr option is only supported with type=aws")
+
+        if (records or folders or folders_recursive) and sync_type == 'aws' and not prefix:
+            raise KsmCliException(
+                "--prefix/-px is required when using --record/-r, --folder/-f, or --folder-recursive/-fr with --type aws. "
+                "Provide a prefix to namespace the derived AWS secret names (e.g. --prefix keeper/)."
+            )
 
         if raw_json and sync_type != 'aws':
             click.echo(click.style("Warning: --raw-json/-rj flag is only supported with type=aws, ignoring...", fg="yellow"), file=sys.stderr)
@@ -1592,7 +1599,7 @@ def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, r
             raise KsmCliException(f"For type={sync_type}, --map/-m must be provided")
 
     sync = Sync(cli=ctx.obj["cli"])
-    sync.sync_values(sync_type=sync_type, credentials=credentials, dry_run=dry_run, preserve_missing=preserve_missing, maps=maps, records=records, folders=folders, folders_recursive=folders_recursive, raw_json=raw_json)
+    sync.sync_values(sync_type=sync_type, credentials=credentials, dry_run=dry_run, preserve_missing=preserve_missing, maps=maps, records=records, folders=folders, folders_recursive=folders_recursive, prefix=prefix, raw_json=raw_json)
 
 
 # TOP LEVEL COMMANDS

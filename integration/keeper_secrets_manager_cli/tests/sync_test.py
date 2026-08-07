@@ -164,10 +164,11 @@ class SyncTest(unittest.TestCase):
         # Verify it read the existing value
         mock_client.get_secret_value.assert_called_with(SecretId='kms_key')
 
-        # Verify output shows existing values
         self.assertEqual(len(output_data), 1)
-        self.assertIsNone(output_data[0][0]["dstValue"])  # json_key1 doesn't exist yet
-        self.assertIsNone(output_data[0][1]["dstValue"])  # json_key2 doesn't exist yet
+        self.assertNotIn("dstValue", output_data[0][0])
+        self.assertFalse(output_data[0][0]["dstExists"])
+        self.assertNotIn("dstValue", output_data[0][1])
+        self.assertFalse(output_data[0][1]["dstExists"])
 
     @requires_boto3
     @patch('boto3.client')
@@ -1132,6 +1133,65 @@ class SyncTest(unittest.TestCase):
         # Exactly one warning, from by-name only, and it names the resolved UID.
         self.assertEqual(warnings.count("resolved by name or path"), 1)
         self.assertIn("BBBBBBBBBBBBBBBBBBBBBB", warnings)
+
+
+    def test_sync_prefix_prepended_to_record_title(self):
+        mock_record = Mock()
+        mock_record.uid = "test_uid"
+        mock_record.title = "my-secret"
+        mock_record.fields = []
+        mock_record.custom = []
+
+        with patch.object(self.sync, '_resolve_records') as mock_resolve, \
+             patch.object(self.sync, '_validate_aws_secret_name') as mock_validate, \
+             patch.object(self.sync, '_generate_record_json') as mock_generate, \
+             patch.object(self.sync, '_get_aws_client') as mock_get_client, \
+             patch.object(self.sync, 'sync_aws_json_with_client'):
+
+            mock_resolve.return_value = [mock_record]
+            mock_validate.return_value = ("keeper/my-secret", None)
+            mock_generate.return_value = '{"password":"x"}'
+            mock_get_client.return_value = Mock()
+
+            self.sync.sync_values(
+                sync_type='aws',
+                records=['my-secret'],
+                prefix='keeper/',
+                raw_json=False
+            )
+
+            mock_validate.assert_called_once_with("keeper/my-secret")
+
+    def test_sync_map_does_not_require_prefix(self):
+        with patch.object(self.sync, '_get_secret') as mock_get_secret, \
+             patch.object(self.sync, '_get_aws_client') as mock_get_client, \
+             patch.object(self.sync, 'sync_aws_with_client'):
+
+            mock_get_secret.return_value = "val"
+            mock_get_client.return_value = Mock()
+
+            self.sync.sync_values(
+                sync_type='aws',
+                maps=[('my-key', 'keeper://UID1234567890123456789/field/password')],
+                prefix=None
+            )
+
+    def test_dry_run_does_not_disclose_dst_value(self):
+        mock_secretsmanager = Mock()
+        mock_secretsmanager.get_secret_value.return_value = {"SecretString": "live-secret-value"}
+
+        maps = [{"mapKey": "my-key", "mapNotation": "keeper://UID/field/password", "srcValue": "new-value", "dstValue": None}]
+
+        with patch.object(self.sync, '_get_secret_aws') as mock_get:
+            mock_get.return_value = {"value": "live-secret-value"}
+
+            self.sync.sync_aws_with_client(mock_secretsmanager, dry_run=True, maps=maps)
+
+        self.assertNotIn("dstValue", maps[0])
+        self.assertIn("dstExists", maps[0])
+        self.assertIn("dstDiffers", maps[0])
+        self.assertTrue(maps[0]["dstExists"])
+        self.assertTrue(maps[0]["dstDiffers"])
 
 
 if __name__ == '__main__':
