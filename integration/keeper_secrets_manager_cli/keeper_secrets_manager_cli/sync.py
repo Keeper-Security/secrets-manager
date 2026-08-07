@@ -785,6 +785,12 @@ class Sync:
             return "GCP Secret Manager secret ids may contain only letters, digits, '-' and '_' (1 to 255 characters)"
         return None
 
+    def _sanitize_title_for_prefix(self, title):
+        title = title.lstrip("/")
+        if ".." in title.split("/"):
+            return title, "title contains '..' path segment, which is not allowed with --prefix"
+        return title, None
+
     def _resolve_records(self, record_tokens):
         """Resolve record tokens to actual records"""
         if not record_tokens:
@@ -1219,12 +1225,13 @@ class Sync:
             validated_records = []  # List of (record_obj, secret_name)
 
             for record_obj in resolved_records:
-                # Validate record title for AWS compatibility
-                secret_name, error_msg = self._validate_aws_secret_name(prefix + record_obj.title)
-
+                safe_title, sanitize_error = self._sanitize_title_for_prefix(record_obj.title)
+                if sanitize_error:
+                    validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}): {sanitize_error}")
+                    continue
+                secret_name, error_msg = self._validate_aws_secret_name(prefix + safe_title)
                 if error_msg:
                     validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}): {error_msg}")
-
                 validated_records.append((record_obj, secret_name))
 
             # If there are validation errors, display them all at once
@@ -1526,14 +1533,14 @@ class Sync:
 
             for rec_tuple in unique_folder_records_with_metadata:
                 record_obj, source_folder_uid, is_recursive = rec_tuple
-
-                # Validate record title for AWS compatibility
-                secret_name, error_msg = self._validate_aws_secret_name(prefix + record_obj.title)
-
+                folder_type = "-fr" if is_recursive else "-f"
+                safe_title, sanitize_error = self._sanitize_title_for_prefix(record_obj.title)
+                if sanitize_error:
+                    validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}) from {folder_type} {source_folder_uid}: {sanitize_error}")
+                    continue
+                secret_name, error_msg = self._validate_aws_secret_name(prefix + safe_title)
                 if error_msg:
-                    folder_type = "-fr" if is_recursive else "-f"
                     validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}) from {folder_type} {source_folder_uid}: {error_msg}")
-
                 validated_folder_records.append((record_obj, secret_name, source_folder_uid, is_recursive))
 
             # If there are validation errors, display them all at once
