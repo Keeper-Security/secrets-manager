@@ -1115,7 +1115,7 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(warnings.count("resolved by title"), 1)
 
     def test_resolve_folders_by_name_warns(self):
-        """Resolving a --folder token by name/path (not UID) warns and still resolves."""
+        """Resolving a --folder token by name/path warns; UID resolution stays silent."""
         folder = Mock()
         folder.folder_uid = "BBBBBBBBBBBBBBBBBBBBBB"
         folder.name = "prod"
@@ -1123,10 +1123,15 @@ class SyncTest(unittest.TestCase):
         self.cli_mock.client.get_folders.return_value = [folder]
         with patch('keeper_secrets_manager_cli.sync.click.echo') as mock_echo:
             by_name = self.sync._resolve_folders(["prod"])
+            by_uid = self.sync._resolve_folders(["BBBBBBBBBBBBBBBBBBBBBB"])
         self.assertEqual(len(by_name), 1)
         self.assertEqual(by_name[0].folder_uid, "BBBBBBBBBBBBBBBBBBBBBB")
+        self.assertEqual(len(by_uid), 1)
+        self.assertEqual(by_uid[0].folder_uid, "BBBBBBBBBBBBBBBBBBBBBB")
         warnings = " ".join(str(c) for c in mock_echo.call_args_list)
-        self.assertIn("resolved by name or path", warnings)
+        # Exactly one warning, from by-name only, and it names the resolved UID.
+        self.assertEqual(warnings.count("resolved by name or path"), 1)
+        self.assertIn("BBBBBBBBBBBBBBBBBBBBBB", warnings)
 
 
 if __name__ == '__main__':
