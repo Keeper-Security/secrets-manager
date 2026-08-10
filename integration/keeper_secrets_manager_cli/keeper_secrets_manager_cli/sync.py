@@ -765,7 +765,12 @@ class Sync:
     def _validate_azure_secret_name(self, name):
         """Return an error message if name is not a valid Azure Key Vault secret name, else None.
 
-        Azure Key Vault permits only alphanumeric characters and dashes, 1 to 127 characters.
+        Azure Key Vault object names (secrets) permit only alphanumeric characters and
+        dashes, 1 to 127 characters, with no restriction on the first character or on
+        hyphen placement; the leading-letter and no-consecutive-hyphen rules apply to
+        vault names, not secret names. The Key Vault REST spec validates SetSecret
+        names with the pattern ^[0-9a-zA-Z-]+$. See
+        https://learn.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates
         """
         if not name or not re.match(r'^[0-9A-Za-z-]{1,127}$', name):
             return "Azure Key Vault secret names may contain only alphanumeric characters and dashes (1 to 127 characters)"
