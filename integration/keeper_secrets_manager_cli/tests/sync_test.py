@@ -1061,6 +1061,46 @@ class SyncTest(unittest.TestCase):
             # Valid record should not appear in errors
             self.assertNotIn("uid1", error_msg)
 
+    def test_dst_status_never_exposes_value(self):
+        """_dst_status reports existence and difference but never the live value."""
+        self.assertEqual(
+            self.sync._dst_status("LIVE_VALUE", "new_value"),
+            {"dstValue": None, "dstExists": True, "dstDiffers": True})
+        self.assertEqual(
+            self.sync._dst_status("same", "same"),
+            {"dstValue": None, "dstExists": True, "dstDiffers": False})
+        self.assertEqual(
+            self.sync._dst_status(None, "new_value"),
+            {"dstValue": None, "dstExists": False, "dstDiffers": None})
+        # The live value is never present in the returned fields.
+        self.assertNotIn("LIVE_VALUE", json.dumps(self.sync._dst_status("LIVE_VALUE", "x")))
+
+    def test_validate_azure_secret_name(self):
+        """Azure Key Vault names allow only alphanumerics and dashes."""
+        self.assertIsNone(self.sync._validate_azure_secret_name("valid-Name123"))
+        # Documented-valid edge shapes: secret names have no first-character or
+        # hyphen-placement rules (those apply to vault names, not secret names).
+        self.assertIsNone(self.sync._validate_azure_secret_name("123-secret"))
+        self.assertIsNone(self.sync._validate_azure_secret_name("name-"))
+        self.assertIsNone(self.sync._validate_azure_secret_name("a--b"))
+        # Length boundary: 1 to 127 characters.
+        self.assertIsNone(self.sync._validate_azure_secret_name("A" * 127))
+        self.assertIsNotNone(self.sync._validate_azure_secret_name("A" * 128))
+        self.assertIsNotNone(self.sync._validate_azure_secret_name("has_underscore"))
+        self.assertIsNotNone(self.sync._validate_azure_secret_name("has/slash"))
+        self.assertIsNotNone(self.sync._validate_azure_secret_name(""))
+
+    def test_validate_gcp_secret_name(self):
+        """GCP Secret Manager ids allow letters, digits, '-' and '_'."""
+        self.assertIsNone(self.sync._validate_gcp_secret_name("valid_Name-123"))
+        # No first-character rule; length boundary is 1 to 255 characters.
+        self.assertIsNone(self.sync._validate_gcp_secret_name("123_id"))
+        self.assertIsNone(self.sync._validate_gcp_secret_name("a" * 255))
+        self.assertIsNotNone(self.sync._validate_gcp_secret_name("a" * 256))
+        self.assertIsNotNone(self.sync._validate_gcp_secret_name("has/slash"))
+        self.assertIsNotNone(self.sync._validate_gcp_secret_name("has.dot"))
+        self.assertIsNotNone(self.sync._validate_gcp_secret_name(""))
+
 
 if __name__ == '__main__':
     unittest.main()
