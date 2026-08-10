@@ -4,7 +4,7 @@ import unittest
 import unittest.mock
 from http import HTTPStatus
 
-from keeper_secrets_manager_core.core import KSMCache, SecretsManager
+from keeper_secrets_manager_core.core import KSMCache, SecretsManager, _default_cache_path
 from keeper_secrets_manager_core.dto.payload import KSMHttpResponse, TransmissionKey
 
 
@@ -129,6 +129,46 @@ class CacheTest(unittest.TestCase):
                 os.environ.pop("KSM_CACHE_DIR", None)
             else:
                 os.environ["KSM_CACHE_DIR"] = original_env
+
+    def test_default_path_without_override_or_env_is_cwd(self):
+        """With no override and no KSM_CACHE_DIR, the cache lives in the current working directory.
+
+        Locks in the untouched-default contract directly: get_cache_file_path returns the
+        bare filename and save_cache writes it into the CWD. Every other test exercises an
+        env var or an override; without this one, a regression in the plain default would
+        go unnoticed.
+        """
+        original_env = os.environ.get("KSM_CACHE_DIR")
+        original_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            try:
+                os.environ.pop("KSM_CACHE_DIR", None)
+                os.chdir(temp_dir)
+
+                self.assertEqual("ksm_cache.bin", KSMCache.get_cache_file_path())
+
+                KSMCache.save_cache(b"default-bytes")
+                self.assertTrue(
+                    os.path.exists(os.path.join(temp_dir, "ksm_cache.bin")),
+                    "with no override and no KSM_CACHE_DIR the cache file should be "
+                    "created in the current working directory",
+                )
+            finally:
+                os.chdir(original_cwd)
+                if original_env is not None:
+                    os.environ["KSM_CACHE_DIR"] = original_env
+
+    def test_default_sentinel_text_matches_lazy_default_path(self):
+        """The sentinel's text must equal what the lazy branch builds under the same env.
+
+        Resolution ignores the sentinel's text (identity only), but kms_cache_file_name is
+        a public attribute consumers may read directly; if the sentinel construction and
+        _default_cache_path() drift apart (say one side re-inlines the expression), the
+        attribute would advertise a path the cache methods never use. Every KSM_CACHE_DIR
+        mutation in this suite restores the import-time value, so comparing against the
+        helper's current output is exact.
+        """
+        self.assertEqual(_default_cache_path(), str(KSMCache._default_cache_file_name))
 
 
     @unittest.skipIf(os.name == 'nt', "file permission bits are not meaningful on Windows")
