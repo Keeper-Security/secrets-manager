@@ -2,7 +2,7 @@ name: Test-CLI
 
 on:
   pull_request:
-    branches: [ master ]
+    branches: [ master, 'release/tool/cli/**' ]
     paths:
       - 'integration/keeper_secrets_manager_cli/**'
       - 'sdk/python/core/**'
