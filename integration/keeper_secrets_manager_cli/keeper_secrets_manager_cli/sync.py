@@ -1917,9 +1917,26 @@ class Sync:
                 for mapping in json_mappings:
                     mapping["original"]["dstValue"] = None
                     if mapping["json_key"] is None:
-                        # Full JSON content (record-based)
+                        # Full JSON content (record-based). srcValue is a dict here,
+                        # so compare via JSON serialization the same way the real run does.
                         mapping["original"]["dstExists"] = current_value is not None
-                        mapping["original"]["dstDiffers"] = (current_value != mapping["srcValue"]) if current_value is not None else None
+                        if current_value is None:
+                            mapping["original"]["dstDiffers"] = None
+                        else:
+                            src_value = mapping["srcValue"]
+                            src_json = src_value if isinstance(src_value, dict) else json.loads(src_value)
+                            try:
+                                current_json = json.loads(current_value)
+                                current_cmp = json.dumps(
+                                    {k: v for k, v in current_json.items() if k != "_preserved_plaintext"},
+                                    sort_keys=True, separators=(',', ':'))
+                                src_cmp = json.dumps(
+                                    {k: v for k, v in src_json.items() if k != "_preserved_plaintext"},
+                                    sort_keys=True, separators=(',', ':'))
+                                mapping["original"]["dstDiffers"] = current_cmp != src_cmp
+                            except (json.JSONDecodeError, TypeError, AttributeError):
+                                # Destination holds plaintext; the real run rewrites it, so it differs.
+                                mapping["original"]["dstDiffers"] = True
                     else:
                         # Partial JSON content (map-based)
                         existing_val = existing_json.get(mapping["json_key"])

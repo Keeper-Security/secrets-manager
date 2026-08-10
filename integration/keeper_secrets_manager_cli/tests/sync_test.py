@@ -1176,6 +1176,31 @@ class SyncTest(unittest.TestCase):
                 prefix=None
             )
 
+    def test_sync_aws_prefix_enforcement(self):
+        from keeper_secrets_manager_cli.__main__ import sync_command
+        runner = CliRunner()
+
+        # Missing prefix with --record: rejected
+        result = runner.invoke(sync_command, ['-c', 'UID', '-t', 'aws', '-r', 'rec'],
+                               obj={'cli': Mock()})
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("--prefix/-px is required", result.output)
+
+        # Alphanumeric-terminated prefix: rejected
+        result = runner.invoke(sync_command, ['-c', 'UID', '-t', 'aws', '-r', 'rec', '-px', 'keeper'],
+                               obj={'cli': Mock()})
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("--prefix must end with a separator", result.output)
+
+        # Valid prefix: passes validation and reaches sync_values
+        with patch('keeper_secrets_manager_cli.__main__.Sync') as mock_sync_cls:
+            mock_sync_cls.return_value.sync_values.return_value = None
+            result = runner.invoke(sync_command, ['-c', 'UID', '-t', 'aws', '-r', 'rec', '-px', 'keeper/'],
+                                   obj={'cli': Mock()})
+        self.assertNotIn("--prefix/-px is required", result.output)
+        self.assertNotIn("--prefix must end with a separator", result.output)
+        mock_sync_cls.return_value.sync_values.assert_called_once()
+
     def test_dry_run_does_not_disclose_dst_value(self):
         mock_secretsmanager = Mock()
         mock_secretsmanager.get_secret_value.return_value = {"SecretString": "live-secret-value"}
@@ -1208,18 +1233,34 @@ class SyncTest(unittest.TestCase):
     @requires_boto3
     def test_dry_run_record_based_does_not_disclose_dst_value(self):
         mock_secretsmanager = Mock()
-        mock_secretsmanager.get_secret_value.return_value = {"SecretString": '{"password":"live-value"}'}
 
-        maps = [{"mapKey": "keeper/my-secret", "mapNotation": "record:rec_uid", "srcValue": '{"password":"new-value"}', "dstValue": None}]
+        # srcValue is a dict, matching what _generate_record_json returns in production.
+        src_dict = {"password": "new-value"}
+        maps = [{"mapKey": "keeper/my-secret", "mapNotation": "record:rec_uid", "srcValue": src_dict, "dstValue": None}]
 
         with patch.object(self.sync, '_get_secret_aws') as mock_get:
             mock_get.return_value = {"value": '{"password":"live-value"}'}
-
             self.sync.sync_aws_json_with_client(mock_secretsmanager, dry_run=True, maps=maps)
 
         self.assertIsNone(maps[0]["dstValue"])
         self.assertTrue(maps[0]["dstExists"])
         self.assertTrue(maps[0]["dstDiffers"])
+
+    def test_dry_run_record_based_dst_differs_false_when_content_matches(self):
+        mock_secretsmanager = Mock()
+
+        # AWS already holds exactly what the sync would write.
+        src_dict = {"login": "admin", "password": "p@ss"}
+        aws_current = json.dumps(src_dict, separators=(',', ':'))
+        maps = [{"mapKey": "keeper/my-secret", "mapNotation": "record:rec_uid", "srcValue": src_dict, "dstValue": None}]
+
+        with patch.object(self.sync, '_get_secret_aws') as mock_get:
+            mock_get.return_value = {"value": aws_current}
+            self.sync.sync_aws_json_with_client(mock_secretsmanager, dry_run=True, maps=maps)
+
+        self.assertIsNone(maps[0]["dstValue"])
+        self.assertTrue(maps[0]["dstExists"])
+        self.assertFalse(maps[0]["dstDiffers"])
 
     def test_sync_prefix_prepended_to_folder_record(self):
         mock_record = Mock()
@@ -1256,6 +1297,65 @@ class SyncTest(unittest.TestCase):
             )
 
             mock_validate.assert_called_once_with("keeper/my-secret")
+
+
+    def test_sync_dotdot_title_aborts_record_sync(self):
+        mock_record = Mock()
+        mock_record.uid = "uid1"
+        mock_record.title = "../escape"
+        mock_record.fields = []
+        mock_record.custom = []
+
+        with patch.object(self.sync, '_resolve_records') as mock_resolve:
+            mock_resolve.return_value = [mock_record]
+
+            with self.assertRaises(KsmCliException) as context:
+                self.sync.sync_values(
+                    sync_type='aws',
+                    credentials='cred_uid',
+                    dry_run=False,
+                    preserve_missing=False,
+                    maps=None,
+                    records=['../escape'],
+                    prefix='keeper/',
+                    raw_json=False
+                )
+
+        self.assertIn("'..'", str(context.exception))
+
+    def test_sync_dotdot_title_aborts_folder_sync(self):
+        mock_record = Mock()
+        mock_record.uid = "uid1"
+        mock_record.title = "foo/../bar"
+        mock_record.inner_folder_uid = "folder_uid"
+        mock_record.folder_uid = "folder_uid"
+        mock_record.fields = []
+        mock_record.custom = []
+
+        mock_folder = Mock()
+        mock_folder.folder_uid = "folder_uid"
+        mock_folder.parent_uid = None
+
+        mock_full_response = Mock()
+        mock_full_response.records = [mock_record]
+
+        with patch.object(self.sync, '_resolve_folders') as mock_resolve_folders:
+            mock_resolve_folders.return_value = [mock_folder]
+            self.sync.cli.client.get_secrets = Mock(return_value=mock_full_response)
+            self.sync.cli.client.get_folders = Mock(return_value=[mock_folder])
+
+            with self.assertRaises(KsmCliException) as context:
+                self.sync._process_aws_records_and_folders(
+                    result=[],
+                    records=[],
+                    folders=['folder_uid'],
+                    folders_recursive=[],
+                    raw_json=False,
+                    maps=[],
+                    prefix='keeper/'
+                )
+
+        self.assertIn("'..'", str(context.exception))
 
 
 if __name__ == '__main__':
