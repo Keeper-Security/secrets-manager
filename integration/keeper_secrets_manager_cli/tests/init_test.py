@@ -150,7 +150,7 @@ class InitTest(unittest.TestCase):
                     fh = StringIO(result.output)
 
                     # This is horrible. CLI can't use yaml
-                    script = yaml.load(fh, yaml.Loader)
+                    script = yaml.safe_load(fh)
 
                     json_config = base64.b64decode(script['data']['config'])
                     config = json.loads(json_config.decode())
@@ -208,17 +208,24 @@ class InitTest(unittest.TestCase):
 
                     token = "US:MY_TOKEN"
                     malicious = "evil\ninjected: pwned"
+                    malicious_ns = "evil\nns-injected: pwned"
                     runner = CliRunner()
                     result = runner.invoke(cli, [
                         'init ', 'k8s', token,
                         '--name', malicious,
-                        '--namespace', 'default'
+                        '--namespace', malicious_ns,
+                        '--immutable'
                     ], catch_exceptions=False)
                     self.assertEqual(0, result.exit_code, "k8s init did not succeed")
 
-                    script = yaml.load(StringIO(result.output), yaml.Loader)
-                    # The injected key must not appear as manifest content.
+                    script = yaml.safe_load(StringIO(result.output))
+                    # The injected keys must not appear as manifest content, neither at
+                    # the top level nor inside metadata.
                     self.assertNotIn("injected", script)
-                    # The malicious name is preserved verbatim as a single scalar.
+                    self.assertNotIn("ns-injected", script)
+                    self.assertEqual({"name", "namespace"}, set(script["metadata"]))
+                    # The malicious values are preserved verbatim as single scalars.
                     self.assertEqual(malicious, script["metadata"]["name"])
+                    self.assertEqual(malicious_ns, script["metadata"]["namespace"])
                     self.assertEqual("Secret", script.get("kind"))
+                    self.assertIs(script.get("immutable"), True)
