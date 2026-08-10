@@ -17,6 +17,7 @@ from .export import Export
 from .config import Config
 import subprocess
 import sys
+import yaml
 
 
 class Init:
@@ -61,18 +62,24 @@ class Init:
             ])
             print("Created secret for KSM config.", file=sys.stderr)
         else:
-            secret = "apiVersion: v1\n"\
-                     "data: \n"\
-                     "  config: {}\n"\
-                     "kind: Secret\n"\
-                     "metadata:\n"\
-                     "  name: {}\n"\
-                     "  namespace: {}\n"\
-                     "type: Opaque".format(base64_config.decode(), name, namespace)
-
+            # Build the manifest as a dict and serialize with a YAML library rather
+            # than string formatting, so name and namespace are always emitted as
+            # properly encoded scalars and cannot inject additional manifest content.
+            manifest = {
+                "apiVersion": "v1",
+                "data": {"config": base64_config.decode()},
+                "kind": "Secret",
+                "metadata": {
+                    "name": name,
+                    "namespace": namespace,
+                },
+                "type": "Opaque",
+            }
             # Kubernetes v1.21
             if immutable is True:
-                secret += "\nimmutable: True\n"
+                manifest["immutable"] = True
+
+            secret = yaml.safe_dump(manifest, default_flow_style=False, sort_keys=False).rstrip("\n")
 
             print("", file=sys.stderr)
             self.cli.output(secret)

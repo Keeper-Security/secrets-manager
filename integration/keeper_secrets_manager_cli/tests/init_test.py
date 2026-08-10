@@ -150,7 +150,7 @@ class InitTest(unittest.TestCase):
                     fh = StringIO(result.output)
 
                     # This is horrible. CLI can't use yaml
-                    script = yaml.load(fh, yaml.Loader)
+                    script = yaml.safe_load(fh)
 
                     json_config = base64.b64decode(script['data']['config'])
                     config = json.loads(json_config.decode())
@@ -172,3 +172,60 @@ class InitTest(unittest.TestCase):
                     self.assertEqual("keepersecurity.com", config.get("hostname"), "hostname is not correct")
                     self.assertEqual(mock_config.get("appKey"), config.get("appKey"),
                                      "app key is not correct")
+
+    def test_k8s_name_injection_is_neutralized(self):
+
+        """A newline in --name/--namespace cannot inject manifest content (KSM-1171)."""
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        init_config = InMemoryKeyValueStorage()
+        init_secrets_manager = SecretsManager(
+            config=init_config,
+            token="MY_TOKEN",
+            hostname="US",
+            verify_ssl_certs=False
+        )
+        init_config.set(ConfigKeys.KEY_APP_KEY, mock_config.get("appKey"))
+
+        res = mock.Response()
+        res.add_record(title="My Record 1")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(res)
+        queue.add_response(res)
+        init_queue = mock.ResponseQueue(client=init_secrets_manager)
+        init_queue.add_response(res)
+        init_queue.add_response(res)
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
+            mock_client.return_value = secrets_manager
+            with patch('keeper_secrets_manager_cli.init.Init.get_client') as mock_init_client:
+                mock_init_client.return_value = init_secrets_manager
+                with patch('keeper_secrets_manager_cli.init.Init.init_config') as mock_init_config:
+                    mock_init_config.return_value = init_config
+
+                    token = "US:MY_TOKEN"
+                    malicious = "evil\ninjected: pwned"
+                    malicious_ns = "evil\nns-injected: pwned"
+                    runner = CliRunner()
+                    result = runner.invoke(cli, [
+                        'init ', 'k8s', token,
+                        '--name', malicious,
+                        '--namespace', malicious_ns,
+                        '--immutable'
+                    ], catch_exceptions=False)
+                    self.assertEqual(0, result.exit_code, "k8s init did not succeed")
+
+                    script = yaml.safe_load(StringIO(result.output))
+                    # The injected keys must not appear as manifest content, neither at
+                    # the top level nor inside metadata.
+                    self.assertNotIn("injected", script)
+                    self.assertNotIn("ns-injected", script)
+                    self.assertEqual({"name", "namespace"}, set(script["metadata"]))
+                    # The malicious values are preserved verbatim as single scalars.
+                    self.assertEqual(malicious, script["metadata"]["name"])
+                    self.assertEqual(malicious_ns, script["metadata"]["namespace"])
+                    self.assertEqual("Secret", script.get("kind"))
+                    self.assertIs(script.get("immutable"), True)
