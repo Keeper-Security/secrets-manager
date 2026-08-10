@@ -1981,6 +1981,14 @@ class SecretsManager:
         return value
 
 
+# Single source of truth for the default cache path: 'ksm_cache.bin' under KSM_CACHE_DIR
+# (or the current working directory when the env var is unset). The identity check in
+# get_cache_file_path relies on the import-time sentinel and the lazy branch producing the
+# same text, so both must build it through this helper.
+def _default_cache_path():
+    return os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
+
+
 # A str subclass used only as the import-time default-cache-path sentinel. Because it is a
 # distinct subclass and a fresh instance, an explicit kms_cache_file_name assignment can
 # never be object-identical to it, so get_cache_file_path detects an override by identity
@@ -1996,11 +2004,9 @@ class KSMCache:
     # if unset, the cache file is created in the current working directory. Assigning
     # kms_cache_file_name directly overrides the full path (backward compatibility); the
     # override is detected by object identity against this sentinel, so it holds even when
-    # the assigned value equals the default text. (Re-assign _default_cache_file_name to
-    # restore the default.)
-    _default_cache_file_name = _DefaultCachePath(
-        os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
-    )
+    # the assigned value equals the default text. (To restore the default, assign
+    # KSMCache.kms_cache_file_name = KSMCache._default_cache_file_name.)
+    _default_cache_file_name = _DefaultCachePath(_default_cache_path())
     kms_cache_file_name = _default_cache_file_name
 
     @classmethod
@@ -2008,7 +2014,7 @@ class KSMCache:
         # Identity check: a same-text path assigned after import still takes precedence over KSM_CACHE_DIR.
         if cls.kms_cache_file_name is not cls._default_cache_file_name:
             return cls.kms_cache_file_name
-        return os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
+        return _default_cache_path()
 
     @staticmethod
     def save_cache(data):

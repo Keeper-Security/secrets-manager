@@ -98,6 +98,38 @@ class CacheTest(unittest.TestCase):
             else:
                 os.environ["KSM_CACHE_DIR"] = original_env
 
+    def test_kms_cache_file_name_override_can_be_restored_to_default(self):
+        """Restoring the default means assigning the sentinel back to kms_cache_file_name.
+
+        Locks in the documented restore path: after
+        KSMCache.kms_cache_file_name = KSMCache._default_cache_file_name, the override is
+        treated as unset again and lazy KSM_CACHE_DIR resolution must take effect. (Assigning
+        anything else, including a plain str with the default text, would keep override
+        semantics; mutating _default_cache_file_name itself is never the way.)
+        """
+        original_override = KSMCache.kms_cache_file_name
+        original_env = os.environ.get("KSM_CACHE_DIR")
+        try:
+            KSMCache.kms_cache_file_name = os.path.join("some", "custom", "path.bin")
+            # The documented restore: assign the sentinel back.
+            KSMCache.kms_cache_file_name = KSMCache._default_cache_file_name
+
+            # After restore, lazy env resolution must work again.
+            lazy_dir = os.path.join("lazy", "dir")
+            os.environ["KSM_CACHE_DIR"] = lazy_dir
+            self.assertEqual(
+                os.path.join(lazy_dir, "ksm_cache.bin"),
+                KSMCache.get_cache_file_path(),
+                "restoring kms_cache_file_name to _default_cache_file_name should "
+                "re-enable lazy KSM_CACHE_DIR resolution",
+            )
+        finally:
+            KSMCache.kms_cache_file_name = original_override
+            if original_env is None:
+                os.environ.pop("KSM_CACHE_DIR", None)
+            else:
+                os.environ["KSM_CACHE_DIR"] = original_env
+
 
     @unittest.skipIf(os.name == 'nt', "file permission bits are not meaningful on Windows")
     def test_save_cache_creates_file_owner_readable_only(self):
