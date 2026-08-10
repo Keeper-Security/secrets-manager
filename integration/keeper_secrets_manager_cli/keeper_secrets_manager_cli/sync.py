@@ -785,6 +785,12 @@ class Sync:
             return "GCP Secret Manager secret ids may contain only letters, digits, '-' and '_' (1 to 255 characters)"
         return None
 
+    def _sanitize_title_for_prefix(self, title):
+        title = title.lstrip("/")
+        if ".." in title.split("/"):
+            return title, "title contains '..' path segment, which is not allowed with --prefix"
+        return title, None
+
     def _resolve_records(self, record_tokens):
         """Resolve record tokens to actual records"""
         if not record_tokens:
@@ -1208,7 +1214,7 @@ class Sync:
         # Return True if we have JSON format keys
         return bool(json_format_kms_keys)
 
-    def _process_aws_records_and_folders(self, result, records, folders, folders_recursive, raw_json, maps):
+    def _process_aws_records_and_folders(self, result, records, folders, folders_recursive, raw_json, maps, prefix=""):
         """Process AWS-specific --record, --folder, and --folder-recursive options and update result list"""
         # Handle record option for AWS
         if records:
@@ -1219,12 +1225,13 @@ class Sync:
             validated_records = []  # List of (record_obj, secret_name)
 
             for record_obj in resolved_records:
-                # Validate record title for AWS compatibility
-                secret_name, error_msg = self._validate_aws_secret_name(record_obj.title)
-
+                safe_title, sanitize_error = self._sanitize_title_for_prefix(record_obj.title)
+                if sanitize_error:
+                    validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}): {sanitize_error}")
+                    continue
+                secret_name, error_msg = self._validate_aws_secret_name(prefix + safe_title)
                 if error_msg:
                     validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}): {error_msg}")
-
                 validated_records.append((record_obj, secret_name))
 
             # If there are validation errors, display them all at once
@@ -1526,14 +1533,14 @@ class Sync:
 
             for rec_tuple in unique_folder_records_with_metadata:
                 record_obj, source_folder_uid, is_recursive = rec_tuple
-
-                # Validate record title for AWS compatibility
-                secret_name, error_msg = self._validate_aws_secret_name(record_obj.title)
-
+                folder_type = "-fr" if is_recursive else "-f"
+                safe_title, sanitize_error = self._sanitize_title_for_prefix(record_obj.title)
+                if sanitize_error:
+                    validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}) from {folder_type} {source_folder_uid}: {sanitize_error}")
+                    continue
+                secret_name, error_msg = self._validate_aws_secret_name(prefix + safe_title)
                 if error_msg:
-                    folder_type = "-fr" if is_recursive else "-f"
                     validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}) from {folder_type} {source_folder_uid}: {error_msg}")
-
                 validated_folder_records.append((record_obj, secret_name, source_folder_uid, is_recursive))
 
             # If there are validation errors, display them all at once
@@ -1602,7 +1609,7 @@ class Sync:
                 if overlapping:
                     raise KsmCliException(f"Duplicate keys found between --map/--record and --folder/--folder-recursive: {', '.join(overlapping)}")
 
-    def sync_values(self, sync_type:str, credentials:str="", dry_run=False, preserve_missing=False, maps=None, records=None, folders=None, folders_recursive=None, raw_json=False):
+    def sync_values(self, sync_type:str, credentials:str="", dry_run=False, preserve_missing=False, maps=None, records=None, folders=None, folders_recursive=None, prefix=None, raw_json=False):
         maps = maps or []
         result = []
 
@@ -1668,7 +1675,7 @@ class Sync:
         if (sync_type == 'aws' or sync_type == 'json') and (records or folders or folders_recursive):
             if sync_type == 'json':
                 click.echo(click.style("Warning: --record, --folder, and --folder-recursive options generate JSON format that is only valid for --type=aws", fg="yellow"), file=sys.stderr)
-            self._process_aws_records_and_folders(result, records, folders, folders_recursive, raw_json, maps)
+            self._process_aws_records_and_folders(result, records, folders, folders_recursive, raw_json, maps, prefix=prefix or "")
 
         if sync_type == 'json':
             # type=json always outputs the dict structure as-is (no stringification)
@@ -1908,12 +1915,33 @@ class Sync:
 
                 # Show what would be in the JSON
                 for mapping in json_mappings:
+                    mapping["original"]["dstValue"] = None
                     if mapping["json_key"] is None:
-                        # Full JSON content (record-based)
-                        mapping["original"]["dstValue"] = current_value
+                        # Full JSON content (record-based). srcValue is a dict here,
+                        # so compare via JSON serialization the same way the real run does.
+                        mapping["original"]["dstExists"] = current_value is not None
+                        if current_value is None:
+                            mapping["original"]["dstDiffers"] = None
+                        else:
+                            src_value = mapping["srcValue"]
+                            src_json = src_value if isinstance(src_value, dict) else json.loads(src_value)
+                            try:
+                                current_json = json.loads(current_value)
+                                current_cmp = json.dumps(
+                                    {k: v for k, v in current_json.items() if k != "_preserved_plaintext"},
+                                    sort_keys=True, separators=(',', ':'))
+                                src_cmp = json.dumps(
+                                    {k: v for k, v in src_json.items() if k != "_preserved_plaintext"},
+                                    sort_keys=True, separators=(',', ':'))
+                                mapping["original"]["dstDiffers"] = current_cmp != src_cmp
+                            except (json.JSONDecodeError, TypeError, AttributeError):
+                                # Destination holds plaintext; the real run rewrites it, so it differs.
+                                mapping["original"]["dstDiffers"] = True
                     else:
                         # Partial JSON content (map-based)
-                        mapping["original"]["dstValue"] = existing_json.get(mapping["json_key"])
+                        existing_val = existing_json.get(mapping["json_key"])
+                        mapping["original"]["dstExists"] = existing_val is not None
+                        mapping["original"]["dstDiffers"] = (existing_val != mapping["srcValue"]) if existing_val is not None else None
 
                 if not res.get("not_found", False) and res.get("error", ""):
                     for mapping in json_mappings:
@@ -2036,7 +2064,9 @@ class Sync:
                 key = m["mapKey"]
                 res = self._get_secret_aws(secretsmanager, key)
                 val = res.get("value", None)
-                m["dstValue"] = val if val else None
+                m["dstValue"] = None
+                m["dstExists"] = val is not None
+                m["dstDiffers"] = (val != m["srcValue"]) if val is not None else None
                 if not res.get("not_found", False) and res.get("error", ""):
                     m["error"] = "Error reading the value from AWS Secrets Manager."
                     self.log.append(f"Error reading the value from AWS Secrets Manager for key={key}")
