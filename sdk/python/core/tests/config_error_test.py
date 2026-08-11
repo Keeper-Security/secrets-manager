@@ -159,6 +159,25 @@ class ConfigErrorTest(unittest.TestCase):
         self.assertIn("None", message)
         self.assertIn("configuration", message.lower())
 
+    # ------------------------------------------------------------------
+    # InMemoryKeyValueStorage must raise KeeperError (not a cryptic
+    # TypeError) when given a malformed base64/JSON config string
+    # ------------------------------------------------------------------
+
+    def test_inmemory_storage_malformed_config_raises_keeper_error(self):
+        """A single-char config string must raise KeeperError, not a cryptic TypeError."""
+        with self.assertRaises(KeeperError) as context:
+            InMemoryKeyValueStorage("A")
+        message = str(context.exception)
+        self.assertIn("Could not load config data", message)
+
+    def test_inmemory_storage_non_json_string_raises_keeper_error(self):
+        """A non-JSON, non-base64 config string raises a clear KeeperError."""
+        with self.assertRaises(KeeperError) as context:
+            InMemoryKeyValueStorage("not a valid config")
+        message = str(context.exception)
+        self.assertIn("Could not load config data", message)
+
     def _make_secrets_manager_with_config(self, config_overrides=None, skip_keys=None):
         """Build a SecretsManager whose InMemoryKeyValueStorage is missing the requested keys."""
         skip_keys = skip_keys or []
