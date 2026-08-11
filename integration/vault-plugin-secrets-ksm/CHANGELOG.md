@@ -6,6 +6,7 @@
 - KSM-607: Upgrade golang.org/x/crypto to 0.37.0 (security fix)
 - KSM-608: Upgrade golang.org/x/net to 0.39.0 (security fix)
 - KSM-640: Upgrade github.com/docker/docker to v28.3.3 (security fix)
+- Upgrade golang.org/x/crypto to 0.53.0, golang.org/x/net to 0.55.0 and google.golang.org/grpc to 1.82.1 (security fixes)
 
 ## 1.0.4
 
