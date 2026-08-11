@@ -34,6 +34,7 @@ see the official docs link above.
 ## Change Log
 
 ### 17.4.0
+* KSM-299 - Fixed `InMemoryKeyValueStorage` raising a cryptic `TypeError: object of type 'NoneType' has no len()` when initialized with a config string that is not valid JSON or base64-encoded JSON. The SDK now raises `KeeperError` with a clear message instead.
 * KSM-1019 - Fixed `KSMCache` silently ignoring an explicit `kms_cache_file_name` assignment when the assigned path equaled the import-time default (regression from KSM-1004). The SDK now detects the override by object identity, so an explicit assignment always takes precedence over `KSM_CACHE_DIR`. Default behavior and `KSM_CACHE_DIR` resolution are unchanged.
 * KSM-1145 - Fixed `get_secrets()` returning duplicate entries when a record is accessible both via a shared folder and as an individual share. The SDK now deduplicates records by UID before returning them.
 * KSM-747 - Fixed records created by non-SDK clients (Commander, Vault UI) inside shared folders silently disappearing from `get_secrets()` results. When the flat `records[]` array contains a record with `innerFolderUid` set, the SDK now decrypts its key using the folder key instead of the app key. This matches the existing behavior for records in `folders[].records[]`.
