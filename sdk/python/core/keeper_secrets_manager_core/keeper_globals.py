@@ -30,8 +30,8 @@ def get_client_version(hardcode=False):
     version id" errors from the backend.
     """
     # Default version for hardcode mode or when all detection methods fail
-    version_major = "17"
-    version_minor_default = "4"
+    version_major = "18"
+    version_minor_default = "0"
     version_revision_default = "0"
     version = "{}.{}.{}".format(version_major, version_minor_default, version_revision_default)
 
@@ -42,6 +42,7 @@ def get_client_version(hardcode=False):
             from keeper_secrets_manager_core._version import __version__
             version_parts = __version__.split(".")
             if len(version_parts) >= 3:
+                version_major = version_parts[0]
                 version_minor = version_parts[1]
                 version_revision = re.search(r'^\d+', version_parts[2]).group()
                 version = "{}.{}.{}".format(version_major, version_minor, version_revision)
@@ -54,6 +55,7 @@ def get_client_version(hardcode=False):
         try:
             ksm_version = _get_pkg_version("keeper-secrets-manager-core")
             version_parts = ksm_version.split(".")
+            version_major = version_parts[0]
             version_minor = version_parts[1]
             version_revision = re.search(r'^\d+', version_parts[2]).group()
             version = "{}.{}.{}".format(version_major, version_minor, version_revision)
