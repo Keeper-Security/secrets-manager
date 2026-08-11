@@ -4,7 +4,7 @@ import unittest
 import unittest.mock
 from http import HTTPStatus
 
-from keeper_secrets_manager_core.core import KSMCache, SecretsManager
+from keeper_secrets_manager_core.core import KSMCache, SecretsManager, _default_cache_path
 from keeper_secrets_manager_core.dto.payload import KSMHttpResponse, TransmissionKey
 
 
@@ -41,6 +41,134 @@ class CacheTest(unittest.TestCase):
                     os.environ.pop("KSM_CACHE_DIR", None)
                 else:
                     os.environ["KSM_CACHE_DIR"] = original
+
+    def test_kms_cache_file_name_override_is_honored(self):
+        """Assigning KSMCache.kms_cache_file_name must override the cache path (backward compat).
+
+        Before the lazy-resolution change this override governed the cache location; cache
+        operations must continue to honor it when it is explicitly set.
+        """
+        original = KSMCache.kms_cache_file_name
+        with tempfile.TemporaryDirectory() as temp_dir:
+            custom_path = os.path.join(temp_dir, "custom_cache.bin")
+            KSMCache.kms_cache_file_name = custom_path
+            try:
+                payload = b"override-bytes"
+                KSMCache.save_cache(payload)
+                self.assertTrue(
+                    os.path.exists(custom_path),
+                    "cache file should be written to the overridden kms_cache_file_name",
+                )
+                self.assertEqual(payload, KSMCache.get_cached_data())
+
+                KSMCache.remove_cache_file()
+                self.assertFalse(
+                    os.path.exists(custom_path),
+                    "remove_cache_file should delete the overridden cache file",
+                )
+            finally:
+                KSMCache.kms_cache_file_name = original
+
+    def test_override_equal_to_default_text_is_still_honored(self):
+        """An explicit kms_cache_file_name override must win even when its text equals the
+        import-time default and KSM_CACHE_DIR is set afterward.
+
+        Regression guard: a value-equality check treated a same-text override as "not set"
+        and silently re-derived the path from KSM_CACHE_DIR. Identity-based detection fixes it.
+        """
+        original_override = KSMCache.kms_cache_file_name
+        original_env = os.environ.get("KSM_CACHE_DIR")
+        try:
+            # A distinct str object whose text equals the import-time default.
+            colliding_override = str(KSMCache._default_cache_file_name)
+            KSMCache.kms_cache_file_name = colliding_override
+            # Env set AFTER the override; the old code re-derived from this and dropped it.
+            os.environ["KSM_CACHE_DIR"] = os.path.join("some", "other", "dir")
+
+            self.assertEqual(
+                colliding_override,
+                KSMCache.get_cache_file_path(),
+                "explicit kms_cache_file_name override must take precedence over "
+                "KSM_CACHE_DIR even when its text equals the default",
+            )
+        finally:
+            KSMCache.kms_cache_file_name = original_override
+            if original_env is None:
+                os.environ.pop("KSM_CACHE_DIR", None)
+            else:
+                os.environ["KSM_CACHE_DIR"] = original_env
+
+    def test_kms_cache_file_name_override_can_be_restored_to_default(self):
+        """Restoring the default means assigning the sentinel back to kms_cache_file_name.
+
+        Locks in the documented restore path: after
+        KSMCache.kms_cache_file_name = KSMCache._default_cache_file_name, the override is
+        treated as unset again and lazy KSM_CACHE_DIR resolution must take effect. (Assigning
+        anything else, including a plain str with the default text, would keep override
+        semantics; mutating _default_cache_file_name itself is never the way.)
+        """
+        original_override = KSMCache.kms_cache_file_name
+        original_env = os.environ.get("KSM_CACHE_DIR")
+        try:
+            KSMCache.kms_cache_file_name = os.path.join("some", "custom", "path.bin")
+            # The documented restore: assign the sentinel back.
+            KSMCache.kms_cache_file_name = KSMCache._default_cache_file_name
+
+            # After restore, lazy env resolution must work again.
+            lazy_dir = os.path.join("lazy", "dir")
+            os.environ["KSM_CACHE_DIR"] = lazy_dir
+            self.assertEqual(
+                os.path.join(lazy_dir, "ksm_cache.bin"),
+                KSMCache.get_cache_file_path(),
+                "restoring kms_cache_file_name to _default_cache_file_name should "
+                "re-enable lazy KSM_CACHE_DIR resolution",
+            )
+        finally:
+            KSMCache.kms_cache_file_name = original_override
+            if original_env is None:
+                os.environ.pop("KSM_CACHE_DIR", None)
+            else:
+                os.environ["KSM_CACHE_DIR"] = original_env
+
+    def test_default_path_without_override_or_env_is_cwd(self):
+        """With no override and no KSM_CACHE_DIR, the cache lives in the current working directory.
+
+        Locks in the untouched-default contract directly: get_cache_file_path returns the
+        bare filename and save_cache writes it into the CWD. Every other test exercises an
+        env var or an override; without this one, a regression in the plain default would
+        go unnoticed.
+        """
+        original_env = os.environ.get("KSM_CACHE_DIR")
+        original_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            try:
+                os.environ.pop("KSM_CACHE_DIR", None)
+                os.chdir(temp_dir)
+
+                self.assertEqual("ksm_cache.bin", KSMCache.get_cache_file_path())
+
+                KSMCache.save_cache(b"default-bytes")
+                self.assertTrue(
+                    os.path.exists(os.path.join(temp_dir, "ksm_cache.bin")),
+                    "with no override and no KSM_CACHE_DIR the cache file should be "
+                    "created in the current working directory",
+                )
+            finally:
+                os.chdir(original_cwd)
+                if original_env is not None:
+                    os.environ["KSM_CACHE_DIR"] = original_env
+
+    def test_default_sentinel_text_matches_lazy_default_path(self):
+        """The sentinel's text must equal what the lazy branch builds under the same env.
+
+        Resolution ignores the sentinel's text (identity only), but kms_cache_file_name is
+        a public attribute consumers may read directly; if the sentinel construction and
+        _default_cache_path() drift apart (say one side re-inlines the expression), the
+        attribute would advertise a path the cache methods never use. Every KSM_CACHE_DIR
+        mutation in this suite restores the import-time value, so comparing against the
+        helper's current output is exact.
+        """
+        self.assertEqual(_default_cache_path(), str(KSMCache._default_cache_file_name))
 
 
     @unittest.skipIf(os.name == 'nt', "file permission bits are not meaningful on Windows")

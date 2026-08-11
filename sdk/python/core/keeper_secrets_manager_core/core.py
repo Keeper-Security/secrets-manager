@@ -1981,16 +1981,40 @@ class SecretsManager:
         return value
 
 
-class KSMCache:
-    # Default cache file name, kept for backward compatibility. The directory is read
-    # lazily from KSM_CACHE_DIR at call time (see get_cache_file_path), so setting the
-    # env var after import is honored. If not set, the cache file is created in the
-    # current working directory.
-    kms_cache_file_name = os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
+# Single source of truth for the default cache path: 'ksm_cache.bin' under KSM_CACHE_DIR
+# (or the current working directory when the env var is unset). The identity check in
+# get_cache_file_path relies on the import-time sentinel and the lazy branch producing the
+# same text, so both must build it through this helper.
+def _default_cache_path():
+    return os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
 
-    @staticmethod
-    def get_cache_file_path():
-        return os.path.join(os.environ.get("KSM_CACHE_DIR", ""), 'ksm_cache.bin')
+
+# A str subclass used only as the import-time default-cache-path sentinel. Because it is a
+# distinct subclass and a fresh instance, an explicit kms_cache_file_name assignment can
+# never be object-identical to it, so get_cache_file_path detects an override by identity
+# rather than value. That holds even when the override's text equals the default. It
+# behaves as an ordinary str everywhere else.
+class _DefaultCachePath(str):
+    pass
+
+
+class KSMCache:
+    # Import-time default cache path. The directory is read lazily from KSM_CACHE_DIR at
+    # call time (see get_cache_file_path), so setting the env var after import is honored;
+    # if unset, the cache file is created in the current working directory. Assigning
+    # kms_cache_file_name directly overrides the full path (backward compatibility); the
+    # override is detected by object identity against this sentinel, so it holds even when
+    # the assigned value equals the default text. (To restore the default, assign
+    # KSMCache.kms_cache_file_name = KSMCache._default_cache_file_name.)
+    _default_cache_file_name = _DefaultCachePath(_default_cache_path())
+    kms_cache_file_name = _default_cache_file_name
+
+    @classmethod
+    def get_cache_file_path(cls):
+        # Identity check: a same-text path assigned after import still takes precedence over KSM_CACHE_DIR.
+        if cls.kms_cache_file_name is not cls._default_cache_file_name:
+            return cls.kms_cache_file_name
+        return _default_cache_path()
 
     @staticmethod
     def save_cache(data):
