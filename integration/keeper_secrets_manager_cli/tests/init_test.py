@@ -310,6 +310,7 @@ class InitTest(unittest.TestCase):
             ('evil\ninjected: pwned', 'newline'),
             ('under_score', 'underscore'),
             ('a' * 254, '254 characters'),
+            ('my-secret\n', 'trailing newline only'),
         ]:
             with self._patched_cli():
                 runner = CliRunner()

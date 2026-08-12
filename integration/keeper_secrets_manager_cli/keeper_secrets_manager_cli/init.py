@@ -25,7 +25,7 @@ import yaml
 # RFC 1123 subdomain, the rule Kubernetes applies to Secret names. Enforced
 # before the name reaches kubectl, which would otherwise read a value starting
 # with '-' as one of its own flags.
-K8S_NAME_PATTERN = re.compile(r'^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$')
+K8S_NAME_PATTERN = re.compile(r'^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?\Z')
 
 
 class Init:
