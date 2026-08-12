@@ -4,11 +4,15 @@ RSpec.describe KeeperSecretsManager::Core::SecretsManager do
   # Use fixed token bytes so we can encrypt mock data with it
   let(:mock_token_bytes) { 'test_token_key_32_bytes_long!!!!' } # Exactly 32 bytes
   let(:mock_token) { 'US:' + Base64.urlsafe_encode64(mock_token_bytes, padding: false) }
+  # A real P-256 key, not random bytes: record creation encrypts the record key to it, so
+  # it has to load as an EC point.
+  let(:owner_keys) { KeeperSecretsManager::Crypto.generate_ecc_keys }
   let(:mock_config) do
     config = KeeperSecretsManager::Storage::InMemoryStorage.new
     config.save_string(KeeperSecretsManager::ConfigKeys::KEY_CLIENT_ID, 'test_client_id')
     config.save_bytes(KeeperSecretsManager::ConfigKeys::KEY_APP_KEY, 'test_app_key')
     config.save_string(KeeperSecretsManager::ConfigKeys::KEY_HOSTNAME, 'fake.keepersecurity.com')
+    config.save_bytes(KeeperSecretsManager::ConfigKeys::KEY_OWNER_PUBLIC_KEY, owner_keys[:public_key_bytes])
     config
   end
 
