@@ -16,6 +16,7 @@ import logging
 import re
 import sys
 import urllib.parse
+from typing import Optional
 import click
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_core.keeper_globals import logger_name
@@ -1880,8 +1881,9 @@ class Sync:
 
         return secretsmanager
 
-    def sync_aws_json_with_client(self, secretsmanager, dry_run=False, preserve_missing=False, maps: list = []):
+    def sync_aws_json_with_client(self, secretsmanager, dry_run=False, preserve_missing=False, maps: Optional[list] = None):
         """Sync to AWS using JSON format with provided client"""
+        maps = maps or []
 
         # Group mappings by KMS key
         kms_groups = {}
@@ -2059,7 +2061,7 @@ class Sync:
 
             self._output(maps, True)
 
-    def sync_aws_json(self, credentials: str = "", dry_run=False, preserve_missing=False, maps: list = []):
+    def sync_aws_json(self, credentials: str = "", dry_run=False, preserve_missing=False, maps: Optional[list] = None):
         """Sync to AWS using JSON format for KMS keys (kms_key+json_key format)"""
         if not maps or len(maps) == 0:
             click.echo(click.style("Nothing to sync - please provide some values with `--map \"key\" \"value\"`", fg="yellow"), file=sys.stderr)
@@ -2069,7 +2071,8 @@ class Sync:
         if secretsmanager:
             self.sync_aws_json_with_client(secretsmanager, dry_run, preserve_missing, maps)
 
-    def sync_aws_with_client(self, secretsmanager, dry_run=False, preserve_missing=False, maps: list = []):
+    def sync_aws_with_client(self, secretsmanager, dry_run=False, preserve_missing=False, maps: Optional[list] = None):
+        maps = maps or []
 
         if dry_run:
             for m in maps:
@@ -2109,7 +2112,7 @@ class Sync:
                         self.logger.error("Failed to set new value for key=" + key)
             self._output(maps, True)
 
-    def sync_aws(self, credentials: str = "", dry_run=False, preserve_missing=False, maps: list = []):
+    def sync_aws(self, credentials: str = "", dry_run=False, preserve_missing=False, maps: Optional[list] = None):
         """Sync to AWS using plain format"""
         if not maps or len(maps) == 0:
             click.echo(click.style("Nothing to sync - please provide some values with `--map \"key\" \"value\"`", fg="yellow"), file=sys.stderr)
