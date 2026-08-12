@@ -15,9 +15,17 @@ from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from .export import Export
 from .config import Config
+from .exception import KsmCliException
+import re
 import subprocess
 import sys
 import yaml
+
+
+# RFC 1123 subdomain, the rule Kubernetes applies to Secret names. Enforced
+# before the name reaches kubectl, which would otherwise read a value starting
+# with '-' as one of its own flags.
+K8S_NAME_PATTERN = re.compile(r'^[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$')
 
 
 class Init:
@@ -52,6 +60,13 @@ class Init:
         self.config = config.get_profile("NA")
 
     def get_k8s(self, name, namespace, apply=False, immutable=False):
+
+        if not K8S_NAME_PATTERN.match(name):
+            raise KsmCliException(
+                "Invalid Kubernetes secret name '{}': must consist of lowercase alphanumeric "
+                "characters or '-', start and end with an alphanumeric character, and be at "
+                "most 253 characters.".format(name)
+            )
 
         base64_config = Export(config=self.config, file_format="json", plain=False).run()
 

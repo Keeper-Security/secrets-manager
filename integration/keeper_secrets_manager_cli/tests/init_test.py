@@ -1,6 +1,7 @@
 import base64
 import os
 import unittest
+from contextlib import contextmanager
 from unittest.mock import patch
 import yaml
 from conftest import CliRunner
@@ -175,7 +176,11 @@ class InitTest(unittest.TestCase):
 
     def test_k8s_name_injection_is_neutralized(self):
 
-        """A newline in --name/--namespace cannot inject manifest content (KSM-1171)."""
+        """A newline in --namespace cannot inject manifest content.
+
+        --name is rejected outright by RFC 1123 validation, so only --namespace
+        still reaches the serializer with arbitrary content.
+        """
 
         mock_config = MockConfig.make_config()
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
@@ -207,25 +212,113 @@ class InitTest(unittest.TestCase):
                     mock_init_config.return_value = init_config
 
                     token = "US:MY_TOKEN"
-                    malicious = "evil\ninjected: pwned"
                     malicious_ns = "evil\nns-injected: pwned"
                     runner = CliRunner()
                     result = runner.invoke(cli, [
                         'init ', 'k8s', token,
-                        '--name', malicious,
+                        '--name', 'mine',
                         '--namespace', malicious_ns,
                         '--immutable'
                     ], catch_exceptions=False)
                     self.assertEqual(0, result.exit_code, "k8s init did not succeed")
 
                     script = yaml.safe_load(StringIO(result.output))
-                    # The injected keys must not appear as manifest content, neither at
+                    # The injected key must not appear as manifest content, neither at
                     # the top level nor inside metadata.
-                    self.assertNotIn("injected", script)
                     self.assertNotIn("ns-injected", script)
                     self.assertEqual({"name", "namespace"}, set(script["metadata"]))
-                    # The malicious values are preserved verbatim as single scalars.
-                    self.assertEqual(malicious, script["metadata"]["name"])
+                    # The malicious value is preserved verbatim as a single scalar.
                     self.assertEqual(malicious_ns, script["metadata"]["namespace"])
                     self.assertEqual("Secret", script.get("kind"))
                     self.assertIs(script.get("immutable"), True)
+
+    @contextmanager
+    def _patched_cli(self):
+
+        """Patch the client entry points so the CLI never hits the network."""
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        init_config = InMemoryKeyValueStorage()
+        init_secrets_manager = SecretsManager(
+            config=init_config,
+            token="MY_TOKEN",
+            hostname="US",
+            verify_ssl_certs=False
+        )
+        init_config.set(ConfigKeys.KEY_APP_KEY, mock_config.get("appKey"))
+
+        res = mock.Response()
+        res.add_record(title="My Record 1")
+        for client in (secrets_manager, init_secrets_manager):
+            queue = mock.ResponseQueue(client=client)
+            queue.add_response(res)
+            queue.add_response(res)
+
+        with patch('keeper_secrets_manager_cli.KeeperCli.get_client', return_value=secrets_manager), \
+                patch('keeper_secrets_manager_cli.init.Init.get_client', return_value=init_secrets_manager), \
+                patch('keeper_secrets_manager_cli.init.Init.init_config', return_value=init_config):
+            yield
+
+    def test_k8s_apply_rejects_dash_name(self):
+
+        """A --name that kubectl would read as one of its own flags is rejected."""
+
+        with self._patched_cli():
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                'init ', 'k8s', '--apply',
+                '--name', '--kubeconfig=/tmp/x',
+                'FAKE_TOKEN'
+            ], catch_exceptions=False)
+
+        self.assertNotEqual(0, result.exit_code, "a flag-shaped name was accepted")
+        self.assertIn("must consist of lowercase alphanumeric", result.output)
+
+    def test_k8s_apply_valid_name(self):
+
+        """A valid --name reaches kubectl as the NAME positional, not as a flag."""
+
+        with self._patched_cli():
+            with patch('keeper_secrets_manager_cli.init.subprocess.run') as mock_run:
+                runner = CliRunner()
+                result = runner.invoke(cli, [
+                    'init ', 'k8s', '--apply',
+                    '--name', 'my-secret',
+                    'FAKE_TOKEN'
+                ], catch_exceptions=False)
+
+        self.assertEqual(0, result.exit_code, result.output)
+        mock_run.assert_called_once()
+
+        argv = mock_run.call_args[0][0]
+        self.assertEqual(["kubectl", "create", "secret", "generic"], argv[:4])
+        # kubectl reads NAME as the only positional, so it has to be its own argv
+        # element and it must not be flag-shaped.
+        self.assertEqual("my-secret", argv[4])
+        self.assertFalse(argv[4].startswith("-"))
+
+    def test_k8s_rejects_invalid_names(self):
+
+        """RFC 1123 validation covers the manifest branch too, not just --apply."""
+
+        for invalid_name, desc in [
+            ('MySecret', 'uppercase'),
+            ('-leading-dash', 'leading dash'),
+            ('trailing-dash-', 'trailing dash'),
+            ('evil\ninjected: pwned', 'newline'),
+            ('under_score', 'underscore'),
+            ('a' * 254, '254 characters'),
+        ]:
+            with self._patched_cli():
+                runner = CliRunner()
+                result = runner.invoke(cli, [
+                    'init ', 'k8s',
+                    '--name', invalid_name,
+                    'FAKE_TOKEN'
+                ], catch_exceptions=False)
+
+            self.assertNotEqual(0, result.exit_code, "expected failure for {}".format(desc))
+            self.assertIn("must consist of lowercase alphanumeric", result.output,
+                          "expected validation error for {}".format(desc))
