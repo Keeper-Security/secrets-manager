@@ -1743,8 +1743,13 @@ class Sync:
             from azure.keyvault.secrets import SecretClient
             from azure.identity import ClientSecretCredential
         except ImportError as ie:
-            click.echo(click.style("Missing Azure dependencies. To install missing packages run: \r\n", fg="red") +
-                click.style("pip3 install azure-identity azure-keyvault-secrets\r\n", fg="yellow"), file=sys.stderr)
+            if getattr(sys, 'frozen', False):
+                click.echo(click.style(
+                    "Missing Azure dependencies. Re-run the installer and enable the "
+                    "'Cloud Sync' component.\r\n", fg="red"), file=sys.stderr)
+            else:
+                click.echo(click.style("Missing Azure dependencies. To install missing packages run: \r\n", fg="red") +
+                    click.style("pip3 install azure-identity azure-keyvault-secrets\r\n", fg="yellow"), file=sys.stderr)
             raise KsmCliException("Missing Azure Dependencies: " + str(ie))
 
         if not maps or len(maps) == 0:
@@ -1832,8 +1837,15 @@ class Sync:
         try:
             import boto3
         except ImportError as ie:
-            click.echo(click.style("Missing AWS dependencies. Install the [aws] extra with: \r\n", fg="red") +
-                click.style("pip install keeper-secrets-manager-cli[aws]\r\n", fg="yellow"), file=sys.stderr)
+            if getattr(sys, 'frozen', False):
+                click.echo(click.style(
+                    "Missing AWS dependencies. Re-run the installer and enable the "
+                    "'Cloud Sync' component.\r\n", fg="red"), file=sys.stderr)
+            else:
+                # Quote the package name for zsh compatibility.
+                # Unquoted [] is a glob pattern in zsh and causes "no matches found" on copy-paste.
+                click.echo(click.style("Missing AWS dependencies. Install the [aws] extra with: \r\n", fg="red") +
+                    click.style("pip install 'keeper-secrets-manager-cli[aws]'\r\n", fg="yellow"), file=sys.stderr)
             raise KsmCliException("Missing AWS Dependencies: " + str(ie))
 
         if not credentials or not str(credentials).strip():
@@ -2112,8 +2124,13 @@ class Sync:
             from google.cloud import secretmanager
             from google.oauth2 import service_account
         except ImportError as ie:
-            click.echo(click.style("Missing GCP dependencies. To install missing packages run: \r\n", fg="red") +
-                click.style("pip3 install --upgrade google-cloud-secret-manager google-auth\r\n", fg="yellow"), file=sys.stderr)
+            if getattr(sys, 'frozen', False):
+                click.echo(click.style(
+                    "Missing GCP dependencies. Re-run the installer and enable the "
+                    "'Cloud Sync' component.\r\n", fg="red"), file=sys.stderr)
+            else:
+                click.echo(click.style("Missing GCP dependencies. To install missing packages run: \r\n", fg="red") +
+                    click.style("pip3 install --upgrade google-cloud-secret-manager google-auth\r\n", fg="yellow"), file=sys.stderr)
             raise KsmCliException("Missing GCP Dependencies: " + str(ie))
 
         if not maps or len(maps) == 0:

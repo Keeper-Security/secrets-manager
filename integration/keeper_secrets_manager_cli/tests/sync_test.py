@@ -1,3 +1,5 @@
+import io
+import sys
 import unittest
 import pytest
 from unittest.mock import Mock, MagicMock, patch
@@ -1356,6 +1358,94 @@ class SyncTest(unittest.TestCase):
                 )
 
         self.assertIn("'..'", str(context.exception))
+
+
+class SyncMissingCloudDependencyTest(unittest.TestCase):
+    """The cloud providers ship as optional dependencies of the CLI.
+
+    A pip install fixes them with a pip command. A frozen binary has no pip, so the
+    only fix is re-running the installer with the 'Cloud Sync' component selected.
+    Each handler picks its advice off sys.frozen.
+    """
+
+    FROZEN_ADVICE = "Cloud Sync"
+
+    AZURE_MODULES = ("azure.keyvault.secrets", "azure.identity")
+    AZURE_PIP = "pip3 install azure-identity azure-keyvault-secrets"
+
+    AWS_MODULES = ("boto3",)
+    AWS_PIP_QUOTED = "pip install 'keeper-secrets-manager-cli[aws]'"
+    AWS_PIP_UNQUOTED = "pip install keeper-secrets-manager-cli[aws]"
+
+    GCP_MODULES = ("google.cloud", "google.oauth2")
+    GCP_PIP = "pip3 install --upgrade google-cloud-secret-manager google-auth"
+
+    def setUp(self):
+        super().setUp()
+        cli_mock = Mock()
+        cli_mock.client = Mock()
+        with patch('keeper_secrets_manager_cli.sync.logging.getLogger') as mock_get_logger:
+            mock_get_logger.return_value = Mock()
+            self.sync = Sync(cli=cli_mock)
+            self.sync.logger = Mock()
+
+        self._had_frozen = hasattr(sys, "frozen")
+        self._frozen_val = getattr(sys, "frozen", None)
+        if self._had_frozen:
+            del sys.frozen
+
+    def tearDown(self):
+        try:
+            if self._had_frozen:
+                sys.frozen = self._frozen_val
+            elif hasattr(sys, "frozen"):
+                del sys.frozen
+        finally:
+            super().tearDown()
+
+    def _stderr_for_missing(self, modules, call):
+        """Run call() with modules unimportable, returning what it wrote to stderr."""
+        captured = io.StringIO()
+        with patch.dict(sys.modules, {name: None for name in modules}), \
+                patch('sys.stderr', captured):
+            with self.assertRaises(KsmCliException):
+                call()
+        return captured.getvalue()
+
+    def test_azure_frozen_binary_names_installer_component(self):
+        sys.frozen = True
+        output = self._stderr_for_missing(self.AZURE_MODULES, self.sync.sync_azure)
+        self.assertIn(self.FROZEN_ADVICE, output)
+        self.assertNotIn("pip", output)
+
+    def test_azure_pip_install_keeps_pip_advice(self):
+        output = self._stderr_for_missing(self.AZURE_MODULES, self.sync.sync_azure)
+        self.assertIn(self.AZURE_PIP, output)
+        self.assertNotIn(self.FROZEN_ADVICE, output)
+
+    def test_aws_frozen_binary_names_installer_component(self):
+        sys.frozen = True
+        output = self._stderr_for_missing(self.AWS_MODULES, self.sync._get_aws_client)
+        self.assertIn(self.FROZEN_ADVICE, output)
+        self.assertNotIn("pip", output)
+
+    def test_aws_pip_install_keeps_pip_advice(self):
+        output = self._stderr_for_missing(self.AWS_MODULES, self.sync._get_aws_client)
+        self.assertIn(self.AWS_PIP_QUOTED, output)
+        self.assertNotIn(self.FROZEN_ADVICE, output)
+        # Unquoted brackets are a glob in zsh, so copy-pasting hits "no matches found".
+        self.assertNotIn(self.AWS_PIP_UNQUOTED, output)
+
+    def test_gcp_frozen_binary_names_installer_component(self):
+        sys.frozen = True
+        output = self._stderr_for_missing(self.GCP_MODULES, self.sync.sync_gcp)
+        self.assertIn(self.FROZEN_ADVICE, output)
+        self.assertNotIn("pip", output)
+
+    def test_gcp_pip_install_keeps_pip_advice(self):
+        output = self._stderr_for_missing(self.GCP_MODULES, self.sync.sync_gcp)
+        self.assertIn(self.GCP_PIP, output)
+        self.assertNotIn(self.FROZEN_ADVICE, output)
 
 
 if __name__ == '__main__':
