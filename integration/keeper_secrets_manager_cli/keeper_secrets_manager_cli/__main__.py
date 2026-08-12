@@ -1629,7 +1629,12 @@ def main():
         if "shell" in sys.argv:
             program_name = ""
 
-        cli(obj={"cli": None}, prog_name=program_name)
+        # KSM-1186: on Windows, click >= 8.0 expands every command-line argument
+        # before parsing (os.path.expanduser, then os.path.expandvars — which
+        # expands %VAR%/$VAR and collapses $$ to $ — then glob), so secret
+        # values passed as arguments were silently corrupted before storage.
+        # Secret values are not shell globs; disable the expansion.
+        cli(obj={"cli": None}, prog_name=program_name, windows_expand_args=False)
     except Exception as err:
         # Set KSM_DEBUG to get a stack trace. Secret env var.
         if os.environ.get("KSM_DEBUG") is not None:
