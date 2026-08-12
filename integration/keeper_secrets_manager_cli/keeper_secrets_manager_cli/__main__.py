@@ -30,7 +30,7 @@ from .folder import Folder
 from .secret import Secret
 from .sync import Sync
 from .profile import Profile
-from .init import Init
+from .init import Init, is_valid_k8s_name, K8S_NAME_ERROR
 from .config import Config
 from .interpolate import Interpolate
 
@@ -243,6 +243,13 @@ def validate_non_empty_or_blank_list(ctx, param, value):
     if isinstance(value, tuple) and next((x for x in value if str(x).strip() == ""), None) is None:
         return value
     raise click.BadParameter("Empty strings are not allowed")
+
+
+def validate_k8s_name(ctx, param, value):
+    """Validate --name against the RFC 1123 subdomain rule Kubernetes applies to Secret names"""
+    if is_valid_k8s_name(value):
+        return value
+    raise click.BadParameter(K8S_NAME_ERROR)
 
 
 class Mutex(click.Option):
@@ -1351,7 +1358,7 @@ def init_command(ctx):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-@click.option('--name', '-n', type=str, help="Name of secret", default='ksm-config')
+@click.option('--name', '-n', type=str, help="Name of secret", default='ksm-config', callback=validate_k8s_name)
 @click.option('--namespace', '--ns', type=str, help="Namespace", default='default')
 @click.option('--hostname', '-h', type=str, help="Hostname of secrets manager server.")
 @click.option('--apply', '-a', is_flag=True, help='Apply to k8s secrets.')
