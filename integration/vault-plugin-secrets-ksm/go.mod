@@ -2,6 +2,8 @@ module github.com/keeper-security/secrets-manager/integration/vault-plugin-secre
 
 go 1.25.0
 
+toolchain go1.25.12
+
 require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/vault/api v1.22.0
