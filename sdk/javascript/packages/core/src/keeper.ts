@@ -14,6 +14,9 @@ const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the clien
 const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
 const KEY_OWNER_PUBLIC_KEY = 'appOwnerPublicKey' // The application owner public key, to create records
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
+// Set in an auth-only storage once binding has succeeded. A unified storage detects binding by the
+// presence of the app key; an auth-only storage never holds the app key, so it needs this marker.
+const KEY_BOUND = 'bound'
 
 // Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
@@ -57,6 +60,22 @@ export type SecretManagerOptions = {
     // Override the sleep between throttle retries (primarily for tests). Defaults to setTimeout.
     throttleSleep?: (milliseconds: number) => Promise<void>
 }
+
+/**
+ * The two capabilities the SDK needs live in disjoint key material, so a configuration can be split
+ * across two clients that each hold only one of them:
+ *
+ *  - AUTHENTICATION (`hostname`, `clientId`, `privateKey`, `serverPublicKey*`, `bound`) - signs and
+ *    sends requests and strips the transmission-key envelope from responses. Sees only ciphertext.
+ *  - DECRYPTION (`hostname`, `clientId`, `appKey`, `appOwnerPublicKey`, and until binding completes
+ *    `clientKey`) - decrypts fetched responses. Never touches the network.
+ *
+ * The split currently covers reads - fetchSecrets/decryptSecrets and fetchFolders/decryptFolders.
+ * Writes are unchanged and still require a single unified configuration.
+ *
+ * This alias marks the operations that need only the authentication role.
+ */
+export type AuthOptions = SecretManagerOptions
 
 // Error classes live in a dependency-free module (errors.ts) to avoid a circular import with
 // utils.ts/platform code that throws them; re-exported here so the public API is unchanged.
@@ -210,7 +229,7 @@ type SecretsManagerDeleteResponseFolder =  {
     responseCode: string
 }
 
-type SecretsManagerResponseFolder = {
+export type SecretsManagerResponseFolder = {
     folderUid: string
     folderKey: string
     data: string
@@ -219,7 +238,7 @@ type SecretsManagerResponseFolder = {
     records: SecretsManagerResponseRecord[]
 }
 
-type SecretsManagerResponseRecord = {
+export type SecretsManagerResponseRecord = {
     recordUid: string
     recordKey: string
     data: string
@@ -229,13 +248,13 @@ type SecretsManagerResponseRecord = {
     links?: KeeperRecordLinkRaw[]
 }
 
-type KeeperRecordLinkRaw = {
+export type KeeperRecordLinkRaw = {
     recordUid: string
     data?: string
     path?: string
 }
 
-type SecretsManagerResponseFile = {
+export type SecretsManagerResponseFile = {
     fileUid: string
     fileKey: string
     data: string
@@ -243,7 +262,7 @@ type SecretsManagerResponseFile = {
     thumbnailUrl: string
 }
 
-type SecretsManagerResponse = {
+export type SecretsManagerResponse = {
     appData: string
     encryptedAppKey?: string  // received only on the first response
     appOwnerPublicKey?: string   // received only on the first response
@@ -511,6 +530,11 @@ const getUidBytes = (): Uint8Array => {
     return bytes
 }
 
+/**
+ * The get payload is built entirely from authentication-role material - client id plus, while still
+ * unbound, the public half of the signing key. Nothing here is derived from the app key, which is why
+ * an authentication-only client can build it.
+ */
 const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryOptions): Promise<GetPayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
@@ -520,8 +544,10 @@ const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryO
         clientVersion: 'ms' + packageVersion,
         clientId: clientId
     }
-    const appKey = await storage.getBytes(KEY_APP_KEY)
-    if (!appKey) {
+    // A unified storage holds the app key once bound; an auth-only storage never does and carries the
+    // `bound` marker instead.
+    const bound = (await storage.getBytes(KEY_APP_KEY)) != null || (await storage.getString(KEY_BOUND)) != null
+    if (!bound) {
         const publicKey = await platform.exportPublicKey(KEY_PRIVATE_KEY, storage)
         payload.publicKey = platform.bytesToBase64(publicKey)
     }
@@ -863,7 +889,44 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
     return keeperRecord
 }
 
-const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
+/**
+ * The serializable hand-off between the two roles: a transport-decrypted response whose record data,
+ * record keys and folder keys are still encrypted under the app key. An authentication-only client
+ * produces this; a decryption-only client consumes it. Safe to send over a wire or persist - it
+ * contains no plaintext secret and no key usable without the app key.
+ */
+export type EncryptedSecrets = {
+    // Bundle format version, so a consumer can reject what it does not understand.
+    version: number
+    // True when this response carried the encrypted app key, i.e. the client just bound.
+    justBound: boolean
+    response: SecretsManagerResponse
+}
+
+export type EncryptedFolders = {
+    version: number
+    response: SecretsManagerResponse
+}
+
+const BUNDLE_VERSION = 1
+
+const assertBundleVersion = (version: number): void => {
+    if (version !== BUNDLE_VERSION) {
+        throw new Error(`Unsupported bundle version ${version}, expected ${BUNDLE_VERSION}`)
+    }
+}
+
+/**
+ * AUTHENTICATION ROLE. Signs and posts a get_secret request and strips the transmission-key
+ * envelope. Requires only an auth configuration; never decrypts record data.
+ */
+export const fetchSecrets = async (options: AuthOptions, queryOptions?: QueryOptions): Promise<EncryptedSecrets> => {
+    return fetchSecretsBundle(options, queryOptions, true)
+}
+
+// `markBound` is set only for the auth-only role, so a unified configuration is left byte-identical
+// to what earlier SDK versions wrote.
+const fetchSecretsBundle = async (options: SecretManagerOptions, queryOptions: QueryOptions | undefined, markBound: boolean): Promise<EncryptedSecrets> => {
     const storage = options.storage
     if (options.serverPublicKey) {
         await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
@@ -874,11 +937,29 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
     const payload = await prepareGetPayload(storage, queryOptions)
     const responseData = await postQuery(options, 'get_secret', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
+    const justBound = response.encryptedAppKey != null
+    if (justBound && markBound) {
+        // The app key itself is opaque to this role; only remember that binding happened, so the
+        // public key is not offered again on the next request.
+        await storage.saveString(KEY_BOUND, 'true')
+    }
+    return {version: BUNDLE_VERSION, justBound, response}
+}
 
+/**
+ * DECRYPTION ROLE. Turns a fetched bundle into plaintext records. Requires only a crypto
+ * configuration; performs no network I/O and no signing. On a binding bundle it also unwraps the app
+ * key with the one-time token's client key and then discards that client key.
+ */
+export const decryptSecrets = async (storage: KeyValueStorage, bundle: EncryptedSecrets): Promise<KeeperSecrets> => {
+    assertBundleVersion(bundle.version)
+    platform.cleanKeyCache()
+    return decryptSecretsResponse(storage, bundle.response)
+}
+
+const decryptSecretsResponse = async (storage: KeyValueStorage, response: SecretsManagerResponse): Promise<KeeperSecrets> => {
     const records: KeeperRecord[] = []
-    let justBound = false
     if (response.encryptedAppKey) {
-        justBound = true
         await platform.unwrap(platform.base64ToBytes(response.encryptedAppKey), KEY_APP_KEY, KEY_CLIENT_KEY, storage)
         await storage.delete(KEY_CLIENT_KEY)
         await storage.saveString(KEY_OWNER_PUBLIC_KEY, response.appOwnerPublicKey!)
@@ -932,7 +1013,14 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
     if (response.extra && Object.keys(response.extra).length > 0) {
         secrets.extra = response.extra
     }
-    return {secrets, justBound}
+    return secrets
+}
+
+// Single-client composition of the two roles, preserved for the original API.
+const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
+    const bundle = await fetchSecretsBundle(options, queryOptions, false)
+    const secrets = await decryptSecretsResponse(options.storage, bundle.response)
+    return {secrets, justBound: bundle.justBound}
 }
 
 const getSharedFolderUid = (folders: SecretsManagerResponseFolder[], parent: string): string | undefined => {
@@ -949,11 +1037,26 @@ const getSharedFolderUid = (folders: SecretsManagerResponseFolder[], parent: str
     }
 };
 
-const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<KeeperFolder[]> => {
-    const storage = options.storage
-    const payload = await prepareGetPayload(storage)
+/**
+ * AUTHENTICATION ROLE. Signs and posts a get_folders request; folder names stay encrypted.
+ */
+export const fetchFolders = async (options: AuthOptions): Promise<EncryptedFolders> => {
+    const payload = await prepareGetPayload(options.storage)
     const responseData = await postQuery(options, 'get_folders', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
+    return {version: BUNDLE_VERSION, response}
+}
+
+/**
+ * DECRYPTION ROLE. Decrypts folder names from a fetched bundle. Performs no network I/O and no signing.
+ */
+export const decryptFolders = async (storage: KeyValueStorage, bundle: EncryptedFolders): Promise<KeeperFolder[]> => {
+    assertBundleVersion(bundle.version)
+    platform.cleanKeyCache()
+    return decryptFoldersResponse(storage, bundle.response)
+}
+
+const decryptFoldersResponse = async (storage: KeyValueStorage, response: SecretsManagerResponse): Promise<KeeperFolder[]> => {
     const folders: KeeperFolder[] = []
     if (response.folders) {
         for (const folder of response.folders) {
@@ -980,18 +1083,44 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
     return folders
 }
 
+// Single-client composition of the two roles, preserved for the original API.
+const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<KeeperFolder[]> => {
+    const bundle = await fetchFolders(options)
+    return decryptFoldersResponse(options.storage, bundle.response)
+}
+
 export const getClientId = async (clientKey: string): Promise<string> => {
     const clientKeyHash = await platform.hash(webSafe64ToBytes(clientKey), CLIENT_ID_HASH_TAG)
     return platform.bytesToBase64(clientKeyHash)
 }
 
-export const initializeStorage = async (
-    storage: KeyValueStorage,
+/**
+ * The non-secret half of a one-time token. Derived by the decryption role and handed to the
+ * authentication role, which cannot derive it itself because that requires the client key. Contains
+ * nothing that decrypts anything.
+ */
+export type AuthBootstrap = {
+    clientId: string
+    hostname: string
+    serverPublicKeyId?: string
+    serverPublicKey?: string
+}
+
+type ParsedToken = {
+    host: string
+    clientKey: string
+    serverPublicKeyId?: string
+    serverPublicKey?: string
+}
+
+const parseOneTimeToken = (
     oneTimeToken: string,
-    hostName?: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au'
-      ) => {
+    hostName?: string
+): ParsedToken => {
     const tokenParts = oneTimeToken.split(':')
     let host, clientKey
+    let serverPublicKeyId: string | undefined
+    let serverPublicKey: string | undefined
     if (tokenParts.length === 1) {
         if (!hostName) {
             throw new Error('The hostname must be present in the token or as a parameter')
@@ -1025,12 +1154,25 @@ export const initializeStorage = async (
                 if (tokenParts[3].length < 80) {
                     throw new Error(`IL5 token: serverPublicKey appears malformed`)
                 }
-                await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, keyId)
-                await storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
+                serverPublicKeyId = keyId
+                serverPublicKey = tokenParts[3]
             }
         }
     }
-    const clientKeyBytes = webSafe64ToBytes(clientKey)
+    return {host, clientKey, serverPublicKeyId, serverPublicKey}
+}
+
+export const initializeStorage = async (
+    storage: KeyValueStorage,
+    oneTimeToken: string,
+    hostName?: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au'
+      ) => {
+    const token = parseOneTimeToken(oneTimeToken, hostName)
+    if (token.serverPublicKeyId) {
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, token.serverPublicKeyId)
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY, token.serverPublicKey!)
+    }
+    const clientKeyBytes = webSafe64ToBytes(token.clientKey)
     const clientKeyHash = await platform.hash(clientKeyBytes, CLIENT_ID_HASH_TAG)
     const clientId = platform.bytesToBase64(clientKeyHash)
     const existingClientId = await storage.getString(KEY_CLIENT_ID)
@@ -1040,9 +1182,71 @@ export const initializeStorage = async (
         }
         throw new Error(`The storage is already initialized with a different client Id (${existingClientId})`)
     }
-    await storage.saveString(KEY_HOSTNAME, host)
+    await storage.saveString(KEY_HOSTNAME, token.host)
     await storage.saveString(KEY_CLIENT_ID, clientId)
     await platform.importKey(KEY_CLIENT_KEY, clientKeyBytes, storage)
+    await platform.generatePrivateKey(KEY_PRIVATE_KEY, storage)
+}
+
+/**
+ * DECRYPTION ROLE. Consumes the one-time token and keeps its client key, which will unwrap the app
+ * key on the first response. No signing key is generated here, so this storage can never authenticate.
+ *
+ * Returns the AuthBootstrap to pass to initializeAuthStorage on the other client.
+ */
+export const initializeCryptoStorage = async (
+    storage: KeyValueStorage,
+    oneTimeToken: string,
+    hostName?: string | 'keepersecurity.com' | 'keepersecurity.eu' | 'keepersecurity.au'
+): Promise<AuthBootstrap> => {
+    const token = parseOneTimeToken(oneTimeToken, hostName)
+    const clientKeyBytes = webSafe64ToBytes(token.clientKey)
+    const clientId = platform.bytesToBase64(await platform.hash(clientKeyBytes, CLIENT_ID_HASH_TAG))
+    const bootstrap: AuthBootstrap = {
+        clientId,
+        hostname: token.host,
+        serverPublicKeyId: token.serverPublicKeyId,
+        serverPublicKey: token.serverPublicKey
+    }
+    const existingClientId = await storage.getString(KEY_CLIENT_ID)
+    if (existingClientId) {
+        if (existingClientId === clientId) {
+            // Already initialized - do not re-import the client key, which binding has since deleted.
+            return bootstrap
+        }
+        throw new Error(`The storage is already initialized with a different client Id (${existingClientId})`)
+    }
+    if (token.serverPublicKeyId) {
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, token.serverPublicKeyId)
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY, token.serverPublicKey!)
+    }
+    await storage.saveString(KEY_HOSTNAME, token.host)
+    await storage.saveString(KEY_CLIENT_ID, clientId)
+    await platform.importKey(KEY_CLIENT_KEY, clientKeyBytes, storage)
+    return bootstrap
+}
+
+/**
+ * AUTHENTICATION ROLE. Generates the signing key pair from the non-secret bootstrap. The one-time
+ * token never reaches this client, so this storage can never derive the app key.
+ */
+export const initializeAuthStorage = async (
+    storage: KeyValueStorage,
+    bootstrap: AuthBootstrap
+): Promise<void> => {
+    const existingClientId = await storage.getString(KEY_CLIENT_ID)
+    if (existingClientId) {
+        if (existingClientId === bootstrap.clientId) {
+            return  // the storage is already initialized
+        }
+        throw new Error(`The storage is already initialized with a different client Id (${existingClientId})`)
+    }
+    if (bootstrap.serverPublicKeyId) {
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, bootstrap.serverPublicKeyId)
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY, bootstrap.serverPublicKey!)
+    }
+    await storage.saveString(KEY_HOSTNAME, bootstrap.hostname)
+    await storage.saveString(KEY_CLIENT_ID, bootstrap.clientId)
     await platform.generatePrivateKey(KEY_PRIVATE_KEY, storage)
 }
 
