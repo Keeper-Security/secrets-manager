@@ -44,7 +44,7 @@ dependencies {
 
     // Azure Key Vault dependencies (upgraded for security fixes)
     implementation("com.azure:azure-identity:1.18.1")
-    implementation("com.azure:azure-security-keyvault-keys:4.10.4")
+    implementation("com.azure:azure-security-keyvault-keys:4.10.6")
 
     // JSON processing
     implementation("com.google.code.gson:gson:2.12.1")
@@ -69,6 +69,17 @@ dependencies {
     // Logging implementation for tests only
     testImplementation("ch.qos.logback:logback-classic:1.2.6")
     testImplementation("ch.qos.logback:logback-core:1.2.6")
+}
+
+configurations.all {
+    resolutionStrategy {
+        // Netty arrives transitively via azure-identity/azure-security-keyvault-keys with no
+        // floor of its own (CVE-2026-45674, DnsResolveContext CNAME bailiwick validation).
+        force("io.netty:netty-common:4.1.135.Final")
+        force("io.netty:netty-handler:4.1.135.Final")
+        force("io.netty:netty-codec-http2:4.1.135.Final")
+        force("io.netty:netty-resolver-dns:4.1.135.Final")
+    }
 }
 
 tasks.jar {
