@@ -4,6 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.2.1
+- KSM-1193 - Security fix: `create_secret` now encrypts the record key to the application owner's public key before sending it, matching the other SDKs. Earlier versions placed the record key in the create payload unencrypted, while the same request carried the record data encrypted under that key. All previously published versions are affected (17.0.3, 17.0.4, 17.1.0, 17.2.0). A record key cannot be changed after creation, so upgrading protects newly created records only; records created by an earlier version must be re-created to place them under a new key.
+
 ## 17.2.0 - 2025-11-14
 - KSM-685 - Fixed `CreateOptions.subfolder_uid` parameter API transmission
 - KSM-686 - Implemented disaster recovery caching with `CachingPostFunction`
