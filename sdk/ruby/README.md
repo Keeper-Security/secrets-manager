@@ -5,9 +5,9 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 17.2.1
-- KSM-1193 - Security fix: `create_secret` now encrypts the record key to the application owner's public key before sending it, matching the other SDKs. Earlier versions placed the record key in the create payload unencrypted, while the same request carried the record data encrypted under that key. All previously published versions are affected (17.0.3, 17.0.4, 17.1.0, 17.2.0). A record key cannot be changed after creation, so upgrading protects newly created records only; records created by an earlier version must be re-created to place them under a new key.
+- KSM-1193 - Security fix: `create_secret` now encrypts the record key to the application owner's public key before sending it, matching the other SDKs. Earlier versions placed the record key in the create payload without that wrap, while the same request carried the record data encrypted under it. All previously published versions are affected (17.0.3, 17.0.4, 17.1.0, 17.2.0). A record key cannot be changed after creation, so upgrading protects newly created records only; records created by an earlier version must be re-created to place them under a new key. `create_secret` now raises an error if the application configuration has no `appOwnerPublicKey`. This key is only persisted during binding, so an already-bound configuration cannot acquire it after the fact; re-bind with a fresh one-time token, or set the `KSM_APPOWNERPUBLICKEY` environment variable when using the read-only `EnvironmentStorage`.
 
-## 17.2.0 - 2025-11-14
+## 17.2.0
 - KSM-685 - Fixed `CreateOptions.subfolder_uid` parameter API transmission
 - KSM-686 - Implemented disaster recovery caching with `CachingPostFunction`
 - KSM-687 - Added missing DTO fields for complete SDK parity (links, is_editable, inner_folder_uid, thumbnail_url, last_modified, expires_on)
@@ -25,7 +25,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - Fixed example files to use correct SDK APIs
 - Improved mock infrastructure with proper AES-256-GCM encryption
 
-## 17.1.0 - 2025-01-06
+## 17.1.0
 - **BREAKING**: Minimum Ruby version increased to 3.1.0 (from 2.6.0)
 - Fixed ECC key generation to return 32-byte raw private keys
 - Fixed `update_secret` to correctly encrypt and persist changes

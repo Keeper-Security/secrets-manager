@@ -2,8 +2,8 @@
 
 ## [17.2.1]
 
-### Fixed
-- **KSM-1193**: `create_secret` now encrypts the record key to the application owner's public key before sending it, matching the other SDKs. Previously the record key was placed in the create payload unencrypted, while the same request carried the record data encrypted under that key. All earlier published versions are affected: 17.0.3, 17.0.4, 17.1.0 and 17.2.0. A record key cannot be changed after creation, so upgrading protects newly created records only; existing records must be re-created to place them under a new key. `create_secret` now also raises an error when the application configuration has no owner public key, instead of continuing without the encryption step.
+### Security
+- **KSM-1193**: `create_secret` now encrypts the record key to the application owner's public key before sending it, matching the other SDKs. Previously the record key was placed in the create payload without that wrap, while the same request carried the record data encrypted under it. All earlier published versions are affected: 17.0.3, 17.0.4, 17.1.0 and 17.2.0; 17.0.0-17.0.2 were never published to RubyGems. A record key cannot be changed after creation, so upgrading protects newly created records only; records created by an earlier version must be re-created to place them under a new key. `create_secret` now also raises an error when the application configuration has no owner public key, instead of continuing without the encryption step.
 
 ## [17.2.0]
 
@@ -80,7 +80,7 @@
   - Removed emojis from all example files for professional appearance
 - **Dependencies:** Added base32 gem to test dependencies for TOTP support
 
-## [17.1.0] - 2025-01-06
+## [17.1.0]
 
 ### Changed
 - **BREAKING**: Minimum Ruby version increased to 3.1.0 (from 2.6.0)
@@ -99,28 +99,28 @@
 - `create_folder` now properly encrypts folder key with AES-CBC and sets correct parent_uid (nil for root-level folders)
 - Fixed AES-CBC encryption to not double-pad data (OpenSSL handles padding automatically)
 
-## [17.0.4] - 2025-10-20
+## [17.0.4]
 
 ### Changed
 - Maintenance release with internal improvements
 
-## [17.0.3] - 2025-06-25
+## [17.0.3]
 
 ### Changed
 - Cleaned up directory structure
 - Removed development and debug files from distribution
 
-## [17.0.2] - 2025-06-25
+## [17.0.2]
 
 ### Security
 - Updated all examples to use environment variables or placeholders
 
-## [17.0.1] - 2025-06-25
+## [17.0.1]
 
 ### Fixed
 - Added missing files to gem package (folder_manager, notation_enhancements, totp)
 
-## [17.0.0] - 2025-06-25
+## [17.0.0]
 
 ### Added
 - Initial release of Keeper Secrets Manager Ruby SDK
@@ -135,4 +135,5 @@
 - Version 17.0.0 to align with other Keeper SDKs
 - No runtime dependencies (base32 is optional)
 
+[17.2.1]: https://github.com/Keeper-Security/secrets-manager/compare/ruby-sdk-v17.2.0...ruby-sdk-v17.2.1
 [17.2.0]: https://github.com/Keeper-Security/secrets-manager/compare/ruby-sdk-v17.1.0...ruby-sdk-v17.2.0

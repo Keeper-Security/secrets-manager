@@ -15,7 +15,7 @@ Gem::Specification.new do |spec|
   spec.metadata['allowed_push_host'] = 'https://rubygems.org'
   spec.metadata['homepage_uri'] = spec.homepage
   spec.metadata['source_code_uri'] = 'https://github.com/Keeper-Security/secrets-manager'
-  spec.metadata['changelog_uri'] = 'https://github.com/Keeper-Security/secrets-manager/blob/master/CHANGELOG.md'
+  spec.metadata['changelog_uri'] = 'https://github.com/Keeper-Security/secrets-manager/blob/master/sdk/ruby/CHANGELOG.md'
 
   # Specify which files should be added to the gem when it is released.
   spec.files = Dir.chdir(File.expand_path(__dir__)) do
