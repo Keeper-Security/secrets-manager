@@ -3,7 +3,7 @@
 ## [17.3.0]
 
 ### Fixed
-- **KSM-1193**: `create_secret` now encrypts the record key to the application owner's public key before sending it, matching the other SDKs. Previously the record key was placed in the create payload unencrypted, while the same request carried the record data encrypted under that key. Records created by versions 17.1.0 and 17.2.0 are affected. A record key cannot be changed after creation, so upgrading protects newly created records only; existing records must be re-created to place them under a new key. `create_secret` now also raises an error when the application configuration has no owner public key, instead of continuing without the encryption step.
+- **KSM-1193**: `create_secret` now encrypts the record key to the application owner's public key before sending it, matching the other SDKs. Previously the record key was placed in the create payload unencrypted, while the same request carried the record data encrypted under that key. All earlier published versions are affected: 17.0.3, 17.0.4, 17.1.0 and 17.2.0. A record key cannot be changed after creation, so upgrading protects newly created records only; existing records must be re-created to place them under a new key. `create_secret` now also raises an error when the application configuration has no owner public key, instead of continuing without the encryption step.
 
 ## [17.2.0]
 
