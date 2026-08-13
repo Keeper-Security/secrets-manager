@@ -33,7 +33,6 @@ def caching_post_function(
 
 secrets_manager = SecretsManager(
     config=FileKeyValueStorage('ksm-config.json'),
-    verify_ssl_certs=False,
     custom_post_function=caching_post_function
 )
 
