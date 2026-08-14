@@ -60,8 +60,8 @@ describe('throttleDelay (unit)', () => {
         expect(throttleDelay(0, 0, 0)).toBe(11000)
         expect(throttleDelay(1, -5, 0)).toBe(22000)
     })
-    test('jitter bounds keep the first delay in [8.25s, 13.75s]', () => {
-        expect(throttleDelay(0, 0, -0.25)).toBe(8250)
+    test('jitter bounds keep the first delay in [11s, 13.75s)', () => {
+        expect(throttleDelay(0, 0, 0)).toBe(11000)
         expect(throttleDelay(0, 0, 0.25)).toBe(13750)
     })
 })

@@ -96,7 +96,7 @@ export const parseThrottle = (body: string): number | null => {
 /**
  * Computes the backoff delay (milliseconds) for a 0-based `attempt`: `retryAfter` seconds when
  * provided (> 0), otherwise exponential backoff (BASE_THROTTLE_DELAY_SEC * 2**attempt -> 11, 22,
- * 44, 88, 176s). The `jitter` fraction (typically in [-0.25, 0.25)) is then applied.
+ * 44, 88, 176s). The `jitter` fraction (typically in [0, 0.25)) is then applied.
  */
 export const throttleDelay = (attempt: number, retryAfter: number, jitter: number = throttleJitter()): number => {
     const baseSec = retryAfter > 0 ? retryAfter : BASE_THROTTLE_DELAY_SEC * Math.pow(2, attempt)
