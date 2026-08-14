@@ -34,7 +34,6 @@ see the official docs link above.
 ## Change Log
 
 ### 17.4.0
-* KSM-1140 - Added full PAM connection settings field coverage to the CLI helper schema. `PamSettings.connection` now includes all `PamSettingsConnection` fields (RDP, SSH/Terminal, VNC, database, Telnet, Kubernetes, and SFTP sub-settings), `PamSettingsPortForward` gains `useSpecifiedLocalPort`, `localPort`, and `allowKeeperDBProxy`, and `PamRemoteBrowserSettings` gains audio control and browser session fields (`disableAudio`, `disableCopy`, `disablePaste`, `audioChannels`, `audioBps`, `audioSampleRate`, `sessionPersistence`, `allowFileUploads`, `allowFileDownloads`).
 * KSM-1145 - Fixed `get_secrets()` returning duplicate entries when a record is accessible both via a shared folder and as an individual share. The SDK now deduplicates records by UID before returning them.
 * KSM-747 - Fixed records created by non-SDK clients (Commander, Vault UI) inside shared folders silently disappearing from `get_secrets()` results. When the flat `records[]` array contains a record with `innerFolderUid` set, the SDK now decrypts its key using the folder key instead of the app key. This matches the existing behavior for records in `folders[].records[]`.
 * KSM-1080 - Fixed `get_folders()` crashing when any folder in the response contains a corrupted or missing key. Undecryptable folders are now skipped with a warning. The remaining folders are returned normally.
