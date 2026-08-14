@@ -1,7 +1,7 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey} from './platform'
 import {webSafe64FromBytes, webSafe64ToBytes, tryParseInt} from './utils'
 import {parseNotation} from './notation'
-import {KeeperThrottleError} from './errors'
+import {KeeperError, KeeperThrottleError} from './errors'
 
 export {KeyValueStorage} from './platform'
 
@@ -820,15 +820,19 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                 let errorObj: KeeperApiError | null = null
                 try { errorObj = JSON.parse(errorMessage) } catch {}
                 if (errorObj?.error === 'key') {
+                    const suggestedKeyId = errorObj.key_id
+                    if (typeof suggestedKeyId !== 'number' || !Number.isInteger(suggestedKeyId) || suggestedKeyId <= 0) {
+                        throw new KeeperError(`Server key error response contains invalid key_id: ${JSON.stringify(suggestedKeyId)}`)
+                    }
                     const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
                     if (customKey) {
                         const currentKeyId = await options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-                        throw new Error(`Server rejected the custom server public key (id ${currentKeyId}). The server suggested key id ${errorObj.key_id}. Please update your IL5 KSM configuration.`)
+                        throw new KeeperError(`Server rejected the custom server public key (id ${currentKeyId}). The server suggested key id ${suggestedKeyId}. Please update your IL5 KSM configuration.`)
                     }
                     if (keyRotationAttempt >= MAX_KEY_ROTATION_RETRIES) {
-                        throw new Error(`Server key rotation exhausted ${MAX_KEY_ROTATION_RETRIES} retries; suggested key id ${errorObj.key_id} was not accepted`)
+                        throw new KeeperError(`Server key rotation exhausted ${MAX_KEY_ROTATION_RETRIES} retries; suggested key id ${suggestedKeyId} was not accepted`)
                     }
-                    await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, errorObj.key_id!.toString())
+                    await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, suggestedKeyId.toString())
                     keyRotationAttempt++
                     continue
                 }

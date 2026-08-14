@@ -321,27 +321,38 @@ test('IL5 dynamic key - server key rotation retries are bounded, not infinite', 
     const storage = inMemoryStorage({})
     await initializeStorage(storage, 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c', 'fake.keepersecurity.com')
     let calls = 0
+    const enc = new TextEncoder()
+    const keyError = { statusCode: 400, data: enc.encode(JSON.stringify({ error: 'key', key_id: 7 })), headers: [] }
     const options: SecretManagerOptions = {
         storage,
-        queryFunction: async () => {
-            calls++
-            // Safety net only: without a bound, this branch never throws a matching error on its
-            // own and the loop would otherwise run until the test times out.
-            if (calls > 50) {
-                throw new Error('TEST_GUARD_UNBOUNDED_LOOP')
-            }
-            // key_id 7 is a real supported key number so the loop keeps re-entering the
-            // key-rotation branch itself, rather than tripping over an unrelated "unsupported
-            // key number" error from generateTransmissionKey.
-            return {
-                statusCode: 400,
-                data: new TextEncoder().encode(JSON.stringify({ error: 'key', key_id: 7 })),
-                headers: []
-            }
-        }
+        // key_id 7 is a real supported key number so each retry re-enters the key-rotation branch
+        // rather than tripping over an unrelated "unsupported key number" error.
+        queryFunction: async () => { calls++; return keyError }
     }
     await expect(getSecrets(options)).rejects.toThrow(/key rotation exhausted/i)
-    expect(calls).toBeLessThanOrEqual(10)
+    // MAX_KEY_ROTATION_RETRIES = 3: initial attempt + 3 retries = 4 total calls.
+    expect(calls).toBe(4)
+})
+
+test('IL5 dynamic key - single key rotation succeeds on retry', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c', 'fake.keepersecurity.com')
+    let calls = 0
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async (_url, tk) => {
+            calls++
+            if (calls === 1) {
+                return { statusCode: 400, data: enc.encode(JSON.stringify({ error: 'key', key_id: 7 })), headers: [] }
+            }
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    const secrets = await getSecrets(options)
+    expect(secrets.records).toEqual([])
+    expect(calls).toBe(2)
 })
 
 test('stale pinned server key: diagnostic message propagates to caller, key preserved', async () => {
