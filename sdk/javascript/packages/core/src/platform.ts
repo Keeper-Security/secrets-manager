@@ -49,7 +49,12 @@ export type TransmissionKey = {
 
 export type EncryptedPayload = {
     payload: Uint8Array
-    signature: Uint8Array
+    // Complete value of the Authorization header, produced by the Authorizer that prepared this
+    // payload, e.g. 'Signature <base64>' or 'Bearer <token>'.
+    authorization?: string
+    // The raw EC signature. Filled only by the native signature scheme; kept so custom
+    // queryFunctions written against older SDK versions keep working.
+    signature?: Uint8Array
 }
 
 export type KeeperHttpResponse = {

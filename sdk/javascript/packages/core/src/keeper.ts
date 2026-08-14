@@ -14,6 +14,7 @@ const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the clien
 const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
 const KEY_OWNER_PUBLIC_KEY = 'appOwnerPublicKey' // The application owner public key, to create records
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
+const KEY_BEARER_TOKEN = 'bearerToken' // The bearer credential, when the client uses the bearer auth scheme
 // Set in an auth-only storage once binding has succeeded. A unified storage detects binding by the
 // presence of the app key; an auth-only storage never holds the app key, so it needs this marker.
 const KEY_BOUND = 'bound'
@@ -53,6 +54,9 @@ export const initialize = (pkgVersion?: string) => {
 
 export type SecretManagerOptions = {
     storage: KeyValueStorage
+    // How requests prove their identity to the Secrets Manager service. Defaults to signatureAuth,
+    // the native scheme (EC signature with the private key held in `storage`).
+    authorizer?: Authorizer
     queryFunction?: (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean) => Promise<KeeperHttpResponse>
     allowUnverifiedCertificate?: boolean
     serverPublicKey?: string
@@ -60,6 +64,92 @@ export type SecretManagerOptions = {
     // Override the sleep between throttle retries (primarily for tests). Defaults to setTimeout.
     throttleSleep?: (milliseconds: number) => Promise<void>
 }
+
+/**
+ * A single request as seen by an Authorizer: the two ciphertext blobs that go on the wire. The
+ * native scheme signs their concatenation; schemes carrying an external credential ignore them.
+ */
+export type AuthorizeRequest = {
+    encryptedTransmissionKey: Uint8Array
+    encryptedPayload: Uint8Array
+}
+
+/**
+ * An authentication scheme for the Secrets Manager service. Authentication is deliberately decoupled
+ * from decryption (see AuthOptions below): an Authorizer proves *who is asking* and never touches the
+ * app key, so swapping schemes cannot affect the zero-knowledge properties of record data.
+ *
+ * Two schemes ship with the SDK:
+ *  - signatureAuth (default) - the native scheme; per-request EC signature with the stored private key.
+ *  - bearerAuth - RFC 6750 style `Authorization: Bearer <token>`; the token is provisioned when the
+ *    device is added to the application and lives in the auth configuration. NOTE: server-side
+ *    acceptance of non-native schemes is a future capability - see the scheme's doc comment.
+ */
+export type Authorizer = {
+    // Scheme discriminator, e.g. 'signature' or 'bearer'. Diagnostic only - the server dispatches on
+    // the Authorization header itself.
+    kind: string
+    // Called once by initializeAuthStorage/initializeStorage to create whatever local state the
+    // scheme needs (the native scheme generates its key pair here). No-op for credential-based schemes.
+    setup(storage: KeyValueStorage): Promise<void>
+    // The public key to include in the binding (first) request, or undefined when the scheme has no
+    // key pair to enroll. Called only while the client is unbound.
+    bindingPublicKey(storage: KeyValueStorage): Promise<Uint8Array | undefined>
+    // Produces the complete Authorization header value for one request.
+    authorize(request: AuthorizeRequest, storage: KeyValueStorage): Promise<string>
+}
+
+/** The native scheme: sign encryptedTransmissionKey + encryptedPayload with the stored private key. */
+export const signatureAuth: Authorizer = {
+    kind: 'signature',
+    setup: storage => platform.generatePrivateKey(KEY_PRIVATE_KEY, storage),
+    bindingPublicKey: storage => platform.exportPublicKey(KEY_PRIVATE_KEY, storage),
+    authorize: async (request, storage) => {
+        const signatureBase = new Uint8Array(request.encryptedTransmissionKey.length + request.encryptedPayload.length)
+        signatureBase.set(request.encryptedTransmissionKey, 0)
+        signatureBase.set(request.encryptedPayload, request.encryptedTransmissionKey.length)
+        const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
+        return `Signature ${platform.bytesToBase64(signature)}`
+    }
+}
+
+/**
+ * Bearer token scheme. The token is generated when the device is added to the application and
+ * registered with the service right there, alongside the (encrypted) app key - so unlike the native
+ * scheme nothing is enrolled on the first call, and the same token authenticates every call until
+ * the admin rotates it.
+ *
+ * The client receives the token once, next to the one-time token: pass it here during initialization
+ * and initializeAuthStorage persists it in the auth configuration; later runs can construct
+ * bearerAuth() with no argument and the stored token is used. A callback can be passed instead when
+ * the credential is managed outside the configuration - it is invoked per request and never stored.
+ *
+ * NOTE: this expresses the client half only. The Secrets Manager endpoint accepts the native
+ * signature scheme today; bearer requests will be rejected until the service side lands.
+ */
+export const bearerAuth = (token?: string | (() => Promise<string>)): Authorizer => ({
+    kind: 'bearer',
+    setup: async storage => {
+        if (typeof token === 'string') {
+            await storage.saveString(KEY_BEARER_TOKEN, token)
+        }
+    },
+    bindingPublicKey: async () => undefined,
+    authorize: async (request, storage) => {
+        if (typeof token === 'function') {
+            return `Bearer ${await token()}`
+        }
+        // An explicitly passed token wins over the stored one; the stored one serves the runs that
+        // construct bearerAuth() with no argument.
+        const effective = token ?? await storage.getString(KEY_BEARER_TOKEN)
+        if (!effective) {
+            throw new Error('Bearer token is missing from the configuration')
+        }
+        return `Bearer ${effective}`
+    }
+})
+
+const authorizerOf = (options: SecretManagerOptions): Authorizer => options.authorizer ?? signatureAuth
 
 /**
  * The two capabilities the SDK needs live in disjoint key material, so a configuration can be split
@@ -532,10 +622,11 @@ const getUidBytes = (): Uint8Array => {
 
 /**
  * The get payload is built entirely from authentication-role material - client id plus, while still
- * unbound, the public half of the signing key. Nothing here is derived from the app key, which is why
- * an authentication-only client can build it.
+ * unbound, whatever the auth scheme enrolls with (the native scheme's public key; nothing for
+ * credential-based schemes). Nothing here is derived from the app key, which is why an
+ * authentication-only client can build it.
  */
-const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryOptions): Promise<GetPayload> => {
+const prepareGetPayload = async (storage: KeyValueStorage, authorizer: Authorizer, queryOptions?: QueryOptions): Promise<GetPayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
@@ -548,8 +639,10 @@ const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryO
     // `bound` marker instead.
     const bound = (await storage.getBytes(KEY_APP_KEY)) != null || (await storage.getString(KEY_BOUND)) != null
     if (!bound) {
-        const publicKey = await platform.exportPublicKey(KEY_PRIVATE_KEY, storage)
-        payload.publicKey = platform.bytesToBase64(publicKey)
+        const publicKey = await authorizer.bindingPublicKey(storage)
+        if (publicKey) {
+            payload.publicKey = platform.bytesToBase64(publicKey)
+        }
     }
     if (queryOptions?.recordsFilter) {
         payload.requestedRecords = queryOptions.recordsFilter
@@ -756,12 +849,24 @@ const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: K
     }
 }
 
+// Builds the Authorization header for a prepared payload. Prefers the scheme-produced value; falls
+// back to the native format for payloads built by custom code that only fills `signature`.
+export const authorizationHeader = (payload: EncryptedPayload): string => {
+    if (payload.authorization) {
+        return payload.authorization
+    }
+    if (!payload.signature) {
+        throw new Error('The payload carries neither an authorization nor a signature')
+    }
+    return `Signature ${platform.bytesToBase64(payload.signature)}`
+}
+
 export const postFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse> => {
     return platform.post(url, payload.payload,
         {
             PublicKeyId: transmissionKey.publicKeyId.toString(),
             TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
-            Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
+            Authorization: authorizationHeader(payload)
         }, allowUnverifiedCertificate)
 }
 
@@ -787,14 +892,22 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
     }
 }
 
-const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload | FileUploadPayload): Promise<EncryptedPayload> => {
+// Encrypts the payload with the per-request transmission key and lets the authorizer produce the
+// Authorization header over the resulting ciphertexts. For the native scheme the raw signature is
+// also kept on the result for older custom queryFunctions.
+const encryptAndAuthorizePayload = async (storage: KeyValueStorage, authorizer: Authorizer, transmissionKey: TransmissionKey, payload: AnyPayload): Promise<EncryptedPayload> => {
     const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
     const encryptedPayload = await platform.encryptWithKey(payloadBytes, transmissionKey.key)
-    const signatureBase = new Uint8Array(transmissionKey.encryptedKey.length + encryptedPayload.length)
-    signatureBase.set(transmissionKey.encryptedKey, 0)
-    signatureBase.set(encryptedPayload, transmissionKey.encryptedKey.length)
-    const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
-    return {payload: encryptedPayload, signature}
+    const authorization = await authorizer.authorize({
+        encryptedTransmissionKey: transmissionKey.encryptedKey,
+        encryptedPayload: encryptedPayload
+    }, storage)
+    const result: EncryptedPayload = {payload: encryptedPayload, authorization}
+    const signaturePrefix = 'Signature '
+    if (authorization.startsWith(signaturePrefix)) {
+        result.signature = platform.base64ToBytes(authorization.slice(signaturePrefix.length))
+    }
+    return result
 }
 const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
     if (options.serverPublicKey) {
@@ -812,7 +925,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
     let throttleAttempt = 0
     while (true) {
         const transmissionKey = await generateTransmissionKey(options.storage)
-        const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
+        const encryptedPayload = await encryptAndAuthorizePayload(options.storage, authorizerOf(options), transmissionKey, payload)
         const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate)
         if (response.statusCode !== 200) {
             let errorMessage
@@ -934,7 +1047,7 @@ const fetchSecretsBundle = async (options: SecretManagerOptions, queryOptions: Q
     if (options.serverPublicKeyId) {
         await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
     }
-    const payload = await prepareGetPayload(storage, queryOptions)
+    const payload = await prepareGetPayload(storage, authorizerOf(options), queryOptions)
     const responseData = await postQuery(options, 'get_secret', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
     const justBound = response.encryptedAppKey != null
@@ -1041,7 +1154,7 @@ const getSharedFolderUid = (folders: SecretsManagerResponseFolder[], parent: str
  * AUTHENTICATION ROLE. Signs and posts a get_folders request; folder names stay encrypted.
  */
 export const fetchFolders = async (options: AuthOptions): Promise<EncryptedFolders> => {
-    const payload = await prepareGetPayload(options.storage)
+    const payload = await prepareGetPayload(options.storage, authorizerOf(options))
     const responseData = await postQuery(options, 'get_folders', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
     return {version: BUNDLE_VERSION, response}
@@ -1227,12 +1340,15 @@ export const initializeCryptoStorage = async (
 }
 
 /**
- * AUTHENTICATION ROLE. Generates the signing key pair from the non-secret bootstrap. The one-time
- * token never reaches this client, so this storage can never derive the app key.
+ * AUTHENTICATION ROLE. Sets up the auth scheme's local state from the non-secret bootstrap - the
+ * native scheme generates its signing key pair here; credential-based schemes such as bearerAuth
+ * store nothing beyond hostname and clientId. The one-time token never reaches this client, so this
+ * storage can never derive the app key.
  */
 export const initializeAuthStorage = async (
     storage: KeyValueStorage,
-    bootstrap: AuthBootstrap
+    bootstrap: AuthBootstrap,
+    authorizer: Authorizer = signatureAuth
 ): Promise<void> => {
     const existingClientId = await storage.getString(KEY_CLIENT_ID)
     if (existingClientId) {
@@ -1247,7 +1363,7 @@ export const initializeAuthStorage = async (
     }
     await storage.saveString(KEY_HOSTNAME, bootstrap.hostname)
     await storage.saveString(KEY_CLIENT_ID, bootstrap.clientId)
-    await platform.generatePrivateKey(KEY_PRIVATE_KEY, storage)
+    await authorizer.setup(storage)
 }
 
 export const getSecrets = async (options: SecretManagerOptions, recordsFilter?: string[]): Promise<KeeperSecrets> => {

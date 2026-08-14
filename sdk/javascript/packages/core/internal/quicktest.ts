@@ -23,7 +23,9 @@ const oneTimeToken = 'US:ONE_TIME_TOKEN'
 
 async function test() {
     const kvs = localConfigStorage(configFileName)
-    await initializeStorage(kvs, oneTimeToken)
+    if (oneTimeToken != 'US:ONE_TIME_TOKEN') {
+        await initializeStorage(kvs, oneTimeToken)
+    }
     const options: SecretManagerOptions = {
         storage: kvs,
         // queryFunction: cachingPostFunction

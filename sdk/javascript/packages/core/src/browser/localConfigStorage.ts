@@ -1,4 +1,5 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, TransmissionKey, platform} from "../platform";
+import {authorizationHeader} from "../keeper";
 
 export const localConfigStorage = (client: string, useObjects: boolean): KeyValueStorage => {
 
@@ -155,7 +156,7 @@ export function createCachingFunction(storage: KeyValueStorage): (url: string, t
             const response = await platform.post(url, payload.payload, {
                 PublicKeyId: transmissionKey.publicKeyId.toString(),
                 TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
-                Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
+                Authorization: authorizationHeader(payload)
             })
             if (response.statusCode == 200) {
                 await storage.saveBytes('cache', new Uint8Array([...transmissionKey.key, ...response.data]))

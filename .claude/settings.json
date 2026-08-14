@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "../keeperapp"
+    ],
+    "allow": [
+      "Read(../keeperapp/**)"
+    ]
+  }
+}

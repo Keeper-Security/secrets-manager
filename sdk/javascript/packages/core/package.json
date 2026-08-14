@@ -15,6 +15,7 @@
     "pretest": "rollup -c --bundleConfigAsCjs",
     "test": "jest",
     "quicktest": "ts-node internal/quicktest.ts",
+    "quicktest-split": "ts-node internal/quicktest-split.ts",
     "prepublishOnly": "rollup -c --bundleConfigAsCjs",
     "publish-to-npm": "npm publish"
   },
