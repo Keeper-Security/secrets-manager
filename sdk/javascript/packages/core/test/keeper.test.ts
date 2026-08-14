@@ -405,3 +405,95 @@ test('getFolders skips an undecryptable folder and returns the good one', async 
     expect(folders[0].folderUid).toBe('good-uid')
     expect(folders[0].name).toBe('Good Folder')
 })
+
+test('flat record with innerFolderUid decrypts recordKey using the folder key, not the app key', async () => {
+    const transmissionKey = new Uint8Array(32).fill(1)
+    const appKey = new Uint8Array(32).fill(2)
+    const folderKey = new Uint8Array(32).fill(3)
+    const recordKey = new Uint8Array(32).fill(4)
+    const folderUid = 'folder-uid-1'
+    const recordUid = 'record-uid-1'
+
+    const wrappedFolderKey = await platform.encryptWithKey(folderKey, appKey)
+    const wrappedRecordKey = await platform.encryptWithKey(recordKey, folderKey)
+    const recordData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ title: 'Shared Record', type: 'login', fields: [], custom: [] })), recordKey)
+
+    const serverResponse = {
+        folders: [
+            { folderUid, folderKey: platform.bytesToBase64(wrappedFolderKey), data: '', records: [] }
+        ],
+        records: [
+            {
+                recordUid,
+                recordKey: platform.bytesToBase64(wrappedRecordKey),
+                data: platform.bytesToBase64(recordData),
+                revision: 1,
+                files: [],
+                innerFolderUid: folderUid
+            }
+        ],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const secrets = await getSecrets({ storage: kvs, queryFunction: queryFn })
+
+    // Bug: the flat-records loop always unwraps recordKey with KEY_APP_KEY, ignoring
+    // innerFolderUid. Since recordKey here is wrapped with the folder key, unwrapping
+    // with the app key throws, the record is caught and silently skipped, and
+    // secrets.records comes back empty instead of containing the decrypted record.
+    expect(secrets.records.length).toBe(1)
+    expect(secrets.records[0].data.title).toBe('Shared Record')
+    expect(secrets.records[0].folderUid).toBe(folderUid)
+})
+
+test('flat record with innerFolderUid falls back to the app key when no matching folder is returned', async () => {
+    const transmissionKey = new Uint8Array(32).fill(5)
+    const appKey = new Uint8Array(32).fill(6)
+    const recordKey = new Uint8Array(32).fill(7)
+    const recordUid = 'record-uid-2'
+
+    const wrappedRecordKey = await platform.encryptWithKey(recordKey, appKey)
+    const recordData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ title: 'Orphaned Record', type: 'login', fields: [], custom: [] })), recordKey)
+
+    const serverResponse = {
+        folders: [],
+        records: [
+            {
+                recordUid,
+                recordKey: platform.bytesToBase64(wrappedRecordKey),
+                data: platform.bytesToBase64(recordData),
+                revision: 1,
+                files: [],
+                innerFolderUid: 'folder-uid-not-in-response'
+            }
+        ],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const secrets = await getSecrets({ storage: kvs, queryFunction: queryFn })
+
+    expect(secrets.records.length).toBe(1)
+    expect(secrets.records[0].data.title).toBe('Orphaned Record')
+})

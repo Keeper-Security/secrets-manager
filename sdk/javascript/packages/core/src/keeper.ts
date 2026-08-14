@@ -883,13 +883,34 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
         await storage.delete(KEY_CLIENT_KEY)
         await storage.saveString(KEY_OWNER_PUBLIC_KEY, response.appOwnerPublicKey!)
     }
+    const folderKeyIds = new Set<string>()
+    if (response.folders) {
+        for (const folder of response.folders) {
+            try {
+                if (!folder.folderKey) continue
+                await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
+                folderKeyIds.add(folder.folderUid)
+            } catch (e: Error | any) {
+                // ignored here; the folders loop below re-attempts the same unwrap and logs the failure
+            }
+        }
+    }
     if (response.records) {
         for (const record of response.records) {
             try {
                 if (record.recordKey) {
-                    await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, KEY_APP_KEY, storage, true)
+                    // Records created outside the SDK in a shared folder arrive in the flat
+                    // response.records[] with innerFolderUid set; their recordKey is wrapped
+                    // with the folder key, not the app key.
+                    const unwrappingKeyId = record.innerFolderUid && folderKeyIds.has(record.innerFolderUid)
+                        ? record.innerFolderUid
+                        : KEY_APP_KEY
+                    await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, unwrappingKeyId, storage, true)
                 }
                 const decryptedRecord = await decryptRecord(record, storage)
+                if (record.innerFolderUid && folderKeyIds.has(record.innerFolderUid)) {
+                    decryptedRecord.folderUid = record.innerFolderUid
+                }
                 records.push(decryptedRecord)
             } catch (e: Error | any) {
                 console.error(`Record ${record.recordUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
