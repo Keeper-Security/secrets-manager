@@ -1,5 +1,8 @@
 # Change Log
 
+## 17.6.0
+- KSM-1035 - Throttle backoff hardening: retry jitter is now one-sided (0 to +25%, so delays never fall below the computed floor), and a server-supplied `retry_after` is capped at 176s (the exponential ladder's last step) so it can no longer force an excessive or unbounded wait.
+
 ## 17.5.0
 - KSM-1029 - Fixed stale pinned server key error: when the server rejects a configured custom server public key, the diagnostic message now propagates to the caller instead of being swallowed by a bare catch.
 - KSM-880 - Added automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `postQuery` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus ±25% jitter, honoring `retry_after` from the response when present; a typed `KeeperThrottleError` is thrown once retries are exhausted. Existing key-rotation retry behavior is unchanged.
