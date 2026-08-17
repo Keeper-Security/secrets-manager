@@ -877,6 +877,7 @@ class PamSettings(FieldType):
     schema = {
         "value_type": dict,
         "schema": {
+            "allowSupplyHost": {"value_type": bool},
             "connection": {
                 "value_type": dict,
                 "desc": "PAM Settings",
@@ -889,7 +890,6 @@ class PamSettings(FieldType):
                             "port": {"value_type": str},
                         }
                     },
-                    "allowSupplyHost": {"value_type": bool},
                     "connection": {
                         "value_type": list,
                         "desc": "Connection Settings",
@@ -900,6 +900,8 @@ class PamSettings(FieldType):
                             "ignoreCert": {"value_type": bool},
                             "resizeMethod": {"value_type": str},
                             "colorScheme": {"value_type": str},
+                            "database": {"value_type": str},
+                            "dbConnectionMethod": {"value_type": str},
                         }
                     },
                 }
