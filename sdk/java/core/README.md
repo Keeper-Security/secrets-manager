@@ -4,6 +4,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.4.0
+- KSM-1081 - Fixed `getFolders()` crashing when any folder in the response has a corrupted or missing key. The SDK now skips undecryptable folders and returns the remaining folders normally.
+- KSM-1086 - Fixed `deleteFolder()` to return `SecretsManagerDeleteFolderResponse` (typed per-folder status), matching `deleteSecret()`. The SDK now logs per-item server failures to stderr and includes them in the return value so callers can detect partial failures.
+
 ## 17.3.0
 **Breaking Changes**
 - `KeeperFile.url` changed from `String` to `String?` — callers that access `url` directly must now handle null; `downloadFile()` already does this with a typed exception
