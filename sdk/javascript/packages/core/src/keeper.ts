@@ -821,13 +821,13 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                 try { errorObj = JSON.parse(errorMessage) } catch {}
                 if (errorObj?.error === 'key') {
                     const suggestedKeyId = errorObj.key_id
-                    if (typeof suggestedKeyId !== 'number' || !Number.isInteger(suggestedKeyId) || suggestedKeyId <= 0) {
-                        throw new KeeperError(`Server key error response contains invalid key_id: ${JSON.stringify(suggestedKeyId)}`)
-                    }
                     const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
                     if (customKey) {
                         const currentKeyId = await options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
                         throw new KeeperError(`Server rejected the custom server public key (id ${currentKeyId}). The server suggested key id ${suggestedKeyId}. Please update your IL5 KSM configuration.`)
+                    }
+                    if (typeof suggestedKeyId !== 'number' || !Number.isInteger(suggestedKeyId) || suggestedKeyId <= 0) {
+                        throw new KeeperError(`Server key error response contains invalid key_id: ${JSON.stringify(suggestedKeyId)}`)
                     }
                     if (!(suggestedKeyId in keeperPublicKeys)) {
                         throw new KeeperError(`Server suggested unsupported key id ${suggestedKeyId}; this SDK version supports key ids 7-18`)
