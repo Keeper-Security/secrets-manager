@@ -369,6 +369,27 @@ test('IL5 dynamic key - single key rotation succeeds on retry', async () => {
     expect(await storage.getString('serverPublicKeyId')).toBe('8')
 })
 
+test('IL5 dynamic key - unsupported suggested key id is rejected, not persisted', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    let calls = 0
+    const enc = new TextEncoder()
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
+            return { statusCode: 400, data: enc.encode(keyErrorResponse(99)), headers: [] }
+        }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/unsupported key id 99/)
+    // Rejected before the retry loop persists anything: one request, config untouched.
+    expect(calls).toBe(1)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
 test('stale pinned server key: diagnostic message propagates to caller, key preserved', async () => {
     const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
     const storage = inMemoryStorage({})
