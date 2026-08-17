@@ -6,33 +6,42 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.*
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
-import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.*
 import kotlin.collections.HashMap
 
 fun saveCachedValue(data: ByteArray) {
-    val file = File("cache.dat")
-    FileOutputStream(file).use { fos -> fos.write(data) } // .use{} closes on exception even if the operation throws
-
-    // Set file permissions to 0600 (owner read/write only)
+    val targetPath = File("cache.dat").absoluteFile.toPath()
+    val tmpPath = Files.createTempFile(targetPath.parent, "ksm_", ".tmp")
     try {
-        val perms = PosixFilePermissions.fromString("rw-------")
-        Files.setPosixFilePermissions(file.toPath(), perms)
-    } catch (e: UnsupportedOperationException) {
-        // Windows or file system doesn't support POSIX permissions
-        // File.setReadable/setWritable provides basic protection
-        file.setReadable(false, false)  // Remove all read permissions
-        file.setWritable(false, false)  // Remove all write permissions
-        file.setReadable(true, true)     // Owner read only
-        file.setWritable(true, true)     // Owner write only
+        try {
+            Files.setPosixFilePermissions(tmpPath, PosixFilePermissions.fromString("rw-------"))
+        } catch (_: UnsupportedOperationException) {
+            tmpPath.toFile().let { f ->
+                f.setReadable(false, false)
+                f.setWritable(false, false)
+                f.setReadable(true, true)
+                f.setWritable(true, true)
+            }
+        }
+        Files.write(tmpPath, data)
+        try {
+            Files.move(tmpPath, targetPath, StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(tmpPath, targetPath, StandardCopyOption.REPLACE_EXISTING)
+        }
+    } catch (e: Exception) {
+        try { Files.deleteIfExists(tmpPath) } catch (_: Exception) { }
+        throw e
     }
 }
 
 fun getCachedValue(): ByteArray {
     try {
-        return FileInputStream("cache.dat").use { it.readBytes() } // .use{} closes on exception even if the operation throws
+        return FileInputStream("cache.dat").use { it.readBytes() } // .use{} closes on exception
     } catch (e: Exception) {
         throw SecretsManagerException("Cached value does not exist")
     }
@@ -115,7 +124,7 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
 
     private val file = configName?.let { File(it) }
     private var storage: InMemoryStorage = if (file != null && file.exists()) {
-        val content = BufferedReader(FileReader(file)).use { it.readText() } // previously never closed on exception; .use{} guarantees it
+        val content = file.readText(Charsets.UTF_8)
         InMemoryStorage(content)
     } else {
         InMemoryStorage()
@@ -125,29 +134,38 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
 
     private fun saveToFile() {
         if (file == null) return
-        val config = LocalConfig()
-        config.hostname = storage.getString(KEY_HOSTNAME)
-        config.clientId = storage.getString(KEY_CLIENT_ID)
-        config.privateKey = storage.getString(KEY_PRIVATE_KEY)
-        config.clientKey = storage.getString(KEY_CLIENT_KEY)
-        config.appKey = storage.getString(KEY_APP_KEY)
-        config.appOwnerPublicKey = storage.getString(KEY_OWNER_PUBLIC_KEY)
-        config.serverPublicKeyId = storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-        config.serverPublicKey = storage.getString(KEY_SERVER_PUBLIC_KEY)
-        val json = prettyJson.encodeToString(config)
-        BufferedWriter(FileWriter(file)).use { it.write(json) } // .use{} closes on exception even if the operation throws
-
-        // Set file permissions to 0600 (owner read/write only)
+        val targetPath = file.absoluteFile.toPath()
+        val tmpPath = Files.createTempFile(targetPath.parent, "ksm_", ".tmp")
         try {
-            val perms = PosixFilePermissions.fromString("rw-------")
-            Files.setPosixFilePermissions(file.toPath(), perms)
-        } catch (e: UnsupportedOperationException) {
-            // Windows or file system doesn't support POSIX permissions
-            // File.setReadable/setWritable provides basic protection
-            file.setReadable(false, false)  // Remove all read permissions
-            file.setWritable(false, false)  // Remove all write permissions
-            file.setReadable(true, true)     // Owner read only
-            file.setWritable(true, true)     // Owner write only
+            try {
+                Files.setPosixFilePermissions(tmpPath, PosixFilePermissions.fromString("rw-------"))
+            } catch (_: UnsupportedOperationException) {
+                tmpPath.toFile().let { f ->
+                    f.setReadable(false, false)
+                    f.setWritable(false, false)
+                    f.setReadable(true, true)
+                    f.setWritable(true, true)
+                }
+            }
+            val config = LocalConfig(
+                hostname = storage.getString(KEY_HOSTNAME),
+                clientId = storage.getString(KEY_CLIENT_ID),
+                privateKey = storage.getString(KEY_PRIVATE_KEY),
+                clientKey = storage.getString(KEY_CLIENT_KEY),
+                appKey = storage.getString(KEY_APP_KEY),
+                appOwnerPublicKey = storage.getString(KEY_OWNER_PUBLIC_KEY),
+                serverPublicKeyId = storage.getString(KEY_SERVER_PUBLIC_KEY_ID),
+                serverPublicKey = storage.getString(KEY_SERVER_PUBLIC_KEY)
+            )
+            Files.write(tmpPath, prettyJson.encodeToString(config).toByteArray())
+            try {
+                Files.move(tmpPath, targetPath, StandardCopyOption.ATOMIC_MOVE)
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(tmpPath, targetPath, StandardCopyOption.REPLACE_EXISTING)
+            }
+        } catch (e: Exception) {
+            try { Files.deleteIfExists(tmpPath) } catch (_: Exception) { }
+            throw e
         }
     }
 
