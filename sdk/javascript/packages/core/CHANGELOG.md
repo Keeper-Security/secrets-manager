@@ -1,7 +1,12 @@
 # Change Log
 
 ## 17.6.0
-- KSM-1035 - Throttle backoff hardening: retry jitter is now one-sided (0 to +25%, so delays never fall below the computed floor), and a server-supplied `retry_after` is capped at 176s (the exponential ladder's last step) so it can no longer force an excessive or unbounded wait.
+- KSM-1073 - Added `dbConnectionMethod` to `PamSettingsConnection`.
+- KSM-1079 - Fixed `getFolders()` crashing when a folder in the response has a corrupted or missing key. The SDK now skips undecryptable folders and returns the remaining folders normally.
+- KSM-1084 - Fixed `deleteSecret()` and `deleteFolder()` silently reporting success when the server rejected some UIDs. The SDK now surfaces per-item error messages from the server to the caller.
+- KSM-748 - Fixed `getSecrets()` silently dropping records created by Commander or the Vault UI inside shared folders. The SDK now uses the folder key to decrypt the record key for any flat record that has `innerFolderUid` set. This matches the behavior for records in `folders[].records[]`.
+- KSM-1035 - Fixed throttle retry jitter being two-sided, which could reduce a retry delay below the computed floor. Jitter is now one-sided (0 to +25%). The SDK also caps a server-supplied `retry_after` at 176s to prevent an arbitrarily long wait.
+- Maintenance: Updated `minimatch`, `@babel/core`, and `handlebars` dev dependencies.
 
 ## 17.5.0
 - KSM-1029 - Fixed stale pinned server key error: when the server rejects a configured custom server public key, the diagnostic message now propagates to the caller instead of being swallowed by a bare catch.
