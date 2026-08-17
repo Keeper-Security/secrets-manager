@@ -2,8 +2,11 @@ import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, Transmi
 import {webSafe64FromBytes, webSafe64ToBytes, tryParseInt} from './utils'
 import {parseNotation} from './notation'
 import {KeeperThrottleError} from './errors'
+import {ambientToken, provisionedToken, TokenSource} from './tokenSource'
 
 export {KeyValueStorage} from './platform'
+// The token acquisition layer beneath the bearer auth scheme.
+export * from './tokenSource'
 
 let packageVersion = '[VI]{version}[/VI]'
 const KEY_HOSTNAME = 'hostname' // base url for the Secrets Manager service
@@ -14,7 +17,6 @@ const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the clien
 const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
 const KEY_OWNER_PUBLIC_KEY = 'appOwnerPublicKey' // The application owner public key, to create records
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
-const KEY_BEARER_TOKEN = 'bearerToken' // The bearer credential, when the client uses the bearer auth scheme
 // Set in an auth-only storage once binding has succeeded. A unified storage detects binding by the
 // presence of the app key; an auth-only storage never holds the app key, so it needs this marker.
 const KEY_BOUND = 'bound'
@@ -81,13 +83,14 @@ export type AuthorizeRequest = {
  *
  * Two schemes ship with the SDK:
  *  - signatureAuth (default) - the native scheme; per-request EC signature with the stored private key.
- *  - bearerAuth - RFC 6750 style `Authorization: Bearer <token>`; the token is provisioned when the
- *    device is added to the application and lives in the auth configuration. NOTE: server-side
- *    acceptance of non-native schemes is a future capability - see the scheme's doc comment.
+ *  - bearerAuth - RFC 6750 style `Authorization: Bearer <token>`; the credential itself comes from a
+ *    TokenSource (provisioned at device creation, an OAuth token endpoint, or ambient platform
+ *    identity - see tokenSource.ts). NOTE: server-side acceptance of non-native schemes is a future
+ *    capability - see the scheme's doc comment.
  */
 export type Authorizer = {
-    // Scheme discriminator, e.g. 'signature' or 'bearer'. Diagnostic only - the server dispatches on
-    // the Authorization header itself.
+    // Scheme discriminator, e.g. 'signature' or 'bearer:provisioned'. Diagnostic only - the server
+    // dispatches on the Authorization header itself.
     kind: string
     // Called once by initializeAuthStorage/initializeStorage to create whatever local state the
     // scheme needs (the native scheme generates its key pair here). No-op for credential-based schemes.
@@ -97,6 +100,9 @@ export type Authorizer = {
     bindingPublicKey(storage: KeyValueStorage): Promise<Uint8Array | undefined>
     // Produces the complete Authorization header value for one request.
     authorize(request: AuthorizeRequest, storage: KeyValueStorage): Promise<string>
+    // Called when the service rejects the request's credential as expired ({"error":"token_expired"}).
+    // Refresh whatever can be refreshed and return true to have the request retried once.
+    onAuthRejected?(): Promise<boolean> | boolean
 }
 
 /** The native scheme: sign encryptedTransmissionKey + encryptedPayload with the stored private key. */
@@ -114,40 +120,34 @@ export const signatureAuth: Authorizer = {
 }
 
 /**
- * Bearer token scheme. The token is generated when the device is added to the application and
- * registered with the service right there, alongside the (encrypted) app key - so unlike the native
- * scheme nothing is enrolled on the first call, and the same token authenticates every call until
- * the admin rotates it.
+ * Bearer token scheme. The credential comes from a TokenSource, which owns acquisition, caching and
+ * refresh; this Authorizer only turns it into the Authorization header. Accepted arguments:
  *
- * The client receives the token once, next to the one-time token: pass it here during initialization
- * and initializeAuthStorage persists it in the auth configuration; later runs can construct
- * bearerAuth() with no argument and the stored token is used. A callback can be passed instead when
- * the credential is managed outside the configuration - it is invoked per request and never stored.
+ *  - a TokenSource - provisionedToken(), ambientToken(), oauthClientCredentials(), or a custom one
+ *  - a string - shorthand for provisionedToken(token): the static token issued at device creation,
+ *    persisted into the auth configuration by initializeAuthStorage
+ *  - no argument - shorthand for provisionedToken(): use the token stored at initialization
+ *  - a callback - shorthand for ambientToken(callback): a platform-managed credential, read as
+ *    needed and never persisted
  *
  * NOTE: this expresses the client half only. The Secrets Manager endpoint accepts the native
  * signature scheme today; bearer requests will be rejected until the service side lands.
  */
-export const bearerAuth = (token?: string | (() => Promise<string>)): Authorizer => ({
-    kind: 'bearer',
-    setup: async storage => {
-        if (typeof token === 'string') {
-            await storage.saveString(KEY_BEARER_TOKEN, token)
-        }
-    },
-    bindingPublicKey: async () => undefined,
-    authorize: async (request, storage) => {
-        if (typeof token === 'function') {
-            return `Bearer ${await token()}`
-        }
-        // An explicitly passed token wins over the stored one; the stored one serves the runs that
-        // construct bearerAuth() with no argument.
-        const effective = token ?? await storage.getString(KEY_BEARER_TOKEN)
-        if (!effective) {
-            throw new Error('Bearer token is missing from the configuration')
-        }
-        return `Bearer ${effective}`
+export const bearerAuth = (token?: string | (() => Promise<string>) | TokenSource): Authorizer => {
+    const source: TokenSource =
+        typeof token === 'function' ? ambientToken(token)
+            : typeof token === 'object' ? token
+                : provisionedToken(token)
+    return {
+        kind: `bearer:${source.kind}`,
+        setup: async storage => {
+            await source.setup?.(storage)
+        },
+        bindingPublicKey: async () => undefined,
+        authorize: async (request, storage) => `Bearer ${await source.getToken(storage)}`,
+        onAuthRejected: () => source.invalidate?.() ?? false
     }
-})
+}
 
 const authorizerOf = (options: SecretManagerOptions): Authorizer => options.authorizer ?? signatureAuth
 
@@ -923,6 +923,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
     const url = `https://${hostName}/api/rest/sm/v1/${path}`
     const sleep = options.throttleSleep || ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)))
     let throttleAttempt = 0
+    let authRetried = false
     while (true) {
         const transmissionKey = await generateTransmissionKey(options.storage)
         const encryptedPayload = await encryptAndAuthorizePayload(options.storage, authorizerOf(options), transmissionKey, payload)
@@ -949,6 +950,15 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                 }
                 let errorObj: KeeperApiError | null = null
                 try { errorObj = JSON.parse(errorMessage) } catch {}
+                // Planned service contract for credential-based schemes: a token that expired (or
+                // was rotated away) between acquisition and arrival is rejected with
+                // {"error":"token_expired"}. Let the scheme refresh its credential and retry once.
+                if (errorObj?.error === 'token_expired' && !authRetried) {
+                    authRetried = true
+                    if (await authorizerOf(options).onAuthRejected?.()) {
+                        continue
+                    }
+                }
                 if (errorObj?.error === 'key') {
                     const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
                     if (customKey) {

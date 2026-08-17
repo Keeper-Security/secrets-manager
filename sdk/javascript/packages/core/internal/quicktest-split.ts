@@ -18,8 +18,16 @@
  *               the application and registered with the service alongside the encrypted app key, so
  *               the client is provisioned with two values: the bearer token (auth client) and the
  *               one-time token (codec client). The same token authenticates the first and all
- *               subsequent calls until the admin rotates it. NOTE: the service does not accept
- *               bearer yet - this demonstrates the client-side API shape only.
+ *               subsequent calls until the admin rotates it.
+ *  - 'oauth'  - same bearer wire format, but the credential is minted by an OAuth authorization
+ *               server (client_credentials grant) and refreshed automatically before expiry. Set
+ *               KSM_OAUTH_TOKEN_ENDPOINT / KSM_OAUTH_CLIENT_ID / KSM_OAUTH_CLIENT_SECRET.
+ *  - 'ambient' - same wire format again, but the credential is one the platform already provides
+ *               (kubelet-projected service account token, cloud metadata identity). Set
+ *               KSM_AMBIENT_TOKEN_PATH to the projected token file.
+ *
+ * NOTE: the service accepts only 'native' today - the other modes demonstrate the client-side API
+ * shape (an Authorizer over a TokenSource) and the token acquisition/caching behavior.
  *
  * NOTE ON THIS DEMO: both roles run in one process here, and platform key material is cached in one
  * process-global keyCache. So this file demonstrates the *storage/protocol* separation - what each
@@ -27,6 +35,7 @@
  * halves are separate processes or hosts and the bundle crosses as JSON.
  */
 import {
+    ambientToken,
     AuthBootstrap,
     Authorizer,
     bearerAuth,
@@ -39,6 +48,7 @@ import {
     initializeAuthStorage,
     initializeCryptoStorage,
     KeeperSecrets,
+    oauthClientCredentials,
     QueryOptions,
     SecretManagerOptions,
     signatureAuth
@@ -47,6 +57,7 @@ import {nodePlatform} from '../src/node/nodePlatform';
 import {connectPlatform, KeyValueStorage} from '../src/platform';
 import {inspect} from 'util';
 import {localConfigStorage} from "../src/node";
+import {promises as fs} from 'fs';
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 
@@ -60,9 +71,10 @@ const cryptoConfigFileName = 'client-config-split-crypto.json'
 const oneTimeToken = 'US:ONE_TIME_TOKEN'    // goes to the codec client
 const bearerToken = 'BEARER_TOKEN'          // goes to the auth client (bearer mode only)
 
-// How client 1 authenticates (also settable via KSM_AUTH_MODE=bearer). The codec client is
-// unaffected by this choice - decryption is the same regardless of how the ciphertext was fetched.
-const AUTH_MODE = (process.env.KSM_AUTH_MODE ?? 'native') as 'native' | 'bearer'
+// How client 1 authenticates (also settable via KSM_AUTH_MODE=bearer|oauth|ambient). The codec
+// client is unaffected by this choice - decryption is the same regardless of how the ciphertext was
+// fetched.
+const AUTH_MODE = (process.env.KSM_AUTH_MODE ?? 'native') as 'native' | 'bearer' | 'oauth' | 'ambient'
 
 const makeAuthorizer = (): Authorizer => {
     switch (AUTH_MODE) {
@@ -70,6 +82,21 @@ const makeAuthorizer = (): Authorizer => {
             // The token is passed once, at initialization; bootstrap() persists it in the auth
             // config, and later runs may use bearerAuth() with no argument.
             return bearerAuth(bearerToken)
+        case 'oauth':
+            // Short-lived access tokens from the AS, cached by the source and renewed ~60s before
+            // expiry. bootstrap() persists the non-secret settings; add persistSecret: true to also
+            // store the client secret in the auth config.
+            return bearerAuth(oauthClientCredentials({
+                tokenEndpoint: process.env.KSM_OAUTH_TOKEN_ENDPOINT!,
+                clientId: process.env.KSM_OAUTH_CLIENT_ID!,
+                clientSecret: process.env.KSM_OAUTH_CLIENT_SECRET,
+                audience: 'https://keepersecurity.com/api/rest/sm'
+            }))
+        case 'ambient':
+            // The federated flow from federated-oauth-flow.md: the platform mints and rotates the
+            // credential; nothing is persisted. JWTs are cached until shortly before their exp.
+            return bearerAuth(ambientToken(() =>
+                fs.readFile(process.env.KSM_AMBIENT_TOKEN_PATH ?? '/var/run/secrets/tokens/keeper-token', 'utf8')))
         default:
             return signatureAuth
     }

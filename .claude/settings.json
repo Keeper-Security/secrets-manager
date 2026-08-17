@@ -4,7 +4,7 @@
       "../keeperapp"
     ],
     "allow": [
-      "Read(../keeperapp/**)"
+      "Write(../keeperapp/**)"
     ]
   }
 }
