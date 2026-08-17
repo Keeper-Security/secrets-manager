@@ -10,6 +10,10 @@ import {
 
 import * as fs from 'fs'
 
+const FAKE_ONE_TIME_TOKEN = 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'
+
+const keyErrorResponse = (keyId: number) => JSON.stringify({ error: 'key', key_id: keyId })
+
 test('Get secrets e2e', async () => {
 
     const responses: { transmissionKey: string, data: string, statusCode: number } [] = JSON.parse(fs.readFileSync('../../../fake_data.json').toString())
@@ -319,15 +323,18 @@ test('IL5 dynamic key - rotation suppression: server key_id hint ignored when se
 
 test('IL5 dynamic key - server key rotation retries are bounded, not infinite', async () => {
     const storage = inMemoryStorage({})
-    await initializeStorage(storage, 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c', 'fake.keepersecurity.com')
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
     let calls = 0
     const enc = new TextEncoder()
-    const keyError = { statusCode: 400, data: enc.encode(JSON.stringify({ error: 'key', key_id: 7 })), headers: [] }
     const options: SecretManagerOptions = {
         storage,
-        // key_id 7 is a real supported key number so each retry re-enters the key-rotation branch
-        // rather than tripping over an unrelated "unsupported key number" error.
-        queryFunction: async () => { calls++; return keyError }
+        queryFunction: async () => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
+            return { statusCode: 400, data: enc.encode(keyErrorResponse(7)), headers: [] }
+        }
     }
     await expect(getSecrets(options)).rejects.toThrow(/key rotation exhausted/i)
     // MAX_KEY_ROTATION_RETRIES = 3: initial attempt + 3 retries = 4 total calls.
@@ -336,7 +343,7 @@ test('IL5 dynamic key - server key rotation retries are bounded, not infinite', 
 
 test('IL5 dynamic key - single key rotation succeeds on retry', async () => {
     const storage = inMemoryStorage({})
-    await initializeStorage(storage, 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c', 'fake.keepersecurity.com')
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
     let calls = 0
     const enc = new TextEncoder()
     const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
@@ -344,31 +351,45 @@ test('IL5 dynamic key - single key rotation succeeds on retry', async () => {
         storage,
         queryFunction: async (_url, tk) => {
             calls++
-            if (calls === 1) {
-                return { statusCode: 400, data: enc.encode(JSON.stringify({ error: 'key', key_id: 7 })), headers: [] }
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
             }
+            if (calls === 1) {
+                return { statusCode: 400, data: enc.encode(keyErrorResponse(8)), headers: [] }
+            }
+            // Verify the rotation was adopted: second request should use key_id 8.
+            expect(tk.publicKeyId).toBe(8)
             return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
         }
     }
     const secrets = await getSecrets(options)
     expect(secrets.records).toEqual([])
     expect(calls).toBe(2)
+    // Verify the suggested key_id 8 was persisted to storage.
+    expect(await storage.getString('serverPublicKeyId')).toBe('8')
 })
 
 test('stale pinned server key: diagnostic message propagates to caller, key preserved', async () => {
     const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
     const storage = inMemoryStorage({})
-    await initializeStorage(storage, 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c', 'fake.keepersecurity.com')
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
     await storage.saveString('serverPublicKey', fakeKey)
     await storage.saveString('serverPublicKeyId', '20')
-    const keyError = JSON.stringify({ error: 'key', key_id: 7 })
+    let calls = 0
+    const enc = new TextEncoder()
     const options: SecretManagerOptions = {
         storage,
-        queryFunction: async () => ({
-            statusCode: 400,
-            data: new TextEncoder().encode(keyError),
-            headers: []
-        })
+        queryFunction: async () => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected')
+            }
+            return {
+                statusCode: 400,
+                data: enc.encode(keyErrorResponse(7)),
+                headers: []
+            }
+        }
     }
     await expect(getSecrets(options)).rejects.toThrow(/Server rejected the custom server public key/)
     await expect(getSecrets(options)).rejects.toThrow(/Please update your IL5 KSM configuration/)
