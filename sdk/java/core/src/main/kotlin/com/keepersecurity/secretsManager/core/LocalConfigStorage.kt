@@ -15,7 +15,13 @@ import kotlin.collections.HashMap
 
 fun saveCachedValue(data: ByteArray) {
     val targetPath = File("cache.dat").absoluteFile.toPath()
-    val tmpPath = Files.createTempFile(targetPath.parent, "ksm_", ".tmp")
+    val tmpPath = try {
+        Files.createTempFile(targetPath.parent, "ksm_", ".tmp")
+    } catch (e: IOException) {
+        throw SecretsManagerException(
+            "Cannot write cache $targetPath: directory ${targetPath.parent} is not writable."
+        )
+    }
     try {
         try {
             Files.setPosixFilePermissions(tmpPath, PosixFilePermissions.fromString("rw-------"))
@@ -135,7 +141,14 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
     private fun saveToFile() {
         if (file == null) return
         val targetPath = file.absoluteFile.toPath()
-        val tmpPath = Files.createTempFile(targetPath.parent, "ksm_", ".tmp")
+        val tmpPath = try {
+            Files.createTempFile(targetPath.parent, "ksm_", ".tmp")
+        } catch (e: IOException) {
+            throw SecretsManagerException(
+                "Cannot write config $targetPath: directory ${targetPath.parent} is not writable. " +
+                "Move the config to a writable directory or use InMemoryStorage with an injected config string."
+            )
+        }
         try {
             try {
                 Files.setPosixFilePermissions(tmpPath, PosixFilePermissions.fromString("rw-------"))

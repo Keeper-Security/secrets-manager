@@ -255,6 +255,11 @@ internal class SecretsManagerTest {
     @Test
     fun testConfigFileAtomicWriteIsOwnerOnly() {
         // KSM-1262: the config file must be written via atomic rename and be readable only by the owner.
+        // The 0600 guarantee is POSIX-only; skip rather than fail on Windows or non-POSIX file systems.
+        org.junit.Assume.assumeTrue(
+            "POSIX file permissions not supported on this file system",
+            java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix")
+        )
         val configFile = File.createTempFile("ksm-test-", ".json").also { it.delete() }
         try {
             val storage = LocalConfigStorage(configFile.absolutePath)
