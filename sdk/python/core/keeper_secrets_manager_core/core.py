@@ -614,12 +614,12 @@ class SecretsManager:
         payload.folderUid = CryptoUtils.bytes_to_url_safe_str(folder_uid)
 
         folder_key = generate_random_bytes(32)
-        encrypted_folder_key = CryptoUtils.encrypt_aes_cbc(folder_key, shared_folder_key)
+        encrypted_folder_key = CryptoUtils.encrypt_aes(folder_key, shared_folder_key)
         payload.sharedFolderKey = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_key)
 
         folder_json = dict_to_json({"name": folder_name})
         folder_data_bytes = string_to_bytes(folder_json)
-        encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
+        encrypted_folder_data = CryptoUtils.encrypt_aes(folder_data_bytes, folder_key)
         payload.data = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_data)
 
         return payload
