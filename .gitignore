@@ -66,6 +66,9 @@ keeper.ini*
 .secrets
 ansible.cfg
 
+# Credentials projected by internal/project-token.ts for the KSM ambient-auth prototype
+*.jwt
+
 # Except typescript configuration
 !tsconfig.json
 !tsconfig.test.json

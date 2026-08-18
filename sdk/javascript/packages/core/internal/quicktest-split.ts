@@ -24,8 +24,10 @@
  *               kidp (../kidp: KIDP_ISSUER=http://host.docker.internal:8080 ./gradlew :server:run)
  *               and configure KA's KSM_OAUTH_CLIENTS; see the oauth constants below.
  *  - 'ambient' - same wire format again, but the credential is one the platform already provides
- *               (kubelet-projected service account token, cloud metadata identity). Set
- *               KSM_AMBIENT_TOKEN_PATH to the projected token file.
+ *               (kubelet-projected service account token, cloud metadata identity): the SDK just
+ *               reads a file the platform maintains, and persists nothing. To simulate the platform
+ *               locally, run `npx ts-node internal/project-token.ts --watch`, which mints kidp
+ *               tokens into ambientTokenPath the way a kubelet re-mints a projected token.
  *
  * NOTE: the service accepts only 'native' today - the other modes demonstrate the client-side API
  * shape (an Authorizer over a TokenSource) and the token acquisition/caching behavior.
@@ -63,7 +65,7 @@ import {promises as fs} from 'fs';
 import {request as httpRequest} from 'http';
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
-process.env.KSM_AUTH_MODE = 'oauth'
+process.env.KSM_AUTH_MODE = 'ambient'
 
 const version = require("../package.json").version;
 connectPlatform(nodePlatform)
@@ -80,6 +82,9 @@ const bearerToken = 'BEARER_TOKEN'          // goes to the auth client (bearer m
 const oauthTokenEndpoint = 'http://localhost:8080/token'
 const oauthClientId = 'ksm-demo'
 const oauthAudience = 'https://keepersecurity.com/api/rest/sm'
+
+// ambient mode: the file the "platform" keeps a fresh credential in (see internal/project-token.ts).
+const ambientTokenPath = 'ambient-token.jwt'
 
 // kidp is plain http and nodePlatform.post speaks https only, so the token endpoint gets its own
 // tiny transport. A real deployment would use the default (platform.post).
@@ -115,9 +120,10 @@ const makeAuthorizer = (): Authorizer => {
             }, httpPost))
         case 'ambient':
             // The federated flow from federated-oauth-flow.md: the platform mints and rotates the
-            // credential; nothing is persisted. JWTs are cached until shortly before their exp.
-            return bearerAuth(ambientToken(() =>
-                fs.readFile(process.env.KSM_AMBIENT_TOKEN_PATH ?? '/var/run/secrets/tokens/keeper-token', 'utf8')))
+            // credential; nothing is persisted. JWTs are cached until shortly before their exp, so
+            // the file is re-read only when the cached token is close to expiring.
+            return bearerAuth(ambientToken(async () =>
+                (await fs.readFile(ambientTokenPath, 'utf8')).trim()))
         default:
             return signatureAuth
     }
