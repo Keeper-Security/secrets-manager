@@ -59,12 +59,11 @@ internal fun resolveProxy(
 }
 
 private fun systemPropertyProxy(environment: ProxyEnvironment): String? {
-    val host = environment.property("https.proxyHost")?.takeIf { it.isNotBlank() }
-        ?: environment.property("http.proxyHost")?.takeIf { it.isNotBlank() }
-        ?: return null
-    val isHttps = environment.property("https.proxyHost")?.isNotBlank() == true
-    val port = (if (isHttps) environment.property("https.proxyPort") else environment.property("http.proxyPort"))
-        ?: if (isHttps) "443" else "80"
+    // Only https.proxyHost is honored: all KSM traffic is HTTPS, and the JDK's own ProxySelector
+    // never applies http.proxyHost to HTTPS URLs. Applying it here would silently proxy traffic
+    // the operator may not have intended to route through that host.
+    val host = environment.property("https.proxyHost")?.takeIf { it.isNotBlank() } ?: return null
+    val port = environment.property("https.proxyPort") ?: "443"
     return "$host:$port"
 }
 
@@ -83,7 +82,8 @@ private fun parseProxy(raw: String, isExplicit: Boolean = false): ResolvedProxy?
         return null
     }
 
-    val port = if (uri.port != -1) uri.port else if (uri.scheme?.equals("https", ignoreCase = true) == true) 443 else 80
+    // https:// proxy URLs are rejected above; no need to handle the https scheme here.
+    val port = if (uri.port != -1) uri.port else 80
     val userInfo = uri.userInfo
     val username = userInfo?.substringBefore(':')?.takeIf { it.isNotEmpty() }
     val password = userInfo?.substringAfter(':', "")?.takeIf { userInfo.contains(':') }

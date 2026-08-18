@@ -184,6 +184,16 @@ internal class ProxyTest {
     }
 
     @Test
+    fun httpProxyHostPropertyIsIgnoredForHttpsTraffic() {
+        // The JDK's ProxySelector never applies http.proxyHost to HTTPS URLs.
+        // KSM connects only to HTTPS endpoints, so http.proxyHost must have no effect.
+        val env = FakeProxyEnvironment(
+            properties = mapOf("http.proxyHost" to "legacyproxy.corp", "http.proxyPort" to "3128")
+        )
+        assertNull(resolveProxy(null, target, env))
+    }
+
+    @Test
     fun unparsableAmbientProxyDoesNotForceDirectConnection() {
         // A proxy candidate that fails parseProxy (e.g. underscore hostname rejected by URI) must
         // fall through without forcing Proxy.NO_PROXY — isExcluded() is the only exclusion signal.

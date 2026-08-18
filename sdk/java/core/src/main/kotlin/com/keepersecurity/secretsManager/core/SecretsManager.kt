@@ -1180,7 +1180,7 @@ fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: 
     val payloadAndFile = prepareFileUploadPayload(options.storage, ownerRecord, file)
     val responseData = postQuery(options, "add_file", payloadAndFile.payload)
     val response = nonStrictJson.decodeFromString<SecretsManagerAddFileResponse>(bytesToString(responseData))
-    val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile, options.proxyUrl)
+    val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile, options.proxyUrl, options.allowUnverifiedCertificate)
     if (uploadResult.statusCode != response.successStatusCode) {
         throw SecretsManagerException("Upload failed (${bytesToString(uploadResult.data)}), code ${uploadResult.statusCode}")
     }
@@ -1236,13 +1236,13 @@ private fun downloadFile(file: KeeperFile, url: String, proxyUrl: String? = null
     }
 }
 
-private fun uploadFile(url: String, parameters: String, fileData: ByteArray, proxyUrl: String?): KeeperHttpResponse {
+private fun uploadFile(url: String, parameters: String, fileData: ByteArray, proxyUrl: String?, allowUnverifiedCertificate: Boolean = false): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
     val boundary = String.format("----------%x", Instant.now().epochSecond)
     val boundaryBytes: ByteArray = stringToBytes("\r\n--$boundary")
     val paramJson = Json.parseToJsonElement(parameters) as JsonObject
-    val connection = openProxiedConnection(url, proxyUrl, false)
+    val connection = openProxiedConnection(url, proxyUrl, allowUnverifiedCertificate)
     try {
         connection.connectTimeout = DEFAULT_CONNECT_TIMEOUT_MS
         connection.readTimeout = DEFAULT_READ_TIMEOUT_MS
@@ -1723,6 +1723,9 @@ fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: 
         }
         response
     } catch (e: Exception) {
+        System.err.println("WARNING: KSM request failed (${e.message}); serving cached secrets. " +
+            "Note: cachingPostFunction does not support a proxy. To use a proxy, pass " +
+            "SecretsManagerOptions.proxyUrl and use the default postFunction instead of cachingPostFunction.")
         val cachedData = getCachedValue()
         val cachedTransmissionKey = cachedData.copyOfRange(0, 32)
         transmissionKey.key = cachedTransmissionKey
