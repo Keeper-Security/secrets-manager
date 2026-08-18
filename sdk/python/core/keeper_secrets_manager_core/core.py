@@ -914,6 +914,22 @@ class SecretsManager:
         decrypted_response_str = utils.bytes_to_string(decrypted_response_bytes)
         decrypted_response_dict = utils.json_to_dict(decrypted_response_str) or {}
 
+        if decrypted_response_dict.get('encryptedAppKey'):
+            encrypted_master_key = url_safe_str_to_bytes(decrypted_response_dict.get('encryptedAppKey'))
+            client_key_b64 = self.config.get(ConfigKeys.KEY_CLIENT_KEY)
+            if client_key_b64 is None:
+                raise KeeperError(
+                    "Required config key 'clientKey' is missing. Reinitialize the SDK "
+                    "with a fresh One-Time Token to repair the configuration."
+                )
+            client_key = url_safe_str_to_bytes(client_key_b64)
+            secret_key = CryptoUtils.decrypt_aes(encrypted_master_key, client_key)
+            self.config.set(ConfigKeys.KEY_APP_KEY, bytes_to_base64(secret_key))
+            self.config.delete(ConfigKeys.KEY_CLIENT_KEY)
+            if decrypted_response_dict.get('appOwnerPublicKey'):
+                appOwnerPublicKeyBytes = url_safe_str_to_bytes(decrypted_response_dict.get('appOwnerPublicKey'))
+                self.config.set(ConfigKeys.KEY_OWNER_PUBLIC_KEY, bytes_to_base64(appOwnerPublicKeyBytes))
+
         app_key_b64 = self.config.get(ConfigKeys.KEY_APP_KEY)
         if app_key_b64 is None:
             raise KeeperError(
