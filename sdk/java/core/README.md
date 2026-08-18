@@ -35,6 +35,20 @@ For more information see our official documentation page https://docs.keeper.io/
   - Without this fix, a second run after IL5 bind failed with "Key number X is not supported" because the key ID was stored but the key bytes were not
 - KSM-1067 - Fix IL5 stale-key diagnostic message swallowed by bare catch
   - The actionable "Server rejected the custom server public key" error now propagates to callers instead of being swallowed
+- KSM-531 - Add HTTP/HTTPS proxy support
+  - New `proxyUrl` option on `SecretsManagerOptions`, e.g. `SecretsManagerOptions(storage, proxyUrl = "http://proxy.local:8080")`. Java callers can also use `new SecretsManagerOptions(storage, "http://proxy.local:8080")`.
+  - Authenticated proxies use the `http://user:password@host:port` URL form
+  - Applies to secret queries (`getSecrets`), file uploads (`uploadFile`), and notation lookups that resolve a file attachment. File downloads require the options-taking overloads: `downloadFile(options, file)` and `downloadThumbnail(options, file)`. The single-argument forms `downloadFile(file)` and `downloadThumbnail(file)` open a direct connection unless given an explicit `proxyUrl` argument.
+  - When `proxyUrl` is not set, the SDK falls back to JVM system properties (`https.proxyHost`/`https.proxyPort`), then the `HTTPS_PROXY`/`HTTP_PROXY` environment variables; `NO_PROXY` and `http.nonProxyHosts` exclusions are honored
+  - Credentials found in ambient environment variables (`HTTPS_PROXY`, `HTTP_PROXY`) are detected but not registered with the JVM `Authenticator` by default. Registering the global `Authenticator` from ambient env values would silently interfere with other libraries in the same process. To use authenticated proxy credentials, pass them explicitly via the `proxyUrl` field in `SecretsManagerOptions`.
+  - **Authenticated proxies require a JVM startup flag in most applications.** Java disables Basic auth over HTTPS CONNECT tunnels by default (`jdk.http.auth.tunneling.disabledSchemes`, a CVE-2016-5597 mitigation), and that default locks in the first time *any* HTTPS connection is made in the process, before this SDK gets a chance to run. The SDK does clear it automatically when proxy credentials are supplied, but that only works if the SDK's proxied call happens to be the very first HTTPS connection in the JVM, which is not the common case in a real application. If you use an authenticated proxy, set this **before your application makes any other HTTPS call**:
+    - Command line: `-Djdk.http.auth.tunneling.disabledSchemes=`
+    - Environment variable (Java 9+): `JDK_JAVA_OPTIONS=-Djdk.http.auth.tunneling.disabledSchemes=`
+    - Environment variable (Java 8): `_JAVA_OPTIONS=-Djdk.http.auth.tunneling.disabledSchemes=` or `JAVA_TOOL_OPTIONS=-Djdk.http.auth.tunneling.disabledSchemes=`
+
+    If this is not set in time, the SDK throws a `SecretsManagerException` with this exact remediation in the message rather than surfacing a bare 407, so the failure is loud and actionable, not a silent/confusing auth error.
+  - Proxy credentials are supplied via a default `java.net.Authenticator` scoped to the configured proxy host, re-asserted on every proxied connection. Applications that install their own default `Authenticator` should pass proxy credentials through that mechanism instead
+  - The legacy `cachingPostFunction` helper does not carry the proxy; use the `proxyUrl` option with the default query path
 - KSM-902 - Add IL5 (DoD Impact Level 5) region mapping and dynamic server public key injection
   - Region: `IL5` OTT prefix maps to `il5.keepersecurity.us`
   - Layer 1 (config field): `serverPublicKey` in storage config overrides the embedded key table

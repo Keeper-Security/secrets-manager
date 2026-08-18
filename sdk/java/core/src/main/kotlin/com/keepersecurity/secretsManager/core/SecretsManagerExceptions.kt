@@ -2,7 +2,17 @@
 
 package com.keepersecurity.secretsManager.core
 
-open class SecretsManagerException(message: String): Exception(message)
+open class SecretsManagerException : Exception {
+    companion object {
+        // Explicit serialVersionUID matches the computed value of the original single-constructor
+        // shape, maintaining serialization compatibility with jars built before this PR.
+        @JvmField
+        val serialVersionUID: Long = 4308841855089494389L
+    }
+
+    constructor(message: String) : super(message)
+    constructor(message: String, cause: Throwable?) : super(message, cause)
+}
 
 internal class SecureRandomException(message: String): SecretsManagerException(message)
 internal class SecureRandomSlowGenerationException(message: String): SecretsManagerException(message)
