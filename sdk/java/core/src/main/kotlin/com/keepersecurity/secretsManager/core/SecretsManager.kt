@@ -36,6 +36,7 @@ const val KEEPER_CLIENT_VERSION = "mj17.3.0"
 const val MAX_THROTTLE_RETRIES = 5
 const val BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 const val MAX_THROTTLE_DELAY_SEC = 176 // caps a backend-supplied retry_after from forcing an excessive wait
+const val MAX_KEY_ROTATION_RETRIES = 3 // parity with JS SDK open PR #1078
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBLIC_KEY_ID = "serverPublicKeyId"
@@ -1806,6 +1807,7 @@ private inline fun <reified T> postQuery(
     val url = "https://${hostName}/api/rest/sm/v1/${path}"
     val throttleSleep = options.throttleSleepMillis ?: { ms -> Thread.sleep(ms) }
     var throttleAttempt = 0
+    var keyRotationAttempt = 0
     while (true) {
         val transmissionKey = generateTransmissionKey(options.storage)
         val encryptedPayload = encryptAndSignPayload(options.storage, transmissionKey, payload)
@@ -1846,6 +1848,18 @@ private inline fun <reified T> postQuery(
                     val currentKeyId = options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
                     throw SecretsManagerException("Server rejected the custom server public key (id $currentKeyId). The server suggested key id ${error.key_id}. Please update your IL5 KSM configuration.")
                 }
+                if (!keeperPublicKeys.containsKey(error.key_id)) {
+                    val ids = keeperPublicKeys.keys.sorted()
+                    throw SecretsManagerException(
+                        "Server suggested unsupported key id ${error.key_id}; this SDK version supports key ids ${ids.first()}-${ids.last()}"
+                    )
+                }
+                if (keyRotationAttempt >= MAX_KEY_ROTATION_RETRIES) {
+                    throw SecretsManagerException(
+                        "Server key rotation exhausted $MAX_KEY_ROTATION_RETRIES retries; key id ${transmissionKey.publicKeyId} was not accepted"
+                    )
+                }
+                keyRotationAttempt++
                 options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, error.key_id.toString())
                 continue
             }

@@ -181,6 +181,94 @@ internal class SecretsManagerTest {
     }
 
     @Test
+    fun testServerKeyIdOutOfRangeIsRejected() {
+        // Server-supplied key_id outside the known range must be rejected before storage is written.
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "fake.keepersecurity.com:FAKE_CLIENT_KEY")
+        TestStubs.transmissionKeyStub = { ByteArray(32) }
+        val testPostFunction: (String, TransmissionKey, EncryptedPayload) -> KeeperHttpResponse = { _, _, _ ->
+            KeeperHttpResponse(400, """{"error":"key","key_id":999}""".toByteArray())
+        }
+        val options = SecretsManagerOptions(storage, testPostFunction)
+        val ex = assertFailsWith<SecretsManagerException> {
+            getSecrets(options)
+        }
+        assertTrue(
+            ex.message?.contains("unsupported key id 999") == true,
+            "Exception must come from the key-table guard and name the rejected id. Got: ${ex.message}"
+        )
+        assertNull(
+            storage.getString(KEY_SERVER_PUBLIC_KEY_ID),
+            "Storage must not be poisoned with key_id=999. Got: ${storage.getString(KEY_SERVER_PUBLIC_KEY_ID)}"
+        )
+    }
+
+    @Test
+    fun testCustomServerKeyGuardTakesPriorityOverKeyTable() {
+        // When a custom server key is configured, a server key-rotation hint must reach
+        // the custom-key branch and throw the actionable error before the key-table guard.
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "fake.keepersecurity.com:FAKE_CLIENT_KEY")
+        // Use a real EC public key so webSafe64ToBytes succeeds in generateTransmissionKey.
+        // The value here is keeper public key #7 (from the embedded table).
+        storage.saveString(KEY_SERVER_PUBLIC_KEY, "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM")
+        storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, "20")
+        TestStubs.transmissionKeyStub = { ByteArray(32) }
+        val testPostFunction: (String, TransmissionKey, EncryptedPayload) -> KeeperHttpResponse = { _, _, _ ->
+            KeeperHttpResponse(400, """{"error":"key","key_id":999}""".toByteArray())
+        }
+        val options = SecretsManagerOptions(storage, testPostFunction)
+        val ex = assertFailsWith<SecretsManagerException> {
+            getSecrets(options)
+        }
+        assertTrue(
+            ex.message?.contains("custom server public key") == true,
+            "Custom-key path must fire before the key-table guard. Got: ${ex.message}"
+        )
+    }
+
+    @Test
+    fun testServerKeyRotationRetryCap() {
+        // When the server keeps returning an in-table key_id, the loop must stop after MAX_KEY_ROTATION_RETRIES.
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "fake.keepersecurity.com:FAKE_CLIENT_KEY")
+        TestStubs.transmissionKeyStub = { ByteArray(32) }
+        val callCount = intArrayOf(0)
+        val testPostFunction: (String, TransmissionKey, EncryptedPayload) -> KeeperHttpResponse = { _, _, _ ->
+            callCount[0]++
+            KeeperHttpResponse(400, """{"error":"key","key_id":10}""".toByteArray())
+        }
+        val options = SecretsManagerOptions(storage, testPostFunction)
+        val ex = assertFailsWith<SecretsManagerException> {
+            getSecrets(options)
+        }
+        assertTrue(
+            ex.message?.contains("key rotation exhausted $MAX_KEY_ROTATION_RETRIES retries") == true,
+            "Exception must name the retry limit. Got: ${ex.message}"
+        )
+        assertEquals(
+            MAX_KEY_ROTATION_RETRIES + 1, callCount[0],
+            "Must make exactly MAX_KEY_ROTATION_RETRIES+1 calls (initial + cap retries)"
+        )
+    }
+
+    @Test
+    fun testConfigFileAtomicWriteIsOwnerOnly() {
+        // KSM-1262: the config file must be written via atomic rename and be readable only by the owner.
+        val configFile = File.createTempFile("ksm-test-", ".json").also { it.delete() }
+        try {
+            val storage = LocalConfigStorage(configFile.absolutePath)
+            initializeStorage(storage, "fake.keepersecurity.com:FAKE_CLIENT_KEY")
+            assertTrue(configFile.exists(), "Config file must exist after initializeStorage")
+            val perms = java.nio.file.Files.getPosixFilePermissions(configFile.toPath())
+            val expected = java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")
+            assertEquals(expected, perms, "Config file must be owner-read/write only. Got: $perms")
+        } finally {
+            configFile.delete()
+        }
+    }
+
+    @Test
     fun testRecordCreateEmptyCustomSerialized() {
         // RecordCreate with no custom fields must include "custom": [] in JSON payload
         val recordData = KeeperRecordData(
@@ -195,7 +283,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testKeeperFileDataMissingLastModified() {
-        // lastModified entirely absent; must deserialize without throwing
+        // lastModified is absent. The SDK must deserialize without throwing.
         val json = """{"title":"test.txt","name":"test.txt","type":"text/plain","size":1024}"""
         val result = Json.decodeFromString<KeeperFileData>(json)
         assertEquals(0L, result.lastModified)
@@ -212,7 +300,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testKeeperFileDataFractionalLastModified() {
-        // Regression guard: fractional lastModified (iOS client format)
+        // Regression guard for fractional lastModified (iOS client format)
         val json = """{"title":"test.txt","name":"test.txt","size":1024,"lastModified":1760646182.790214}"""
         val result = Json.decodeFromString<KeeperFileData>(json)
         assertEquals(1760646182L, result.lastModified)
@@ -220,7 +308,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testKeeperFileNullUrl() {
-        // KeeperFile.url must be nullable; server may omit url for files without a download link
+        // KeeperFile.url must be nullable. The server may omit url for files without a download link.
         val fileData = KeeperFileData("test.txt", "test.txt", "text/plain", 1024)
         val file = KeeperFile(ByteArray(32), "uid123", fileData, null, null)
         assertNull(file.url)
@@ -228,7 +316,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testBase64EmptyStringThrowsTypedException() {
-        // Empty string must throw a typed Keeper exception, not an NPE from inside java.util.Base64
+        // Empty string must throw a typed Keeper exception, not an NPE from inside java.util.Base64.
         val base64Ex = assertFailsWith<Exception> { base64ToBytes("") }
         assertTrue(base64Ex.message?.isNotEmpty() == true)
         val webSafe64Ex = assertFailsWith<Exception> { webSafe64ToBytes("") }
