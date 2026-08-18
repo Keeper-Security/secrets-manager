@@ -70,13 +70,14 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val readTimeoutMillis: Int = 30_000,
     val proxyUrl: String? = null
 ) {
-    // Secondary constructor for Java callers who only need to set a proxy.
-    // @JvmOverloads emits prefix-truncated arities and cannot reach a trailing optional parameter,
-    // so a Java caller that wants proxyUrl but not the other defaults would otherwise need to pass
-    // all 8 arguments explicitly.
-    constructor(storage: KeyValueStorage, proxyUrl: String) : this(
-        storage, null, false, true, null, null, null, 5_000, 30_000, proxyUrl
-    )
+    companion object {
+        // Static factory for Java callers — preferred over the 8-arg @JvmOverloads form.
+        // Adding proxyUrl to the primary constructor changed the copy() binary signature;
+        // callers compiled against 17.3.0 must recompile against 17.4.0.
+        @JvmStatic
+        fun withProxy(storage: KeyValueStorage, proxyUrl: String) =
+            SecretsManagerOptions(storage = storage, proxyUrl = proxyUrl)
+    }
 
     init {
         testSecureRandom()
@@ -1188,20 +1189,20 @@ fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: 
 
 fun downloadFile(options: SecretsManagerOptions, file: KeeperFile): ByteArray {
     val url = file.url ?: throw SecretsManagerException("File ${file.fileUid} has no download URL")
-    return downloadFile(file, url, options.proxyUrl, options.allowUnverifiedCertificate)
+    return downloadFileFromUrl(file, url, options.proxyUrl, options.allowUnverifiedCertificate)
 }
 
 @JvmOverloads
 fun downloadFile(file: KeeperFile, proxyUrl: String? = null): ByteArray {
     val url = file.url ?: throw SecretsManagerException("File ${file.fileUid} has no download URL")
-    return downloadFile(file, url, proxyUrl, false)
+    return downloadFileFromUrl(file, url, proxyUrl, false)
 }
 
 fun downloadThumbnail(options: SecretsManagerOptions, file: KeeperFile): ByteArray {
     if (file.thumbnailUrl == null) {
         throw SecretsManagerException("Thumbnail does not exist for the file ${file.fileUid}")
     }
-    return downloadFile(file, file.thumbnailUrl, options.proxyUrl, options.allowUnverifiedCertificate)
+    return downloadFileFromUrl(file, file.thumbnailUrl, options.proxyUrl, options.allowUnverifiedCertificate)
 }
 
 private const val DEFAULT_CONNECT_TIMEOUT_MS = 5_000
@@ -1212,10 +1213,10 @@ fun downloadThumbnail(file: KeeperFile, proxyUrl: String? = null): ByteArray {
     if (file.thumbnailUrl == null) {
         throw SecretsManagerException("Thumbnail does not exist for the file ${file.fileUid}")
     }
-    return downloadFile(file, file.thumbnailUrl, proxyUrl, false)
+    return downloadFileFromUrl(file, file.thumbnailUrl, proxyUrl, false)
 }
 
-private fun downloadFile(file: KeeperFile, url: String, proxyUrl: String? = null, allowUnverifiedCertificate: Boolean = false): ByteArray {
+private fun downloadFileFromUrl(file: KeeperFile, url: String, proxyUrl: String? = null, allowUnverifiedCertificate: Boolean = false): ByteArray {
     val connection = openProxiedConnection(url, proxyUrl, allowUnverifiedCertificate)
     try {
         connection.connectTimeout = DEFAULT_CONNECT_TIMEOUT_MS
@@ -1266,8 +1267,8 @@ private fun uploadFile(url: String, parameters: String, fileData: ByteArray, pro
             // For tunneled HTTPS connections the JDK can throw here when the CONNECT tunnel fails.
             if (e.message?.contains("407") == true) {
                 val resolved = resolveProxy(proxyUrl, url)
-                if (resolved != null) {
-                    val isAmbientCredentials = !resolved.isExplicit && resolved.username != null
+                if (resolved != null && resolved.username != null) {
+                    val isAmbientCredentials = !resolved.isExplicit
                     throw SecretsManagerException(proxyAuthFailureMessage(e.message, isAmbientCredentials), e)
                 }
             }
@@ -1722,10 +1723,10 @@ fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: 
         }
         response
     } catch (e: Exception) {
-        System.err.println("WARNING: KSM request failed (${e.message}); serving cached secrets. " +
+        val cachedData = getCachedValue()
+        System.err.println("WARNING: KSM request failed (${e.message}); serving stale cached secrets. " +
             "Note: cachingPostFunction does not support a proxy. To use a proxy, pass " +
             "SecretsManagerOptions.proxyUrl and use the default postFunction instead of cachingPostFunction.")
-        val cachedData = getCachedValue()
         val cachedTransmissionKey = cachedData.copyOfRange(0, 32)
         transmissionKey.key = cachedTransmissionKey
         val data = cachedData.copyOfRange(32, cachedData.size)
@@ -1767,8 +1768,8 @@ fun postFunction(
             // For tunneled HTTPS connections the JDK throws here when the CONNECT tunnel fails.
             if (e.message?.contains("407") == true) {
                 val resolved = resolveProxy(proxyUrl, url)
-                if (resolved != null) {
-                    val isAmbientCredentials = !resolved.isExplicit && resolved.username != null
+                if (resolved != null && resolved.username != null) {
+                    val isAmbientCredentials = !resolved.isExplicit
                     throw SecretsManagerException(proxyAuthFailureMessage(e.message, isAmbientCredentials), e)
                 }
             }

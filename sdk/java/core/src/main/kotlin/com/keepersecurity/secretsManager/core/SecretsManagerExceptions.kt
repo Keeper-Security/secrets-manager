@@ -8,7 +8,7 @@ open class SecretsManagerException : Exception {
         // built before this PR can deserialize exceptions from jars built after it (e.g. Jenkins
         // controller/agent remoting). private const val generates private static final in bytecode,
         // which is the conventional form recognized by ObjectStreamClass.
-        private const val serialVersionUID: Long = 4308841855089494389L
+        private const val serialVersionUID: Long = 5401507264959279624L
     }
 
     constructor(message: String) : super(message)

@@ -251,6 +251,19 @@ internal class ProxyTest {
         assertTrue(ambientMsg.contains("proxyUrl field"), "Ambient message must mention proxyUrl field in options")
     }
 
+    @Test
+    fun redactProxyUrlHandlesSchemeLessUrl() {
+        assertEquals("user:***@proxy.corp:8080", redactProxyUrl("user:p@ssword@proxy.corp:8080"))
+    }
+
+    @Test
+    fun secretsManagerExceptionSerialVersionUidMatchesReleasedJars() {
+        assertEquals(
+            5401507264959279624L,
+            java.io.ObjectStreamClass.lookup(SecretsManagerException::class.java).serialVersionUID
+        )
+    }
+
     private fun host(resolved: ResolvedProxy?): String =
         (resolved!!.proxy.address() as java.net.InetSocketAddress).hostString
 }

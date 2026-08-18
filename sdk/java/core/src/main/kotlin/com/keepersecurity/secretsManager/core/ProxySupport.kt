@@ -67,7 +67,7 @@ private fun systemPropertyProxy(environment: ProxyEnvironment): String? {
     // never applies http.proxyHost to HTTPS URLs. Applying it here would silently proxy traffic
     // the operator may not have intended to route through that host.
     val host = environment.property("https.proxyHost")?.takeIf { it.isNotBlank() } ?: return null
-    val port = environment.property("https.proxyPort") ?: "443"
+    val port = environment.property("https.proxyPort")?.takeIf { it.isNotBlank() } ?: "443"
     return "$host:$port"
 }
 
@@ -109,7 +109,8 @@ private fun parseProxy(raw: String, isExplicit: Boolean = false): ResolvedProxy?
 }
 
 internal fun isExcluded(host: String, environment: ProxyEnvironment): Boolean {
-    val noProxy = environment.env("NO_PROXY") ?: environment.env("no_proxy")
+    val noProxy = environment.env("NO_PROXY")?.takeIf { it.isNotBlank() }
+        ?: environment.env("no_proxy")?.takeIf { it.isNotBlank() }
     val nonProxyHosts = environment.property("http.nonProxyHosts")
     val patterns = buildList {
         noProxy?.split(',')?.forEach { add(it.trim()) }
@@ -263,9 +264,10 @@ internal object ProxyAuthenticator : Authenticator() {
  */
 internal fun redactProxyUrl(proxyUrl: String): String {
     val schemeEnd = proxyUrl.indexOf("://")
-    if (schemeEnd < 0) return proxyUrl
-    val afterScheme = proxyUrl.substring(schemeEnd + 3)
-    val atIndex = afterScheme.lastIndexOf('@')
+    val authorityStart = if (schemeEnd < 0) 0 else schemeEnd + 3
+    val afterScheme = proxyUrl.substring(authorityStart)
+    val authorityEnd = afterScheme.indexOf('/').let { if (it < 0) afterScheme.length else it }
+    val atIndex = afterScheme.lastIndexOf('@', authorityEnd - 1)
     if (atIndex < 0) return proxyUrl
     val userInfo = afterScheme.substring(0, atIndex)
     val colonIndex = userInfo.indexOf(':')
@@ -274,7 +276,7 @@ internal fun redactProxyUrl(proxyUrl: String): String {
     } else {
         "$userInfo:***"
     }
-    return proxyUrl.substring(0, schemeEnd + 3) + redactedUserInfo + "@" + afterScheme.substring(atIndex + 1)
+    return proxyUrl.substring(0, authorityStart) + redactedUserInfo + "@" + afterScheme.substring(atIndex + 1)
 }
 
 /**
