@@ -416,7 +416,7 @@ fun generatePassword(
         if (it.first > 0)
             passwordCharacters += randomSample(it.first, it.second)
     }
-    val pCharArray = passwordCharacters.toCharArray()
-    pCharArray.shuffle()
-    return String(pCharArray)
+    val pCharList = passwordCharacters.toMutableList()
+    Collections.shuffle(pCharList, SecureRandom.getInstanceStrong())
+    return String(pCharList.toCharArray())
 }
