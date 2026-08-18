@@ -243,7 +243,6 @@ internal class ProxyTest {
     fun proxyAuthFailureMessageAmbientBranchRequiresCredentials() {
         // The ambient-credentials branch must only fire when username is non-null.
         // An unauthenticated ambient proxy (no credentials in env var) must use the standard path.
-        val ambientWithCreds = "HTTPS_PROXY=http://user:pass@proxy.corp:3128 -> isAmbient=true, username!=null"
         val standardMsg = proxyAuthFailureMessage("407", isAmbientCredentials = false)
         val ambientMsg = proxyAuthFailureMessage("407", isAmbientCredentials = true)
         assertTrue(standardMsg.contains("proxyUrl"), "Standard message must mention proxyUrl")

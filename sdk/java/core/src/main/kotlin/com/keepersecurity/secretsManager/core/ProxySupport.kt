@@ -11,7 +11,11 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import javax.net.ssl.HttpsURLConnection
 
-internal data class ResolvedProxy(val proxy: Proxy, val username: String?, val password: String?, val isExplicit: Boolean = false)
+internal data class ResolvedProxy(val proxy: Proxy, val username: String?, val password: String?, val isExplicit: Boolean = false) {
+    override fun toString(): String =
+        "ResolvedProxy(proxy=$proxy, username=$username, " +
+        "password=${if (password != null) "<redacted>" else null}, isExplicit=$isExplicit)"
+}
 
 /**
  * Seam over the ambient environment so proxy resolution stays deterministic under test.

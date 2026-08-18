@@ -4,10 +4,11 @@ package com.keepersecurity.secretsManager.core
 
 open class SecretsManagerException : Exception {
     companion object {
-        // Explicit serialVersionUID matches the computed value of the original single-constructor
-        // shape, maintaining serialization compatibility with jars built before this PR.
-        @JvmField
-        val serialVersionUID: Long = 4308841855089494389L
+        // Pins the SUID to the value computed for the original single-constructor shape so jars
+        // built before this PR can deserialize exceptions from jars built after it (e.g. Jenkins
+        // controller/agent remoting). private const val generates private static final in bytecode,
+        // which is the conventional form recognized by ObjectStreamClass.
+        private const val serialVersionUID: Long = 4308841855089494389L
     }
 
     constructor(message: String) : super(message)

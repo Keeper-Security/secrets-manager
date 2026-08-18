@@ -24,7 +24,6 @@ import java.time.Instant
 import java.util.*
 import java.util.concurrent.*
 import kotlin.random.Random
-import javax.net.ssl.*
 
 const val KEEPER_CLIENT_VERSION = "mj17.3.0"
 
