@@ -20,8 +20,9 @@
  *               one-time token (codec client). The same token authenticates the first and all
  *               subsequent calls until the admin rotates it.
  *  - 'oauth'  - same bearer wire format, but the credential is minted by an OAuth authorization
- *               server (client_credentials grant) and refreshed automatically before expiry. Set
- *               KSM_OAUTH_TOKEN_ENDPOINT / KSM_OAUTH_CLIENT_ID / KSM_OAUTH_CLIENT_SECRET.
+ *               server (client_credentials grant) and refreshed automatically before expiry. Run
+ *               kidp (../kidp: KIDP_ISSUER=http://host.docker.internal:8080 ./gradlew :server:run)
+ *               and configure KA's KSM_OAUTH_CLIENTS; see the oauth constants below.
  *  - 'ambient' - same wire format again, but the credential is one the platform already provides
  *               (kubelet-projected service account token, cloud metadata identity). Set
  *               KSM_AMBIENT_TOKEN_PATH to the projected token file.
@@ -51,15 +52,18 @@ import {
     oauthClientCredentials,
     QueryOptions,
     SecretManagerOptions,
-    signatureAuth
+    signatureAuth,
+    TokenEndpointPost
 } from '../src/keeper'
 import {nodePlatform} from '../src/node/nodePlatform';
-import {connectPlatform, KeyValueStorage} from '../src/platform';
+import {connectPlatform, KeeperHttpResponse, KeyValueStorage} from '../src/platform';
 import {inspect} from 'util';
 import {localConfigStorage} from "../src/node";
 import {promises as fs} from 'fs';
+import {request as httpRequest} from 'http';
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+process.env.KSM_AUTH_MODE = 'oauth'
 
 const version = require("../package.json").version;
 connectPlatform(nodePlatform)
@@ -70,6 +74,24 @@ const cryptoConfigFileName = 'client-config-split-crypto-bearer.json'
 // Provisioned together when the device is added to the application:
 const oneTimeToken = 'US:ONE_TIME_TOKEN'    // goes to the codec client
 const bearerToken = 'BEARER_TOKEN'          // goes to the auth client (bearer mode only)
+
+// oauth mode, against the kidp IdP (../kidp). kidp issues sub = client_id, so oauthClientId must
+// match the 'sub' in KA's KSM_OAUTH_CLIENTS binding for this device's clientId.
+const oauthTokenEndpoint = 'http://localhost:8080/token'
+const oauthClientId = 'ksm-demo'
+const oauthAudience = 'https://keepersecurity.com/api/rest/sm'
+
+// kidp is plain http and nodePlatform.post speaks https only, so the token endpoint gets its own
+// tiny transport. A real deployment would use the default (platform.post).
+const httpPost: TokenEndpointPost = (url, body, headers) => new Promise<KeeperHttpResponse>((resolve, reject) => {
+    const post = httpRequest(url, {method: 'POST', headers: {...headers, 'Content-Length': body.length}}, res => {
+        const chunks: Buffer[] = []
+        res.on('data', chunk => chunks.push(chunk))
+        res.on('end', () => resolve({statusCode: res.statusCode!, headers: res.headers, data: new Uint8Array(Buffer.concat(chunks))}))
+    })
+    post.on('error', reject)
+    post.end(Buffer.from(body))
+})
 
 // How client 1 authenticates (also settable via KSM_AUTH_MODE=bearer|oauth|ambient). The codec
 // client is unaffected by this choice - decryption is the same regardless of how the ciphertext was
@@ -84,14 +106,13 @@ const makeAuthorizer = (): Authorizer => {
             return bearerAuth(bearerToken)
         case 'oauth':
             // Short-lived access tokens from the AS, cached by the source and renewed ~60s before
-            // expiry. bootstrap() persists the non-secret settings; add persistSecret: true to also
-            // store the client secret in the auth config.
+            // expiry. bootstrap() persists the non-secret settings; pass clientSecret (and
+            // persistSecret: true to store it) when the AS requires one - the stub does not.
             return bearerAuth(oauthClientCredentials({
-                tokenEndpoint: process.env.KSM_OAUTH_TOKEN_ENDPOINT!,
-                clientId: process.env.KSM_OAUTH_CLIENT_ID!,
-                clientSecret: process.env.KSM_OAUTH_CLIENT_SECRET,
-                audience: 'https://keepersecurity.com/api/rest/sm'
-            }))
+                tokenEndpoint: oauthTokenEndpoint,
+                clientId: oauthClientId,
+                audience: oauthAudience
+            }, httpPost))
         case 'ambient':
             // The federated flow from federated-oauth-flow.md: the platform mints and rotates the
             // credential; nothing is persisted. JWTs are cached until shortly before their exp.

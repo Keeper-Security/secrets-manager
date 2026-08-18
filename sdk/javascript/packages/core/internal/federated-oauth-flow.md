@@ -1,9 +1,17 @@
 # KSM Federated OAuth — mock flow
 
-**Status:** research note. Describes the end-to-end flow that becomes possible after Phase 3 of the
-auth plan (server-side OIDC validation + claim-binding provisioning). Client-side, it builds on the
-`Authorizer` / `bearerAuth` / auth-codec split already prototyped in this package; nothing here
-requires SDK changes beyond the planned `TokenSource` layer (Phase 1).
+**Status:** research note, now backed by a working prototype. Phases 1–3 of the auth plan are built
+and were verified end-to-end on 2026-08-18 against a local KA (server-dev-env Docker, dev database)
+with kidp (a sibling repo — a minimal Kotlin/Ktor test IdP) as the OAuth issuer:
+
+- **Phase 1 (SDK):** `Authorizer` over a `TokenSource` — `provisionedToken` / `ambientToken` /
+  `oauthClientCredentials` (caching, refresh-before-expiry, `token_expired` retry-once).
+- **Phase 2 (KA):** static bearer digests via the `KSM_BEARER_CLIENTS` property. Verified.
+- **Phase 3 (KA):** OIDC validation (JWKS fetch + cache, signature, iss/sub/aud/exp/nbf) against
+  claim bindings in the `KSM_OAUTH_CLIENTS` property. Verified with client_credentials tokens.
+
+The K8s scenario below is unchanged as the *target* design; see "How the prototype maps to this
+design" and "Lessons learned" at the end for where reality differed.
 
 **Scenario:** a `billing-api` pod in a Kubernetes cluster needs secrets from the KSM app
 **payments-prod**. No Keeper-issued secret ever exists inside the pod's auth container.
@@ -134,8 +142,9 @@ Authorization: Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6...
 
 **C9.** KA filter: transmission key decrypt + IV replay check (unchanged) → sees `Bearer` → **new
 path**: issuer must be on the app's allowlist, JWKS fetched/cached from
-`{iss}/.well-known/openid-configuration`, signature + `exp`/`nbf` + `aud` verified. Then payload
-decrypt, clientId extraction, throttle (unchanged).
+`{iss}/.well-known/openid-configuration` (or from an explicit per-binding `jwksUri` — see Lessons),
+signature + `exp`/`nbf` + `aud` verified. Then payload decrypt, clientId extraction, throttle
+(unchanged).
 
 **C10.** KA rest: row for `clientId` says `oauth_federated` → compare token's `iss`/`sub` to the
 stored binding. Match ⇒ authenticated. `verifySignature` is never called for this row.
@@ -166,10 +175,12 @@ plaintext, never the app key.
 ## Failure modes
 
 - **Token expired mid-flight** (read at 59:59): KA returns 401 with a distinct
-  `error: "token_expired"`; SDK re-reads the source and retries once — a Phase 1 SDK detail to
-  remember.
+  `error: "token_expired"` (`ResponseCode.token_expired`); the SDK invalidates its token cache and
+  retries once. Implemented on both sides.
 - **Issuer JWKS unreachable from KA**: validation fails closed; KA serves nothing on a stale key.
-  Cache TTL + `kid`-miss refetch is the standard mitigation.
+  Mitigations implemented: 5-minute JWKS cache with a rate-limited `kid`-miss refetch (which also
+  covers an issuer restarting with a fresh key), and eviction of a *discovered* `jwks_uri` on fetch
+  failure so a reconfigured issuer is re-discovered instead of failing forever.
 
 ## At rest, who holds what
 
@@ -186,4 +197,61 @@ plaintext, never the app key.
 Steps **C11–C12 are identical in every auth scheme**. The entire OAuth story happens on the
 transport side of the bundle hand-off, which is exactly what the auth/codec split was for: swapping
 native / bearer / OAuth changes nothing about how secrets are decrypted, and cannot affect the
-zero-knowledge properties of record data.
+zero-knowledge properties of record data. The prototype confirmed this literally: the codec client
+and the codec-side config were untouched between the native, static-bearer and OAuth runs.
+
+## How the prototype maps to this design
+
+The prototype needed **no database changes** — two substitutions cover the gap:
+
+- **Claim bindings / token digests live in properties**, not on the `app_client` row:
+  `KSM_BEARER_CLIENTS=<clientId>:<b64url sha256(token)>[;...]` and
+  `KSM_OAUTH_CLIENTS=[{"clientId","iss","sub","aud","jwksUri"?}]` (env var, `-D` property, or
+  config.properties — standard KA `Property` resolution). Empty values keep both schemes rejected,
+  so the code is inert unless explicitly configured.
+- **The device public key slot doubles as the binding marker.** A bearer/OAuth client never has a
+  key pair, but KA's binding state machine keys off `device_public_key` (enroll on call 1, clear
+  `encrypted_app_key` on call 2). A stable digest stands in: `sha256(token)` for static bearer,
+  `sha256("oauth|iss|sub")` for OAuth — identity-derived, so hourly token rotation does not disturb
+  it. The rest of `validateAppClient` runs unchanged.
+
+Verification order matters and differs from native: the bearer/OAuth credential is verified
+**before** `validateAppClient` runs, because for these schemes the first call enrolls the digest —
+enrollment must never be reachable unauthenticated. (Native enrolls its public key on a first call
+authenticated only by clientId possession; the pre-registered credential is strictly stronger.)
+
+The issuer in the prototype is kidp (`../kidp`), not a K8s cluster: an RFC 6749 client_credentials
+grant where `sub` = the requested `client_id` and `aud` echoes the request. Same validation path as
+the projected-JWT scenario; only the token acquisition differs (`oauthClientCredentials` source vs
+`ambientToken` reading a projected file).
+
+## Lessons learned
+
+1. **`iss` is an identity string, not an address.** The binding's `iss` must equal what the issuer
+   *stamps into tokens*, not whatever URL happens to reach it from the verifier's network position.
+   With KA in Docker and the issuer on the host (split horizon: host sees `localhost:8080`, the
+   container sees `host.docker.internal:8080`), the two roles must be assigned deliberately. Real
+   IdPs pin one canonical https issuer URL, which is why this never surfaces outside a lab setup —
+   but the provisioning UX should still validate that the entered issuer matches the discovery
+   document's self-declared `issuer`.
+2. **Discovery means following the document.** KA fetches `{iss}/.well-known/openid-configuration`
+   and then trusts the advertised `jwks_uri` — which can point somewhere the verifier cannot reach
+   if the issuer is misconfigured. Two consequences implemented: an explicit per-binding `jwksUri`
+   override (decouples key fetching from the identity string; also useful for issuers without
+   discovery), and eviction of cached discovery results when the JWKS fetch fails.
+3. **The JWKS location must come from the binding, never the token** — a forged `iss` claim must
+   not be able to steer the verifier's outbound fetch (SSRF / attacker-controlled-keys). The claim
+   is *compared to* the binding, not *used*.
+4. **kidp needed an `/.well-known/openid-configuration` alias**: it served only the RFC 8414 path
+   (`oauth-authorization-server`), while OIDC-style verifiers (KA included) resolve the OIDC path.
+   Real IdPs commonly serve both; a test IdP must too.
+5. **Property plumbing is the actual failure mode in practice.** Both misfires during testing were
+   configuration visibility, not protocol: an env var not set on the KA container (env is read at
+   JVM start — restart required; only config.properties is re-read live), and the standing risk of
+   shell quotes becoming part of the value in compose list-form env or properties files. The
+   verifiers therefore log *which side* failed (entry count, clientId-not-found vs digest/claim
+   mismatch — never the token), which turned every subsequent misconfiguration into a one-look
+   diagnosis.
+6. **Fresh-key issuers are handled by the `kid`-miss refetch.** kidp generates a new RS256 key per
+   start; KA recovers without restarts because an unknown `kid` triggers one rate-limited JWKS
+   refetch. That behavior doubles as routine key-rotation support.

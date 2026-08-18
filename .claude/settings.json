@@ -2,11 +2,13 @@
   "permissions": {
     "additionalDirectories": [
       "../keeperapp",
-      "../server_dev_env"
+      "../server_dev_env",
+      "../kidp"
     ],
     "allow": [
       "Write(../keeperapp/**)",
-      "Write(../server_dev_env/**)"
+      "Write(../server_dev_env/**)",
+      "Write(../kidp/**)"
     ]
   }
 }
