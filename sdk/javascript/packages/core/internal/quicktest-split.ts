@@ -65,8 +65,8 @@ const version = require("../package.json").version;
 connectPlatform(nodePlatform)
 initialize(version)
 
-const authConfigFileName = 'client-config-split-auth.json'
-const cryptoConfigFileName = 'client-config-split-crypto.json'
+const authConfigFileName = 'client-config-split-auth-bearer.json'
+const cryptoConfigFileName = 'client-config-split-crypto-bearer.json'
 // Provisioned together when the device is added to the application:
 const oneTimeToken = 'US:ONE_TIME_TOKEN'    // goes to the codec client
 const bearerToken = 'BEARER_TOKEN'          // goes to the auth client (bearer mode only)
@@ -74,7 +74,7 @@ const bearerToken = 'BEARER_TOKEN'          // goes to the auth client (bearer m
 // How client 1 authenticates (also settable via KSM_AUTH_MODE=bearer|oauth|ambient). The codec
 // client is unaffected by this choice - decryption is the same regardless of how the ciphertext was
 // fetched.
-const AUTH_MODE = (process.env.KSM_AUTH_MODE ?? 'native') as 'native' | 'bearer' | 'oauth' | 'ambient'
+const AUTH_MODE = (process.env.KSM_AUTH_MODE ?? 'bearer') as 'bearer' | 'native' | 'oauth' | 'ambient'
 
 const makeAuthorizer = (): Authorizer => {
     switch (AUTH_MODE) {
@@ -166,6 +166,7 @@ async function test() {
 
     // --- Binding ------------------------------------------------------------------------------
     // The token never reaches the auth client.
+    // @ts-ignore
     if (oneTimeToken != 'US:ONE_TIME_TOKEN') {
         const bootstrap = await codecClient.bootstrap(oneTimeToken)
         await authClient.bootstrap(bootstrap)
