@@ -1,7 +1,7 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey} from './platform'
 import {webSafe64FromBytes, webSafe64ToBytes, tryParseInt} from './utils'
 import {parseNotation} from './notation'
-import {KeeperThrottleError} from './errors'
+import {KeeperError, KeeperThrottleError} from './errors'
 
 export {KeyValueStorage} from './platform'
 
@@ -19,6 +19,10 @@ const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
 // request, so the counter only clears after 10s of silence).
 const MAX_THROTTLE_RETRIES = 5
+// Bounds the server-key-rotation retry (postQuery's `error === 'key'` branch, no custom key
+// pinned): one legitimate rotation should resolve it, so this only needs to tolerate a little
+// slack, not act as a real retry budget.
+const MAX_KEY_ROTATION_RETRIES = 3
 const BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 const MAX_THROTTLE_DELAY_SEC = 176 // same ceiling the exponential branch reaches at the last retry (11 * 2**4)
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
@@ -788,6 +792,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
     const url = `https://${hostName}/api/rest/sm/v1/${path}`
     const sleep = options.throttleSleep || ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)))
     let throttleAttempt = 0
+    let keyRotationAttempt = 0
     while (true) {
         const transmissionKey = await generateTransmissionKey(options.storage)
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
@@ -815,12 +820,24 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                 let errorObj: KeeperApiError | null = null
                 try { errorObj = JSON.parse(errorMessage) } catch {}
                 if (errorObj?.error === 'key') {
+                    const suggestedKeyId = errorObj.key_id
                     const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
                     if (customKey) {
                         const currentKeyId = await options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-                        throw new Error(`Server rejected the custom server public key (id ${currentKeyId}). The server suggested key id ${errorObj.key_id}. Please update your IL5 KSM configuration.`)
+                        throw new KeeperError(`Server rejected the custom server public key (id ${currentKeyId ?? transmissionKey.publicKeyId}). The server suggested key id ${suggestedKeyId}. Please update your IL5 KSM configuration.`)
                     }
-                    await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, errorObj.key_id!.toString())
+                    if (typeof suggestedKeyId !== 'number' || !Number.isInteger(suggestedKeyId) || suggestedKeyId <= 0) {
+                        throw new KeeperError(`Server key error response contains invalid key_id: ${JSON.stringify(suggestedKeyId)}`)
+                    }
+                    if (!(suggestedKeyId in keeperPublicKeys)) {
+                        const supported = Object.keys(keeperPublicKeys)
+                        throw new KeeperError(`Server suggested unsupported key id ${suggestedKeyId}; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
+                    }
+                    if (keyRotationAttempt >= MAX_KEY_ROTATION_RETRIES) {
+                        throw new KeeperError(`Server key rotation exhausted ${MAX_KEY_ROTATION_RETRIES} retries; transmission key id ${transmissionKey.publicKeyId} was not accepted`)
+                    }
+                    await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, suggestedKeyId.toString())
+                    keyRotationAttempt++
                     continue
                 }
             } else {
