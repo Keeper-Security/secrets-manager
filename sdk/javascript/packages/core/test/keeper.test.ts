@@ -321,7 +321,7 @@ test('IL5 dynamic key - rotation suppression: server key_id hint ignored when se
     expect(await storage.getString('serverPublicKeyId')).toBe('20')
 })
 
-test('IL5 dynamic key - server key rotation retries are bounded, not infinite', async () => {
+test('key rotation - retries are bounded, not infinite', async () => {
     const storage = inMemoryStorage({})
     await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
     let calls = 0
@@ -341,7 +341,7 @@ test('IL5 dynamic key - server key rotation retries are bounded, not infinite', 
     expect(calls).toBe(4)
 })
 
-test('IL5 dynamic key - single key rotation succeeds on retry', async () => {
+test('key rotation - suggested key id is adopted and persisted', async () => {
     const storage = inMemoryStorage({})
     await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
     let calls = 0
@@ -369,7 +369,7 @@ test('IL5 dynamic key - single key rotation succeeds on retry', async () => {
     expect(await storage.getString('serverPublicKeyId')).toBe('8')
 })
 
-test('IL5 dynamic key - unsupported suggested key id is rejected, not persisted', async () => {
+test('key rotation - unsupported suggested key id is rejected, not persisted', async () => {
     const storage = inMemoryStorage({})
     await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
     let calls = 0
