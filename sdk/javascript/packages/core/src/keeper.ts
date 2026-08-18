@@ -824,13 +824,14 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                     const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
                     if (customKey) {
                         const currentKeyId = await options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-                        throw new KeeperError(`Server rejected the custom server public key (id ${currentKeyId}). The server suggested key id ${suggestedKeyId}. Please update your IL5 KSM configuration.`)
+                        throw new KeeperError(`Server rejected the custom server public key (id ${currentKeyId ?? transmissionKey.publicKeyId}). The server suggested key id ${suggestedKeyId}. Please update your IL5 KSM configuration.`)
                     }
                     if (typeof suggestedKeyId !== 'number' || !Number.isInteger(suggestedKeyId) || suggestedKeyId <= 0) {
                         throw new KeeperError(`Server key error response contains invalid key_id: ${JSON.stringify(suggestedKeyId)}`)
                     }
                     if (!(suggestedKeyId in keeperPublicKeys)) {
-                        throw new KeeperError(`Server suggested unsupported key id ${suggestedKeyId}; this SDK version supports key ids 7-18`)
+                        const supported = Object.keys(keeperPublicKeys)
+                        throw new KeeperError(`Server suggested unsupported key id ${suggestedKeyId}; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
                     }
                     if (keyRotationAttempt >= MAX_KEY_ROTATION_RETRIES) {
                         throw new KeeperError(`Server key rotation exhausted ${MAX_KEY_ROTATION_RETRIES} retries; transmission key id ${transmissionKey.publicKeyId} was not accepted`)
