@@ -268,6 +268,36 @@ internal class SecretsManagerTest {
             val perms = java.nio.file.Files.getPosixFilePermissions(configFile.toPath())
             val expected = java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")
             assertEquals(expected, perms, "Config file must be owner-read/write only. Got: $perms")
+
+            // Permissions alone do not prove the fix: the previous implementation also ended at
+            // 0600 by calling chmod after writing the private key through an 0644 handle. What is
+            // new is that the secrets are never written to the visible path at all. A rename
+            // installs a different inode, so fileKey() changes across a write; an in-place
+            // rewrite keeps the same one.
+            val inodeBefore = java.nio.file.Files.readAttributes(
+                configFile.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java
+            ).fileKey()
+            assertNotNull(inodeBefore, "File system does not expose fileKey(); cannot verify the swap")
+            storage.saveString(KEY_HOSTNAME, "second.keepersecurity.com")
+            val inodeAfter = java.nio.file.Files.readAttributes(
+                configFile.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java
+            ).fileKey()
+            assertNotEquals(
+                inodeBefore, inodeAfter,
+                "Config was rewritten in place rather than swapped in via rename, so the window " +
+                    "where the file is visible with partial or loosely-permissioned content is open"
+            )
+            assertEquals(
+                java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"),
+                java.nio.file.Files.getPosixFilePermissions(configFile.toPath()),
+                "Permissions must survive the swap"
+            )
+
+            // The staging file must not survive a successful write.
+            val leftovers = configFile.absoluteFile.parentFile
+                .list { _, name -> name.startsWith("ksm_") && name.endsWith(".tmp") }
+                ?: emptyArray()
+            assertTrue(leftovers.isEmpty(), "Staging files were left behind: ${leftovers.toList()}")
         } finally {
             configFile.delete()
         }
