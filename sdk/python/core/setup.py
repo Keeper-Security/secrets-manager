@@ -17,7 +17,7 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
 
 install_requires = [
     'requests>=2.32.4',
-    'cryptography>=46.0.5',
+    'cryptography>=46.0.7',
     'urllib3>=2.6.3',
 ]
 
