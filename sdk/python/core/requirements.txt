@@ -1,4 +1,4 @@
-cryptography>=46.0.5
+cryptography>=46.0.7
 requests>=2.32.4
 urllib3>=2.6.3
 pytest>=7.2.1
