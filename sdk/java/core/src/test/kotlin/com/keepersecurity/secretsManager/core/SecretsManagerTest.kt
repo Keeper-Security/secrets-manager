@@ -510,6 +510,73 @@ internal class SecretsManagerTest {
         assertEquals(0, folders.size, "both cyclic folders must be skipped; the call must complete without hanging")
     }
 
+    // Builds a get_folders response with one decryptable folder and one that is not, so the skip
+    // path in fetchAndDecryptFolders can be driven without a live backend.
+    private fun undecryptableFolderOptions(loggingEnabled: Boolean): SecretsManagerOptions {
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+        val appKey = getRandomBytes(32)
+        val goodFolderKey = getRandomBytes(32)
+        val encGoodFolderKey = bytesToBase64(encrypt(goodFolderKey, appKey))
+        val encGoodData = bytesToBase64(encrypt(stringToBytes("""{"name":"Good Folder"}"""), goodFolderKey, true))
+        val badFolderKey = bytesToBase64(ByteArray(16) { it.toByte() })
+        val responseJson = """{"encryptedAppKey":null,"folders":[{"folderUid":"good-uid","folderKey":"$encGoodFolderKey","data":"$encGoodData","parent":null,"records":null},{"folderUid":"bad-uid","folderKey":"$badFolderKey","data":null,"parent":null,"records":null}],"records":null}"""
+        val encryptedResponse = encrypt(stringToBytes(responseJson), transmissionKey)
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+        return SecretsManagerOptions(
+            storage,
+            queryFunction = { _, _, _ -> KeeperHttpResponse(200, encryptedResponse) },
+            loggingEnabled = loggingEnabled
+        )
+    }
+
+    private fun captureStderr(block: () -> Unit): String {
+        val original = System.err
+        val buffer = java.io.ByteArrayOutputStream()
+        System.setErr(java.io.PrintStream(buffer, true, "UTF-8"))
+        try {
+            block()
+        } finally {
+            System.setErr(original)
+        }
+        return buffer.toString("UTF-8")
+    }
+
+    @Test
+    fun testFolderSkipDiagnosticRespectsLoggingEnabled() {
+        // loggingEnabled gates the throttle and record-decryption diagnostics elsewhere in this
+        // file. A library that has been told not to log must not write to stderr from the folder
+        // skip path either.
+        val stderr = captureStderr {
+            val folders = getFolders(undecryptableFolderOptions(loggingEnabled = false))
+            assertEquals(1, folders.size)
+        }
+        assertEquals("", stderr, "loggingEnabled = false must not write to stderr. Got: $stderr")
+    }
+
+    @Test
+    fun testFolderSkipDiagnosticNamesTheExceptionType() {
+        // The message must carry the exception class, not just its message: the causes this skip
+        // path exists for (a null data field, a GCM tag mismatch) frequently have a null message,
+        // which on its own logs "skipped due to error: null" and tells an operator nothing.
+        val stderr = captureStderr {
+            val folders = getFolders(undecryptableFolderOptions(loggingEnabled = true))
+            assertEquals(1, folders.size)
+        }
+        // Scope the assertion to the line about this folder and require the class name in the
+        // position the sibling handlers put it. A bare stderr.contains("Exception") would also
+        // pass on an exception message that happens to spell the word, or on output bleeding in
+        // from another test.
+        val line = stderr.lineSequence().firstOrNull { it.contains("bad-uid") }
+        assertNotNull(line, "The skipped folder must be named. Got: $stderr")
+        assertTrue(
+            Regex("""skipped due to error: \w*(Exception|Error)\w*, """).containsMatchIn(line),
+            "The exception class must directly follow the prefix so a null message is still " +
+                "diagnosable. Got: $line"
+        )
+    }
 
 //    @Test // uncomment to debug the integration test
     fun integrationTest() {
