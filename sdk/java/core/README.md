@@ -5,6 +5,7 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 17.4.0
+- KSM-1203 - Fixed `generatePassword` using a non-cryptographic PRNG (Kotlin `Random.Default`) for the final character shuffle. The shuffle now uses `SecureRandom`, so the entire password generation path is cryptographically secure.
 - KSM-1081 - Fixed `getFolders()` crashing when any folder in the response has a corrupted or missing key. The SDK now skips undecryptable folders and returns the remaining folders normally.
 - KSM-1086 - Fixed `deleteFolder()` to return `SecretsManagerDeleteFolderResponse` (typed per-folder status), matching `deleteSecret()`. The SDK now logs per-item server failures to stderr and includes them in the return value so callers can detect partial failures.
 - KSM-1248 - Server-supplied key IDs are validated against the embedded public key table before being stored. An unrecognized key ID throws `SecretsManagerException` and leaves storage unchanged. Key rotation retries are now capped at `MAX_KEY_ROTATION_RETRIES` (3); exhausted retries throw a typed error naming the last suggested key ID.
