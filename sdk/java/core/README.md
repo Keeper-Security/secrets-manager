@@ -5,6 +5,10 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 17.4.0
+**Breaking Changes**
+- `deleteFolder()` returns `SecretsManagerDeleteFolderResponse` instead of `SecretsManagerDeleteResponse`. The new type exposes a `folders` list, where each entry has `folderUid`, `responseCode`, and an optional `errorMessage`; callers that read `.records` on the old return type must switch to `.folders`.
+- `KeeperRecord` and `SecretsManagerOptions` each gained a constructor parameter. Recompiling is enough: Kotlin source needs no edit, and Java call sites keep every constructor form published in 17.3.0 because both types carry `@JvmOverloads`. What does change is bytecode-level. The generated `copy()` methods and the synthetic constructor Kotlin emits for omitted default arguments both changed arity, so Kotlin code compiled against 17.3.0 throws `NoSuchMethodError` if the 17.4.0 jar is swapped in without recompiling. Rebuild dependents against 17.4.0 rather than replacing the jar in place.
+
 - KSM-1203 - Fixed `generatePassword` using a non-cryptographic PRNG (Kotlin `Random.Default`) for the final character shuffle. The shuffle now uses `SecureRandom`, so the entire password generation path is cryptographically secure.
 - KSM-1176 - `KeeperRecord` now exposes `isEditable: Boolean`, forwarded from the server response envelope. Callers can inspect this field before calling `updateSecret` to determine whether the app has write permission for the record.
 - KSM-1207 - Fixed all `HttpsURLConnection` calls defaulting to an infinite timeout. Added `connectTimeoutMillis` (default 5 000 ms) and `readTimeoutMillis` (default 30 000 ms) to `SecretsManagerOptions`. A stalled or unresponsive server now causes a `SocketTimeoutException` rather than an indefinite hang.

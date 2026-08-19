@@ -365,6 +365,8 @@ internal class SecretsManagerTest {
 
     @Test
     fun testIsEditableForwardedToKeeperRecord() {
+        // The server's per-record write-permission flag must survive decryptRecord() unchanged in
+        // both directions. Asserting only the true case would pass against a hardcoded value.
         val transmissionKey = ByteArray(32) { it.toByte() }
         TestStubs.transmissionKeyStub = { transmissionKey }
 
@@ -382,13 +384,18 @@ internal class SecretsManagerTest {
         initializeStorage(storage, "US:FAKE_CLIENT_KEY")
         storage.saveBytes(KEY_APP_KEY, appKey)
 
-        var options = SecretsManagerOptions(storage, queryFunction = { _, _, _ -> KeeperHttpResponse(200, response(true)) })
-        assertEquals(true, getSecrets(options).records[0].isEditable,
-            "isEditable:true from server must reach KeeperRecord")
-
-        options = SecretsManagerOptions(storage, queryFunction = { _, _, _ -> KeeperHttpResponse(200, response(false)) })
-        assertEquals(false, getSecrets(options).records[0].isEditable,
-            "isEditable:false from server must reach KeeperRecord")
+        // fetchAndDecryptSecrets swallows per-record failures to stderr, so assert the record
+        // survived before indexing: a decrypt regression must not surface as IndexOutOfBounds.
+        for (expected in listOf(true, false)) {
+            val options = SecretsManagerOptions(
+                storage,
+                queryFunction = { _, _, _ -> KeeperHttpResponse(200, response(expected)) }
+            )
+            val records = getSecrets(options).records
+            assertEquals(1, records.size, "record must decrypt for the isEditable:$expected case")
+            assertEquals(expected, records[0].isEditable,
+                "isEditable:$expected from server must reach KeeperRecord")
+        }
     }
 
     @Test
