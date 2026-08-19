@@ -274,6 +274,36 @@ internal class SecretsManagerTest {
     }
 
     @Test
+    fun testConfigWriteFailureReportsTheUnderlyingCause() {
+        // The write path translates IOException into SecretsManagerException. It must not claim a
+        // permissions problem for every failure, and it must keep the original exception as the
+        // cause so the stack trace survives.
+        val missingDir = File(
+            File(System.getProperty("java.io.tmpdir")),
+            "ksm-absent-${System.nanoTime()}"
+        )
+        assertFalse(missingDir.exists(), "Test precondition: the directory must not exist")
+        val storage = LocalConfigStorage(File(missingDir, "config.json").absolutePath)
+
+        val ex = assertFailsWith<SecretsManagerException> {
+            storage.saveString(KEY_HOSTNAME, "fake.keepersecurity.com")
+        }
+        assertNotNull(ex.cause, "The original IOException must be retained as the cause")
+        assertTrue(
+            ex.cause is java.io.IOException,
+            "Cause must be the file system failure. Got: ${ex.cause?.javaClass?.name}"
+        )
+        assertFalse(
+            ex.message!!.contains("is not writable"),
+            "A missing directory must not be reported as a permissions problem. Got: ${ex.message}"
+        )
+        assertTrue(
+            ex.message!!.contains(missingDir.name),
+            "The message must name the directory it could not use. Got: ${ex.message}"
+        )
+    }
+
+    @Test
     fun testRecordCreateEmptyCustomSerialized() {
         // RecordCreate with no custom fields must include "custom": [] in JSON payload
         val recordData = KeeperRecordData(
