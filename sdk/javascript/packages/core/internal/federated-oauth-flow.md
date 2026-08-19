@@ -4,11 +4,15 @@
 and were verified end-to-end on 2026-08-18 against a local KA (server-dev-env Docker, dev database)
 with kidp (a sibling repo — a minimal Kotlin/Ktor test IdP) as the OAuth issuer:
 
-- **Phase 1 (SDK):** `Authorizer` over a `TokenSource` — `provisionedToken` / `ambientToken` /
-  `oauthClientCredentials` (caching, refresh-before-expiry, `token_expired` retry-once).
-- **Phase 2 (KA):** static bearer digests via the `KSM_BEARER_CLIENTS` property. Verified.
-- **Phase 3 (KA):** OIDC validation (JWKS fetch + cache, signature, iss/sub/aud/exp/nbf) against
-  claim bindings in the `KSM_OAUTH_CLIENTS` property. Verified with client_credentials tokens.
+- **Phase 1 (SDK):** `Authorizer` over a `TokenSource` — `ambientToken` / `oauthClientCredentials`
+  (caching, refresh-before-expiry, `token_expired` retry-once).
+- **Phase 2 (KA):** the `Authorization: Bearer` path through `SecretsManagerFilter`, first proved out
+  with static tokens. Static bearer was then dropped as a scheme — it stores a long-lived secret on
+  the client for no capability federation does not already provide — leaving the bearer *wire format*
+  in place for OAuth.
+- **Phase 3 (KA):** OIDC validation (JWKS fetch + cache, signature, iss/sub/aud/exp/nbf) against a
+  claim binding. Verified with client_credentials tokens from kidp, first via a configuration rig and
+  now against claim bindings stored on the `app_client` row.
 
 The K8s scenario below is unchanged as the *target* design; see "How the prototype maps to this
 design" and "Lessons learned" at the end for where reality differed.
@@ -79,9 +83,9 @@ audience: https://keepersecurity.com/api/rest/sm                     (fixed KSM 
 ```
 
 **A2.** Vault generates the OTT client key as today, derives `clientId = HMAC(clientKey)`, and
-pushes the `app_client` row: `clientId`, `auth_type = oauth_federated`, the claim binding, and
-`encrypted_app_key = AES-GCM(appKey, clientKey)`. *Delta from static bearer: a claim binding is
-stored where the token digest would have been. App-key delivery is completely unchanged.*
+pushes the `app_client` row: `clientId`, the claim binding (whose presence is what marks the client
+OAuth-authenticated), and `encrypted_app_key = AES-GCM(appKey, clientKey)`. *App-key delivery is completely unchanged from the
+native scheme; only the authentication columns are new.*
 
 **A3.** Two things leave the admin's hands, to two different places:
 
@@ -115,7 +119,7 @@ await initializeAuthStorage(authStorage, bootstrap, authorizer)
 ```
 
 Auth config after this, in its entirety: `{"hostname": "keepersecurity.com", "clientId": "abc…"}`.
-`setup()` had nothing to persist — compare native (private key) or static bearer (token).
+`setup()` had nothing to persist — compare the native scheme, which stores a private key here.
 
 ## Phase C — First fetch (binding)
 
@@ -140,15 +144,15 @@ Authorization: Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6...
 <AES-GCM({clientVersion, clientId}, transmissionKey)>
 ```
 
-**C9.** KA filter: transmission key decrypt + IV replay check (unchanged) → sees `Bearer` → **new
-path**: issuer must be on the app's allowlist, JWKS fetched/cached from
-`{iss}/.well-known/openid-configuration` (or from an explicit per-binding `jwksUri` — see Lessons),
-signature + `exp`/`nbf` + `aud` verified. Then payload decrypt, clientId extraction, throttle
-(unchanged).
+**C9.** KA filter: transmission key decrypt + IV replay check (unchanged) → sees `Bearer` → stashes
+the token for the resource layer, since the payload carrying the `clientId` is not decrypted yet.
+Then payload decrypt, clientId extraction, throttle (unchanged).
 
-**C10.** KA rest: row for `clientId` says `oauth_federated` → compare token's `iss`/`sub` to the
-stored binding. Match ⇒ authenticated. `verifySignature` is never called for this row.
-`encrypted_app_key` still present ⇒ include it in the response; audit `app_client_connected`.
+**C10.** KA resource layer: the `app_client` row carries a claim binding, so before any state change
+the token is validated against that row — signature against the issuer's JWKS (from the binding's `jwksUri`, or
+discovered from its `issuer`), then `exp`/`nbf`, then `iss`/`sub`/`aud` matched to the binding. Match
+⇒ authenticated, and `verifySignature` is never called for this row. `encrypted_app_key` still
+present ⇒ include it in the response; audit `app_client_connected`.
 *Note what's better than native here: native's first call is authenticated only by clientId
 possession; this first call carries a fully verified identity.*
 
@@ -202,28 +206,37 @@ and the codec-side config were untouched between the native, static-bearer and O
 
 ## How the prototype maps to this design
 
-The prototype needed **no database changes** — two substitutions cover the gap:
+Two details differ from the target design as described above:
 
-- **Claim bindings / token digests live in properties**, not on the `app_client` row:
-  `KSM_BEARER_CLIENTS=<clientId>:<b64url sha256(token)>[;...]` and
-  `KSM_OAUTH_CLIENTS=[{"clientId","iss","sub","aud","jwksUri"?}]` (env var, `-D` property, or
-  config.properties — standard KA `Property` resolution). Empty values keep both schemes rejected,
-  so the code is inert unless explicitly configured.
-- **The device public key slot doubles as the binding marker.** A bearer/OAuth client never has a
-  key pair, but KA's binding state machine keys off `device_public_key` (enroll on call 1, clear
-  `encrypted_app_key` on call 2). A stable digest stands in: `sha256(token)` for static bearer,
-  `sha256("oauth|iss|sub")` for OAuth — identity-derived, so hourly token rotation does not disturb
-  it. The rest of `validateAppClient` runs unchanged.
+- **The claim binding lives on the `app_client` row**, not in a separate table:
+  `oauth_issuer` / `oauth_subject` / `oauth_audience` / `oauth_jwks_uri`. The relationship is 1:1, and
+  `validateAppClient` already reads that row — memcached — on every request, so a side table would
+  have added an uncached query to the hottest path. An earlier iteration configured the bindings
+  through KA properties instead; that rig is gone.
+- **There is no auth-type column.** A client is OAuth-authenticated exactly when it has a binding, so
+  the scheme is derived rather than stored — one representation of one fact, which cannot drift out of
+  step with itself. It also means a `NULL` binding is precisely what "native" means, so existing
+  clients need no backfill and a memcached row written before the columns shipped reads correctly.
+  The protobuf request keeps an explicit `authType`, though: it lets the server reject a client that
+  says OAuth but sends no binding, instead of silently creating a native device.
+- **`credential_enrolled_on` replaces the device public key as the binding marker.** An OAuth client
+  never has a key pair, but KA's state machine keys off `device_public_key` (enroll on call 1, clear
+  `encrypted_app_key` on call 2). Rather than store a fake key, the column records the first
+  authenticated call and drives the same two-step delivery. `device_public_key` stays NULL, so the
+  vault UI never shows a bogus key.
 
-Verification order matters and differs from native: the bearer/OAuth credential is verified
-**before** `validateAppClient` runs, because for these schemes the first call enrolls the digest —
-enrollment must never be reachable unauthenticated. (Native enrolls its public key on a first call
-authenticated only by clientId possession; the pre-registered credential is strictly stronger.)
+Verification order matters and differs from native: the token is checked **before** any state change,
+via a `CredentialVerifier` callback that `validateAppClient` invokes on the loaded row. For an OAuth
+client the first call enrolls the credential, and enrollment must never be reachable without a valid
+token. (Native enrolls its public key on a first call authenticated only by clientId possession; a
+pre-registered federated identity is strictly stronger.) The scheme is pinned per client in both
+directions: an OAuth client cannot fall back to enrolling a key pair and signing, and a native client
+cannot present a bearer token.
 
-The issuer in the prototype is kidp (`../kidp`), not a K8s cluster: an RFC 6749 client_credentials
-grant where `sub` = the requested `client_id` and `aud` echoes the request. Same validation path as
-the projected-JWT scenario; only the token acquisition differs (`oauthClientCredentials` source vs
-`ambientToken` reading a projected file).
+The issuer in the prototype is kidp (a small Kotlin/Ktor test IdP in a sibling repo), not a K8s
+cluster: an RFC 6749 client_credentials grant signing ES256, where `sub` = the requested `client_id`
+and `aud` echoes the request. Same validation path as the projected-JWT scenario; only the token
+acquisition differs (`oauthClientCredentials` source vs `ambientToken` reading a projected file).
 
 ## Lessons learned
 
@@ -245,13 +258,18 @@ the projected-JWT scenario; only the token acquisition differs (`oauthClientCred
 4. **kidp needed an `/.well-known/openid-configuration` alias**: it served only the RFC 8414 path
    (`oauth-authorization-server`), while OIDC-style verifiers (KA included) resolve the OIDC path.
    Real IdPs commonly serve both; a test IdP must too.
-5. **Property plumbing is the actual failure mode in practice.** Both misfires during testing were
-   configuration visibility, not protocol: an env var not set on the KA container (env is read at
-   JVM start — restart required; only config.properties is re-read live), and the standing risk of
-   shell quotes becoming part of the value in compose list-form env or properties files. The
-   verifiers therefore log *which side* failed (entry count, clientId-not-found vs digest/claim
-   mismatch — never the token), which turned every subsequent misconfiguration into a one-look
-   diagnosis.
-6. **Fresh-key issuers are handled by the `kid`-miss refetch.** kidp generates a new RS256 key per
+5. **Configuration plumbing was the actual failure mode in practice, which is an argument for the
+   database.** Every misfire during testing was a configuration-visibility problem rather than a
+   protocol one: an env var not set on the KA container (env is read at JVM start, so a restart is
+   required), and quotes leaking into a value. None of those failure modes exist once the binding is a
+   row written through the admin API. The verifier still logs *which* check failed (clientId not
+   registered, iss/sub/aud mismatch, kid miss — never the token), which is what turns a
+   misconfiguration into a one-look diagnosis.
+6. **Fresh-key issuers are handled by the `kid`-miss refetch.** kidp generates a new ES256 key per
    start; KA recovers without restarts because an unknown `kid` triggers one rate-limited JWKS
    refetch. That behavior doubles as routine key-rotation support.
+7. **Static bearer earned its way out of the design.** It shipped first because it was the smallest
+   server-side step, and it worked — but it leaves a long-lived secret at rest on the client, which is
+   the very thing the federated scheme removes, and it offers no capability OAuth lacks. What it
+   contributed was the `Authorization: Bearer` plumbing and the proof that the binding state machine
+   works for a client with no key pair. Both survive; the scheme does not.

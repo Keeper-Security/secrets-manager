@@ -2,11 +2,13 @@
   "permissions": {
     "additionalDirectories": [
       "../keeperapp",
+      "../keeperapp-protobuf",
       "../server_dev_env",
       "../kidp"
     ],
     "allow": [
       "Write(../keeperapp/**)",
+      "Write(../keeperapp-protobuf/**)",
       "Write(../server_dev_env/**)",
       "Write(../kidp/**)"
     ]

@@ -14,15 +14,11 @@
  * AUTH SCHEMES: because client 1 is now a pure transport, its proof of identity is pluggable
  * (Authorizer). Set AUTH_MODE below:
  *  - 'native' - the shipping scheme: EC key pair generated at bootstrap, every request signed.
- *  - 'bearer' - `Authorization: Bearer <token>`. The token is generated when the device is added to
- *               the application and registered with the service alongside the encrypted app key, so
- *               the client is provisioned with two values: the bearer token (auth client) and the
- *               one-time token (codec client). The same token authenticates the first and all
- *               subsequent calls until the admin rotates it.
- *  - 'oauth'  - same bearer wire format, but the credential is minted by an OAuth authorization
- *               server (client_credentials grant) and refreshed automatically before expiry. Run
- *               kidp (../kidp: KIDP_ISSUER=http://host.docker.internal:8080 ./gradlew :server:run)
- *               and configure KA's KSM_OAUTH_CLIENTS; see the oauth constants below.
+ *  - 'oauth'  - `Authorization: Bearer <JWT>`, where the credential is minted by an OAuth
+ *               authorization server (client_credentials grant) and refreshed automatically before
+ *               expiry. Run kidp (../kidp: KIDP_ISSUER=http://host.docker.internal:8080
+ *               ./gradlew :server:run) and register the claim binding on the device's app_client
+ *               row; see the oauth constants below.
  *  - 'ambient' - same wire format again, but the credential is one the platform already provides
  *               (kubelet-projected service account token, cloud metadata identity): the SDK just
  *               reads a file the platform maintains, and persists nothing. To simulate the platform
@@ -71,11 +67,9 @@ const version = require("../package.json").version;
 connectPlatform(nodePlatform)
 initialize(version)
 
-const authConfigFileName = 'client-config-split-auth-bearer.json'
-const cryptoConfigFileName = 'client-config-split-crypto-bearer.json'
-// Provisioned together when the device is added to the application:
+const authConfigFileName = 'client-config-split-auth-oauth.json'
+const cryptoConfigFileName = 'client-config-split-crypto-oauth.json'
 const oneTimeToken = 'US:ONE_TIME_TOKEN'    // goes to the codec client
-const bearerToken = 'BEARER_TOKEN'          // goes to the auth client (bearer mode only)
 
 // oauth mode, against the kidp IdP (../kidp). kidp issues sub = client_id, so oauthClientId must
 // match the 'sub' in KA's KSM_OAUTH_CLIENTS binding for this device's clientId.
@@ -98,17 +92,13 @@ const httpPost: TokenEndpointPost = (url, body, headers) => new Promise<KeeperHt
     post.end(Buffer.from(body))
 })
 
-// How client 1 authenticates (also settable via KSM_AUTH_MODE=bearer|oauth|ambient). The codec
+// How client 1 authenticates (also settable via KSM_AUTH_MODE=oauth|ambient|native). The codec
 // client is unaffected by this choice - decryption is the same regardless of how the ciphertext was
 // fetched.
-const AUTH_MODE = (process.env.KSM_AUTH_MODE ?? 'bearer') as 'bearer' | 'native' | 'oauth' | 'ambient'
+const AUTH_MODE = (process.env.KSM_AUTH_MODE ?? 'oauth') as 'native' | 'oauth' | 'ambient'
 
 const makeAuthorizer = (): Authorizer => {
     switch (AUTH_MODE) {
-        case 'bearer':
-            // The token is passed once, at initialization; bootstrap() persists it in the auth
-            // config, and later runs may use bearerAuth() with no argument.
-            return bearerAuth(bearerToken)
         case 'oauth':
             // Short-lived access tokens from the AS, cached by the source and renewed ~60s before
             // expiry. bootstrap() persists the non-secret settings; pass clientSecret (and
@@ -144,7 +134,7 @@ class AuthClient {
     }
 
     // Step 2 of binding: set up the auth scheme's local state from the non-secret bootstrap
-    // (native generates its key pair here; bearer persists the provisioned token).
+    // (native generates its key pair here; oauth persists its non-secret client settings).
     async bootstrap(bootstrap: AuthBootstrap): Promise<void> {
         await initializeAuthStorage(this.storage, bootstrap, this.authorizer)
     }
@@ -226,11 +216,11 @@ async function test() {
 async function showSeparation(authStorage: KeyValueStorage, cryptoStorage: KeyValueStorage, bundle: EncryptedSecrets) {
     const has = async (storage: KeyValueStorage, key: string) => (await storage.getString(key)) != null
     console.log('\n--- what each side holds ---')
-    console.log('auth   config: privateKey=%s bearerToken=%s appKey=%s clientKey=%s bound=%s',
-        await has(authStorage, 'privateKey'), await has(authStorage, 'bearerToken'),
+    console.log('auth   config: privateKey=%s oauthConfig=%s appKey=%s clientKey=%s bound=%s',
+        await has(authStorage, 'privateKey'), await has(authStorage, 'oauthConfig'),
         await has(authStorage, 'appKey'), await has(authStorage, 'clientKey'), await has(authStorage, 'bound'))
-    console.log('codec  config: privateKey=%s bearerToken=%s appKey=%s clientKey=%s bound=%s',
-        await has(cryptoStorage, 'privateKey'), await has(cryptoStorage, 'bearerToken'),
+    console.log('codec  config: privateKey=%s oauthConfig=%s appKey=%s clientKey=%s bound=%s',
+        await has(cryptoStorage, 'privateKey'), await has(cryptoStorage, 'oauthConfig'),
         await has(cryptoStorage, 'appKey'), await has(cryptoStorage, 'clientKey'), await has(cryptoStorage, 'bound'))
 
     // What the auth client sees of a record: a UID, a revision, and two opaque blobs.

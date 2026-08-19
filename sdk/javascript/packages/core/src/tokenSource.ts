@@ -1,7 +1,6 @@
 import {KeeperHttpResponse, KeyValueStorage, platform} from './platform'
 import {webSafe64ToBytes} from './utils'
 
-export const KEY_BEARER_TOKEN = 'bearerToken' // The bearer credential, when the client uses the bearer auth scheme
 const KEY_OAUTH_CONFIG = 'oauthConfig' // Non-secret OAuth client settings: {tokenEndpoint, clientId, scope?, audience?}
 const KEY_OAUTH_CLIENT_SECRET = 'oauthClientSecret' // The OAuth client secret, persisted only on explicit opt-in
 
@@ -9,10 +8,10 @@ const KEY_OAUTH_CLIENT_SECRET = 'oauthClientSecret' // The OAuth client secret, 
  * Where a bearer credential comes from, and when it is refreshed. This is the acquisition layer
  * beneath the bearer auth scheme: the Authorizer decides *how a request proves identity*
  * (signature vs bearer header); a TokenSource decides *where the bearer credential comes from*
- * (provisioned at device creation, minted by an OAuth token endpoint, ambient in the platform).
+ * (minted by an OAuth token endpoint, or ambient in the runtime platform).
  */
 export type TokenSource = {
-    // Diagnostic discriminator, e.g. 'provisioned', 'ambient', 'oauth-client-credentials'.
+    // Diagnostic discriminator, e.g. 'ambient' or 'oauth-client-credentials'.
     kind: string
     // Called once by initializeAuthStorage: persist whatever the source needs for later runs.
     setup?(storage: KeyValueStorage): Promise<void>
@@ -47,31 +46,6 @@ type CachedToken = {
 
 const isFresh = (cached: CachedToken | undefined, skewSeconds: number): cached is CachedToken =>
     cached != null && (cached.expiresAt === undefined || Date.now() < cached.expiresAt - skewSeconds * 1000)
-
-/**
- * A static token issued when the device was added to the application and registered with the
- * service alongside the encrypted app key. Pass the token once, at initialization - setup()
- * persists it in the auth configuration - and construct with no argument on later runs to use the
- * stored one. An explicitly passed token always wins over the stored one (that is also the
- * rotation path). Never expires client-side; rotation is the admin's action.
- */
-export const provisionedToken = (token?: string): TokenSource => ({
-    kind: 'provisioned',
-    setup: async storage => {
-        if (token) {
-            await storage.saveString(KEY_BEARER_TOKEN, token)
-        }
-    },
-    getToken: async storage => {
-        const effective = token ?? await storage.getString(KEY_BEARER_TOKEN)
-        if (!effective) {
-            throw new Error('Bearer token is missing from the configuration')
-        }
-        return effective
-    },
-    // Re-presenting the same static token cannot succeed; the admin has to rotate it.
-    invalidate: () => false
-})
 
 /**
  * A credential the runtime platform already provides - a kubelet-projected service account token,

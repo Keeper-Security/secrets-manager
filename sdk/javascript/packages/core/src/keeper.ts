@@ -2,7 +2,7 @@ import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, Transmi
 import {webSafe64FromBytes, webSafe64ToBytes, tryParseInt} from './utils'
 import {parseNotation} from './notation'
 import {KeeperThrottleError} from './errors'
-import {ambientToken, provisionedToken, TokenSource} from './tokenSource'
+import {ambientToken, TokenSource} from './tokenSource'
 
 export {KeyValueStorage} from './platform'
 // The token acquisition layer beneath the bearer auth scheme.
@@ -84,9 +84,9 @@ export type AuthorizeRequest = {
  * Two schemes ship with the SDK:
  *  - signatureAuth (default) - the native scheme; per-request EC signature with the stored private key.
  *  - bearerAuth - RFC 6750 style `Authorization: Bearer <token>`; the credential itself comes from a
- *    TokenSource (provisioned at device creation, an OAuth token endpoint, or ambient platform
- *    identity - see tokenSource.ts). NOTE: server-side acceptance of non-native schemes is a future
- *    capability - see the scheme's doc comment.
+ *    TokenSource - an OAuth token endpoint, or an ambient platform identity (see tokenSource.ts).
+ *    NOTE: server-side acceptance of non-native schemes is a future capability - see the scheme's
+ *    doc comment.
  */
 export type Authorizer = {
     // Scheme discriminator, e.g. 'signature' or 'bearer:provisioned'. Diagnostic only - the server
@@ -121,31 +121,25 @@ export const signatureAuth: Authorizer = {
 
 /**
  * Bearer token scheme. The credential comes from a TokenSource, which owns acquisition, caching and
- * refresh; this Authorizer only turns it into the Authorization header. Accepted arguments:
+ * refresh; this Authorizer only turns it into the Authorization header. Accepts either:
  *
- *  - a TokenSource - provisionedToken(), ambientToken(), oauthClientCredentials(), or a custom one
- *  - a string - shorthand for provisionedToken(token): the static token issued at device creation,
- *    persisted into the auth configuration by initializeAuthStorage
- *  - no argument - shorthand for provisionedToken(): use the token stored at initialization
+ *  - a TokenSource - oauthClientCredentials(), ambientToken(), or a custom one
  *  - a callback - shorthand for ambientToken(callback): a platform-managed credential, read as
  *    needed and never persisted
  *
  * NOTE: this expresses the client half only. The Secrets Manager endpoint accepts the native
  * signature scheme today; bearer requests will be rejected until the service side lands.
  */
-export const bearerAuth = (token?: string | (() => Promise<string>) | TokenSource): Authorizer => {
-    const source: TokenSource =
-        typeof token === 'function' ? ambientToken(token)
-            : typeof token === 'object' ? token
-                : provisionedToken(token)
+export const bearerAuth = (source: TokenSource | (() => Promise<string>)): Authorizer => {
+    const tokenSource: TokenSource = typeof source === 'function' ? ambientToken(source) : source
     return {
-        kind: `bearer:${source.kind}`,
+        kind: `bearer:${tokenSource.kind}`,
         setup: async storage => {
-            await source.setup?.(storage)
+            await tokenSource.setup?.(storage)
         },
         bindingPublicKey: async () => undefined,
-        authorize: async (request, storage) => `Bearer ${await source.getToken(storage)}`,
-        onAuthRejected: () => source.invalidate?.() ?? false
+        authorize: async (request, storage) => `Bearer ${await tokenSource.getToken(storage)}`,
+        onAuthRejected: () => tokenSource.invalidate?.() ?? false
     }
 }
 

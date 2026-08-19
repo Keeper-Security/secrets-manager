@@ -5,7 +5,6 @@ import {
     KeeperHttpResponse,
     oauthClientCredentials,
     platform,
-    provisionedToken,
     TokenEndpointPost,
 } from '../'
 
@@ -33,26 +32,6 @@ const tokenEndpoint = (
         }
     },
     requests
-})
-
-describe('provisionedToken', () => {
-    test('setup persists the token; a no-argument source reads it back', async () => {
-        const kvs = storage()
-        await provisionedToken('tok-1').setup!(kvs)
-        expect(await provisionedToken().getToken(kvs)).toBe('tok-1')
-    })
-
-    test('an explicitly passed token wins over the stored one', async () => {
-        const kvs = storage()
-        await provisionedToken('tok-1').setup!(kvs)
-        expect(await provisionedToken('tok-2').getToken(kvs)).toBe('tok-2')
-    })
-
-    test('missing token is an error, and invalidate does not suggest a retry', async () => {
-        const source = provisionedToken()
-        await expect(source.getToken(storage())).rejects.toThrow('Bearer token is missing')
-        expect(await source.invalidate!()).toBe(false)
-    })
 })
 
 describe('ambientToken', () => {
@@ -235,19 +214,12 @@ describe('bearerAuth over a TokenSource', () => {
         expect(await authorizer.authorize(request, storage())).toBe('Bearer T1')
     })
 
-    test('a string argument behaves as a provisioned token', async () => {
-        const kvs = storage()
-        const authorizer = bearerAuth('tok-1')
-        expect(authorizer.kind).toBe('bearer:provisioned')
-        await authorizer.setup(kvs)
-        expect(await bearerAuth().authorize(request, kvs)).toBe('Bearer tok-1')
-        expect(await authorizer.bindingPublicKey(kvs)).toBeUndefined()
-    })
-
     test('a callback argument behaves as an ambient credential', async () => {
         const authorizer = bearerAuth(async () => 'from-platform')
         expect(authorizer.kind).toBe('bearer:ambient')
         expect(await authorizer.authorize(request, storage())).toBe('Bearer from-platform')
+        // A bearer client enrolls no key pair; the binding request carries no public key.
+        expect(await authorizer.bindingPublicKey(storage())).toBeUndefined()
     })
 
     test('onAuthRejected invalidates the source and requests a retry when refreshable', async () => {
@@ -263,8 +235,5 @@ describe('bearerAuth over a TokenSource', () => {
         expect(await authorizer.authorize(request, kvs)).toBe('Bearer T1')
         expect(await authorizer.onAuthRejected!()).toBe(true)
         expect(await authorizer.authorize(request, kvs)).toBe('Bearer T2')
-
-        // A static token cannot be refreshed - no retry.
-        expect(await bearerAuth('tok').onAuthRejected!()).toBe(false)
     })
 })
