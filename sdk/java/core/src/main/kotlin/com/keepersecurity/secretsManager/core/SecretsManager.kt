@@ -1697,8 +1697,8 @@ fun postFunction(
     transmissionKey: TransmissionKey,
     payload: EncryptedPayload,
     allowUnverifiedCertificate: Boolean,
-    connectTimeoutMillis: Int = 5_000,
-    readTimeoutMillis: Int = 30_000,
+    connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MS,
+    readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MS,
 ): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
