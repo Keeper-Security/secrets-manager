@@ -427,6 +427,30 @@ internal class SecretsManagerTest {
         assertEquals("Good Folder", folders[0].name)
     }
 
+    @Test
+    fun testGetFoldersSkipsFolderParentCycle() {
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+
+        val appKey = getRandomBytes(32)
+        val dummyFolderKey = bytesToBase64(getRandomBytes(60))
+
+        // Two folders whose parent references form a cycle: neither has a null parent,
+        // so getSharedFolderKey can never reach a root. Both must be skipped.
+        val responseJson = """{"encryptedAppKey":null,"folders":[{"folderUid":"folder-a","folderKey":"$dummyFolderKey","data":null,"parent":"folder-b","records":null},{"folderUid":"folder-b","folderKey":"$dummyFolderKey","data":null,"parent":"folder-a","records":null}],"records":null}"""
+        val encryptedResponse = encrypt(stringToBytes(responseJson), transmissionKey)
+
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+
+        val options = SecretsManagerOptions(storage, queryFunction = { _, _, _ -> KeeperHttpResponse(200, encryptedResponse) })
+        val folders = getFolders(options)
+
+        assertEquals(0, folders.size, "both cyclic folders must be skipped; the call must complete without hanging")
+    }
+
+
 //    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (
