@@ -1495,11 +1495,13 @@ private fun fetchAndDecryptFolders(
 }
 
 private fun getSharedFolderKey(folders: List<KeeperFolder>, responseFolders: List<SecretsManagerResponseFolder>, parent: String): ByteArray? {
+    val visited = HashSet<String>()
     var currentParent = parent
-    while (true) {
+    while (visited.add(currentParent)) {
         val parentFolder = responseFolders.find { x -> x.folderUid == currentParent } ?: return null
         currentParent = parentFolder.parent ?: return folders.find { it.folderUid == parentFolder.folderUid }?.folderKey
     }
+    throw SecretsManagerException("Folder data inconsistent - parent cycle detected at folder UID $currentParent")
 }
 
 private fun prepareGetPayload(

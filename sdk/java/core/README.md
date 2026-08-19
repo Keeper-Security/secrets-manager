@@ -17,6 +17,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - KSM-1248 - Server-supplied key IDs are validated against the embedded public key table before being stored. An unrecognized key ID throws `SecretsManagerException` and leaves storage unchanged. Key rotation retries are now capped at `MAX_KEY_ROTATION_RETRIES` (3); exhausted retries throw a typed error naming the last suggested key ID.
 - KSM-1269 - Fixed the Java CI workflow not running on pull requests targeting release branches.
 The test matrix now triggers on both `master` and `release/sdk/java/core/**` targets.
+- KSM-1270 - Fixed `getSharedFolderKey` looping indefinitely when server folder data contains a parent cycle. The function now tracks visited folder UIDs and exits on re-visit; `getFolders` skips the affected folders and continues normally.
 - KSM-1262 - On POSIX systems, config and cache files are now written via a temp-file swap with 0600 permissions set before data is written, closing the window where other local users could read the file during a write. Two behavior changes from the new approach: (1) a symlinked config path is replaced by a regular file on the first write; (2) a config file in a directory without write permission (for example, a read-only container volume mount) will fail at temp-file creation — move the config to a writable directory or use `InMemoryStorage` with an injected config string instead.
 
 ## 17.3.0
