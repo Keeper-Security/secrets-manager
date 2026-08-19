@@ -7,6 +7,7 @@ import kotlin.test.AfterTest
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -162,9 +163,30 @@ internal class ProxyTest {
 
     @Test
     fun partialUserinfoExplicitProxyThrows() {
-        assertFailsWith<SecretsManagerException> {
-            resolveProxy("http://user@proxy.corp:8080", target, FakeProxyEnvironment())
+        // Every incomplete credential shape fails as a config error. The empty-password form is
+        // the one a templated proxy URL produces when its password variable goes unset, and it
+        // has to fail here rather than reaching the proxy and returning an opaque 407.
+        for (url in listOf(
+            "http://user@proxy.corp:8080",
+            "http://:secret@proxy.corp:8080",
+            "http://user:@proxy.corp:8080"
+        )) {
+            assertFailsWith<SecretsManagerException>("expected $url to be rejected") {
+                resolveProxy(url, target, FakeProxyEnvironment())
+            }
         }
+    }
+
+    @Test
+    fun emptyPasswordAmbientProxyIsNotTreatedAsCredentials() {
+        // Ambient config never throws, but an empty password must not count as a credential:
+        // hasCredentials drives both the Authenticator registration and the 407 message branch.
+        val env = FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to "http://user:@proxy.corp:8080"))
+        val resolved = resolveProxy(null, target, env)
+        assertNotNull(resolved)
+        assertEquals("proxy.corp", host(resolved))
+        assertNull(resolved.password)
+        assertFalse(resolved.hasCredentials)
     }
 
     @Test
