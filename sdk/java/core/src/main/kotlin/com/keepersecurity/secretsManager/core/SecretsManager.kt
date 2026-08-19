@@ -28,7 +28,7 @@ import java.util.concurrent.*
 import kotlin.random.Random
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj17.3.0"
+const val KEEPER_CLIENT_VERSION = "mj17.4.0"
 
 // Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
