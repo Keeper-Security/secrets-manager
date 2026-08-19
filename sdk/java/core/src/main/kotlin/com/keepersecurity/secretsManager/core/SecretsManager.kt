@@ -1180,7 +1180,7 @@ fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: 
     val payloadAndFile = prepareFileUploadPayload(options.storage, ownerRecord, file)
     val responseData = postQuery(options, "add_file", payloadAndFile.payload)
     val response = nonStrictJson.decodeFromString<SecretsManagerAddFileResponse>(bytesToString(responseData))
-    val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile, options.proxyUrl, options.allowUnverifiedCertificate)
+    val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile, options.proxyUrl, options.allowUnverifiedCertificate, options.connectTimeoutMillis, options.readTimeoutMillis)
     if (uploadResult.statusCode != response.successStatusCode) {
         throw SecretsManagerException("Upload failed (${bytesToString(uploadResult.data)}), code ${uploadResult.statusCode}")
     }
@@ -1189,7 +1189,7 @@ fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: 
 
 fun downloadFile(options: SecretsManagerOptions, file: KeeperFile): ByteArray {
     val url = file.url ?: throw SecretsManagerException("File ${file.fileUid} has no download URL")
-    return downloadFileFromUrl(file, url, options.proxyUrl, options.allowUnverifiedCertificate)
+    return downloadFileFromUrl(file, url, options.proxyUrl, options.allowUnverifiedCertificate, options.connectTimeoutMillis, options.readTimeoutMillis)
 }
 
 @JvmOverloads
@@ -1202,7 +1202,7 @@ fun downloadThumbnail(options: SecretsManagerOptions, file: KeeperFile): ByteArr
     if (file.thumbnailUrl == null) {
         throw SecretsManagerException("Thumbnail does not exist for the file ${file.fileUid}")
     }
-    return downloadFileFromUrl(file, file.thumbnailUrl, options.proxyUrl, options.allowUnverifiedCertificate)
+    return downloadFileFromUrl(file, file.thumbnailUrl, options.proxyUrl, options.allowUnverifiedCertificate, options.connectTimeoutMillis, options.readTimeoutMillis)
 }
 
 private const val DEFAULT_CONNECT_TIMEOUT_MS = 5_000
@@ -1216,11 +1216,11 @@ fun downloadThumbnail(file: KeeperFile, proxyUrl: String? = null): ByteArray {
     return downloadFileFromUrl(file, file.thumbnailUrl, proxyUrl, false)
 }
 
-private fun downloadFileFromUrl(file: KeeperFile, url: String, proxyUrl: String? = null, allowUnverifiedCertificate: Boolean = false): ByteArray {
+private fun downloadFileFromUrl(file: KeeperFile, url: String, proxyUrl: String? = null, allowUnverifiedCertificate: Boolean = false, connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MS, readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MS): ByteArray {
     val connection = openProxiedConnection(url, proxyUrl, allowUnverifiedCertificate)
     try {
-        connection.connectTimeout = DEFAULT_CONNECT_TIMEOUT_MS
-        connection.readTimeout = DEFAULT_READ_TIMEOUT_MS
+        connection.connectTimeout = connectTimeoutMillis
+        connection.readTimeout = readTimeoutMillis
         connection.requestMethod = "GET"
         val statusCode = connection.checkedResponseCode(proxyUrl, url)
         val data = when {
@@ -1236,7 +1236,7 @@ private fun downloadFileFromUrl(file: KeeperFile, url: String, proxyUrl: String?
     }
 }
 
-private fun uploadFile(url: String, parameters: String, fileData: ByteArray, proxyUrl: String?, allowUnverifiedCertificate: Boolean = false): KeeperHttpResponse {
+private fun uploadFile(url: String, parameters: String, fileData: ByteArray, proxyUrl: String?, allowUnverifiedCertificate: Boolean = false, connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MS, readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MS): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
     val boundary = String.format("----------%x", Instant.now().epochSecond)
@@ -1244,8 +1244,8 @@ private fun uploadFile(url: String, parameters: String, fileData: ByteArray, pro
     val paramJson = Json.parseToJsonElement(parameters) as JsonObject
     val connection = openProxiedConnection(url, proxyUrl, allowUnverifiedCertificate)
     try {
-        connection.connectTimeout = DEFAULT_CONNECT_TIMEOUT_MS
-        connection.readTimeout = DEFAULT_READ_TIMEOUT_MS
+        connection.connectTimeout = connectTimeoutMillis
+        connection.readTimeout = readTimeoutMillis
         connection.requestMethod = "POST"
         connection.useCaches = false
         connection.doInput = true
@@ -1729,8 +1729,9 @@ fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: 
             throw SecretsManagerException("KSM request failed and no cached data is available: ${e.message}", e)
         }
         System.err.println("WARNING: KSM request failed (${e.message}); serving stale cached secrets. " +
-            "Note: cachingPostFunction does not support a proxy. To use a proxy, pass " +
-            "SecretsManagerOptions.proxyUrl and use the default postFunction instead of cachingPostFunction.")
+            "Note: cachingPostFunction cannot use SecretsManagerOptions.proxyUrl; ambient env proxies " +
+            "(HTTPS_PROXY, https.proxyHost) still apply. To use an explicit proxyUrl, use the default " +
+            "postFunction instead of cachingPostFunction.")
         val cachedTransmissionKey = cachedData.copyOfRange(0, 32)
         transmissionKey.key = cachedTransmissionKey
         val data = cachedData.copyOfRange(32, cachedData.size)

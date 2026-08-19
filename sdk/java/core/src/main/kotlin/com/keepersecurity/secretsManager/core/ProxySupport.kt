@@ -42,22 +42,25 @@ internal fun resolveProxy(
     targetUrl: String,
     environment: ProxyEnvironment = SystemProxyEnvironment
 ): ResolvedProxy? {
-    val targetHost = runCatching { URI(targetUrl).host }.getOrNull() ?: return null
-
     // Explicit proxyUrl is authoritative: NO_PROXY / http.nonProxyHosts do not override it,
     // and an unparseable value fails closed rather than falling through to a direct connection.
+    // Checked before parsing targetUrl so that non-URI-parseable hosts (e.g. underscore names
+    // that java.net.URI rejects but java.net.URL connects to) still honour an explicit proxy.
     if (!explicitProxyUrl.isNullOrBlank()) {
         return parseProxy(explicitProxyUrl, isExplicit = true)
             ?: throw SecretsManagerException("proxyUrl '${redactProxyUrl(explicitProxyUrl)}' could not be parsed as a valid proxy URL")
     }
 
+    val targetHost = runCatching { URI(targetUrl).host }.getOrNull() ?: return null
+
     // Ambient proxy: apply exclusions before selecting a candidate.
     if (isExcluded(targetHost, environment)) return null
+    // HTTP_PROXY / http_proxy are intentionally excluded: all KSM traffic is HTTPS, and routing
+    // it through an http-scoped proxy setting would silently proxy traffic the operator may not
+    // have intended (same reasoning as the http.proxyHost exclusion above).
     val candidate = systemPropertyProxy(environment)
         ?: environment.env("HTTPS_PROXY")?.takeIf { it.isNotBlank() }
         ?: environment.env("https_proxy")?.takeIf { it.isNotBlank() }
-        ?: environment.env("HTTP_PROXY")?.takeIf { it.isNotBlank() }
-        ?: environment.env("http_proxy")?.takeIf { it.isNotBlank() }
         ?: return null
 
     return parseProxy(candidate, isExplicit = false)
@@ -93,9 +96,10 @@ private fun parseProxy(raw: String, isExplicit: Boolean = false): ResolvedProxy?
     val username = userInfo?.substringBefore(':')?.takeIf { it.isNotEmpty() }
     val password = userInfo?.substringAfter(':', "")?.takeIf { userInfo.contains(':') }
 
-    // Partial userinfo (username without password) is an error in explicit config.
-    if (username != null && password == null && isExplicit) {
-        throw SecretsManagerException("Invalid proxy URL: username requires a password (format: http://user:pass@host:port)")
+    // Partial userinfo is an error in explicit config: both username-without-password
+    // and password-without-username (http://:secret@host) are rejected.
+    if (isExplicit && userInfo != null && (username == null) != (password == null)) {
+        throw SecretsManagerException("Invalid proxy URL: both username and password are required (format: http://user:pass@host:port)")
     }
 
     // Use createUnresolved to defer DNS to connection time, avoiding two round-trips per request

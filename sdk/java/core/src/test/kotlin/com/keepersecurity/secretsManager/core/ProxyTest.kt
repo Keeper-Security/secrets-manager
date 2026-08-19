@@ -169,9 +169,9 @@ internal class ProxyTest {
 
     @Test
     fun blankEnvVarDoesNotMaskLowerPriorityVar() {
-        // A set-but-empty HTTPS_PROXY must not hide a valid HTTP_PROXY.
+        // A set-but-empty HTTPS_PROXY must not hide a valid https_proxy (case variant).
         val env = FakeProxyEnvironment(
-            envVars = mapOf("HTTPS_PROXY" to "", "HTTP_PROXY" to "http://fallback.corp:3128")
+            envVars = mapOf("HTTPS_PROXY" to "", "https_proxy" to "http://fallback.corp:3128")
         )
         assertEquals("fallback.corp", host(resolveProxy(null, target, env)))
     }
