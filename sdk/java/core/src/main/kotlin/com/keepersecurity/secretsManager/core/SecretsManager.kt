@@ -25,7 +25,7 @@ import java.util.*
 import java.util.concurrent.*
 import kotlin.random.Random
 
-const val KEEPER_CLIENT_VERSION = "mj17.3.0"
+const val KEEPER_CLIENT_VERSION = "mj17.4.0"
 
 // Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
@@ -730,7 +730,7 @@ data class KeeperSecrets(val appData: AppData, val records: List<KeeperRecord>, 
 @Serializable
 data class AppData(val title: String, val type: String)
 
-data class KeeperRecord(
+data class KeeperRecord @JvmOverloads constructor(
     val recordKey: ByteArray,
     val recordUid: String,
     var folderUid: String? = null,
@@ -738,9 +738,19 @@ data class KeeperRecord(
     var innerFolderUid: String? = null,
     val data: KeeperRecordData,
     val revision: Long,
-    val isEditable: Boolean = false,
     val files: List<KeeperFile>? = null,
-    val links: List<KeeperRecordLink>? = null
+    val links: List<KeeperRecordLink>? = null,
+    // Appended rather than inserted: Java sees no default arguments, so an interior
+    // parameter would shift the constructor Java callers already compile against.
+    /**
+     * Write permission for this record, set by the backend from how the application's share was
+     * configured: `true` when the application may call [updateSecret] on it, `false` when the
+     * share is read-only. Informational only; the SDK does not enforce it before an update.
+     *
+     * The default applies only to direct construction. Records returned by [getSecrets] always
+     * carry the server's value, because the field is required in the response envelope.
+     */
+    val isEditable: Boolean = false
 ) {
     fun getPassword(): String? {
         val passwordField = data.getField<Password>() ?: return null
@@ -1465,16 +1475,16 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
     }
 
     return if (recordData != null) KeeperRecord(
-        recordKey,
-        record.recordUid,
-        null,
-        null,
-        record.innerFolderUid,
-        recordData,
-        record.revision,
-        record.isEditable,
-        files,
-        record.links
+        recordKey = recordKey,
+        recordUid = record.recordUid,
+        folderUid = null,
+        folderKey = null,
+        innerFolderUid = record.innerFolderUid,
+        data = recordData,
+        revision = record.revision,
+        files = files,
+        links = record.links,
+        isEditable = record.isEditable
     ) else null
 }
 
@@ -1739,6 +1749,7 @@ fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: 
     }
 }
 
+@JvmOverloads
 fun postFunction(
     url: String,
     transmissionKey: TransmissionKey,
@@ -1751,7 +1762,7 @@ fun postFunction(
     transmissionKey: TransmissionKey,
     payload: EncryptedPayload,
     allowUnverifiedCertificate: Boolean,
-    proxyUrl: String?,
+    proxyUrl: String? = null,
     connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MS,
     readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MS,
 ): KeeperHttpResponse {

@@ -2,17 +2,23 @@
 
 package com.keepersecurity.secretsManager.core
 
-open class SecretsManagerException : Exception {
+/**
+ * Base type for errors raised by this SDK.
+ *
+ * [cause] is optional so a wrapped failure can keep the underlying exception and its stack trace.
+ * `@JvmOverloads` keeps the single-argument form Java callers and subclasses already compile against.
+ */
+open class SecretsManagerException @JvmOverloads constructor(
+    message: String,
+    cause: Throwable? = null
+): Exception(message, cause) {
     companion object {
         // Pins the SUID to the value computed for the original single-constructor shape so jars
-        // built before this PR can deserialize exceptions from jars built after it (e.g. Jenkins
+        // built before this change can deserialize exceptions from jars built after it (e.g. Jenkins
         // controller/agent remoting). private const val generates private static final in bytecode,
         // which is the conventional form recognized by ObjectStreamClass.
         private const val serialVersionUID: Long = 5401507264959279624L
     }
-
-    constructor(message: String) : super(message)
-    constructor(message: String, cause: Throwable?) : super(message, cause)
 }
 
 internal class SecureRandomException(message: String): SecretsManagerException(message)

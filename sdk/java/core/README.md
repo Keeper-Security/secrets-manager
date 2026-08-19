@@ -6,9 +6,8 @@ For more information see our official documentation page https://docs.keeper.io/
 
 ## 17.4.0
 **Breaking Changes**
-- Kotlin callers compiled against 17.3.0 must recompile against 17.4.0.
-Adding `proxyUrl` to the `SecretsManagerOptions` primary constructor changes the constructor and `copy()` signatures that Kotlin default-argument calls bind to, so any Kotlin call site using default or named arguments throws `NoSuchMethodError` against a 17.4.0 jar until recompiled.
-Java callers are unaffected: all previously published constructor arities are retained via `@JvmOverloads`.
+- `deleteFolder()` returns `SecretsManagerDeleteFolderResponse` instead of `SecretsManagerDeleteResponse`. The new type exposes a `folders` list, where each entry has `folderUid`, `responseCode`, and an optional `errorMessage`; callers that read `.records` on the old return type must switch to `.folders`.
+- `KeeperRecord` gained a constructor parameter (`isEditable`) and `SecretsManagerOptions` gained three (`connectTimeoutMillis`, `readTimeoutMillis`, `proxyUrl`). Recompiling is enough: Kotlin source needs no edit, and Java call sites keep every constructor form published in 17.3.0 because both types carry `@JvmOverloads`. What does change is bytecode-level. The generated `copy()` methods and the synthetic constructor Kotlin emits for omitted default arguments both changed arity, so Kotlin code compiled against 17.3.0 throws `NoSuchMethodError` if the 17.4.0 jar is swapped in without recompiling. Rebuild dependents against 17.4.0 rather than replacing the jar in place.
 
 - KSM-1203 - Fixed `generatePassword` using a non-cryptographic PRNG (Kotlin `Random.Default`) for the final character shuffle. The shuffle now uses `SecureRandom`, so the entire password generation path is cryptographically secure.
 - KSM-1176 - `KeeperRecord` now exposes `isEditable: Boolean`, forwarded from the server response envelope. Callers can inspect this field before calling `updateSecret` to determine whether the app has write permission for the record.
@@ -16,6 +15,8 @@ Java callers are unaffected: all previously published constructor arities are re
 - KSM-1081 - Fixed `getFolders()` crashing when any folder in the response has a corrupted or missing key. The SDK now skips undecryptable folders and returns the remaining folders normally.
 - KSM-1086 - Fixed `deleteFolder()` to return `SecretsManagerDeleteFolderResponse` (typed per-folder status), matching `deleteSecret()`. The SDK now logs per-item server failures to stderr and includes them in the return value so callers can detect partial failures.
 - KSM-1248 - Server-supplied key IDs are validated against the embedded public key table before being stored. An unrecognized key ID throws `SecretsManagerException` and leaves storage unchanged. Key rotation retries are now capped at `MAX_KEY_ROTATION_RETRIES` (3); exhausted retries throw a typed error naming the last suggested key ID.
+- KSM-1269 - Fixed the Java CI workflow not running on pull requests targeting release branches.
+The test matrix now triggers on both `master` and `release/sdk/java/core/**` targets.
 - KSM-1262 - On POSIX systems, config and cache files are now written via a temp-file swap with 0600 permissions set before data is written, closing the window where other local users could read the file during a write. Two behavior changes from the new approach: (1) a symlinked config path is replaced by a regular file on the first write; (2) a config file in a directory without write permission (for example, a read-only container volume mount) will fail at temp-file creation — move the config to a writable directory or use `InMemoryStorage` with an injected config string instead.
 - KSM-531 - Add HTTP/HTTPS proxy support
   - New `proxyUrl` option on `SecretsManagerOptions`, e.g. `SecretsManagerOptions(storage, proxyUrl = "http://proxy.local:8080")`. Java callers can also use `SecretsManagerOptions.withProxy(storage, "http://proxy.local:8080")`.
