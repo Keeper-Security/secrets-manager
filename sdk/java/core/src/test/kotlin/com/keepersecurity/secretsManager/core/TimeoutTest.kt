@@ -45,6 +45,29 @@ internal class TimeoutTest {
         assertEquals(10_000, options.readTimeoutMillis)
     }
 
+    // toString is hand-written rather than generated, so every field added to the class has to be
+    // added here too or it silently disappears from the one output someone reads when a timeout or
+    // a proxy misbehaves. Asserts the redaction in the same place because it is the same method.
+    @Test
+    fun toString_reportsTimeoutsAndRedactsProxyUrl() {
+        val options = SecretsManagerOptions(
+            InMemoryStorage(),
+            connectTimeoutMillis = 1_234,
+            readTimeoutMillis = 5_678,
+            // Sentinels rather than realistic values: the rendered storage field carries the
+            // package name, so a substring like "secret" would match com.keepersecurity
+            // .secretsManager and pass the leak check for the wrong reason.
+            proxyUrl = "http://zzuser:zzpassword@zzproxyhost:8080"
+        )
+        val rendered = options.toString()
+        assertTrue(rendered.contains("connectTimeoutMillis=1234"), "connect timeout missing from: $rendered")
+        assertTrue(rendered.contains("readTimeoutMillis=5678"), "read timeout missing from: $rendered")
+        assertTrue(rendered.contains("proxyUrl=<redacted>"), "proxyUrl not redacted in: $rendered")
+        assertFalse(rendered.contains("zzpassword"), "proxy password leaked into: $rendered")
+        assertFalse(rendered.contains("zzuser"), "proxy username leaked into: $rendered")
+        assertFalse(rendered.contains("zzproxyhost"), "proxy host leaked into: $rendered")
+    }
+
     @Test
     fun readTimeout_boundsAStalledServer() {
         ServerSocket(0).use { server ->
