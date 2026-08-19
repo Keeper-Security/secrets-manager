@@ -625,7 +625,7 @@ class SecretsManager:
         return payload
 
     @staticmethod
-    def prepare_update_folder_payload(storage, folder_uid, folder_name, folder_key):
+    def prepare_update_folder_payload(storage, folder_uid, folder_name, folder_key, use_gcm=False):
 
         payload = UpdateFolderPayload()
 
@@ -635,7 +635,10 @@ class SecretsManager:
 
         folder_json = dict_to_json({"name": folder_name})
         folder_data_bytes = utils.string_to_bytes(folder_json)
-        encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
+        if use_gcm:
+            encrypted_folder_data = CryptoUtils.encrypt_aes(folder_data_bytes, folder_key)
+        else:
+            encrypted_folder_data = CryptoUtils.encrypt_aes_cbc(folder_data_bytes, folder_key)
         payload.data = CryptoUtils.bytes_to_url_safe_str(encrypted_folder_data)
 
         return payload
@@ -972,7 +975,8 @@ class SecretsManager:
                 fldr = KeeperFolder(folder_key,
                                     folder.get('folderUid', '') or '',
                                     folder_parent,
-                                    folder_name)
+                                    folder_name,
+                                    use_gcm)
                 folders.append(fldr)
             except Exception as e:
                 self.logger.warning('Folder %s skipped due to error: %s', folder.get('folderUid', ''), e)
@@ -1308,7 +1312,7 @@ class SecretsManager:
         if shared_folder is None or not shared_folder.folder_key:
             raise KeeperError(f'Unable to update folder - folder key for {folder_uid} not found')
 
-        payload = SecretsManager.prepare_update_folder_payload(self.config, folder_uid, folder_name, shared_folder.folder_key)
+        payload = SecretsManager.prepare_update_folder_payload(self.config, folder_uid, folder_name, shared_folder.folder_key, shared_folder.use_gcm)
         _ = self._post_query('update_folder', payload)
 
     def delete_folder(self, folder_uids, force_deletion=False):
