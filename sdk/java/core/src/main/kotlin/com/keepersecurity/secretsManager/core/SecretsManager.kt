@@ -717,7 +717,7 @@ data class KeeperSecrets(val appData: AppData, val records: List<KeeperRecord>, 
 @Serializable
 data class AppData(val title: String, val type: String)
 
-data class KeeperRecord(
+data class KeeperRecord @JvmOverloads constructor(
     val recordKey: ByteArray,
     val recordUid: String,
     var folderUid: String? = null,
@@ -725,9 +725,11 @@ data class KeeperRecord(
     var innerFolderUid: String? = null,
     val data: KeeperRecordData,
     val revision: Long,
-    val isEditable: Boolean = false,
     val files: List<KeeperFile>? = null,
-    val links: List<KeeperRecordLink>? = null
+    val links: List<KeeperRecordLink>? = null,
+    // Appended rather than inserted: Java sees no default arguments, so an interior
+    // parameter would shift the constructor Java callers already compile against.
+    val isEditable: Boolean = false
 ) {
     fun getPassword(): String? {
         val passwordField = data.getField<Password>() ?: return null
@@ -1426,16 +1428,16 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
     }
 
     return if (recordData != null) KeeperRecord(
-        recordKey,
-        record.recordUid,
-        null,
-        null,
-        record.innerFolderUid,
-        recordData,
-        record.revision,
-        record.isEditable,
-        files,
-        record.links
+        recordKey = recordKey,
+        recordUid = record.recordUid,
+        folderUid = null,
+        folderKey = null,
+        innerFolderUid = record.innerFolderUid,
+        data = recordData,
+        revision = record.revision,
+        files = files,
+        links = record.links,
+        isEditable = record.isEditable
     ) else null
 }
 
