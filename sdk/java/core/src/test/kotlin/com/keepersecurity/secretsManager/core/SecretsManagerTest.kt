@@ -364,6 +364,34 @@ internal class SecretsManagerTest {
     }
 
     @Test
+    fun testIsEditableForwardedToKeeperRecord() {
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+
+        val appKey = getRandomBytes(32)
+        val recordKey = getRandomBytes(32)
+        val encRecordKey = bytesToBase64(encrypt(recordKey, appKey))
+        val encData = bytesToBase64(encrypt(stringToBytes(
+            """{"title":"Test","type":"login","fields":[],"custom":[]}"""), recordKey))
+
+        fun response(isEditable: Boolean) = encrypt(stringToBytes(
+            """{"encryptedAppKey":null,"folders":null,"records":[{"recordUid":"uid1","recordKey":"$encRecordKey","data":"$encData","revision":1,"isEditable":$isEditable,"files":null,"innerFolderUid":null}]}"""
+        ), transmissionKey)
+
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+
+        var options = SecretsManagerOptions(storage, queryFunction = { _, _, _ -> KeeperHttpResponse(200, response(true)) })
+        assertEquals(true, getSecrets(options).records[0].isEditable,
+            "isEditable:true from server must reach KeeperRecord")
+
+        options = SecretsManagerOptions(storage, queryFunction = { _, _, _ -> KeeperHttpResponse(200, response(false)) })
+        assertEquals(false, getSecrets(options).records[0].isEditable,
+            "isEditable:false from server must reach KeeperRecord")
+    }
+
+    @Test
     fun testGetFoldersSkipsUndecryptableFolder() {
         // A single folder whose key cannot be decrypted must not abort getFolders(). The bad
         // folder is skipped and the remaining good folder is still returned.

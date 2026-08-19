@@ -723,6 +723,7 @@ data class KeeperRecord(
     var innerFolderUid: String? = null,
     val data: KeeperRecordData,
     val revision: Long,
+    val isEditable: Boolean = false,
     val files: List<KeeperFile>? = null,
     val links: List<KeeperRecordLink>? = null
 ) {
@@ -1423,6 +1424,7 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
         record.innerFolderUid,
         recordData,
         record.revision,
+        record.isEditable,
         files,
         record.links
     ) else null
