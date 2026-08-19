@@ -266,8 +266,7 @@ internal fun redactProxyUrl(proxyUrl: String): String {
     val schemeEnd = proxyUrl.indexOf("://")
     val authorityStart = if (schemeEnd < 0) 0 else schemeEnd + 3
     val afterScheme = proxyUrl.substring(authorityStart)
-    val authorityEnd = afterScheme.indexOf('/').let { if (it < 0) afterScheme.length else it }
-    val atIndex = afterScheme.lastIndexOf('@', authorityEnd - 1)
+    val atIndex = afterScheme.lastIndexOf('@')
     if (atIndex < 0) return proxyUrl
     val userInfo = afterScheme.substring(0, atIndex)
     val colonIndex = userInfo.indexOf(':')

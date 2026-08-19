@@ -107,6 +107,7 @@ internal class ProxyTest {
         assertEquals("http://user:***@proxy.corp:8080", redactProxyUrl("http://user:p@ssword@proxy.corp:8080"))
         assertEquals("http://user:***@proxy.corp:8080", redactProxyUrl("http://user:pass word@proxy.corp:8080"))
         assertEquals("http://user:***@proxy.corp:8080", redactProxyUrl("http://user:simplepass@proxy.corp:8080"))
+        assertEquals("http://user:***@proxy.corp:8080", redactProxyUrl("http://user:a/b@proxy.corp:8080"))
         assertEquals("http://proxy.corp:8080", redactProxyUrl("http://proxy.corp:8080"))
         assertEquals("notaurl", redactProxyUrl("notaurl"))
     }
