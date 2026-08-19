@@ -108,6 +108,7 @@ internal class ProxyTest {
         assertEquals("http://user:***@proxy.corp:8080", redactProxyUrl("http://user:pass word@proxy.corp:8080"))
         assertEquals("http://user:***@proxy.corp:8080", redactProxyUrl("http://user:simplepass@proxy.corp:8080"))
         assertEquals("http://user:***@proxy.corp:8080", redactProxyUrl("http://user:a/b@proxy.corp:8080"))
+        assertEquals("user:***@proxy.corp:8080", redactProxyUrl("user:pa ss/word@proxy.corp:8080"))
         assertEquals("http://proxy.corp:8080", redactProxyUrl("http://proxy.corp:8080"))
         assertEquals("notaurl", redactProxyUrl("notaurl"))
     }
@@ -241,7 +242,7 @@ internal class ProxyTest {
     }
 
     @Test
-    fun proxyAuthFailureMessageAmbientBranchRequiresCredentials() {
+    fun proxyAuthFailureMessageBranchContentIsCorrect() {
         // The ambient-credentials branch must only fire when username is non-null.
         // An unauthenticated ambient proxy (no credentials in env var) must use the standard path.
         val standardMsg = proxyAuthFailureMessage("407", isAmbientCredentials = false)

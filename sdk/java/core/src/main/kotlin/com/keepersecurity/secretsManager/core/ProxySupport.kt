@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.net.ssl.HttpsURLConnection
 
 internal data class ResolvedProxy(val proxy: Proxy, val username: String?, val password: String?, val isExplicit: Boolean = false) {
+    val hasCredentials: Boolean get() = username != null && password != null
     override fun toString(): String =
         "ResolvedProxy(proxy=$proxy, username=$username, " +
         "password=${if (password != null) "<redacted>" else null}, isExplicit=$isExplicit)"
@@ -149,7 +150,7 @@ internal fun openProxiedConnection(
     // Must run before openConnection(): the JDK reads jdk.http.auth.tunneling.disabledSchemes
     // into a static field the first time HttpURLConnection's class is loaded, so clearing it
     // afterward has no effect on this connection.
-    if (resolved?.isExplicit == true && resolved.username != null && resolved.password != null) {
+    if (resolved?.isExplicit == true && resolved.hasCredentials) {
         val address = resolved.proxy.address() as InetSocketAddress
         ProxyAuthenticator.register(address.hostString, address.port, resolved.username, resolved.password)
     }
@@ -183,7 +184,7 @@ internal fun HttpsURLConnection.checkedResponseCode(
     environment: ProxyEnvironment = SystemProxyEnvironment
 ): Int {
     val resolved = resolveProxy(explicitProxyUrl, targetUrl, environment)
-    val requiresProxyAuth = resolved?.let { it.username != null && it.password != null } ?: false
+    val requiresProxyAuth = resolved?.hasCredentials ?: false
     if (!requiresProxyAuth) {
         return responseCode
     }

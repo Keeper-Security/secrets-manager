@@ -1267,7 +1267,7 @@ private fun uploadFile(url: String, parameters: String, fileData: ByteArray, pro
             // For tunneled HTTPS connections the JDK can throw here when the CONNECT tunnel fails.
             if (e.message?.contains("407") == true) {
                 val resolved = resolveProxy(proxyUrl, url)
-                if (resolved != null && resolved.username != null) {
+                if (resolved != null && resolved.hasCredentials) {
                     val isAmbientCredentials = !resolved.isExplicit
                     throw SecretsManagerException(proxyAuthFailureMessage(e.message, isAmbientCredentials), e)
                 }
@@ -1723,7 +1723,11 @@ fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: 
         }
         response
     } catch (e: Exception) {
-        val cachedData = getCachedValue()
+        val cachedData = try {
+            getCachedValue()
+        } catch (cacheE: Exception) {
+            throw SecretsManagerException("KSM request failed and no cached data is available: ${e.message}", e)
+        }
         System.err.println("WARNING: KSM request failed (${e.message}); serving stale cached secrets. " +
             "Note: cachingPostFunction does not support a proxy. To use a proxy, pass " +
             "SecretsManagerOptions.proxyUrl and use the default postFunction instead of cachingPostFunction.")
@@ -1768,7 +1772,7 @@ fun postFunction(
             // For tunneled HTTPS connections the JDK throws here when the CONNECT tunnel fails.
             if (e.message?.contains("407") == true) {
                 val resolved = resolveProxy(proxyUrl, url)
-                if (resolved != null && resolved.username != null) {
+                if (resolved != null && resolved.hasCredentials) {
                     val isAmbientCredentials = !resolved.isExplicit
                     throw SecretsManagerException(proxyAuthFailureMessage(e.message, isAmbientCredentials), e)
                 }
