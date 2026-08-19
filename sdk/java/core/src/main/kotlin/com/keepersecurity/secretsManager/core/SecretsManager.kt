@@ -1169,7 +1169,13 @@ fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: 
     val payloadAndFile = prepareFileUploadPayload(options.storage, ownerRecord, file)
     val responseData = postQuery(options, "add_file", payloadAndFile.payload)
     val response = nonStrictJson.decodeFromString<SecretsManagerAddFileResponse>(bytesToString(responseData))
-    val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile)
+    val uploadResult = uploadFile(
+        response.url,
+        response.parameters,
+        payloadAndFile.encryptedFile,
+        options.connectTimeoutMillis,
+        options.readTimeoutMillis
+    )
     if (uploadResult.statusCode != response.successStatusCode) {
         throw SecretsManagerException("Upload failed (${bytesToString(uploadResult.data)}), code ${uploadResult.statusCode}")
     }
@@ -1211,7 +1217,13 @@ private fun downloadFile(file: KeeperFile, url: String): ByteArray {
     }
 }
 
-private fun uploadFile(url: String, parameters: String, fileData: ByteArray): KeeperHttpResponse {
+private fun uploadFile(
+    url: String,
+    parameters: String,
+    fileData: ByteArray,
+    connectTimeoutMillis: Int,
+    readTimeoutMillis: Int
+): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
     val boundary = String.format("----------%x", Instant.now().epochSecond)
@@ -1219,8 +1231,8 @@ private fun uploadFile(url: String, parameters: String, fileData: ByteArray): Ke
     val paramJson = Json.parseToJsonElement(parameters) as JsonObject
     val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
     try {
-        connection.connectTimeout = DEFAULT_CONNECT_TIMEOUT_MS
-        connection.readTimeout = DEFAULT_READ_TIMEOUT_MS
+        connection.connectTimeout = connectTimeoutMillis
+        connection.readTimeout = readTimeoutMillis
         connection.requestMethod = "POST"
         connection.useCaches = false
         connection.doInput = true
