@@ -18,8 +18,12 @@ fun saveCachedValue(data: ByteArray) {
     val tmpPath = try {
         Files.createTempFile(targetPath.parent, "ksm_", ".tmp")
     } catch (e: IOException) {
+        // Report what actually failed: createTempFile also fails on a full or read-only volume,
+        // a missing parent, or an fd limit, none of which are a permission problem.
         throw SecretsManagerException(
-            "Cannot write cache $targetPath: directory ${targetPath.parent} is not writable."
+            "Cannot write cache $targetPath: could not create a temporary file in ${targetPath.parent} " +
+            "(${e.javaClass.simpleName}: ${e.message}). The directory must exist and be writable.",
+            e
         )
     }
     try {
@@ -144,9 +148,13 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         val tmpPath = try {
             Files.createTempFile(targetPath.parent, "ksm_", ".tmp")
         } catch (e: IOException) {
+            // Report what actually failed: createTempFile also fails on a full or read-only volume,
+            // a missing parent, or an fd limit, none of which are a permission problem.
             throw SecretsManagerException(
-                "Cannot write config $targetPath: directory ${targetPath.parent} is not writable. " +
-                "Move the config to a writable directory or use InMemoryStorage with an injected config string."
+                "Cannot write config $targetPath: could not create a temporary file in ${targetPath.parent} " +
+                "(${e.javaClass.simpleName}: ${e.message}). The directory must exist and be writable; " +
+                "move the config to a writable directory or use InMemoryStorage with an injected config string.",
+                e
             )
         }
         try {

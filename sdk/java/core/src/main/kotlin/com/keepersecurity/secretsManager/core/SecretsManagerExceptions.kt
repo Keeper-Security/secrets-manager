@@ -2,7 +2,16 @@
 
 package com.keepersecurity.secretsManager.core
 
-open class SecretsManagerException(message: String): Exception(message)
+/**
+ * Base type for errors raised by this SDK.
+ *
+ * [cause] is optional so a wrapped failure can keep the underlying exception and its stack trace.
+ * `@JvmOverloads` keeps the single-argument form Java callers and subclasses already compile against.
+ */
+open class SecretsManagerException @JvmOverloads constructor(
+    message: String,
+    cause: Throwable? = null
+): Exception(message, cause)
 
 internal class SecureRandomException(message: String): SecretsManagerException(message)
 internal class SecureRandomSlowGenerationException(message: String): SecretsManagerException(message)
