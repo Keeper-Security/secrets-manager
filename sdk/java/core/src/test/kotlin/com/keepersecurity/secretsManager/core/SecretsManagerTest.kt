@@ -268,9 +268,69 @@ internal class SecretsManagerTest {
             val perms = java.nio.file.Files.getPosixFilePermissions(configFile.toPath())
             val expected = java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")
             assertEquals(expected, perms, "Config file must be owner-read/write only. Got: $perms")
+
+            // Permissions alone do not prove the fix: the previous implementation also ended at
+            // 0600 by calling chmod after writing the private key through an 0644 handle. What is
+            // new is that the secrets are never written to the visible path at all. A rename
+            // installs a different inode, so fileKey() changes across a write; an in-place
+            // rewrite keeps the same one.
+            val inodeBefore = java.nio.file.Files.readAttributes(
+                configFile.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java
+            ).fileKey()
+            assertNotNull(inodeBefore, "File system does not expose fileKey(); cannot verify the swap")
+            storage.saveString(KEY_HOSTNAME, "second.keepersecurity.com")
+            val inodeAfter = java.nio.file.Files.readAttributes(
+                configFile.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java
+            ).fileKey()
+            assertNotEquals(
+                inodeBefore, inodeAfter,
+                "Config was rewritten in place rather than swapped in via rename, so the window " +
+                    "where the file is visible with partial or loosely-permissioned content is open"
+            )
+            assertEquals(
+                java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"),
+                java.nio.file.Files.getPosixFilePermissions(configFile.toPath()),
+                "Permissions must survive the swap"
+            )
+
+            // The staging file must not survive a successful write.
+            val leftovers = configFile.absoluteFile.parentFile
+                .list { _, name -> name.startsWith("ksm_") && name.endsWith(".tmp") }
+                ?: emptyArray()
+            assertTrue(leftovers.isEmpty(), "Staging files were left behind: ${leftovers.toList()}")
         } finally {
             configFile.delete()
         }
+    }
+
+    @Test
+    fun testConfigWriteFailureReportsTheUnderlyingCause() {
+        // The write path translates IOException into SecretsManagerException. It must not claim a
+        // permissions problem for every failure, and it must keep the original exception as the
+        // cause so the stack trace survives.
+        val missingDir = File(
+            File(System.getProperty("java.io.tmpdir")),
+            "ksm-absent-${System.nanoTime()}"
+        )
+        assertFalse(missingDir.exists(), "Test precondition: the directory must not exist")
+        val storage = LocalConfigStorage(File(missingDir, "config.json").absolutePath)
+
+        val ex = assertFailsWith<SecretsManagerException> {
+            storage.saveString(KEY_HOSTNAME, "fake.keepersecurity.com")
+        }
+        assertNotNull(ex.cause, "The original IOException must be retained as the cause")
+        assertTrue(
+            ex.cause is java.io.IOException,
+            "Cause must be the file system failure. Got: ${ex.cause?.javaClass?.name}"
+        )
+        assertFalse(
+            ex.message!!.contains("is not writable"),
+            "A missing directory must not be reported as a permissions problem. Got: ${ex.message}"
+        )
+        assertTrue(
+            ex.message!!.contains(missingDir.name),
+            "The message must name the directory it could not use. Got: ${ex.message}"
+        )
     }
 
     @Test
@@ -450,6 +510,73 @@ internal class SecretsManagerTest {
         assertEquals(0, folders.size, "both cyclic folders must be skipped; the call must complete without hanging")
     }
 
+    // Builds a get_folders response with one decryptable folder and one that is not, so the skip
+    // path in fetchAndDecryptFolders can be driven without a live backend.
+    private fun undecryptableFolderOptions(loggingEnabled: Boolean): SecretsManagerOptions {
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+        val appKey = getRandomBytes(32)
+        val goodFolderKey = getRandomBytes(32)
+        val encGoodFolderKey = bytesToBase64(encrypt(goodFolderKey, appKey))
+        val encGoodData = bytesToBase64(encrypt(stringToBytes("""{"name":"Good Folder"}"""), goodFolderKey, true))
+        val badFolderKey = bytesToBase64(ByteArray(16) { it.toByte() })
+        val responseJson = """{"encryptedAppKey":null,"folders":[{"folderUid":"good-uid","folderKey":"$encGoodFolderKey","data":"$encGoodData","parent":null,"records":null},{"folderUid":"bad-uid","folderKey":"$badFolderKey","data":null,"parent":null,"records":null}],"records":null}"""
+        val encryptedResponse = encrypt(stringToBytes(responseJson), transmissionKey)
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+        return SecretsManagerOptions(
+            storage,
+            queryFunction = { _, _, _ -> KeeperHttpResponse(200, encryptedResponse) },
+            loggingEnabled = loggingEnabled
+        )
+    }
+
+    private fun captureStderr(block: () -> Unit): String {
+        val original = System.err
+        val buffer = java.io.ByteArrayOutputStream()
+        System.setErr(java.io.PrintStream(buffer, true, "UTF-8"))
+        try {
+            block()
+        } finally {
+            System.setErr(original)
+        }
+        return buffer.toString("UTF-8")
+    }
+
+    @Test
+    fun testFolderSkipDiagnosticRespectsLoggingEnabled() {
+        // loggingEnabled gates the throttle and record-decryption diagnostics elsewhere in this
+        // file. A library that has been told not to log must not write to stderr from the folder
+        // skip path either.
+        val stderr = captureStderr {
+            val folders = getFolders(undecryptableFolderOptions(loggingEnabled = false))
+            assertEquals(1, folders.size)
+        }
+        assertEquals("", stderr, "loggingEnabled = false must not write to stderr. Got: $stderr")
+    }
+
+    @Test
+    fun testFolderSkipDiagnosticNamesTheExceptionType() {
+        // The message must carry the exception class, not just its message: the causes this skip
+        // path exists for (a null data field, a GCM tag mismatch) frequently have a null message,
+        // which on its own logs "skipped due to error: null" and tells an operator nothing.
+        val stderr = captureStderr {
+            val folders = getFolders(undecryptableFolderOptions(loggingEnabled = true))
+            assertEquals(1, folders.size)
+        }
+        // Scope the assertion to the line about this folder and require the class name in the
+        // position the sibling handlers put it. A bare stderr.contains("Exception") would also
+        // pass on an exception message that happens to spell the word, or on output bleeding in
+        // from another test.
+        val line = stderr.lineSequence().firstOrNull { it.contains("bad-uid") }
+        assertNotNull(line, "The skipped folder must be named. Got: $stderr")
+        assertTrue(
+            Regex("""skipped due to error: \w*(Exception|Error)\w*, """).containsMatchIn(line),
+            "The exception class must directly follow the prefix so a null message is still " +
+                "diagnosable. Got: $line"
+        )
+    }
 
 //    @Test // uncomment to debug the integration test
     fun integrationTest() {

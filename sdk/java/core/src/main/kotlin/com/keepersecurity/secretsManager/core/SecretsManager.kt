@@ -1099,7 +1099,7 @@ fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>): Secr
     val responseData = postQuery(options, "delete_secret", payload)
     val response: SecretsManagerDeleteResponse = nonStrictJson.decodeFromString(bytesToString(responseData))
     for (r in response.records) {
-        if (r.responseCode != "ok") {
+        if (r.responseCode != "ok" && options.loggingEnabled) {
             System.err.println("Failed to delete record ${r.recordUid}: ${r.responseCode} ${r.errorMessage ?: ""}")
         }
     }
@@ -1112,7 +1112,7 @@ fun deleteFolder(options: SecretsManagerOptions, folderUids: List<String>, force
     val responseData = postQuery(options, "delete_folder", payload)
     val response: SecretsManagerDeleteFolderResponse = nonStrictJson.decodeFromString(bytesToString(responseData))
     for (f in response.folders) {
-        if (f.responseCode != "ok") {
+        if (f.responseCode != "ok" && options.loggingEnabled) {
             System.err.println("Failed to delete folder ${f.folderUid}: ${f.responseCode} ${f.errorMessage ?: ""}")
         }
     }
@@ -1515,7 +1515,12 @@ private fun fetchAndDecryptFolders(
             val folderName = nonStrictJson.decodeFromString<KeeperFolderName>(folderNameJson)
             folders.add(KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name))
         } catch (e: Exception) {
-            System.err.println("Folder ${folder.folderUid} skipped due to error: ${e.message}")
+            if (options.loggingEnabled) {
+                // Same shape as the skip diagnostics in fetchAndDecryptSecrets. The class name
+                // matters because the common causes (a null data field, a tag mismatch) carry no
+                // message, which would otherwise log "skipped due to error: null".
+                System.err.println("Folder ${folder.folderUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+            }
         }
     }
     return folders
