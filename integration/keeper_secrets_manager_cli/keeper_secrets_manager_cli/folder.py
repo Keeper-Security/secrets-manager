@@ -180,7 +180,10 @@ class Folder:
 
         shared_folder = next((x for x in folders if x.folder_uid == folder_uid), None)
         while shared_folder and shared_folder.parent_uid:
-            shared_folder = next((x for x in folders if x.folder_uid == shared_folder.parent_uid), shared_folder)
+            parent = next((x for x in folders if x.folder_uid == shared_folder.parent_uid), None)
+            if parent is None:
+                break
+            shared_folder = parent
 
         if shared_folder is None:
             raise KsmCliException(f'Unable to find the shared folder for {folder_uid}')
