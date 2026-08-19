@@ -944,18 +944,29 @@ class SecretsManager:
         folders = []
         for folder in response_folders:
             try:
-                folder_key = folder.get('folderKey')
+                folder_key_raw = folder.get('folderKey')
                 folder_parent = folder.get('parent', '') or ''
                 if not folder_parent:
-                    folder_key = CryptoUtils.decrypt_aes(utils.base64_to_bytes(folder_key), app_key)
+                    folder_key = CryptoUtils.decrypt_aes(utils.base64_to_bytes(folder_key_raw), app_key)
+                    use_gcm = False
                 else:
                     shared_folder_key = SecretsManager.get_shared_folder_key(folders, response_folders, folder_parent)
-                    folder_key = CryptoUtils.decrypt_aes_cbc(utils.base64_to_bytes(folder_key), shared_folder_key)
+                    folder_key_bytes = utils.base64_to_bytes(folder_key_raw)
+                    if len(folder_key_bytes) == 60:
+                        folder_key = CryptoUtils.decrypt_aes(folder_key_bytes, shared_folder_key)
+                        use_gcm = True
+                    else:
+                        folder_key = CryptoUtils.decrypt_aes_cbc(folder_key_bytes, shared_folder_key)
+                        use_gcm = False
 
                 folder_name = ''
                 folder_data = folder.get('data', '')
                 if folder_data:
-                    folder_data_json = CryptoUtils.decrypt_aes_cbc(utils.base64_to_bytes(folder_data), folder_key)
+                    folder_data_bytes = utils.base64_to_bytes(folder_data)
+                    if use_gcm:
+                        folder_data_json = CryptoUtils.decrypt_aes(folder_data_bytes, folder_key)
+                    else:
+                        folder_data_json = CryptoUtils.decrypt_aes_cbc(folder_data_bytes, folder_key)
                     folder_data_dict = json.loads(folder_data_json.decode())
                     folder_name = folder_data_dict.get('name', '') or ''
                 fldr = KeeperFolder(folder_key,
