@@ -68,7 +68,9 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val serverPublicKey: String? = null,
     val serverPublicKeyId: String? = null,
     // Override the sleep between throttle retries (primarily for tests). Defaults to Thread.sleep.
-    val throttleSleepMillis: ((Long) -> Unit)? = null
+    val throttleSleepMillis: ((Long) -> Unit)? = null,
+    val connectTimeoutMillis: Int = 5_000,
+    val readTimeoutMillis: Int = 30_000,
 ) {
     init {
         testSecureRandom()
@@ -1184,9 +1186,14 @@ fun downloadThumbnail(file: KeeperFile): ByteArray {
     return downloadFile(file, file.thumbnailUrl)
 }
 
+private const val DEFAULT_CONNECT_TIMEOUT_MS = 5_000
+private const val DEFAULT_READ_TIMEOUT_MS = 30_000
+
 private fun downloadFile(file: KeeperFile, url: String): ByteArray {
     val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
     try {
+        connection.connectTimeout = DEFAULT_CONNECT_TIMEOUT_MS
+        connection.readTimeout = DEFAULT_READ_TIMEOUT_MS
         connection.requestMethod = "GET"
         val statusCode = connection.responseCode
         val data = when {
@@ -1210,6 +1217,8 @@ private fun uploadFile(url: String, parameters: String, fileData: ByteArray): Ke
     val paramJson = Json.parseToJsonElement(parameters) as JsonObject
     val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
     try {
+        connection.connectTimeout = DEFAULT_CONNECT_TIMEOUT_MS
+        connection.readTimeout = DEFAULT_READ_TIMEOUT_MS
         connection.requestMethod = "POST"
         connection.useCaches = false
         connection.doInput = true
@@ -1687,12 +1696,16 @@ fun postFunction(
     url: String,
     transmissionKey: TransmissionKey,
     payload: EncryptedPayload,
-    allowUnverifiedCertificate: Boolean
+    allowUnverifiedCertificate: Boolean,
+    connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MS,
+    readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MS,
 ): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
     val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
     try {
+        connection.connectTimeout = connectTimeoutMillis
+        connection.readTimeout = readTimeoutMillis
         if (allowUnverifiedCertificate) {
             connection.sslSocketFactory = trustAllSocketFactory()
         }
@@ -1814,7 +1827,7 @@ private inline fun <reified T> postQuery(
         val transmissionKey = generateTransmissionKey(options.storage)
         val encryptedPayload = encryptAndSignPayload(options.storage, transmissionKey, payload)
         val response = if (options.queryFunction == null) {
-            postFunction(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate)
+            postFunction(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, options.connectTimeoutMillis, options.readTimeoutMillis)
         } else {
             options.queryFunction.invoke(url, transmissionKey, encryptedPayload)
         }
