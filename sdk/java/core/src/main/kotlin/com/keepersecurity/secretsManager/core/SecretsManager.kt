@@ -729,6 +729,14 @@ data class KeeperRecord @JvmOverloads constructor(
     val links: List<KeeperRecordLink>? = null,
     // Appended rather than inserted: Java sees no default arguments, so an interior
     // parameter would shift the constructor Java callers already compile against.
+    /**
+     * Write permission for this record, set by the backend from how the application's share was
+     * configured: `true` when the application may call [updateSecret] on it, `false` when the
+     * share is read-only. Informational only; the SDK does not enforce it before an update.
+     *
+     * The default applies only to direct construction. Records returned by [getSecrets] always
+     * carry the server's value, because the field is required in the response envelope.
+     */
     val isEditable: Boolean = false
 ) {
     fun getPassword(): String? {
