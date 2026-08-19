@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.IOException
 import java.net.HttpURLConnection.HTTP_FORBIDDEN
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -18,15 +19,11 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.doubleOrNull
 import java.net.HttpURLConnection.HTTP_OK
 import java.net.URI
-import java.security.KeyManagementException
-import java.security.NoSuchAlgorithmException
 import java.security.SecureRandom
-import java.security.cert.X509Certificate
 import java.time.Instant
 import java.util.*
 import java.util.concurrent.*
 import kotlin.random.Random
-import javax.net.ssl.*
 
 const val KEEPER_CLIENT_VERSION = "mj17.4.0"
 
@@ -71,12 +68,28 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val throttleSleepMillis: ((Long) -> Unit)? = null,
     val connectTimeoutMillis: Int = 5_000,
     val readTimeoutMillis: Int = 30_000,
+    val proxyUrl: String? = null
 ) {
+    companion object {
+        // Static factory for Java callers — preferred over the 8-arg @JvmOverloads form.
+        // Adding proxyUrl to the primary constructor changed the copy() binary signature;
+        // callers compiled against 17.3.0 must recompile against 17.4.0.
+        @JvmStatic
+        fun withProxy(storage: KeyValueStorage, proxyUrl: String) =
+            SecretsManagerOptions(storage = storage, proxyUrl = proxyUrl)
+    }
+
     init {
         testSecureRandom()
         serverPublicKey?.let { storage.saveString(KEY_SERVER_PUBLIC_KEY, it) }
         serverPublicKeyId?.let { storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, it) }
     }
+
+    override fun toString(): String =
+        "SecretsManagerOptions(storage=$storage, queryFunction=$queryFunction, " +
+        "allowUnverifiedCertificate=$allowUnverifiedCertificate, loggingEnabled=$loggingEnabled, " +
+        "serverPublicKey=$serverPublicKey, serverPublicKeyId=$serverPublicKeyId, " +
+        "throttleSleepMillis=$throttleSleepMillis, proxyUrl=${if (proxyUrl != null) "<redacted>" else null})"
 }
 
 data class QueryOptions @JvmOverloads constructor(
@@ -1034,7 +1047,7 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
                 throw SecretsManagerException("Notation error - Record $recordToken has multiple files matching the search criteria '$parameter'")
             if (files.isEmpty())
                 throw SecretsManagerException("Notation error - Record $recordToken has no files matching the search criteria '$parameter'")
-            val contents = downloadFile(files[0])
+            val contents = downloadFile(options, files[0])
             val text = webSafe64FromBytes(contents)
             result.add(text)
         }
@@ -1177,41 +1190,49 @@ fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: 
     val payloadAndFile = prepareFileUploadPayload(options.storage, ownerRecord, file)
     val responseData = postQuery(options, "add_file", payloadAndFile.payload)
     val response = nonStrictJson.decodeFromString<SecretsManagerAddFileResponse>(bytesToString(responseData))
-    val uploadResult = uploadFile(
-        response.url,
-        response.parameters,
-        payloadAndFile.encryptedFile,
-        options.connectTimeoutMillis,
-        options.readTimeoutMillis
-    )
+    val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile, options.proxyUrl, options.allowUnverifiedCertificate, options.connectTimeoutMillis, options.readTimeoutMillis)
     if (uploadResult.statusCode != response.successStatusCode) {
         throw SecretsManagerException("Upload failed (${bytesToString(uploadResult.data)}), code ${uploadResult.statusCode}")
     }
     return payloadAndFile.payload.fileRecordUid
 }
 
-fun downloadFile(file: KeeperFile): ByteArray {
+fun downloadFile(options: SecretsManagerOptions, file: KeeperFile): ByteArray {
     val url = file.url ?: throw SecretsManagerException("File ${file.fileUid} has no download URL")
-    return downloadFile(file, url)
+    return downloadFileFromUrl(file, url, options.proxyUrl, options.allowUnverifiedCertificate, options.connectTimeoutMillis, options.readTimeoutMillis)
 }
 
-fun downloadThumbnail(file: KeeperFile): ByteArray {
+@JvmOverloads
+fun downloadFile(file: KeeperFile, proxyUrl: String? = null): ByteArray {
+    val url = file.url ?: throw SecretsManagerException("File ${file.fileUid} has no download URL")
+    return downloadFileFromUrl(file, url, proxyUrl, false)
+}
+
+fun downloadThumbnail(options: SecretsManagerOptions, file: KeeperFile): ByteArray {
     if (file.thumbnailUrl == null) {
         throw SecretsManagerException("Thumbnail does not exist for the file ${file.fileUid}")
     }
-    return downloadFile(file, file.thumbnailUrl)
+    return downloadFileFromUrl(file, file.thumbnailUrl, options.proxyUrl, options.allowUnverifiedCertificate, options.connectTimeoutMillis, options.readTimeoutMillis)
 }
 
 private const val DEFAULT_CONNECT_TIMEOUT_MS = 5_000
 private const val DEFAULT_READ_TIMEOUT_MS = 30_000
 
-private fun downloadFile(file: KeeperFile, url: String): ByteArray {
-    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
+@JvmOverloads
+fun downloadThumbnail(file: KeeperFile, proxyUrl: String? = null): ByteArray {
+    if (file.thumbnailUrl == null) {
+        throw SecretsManagerException("Thumbnail does not exist for the file ${file.fileUid}")
+    }
+    return downloadFileFromUrl(file, file.thumbnailUrl, proxyUrl, false)
+}
+
+private fun downloadFileFromUrl(file: KeeperFile, url: String, proxyUrl: String? = null, allowUnverifiedCertificate: Boolean = false, connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MS, readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MS): ByteArray {
+    val connection = openProxiedConnection(url, proxyUrl, allowUnverifiedCertificate)
     try {
-        connection.connectTimeout = DEFAULT_CONNECT_TIMEOUT_MS
-        connection.readTimeout = DEFAULT_READ_TIMEOUT_MS
+        connection.connectTimeout = connectTimeoutMillis
+        connection.readTimeout = readTimeoutMillis
         connection.requestMethod = "GET"
-        val statusCode = connection.responseCode
+        val statusCode = connection.checkedResponseCode(proxyUrl, url)
         val data = when {
             connection.errorStream != null -> connection.errorStream.readBytes()
             else -> connection.inputStream.readBytes()
@@ -1225,19 +1246,13 @@ private fun downloadFile(file: KeeperFile, url: String): ByteArray {
     }
 }
 
-private fun uploadFile(
-    url: String,
-    parameters: String,
-    fileData: ByteArray,
-    connectTimeoutMillis: Int,
-    readTimeoutMillis: Int
-): KeeperHttpResponse {
+private fun uploadFile(url: String, parameters: String, fileData: ByteArray, proxyUrl: String?, allowUnverifiedCertificate: Boolean = false, connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MS, readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MS): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
     val boundary = String.format("----------%x", Instant.now().epochSecond)
     val boundaryBytes: ByteArray = stringToBytes("\r\n--$boundary")
     val paramJson = Json.parseToJsonElement(parameters) as JsonObject
-    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
+    val connection = openProxiedConnection(url, proxyUrl, allowUnverifiedCertificate)
     try {
         connection.connectTimeout = connectTimeoutMillis
         connection.readTimeout = readTimeoutMillis
@@ -1246,18 +1261,30 @@ private fun uploadFile(
         connection.doInput = true
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-        connection.outputStream.use { os ->
-            for (param in paramJson.entries) {
+        try {
+            connection.outputStream.use { os ->
+                for (param in paramJson.entries) {
+                    os.write(boundaryBytes)
+                    os.write(stringToBytes("\r\nContent-Disposition: form-data; name=\"${param.key}\"\r\n\r\n${param.value.jsonPrimitive.content}"))
+                }
                 os.write(boundaryBytes)
-                os.write(stringToBytes("\r\nContent-Disposition: form-data; name=\"${param.key}\"\r\n\r\n${param.value.jsonPrimitive.content}"))
+                os.write(stringToBytes("\r\nContent-Disposition: form-data; name=\"file\"\r\nContent-Type: application/octet-stream\r\n\r\n"))
+                os.write(fileData)
+                os.write(boundaryBytes)
+                os.write(stringToBytes("--\r\n"))
             }
-            os.write(boundaryBytes)
-            os.write(stringToBytes("\r\nContent-Disposition: form-data; name=\"file\"\r\nContent-Type: application/octet-stream\r\n\r\n"))
-            os.write(fileData)
-            os.write(boundaryBytes)
-            os.write(stringToBytes("--\r\n"))
+        } catch (e: IOException) {
+            // For tunneled HTTPS connections the JDK can throw here when the CONNECT tunnel fails.
+            if (e.message?.contains("407") == true) {
+                val resolved = resolveProxy(proxyUrl, url)
+                if (resolved != null && resolved.hasCredentials) {
+                    val isAmbientCredentials = !resolved.isExplicit
+                    throw SecretsManagerException(proxyAuthFailureMessage(e.message, isAmbientCredentials), e)
+                }
+            }
+            throw e
         }
-        statusCode = connection.responseCode
+        statusCode = connection.checkedResponseCode(proxyUrl, url)
         data = when {
             connection.errorStream != null -> connection.errorStream.readBytes()
             else -> connection.inputStream.readBytes()
@@ -1708,7 +1735,15 @@ fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: 
         }
         response
     } catch (e: Exception) {
-        val cachedData = getCachedValue()
+        val cachedData = try {
+            getCachedValue()
+        } catch (cacheE: Exception) {
+            throw SecretsManagerException("KSM request failed and no cached data is available: ${e.message}", e)
+        }
+        System.err.println("WARNING: KSM request failed (${e.message}); serving stale cached secrets. " +
+            "Note: cachingPostFunction cannot use SecretsManagerOptions.proxyUrl; ambient env proxies " +
+            "(HTTPS_PROXY, https.proxyHost) still apply. To use an explicit proxyUrl, use the default " +
+            "postFunction instead of cachingPostFunction.")
         val cachedTransmissionKey = cachedData.copyOfRange(0, 32)
         transmissionKey.key = cachedTransmissionKey
         val data = cachedData.copyOfRange(32, cachedData.size)
@@ -1721,27 +1756,44 @@ fun postFunction(
     url: String,
     transmissionKey: TransmissionKey,
     payload: EncryptedPayload,
+    allowUnverifiedCertificate: Boolean
+): KeeperHttpResponse = postFunction(url, transmissionKey, payload, allowUnverifiedCertificate, null)
+
+fun postFunction(
+    url: String,
+    transmissionKey: TransmissionKey,
+    payload: EncryptedPayload,
     allowUnverifiedCertificate: Boolean,
+    proxyUrl: String? = null,
     connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MS,
     readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MS,
 ): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
-    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
+    val connection = openProxiedConnection(url, proxyUrl, allowUnverifiedCertificate)
     try {
         connection.connectTimeout = connectTimeoutMillis
         connection.readTimeout = readTimeoutMillis
-        if (allowUnverifiedCertificate) {
-            connection.sslSocketFactory = trustAllSocketFactory()
-        }
         connection.requestMethod = "POST"
         connection.doOutput = true
         connection.setRequestProperty("PublicKeyId", transmissionKey.publicKeyId.toString())
         connection.setRequestProperty("TransmissionKey", bytesToBase64(transmissionKey.encryptedKey))
         connection.setRequestProperty("Authorization", "Signature ${bytesToBase64(payload.signature)}")
-        connection.outputStream.write(payload.payload)
-        connection.outputStream.flush()
-        statusCode = connection.responseCode
+        try {
+            connection.outputStream.write(payload.payload)
+            connection.outputStream.flush()
+        } catch (e: IOException) {
+            // For tunneled HTTPS connections the JDK throws here when the CONNECT tunnel fails.
+            if (e.message?.contains("407") == true) {
+                val resolved = resolveProxy(proxyUrl, url)
+                if (resolved != null && resolved.hasCredentials) {
+                    val isAmbientCredentials = !resolved.isExplicit
+                    throw SecretsManagerException(proxyAuthFailureMessage(e.message, isAmbientCredentials), e)
+                }
+            }
+            throw e
+        }
+        statusCode = connection.checkedResponseCode(proxyUrl, url)
         data = when {
             connection.errorStream != null -> connection.errorStream.readBytes()
             else -> connection.inputStream.readBytes()
@@ -1852,7 +1904,7 @@ private inline fun <reified T> postQuery(
         val transmissionKey = generateTransmissionKey(options.storage)
         val encryptedPayload = encryptAndSignPayload(options.storage, transmissionKey, payload)
         val response = if (options.queryFunction == null) {
-            postFunction(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, options.connectTimeoutMillis, options.readTimeoutMillis)
+            postFunction(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, options.proxyUrl, options.connectTimeoutMillis, options.readTimeoutMillis)
         } else {
             options.queryFunction.invoke(url, transmissionKey, encryptedPayload)
         }
@@ -1910,36 +1962,6 @@ private inline fun <reified T> postQuery(
         }
         return decrypt(response.data, transmissionKey.key)
     }
-}
-
-private fun trustAllSocketFactory(): SSLSocketFactory {
-    val trustAllCerts: Array<TrustManager> = arrayOf(
-        object : X509TrustManager {
-            private val AcceptedIssuers = arrayOf<X509Certificate>()
-            override fun checkClientTrusted(
-                certs: Array<X509Certificate?>?, authType: String?
-            ) {
-            }
-
-            override fun checkServerTrusted(
-                certs: Array<X509Certificate?>?, authType: String?
-            ) {
-            }
-
-            override fun getAcceptedIssuers(): Array<X509Certificate> {
-                return AcceptedIssuers
-            }
-        }
-    )
-    val sslContext = SSLContext.getInstance("TLS")
-    try {
-        sslContext.init(null, trustAllCerts, SecureRandom())
-    } catch (e: NoSuchAlgorithmException) {
-        e.printStackTrace()
-    } catch (e: KeyManagementException) {
-        e.printStackTrace()
-    }
-    return sslContext.socketFactory
 }
 
 internal object TestStubs {

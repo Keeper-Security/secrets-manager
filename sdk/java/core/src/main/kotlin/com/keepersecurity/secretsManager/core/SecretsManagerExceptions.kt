@@ -11,7 +11,15 @@ package com.keepersecurity.secretsManager.core
 open class SecretsManagerException @JvmOverloads constructor(
     message: String,
     cause: Throwable? = null
-): Exception(message, cause)
+): Exception(message, cause) {
+    companion object {
+        // Pins the SUID to the value computed for the original single-constructor shape so jars
+        // built before this change can deserialize exceptions from jars built after it (e.g. Jenkins
+        // controller/agent remoting). private const val generates private static final in bytecode,
+        // which is the conventional form recognized by ObjectStreamClass.
+        private const val serialVersionUID: Long = 5401507264959279624L
+    }
+}
 
 internal class SecureRandomException(message: String): SecretsManagerException(message)
 internal class SecureRandomSlowGenerationException(message: String): SecretsManagerException(message)
