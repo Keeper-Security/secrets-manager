@@ -1501,7 +1501,7 @@ private fun getSharedFolderKey(folders: List<KeeperFolder>, responseFolders: Lis
         val parentFolder = responseFolders.find { x -> x.folderUid == currentParent } ?: return null
         currentParent = parentFolder.parent ?: return folders.find { it.folderUid == parentFolder.folderUid }?.folderKey
     }
-    return null
+    throw SecretsManagerException("Folder data inconsistent - parent cycle detected at folder UID $currentParent")
 }
 
 private fun prepareGetPayload(

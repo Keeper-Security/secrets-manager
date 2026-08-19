@@ -427,7 +427,7 @@ internal class SecretsManagerTest {
         assertEquals("Good Folder", folders[0].name)
     }
 
-    @Test
+    @Test(timeout = 5_000)
     fun testGetFoldersSkipsFolderParentCycle() {
         val transmissionKey = ByteArray(32) { it.toByte() }
         TestStubs.transmissionKeyStub = { transmissionKey }
