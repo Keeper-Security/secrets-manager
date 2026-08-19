@@ -152,7 +152,7 @@ internal fun openProxiedConnection(
     // afterward has no effect on this connection.
     if (resolved?.isExplicit == true && resolved.hasCredentials) {
         val address = resolved.proxy.address() as InetSocketAddress
-        ProxyAuthenticator.register(address.hostString, address.port, resolved.username, resolved.password)
+        ProxyAuthenticator.register(address.hostString, address.port, resolved.username!!, resolved.password!!)
     }
     val url = URI.create(targetUrl).toURL()
     val proxy = when {

@@ -6,7 +6,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 ## 17.4.0
 **Breaking Changes**
-- `SecretsManagerOptions.copy()` binary signature changed — callers compiled against 17.3.0 that invoke `copy()` must recompile against 17.4.0.
+- Kotlin callers compiled against 17.3.0 must recompile against 17.4.0.
+Adding `proxyUrl` to the `SecretsManagerOptions` primary constructor changes the constructor and `copy()` signatures that Kotlin default-argument calls bind to, so any Kotlin call site using default or named arguments throws `NoSuchMethodError` against a 17.4.0 jar until recompiled.
+Java callers are unaffected: all previously published constructor arities are retained via `@JvmOverloads`.
 
 - KSM-1203 - Fixed `generatePassword` using a non-cryptographic PRNG (Kotlin `Random.Default`) for the final character shuffle. The shuffle now uses `SecureRandom`, so the entire password generation path is cryptographically secure.
 - KSM-1176 - `KeeperRecord` now exposes `isEditable: Boolean`, forwarded from the server response envelope. Callers can inspect this field before calling `updateSecret` to determine whether the app has write permission for the record.
