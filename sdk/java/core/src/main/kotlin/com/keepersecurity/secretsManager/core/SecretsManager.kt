@@ -28,7 +28,7 @@ import java.util.concurrent.*
 import kotlin.random.Random
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj17.3.0"
+const val KEEPER_CLIENT_VERSION = "mj17.4.0"
 
 // Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
@@ -717,7 +717,7 @@ data class KeeperSecrets(val appData: AppData, val records: List<KeeperRecord>, 
 @Serializable
 data class AppData(val title: String, val type: String)
 
-data class KeeperRecord(
+data class KeeperRecord @JvmOverloads constructor(
     val recordKey: ByteArray,
     val recordUid: String,
     var folderUid: String? = null,
@@ -725,9 +725,11 @@ data class KeeperRecord(
     var innerFolderUid: String? = null,
     val data: KeeperRecordData,
     val revision: Long,
-    val isEditable: Boolean = false,
     val files: List<KeeperFile>? = null,
-    val links: List<KeeperRecordLink>? = null
+    val links: List<KeeperRecordLink>? = null,
+    // Appended rather than inserted: Java sees no default arguments, so an interior
+    // parameter would shift the constructor Java callers already compile against.
+    val isEditable: Boolean = false
 ) {
     fun getPassword(): String? {
         val passwordField = data.getField<Password>() ?: return null
@@ -1167,7 +1169,13 @@ fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: 
     val payloadAndFile = prepareFileUploadPayload(options.storage, ownerRecord, file)
     val responseData = postQuery(options, "add_file", payloadAndFile.payload)
     val response = nonStrictJson.decodeFromString<SecretsManagerAddFileResponse>(bytesToString(responseData))
-    val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile)
+    val uploadResult = uploadFile(
+        response.url,
+        response.parameters,
+        payloadAndFile.encryptedFile,
+        options.connectTimeoutMillis,
+        options.readTimeoutMillis
+    )
     if (uploadResult.statusCode != response.successStatusCode) {
         throw SecretsManagerException("Upload failed (${bytesToString(uploadResult.data)}), code ${uploadResult.statusCode}")
     }
@@ -1209,7 +1217,13 @@ private fun downloadFile(file: KeeperFile, url: String): ByteArray {
     }
 }
 
-private fun uploadFile(url: String, parameters: String, fileData: ByteArray): KeeperHttpResponse {
+private fun uploadFile(
+    url: String,
+    parameters: String,
+    fileData: ByteArray,
+    connectTimeoutMillis: Int,
+    readTimeoutMillis: Int
+): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
     val boundary = String.format("----------%x", Instant.now().epochSecond)
@@ -1217,8 +1231,8 @@ private fun uploadFile(url: String, parameters: String, fileData: ByteArray): Ke
     val paramJson = Json.parseToJsonElement(parameters) as JsonObject
     val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
     try {
-        connection.connectTimeout = DEFAULT_CONNECT_TIMEOUT_MS
-        connection.readTimeout = DEFAULT_READ_TIMEOUT_MS
+        connection.connectTimeout = connectTimeoutMillis
+        connection.readTimeout = readTimeoutMillis
         connection.requestMethod = "POST"
         connection.useCaches = false
         connection.doInput = true
@@ -1426,16 +1440,16 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
     }
 
     return if (recordData != null) KeeperRecord(
-        recordKey,
-        record.recordUid,
-        null,
-        null,
-        record.innerFolderUid,
-        recordData,
-        record.revision,
-        record.isEditable,
-        files,
-        record.links
+        recordKey = recordKey,
+        recordUid = record.recordUid,
+        folderUid = null,
+        folderKey = null,
+        innerFolderUid = record.innerFolderUid,
+        data = recordData,
+        revision = record.revision,
+        files = files,
+        links = record.links,
+        isEditable = record.isEditable
     ) else null
 }
 
@@ -1692,6 +1706,7 @@ fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: 
     }
 }
 
+@JvmOverloads
 fun postFunction(
     url: String,
     transmissionKey: TransmissionKey,
