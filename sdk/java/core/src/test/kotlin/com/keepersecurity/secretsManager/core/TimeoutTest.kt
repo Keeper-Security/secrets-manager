@@ -2,11 +2,13 @@ package com.keepersecurity.secretsManager.core
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import java.net.ServerSocket
+import java.net.Socket
 import java.net.SocketTimeoutException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.*
 
 // Connect/read timeouts on the built-in HTTP transport. The behavioural test points
@@ -46,28 +48,39 @@ internal class TimeoutTest {
     @Test
     fun readTimeout_boundsAStalledServer() {
         ServerSocket(0).use { server ->
-            val accepted = Thread { runCatching { server.accept() } }
-            accepted.isDaemon = true
-            accepted.start()
+            // The accepted socket is held for the whole timeout window on purpose. Dropped, it
+            // turns unreachable the moment the acceptor thread exits, and a GC cycle closes it
+            // underneath the handshake: the client then fails in tens of milliseconds with a
+            // handshake or reset error rather than timing out, and this test fails on the wrong
+            // exception. Reproduced on JDK 8 and 21 under forced GC.
+            val accepted = AtomicReference<Socket?>(null)
+            val acceptor = Thread { runCatching { accepted.set(server.accept()) } }
+            acceptor.isDaemon = true
+            acceptor.start()
 
-            val url = "https://127.0.0.1:${server.localPort}/"
-            val elapsedMillis = withWatchdog {
-                val start = System.nanoTime()
-                assertFailsWith<SocketTimeoutException> {
-                    postFunction(
-                        url,
-                        stubTransmissionKey,
-                        stubPayload,
-                        true,
-                        readTimeoutMillis = probeReadTimeoutMillis
-                    )
+            try {
+                val url = "https://127.0.0.1:${server.localPort}/"
+                val elapsedMillis = withWatchdog {
+                    val start = System.nanoTime()
+                    assertFailsWith<SocketTimeoutException> {
+                        postFunction(
+                            url,
+                            stubTransmissionKey,
+                            stubPayload,
+                            true,
+                            readTimeoutMillis = probeReadTimeoutMillis
+                        )
+                    }
+                    (System.nanoTime() - start) / 1_000_000
                 }
-                (System.nanoTime() - start) / 1_000_000
+                assertTrue(
+                    elapsedMillis >= probeReadTimeoutMillis / 2,
+                    "returned in ${elapsedMillis}ms, too fast to have been the read timeout"
+                )
+            } finally {
+                acceptor.join(1_000)
+                accepted.get()?.close()
             }
-            assertTrue(
-                elapsedMillis >= probeReadTimeoutMillis / 2,
-                "returned in ${elapsedMillis}ms, too fast to have been the read timeout"
-            )
         }
     }
 
