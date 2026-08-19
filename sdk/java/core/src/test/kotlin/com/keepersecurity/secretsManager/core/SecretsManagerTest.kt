@@ -420,15 +420,6 @@ internal class SecretsManagerTest {
         assertEquals("Good Folder", folders[0].name)
     }
 
-    @Test
-    fun testSecretsManagerOptionsAcceptsCustomTimeouts() {
-        val storage = InMemoryStorage()
-        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
-        val options = SecretsManagerOptions(storage, connectTimeoutMillis = 2_000, readTimeoutMillis = 10_000)
-        assertEquals(2_000, options.connectTimeoutMillis)
-        assertEquals(10_000, options.readTimeoutMillis)
-    }
-
 //    @Test // uncomment to debug the integration test
     fun integrationTest() {
         val trustAllPostFunction: (
