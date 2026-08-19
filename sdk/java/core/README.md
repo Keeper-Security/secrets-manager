@@ -24,6 +24,9 @@ For more information see our official documentation page https://docs.keeper.io/
     If this is not set in time, the SDK throws a `SecretsManagerException` with this exact remediation in the message rather than surfacing a bare 407, so the failure is loud and actionable, not a silent/confusing auth error.
   - Proxy credentials are supplied via a default `java.net.Authenticator` scoped to the configured proxy host, re-asserted on every proxied connection. Applications that install their own default `Authenticator` should pass proxy credentials through that mechanism instead.
   - `cachingPostFunction` cannot carry `options.proxyUrl`; ambient proxies (`HTTPS_PROXY`, `https.proxyHost`) still apply. To use an explicit `proxyUrl`, use the default query path instead.
+  - `cachingPostFunction` now prints a warning to stderr when it falls back to stale cached data.
+This output is unconditional and not gated by `loggingEnabled`, because the function has no access to `SecretsManagerOptions`.
+KSM-1298 tracks the proper fix for the next release.
   - `allowUnverifiedCertificate` now applies to file downloads and uploads when using the options-taking overloads, in addition to secret queries. Deployments that set this flag should be aware that certificate verification is now bypassed on all SDK outbound connections when it is enabled.
 - KSM-1081 - Fixed `getFolders()` crashing when any folder in the response has a corrupted or missing key. The SDK now skips undecryptable folders and returns the remaining folders normally. The skipped-folder diagnostic names the exception type and is suppressed when `loggingEnabled` is false.
 - KSM-1086 - Fixed `deleteFolder()` to return `SecretsManagerDeleteFolderResponse` (typed per-folder status), matching `deleteSecret()`. Both `deleteFolder()` and `deleteSecret()` now report per-item server failures to stderr, gated on `loggingEnabled`, and include them in the return value so callers can detect partial failures.
