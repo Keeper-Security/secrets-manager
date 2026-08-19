@@ -166,6 +166,38 @@ internal class CryptoUtilsTest {
     }
 
     @Test
+    fun testGeneratePasswordMixedCategoriesAreShuffled() {
+        // Every other testGeneratePassword case asks for a single category, so all 32 characters
+        // come from one charset and the final shuffle cannot be observed. randomSample() emits
+        // characters grouped by category, so a mixed request is the only way to tell a real
+        // shuffle from no shuffle at all: without one, position 0 is always lowercase.
+        //
+        // Scope: this pins down that the shuffle happens and that it preserves the requested
+        // count per category. It cannot distinguish a CSPRNG from a weak PRNG, since both
+        // produce a uniform permutation; that the shuffle draws from SecureRandom is enforced
+        // by review of generatePassword, not by this test.
+        val charsets = listOf(AsciiLowercase, AsciiUppercase, AsciiDigits, AsciiSpecialCharacters)
+        val categoryOfFirstChar = mutableSetOf<Int>()
+        repeat(200) {
+            val password = generatePassword(32, 8, 8, 8, 8)
+            assertEquals(32, password.length)
+            // The shuffle must preserve the requested count for each category.
+            charsets.forEachIndexed { category, charset ->
+                assertEquals(
+                    8, password.count { it in charset },
+                    "category $category count changed. Password: $password"
+                )
+            }
+            categoryOfFirstChar.add(charsets.indexOfFirst { password[0] in it })
+        }
+        assertTrue(
+            categoryOfFirstChar.size > 1,
+            "position 0 only ever held category $categoryOfFirstChar across 200 passwords, " +
+                "so the characters are not being shuffled across categories"
+        )
+    }
+
+    @Test
     fun testWebSafe64FromBytes() {
         val urlSafeRegex = "^[a-zA-Z0-9_-]*\$".toRegex()
 
