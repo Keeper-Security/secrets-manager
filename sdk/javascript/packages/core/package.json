@@ -16,6 +16,7 @@
     "test": "jest",
     "quicktest": "ts-node internal/quicktest.ts",
     "quicktest-split": "ts-node internal/quicktest-split.ts",
+    "quicktest-oauth": "ts-node internal/quicktest-oauth.ts",
     "prepublishOnly": "rollup -c --bundleConfigAsCjs",
     "publish-to-npm": "npm publish"
   },
