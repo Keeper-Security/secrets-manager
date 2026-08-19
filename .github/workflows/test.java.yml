@@ -2,7 +2,16 @@ name: Test-Java
 
 on:
   pull_request:
-    branches: [ master ]
+    branches:
+      - master
+      - 'release/sdk/java/core/**'
+    paths:
+      - 'sdk/java/core/**'
+      - '.github/workflows/test.java.yml'
+  push:
+    branches:
+      - master
+      - 'release/sdk/java/core/**'
     paths:
       - 'sdk/java/core/**'
       - '.github/workflows/test.java.yml'
