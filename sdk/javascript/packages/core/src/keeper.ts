@@ -979,6 +979,13 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
     const payload = await prepareGetPayload(storage)
     const responseData = await postQuery(options, 'get_folders', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
+    if (response.encryptedAppKey) {
+        await platform.unwrap(platform.base64ToBytes(response.encryptedAppKey), KEY_APP_KEY, KEY_CLIENT_KEY, storage)
+        await storage.delete(KEY_CLIENT_KEY)
+        if (response.appOwnerPublicKey) {
+            await storage.saveString(KEY_OWNER_PUBLIC_KEY, response.appOwnerPublicKey)
+        }
+    }
     const folders: KeeperFolder[] = []
     if (response.folders) {
         for (const folder of response.folders) {

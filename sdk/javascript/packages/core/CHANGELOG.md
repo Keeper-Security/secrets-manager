@@ -1,5 +1,8 @@
 # Change Log
 
+## 18.0.0
+- KSM-1042 - Fixed `getFolders()` failing with "appKey missing" when called as the first method on a freshly bound application. `getFolders()` now processes `encryptedAppKey` from the server binding response the same way `getSecrets()` does.
+
 ## 17.6.0
 - KSM-1073 - Added `dbConnectionMethod` to `PamSettingsConnection`.
 - KSM-1079 - Fixed `getFolders()` crashing when a folder in the response has a corrupted or missing key. The SDK now skips undecryptable folders and returns the remaining folders normally.
