@@ -168,6 +168,18 @@ module KeeperSecretsManager
         response_json = post_query('get_folders', payload)
         response_dict = JSON.parse(response_json)
 
+        if response_dict['encryptedAppKey']
+          encrypted_app_key = Utils.url_safe_str_to_bytes(response_dict['encryptedAppKey'])
+          client_key = Utils.url_safe_str_to_bytes(@config.get_string(ConfigKeys::KEY_CLIENT_KEY))
+          app_key = Crypto.decrypt_aes_gcm(encrypted_app_key, client_key)
+          @config.save_bytes(ConfigKeys::KEY_APP_KEY, app_key)
+          @config.delete(ConfigKeys::KEY_CLIENT_KEY)
+          if response_dict['appOwnerPublicKey']
+            app_owner_public_key_bytes = Utils.url_safe_str_to_bytes(response_dict['appOwnerPublicKey'])
+            @config.save_bytes(ConfigKeys::KEY_OWNER_PUBLIC_KEY, app_owner_public_key_bytes)
+          end
+        end
+
         # Get app key for decryption
         app_key_str = @config.get_string(ConfigKeys::KEY_APP_KEY)
 
