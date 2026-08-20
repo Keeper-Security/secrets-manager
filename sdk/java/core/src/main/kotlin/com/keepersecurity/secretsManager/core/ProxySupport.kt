@@ -264,6 +264,11 @@ internal object ProxyAuthenticator : Authenticator() {
         return PasswordAuthentication(credential.username, credential.password.clone())
     }
 
+    // Drops every registered credential. Exists for test isolation: this object is a process-wide
+    // singleton, so without it a test that registers a proxy credential leaves it answerable for
+    // the rest of the JVM's life. Not part of the SDK's supported surface.
+    fun reset() = credentials.clear()
+
     private fun key(host: String, port: Int) = "${host.lowercase(Locale.ROOT)}:$port"
 }
 
