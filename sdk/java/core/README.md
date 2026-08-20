@@ -8,6 +8,7 @@ For more information see our official documentation page https://docs.keeper.io/
 - KSM-1634 - Fix concurrent `getSecrets` calls corrupting shared cryptographic state
   - Concurrent calls could produce a transmission key that the server rejected with `encrypted transmission key is invalid`. With the BouncyCastle provider registered (for example in Jenkins), a call could also leave the SHA-256 digest permanently broken, so every later call failed with `ArrayIndexOutOfBoundsException` until the JVM restarted.
   - The SDK now creates the digest, key pair generator, and key factory for each call instead of sharing one instance. No API change.
+- KSM-1045 - Fixed `getFolders()` failing with "App key is missing" when called as the first method on a freshly bound application. `getFolders()` now processes `encryptedAppKey` from the server binding response the same way `getSecrets()` does.
 
 ## 17.4.0
 **Breaking Changes**
