@@ -586,9 +586,9 @@ namespace SecretsManager
         private const string KeyOwnerPublicKey = "appOwnerPublicKey"; // The application owner public key, to create records
         private const string KeyPrivateKey = "privateKey"; // The client's private key
 
-        // Throttle retry (KSM-876 / KSM-879). The backend throttles HTTP 403 {"error":"throttled"}
-        // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
-        // request, so the counter only clears after 10s of silence).
+        // The backend throttles HTTP 403 {"error":"throttled"} per clientId+endpoint
+        // (100 requests / 10s window; memcached TTL 10s that resets on every request,
+        // so the counter only clears after 10s of silence).
         private const int MaxThrottleRetries = 5;
         private const int BaseThrottleDelaySec = 11; // 1s safety margin over the backend's 10s memcached TTL
         private const int MaxThrottleDelaySec = 176; // cap on server-supplied retry_after (baseThrottleDelaySec * 2^4)
@@ -1209,10 +1209,29 @@ namespace SecretsManager
             var payload = PrepareGetPayload(storage, null);
             var responseData = await PostQuery(options, "get_folders", payload);
             var response = JsonUtils.ParseJson<SecretsManagerResponse>(responseData);
-            var appKey = storage.GetBytes(KeyAppKey);
-            if (appKey == null)
+            byte[] appKey;
+            if (response.encryptedAppKey != null)
             {
-                throw new Exception("App key is missing from the storage");
+                var clientKey = storage.GetBytes(KeyClientKey);
+                if (clientKey == null)
+                {
+                    throw new Exception("Client key is missing from the storage");
+                }
+                appKey = CryptoUtils.Decrypt(response.encryptedAppKey, clientKey);
+                storage.SaveBytes(KeyAppKey, appKey);
+                storage.Delete(KeyClientKey);
+                if (response.appOwnerPublicKey != null)
+                {
+                    storage.SaveString(KeyOwnerPublicKey, response.appOwnerPublicKey);
+                }
+            }
+            else
+            {
+                appKey = storage.GetBytes(KeyAppKey);
+                if (appKey == null)
+                {
+                    throw new Exception("App key is missing from the storage");
+                }
             }
 
             if (response.folders == null)
@@ -1690,9 +1709,9 @@ namespace SecretsManager
                     : await options.QueryFunction(url, transmissionKey, encryptedPayload, options.ProxyUrl);
                 if (response.IsError)
                 {
-                    // Throttle retry with exponential backoff + jitter (KSM-876 / KSM-879). Checked
-                    // before key rotation so that path is untouched, and gated on the 403 status so a
-                    // non-403 response carrying a {"error":"throttled"} body is not retried.
+                    // Throttle retry with exponential backoff + jitter. Checked before key rotation
+                    // so that path is untouched, and gated on the 403 status so a non-403 response
+                    // carrying a {"error":"throttled"} body is not retried.
                     if (response.StatusCode == 403)
                     {
                         var retryAfter = ParseThrottle(response.Data);
