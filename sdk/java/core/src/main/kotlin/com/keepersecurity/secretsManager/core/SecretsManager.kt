@@ -35,6 +35,11 @@ const val BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10
 const val MAX_THROTTLE_DELAY_SEC = 176 // caps a backend-supplied retry_after from forcing an excessive wait
 const val MAX_KEY_ROTATION_RETRIES = 3 // parity with JS SDK open PR #1078
 
+// Connection timeouts. Single source for both the SecretsManagerOptions defaults and the
+// overloads that take a KeeperFile without options, so the two cannot drift apart.
+private const val DEFAULT_CONNECT_TIMEOUT_MS = 5_000
+private const val DEFAULT_READ_TIMEOUT_MS = 30_000
+
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBLIC_KEY_ID = "serverPublicKeyId"
 @Deprecated("Typo; use KEY_SERVER_PUBLIC_KEY_ID", ReplaceWith("KEY_SERVER_PUBLIC_KEY_ID"))
@@ -66,8 +71,8 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val serverPublicKeyId: String? = null,
     // Override the sleep between throttle retries (primarily for tests). Defaults to Thread.sleep.
     val throttleSleepMillis: ((Long) -> Unit)? = null,
-    val connectTimeoutMillis: Int = 5_000,
-    val readTimeoutMillis: Int = 30_000,
+    val connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MS,
+    val readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MS,
     val proxyUrl: String? = null
 ) {
     companion object {
@@ -89,7 +94,8 @@ data class SecretsManagerOptions @JvmOverloads constructor(
         "SecretsManagerOptions(storage=$storage, queryFunction=$queryFunction, " +
         "allowUnverifiedCertificate=$allowUnverifiedCertificate, loggingEnabled=$loggingEnabled, " +
         "serverPublicKey=$serverPublicKey, serverPublicKeyId=$serverPublicKeyId, " +
-        "throttleSleepMillis=$throttleSleepMillis, proxyUrl=${if (proxyUrl != null) "<redacted>" else null})"
+        "throttleSleepMillis=$throttleSleepMillis, connectTimeoutMillis=$connectTimeoutMillis, " +
+        "readTimeoutMillis=$readTimeoutMillis, proxyUrl=${if (proxyUrl != null) "<redacted>" else null})"
 }
 
 data class QueryOptions @JvmOverloads constructor(
@@ -1214,9 +1220,6 @@ fun downloadThumbnail(options: SecretsManagerOptions, file: KeeperFile): ByteArr
     }
     return downloadFileFromUrl(file, file.thumbnailUrl, options.proxyUrl, options.allowUnverifiedCertificate, options.connectTimeoutMillis, options.readTimeoutMillis)
 }
-
-private const val DEFAULT_CONNECT_TIMEOUT_MS = 5_000
-private const val DEFAULT_READ_TIMEOUT_MS = 30_000
 
 @JvmOverloads
 fun downloadThumbnail(file: KeeperFile, proxyUrl: String? = null): ByteArray {

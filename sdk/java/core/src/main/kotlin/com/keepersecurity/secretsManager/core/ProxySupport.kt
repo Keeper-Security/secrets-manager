@@ -94,11 +94,16 @@ private fun parseProxy(raw: String, isExplicit: Boolean = false): ResolvedProxy?
     val port = if (uri.port != -1) uri.port else 80
     val userInfo = uri.userInfo
     val username = userInfo?.substringBefore(':')?.takeIf { it.isNotEmpty() }
-    val password = userInfo?.substringAfter(':', "")?.takeIf { userInfo.contains(':') }
+    // An empty half is not a credential: it yields null here exactly as a missing half does, so
+    // hasCredentials stays false and the check below sees both cases the same way.
+    val password = userInfo?.substringAfter(':', "")?.takeIf { it.isNotEmpty() }
 
-    // Partial userinfo is an error in explicit config: both username-without-password
-    // and password-without-username (http://:secret@host) are rejected.
-    if (isExplicit && userInfo != null && (username == null) != (password == null)) {
+    // Credentials in explicit config must be complete. Rejecting an empty half alongside a missing
+    // one turns http://user@host, http://:secret@host and http://user:@host into the same config
+    // error, instead of letting the last one reach the proxy and come back as an opaque 407. A
+    // templated URL whose password variable went unset (http://$USER:$PASS@host) is the usual way
+    // that shape appears.
+    if (isExplicit && userInfo != null && (username == null || password == null)) {
         throw SecretsManagerException("Invalid proxy URL: both username and password are required (format: http://user:pass@host:port)")
     }
 
@@ -287,6 +292,11 @@ internal fun redactProxyUrl(proxyUrl: String): String {
  * Basic auth on HTTPS CONNECT tunnels is disabled by default since 8u111. Clear it (best effort,
  * unless the host app set it explicitly) so authenticated proxies work. May still require the
  * -Djdk.http.auth.tunneling.disabledSchemes= JVM flag if a tunneled connection was opened earlier.
+ *
+ * The property is JVM-wide, so clearing it re-enables Basic over CONNECT for every
+ * HttpURLConnection in the process, not only this SDK's. Two things keep that scoped: it runs only
+ * when the caller supplied credentials in an explicit proxyUrl, and a value the host application
+ * already set is left untouched.
  */
 private fun enableBasicProxyAuthOverTunnel() {
     val property = "jdk.http.auth.tunneling.disabledSchemes"
