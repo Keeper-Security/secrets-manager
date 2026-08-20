@@ -4,6 +4,7 @@ import java.net.Authenticator
 import java.net.Proxy
 import kotlin.test.Test
 import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -23,9 +24,25 @@ internal class ProxyTest {
 
     private val target = "https://vault.keepersecurity.com/api/rest/sm/v1/get_secret"
 
+    private val tunnelingSchemesProperty = "jdk.http.auth.tunneling.disabledSchemes"
+    private var tunnelingSchemesBefore: String? = null
+
+    @BeforeTest
+    fun captureTunnelingSchemes() {
+        tunnelingSchemesBefore = System.getProperty(tunnelingSchemesProperty)
+    }
+
+    // Registering a proxy credential mutates three pieces of process-wide state: the default
+    // Authenticator, the ProxyAuthenticator credential store, and the JDK's tunneling-schemes
+    // property. Gradle runs the whole suite in one JVM, so all three have to be put back or they
+    // stay visible to every test that follows, including the weakened tunneling default.
     @AfterTest
-    fun clearGlobalAuthenticator() {
+    fun restoreGlobalProxyState() {
         Authenticator.setDefault(null)
+        ProxyAuthenticator.reset()
+        val before = tunnelingSchemesBefore
+        if (before == null) System.clearProperty(tunnelingSchemesProperty)
+        else System.setProperty(tunnelingSchemesProperty, before)
     }
 
     @Test
@@ -261,6 +278,19 @@ internal class ProxyTest {
             "other.local", null, 8080, "http", "", "basic", null, Authenticator.RequestorType.PROXY
         )
         assertNull(otherProxy)
+    }
+
+    @Test
+    fun proxyAuthenticatorResetDropsRegisteredCredentials() {
+        // Guards the teardown above: if reset() ever stops emptying the store, a registered
+        // credential outlives its test and the leak this test exists to prevent comes back.
+        ProxyAuthenticator.register("proxy.local", 8080, "u", "p")
+        ProxyAuthenticator.reset()
+
+        val afterReset = Authenticator.requestPasswordAuthentication(
+            "proxy.local", null, 8080, "http", "", "basic", null, Authenticator.RequestorType.PROXY
+        )
+        assertNull(afterReset)
     }
 
     @Test

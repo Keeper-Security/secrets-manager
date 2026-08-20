@@ -1759,7 +1759,9 @@ fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: 
     }
 }
 
-@JvmOverloads
+// Kept as an explicit overload rather than a default argument on the function below: this is the
+// arity Java callers and cachingPostFunction already compile against. No @JvmOverloads, because
+// there are no default arguments here for it to generate overloads from.
 fun postFunction(
     url: String,
     transmissionKey: TransmissionKey,
