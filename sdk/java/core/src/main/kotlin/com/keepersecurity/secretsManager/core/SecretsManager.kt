@@ -1349,7 +1349,9 @@ private fun fetchAndDecryptSecrets(
                     records.add(decryptedRecord)
                 }
             } catch (e: Exception) {
-                System.err.println("Record ${it.recordUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                if (options.loggingEnabled) {
+                    System.err.println("Record ${it.recordUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                }
             }
         }
     }
@@ -1367,11 +1369,15 @@ private fun fetchAndDecryptSecrets(
                             records.add(decryptedRecord)
                         }
                     } catch (e: Exception) {
-                        System.err.println("Record ${record.recordUid} in folder ${folder.folderUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                        if (options.loggingEnabled) {
+                            System.err.println("Record ${record.recordUid} in folder ${folder.folderUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                        }
                     }
                 }
             } catch (e: Exception) {
-                System.err.println("Folder ${folder.folderUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                if (options.loggingEnabled) {
+                    System.err.println("Folder ${folder.folderUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                }
             }
         }
     }
@@ -1408,7 +1414,9 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
                     )
                 )
             } catch (e: Exception) {
-                System.err.println("File ${it.fileUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                if (options.loggingEnabled) {
+                    System.err.println("File ${it.fileUid} skipped due to error: ${e.javaClass.simpleName}, ${e.message}")
+                }
             }
         }
     }
