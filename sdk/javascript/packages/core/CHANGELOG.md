@@ -2,6 +2,7 @@
 
 ## 18.0.0
 - KSM-1042 - Fixed `getFolders()` failing with "appKey missing" when called as the first method on a freshly bound application. `getFolders()` now processes `encryptedAppKey` from the server binding response the same way `getSecrets()` does.
+- KSM-1058 - Fixed `createFolder()` writing folder keys and data with AES-CBC instead of AES-GCM. New folders are now created with GCM. `getFolders()` detects the cipher from the encrypted key length (60 bytes = GCM, 64 bytes = CBC) so existing CBC folders continue to decrypt correctly. `updateFolder()` accepts an optional `useGcm` flag so callers can match the cipher used when the folder was created.
 
 ## 17.6.0
 - KSM-1073 - Added `dbConnectionMethod` to `PamSettingsConnection`.

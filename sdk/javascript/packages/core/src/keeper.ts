@@ -294,6 +294,7 @@ export type KeeperFolder = {
     folderUid: string
     parentUid?: string
     name?: string
+    useGcm?: boolean
 }
 
 export type KeeperFile = {
@@ -650,8 +651,8 @@ const prepareCreateFolderPayload = async (storage: KeyValueStorage, createOption
     }))
     const folderKey = platform.getRandomBytes(32)
     const folderUid = getUidBytes()
-    const encryptedFolderData = await platform.encryptWithKey(folderDataBytes, folderKey, true)
-    const encryptedFolderKey = await platform.encrypt(folderKey, createOptions.folderUid, undefined, true)
+    const encryptedFolderData = await platform.encryptWithKey(folderDataBytes, folderKey)
+    const encryptedFolderKey = await platform.encrypt(folderKey, createOptions.folderUid)
     return {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
@@ -663,7 +664,7 @@ const prepareCreateFolderPayload = async (storage: KeyValueStorage, createOption
     }
 }
 
-const prepareUpdateFolderPayload = async (storage: KeyValueStorage, folderUid: string, folderName: string): Promise<UpdateFolderPayload> => {
+const prepareUpdateFolderPayload = async (storage: KeyValueStorage, folderUid: string, folderName: string, useGcm?: boolean): Promise<UpdateFolderPayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
@@ -671,7 +672,7 @@ const prepareUpdateFolderPayload = async (storage: KeyValueStorage, folderUid: s
     const folderDataBytes = platform.stringToBytes(JSON.stringify({
         name: folderName
     }))
-    const encryptedFolderData = await platform.encrypt(folderDataBytes, folderUid, undefined, true)
+    const encryptedFolderData = await platform.encrypt(folderDataBytes, folderUid, undefined, !useGcm)
     return {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
@@ -1000,8 +1001,11 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
                     if (!sharedFolderUid) {
                         throw new Error('Folder data inconsistent - unable to locate shared folder')
                     }
-                    await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, sharedFolderUid, storage, true, true)
-                    decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
+                    const folderKeyBytes = platform.base64ToBytes(folder.folderKey)
+                    const useCBC = folderKeyBytes.length !== 60
+                    decryptedFolder.useGcm = !useCBC
+                    await platform.unwrap(folderKeyBytes, folder.folderUid, sharedFolderUid, storage, true, useCBC)
+                    decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, useCBC)
                 } else {
                     await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true, true)
                     decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
@@ -1376,11 +1380,11 @@ export const createFolder = async (options: SecretManagerOptions, createOptions:
     return payload.folderUid
 }
 
-export const updateFolder = async (options: SecretManagerOptions, folderUid: string, folderName: string): Promise<void> => {
+export const updateFolder = async (options: SecretManagerOptions, folderUid: string, folderName: string, useGcm?: boolean): Promise<void> => {
     if (!platform.hasKeysCached()) {
         await getSecrets(options) // need to warm up keys cache before posting a record
     }
-    const payload = await prepareUpdateFolderPayload(options.storage, folderUid, folderName)
+    const payload = await prepareUpdateFolderPayload(options.storage, folderUid, folderName, useGcm)
     await postQuery(options, 'update_folder', payload)
 }
 
