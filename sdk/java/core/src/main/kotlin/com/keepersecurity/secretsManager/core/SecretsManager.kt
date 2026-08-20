@@ -1474,7 +1474,19 @@ private fun fetchAndDecryptFolders(
         return emptyList()
     }
     val folders: MutableList<KeeperFolder> = mutableListOf()
-    val appKey = storage.getBytes(KEY_APP_KEY) ?: throw SecretsManagerException("App key is missing from the storage")
+    val appKey: ByteArray
+    if (response.encryptedAppKey != null) {
+        val clientKey = storage.getBytes(KEY_CLIENT_KEY) ?: throw SecretsManagerException("Client key is missing from the storage")
+        appKey = decrypt(response.encryptedAppKey, clientKey)
+        storage.saveBytes(KEY_APP_KEY, appKey)
+        storage.delete(KEY_CLIENT_KEY)
+        storage.delete(KEY_PUBLIC_KEY)
+        response.appOwnerPublicKey?.let {
+            storage.saveString(KEY_OWNER_PUBLIC_KEY, it)
+        }
+    } else {
+        appKey = storage.getBytes(KEY_APP_KEY) ?: throw SecretsManagerException("App key is missing from the storage")
+    }
     response.folders.forEach { folder ->
         try {
             val folderKey: ByteArray = if (folder.parent == null) {

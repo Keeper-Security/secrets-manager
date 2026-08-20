@@ -4,6 +4,9 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 18.0.0
+- KSM-1045 - Fixed `getFolders()` failing with "App key is missing" when called as the first method on a freshly bound application. `getFolders()` now processes `encryptedAppKey` from the server binding response the same way `getSecrets()` does.
+
 ## 17.4.0
 **Breaking Changes**
 - `deleteFolder()` returns `SecretsManagerDeleteFolderResponse` instead of `SecretsManagerDeleteResponse`. The new type exposes a `folders` list, where each entry has `folderUid`, `responseCode`, and an optional `errorMessage`; callers that read `.records` on the old return type must switch to `.folders`.
