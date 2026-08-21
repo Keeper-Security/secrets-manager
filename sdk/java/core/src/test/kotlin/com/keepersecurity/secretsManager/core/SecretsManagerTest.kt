@@ -579,6 +579,85 @@ internal class SecretsManagerTest {
     }
 
     @Test
+    fun testDeleteFolderDecodesFoldersKeyAndSurfacesPerItemFailure() {
+        // The backend keys a delete_folder response under "folders", not "records". Decoding
+        // this response into the records-keyed type throws MissingFieldException instead of
+        // returning a value.
+        val stderr = captureStderr {
+            val response = deleteFolder(deleteFolderOptions(loggingEnabled = true), listOf("good-uid", "denied-uid"))
+            assertEquals(2, response.folders.size)
+            val denied = response.folders.first { it.folderUid == "denied-uid" }
+            assertEquals("access_denied", denied.responseCode)
+            assertEquals("User does not have permission to delete this folder", denied.errorMessage)
+            assertEquals("ok", response.folders.first { it.folderUid == "good-uid" }.responseCode)
+        }
+        val line = stderr.lineSequence().firstOrNull { it.contains("denied-uid") }
+        assertNotNull(line, "The failing folder must be named. Got: $stderr")
+        assertTrue(line.contains("access_denied"))
+    }
+
+    @Test
+    fun testDeleteFolderDoesNotLogWhenLoggingDisabled() {
+        val stderr = captureStderr {
+            deleteFolder(deleteFolderOptions(loggingEnabled = false), listOf("good-uid", "denied-uid"))
+        }
+        assertEquals("", stderr, "loggingEnabled = false must not write to stderr. Got: $stderr")
+    }
+
+    // Builds a delete_folder response with one ok folder and one denied folder, keyed under
+    // "folders" the way the backend actually sends it.
+    private fun deleteFolderOptions(loggingEnabled: Boolean): SecretsManagerOptions {
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+        val responseJson = """{"folders":[{"folderUid":"good-uid","responseCode":"ok"},{"folderUid":"denied-uid","responseCode":"access_denied","errorMessage":"User does not have permission to delete this folder"}]}"""
+        val encryptedResponse = encrypt(stringToBytes(responseJson), transmissionKey)
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        return SecretsManagerOptions(
+            storage,
+            queryFunction = { _, _, _ -> KeeperHttpResponse(200, encryptedResponse) },
+            loggingEnabled = loggingEnabled
+        )
+    }
+
+    @Test
+    fun testDeleteSecretDecodesRecordsAndSurfacesPerItemFailure() {
+        val stderr = captureStderr {
+            val response = deleteSecret(deleteSecretOptions(loggingEnabled = true), listOf("good-uid", "denied-uid"))
+            assertEquals(2, response.records.size)
+            val denied = response.records.first { it.recordUid == "denied-uid" }
+            assertEquals("access_denied", denied.responseCode)
+            assertEquals("User does not have permission to delete this record", denied.errorMessage)
+            assertEquals("ok", response.records.first { it.recordUid == "good-uid" }.responseCode)
+        }
+        val line = stderr.lineSequence().firstOrNull { it.contains("denied-uid") }
+        assertNotNull(line, "The failing record must be named. Got: $stderr")
+        assertTrue(line.contains("access_denied"))
+    }
+
+    @Test
+    fun testDeleteSecretDoesNotLogWhenLoggingDisabled() {
+        val stderr = captureStderr {
+            deleteSecret(deleteSecretOptions(loggingEnabled = false), listOf("good-uid", "denied-uid"))
+        }
+        assertEquals("", stderr, "loggingEnabled = false must not write to stderr. Got: $stderr")
+    }
+
+    private fun deleteSecretOptions(loggingEnabled: Boolean): SecretsManagerOptions {
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+        val responseJson = """{"records":[{"recordUid":"good-uid","responseCode":"ok"},{"recordUid":"denied-uid","responseCode":"access_denied","errorMessage":"User does not have permission to delete this record"}]}"""
+        val encryptedResponse = encrypt(stringToBytes(responseJson), transmissionKey)
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        return SecretsManagerOptions(
+            storage,
+            queryFunction = { _, _, _ -> KeeperHttpResponse(200, encryptedResponse) },
+            loggingEnabled = loggingEnabled
+        )
+    }
+
+    @Test
     fun testGetSecretsSkipsUndecryptableRecordWithoutStderr() {
         // A record whose key cannot be decrypted must be skipped without writing to stderr when
         // loggingEnabled = false. Verifies the same loggingEnabled gate that fetchAndDecryptFolders
