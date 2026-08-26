@@ -166,8 +166,8 @@ const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorag
     return await _decrypt(data, key, useCBC)
 }
 
-function hash(data: Uint8Array): Promise<Uint8Array> {
-    const hash = createHmac('sha512', data).update('KEEPER_SECRETS_MANAGER_CLIENT_ID').digest()
+function hash(data: Uint8Array, tag: string): Promise<Uint8Array> {
+    const hash = createHmac('sha512', data).update(tag).digest()
     return Promise.resolve(hash)
 }
 
