@@ -1,4 +1,4 @@
-import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
+import {deadlineSignal, DEFAULT_REQUEST_TIMEOUT_MS, KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
 import {privateDerToPublicRaw} from '../utils'
 import {KeeperError, KeeperCryptoError} from '../errors'
 
@@ -359,45 +359,60 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
     return result
 }
 
-const get = async (url: string, headers: any): Promise<KeeperHttpResponse> => {
-    const resp = await fetch(url, {
-        method: 'GET',
-        headers: Object.entries(headers),
-    })
-    const body = await resp.arrayBuffer()
-    return {
-        statusCode: resp.status,
-        headers: resp.headers,
-        data: new Uint8Array(body)
+const get = async (url: string, headers: any, timeoutMs?: number): Promise<KeeperHttpResponse> => {
+    const {signal, clear} = deadlineSignal(timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
+    try {
+        const resp = await fetch(url, {
+            method: 'GET',
+            headers: Object.entries(headers),
+            signal
+        })
+        const body = await resp.arrayBuffer()
+        return {
+            statusCode: resp.status,
+            headers: resp.headers,
+            data: new Uint8Array(body)
+        }
+    } finally {
+        clear()
     }
 }
 
 const post = async (
     url: string,
     request: Uint8Array | string,
-    headers?: { [key: string]: string }
+    headers?: { [key: string]: string },
+    allowUnverifiedCertificate?: boolean,
+    timeoutMs?: number
 ): Promise<KeeperHttpResponse> => {
-    const resp = await fetch(url, {
-        method: 'POST',
-        headers: new Headers({
-            'Content-Type': 'application/octet-stream',
-            'Content-Length': String(request.length),
-            ...headers
-        }),
-        body: typeof request === 'string' ? request : request as Uint8Array<ArrayBuffer>,
-    })
-    const body = await resp.arrayBuffer()
-    return {
-        statusCode: resp.status,
-        headers: resp.headers,
-        data: new Uint8Array(body)
+    const {signal, clear} = deadlineSignal(timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
+    try {
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: new Headers({
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': String(request.length),
+                ...headers
+            }),
+            body: typeof request === 'string' ? request : request as Uint8Array<ArrayBuffer>,
+            signal
+        })
+        const body = await resp.arrayBuffer()
+        return {
+            statusCode: resp.status,
+            headers: resp.headers,
+            data: new Uint8Array(body)
+        }
+    } finally {
+        clear()
     }
 }
 
 const fileUpload = async (
     url: string,
     uploadParameters: { [key: string]: string },
-    data: Uint8Array
+    data: Uint8Array,
+    timeoutMs?: number
 ): Promise<any> => {
     const form = new FormData();
 
@@ -406,9 +421,11 @@ const fileUpload = async (
     }
     form.append('file', new Blob([data as Uint8Array<ArrayBuffer>], {type: 'application/octet-stream'}));
 
+    const {signal, clear} = deadlineSignal(timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
     const fetchCfg = {
         method: 'POST',
         body: form,
+        signal
     };
 
     try {
@@ -421,6 +438,8 @@ const fileUpload = async (
     } catch (error) {
         console.error('Error uploading file:', error);
         throw error;
+    } finally {
+        clear()
     }
 };
 
