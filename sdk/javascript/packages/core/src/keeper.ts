@@ -55,12 +55,13 @@ export const initialize = (pkgVersion?: string) => {
 
 export type SecretManagerOptions = {
     storage: KeyValueStorage
-    queryFunction?: (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean) => Promise<KeeperHttpResponse>
+    queryFunction?: (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number) => Promise<KeeperHttpResponse>
     allowUnverifiedCertificate?: boolean
     serverPublicKey?: string
     serverPublicKeyId?: string
     // Override the sleep between throttle retries (primarily for tests). Defaults to setTimeout.
     throttleSleep?: (milliseconds: number) => Promise<void>
+    requestTimeoutMs?: number
 }
 
 // Error classes live in a dependency-free module (errors.ts) to avoid a circular import with
@@ -738,13 +739,13 @@ const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: K
     }
 }
 
-export const postFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse> => {
+export const postFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number): Promise<KeeperHttpResponse> => {
     return platform.post(url, payload.payload,
         {
             PublicKeyId: transmissionKey.publicKeyId.toString(),
             TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
             Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-        }, allowUnverifiedCertificate)
+        }, allowUnverifiedCertificate, timeoutMs)
 }
 
 export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => {
@@ -796,7 +797,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
     while (true) {
         const transmissionKey = await generateTransmissionKey(options.storage)
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
-        const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate)
+        const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, options.requestTimeoutMs)
         if (response.statusCode !== 200) {
             let errorMessage
             if (response.data) {
@@ -1394,13 +1395,13 @@ export const updateFolder = async (options: SecretManagerOptions, folderUid: str
     await postQuery(options, 'update_folder', payload)
 }
 
-export const downloadFile = async (file: KeeperFile): Promise<Uint8Array> => {
-    const fileResponse = await platform.get(file.url!, {})
+export const downloadFile = async (file: KeeperFile, timeoutMs?: number): Promise<Uint8Array> => {
+    const fileResponse = await platform.get(file.url!, {}, timeoutMs)
     return platform.decrypt(fileResponse.data, file.fileUid)
 }
 
-export const downloadThumbnail = async (file: KeeperFile): Promise<Uint8Array> => {
-    const fileResponse = await platform.get(file.thumbnailUrl!, {})
+export const downloadThumbnail = async (file: KeeperFile, timeoutMs?: number): Promise<Uint8Array> => {
+    const fileResponse = await platform.get(file.thumbnailUrl!, {}, timeoutMs)
     return platform.decrypt(fileResponse.data, file.fileUid)
 }
 
@@ -1408,7 +1409,7 @@ export const uploadFile = async (options: SecretManagerOptions, ownerRecord: Kee
     const { payload, encryptedFileData } = await prepareFileUploadPayload(options.storage, ownerRecord, file)
     const responseData = await postQuery(options, 'add_file', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerAddFileResponse
-    const uploadResult = await platform.fileUpload(response.url, JSON.parse(response.parameters), encryptedFileData)
+    const uploadResult = await platform.fileUpload(response.url, JSON.parse(response.parameters), encryptedFileData, options.requestTimeoutMs)
     if (uploadResult.statusCode !== response.successStatusCode) {
         throw new Error(`Upload failed (${uploadResult.statusMessage}), code ${uploadResult.statusCode}`)
     }

@@ -1,3 +1,5 @@
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30000
+
 export type Platform = {
 //  string routines
     bytesToBase64(data: Uint8Array): string
@@ -25,9 +27,9 @@ export type Platform = {
     getRandomCharacterInCharset(charset: string): Promise<string>
 
 //  network
-    get(url: string, headers: any): Promise<KeeperHttpResponse>
-    post(url: string, request: Uint8Array, headers?: { [key: string]: string }, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse>
-    fileUpload(url: string, uploadParameters: any, data: Uint8Array | Blob): Promise<any>
+    get(url: string, headers: any, timeoutMs?: number): Promise<KeeperHttpResponse>
+    post(url: string, request: Uint8Array, headers?: { [key: string]: string }, allowUnverifiedCertificate?: boolean, timeoutMs?: number): Promise<KeeperHttpResponse>
+    fileUpload(url: string, uploadParameters: any, data: Uint8Array | Blob, timeoutMs?: number): Promise<any>
     setCustomProxyAgent(proxyAgent: any): void
 }
 

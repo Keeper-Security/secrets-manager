@@ -1,4 +1,4 @@
-import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
+import {DEFAULT_REQUEST_TIMEOUT_MS, KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
 import {privateDerToPublicRaw} from '../utils'
 import {KeeperError} from '../errors'
 
@@ -328,10 +328,11 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
     return result
 }
 
-const get = async (url: string, headers: any): Promise<KeeperHttpResponse> => {
+const get = async (url: string, headers: any, timeoutMs?: number): Promise<KeeperHttpResponse> => {
     const resp = await fetch(url, {
         method: 'GET',
         headers: Object.entries(headers),
+        signal: AbortSignal.timeout(timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
     })
     const body = await resp.arrayBuffer()
     return {
@@ -344,7 +345,9 @@ const get = async (url: string, headers: any): Promise<KeeperHttpResponse> => {
 const post = async (
     url: string,
     request: Uint8Array | string,
-    headers?: { [key: string]: string }
+    headers?: { [key: string]: string },
+    allowUnverifiedCertificate?: boolean,
+    timeoutMs?: number
 ): Promise<KeeperHttpResponse> => {
     const resp = await fetch(url, {
         method: 'POST',
@@ -354,6 +357,7 @@ const post = async (
             ...headers
         }),
         body: typeof request === 'string' ? request : request as Uint8Array<ArrayBuffer>,
+        signal: AbortSignal.timeout(timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
     })
     const body = await resp.arrayBuffer()
     return {
@@ -366,7 +370,8 @@ const post = async (
 const fileUpload = async (
     url: string,
     uploadParameters: { [key: string]: string },
-    data: Uint8Array
+    data: Uint8Array,
+    timeoutMs?: number
 ): Promise<any> => {
     const form = new FormData();
 
@@ -378,6 +383,7 @@ const fileUpload = async (
     const fetchCfg = {
         method: 'POST',
         body: form,
+        signal: AbortSignal.timeout(timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
     };
 
     try {

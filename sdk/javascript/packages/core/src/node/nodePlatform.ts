@@ -1,4 +1,4 @@
-import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
+import {DEFAULT_REQUEST_TIMEOUT_MS, KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
 import {privateDerToPublicRaw} from '../utils'
 import {KeeperError} from '../errors'
 import {request, RequestOptions} from 'https'
@@ -166,8 +166,8 @@ const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorag
     return await _decrypt(data, key, useCBC)
 }
 
-function hash(data: Uint8Array): Promise<Uint8Array> {
-    const hash = createHmac('sha512', data).update('KEEPER_SECRETS_MANAGER_CLIENT_ID').digest()
+function hash(data: Uint8Array, tag: string): Promise<Uint8Array> {
+    const hash = createHmac('sha512', data).update(tag).digest()
     return Promise.resolve(hash)
 }
 
@@ -200,7 +200,8 @@ const fetchData = (res, resolve) => {
 
 const get = (
     url: string,
-    headers?: { [key: string]: string }
+    headers?: { [key: string]: string },
+    timeoutMs?: number
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
     const get = request(url, {
         method: 'get',
@@ -208,11 +209,16 @@ const get = (
             'User-Agent': `Node/${process.version}`,
             ...headers
         },
-        agent: getProxyAgent()
+        agent: getProxyAgent(),
+        timeout: timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
     }, (res) => {
         fetchData(res, resolve)
     })
     get.on('error', reject)
+    get.on('timeout', () => {
+        get.destroy()
+        reject(new KeeperError(`Request to ${url} timed out after ${timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS}ms`))
+    })
     get.end()
 })
 
@@ -220,11 +226,13 @@ const post = (
     url: string,
     payload: Uint8Array,
     headers?: { [key: string]: string },
-    allowUnverifiedCertificate?: boolean
+    allowUnverifiedCertificate?: boolean,
+    timeoutMs?: number
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
     const options: RequestOptions = {
         rejectUnauthorized: !allowUnverifiedCertificate,
-        agent: getProxyAgent()
+        agent: getProxyAgent(),
+        timeout: timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
     }
     const post = request(url, {
         method: 'post',
@@ -239,6 +247,10 @@ const post = (
         fetchData(res, resolve)
     })
     post.on('error', reject)
+    post.on('timeout', () => {
+        post.destroy()
+        reject(new KeeperError(`Request to ${url} timed out after ${timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS}ms`))
+    })
     post.write(payload)
     post.end()
 })
@@ -246,7 +258,8 @@ const post = (
 const fileUpload = (
     url: string,
     uploadParameters: { [key: string]: string },
-    data: Uint8Array
+    data: Uint8Array,
+    timeoutMs?: number
 ): Promise<any> => new Promise<any>((resolve, reject) => {
     const boundary = `----------${Date.now()}`
     const boundaryBytes = stringToBytes(`\r\n--${boundary}`)
@@ -255,7 +268,8 @@ const fileUpload = (
         headers: {
             'Content-Type': `multipart/form-data; boundary=${boundary}`,
         },
-        agent: getProxyAgent()
+        agent: getProxyAgent(),
+        timeout: timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
     });
     post.on('response', function (res: any) {
         resolve({
@@ -265,6 +279,10 @@ const fileUpload = (
         })
     })
     post.on('error', reject)
+    post.on('timeout', () => {
+        post.destroy()
+        reject(new KeeperError(`Request to ${url} timed out after ${timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS}ms`))
+    })
     for (const key in uploadParameters) {
         post.write(boundaryBytes)
         post.write(stringToBytes(`\r\nContent-Disposition: form-data; name=\"${key}\"\r\n\r\n${uploadParameters[key]}`))
