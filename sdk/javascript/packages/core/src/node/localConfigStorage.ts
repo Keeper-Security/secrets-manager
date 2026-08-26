@@ -1,4 +1,5 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey, inMemoryStorage} from "../platform";
+import {KeeperError} from "../errors";
 import * as fs from 'fs';
 
 // fs.openSync's mode argument is only honored when the file is created; it is a no-op on an
@@ -13,8 +14,11 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
         }
         try {
             return JSON.parse(fs.readFileSync(configName).toString())
-        } catch (e) {
-            return {}
+        } catch (e: Error | any) {
+            if (e.code === 'ENOENT') {
+                return {}
+            }
+            throw new KeeperError(`Unable to read local config ${configName}: ${e.message}`)
         }
     }
 
