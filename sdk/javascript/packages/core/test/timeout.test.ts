@@ -37,9 +37,8 @@ describe('requestTimeoutMs validation and propagation through postQuery', () => 
         } catch (e) {
             error = e
         }
-        expect(error).toBeInstanceOf(Error)
-        expect(error).not.toBeInstanceOf(KeeperError)
-        expect(error.message).toContain('requestTimeoutMs')
+        expect(error).toBeInstanceOf(KeeperError)
+        expect(error.message).toContain('Request timeout must be')
         expect(queryFunction).not.toHaveBeenCalled()
     })
 
@@ -98,13 +97,13 @@ describe('downloadFile / downloadThumbnail requestTimeoutMs precedence', () => {
 
     test('an explicit timeoutMs argument wins over options.requestTimeoutMs', async () => {
         const file = fakeFile()
-        await downloadFile(file, 111, {storage: inMemoryStorage({}), requestTimeoutMs: 999})
+        await downloadFile(file, {storage: inMemoryStorage({}), requestTimeoutMs: 999}, 111)
         expect(platform.get).toHaveBeenCalledWith(file.url, {}, 111)
     })
 
     test('falls back to options.requestTimeoutMs when timeoutMs is omitted', async () => {
         const file = fakeFile()
-        await downloadFile(file, undefined, {storage: inMemoryStorage({}), requestTimeoutMs: 222})
+        await downloadFile(file, {storage: inMemoryStorage({}), requestTimeoutMs: 222})
         expect(platform.get).toHaveBeenCalledWith(file.url, {}, 222)
     })
 
@@ -116,13 +115,13 @@ describe('downloadFile / downloadThumbnail requestTimeoutMs precedence', () => {
 
     test('rejects an invalid resolved timeoutMs before calling platform.get', async () => {
         const file = fakeFile()
-        await expect(downloadFile(file, -1)).rejects.toThrow(/requestTimeoutMs/)
+        await expect(downloadFile(file, undefined, -1)).rejects.toThrow(KeeperError)
         expect(platform.get).not.toHaveBeenCalled()
     })
 
     test('downloadThumbnail applies the same precedence against thumbnailUrl', async () => {
         const file = fakeFile()
-        await downloadThumbnail(file, undefined, {storage: inMemoryStorage({}), requestTimeoutMs: 333})
+        await downloadThumbnail(file, {storage: inMemoryStorage({}), requestTimeoutMs: 333})
         expect(platform.get).toHaveBeenCalledWith(file.thumbnailUrl, {}, 333)
     })
 })
@@ -177,7 +176,7 @@ describe('uploadFile requestTimeoutMs propagation', () => {
         const fileUploadMock = jest.fn()
         platform.fileUpload = fileUploadMock
         const {options, ownerRecord, file} = await setup(0)
-        await expect(uploadFile(options, ownerRecord, file)).rejects.toThrow(/requestTimeoutMs/)
+        await expect(uploadFile(options, ownerRecord, file)).rejects.toThrow(KeeperError)
         expect(fileUploadMock).not.toHaveBeenCalled()
     })
 })

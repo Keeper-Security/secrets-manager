@@ -23,7 +23,7 @@ const getKeeperRecords = async () => {
 
     const file = firstRecord.files.find(x => x.data.name === 'acme.cer')
     if (file) {
-        const fileBytes = await downloadFile(file, undefined, {storage: storage})
+        const fileBytes = await downloadFile(file, {storage: storage})
         fs.writeFileSync(file.data.name, fileBytes)
     }
 
