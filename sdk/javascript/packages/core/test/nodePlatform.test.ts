@@ -20,6 +20,7 @@ class MockRequest extends EventEmitter {
 // everything that happens after the headers, is never executed by any test.
 class MockResponse extends EventEmitter {
     statusCode = 200
+    statusMessage = 'OK'
     headers = {'content-type': 'application/octet-stream'}
     push(chunk: string) { this.emit('data', Buffer.from(chunk)) }
     finish() { this.emit('end') }
@@ -199,8 +200,22 @@ describe('response handling', () => {
 
     test('fileUpload resolves as soon as the response headers arrive', async () => {
         const promise = nodePlatform.fileUpload('https://example.com', {field: 'value'}, new Uint8Array([1, 2, 3]), 5000)
-        mockReq.emit('response', {statusCode: 204, statusMessage: 'No Content', headers: {}})
+        const res = new MockResponse()
+        res.statusCode = 204
+        res.statusMessage = 'No Content'
+        mockReq.emit('response', res)
         await expect(promise).resolves.toMatchObject({statusCode: 204, statusMessage: 'No Content'})
+    })
+
+    // fileUpload never reads the response body, but the response object is still an EventEmitter.
+    // A socket failure after headers land emits 'error' on it; with no listener that throws
+    // instead of doing nothing, per Node's EventEmitter contract for unhandled 'error' events.
+    test('a response stream error after fileUpload has already resolved does not throw', async () => {
+        const promise = nodePlatform.fileUpload('https://example.com', {field: 'value'}, new Uint8Array([1, 2, 3]), 5000)
+        const res = new MockResponse()
+        mockReq.emit('response', res)
+        await promise
+        expect(() => res.fail(new Error('ECONNRESET mid response'))).not.toThrow()
     })
 })
 

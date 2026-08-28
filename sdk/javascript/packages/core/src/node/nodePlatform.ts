@@ -292,6 +292,11 @@ const fileUpload = (
         signal
     });
     post.on('response', function (res: any) {
+        // fileUpload resolves off headers alone and never reads the body, but the response object
+        // is still an EventEmitter: a socket failure after this point emits 'error' on it, and with
+        // no listener that throws instead of doing nothing, per Node's EventEmitter contract for
+        // unhandled 'error' events.
+        res.on('error', reject)
         clear()
         resolve({
             headers: res.headers,
