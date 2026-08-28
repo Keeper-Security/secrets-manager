@@ -8,6 +8,7 @@
 - KSM-1035 - Fixed throttle retry jitter being two-sided, which could reduce a retry delay below the computed floor. Jitter is now one-sided (0 to +25%). The SDK also caps a server-supplied `retry_after` at 176s to prevent an arbitrarily long wait.
 - KSM-1128 - Bounded the server key-rotation retry in `postQuery`. When the server sends `{"error":"key"}`, the code retries at most 3 times before throwing a typed `KeeperError`, instead of retrying forever. Before storing a suggested `key_id`, the code validates its shape (positive integer) and its membership in the bundled key table (keys 7-18). An unsupported key id can no longer corrupt the configuration. The pinned custom-key path does not change.
 - KSM-1254 - Fixed the Node platform's `hash()` ignoring its `tag` parameter and always hashing with a hardcoded string; it now hashes with the caller-supplied tag, matching the browser implementation and the `Platform` contract. No behavior change for existing callers (the SDK's only caller already passed that same string).
+- KSM-1332 - Fixed the browser IndexedDB storage hanging forever on a storage failure. `localConfigStorage` and `secureStorage` wired only `onsuccess`, so a failed IndexedDB open, read, write or delete left the promise pending with no error, no rejection and no timeout. All eight wrappers now reject with a typed `KeeperError`, and the blocked-upgrade and missing-object-store paths reject too instead of hanging.
 - Maintenance: Updated `minimatch`, `@babel/core`, and `handlebars` dev dependencies.
 
 ## 17.5.0
