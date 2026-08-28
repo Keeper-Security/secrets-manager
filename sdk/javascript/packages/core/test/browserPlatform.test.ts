@@ -71,7 +71,8 @@ describe.each(calls)('%s', (name, call) => {
     })
 
     test('an unusable timeoutMs is rejected before any request is made', async () => {
-        await expect(call(0)).rejects.toBeInstanceOf(KeeperError)
+        await expect(call(0)).rejects.toBeInstanceOf(Error)
+        await expect(call(0)).rejects.not.toBeInstanceOf(KeeperError)
         expect(fetchMock).not.toHaveBeenCalled()
     })
 

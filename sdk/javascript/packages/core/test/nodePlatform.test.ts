@@ -124,7 +124,8 @@ describe('request deadline', () => {
     })
 
     test('an unusable timeoutMs is rejected rather than aborting the request immediately', async () => {
-        await expect(nodePlatform.get('https://example.com', {}, 0)).rejects.toBeInstanceOf(KeeperError)
+        await expect(nodePlatform.get('https://example.com', {}, 0)).rejects.toBeInstanceOf(Error)
+        await expect(nodePlatform.get('https://example.com', {}, 0)).rejects.not.toBeInstanceOf(KeeperError)
         await expect(nodePlatform.get('https://example.com', {}, Infinity)).rejects.toThrow(/greater than 0/)
         expect(https.request as unknown as jest.Mock).not.toHaveBeenCalled()
     })

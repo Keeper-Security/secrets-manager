@@ -645,8 +645,8 @@ describe('request timeout propagation', () => {
     })
 
     describe.each([
-        ['downloadFile', (f: KeeperFile, o?: SecretManagerOptions, t?: number) => downloadFile(f, o, t)],
-        ['downloadThumbnail', (f: KeeperFile, o?: SecretManagerOptions, t?: number) => downloadThumbnail(f, o, t)]
+        ['downloadFile', (f: KeeperFile, t?: number, o?: SecretManagerOptions) => downloadFile(f, t, o)],
+        ['downloadThumbnail', (f: KeeperFile, t?: number, o?: SecretManagerOptions) => downloadThumbnail(f, t, o)]
     ])('%s', (name, download) => {
         const file = (): KeeperFile => ({
             fileUid: 'file-uid',
@@ -666,12 +666,12 @@ describe('request timeout propagation', () => {
         })
 
         test('inherits options.requestTimeoutMs', async () => {
-            await download(file(), {storage: inMemoryStorage({}), requestTimeoutMs: 7000})
+            await download(file(), undefined, {storage: inMemoryStorage({}), requestTimeoutMs: 7000})
             expect(seen).toEqual([7000])
         })
 
         test('an explicit timeoutMs wins over the configured one', async () => {
-            await download(file(), {storage: inMemoryStorage({}), requestTimeoutMs: 7000}, 250)
+            await download(file(), 250, {storage: inMemoryStorage({}), requestTimeoutMs: 7000})
             expect(seen).toEqual([250])
         })
 

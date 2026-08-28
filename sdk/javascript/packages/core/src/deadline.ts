@@ -24,13 +24,17 @@ export type Deadline = {
  * 0, negatives, NaN and Infinity all collapse to a near-instant setTimeout, so accepting them
  * would turn a configuration mistake into every request failing in a couple of milliseconds
  * under an error message claiming a long timeout had elapsed.
+ *
+ * Throws a plain Error, not KeeperError: this rejects a bad argument before any request is
+ * attempted, matching this SDK's convention that KeeperError signals a failed interaction with
+ * Keeper's backend, not a caller-input/config mistake.
  */
 export const resolveTimeoutMs = (timeoutMs?: number | null): number => {
     if (timeoutMs === undefined || timeoutMs === null) {
         return DEFAULT_REQUEST_TIMEOUT_MS
     }
     if (typeof timeoutMs !== 'number' || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-        throw new KeeperError(`Request timeout must be a finite number of milliseconds greater than 0, got ${timeoutMs}`)
+        throw new Error(`Request timeout must be a finite number of milliseconds greater than 0, got ${timeoutMs}`)
     }
     return Math.min(Math.floor(timeoutMs), MAX_REQUEST_TIMEOUT_MS)
 }

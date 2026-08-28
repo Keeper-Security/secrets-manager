@@ -48,12 +48,26 @@ test.each([
     ['Infinity', Infinity],
     ['-Infinity', -Infinity]
 ])('%s is rejected instead of silently aborting the request', (_label, value) => {
-    expect(() => resolveTimeoutMs(value)).toThrow(KeeperError)
-    expect(() => resolveTimeoutMs(value)).toThrow(/greater than 0/)
+    let error: any
+    try {
+        resolveTimeoutMs(value)
+    } catch (e) {
+        error = e
+    }
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toBeInstanceOf(KeeperError)
+    expect(error.message).toMatch(/greater than 0/)
 })
 
 test('a non-numeric timeout is rejected', () => {
-    expect(() => resolveTimeoutMs('5000' as unknown as number)).toThrow(KeeperError)
+    let error: any
+    try {
+        resolveTimeoutMs('5000' as unknown as number)
+    } catch (e) {
+        error = e
+    }
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toBeInstanceOf(KeeperError)
 })
 
 test('deadlineSignal reports the timeout it actually enforces, not the one requested', () => {

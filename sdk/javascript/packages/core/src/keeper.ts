@@ -1231,7 +1231,7 @@ export const getNotationResults = async (options: SecretManagerOptions, notation
                 throw new Error(`Notation error - Record ${recordToken} has multiple files matching the search criteria '${parameter}'`)
             if (numFiles < 1)
                 throw new Error(`Notation error - Record ${recordToken} has no files matching the search criteria '${parameter}'`)
-            const contents = await downloadFile(files[0], options)
+            const contents = await downloadFile(files[0], undefined, options)
             const text = webSafe64FromBytes(contents)
             result.push(text)
             break
@@ -1396,15 +1396,17 @@ export const updateFolder = async (options: SecretManagerOptions, folderUid: str
     await postQuery(options, 'update_folder', payload)
 }
 
-// Downloads take `options` so a caller who configured requestTimeoutMs once gets it applied here
-// too, the way uploadFile already does. `timeoutMs` still wins when passed, for a single oversized
-// file that needs longer than the configured default.
-export const downloadFile = async (file: KeeperFile, options?: SecretManagerOptions, timeoutMs?: number): Promise<Uint8Array> => {
+// `timeoutMs` stays the 2nd argument (its original, pre-options position) so this doesn't compound
+// KSM-1265's already-shipped breaking change with a second one in the same minor. `options` is a
+// new, additive 3rd argument so a caller who configured requestTimeoutMs once gets it applied here
+// too, the way uploadFile already does; an explicit `timeoutMs` still wins when passed, for a
+// single oversized file that needs longer than the configured default.
+export const downloadFile = async (file: KeeperFile, timeoutMs?: number, options?: SecretManagerOptions): Promise<Uint8Array> => {
     const fileResponse = await platform.get(file.url!, {}, validateTimeoutMs(timeoutMs ?? options?.requestTimeoutMs))
     return platform.decrypt(fileResponse.data, file.fileUid)
 }
 
-export const downloadThumbnail = async (file: KeeperFile, options?: SecretManagerOptions, timeoutMs?: number): Promise<Uint8Array> => {
+export const downloadThumbnail = async (file: KeeperFile, timeoutMs?: number, options?: SecretManagerOptions): Promise<Uint8Array> => {
     const fileResponse = await platform.get(file.thumbnailUrl!, {}, validateTimeoutMs(timeoutMs ?? options?.requestTimeoutMs))
     return platform.decrypt(fileResponse.data, file.fileUid)
 }
