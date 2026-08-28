@@ -39,7 +39,7 @@ describe('requestTimeoutMs validation and propagation through postQuery', () => 
         }
         expect(error).toBeInstanceOf(Error)
         expect(error).not.toBeInstanceOf(KeeperError)
-        expect(error.message).toContain('requestTimeoutMs')
+        expect(error.message).toContain('Request timeout must be')
         expect(queryFunction).not.toHaveBeenCalled()
     })
 
@@ -116,7 +116,7 @@ describe('downloadFile / downloadThumbnail requestTimeoutMs precedence', () => {
 
     test('rejects an invalid resolved timeoutMs before calling platform.get', async () => {
         const file = fakeFile()
-        await expect(downloadFile(file, -1)).rejects.toThrow(/requestTimeoutMs/)
+        await expect(downloadFile(file, -1)).rejects.toThrow(/Request timeout must be/)
         expect(platform.get).not.toHaveBeenCalled()
     })
 
@@ -177,7 +177,7 @@ describe('uploadFile requestTimeoutMs propagation', () => {
         const fileUploadMock = jest.fn()
         platform.fileUpload = fileUploadMock
         const {options, ownerRecord, file} = await setup(0)
-        await expect(uploadFile(options, ownerRecord, file)).rejects.toThrow(/requestTimeoutMs/)
+        await expect(uploadFile(options, ownerRecord, file)).rejects.toThrow(/Request timeout must be/)
         expect(fileUploadMock).not.toHaveBeenCalled()
     })
 })

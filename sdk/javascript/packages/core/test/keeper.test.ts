@@ -5,7 +5,8 @@ import {
     initializeStorage,
     generateTransmissionKey,
     platform,
-    SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword
+    SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword,
+    downloadFile, downloadThumbnail, uploadFile, KeeperFile, KeeperRecord, DEFAULT_REQUEST_TIMEOUT_MS
 } from '../'
 
 import * as fs from 'fs'
@@ -576,4 +577,149 @@ test('flat record with innerFolderUid falls back to the app key when no matching
 
     expect(secrets.records.length).toBe(1)
     expect(secrets.records[0].data.title).toBe('Orphaned Record')
+})
+
+// requestTimeoutMs is only useful if it survives the trip from SecretManagerOptions to the
+// platform call. Nothing below asserts on timing; each test checks the value that actually reached
+// the wire, so dropping a forwarding argument anywhere in keeper.ts fails here.
+describe('request timeout propagation', () => {
+    const savedPlatform = {get: platform.get, post: platform.post, fileUpload: platform.fileUpload, decrypt: platform.decrypt}
+
+    afterEach(() => {
+        platform.get = savedPlatform.get
+        platform.post = savedPlatform.post
+        platform.fileUpload = savedPlatform.fileUpload
+        platform.decrypt = savedPlatform.decrypt
+        // The uploadFile case seeds the module-global key cache; clear it so nothing leaks into
+        // whatever runs next.
+        platform.cleanKeyCache()
+    })
+
+    test('getSecrets forwards options.requestTimeoutMs to the query function', async () => {
+        const storage = inMemoryStorage({})
+        await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+        const seen: (number | undefined)[] = []
+        const options: SecretManagerOptions = {
+            storage,
+            requestTimeoutMs: 4321,
+            queryFunction: async (_url, _key, _payload, _allowUnverified, timeoutMs) => {
+                seen.push(timeoutMs)
+                return {statusCode: 500, data: new TextEncoder().encode('nope'), headers: []}
+            }
+        }
+        await expect(getSecrets(options)).rejects.toBeDefined()
+        expect(seen).toEqual([4321])
+    })
+
+    test('getSecrets leaves the timeout undefined when none is configured, so the platform default applies', async () => {
+        const storage = inMemoryStorage({})
+        await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+        const seen: (number | undefined)[] = []
+        const options: SecretManagerOptions = {
+            storage,
+            queryFunction: async (_url, _key, _payload, _allowUnverified, timeoutMs) => {
+                seen.push(timeoutMs)
+                return {statusCode: 500, data: new TextEncoder().encode('nope'), headers: []}
+            }
+        }
+        await expect(getSecrets(options)).rejects.toBeDefined()
+        expect(seen).toEqual([undefined])
+    })
+
+    test('a timed-out request is not retried, it propagates to the caller', async () => {
+        const storage = inMemoryStorage({})
+        await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+        let calls = 0
+        const options: SecretManagerOptions = {
+            storage,
+            requestTimeoutMs: 1000,
+            queryFunction: async () => {
+                calls++
+                throw new Error('Request to https://fake.keepersecurity.com/x timed out after 1000ms')
+            }
+        }
+        await expect(getSecrets(options)).rejects.toThrow(/timed out after 1000ms/)
+        // The throttle and key-rotation loops both live in postQuery; neither may swallow a
+        // timeout and spin.
+        expect(calls).toBe(1)
+    })
+
+    describe.each([
+        ['downloadFile', (f: KeeperFile, t?: number, o?: SecretManagerOptions) => downloadFile(f, t, o)],
+        ['downloadThumbnail', (f: KeeperFile, t?: number, o?: SecretManagerOptions) => downloadThumbnail(f, t, o)]
+    ])('%s', (name, download) => {
+        const file = (): KeeperFile => ({
+            fileUid: 'file-uid',
+            data: {} as any,
+            url: 'https://example.com/file',
+            thumbnailUrl: 'https://example.com/thumb'
+        } as unknown as KeeperFile)
+
+        let seen: (number | undefined)[]
+        beforeEach(() => {
+            seen = []
+            platform.get = (async (_url: string, _headers: any, timeoutMs?: number) => {
+                seen.push(timeoutMs)
+                return {statusCode: 200, headers: [], data: new Uint8Array()}
+            }) as typeof platform.get
+            platform.decrypt = (async () => new Uint8Array([1])) as typeof platform.decrypt
+        })
+
+        test('inherits options.requestTimeoutMs', async () => {
+            await download(file(), undefined, {storage: inMemoryStorage({}), requestTimeoutMs: 7000})
+            expect(seen).toEqual([7000])
+        })
+
+        test('an explicit timeoutMs wins over the configured one', async () => {
+            await download(file(), 250, {storage: inMemoryStorage({}), requestTimeoutMs: 7000})
+            expect(seen).toEqual([250])
+        })
+
+        test('sends undefined when neither is given, so the platform default applies', async () => {
+            await download(file())
+            expect(seen).toEqual([undefined])
+        })
+    })
+
+    test('uploadFile forwards options.requestTimeoutMs to platform.fileUpload', async () => {
+        const storage = inMemoryStorage({})
+        await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+        await platform.generatePrivateKey('ownerKey', storage)
+        await storage.saveBytes('appOwnerPublicKey', await platform.exportPublicKey('ownerKey', storage))
+        // importKey seeds the platform key cache as well as storage: prepareFileUploadPayload
+        // calls platform.encrypt without passing storage, so the key must already be cached.
+        await platform.importKey('appKey', platform.getRandomBytes(32), storage)
+
+        const seen: (number | undefined)[] = []
+        platform.fileUpload = (async (_url: string, _params: any, _data: Uint8Array, timeoutMs?: number) => {
+            seen.push(timeoutMs)
+            return {statusCode: 200, statusMessage: 'OK', headers: {}}
+        }) as typeof platform.fileUpload
+
+        // No recordUid, so the record and link keys are encrypted under the app key seeded above
+        // rather than a per-record key this test would otherwise have to plant in storage.
+        const ownerRecord = {recordUid: '', data: {fields: []}, revision: 1} as unknown as KeeperRecord
+        const options: SecretManagerOptions = {
+            storage,
+            requestTimeoutMs: 9000,
+            queryFunction: async (_url, transmissionKey) => ({
+                statusCode: 200,
+                headers: [],
+                data: await platform.encryptWithKey(
+                    platform.stringToBytes(JSON.stringify({
+                        url: 'https://example.com/upload',
+                        parameters: '{}',
+                        successStatusCode: 200
+                    })),
+                    transmissionKey.key)
+            })
+        }
+
+        await uploadFile(options, ownerRecord, {name: 'f.txt', title: 'f', type: 'text/plain', data: new Uint8Array([1, 2, 3])})
+        expect(seen).toEqual([9000])
+    })
+})
+
+test('DEFAULT_REQUEST_TIMEOUT_MS is exported from the package entry point', () => {
+    expect(DEFAULT_REQUEST_TIMEOUT_MS).toBe(30000)
 })
