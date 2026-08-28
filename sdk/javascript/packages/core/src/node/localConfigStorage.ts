@@ -55,13 +55,15 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
     }
 }
 
-export const cachingPostFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload): Promise<KeeperHttpResponse> => {
+// Signature matches SecretManagerOptions.queryFunction so the trailing options, including
+// requestTimeoutMs, reach platform.post instead of being dropped on the floor.
+export const cachingPostFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number): Promise<KeeperHttpResponse> => {
     try {
         const response = await platform.post(url, payload.payload, {
             PublicKeyId: transmissionKey.publicKeyId.toString(),
             TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
             Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-        })
+        }, allowUnverifiedCertificate, timeoutMs)
         if (response.statusCode == 200) {
             // Create cache file with secure permissions (0600)
             const cacheFd = fs.openSync('cache.dat', 'w', 0o600)

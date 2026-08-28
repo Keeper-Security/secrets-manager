@@ -1,4 +1,5 @@
-import {deadlineSignal, DEFAULT_REQUEST_TIMEOUT_MS, KeeperHttpResponse, KeyValueStorage, Platform, truncateUrlForError} from '../platform'
+import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
+import {deadlineSignal, timeoutError} from '../deadline'
 import {privateDerToPublicRaw} from '../utils'
 import {KeeperError, KeeperCryptoError} from '../errors'
 import {request, RequestOptions} from 'https'
@@ -199,7 +200,12 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
     return Buffer.concat([ephemeralPublicKey, encryptedData])
 }
 
-const fetchData = (res, resolve) => {
+// onBodyDone runs when the exchange is genuinely over, not when the headers land: the deadline has
+// to stay armed across the body or a server can send headers instantly and then stall or trickle
+// forever. reject is wired to the response stream's own errors too, because once the response has
+// started the request object no longer reports a mid-body socket failure and the promise would
+// otherwise never settle.
+const fetchData = (res, resolve, onBodyDone?: () => void, reject?: (reason: any) => void) => {
     const retVal = {
         statusCode: res.statusCode,
         headers: res.headers,
@@ -210,7 +216,12 @@ const fetchData = (res, resolve) => {
             ? Buffer.concat([retVal.data, data])
             : data
     })
+    res.on('error', (err) => {
+        onBodyDone?.()
+        reject?.(err)
+    })
     res.on('end', () => {
+        onBodyDone?.()
         resolve(retVal)
     })
 }
@@ -220,8 +231,7 @@ const get = (
     headers?: { [key: string]: string },
     timeoutMs?: number
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
-    const ms = timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
-    const {signal, clear} = deadlineSignal(ms)
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     const get = request(url, {
         method: 'get',
         headers: {
@@ -231,12 +241,11 @@ const get = (
         agent: getProxyAgent(),
         signal
     }, (res) => {
-        clear()
-        fetchData(res, resolve)
+        fetchData(res, resolve, clear, reject)
     })
     signal?.addEventListener('abort', () => {
         get?.destroy()
-        reject(new KeeperError(`Request to ${truncateUrlForError(url)} timed out after ${ms}ms`))
+        reject(timeoutError(url, ms))
     })
     get.on('error', (err) => {
         clear()
@@ -252,8 +261,7 @@ const post = (
     allowUnverifiedCertificate?: boolean,
     timeoutMs?: number
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
-    const ms = timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
-    const {signal, clear} = deadlineSignal(ms)
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     const options: RequestOptions = {
         rejectUnauthorized: !allowUnverifiedCertificate,
         agent: getProxyAgent(),
@@ -269,12 +277,11 @@ const post = (
             ...headers,
         },
     }, (res) => {
-        clear()
-        fetchData(res, resolve)
+        fetchData(res, resolve, clear, reject)
     })
     signal?.addEventListener('abort', () => {
         post?.destroy()
-        reject(new KeeperError(`Request to ${truncateUrlForError(url)} timed out after ${ms}ms`))
+        reject(timeoutError(url, ms))
     })
     post.on('error', (err) => {
         clear()
@@ -290,8 +297,7 @@ const fileUpload = (
     data: Uint8Array,
     timeoutMs?: number
 ): Promise<any> => new Promise<any>((resolve, reject) => {
-    const ms = timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
-    const {signal, clear} = deadlineSignal(ms)
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     const boundary = `----------${Date.now()}`
     const boundaryBytes = stringToBytes(`\r\n--${boundary}`)
     let post = https.request(url, {
@@ -303,6 +309,11 @@ const fileUpload = (
         signal
     });
     post.on('response', function (res: any) {
+        // fileUpload resolves off headers alone and never reads the body, but the response object
+        // is still an EventEmitter: a socket failure after this point emits 'error' on it, and with
+        // no listener that throws instead of doing nothing, per Node's EventEmitter contract for
+        // unhandled 'error' events.
+        res.on('error', reject)
         clear()
         resolve({
             headers: res.headers,
@@ -312,7 +323,7 @@ const fileUpload = (
     })
     signal?.addEventListener('abort', () => {
         post?.destroy()
-        reject(new KeeperError(`Request to ${truncateUrlForError(url)} timed out after ${ms}ms`))
+        reject(timeoutError(url, ms))
     })
     post.on('error', (err) => {
         clear()

@@ -1,42 +1,6 @@
-export const DEFAULT_REQUEST_TIMEOUT_MS = 30000
-
-// Storage backend file/thumbnail download URLs carry an AWS SigV4 signature in the query string
-// (an 8-hour bearer credential, confirmed against the backend's DownloadRequestFactory) - a
-// timeout error embedding the full URL would leak that signature into whatever logs the caller's
-// catch-all error handler writes to. Strips the query string unconditionally, since a future
-// caller could pass a bearer-style URL through post()/fileUpload() too.
-export const truncateUrlForError = (url: string): string => {
-    try {
-        const parsed = new URL(url)
-        return `${parsed.origin}${parsed.pathname}`
-    } catch {
-        return url.split('?')[0]
-    }
-}
-
-export type Deadline = {
-    signal: AbortSignal | undefined
-    clear: () => void
-}
-
-// A plain AbortController-driven deadline rather than the AbortSignal.timeout() shorthand: Node's
-// http.request(...) treats its own `timeout` option as an idle timer that resets on socket
-// activity, not a deadline, so both platforms need this to fire at a fixed point in time
-// regardless of activity. AbortController's support is broader than AbortSignal.timeout()'s, so
-// this also avoids hard-failing every request on older runtimes that lack the newer static method.
-// Callers must call clear() once the request settles, or the underlying setTimeout outlives it.
-export const deadlineSignal = (timeoutMs: number): Deadline => {
-    if (typeof AbortController === 'undefined') {
-        return {signal: undefined, clear: () => {}}
-    }
-    const controller = new AbortController()
-    const timer: any = setTimeout(() => controller.abort(), timeoutMs)
-    // Node's Timeout object supports unref() so this timer alone can't keep the process alive if
-    // the caller never settles (a thrown/mocked request, for instance); browsers' setTimeout
-    // returns a plain number with no such method.
-    timer.unref?.()
-    return {signal: controller.signal, clear: () => clearTimeout(timer)}
-}
+// deadlineSignal() and its helpers live in deadline.ts so they stay internal: this module is
+// re-exported wholesale from the node entry point, and only the default belongs in the public API.
+export {DEFAULT_REQUEST_TIMEOUT_MS} from './deadline'
 
 export type Platform = {
 //  string routines

@@ -202,15 +202,17 @@ export const secureStorage = async (dbName: string): Promise<KeyValueStorage> =>
     }
 }
 
-export function createCachingFunction(storage: KeyValueStorage): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload) => Promise<KeeperHttpResponse> {
+// Signature matches SecretManagerOptions.queryFunction so the trailing options, including
+// requestTimeoutMs, reach platform.post instead of being dropped on the floor.
+export function createCachingFunction(storage: KeyValueStorage): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number) => Promise<KeeperHttpResponse> {
 
-    return async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload): Promise<KeeperHttpResponse> => {
+    return async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number): Promise<KeeperHttpResponse> => {
         try {
             const response = await platform.post(url, payload.payload, {
                 PublicKeyId: transmissionKey.publicKeyId.toString(),
                 TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
                 Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-            })
+            }, allowUnverifiedCertificate, timeoutMs)
             if (response.statusCode == 200) {
                 await storage.saveBytes('cache', new Uint8Array([...transmissionKey.key, ...response.data]))
             }

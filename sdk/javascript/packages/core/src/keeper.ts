@@ -2,6 +2,7 @@ import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, Transmi
 import {webSafe64FromBytes, webSafe64ToBytes, tryParseInt} from './utils'
 import {parseNotation} from './notation'
 import {KeeperError, KeeperThrottleError, KeeperCryptoError, KeeperCryptoFailureReason, KeeperDecryptionErrorInfo} from './errors'
+import {validateTimeoutMs} from './deadline'
 
 export {KeyValueStorage} from './platform'
 
@@ -26,19 +27,6 @@ const MAX_KEY_ROTATION_RETRIES = 3
 const BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 const MAX_THROTTLE_DELAY_SEC = 176 // same ceiling the exponential branch reaches at the last retry (11 * 2**4)
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
-
-// undefined means "not set" and is passed through so the platform-level default applies; 0,
-// negative, and non-finite values are caller-input errors, not a valid way to request "no
-// timeout" - allowing that would reopen the unbounded-wait vector this timeout closes.
-const resolveTimeoutMs = (timeoutMs?: number): number | undefined => {
-    if (timeoutMs === undefined) {
-        return undefined
-    }
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-        throw new Error(`requestTimeoutMs must be a positive finite number, got ${timeoutMs}`)
-    }
-    return timeoutMs
-}
 
 let keeperPublicKeys: Record<number, Uint8Array>
 
@@ -824,7 +812,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
     while (true) {
         const transmissionKey = await generateTransmissionKey(options.storage)
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
-        const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, resolveTimeoutMs(options.requestTimeoutMs))
+        const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, validateTimeoutMs(options.requestTimeoutMs))
         if (response.statusCode !== 200) {
             let errorMessage
             if (response.data) {
@@ -1490,17 +1478,18 @@ export const updateFolder = async (options: SecretManagerOptions, folderUid: str
     await postQuery(options, 'update_folder', payload)
 }
 
-// options is a 3rd, trailing parameter rather than the options-first shape the rest of this file
-// uses (e.g. uploadFile(options, ownerRecord, file)) so that adding it doesn't break either of
-// downloadFile's existing 2 call-site shapes. The options-first reorder is deferred to the next
-// major version (see SDK-V18-BREAKING-CHANGES.html) since this ships in a minor release.
+// `timeoutMs` stays the 2nd argument (its original, pre-options position) so this doesn't compound
+// KSM-1265's already-shipped breaking change with a second one in the same minor. `options` is a
+// new, additive 3rd argument so a caller who configured requestTimeoutMs once gets it applied here
+// too, the way uploadFile already does; an explicit `timeoutMs` still wins when passed, for a
+// single oversized file that needs longer than the configured default.
 export const downloadFile = async (file: KeeperFile, timeoutMs?: number, options?: SecretManagerOptions): Promise<Uint8Array> => {
-    const fileResponse = await platform.get(file.url!, {}, resolveTimeoutMs(timeoutMs ?? options?.requestTimeoutMs))
+    const fileResponse = await platform.get(file.url!, {}, validateTimeoutMs(timeoutMs ?? options?.requestTimeoutMs))
     return platform.decrypt(fileResponse.data, file.fileUid)
 }
 
 export const downloadThumbnail = async (file: KeeperFile, timeoutMs?: number, options?: SecretManagerOptions): Promise<Uint8Array> => {
-    const fileResponse = await platform.get(file.thumbnailUrl!, {}, resolveTimeoutMs(timeoutMs ?? options?.requestTimeoutMs))
+    const fileResponse = await platform.get(file.thumbnailUrl!, {}, validateTimeoutMs(timeoutMs ?? options?.requestTimeoutMs))
     return platform.decrypt(fileResponse.data, file.fileUid)
 }
 
@@ -1508,7 +1497,7 @@ export const uploadFile = async (options: SecretManagerOptions, ownerRecord: Kee
     const { payload, encryptedFileData } = await prepareFileUploadPayload(options.storage, ownerRecord, file)
     const responseData = await postQuery(options, 'add_file', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerAddFileResponse
-    const uploadResult = await platform.fileUpload(response.url, JSON.parse(response.parameters), encryptedFileData, resolveTimeoutMs(options.requestTimeoutMs))
+    const uploadResult = await platform.fileUpload(response.url, JSON.parse(response.parameters), encryptedFileData, validateTimeoutMs(options.requestTimeoutMs))
     if (uploadResult.statusCode !== response.successStatusCode) {
         throw new Error(`Upload failed (${uploadResult.statusMessage}), code ${uploadResult.statusCode}`)
     }

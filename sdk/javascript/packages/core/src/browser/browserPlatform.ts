@@ -1,4 +1,5 @@
-import {deadlineSignal, DEFAULT_REQUEST_TIMEOUT_MS, KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
+import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
+import {deadlineSignal, timeoutError} from '../deadline'
 import {privateDerToPublicRaw} from '../utils'
 import {KeeperError, KeeperCryptoError} from '../errors'
 
@@ -359,8 +360,15 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
     return result
 }
 
+// fetch rejects an aborted request with a DOMException, not something a caller can recognise as
+// an SDK error. The signal is created per request and nothing else aborts it, so an abort here is
+// always our own deadline; translate it to the same KeeperError the node platform raises and leave
+// every other failure untouched.
+const asTimeout = (error: any, url: string, timeoutMs: number, signal: AbortSignal | undefined): any =>
+    signal?.aborted ? timeoutError(url, timeoutMs) : error
+
 const get = async (url: string, headers: any, timeoutMs?: number): Promise<KeeperHttpResponse> => {
-    const {signal, clear} = deadlineSignal(timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     try {
         const resp = await fetch(url, {
             method: 'GET',
@@ -373,6 +381,8 @@ const get = async (url: string, headers: any, timeoutMs?: number): Promise<Keepe
             headers: resp.headers,
             data: new Uint8Array(body)
         }
+    } catch (e) {
+        throw asTimeout(e, url, ms, signal)
     } finally {
         clear()
     }
@@ -385,7 +395,7 @@ const post = async (
     allowUnverifiedCertificate?: boolean,
     timeoutMs?: number
 ): Promise<KeeperHttpResponse> => {
-    const {signal, clear} = deadlineSignal(timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     try {
         const resp = await fetch(url, {
             method: 'POST',
@@ -403,6 +413,8 @@ const post = async (
             headers: resp.headers,
             data: new Uint8Array(body)
         }
+    } catch (e) {
+        throw asTimeout(e, url, ms, signal)
     } finally {
         clear()
     }
@@ -421,7 +433,7 @@ const fileUpload = async (
     }
     form.append('file', new Blob([data as Uint8Array<ArrayBuffer>], {type: 'application/octet-stream'}));
 
-    const {signal, clear} = deadlineSignal(timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     const fetchCfg = {
         method: 'POST',
         body: form,
@@ -436,8 +448,9 @@ const fileUpload = async (
             statusMessage: res.statusText
         };
     } catch (error) {
-        console.error('Error uploading file:', error);
-        throw error;
+        const e = asTimeout(error, url, ms, signal);
+        console.error('Error uploading file:', e);
+        throw e;
     } finally {
         clear()
     }
