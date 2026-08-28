@@ -144,7 +144,7 @@ export const getRecordFilter = (inputs: SecretsInput[]): string[] => {
 }
 
 const downloadSecretFile = async (file: KeeperFile, destination: string, options: SecretManagerOptions): Promise<void> => {
-    const fileData = await downloadFile(file, undefined, options)
+    const fileData = await downloadFile(file, options)
     fs.writeFileSync(destination, fileData)
 }
 
