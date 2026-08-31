@@ -853,8 +853,7 @@ class SecretTest(unittest.TestCase):
 
     def test_custom_fields_json_key(self):
 
-        """Regression test for KSM-820: JSON output must use 'custom' key, not 'custom_fields'.
-        """
+        """Regression test: JSON output must use 'custom' key, not 'custom_fields'."""
 
         mock_config = MockConfig.make_config()
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
@@ -1099,6 +1098,253 @@ class SecretTest(unittest.TestCase):
             self.assertTrue(lines, "did not get back a record uid")  # empty
             self.assertRegex(lines[0], r'^[\w_-]{22}$', "did not get back a record uid")
 
+    def test_clone_nonexistent_uid_exits_nonzero(self):
+        from unittest.mock import patch as _patch
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        profile_init_res = mock.Response()
+        profile_init_res.add_folder(uid="FAKEUID")
+        profile_init_res.add_record(title="Profile Init")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+
+        with _patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             _patch.object(secrets_manager, 'get_secrets', return_value=[]), \
+             _patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                    return_value=False):
+            mock_client.return_value = secrets_manager
+            Profile.init(token='MY_TOKEN')
+
+            runner = CliRunner()
+            result = runner.invoke(cli, ['secret', 'add', 'clone',
+                                         '--uid', 'NONEXISTENT1234567890'],
+                                   catch_exceptions=False)
+
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertIn("Record UID not found", result.output)
+
+    def test_clone_record_with_empty_complex_field(self):
+        """secret add clone must not crash when source record has complex fields with value: []"""
+        from unittest.mock import patch as _patch, MagicMock
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        profile_init_res = mock.Response()
+        profile_init_res.add_folder(uid="FAKEUID")
+        profile_init_res.add_record(title="Profile Init")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+
+        fake_record = MagicMock()
+        fake_record.uid = "BANKACCT0000000000001"
+        fake_record.folder_uid = "FAKEUID"
+        fake_record.inner_folder_uid = None
+        fake_record.type = "bankAccount"
+        fake_record.title = "My Bank Account"
+        fake_record.dict = {
+            "notes": "",
+            "fields": [
+                {
+                    "type": "bankAccount",
+                    "value": [{"accountType": "Checking", "routingNumber": "111000025",
+                               "accountNumber": "1234567890", "otherType": ""}],
+                },
+                {"type": "name", "value": []},     # unpopulated complex field
+                {"type": "address", "value": []},  # unpopulated complex field
+            ],
+            "custom": [],
+        }
+
+        with _patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             _patch.object(secrets_manager, 'get_secrets', return_value=[fake_record]), \
+             _patch.object(secrets_manager, 'create_secret_with_options',
+                           return_value='NEWUID0000000000000000') as mock_create, \
+             _patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                    return_value=False):
+            mock_client.return_value = secrets_manager
+            Profile.init(token='MY_TOKEN')
+
+            runner = CliRunner()
+            result = runner.invoke(cli, ['secret', 'add', 'clone',
+                                         '--uid', 'BANKACCT0000000000001'],
+                                   catch_exceptions=False)
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue(mock_create.called, "create_secret_with_options was not called")
+
+    def test_clone_preserves_empty_custom_fields(self):
+        """secret add clone must keep custom fields whose value is empty (field-faithful clone)"""
+        from unittest.mock import patch as _patch, MagicMock
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        profile_init_res = mock.Response()
+        profile_init_res.add_folder(uid="FAKEUID")
+        profile_init_res.add_record(title="Profile Init")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+
+        fake_record = MagicMock()
+        fake_record.uid = "LOGINRECORD0000000001"
+        fake_record.folder_uid = "FAKEUID"
+        fake_record.inner_folder_uid = None
+        fake_record.type = "login"
+        fake_record.title = "My Login"
+        fake_record.dict = {
+            "notes": "",
+            "fields": [
+                {"type": "login", "value": ["jsmith"]},
+                {"type": "password", "value": []},
+            ],
+            "custom": [
+                {"type": "text", "label": "Department", "value": ["Engineering"]},
+                {"type": "text", "label": "Cost Center", "value": []},
+                {"type": "name", "label": "Emergency Contact", "value": []},  # empty dict-typed
+                {"type": "secret", "label": "Backup Code", "value": [], "required": True},
+            ],
+        }
+
+        with _patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             _patch.object(secrets_manager, 'get_secrets', return_value=[fake_record]), \
+             _patch.object(secrets_manager, 'create_secret_with_options',
+                           return_value='NEWUID0000000000000000') as mock_create, \
+             _patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                    return_value=False):
+            mock_client.return_value = secrets_manager
+            Profile.init(token='MY_TOKEN')
+
+            runner = CliRunner()
+            result = runner.invoke(cli, ['secret', 'add', 'clone',
+                                         '--uid', 'LOGINRECORD0000000001'],
+                                   catch_exceptions=False)
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue(mock_create.called, "create_secret_with_options was not called")
+
+        record_create_obj = mock_create.call_args[0][1]
+        self.assertEqual(4, len(record_create_obj.custom),
+                         "clone must keep every source custom field")
+        custom_by_key = {(f.type, getattr(f, "label", None)): f
+                         for f in record_create_obj.custom}
+
+        # Non-empty custom field passes through with its value intact
+        self.assertEqual(["Engineering"], custom_by_key[("text", "Department")].value)
+
+        # Empty custom fields survive with type/label kept and value []
+        self.assertEqual([], custom_by_key[("text", "Cost Center")].value)
+        self.assertEqual([], custom_by_key[("name", "Emergency Contact")].value)
+        self.assertEqual([], custom_by_key[("secret", "Backup Code")].value)
+        self.assertTrue(custom_by_key[("secret", "Backup Code")].required,
+                        "required flag must be preserved on empty custom fields")
+
+        # Serialized payload sent to the server includes the empty custom fields
+        payload = record_create_obj.to_dict()
+        payload_by_key = {(f.get("type"), f.get("label")): f for f in payload["custom"]}
+        self.assertEqual(["Engineering"], payload_by_key[("text", "Department")]["value"])
+        self.assertEqual([], payload_by_key[("text", "Cost Center")]["value"])
+        self.assertEqual([], payload_by_key[("name", "Emergency Contact")]["value"])
+        self.assertEqual([], payload_by_key[("secret", "Backup Code")]["value"])
+
+    def test_add_file_preserves_empty_custom_fields(self):
+        """secret add file must keep custom fields with value: []; the workaround strips them
+        to dodge a helper IndexError, but must re-attach them so the created record is field-faithful."""
+        from unittest.mock import patch as _patch, MagicMock
+
+        mock_config = MockConfig.make_config()
+        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
+
+        profile_init_res = mock.Response()
+        profile_init_res.add_folder(uid="FAKEUID")
+        profile_init_res.add_record(title="Profile Init")
+
+        queue = mock.ResponseQueue(client=secrets_manager)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+        queue.add_response(profile_init_res)
+
+        fake_folder = MagicMock()
+        fake_folder.folder_uid = "FAKEUID"
+        fake_folder.parent_uid = None
+
+        record_file_data = {
+            "version": "v3",
+            "kind": "KeeperRecord",
+            "data": [{
+                "recordType": "login",
+                "title": "Preserved Fields Test",
+                "fields": [
+                    {"type": "login", "value": ["jsmith"]},
+                    {"type": "password", "value": []},
+                ],
+                "customFields": [
+                    {"type": "text", "label": "Department", "value": ["Engineering"]},
+                    {"type": "text", "label": "Cost Center", "value": []},
+                    {"type": "name", "label": "Emergency Contact", "value": []},
+                    {"type": "secret", "label": "Backup Code", "value": [], "required": True},
+                ],
+            }]
+        }
+
+        tf = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+        self.delete_me.append(tf.name)
+        json.dump(record_file_data, tf)
+        tf.close()
+
+        with _patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client, \
+             _patch.object(secrets_manager, 'get_folders', return_value=[fake_folder]), \
+             _patch.object(secrets_manager, 'create_secret_with_options',
+                           return_value='NEWUID0000000000000000') as mock_create, \
+             _patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                    return_value=False):
+            mock_client.return_value = secrets_manager
+            Profile.init(token='MY_TOKEN')
+
+            runner = CliRunner()
+            result = runner.invoke(cli, ['secret', 'add', 'file',
+                                         '--sf', 'FAKEUID',
+                                         '--file', tf.name],
+                                   catch_exceptions=False)
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue(mock_create.called, "create_secret_with_options was not called")
+
+        record_create_obj = mock_create.call_args[0][1]
+        self.assertEqual(4, len(record_create_obj.custom),
+                         "add file must keep every custom field including empty-value ones")
+        custom_by_key = {(f.type, getattr(f, "label", None)): f
+                         for f in record_create_obj.custom}
+
+        # Populated custom field passes through with value intact
+        self.assertEqual(["Engineering"], custom_by_key[("text", "Department")].value)
+
+        # Empty-value custom fields survive with type/label and value []
+        self.assertEqual([], custom_by_key[("text", "Cost Center")].value)
+        self.assertEqual([], custom_by_key[("name", "Emergency Contact")].value)
+        self.assertEqual([], custom_by_key[("secret", "Backup Code")].value)
+        self.assertTrue(custom_by_key[("secret", "Backup Code")].required,
+                        "required flag must be preserved on empty custom fields")
+
+        # Serialized payload includes all 4 custom fields
+        payload = record_create_obj.to_dict()
+        payload_by_key = {(f.get("type"), f.get("label")): f for f in payload["custom"]}
+        self.assertEqual(["Engineering"], payload_by_key[("text", "Department")]["value"])
+        self.assertEqual([], payload_by_key[("text", "Cost Center")]["value"])
+        self.assertEqual([], payload_by_key[("name", "Emergency Contact")]["value"])
+        self.assertEqual([], payload_by_key[("secret", "Backup Code")]["value"])
+
     def test_create_record_custom_field_empty_list(self):
         """record create payload always includes custom=[] when no custom fields are set"""
 
@@ -1152,7 +1398,7 @@ class SecretTest(unittest.TestCase):
 
 
 class LinkedRecordsTest(unittest.TestCase):
-    """KSM-981: linked records must be surfaced in secret get output."""
+    """Linked records must be surfaced in secret get output."""
 
     def setUp(self):
         self.orig_dir = os.getcwd()
@@ -1190,8 +1436,8 @@ class LinkedRecordsTest(unittest.TestCase):
 
     @staticmethod
     def _live_shape_links(parent_uid, linked_uid):
-        """Link fixtures matching the live backend shapes (see KSM-1007 epic):
-        a meta self-link, a credential link with flags, and a data-less reference."""
+        """Link fixtures matching the live backend shapes: a meta self-link, a
+        credential link with flags, and a data-less reference."""
         meta_payload = {
             "allowedSettings": {"rotation": True, "connections": True},
             "rotateOnTermination": False,
@@ -1207,7 +1453,7 @@ class LinkedRecordsTest(unittest.TestCase):
         ], meta_payload, cred_payload
 
     def test_links_populated_in_json_output(self):
-        """secret get --json keeps raw link fields and adds decoded data (KSM-1015)."""
+        """secret get --json keeps raw link fields and adds decoded data."""
         mock_config = MockConfig.make_config()
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 
@@ -1244,7 +1490,7 @@ class LinkedRecordsTest(unittest.TestCase):
             self.assertEqual(links[0]['data'], meta_link['data'])
             self.assertEqual(linked_uid, cred_link['recordUid'])
 
-            # Decoded data is added per link (KSM-1015)
+            # Decoded data is added per link
             self.assertEqual(meta_payload, meta_link['decoded'],
                              "meta self-link data must be decoded")
             self.assertEqual(cred_payload, cred_link['decoded'],
@@ -1253,7 +1499,7 @@ class LinkedRecordsTest(unittest.TestCase):
                               "data-less reference decodes to None")
 
     def test_links_shown_in_text_output(self):
-        """secret get text output labels self-links and shows decoded link data (KSM-1015)."""
+        """secret get text output labels self-links and shows decoded link data."""
         mock_config = MockConfig.make_config()
         secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
 

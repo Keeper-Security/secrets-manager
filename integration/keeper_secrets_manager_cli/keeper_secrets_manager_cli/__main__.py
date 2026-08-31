@@ -10,6 +10,7 @@
 # Contact: ops@keepersecurity.com
 #
 
+import contextlib
 import difflib
 import os
 import sys
@@ -17,10 +18,10 @@ import traceback
 import typing as t
 from importlib.metadata import version as pkg_version, PackageNotFoundError
 import click
+from click.core import ParameterSource
 import keeper_secrets_manager_core
 from click_help_colors import HelpColorsGroup, HelpColorsCommand
 from click_repl import repl, exit as repl_exit
-from colorama import Fore, Style, init
 from update_checker import UpdateChecker
 from . import KeeperCli
 from .exception import KsmCliException
@@ -29,7 +30,7 @@ from .folder import Folder
 from .secret import Secret
 from .sync import Sync
 from .profile import Profile
-from .init import Init
+from .init import Init, is_valid_k8s_name, K8S_NAME_ERROR
 from .config import Config
 from .interpolate import Interpolate
 
@@ -208,8 +209,8 @@ def base_command_help(f):
     sdk_version = versions.get("keeper-secrets-manager-core", "")
 
     doc = "{} Version: {} ".format(
-        Fore.RED + doc + Style.RESET_ALL,
-        Fore.YELLOW + cli_version + Style.RESET_ALL
+        click.style(doc, fg="red"),
+        click.style(cli_version, fg="yellow")
     )
     try:
         # The __doc__ stuff gets formatted so new line don't work, however long spaces will.
@@ -242,6 +243,13 @@ def validate_non_empty_or_blank_list(ctx, param, value):
     if isinstance(value, tuple) and next((x for x in value if str(x).strip() == ""), None) is None:
         return value
     raise click.BadParameter("Empty strings are not allowed")
+
+
+def validate_k8s_name(ctx, param, value):
+    """Validate --name against the RFC 1123 subdomain rule Kubernetes applies to Secret names"""
+    if is_valid_k8s_name(value):
+        return value
+    raise click.BadParameter(K8S_NAME_ERROR)
 
 
 class Mutex(click.Option):
@@ -306,6 +314,26 @@ class Mutex(click.Option):
 def cli(ctx, ini_file, profile_name, output, color, cache, log_level):
     """Keeper Secrets Manager CLI
     """
+
+    # Inside `ksm shell`, click-repl re-invokes this callback for every typed
+    # line with the shell session's context as the parent (top-level runs have
+    # no parent). Options absent from the inner line parse as their defaults,
+    # which would silently discard session globals like --ini-file, so fall
+    # back to the session's values for them; options typed on the inner line
+    # still win, for that line only.
+    session = ctx.parent.obj if ctx.parent is not None else None
+    if isinstance(session, dict) and "cli" in session:
+        def pick(param_name, inner_value, session_key):
+            if ctx.get_parameter_source(param_name) == ParameterSource.COMMANDLINE:
+                return inner_value
+            return session.get(session_key)
+
+        ini_file = pick("ini_file", ini_file, "ini_file")
+        profile_name = pick("profile_name", profile_name, "profile_name")
+        output = pick("output", output, "output")
+        color = pick("color", color, "use_color")
+        cache = pick("cache", cache, "use_cache")
+        log_level = pick("log_level", log_level, "log_level")
 
     ctx.obj = {
         "cli": _get_cli(
@@ -1330,7 +1358,7 @@ def init_command(ctx):
     cls=HelpColorsCommand,
     help_options_color='blue'
 )
-@click.option('--name', '-n', type=str, help="Name of secret", default='ksm-config')
+@click.option('--name', '-n', type=str, help="Name of secret", default='ksm-config', callback=validate_k8s_name)
 @click.option('--namespace', '--ns', type=str, help="Namespace", default='default')
 @click.option('--hostname', '-h', type=str, help="Hostname of secrets manager server.")
 @click.option('--apply', '-a', is_flag=True, help='Apply to k8s secrets.')
@@ -1404,6 +1432,53 @@ def version_command(ctx):
         pass
 
 
+def _stdout_can_encode(text):
+    """True when the active stdout encoding can represent every character in text."""
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        text.encode(encoding)
+    except (UnicodeEncodeError, LookupError):
+        return False
+    return True
+
+
+@contextlib.contextmanager
+def _windows_safe_shlex():
+    """Patch click_repl's shlex tokenizer on Windows so backslash paths survive.
+
+    click_repl 0.2.0 calls shlex.split() in POSIX mode, where backslash is an
+    escape character. A Windows path like C:\\dir\\file.ini becomes C:dirfile.ini
+    before click ever sees it. This context manager replaces click_repl's shlex
+    reference for the duration of the shell REPL with a tokenizer that treats
+    backslashes as literal characters and still strips quotes in the normal way.
+    Non-Windows platforms are unaffected.
+    """
+    import click_repl as _cr
+    import shlex as _shlex
+
+    if sys.platform != 'win32':
+        yield
+        return
+
+    def _win_split(s, comments=False, posix=True):
+        lex = _shlex.shlex(s, posix=True)
+        lex.escape = ''
+        if not comments:
+            lex.commenters = ''
+        lex.whitespace_split = True
+        return list(lex)
+
+    _orig = _cr.shlex
+    _cr.shlex = type('_WinShlex', (), {
+        'split': staticmethod(_win_split),
+        '__getattr__': lambda self, name: getattr(_shlex, name),
+    })()
+    try:
+        yield
+    finally:
+        _cr.shlex = _orig
+
+
 @click.command(
     name='shell',
     cls=HelpColorsCommand,
@@ -1426,17 +1501,23 @@ def shell_command(app):
 █████╔╝ ███████╗██╔████╔██║    ██║     ██║     ██║
 ██╔═██╗ ╚════██║██║╚██╔╝██║    ██║     ██║     ██║
 ██║  ██╗███████║██║ ╚═╝ ██║    ╚██████╗███████╗██║
-╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝     ╚═════╝╚══════╝╚═╝                                                                          
+╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝     ╚═════╝╚══════╝╚═╝
     """
-    print(Fore.BLUE + logo + Style.RESET_ALL)
+    if _stdout_can_encode(logo) is False:
+        # stdout cannot represent the box-drawing characters (e.g. the cp1252
+        # 'charmap' codec when output is piped or redirected on Windows); fall
+        # back to plain text so the shell still starts.
+        logo = "\nKeeper Secrets Manager CLI\n"
+    click.echo(click.style(logo, fg="blue"))
 
     versions = get_versions()
 
-    print(Fore.CYAN + "Current Version: " + Fore.GREEN + versions.get("keeper-secrets-manager-cli", "") + Style.RESET_ALL)
+    click.echo(click.style("Current Version: ", fg="cyan") +
+               click.style(versions.get("keeper-secrets-manager-cli", ""), fg="green"))
     try:
         update = update_available("keeper-secrets-manager-cli", versions)
         if update is not None:
-            print(Fore.YELLOW + "Version {} is available.".format(update.available_version) + Style.RESET_ALL)
+            click.echo(click.style("Version {} is available.".format(update.available_version), fg="yellow"))
     except (Exception,):
         # A failed update check must never block the shell from starting.
         pass
@@ -1444,9 +1525,10 @@ def shell_command(app):
     print("\nRunning in shell mode. Type 'quit' to exit.\n")
 
     KsmCliException.in_a_shell = True
-    repl(click.get_current_context(), prompt_kwargs={
-        "message": u'\nKSM Shell (? for help) > '
-    })
+    with _windows_safe_shlex():
+        repl(click.get_current_context(), prompt_kwargs={
+            "message": u'\nKSM Shell (? for help) > '
+        })
 
 
 @click.command(
@@ -1488,9 +1570,10 @@ def help_command(ctx):
 @click.option('--record', '-r', 'records', type=str, multiple=True, metavar="<TITLE_OR_UID>...", help='Record title or UID to sync (only for type=aws).')
 @click.option('--folder', '-f', 'folders', type=str, multiple=True, metavar="<FOLDER>...", help='Folder UID, path, or title to sync all records from (only for type=aws).')
 @click.option('--folder-recursive', '-fr', 'folders_recursive', type=str, multiple=True, metavar="<FOLDER>...", help='Folder UID, path, or title to sync all records from recursively (only for type=aws).')
+@click.option('--prefix', '-px', 'prefix', type=str, default=None, metavar="<PREFIX>", help='Prefix prepended to every AWS secret name derived from a record title (required with --record/-r, --folder/-f, or --folder-recursive/-fr). Use a trailing slash to create a path namespace, e.g. keeper/.')
 @click.option('--raw-json', '-rj', is_flag=True, help='Store full JSON in KMS secret (only for type=aws).')
 @click.pass_context
-def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, records, folders, folders_recursive, raw_json):
+def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, records, folders, folders_recursive, prefix, raw_json):
     """Sync selected keys from Keeper vault to secure cloud based key value store"""
 
     # Validation for AWS only options (unless type=json)
@@ -1504,8 +1587,19 @@ def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, r
         if folders_recursive and sync_type != 'aws':
             raise KsmCliException("--folder-recursive/-fr option is only supported with type=aws")
 
+        if (records or folders or folders_recursive) and sync_type == 'aws' and not prefix:
+            raise KsmCliException(
+                "--prefix/-px is required when using --record/-r, --folder/-f, or --folder-recursive/-fr with --type aws. "
+                "Provide a prefix to namespace the derived AWS secret names (e.g. --prefix keeper/)."
+            )
+        if prefix and prefix[-1].isalnum():
+            raise KsmCliException(
+                f"--prefix must end with a separator character (e.g. keeper/ or myapp-), got '{prefix}'. "
+                "Without a separator the prefix runs directly into the record title with no delimiter."
+            )
+
         if raw_json and sync_type != 'aws':
-            print(Fore.YELLOW + "Warning: --raw-json/-rj flag is only supported with type=aws, ignoring..." + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Warning: --raw-json/-rj flag is only supported with type=aws, ignoring...", fg="yellow"), file=sys.stderr)
             raw_json = False
 
     # Validate that required options are provided based on type
@@ -1517,7 +1611,7 @@ def sync_command(ctx, credentials, sync_type, dry_run, preserve_missing, maps, r
             raise KsmCliException(f"For type={sync_type}, --map/-m must be provided")
 
     sync = Sync(cli=ctx.obj["cli"])
-    sync.sync_values(sync_type=sync_type, credentials=credentials, dry_run=dry_run, preserve_missing=preserve_missing, maps=maps, records=records, folders=folders, folders_recursive=folders_recursive, raw_json=raw_json)
+    sync.sync_values(sync_type=sync_type, credentials=credentials, dry_run=dry_run, preserve_missing=preserve_missing, maps=maps, records=records, folders=folders, folders_recursive=folders_recursive, prefix=prefix, raw_json=raw_json)
 
 
 # TOP LEVEL COMMANDS
@@ -1537,15 +1631,17 @@ cli.add_command(help_command)
 
 def main():
     try:
-        # This init colors for Windows. CMD looks great. PS has no yellow :(
-        init()
-
         program_name = "ksm"
         # If we are running in the shell mode, there is no program name for the usage. Blank it out.
         if "shell" in sys.argv:
             program_name = ""
 
-        cli(obj={"cli": None}, prog_name=program_name)
+        # KSM-1186: on Windows, click >= 8.0 expands every command-line argument
+        # before parsing (os.path.expanduser, then os.path.expandvars — which
+        # expands %VAR%/$VAR and collapses $$ to $ — then glob), so secret
+        # values passed as arguments were silently corrupted before storage.
+        # Secret values are not shell globs; disable the expansion.
+        cli(obj={"cli": None}, prog_name=program_name, windows_expand_args=False)
     except Exception as err:
         # Set KSM_DEBUG to get a stack trace. Secret env var.
         if os.environ.get("KSM_DEBUG") is not None:

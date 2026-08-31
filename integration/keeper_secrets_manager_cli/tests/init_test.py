@@ -1,6 +1,7 @@
 import base64
 import os
 import unittest
+from contextlib import contextmanager
 from unittest.mock import patch
 import yaml
 from conftest import CliRunner
@@ -106,11 +107,76 @@ class InitTest(unittest.TestCase):
         """ Test initializing the profile
         """
 
+        with self._patched_cli():
+            token = "US:MY_TOKEN"
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                'init ', 'k8s', token,
+                '--name', 'mine',
+                '--namespace', 'my_ns'
+            ], catch_exceptions=False)
+        self.assertEqual(0, result.exit_code, "did not get a success for default init")
+
+        fh = StringIO(result.output)
+
+        # This is horrible. CLI can't use yaml
+        script = yaml.safe_load(fh)
+
+        json_config = base64.b64decode(script['data']['config'])
+        config = json.loads(json_config.decode())
+
+        self.assertEqual("v1", script.get("apiVersion"), "missing the api version")
+        self.assertIsNotNone(script.get("data"), "missing the data")
+        self.assertEqual("Secret", script.get("kind"), "missing the kind")
+        self.assertIsNotNone(script.get("metadata"), "missing the meta data")
+        self.assertEqual("Opaque", script.get("type"), "missing the kind")
+
+        metadata = script.get("metadata")
+        self.assertEqual("mine", metadata.get("name"), "missing the kind")
+        self.assertEqual("my_ns", metadata.get("namespace"), "missing the kind")
+
+        self.assertIsNotNone(config.get("clientId"), "client id is missing")
+        self.assertIsNotNone(config.get("privateKey"), "private key is missing")
+        self.assertIsNotNone(config.get("appKey"), "app key is missing")
+        self.assertIsNotNone(config.get("hostname"), "hostname is missing")
+        self.assertEqual("keepersecurity.com", config.get("hostname"), "hostname is not correct")
+
+    def test_k8s_name_injection_is_neutralized(self):
+
+        """A newline in --namespace cannot inject manifest content.
+
+        --name is rejected outright by RFC 1123 validation, so only --namespace
+        still reaches the serializer with arbitrary content.
+        """
+
+        with self._patched_cli():
+            token = "US:MY_TOKEN"
+            malicious_ns = "evil\nns-injected: pwned"
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                'init ', 'k8s', token,
+                '--name', 'mine',
+                '--namespace', malicious_ns,
+                '--immutable'
+            ], catch_exceptions=False)
+        self.assertEqual(0, result.exit_code, "k8s init did not succeed")
+
+        script = yaml.safe_load(StringIO(result.output))
+        # The injected key must not appear as manifest content, neither at
+        # the top level nor inside metadata.
+        self.assertNotIn("ns-injected", script)
+        self.assertEqual({"name", "namespace"}, set(script["metadata"]))
+        # The malicious value is preserved verbatim as a single scalar.
+        self.assertEqual(malicious_ns, script["metadata"]["namespace"])
+        self.assertEqual("Secret", script.get("kind"))
+        self.assertIs(script.get("immutable"), True)
+
+    @contextmanager
+    def _patched_cli(self):
+
+        """Patch the client entry points and subprocess.run so the CLI never hits the network or a real kubectl."""
+
         mock_config = MockConfig.make_config()
-
-        secrets_manager = SecretsManager(config=InMemoryKeyValueStorage(mock_config))
-
-        # We kind of need to mock getting back the app key
         init_config = InMemoryKeyValueStorage()
         init_secrets_manager = SecretsManager(
             config=init_config,
@@ -122,53 +188,139 @@ class InitTest(unittest.TestCase):
 
         res = mock.Response()
         res.add_record(title="My Record 1")
+        mock.ResponseQueue(client=init_secrets_manager).add_response(res)
 
-        queue = mock.ResponseQueue(client=secrets_manager)
-        queue.add_response(res)
-        queue.add_response(res)
+        with patch('keeper_secrets_manager_cli.init.Init.get_client', return_value=init_secrets_manager), \
+                patch('keeper_secrets_manager_cli.init.Init.init_config', return_value=init_config), \
+                patch('keeper_secrets_manager_cli.init.subprocess.run') as mock_run:
+            yield mock_run
 
-        init_queue = mock.ResponseQueue(client=init_secrets_manager)
-        init_queue.add_response(res)
-        init_queue.add_response(res)
+    def test_k8s_apply_rejects_dash_name(self):
 
-        with patch('keeper_secrets_manager_cli.KeeperCli.get_client') as mock_client:
-            mock_client.return_value = secrets_manager
-            with patch('keeper_secrets_manager_cli.init.Init.get_client') as mock_init_client:
-                mock_init_client.return_value = init_secrets_manager
-                with patch('keeper_secrets_manager_cli.init.Init.init_config') as mock_init_config:
-                    mock_init_config.return_value = init_config
+        """A --name that kubectl would read as one of its own flags is rejected."""
 
-                    token = "US:MY_TOKEN"
+        with self._patched_cli() as mock_run:
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                'init ', 'k8s', '--apply',
+                '--name', '--kubeconfig=/tmp/x',
+                'FAKE_TOKEN'
+            ], catch_exceptions=False)
+
+        self.assertNotEqual(0, result.exit_code, "a flag-shaped name was accepted")
+        self.assertIn("must consist of lowercase alphanumeric", result.output)
+        mock_run.assert_not_called()
+
+    def test_k8s_apply_valid_name(self):
+
+        """A valid --name reaches kubectl as the NAME positional, not as a flag."""
+
+        with self._patched_cli() as mock_run:
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                'init ', 'k8s', '--apply',
+                '--name', 'my-secret',
+                'FAKE_TOKEN'
+            ], catch_exceptions=False)
+
+        self.assertEqual(0, result.exit_code, result.output)
+        mock_run.assert_called_once()
+
+        argv = mock_run.call_args[0][0]
+        self.assertEqual(["kubectl", "create", "secret", "generic"], argv[:4])
+        # kubectl reads NAME as the only positional, so it has to be its own argv
+        # element and it must not be flag-shaped.
+        self.assertEqual("my-secret", argv[4])
+        self.assertFalse(argv[4].startswith("-"))
+
+    def test_k8s_rejects_invalid_names(self):
+
+        """RFC 1123 validation covers the manifest branch too, not just --apply."""
+
+        for invalid_name, desc in [
+            ('MySecret', 'uppercase'),
+            ('-leading-dash', 'leading dash'),
+            ('trailing-dash-', 'trailing dash'),
+            ('evil\ninjected: pwned', 'newline'),
+            ('under_score', 'underscore'),
+            ('a' * 254, '254 characters'),
+            ('my-secret\n', 'trailing newline only'),
+        ]:
+            with self.subTest(name=desc):
+                with self._patched_cli():
                     runner = CliRunner()
                     result = runner.invoke(cli, [
-                        'init ', 'k8s', token,
-                        '--name', 'mine',
-                        '--namespace', 'my_ns'
+                        'init ', 'k8s',
+                        '--name', invalid_name,
+                        'FAKE_TOKEN'
                     ], catch_exceptions=False)
-                    self.assertEqual(0, result.exit_code, "did not get a success for default init")
 
-                    fh = StringIO(result.output)
+                self.assertNotEqual(0, result.exit_code, "expected failure for {}".format(desc))
+                self.assertIn("must consist of lowercase alphanumeric", result.output,
+                              "expected validation error for {}".format(desc))
 
-                    # This is horrible. CLI can't use yaml
-                    script = yaml.load(fh, yaml.Loader)
+    def test_k8s_apply_accepts_dotted_name(self):
 
-                    json_config = base64.b64decode(script['data']['config'])
-                    config = json.loads(json_config.decode())
+        """Kubernetes Secret names follow the RFC 1123 subdomain rule, which permits dots."""
 
-                    self.assertEqual("v1", script.get("apiVersion"), "missing the api version")
-                    self.assertIsNotNone(script.get("data"), "missing the data")
-                    self.assertEqual("Secret", script.get("kind"), "missing the kind")
-                    self.assertIsNotNone(script.get("metadata"), "missing the meta data")
-                    self.assertEqual("Opaque", script.get("type"), "missing the kind")
+        with self._patched_cli() as mock_run:
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                'init ', 'k8s', '--apply',
+                '--name', 'tls.example.com',
+                'FAKE_TOKEN'
+            ], catch_exceptions=False)
 
-                    metadata = script.get("metadata")
-                    self.assertEqual("mine", metadata.get("name"), "missing the kind")
-                    self.assertEqual("my_ns", metadata.get("namespace"), "missing the kind")
+        self.assertEqual(0, result.exit_code, result.output)
+        argv = mock_run.call_args[0][0]
+        self.assertEqual("tls.example.com", argv[4])
 
-                    self.assertIsNotNone(config.get("clientId"), "client id is missing")
-                    self.assertIsNotNone(config.get("privateKey"), "private key is missing")
-                    self.assertIsNotNone(config.get("appKey"), "app key is missing")
-                    self.assertIsNotNone(config.get("hostname"), "hostname is missing")
-                    self.assertEqual("keepersecurity.com", config.get("hostname"), "hostname is not correct")
-                    self.assertEqual(mock_config.get("appKey"), config.get("appKey"),
-                                     "app key is not correct")
+    def test_k8s_name_length_boundary(self):
+
+        """253 characters is the RFC 1123 subdomain limit; 254 is already covered as invalid."""
+
+        with self._patched_cli() as mock_run:
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                'init ', 'k8s', '--apply',
+                '--name', 'a' * 253,
+                'FAKE_TOKEN'
+            ], catch_exceptions=False)
+
+        self.assertEqual(0, result.exit_code, result.output)
+        argv = mock_run.call_args[0][0]
+        self.assertEqual('a' * 253, argv[4])
+
+    def test_k8s_invalid_name_does_not_redeem_token(self):
+
+        """An invalid --name is rejected before Init redeems the one-time token."""
+
+        with patch('keeper_secrets_manager_cli.init.Init.__init__', return_value=None) as mock_init:
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                'init ', 'k8s',
+                '--name', 'MySecret',
+                'FAKE_TOKEN'
+            ], catch_exceptions=False)
+
+        self.assertNotEqual(0, result.exit_code)
+        mock_init.assert_not_called()
+
+    def test_k8s_manifest_quotes_yaml_ambiguous_names(self):
+
+        """Names legal in Kubernetes but ambiguous in YAML 1.1 (y, 1e5, ...) must be quoted,
+        or kubectl's stricter parser misreads them as bool/number instead of string.
+        """
+
+        with self._patched_cli():
+            runner = CliRunner()
+            result = runner.invoke(cli, [
+                'init ', 'k8s',
+                '--name', 'y',
+                '--namespace', '1e5',
+                'FAKE_TOKEN'
+            ], catch_exceptions=False)
+
+        self.assertEqual(0, result.exit_code, result.output)
+        self.assertIn("name: 'y'", result.output)
+        self.assertIn("namespace: '1e5'", result.output)

@@ -13,7 +13,7 @@
 import json
 import sys
 from typing import List, Tuple
-from colorama import Fore, Style
+import click
 from keeper_secrets_manager_core.core import CreateOptions, KeeperFolder
 from keeper_secrets_manager_cli.exception import KsmCliException
 from .table import Table
@@ -25,9 +25,9 @@ class Folder:
         self.cli = cli
 
     @staticmethod
-    def _color_it(value, color=Style.RESET_ALL, use_color=True):
-        if use_color is True:
-            value = color + value + Style.RESET_ALL
+    def _color_it(value, color=None, use_color=True):
+        if use_color is True and color is not None:
+            value = click.style(value, fg=color)
         return value
 
     @staticmethod
@@ -106,10 +106,10 @@ class Folder:
                 self.cli.output(json.dumps(items, indent=4))
             else:  # output_format == 'text'
                 table = Table(use_color=use_color)
-                table.add_column("Type", data_color=Fore.GREEN)
-                table.add_column("Parent", data_color=Fore.YELLOW)
-                table.add_column("UID", data_color=Fore.YELLOW)
-                table.add_column("Title", data_color=Fore.GREEN, allow_wrap=True)
+                table.add_column("Type", data_color="green")
+                table.add_column("Parent", data_color="yellow")
+                table.add_column("UID", data_color="yellow")
+                table.add_column("Title", data_color="green", allow_wrap=True)
                 for x in items:
                     table.add_row([x["type"], x["parent_uid"], x["uid"], x["title"]])
                 self.cli.output(f"\n{table.get_string()}\n")
@@ -153,9 +153,9 @@ class Folder:
                 self.cli.output(json.dumps(output, indent=4))
             else:  # output_format == 'text'
                 table = Table(use_color=use_color)
-                table.add_column("UID", data_color=Fore.GREEN)
-                table.add_column("Response Code", data_color=Fore.YELLOW)
-                table.add_column("Error", data_color=Fore.RED, allow_wrap=True)
+                table.add_column("UID", data_color="green")
+                table.add_column("Response Code", data_color="yellow")
+                table.add_column("Error", data_color="red", allow_wrap=True)
                 for x in output:
                     table.add_row([x["uid"], x["responseCode"], x["error"]])
                 self.cli.output(f"\n{table.get_string()}\n")

@@ -16,7 +16,8 @@ import logging
 import re
 import sys
 import urllib.parse
-from colorama import Fore, Style
+from typing import Optional
+import click
 from keeper_secrets_manager_cli.exception import KsmCliException
 from keeper_secrets_manager_core.keeper_globals import logger_name
 
@@ -739,7 +740,7 @@ class Sync:
         # Check for ARN suffix behavior
         # if secret name ends with hyphen + 6 chars, it may cause AWS confusion
         if re.match(r'.*-[A-Za-z0-9]{6}$', name):
-            print(Fore.YELLOW + f"Warning: KMS Secret name '{name}' ends with hyphen + 6 chars - may cause ARN confusion" + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style(f"Warning: KMS Secret name '{name}' ends with hyphen + 6 chars - may cause ARN confusion", fg="yellow"), file=sys.stderr)
 
         # Check length (1-512 characters)
         if not(1 <= len(name) <= 512):
@@ -748,6 +749,48 @@ class Sync:
         # Return converted name and aggregated error message
         error_msg = "; ".join(errors) if errors else None
         return name, error_msg
+
+    def _dst_status(self, current_value, src_value):
+        """Dry-run destination fields for a mapping, without exposing the live value.
+
+        current_value is what is stored at the destination now (or None); src_value is
+        what would be written. Returns only existence and difference, so a dry run cannot
+        be used to read a secret out of the sync output.
+        """
+        return {
+            "dstValue": None,
+            "dstExists": current_value is not None,
+            "dstDiffers": (current_value != src_value) if current_value is not None else None,
+        }
+
+    def _validate_azure_secret_name(self, name):
+        """Return an error message if name is not a valid Azure Key Vault secret name, else None.
+
+        Azure Key Vault object names (secrets) permit only alphanumeric characters and
+        dashes, 1 to 127 characters, with no restriction on the first character or on
+        hyphen placement; the leading-letter and no-consecutive-hyphen rules apply to
+        vault names, not secret names. The Key Vault REST spec validates SetSecret
+        names with the pattern ^[0-9a-zA-Z-]+$. See
+        https://learn.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates
+        """
+        if not name or not re.match(r'^[0-9A-Za-z-]{1,127}$', name):
+            return "Azure Key Vault secret names may contain only alphanumeric characters and dashes (1 to 127 characters)"
+        return None
+
+    def _validate_gcp_secret_name(self, name):
+        """Return an error message if name is not a valid GCP Secret Manager secret id, else None.
+
+        GCP secret ids permit letters, digits, '-' and '_', 1 to 255 characters.
+        """
+        if not name or not re.match(r'^[0-9A-Za-z_-]{1,255}$', name):
+            return "GCP Secret Manager secret ids may contain only letters, digits, '-' and '_' (1 to 255 characters)"
+        return None
+
+    def _sanitize_title_for_prefix(self, title):
+        title = title.lstrip("/")
+        if ".." in title.split("/"):
+            return title, "title contains '..' path segment, which is not allowed with --prefix"
+        return title, None
 
     def _resolve_records(self, record_tokens):
         """Resolve record tokens to actual records"""
@@ -760,7 +803,7 @@ class Sync:
             duplicates = [token for token in record_tokens if record_tokens.count(token) > 1]
             unique_duplicates = list(set(duplicates))
             self.log.append(f"Duplicate records found and removed: {unique_duplicates}")
-            print(Fore.YELLOW + f"Warning: Duplicate records found and removed: {unique_duplicates}" + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style(f"Warning: Duplicate records found and removed: {unique_duplicates}", fg="yellow"), file=sys.stderr)
 
         # Get all secrets to resolve by UID or title
         all_secrets = self.cli.client.get_secrets()
@@ -789,7 +832,16 @@ class Sync:
                 match_info = [f"{m.title} (UID: {m.uid})" for m in matches]
                 resolution_errors.append(f"Multiple records found matching '{token}': {match_info}")
             else:
-                resolved_records.append(matches[0])
+                matched = matches[0]
+                # A title is mutable and settable by any shared-folder collaborator, so
+                # note when a token resolved by title rather than by UID. Prefer UIDs for
+                # scheduled syncs.
+                if matched.uid != token:
+                    msg = (f"record '{token}' resolved by title to UID {matched.uid}; "
+                           "titles are mutable, prefer the record UID for scheduled syncs")
+                    self.log.append("Warning: " + msg)
+                    click.echo(click.style("Warning: " + msg, fg="yellow"), file=sys.stderr)
+                resolved_records.append(matched)
 
         if resolution_errors:
             error_message = "Record resolution errors:\n"
@@ -804,7 +856,7 @@ class Sync:
         if len(unique_uids) != len(uids):
             duplicate_uids = [uid for uid in unique_uids if uids.count(uid) > 1]
             self.log.append(f"Duplicate UIDs found in resolved records - removed duplicates: {duplicate_uids}")
-            print(Fore.YELLOW + f"Warning: Duplicate UIDs found in resolved records - removed duplicates: {duplicate_uids}" + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style(f"Warning: Duplicate UIDs found in resolved records - removed duplicates: {duplicate_uids}", fg="yellow"), file=sys.stderr)
             # Remove duplicates
             seen = set()
             resolved_records = [record for record in resolved_records if not (record.uid in seen or seen.add(record.uid))]
@@ -867,7 +919,7 @@ class Sync:
             duplicates = [token for token in folder_tokens if folder_tokens.count(token) > 1]
             unique_duplicates = list(set(duplicates))
             self.log.append(f"Duplicate folder tokens found and removed: {unique_duplicates}")
-            print(Fore.YELLOW + f"Warning: Duplicate folder tokens found and removed: {unique_duplicates}" + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style(f"Warning: Duplicate folder tokens found and removed: {unique_duplicates}", fg="yellow"), file=sys.stderr)
 
         # Get all folders from the client
         try:
@@ -922,7 +974,15 @@ class Sync:
                     match_info.append(f"{name} (UID: {m.folder_uid}, Path: {path})")
                 resolution_errors.append(f"Multiple folders found matching '{token}': {match_info}")
             else:
-                resolved_folders.append(matches[0])
+                matched = matches[0]
+                # Folder names and paths are mutable; note when a token resolved by name
+                # or path rather than by UID. Prefer folder UIDs for scheduled syncs.
+                if matched.folder_uid != token:
+                    msg = (f"folder '{token}' resolved by name or path to UID {matched.folder_uid}; "
+                           "names and paths are mutable, prefer the folder UID for scheduled syncs")
+                    self.log.append("Warning: " + msg)
+                    click.echo(click.style("Warning: " + msg, fg="yellow"), file=sys.stderr)
+                resolved_folders.append(matched)
 
         if resolution_errors:
             error_message = "Folder resolution errors:\n"
@@ -936,7 +996,7 @@ class Sync:
         if len(unique_folder_uids) != len(folder_uids):
             duplicate_uids = [uid for uid in unique_folder_uids if folder_uids.count(uid) > 1]
             self.log.append(f"Duplicate folder UIDs found - removed duplicates: {duplicate_uids}")
-            print(Fore.YELLOW + f"Warning: Duplicate folder UIDs found - removed duplicates: {duplicate_uids}" + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style(f"Warning: Duplicate folder UIDs found - removed duplicates: {duplicate_uids}", fg="yellow"), file=sys.stderr)
             # Remove duplicates
             seen = set()
             resolved_folders = [folder for folder in resolved_folders if not (folder.folder_uid in seen or seen.add(folder.folder_uid))]
@@ -1037,7 +1097,7 @@ class Sync:
                 unique_duplicates = list(set(duplicate_keys))
                 record_title = record.title if hasattr(record, 'title') else 'Unknown'
                 self.log.append(f"Duplicate keys found in record '{record_title}': {unique_duplicates} - added suffixes")
-                print(Fore.YELLOW + f"Warning: Duplicate keys found in record '{record_title}': {unique_duplicates} - added suffixes (:2, :3, etc.)" + Style.RESET_ALL, file=sys.stderr)
+                click.echo(click.style(f"Warning: Duplicate keys found in record '{record_title}': {unique_duplicates} - added suffixes (:2, :3, etc.)", fg="yellow"), file=sys.stderr)
 
             # Return the dictionary (not JSON string) for AWS JSON format
             return flattened
@@ -1155,7 +1215,7 @@ class Sync:
         # Return True if we have JSON format keys
         return bool(json_format_kms_keys)
 
-    def _process_aws_records_and_folders(self, result, records, folders, folders_recursive, raw_json, maps):
+    def _process_aws_records_and_folders(self, result, records, folders, folders_recursive, raw_json, maps, prefix=""):
         """Process AWS-specific --record, --folder, and --folder-recursive options and update result list"""
         # Handle record option for AWS
         if records:
@@ -1166,12 +1226,13 @@ class Sync:
             validated_records = []  # List of (record_obj, secret_name)
 
             for record_obj in resolved_records:
-                # Validate record title for AWS compatibility
-                secret_name, error_msg = self._validate_aws_secret_name(record_obj.title)
-
+                safe_title, sanitize_error = self._sanitize_title_for_prefix(record_obj.title)
+                if sanitize_error:
+                    validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}): {sanitize_error}")
+                    continue
+                secret_name, error_msg = self._validate_aws_secret_name(prefix + safe_title)
                 if error_msg:
                     validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}): {error_msg}")
-
                 validated_records.append((record_obj, secret_name))
 
             # If there are validation errors, display them all at once
@@ -1331,7 +1392,7 @@ class Sync:
                 unique_warnings = list(set(overlap_warnings))
                 for warning in unique_warnings:
                     self.log.append(warning)
-                    print(Fore.YELLOW + f"Warning: {warning}" + Style.RESET_ALL, file=sys.stderr)
+                    click.echo(click.style(f"Warning: {warning}", fg="yellow"), file=sys.stderr)
 
             # Remove overlapping folders
             overlaps_to_remove = set(overlaps_to_remove)
@@ -1428,7 +1489,7 @@ class Sync:
 
             except Exception as e:
                 self.log.append(f"Warning: Failed to retrieve records from folders: {str(e)}")
-                print(Fore.YELLOW + f"Warning: Failed to retrieve records from folders: {str(e)}" + Style.RESET_ALL, file=sys.stderr)
+                click.echo(click.style(f"Warning: Failed to retrieve records from folders: {str(e)}", fg="yellow"), file=sys.stderr)
 
         # Remove duplicate records by UID (keep first occurrence with its metadata)
         seen_folder_record_uids = set()
@@ -1463,7 +1524,7 @@ class Sync:
 
                 warning_msg = f"Records found in both --record and --folder/--folder-recursive: {', '.join(overlap_details)} - will keep only one copy"
                 self.log.append(warning_msg)
-                print(Fore.YELLOW + f"Warning: {warning_msg}" + Style.RESET_ALL, file=sys.stderr)
+                click.echo(click.style(f"Warning: {warning_msg}", fg="yellow"), file=sys.stderr)
 
         # Process folder records
         if unique_folder_records_with_metadata:
@@ -1473,14 +1534,14 @@ class Sync:
 
             for rec_tuple in unique_folder_records_with_metadata:
                 record_obj, source_folder_uid, is_recursive = rec_tuple
-
-                # Validate record title for AWS compatibility
-                secret_name, error_msg = self._validate_aws_secret_name(record_obj.title)
-
+                folder_type = "-fr" if is_recursive else "-f"
+                safe_title, sanitize_error = self._sanitize_title_for_prefix(record_obj.title)
+                if sanitize_error:
+                    validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}) from {folder_type} {source_folder_uid}: {sanitize_error}")
+                    continue
+                secret_name, error_msg = self._validate_aws_secret_name(prefix + safe_title)
                 if error_msg:
-                    folder_type = "-fr" if is_recursive else "-f"
                     validation_errors.append(f"'{record_obj.title}' (UID: {record_obj.uid}) from {folder_type} {source_folder_uid}: {error_msg}")
-
                 validated_folder_records.append((record_obj, secret_name, source_folder_uid, is_recursive))
 
             # If there are validation errors, display them all at once
@@ -1549,7 +1610,7 @@ class Sync:
                 if overlapping:
                     raise KsmCliException(f"Duplicate keys found between --map/--record and --folder/--folder-recursive: {', '.join(overlapping)}")
 
-    def sync_values(self, sync_type:str, credentials:str="", dry_run=False, preserve_missing=False, maps=None, records=None, folders=None, folders_recursive=None, raw_json=False):
+    def sync_values(self, sync_type:str, credentials:str="", dry_run=False, preserve_missing=False, maps=None, records=None, folders=None, folders_recursive=None, prefix=None, raw_json=False):
         maps = maps or []
         result = []
 
@@ -1614,8 +1675,8 @@ class Sync:
         # Process AWS-specific options (records, folders) before type-specific processing
         if (sync_type == 'aws' or sync_type == 'json') and (records or folders or folders_recursive):
             if sync_type == 'json':
-                print(Fore.YELLOW + "Warning: --record, --folder, and --folder-recursive options generate JSON format that is only valid for --type=aws" + Style.RESET_ALL, file=sys.stderr)
-            self._process_aws_records_and_folders(result, records, folders, folders_recursive, raw_json, maps)
+                click.echo(click.style("Warning: --record, --folder, and --folder-recursive options generate JSON format that is only valid for --type=aws", fg="yellow"), file=sys.stderr)
+            self._process_aws_records_and_folders(result, records, folders, folders_recursive, raw_json, maps, prefix=prefix or "")
 
         if sync_type == 'json':
             # type=json always outputs the dict structure as-is (no stringification)
@@ -1624,7 +1685,7 @@ class Sync:
             self.sync_azure(credentials, dry_run, preserve_missing, result)
         elif sync_type == 'aws':
             if not result:
-                print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`, `--record TITLE_OR_UID`, `--folder FOLDER`, or `--folder-recursive FOLDER`" + Style.RESET_ALL, file=sys.stderr)
+                click.echo(click.style("Nothing to sync - please provide some values with `--map \"key\" \"value\"`, `--record TITLE_OR_UID`, `--folder FOLDER`, or `--folder-recursive FOLDER`", fg="yellow"), file=sys.stderr)
                 return
 
             secretsmanager = self._get_aws_client(credentials)
@@ -1683,16 +1744,21 @@ class Sync:
             from azure.keyvault.secrets import SecretClient
             from azure.identity import ClientSecretCredential
         except ImportError as ie:
-            print(Fore.RED + "Missing Azure dependencies. To install missing packages run: \r\n" +
-                Fore.YELLOW + "pip3 install azure-identity azure-keyvault-secrets\r\n" + Style.RESET_ALL, file=sys.stderr)
+            if getattr(sys, 'frozen', False):
+                click.echo(click.style(
+                    "Missing Azure dependencies. Re-run the installer and enable the "
+                    "'Cloud Sync' component.\r\n", fg="red"), file=sys.stderr)
+            else:
+                click.echo(click.style("Missing Azure dependencies. To install missing packages run: \r\n", fg="red") +
+                    click.style("pip3 install azure-identity azure-keyvault-secrets\r\n", fg="yellow"), file=sys.stderr)
             raise KsmCliException("Missing Azure Dependencies: " + str(ie))
 
         if not maps or len(maps) == 0:
-            print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`" + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Nothing to sync - please provide some values with `--map \"key\" \"value\"`", fg="yellow"), file=sys.stderr)
             return
 
         if not credentials or not str(credentials).strip():
-            print(Fore.YELLOW + "Missing credentials' record UID - please provide UID with `--credentials <UID>`" + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Missing credentials' record UID - please provide UID with `--credentials <UID>`", fg="yellow"), file=sys.stderr)
             return
 
         credentials = str(credentials).strip()
@@ -1708,13 +1774,13 @@ class Sync:
         client_secret = self._get_secret_field(creds, AZURE_CLIENT_SECRET_LABEL)
 
         if not vault_name:
-            print(Fore.YELLOW + "Missing Vault Name in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Missing Vault Name in credentials record " + credentials, fg="yellow"), file=sys.stderr)
         if not tenant_id:
-            print(Fore.YELLOW + "Missing Tenant Id in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Missing Tenant Id in credentials record " + credentials, fg="yellow"), file=sys.stderr)
         if not client_id:
-            print(Fore.YELLOW + "Missing Client Id in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Missing Client Id in credentials record " + credentials, fg="yellow"), file=sys.stderr)
         if not client_secret:
-            print(Fore.YELLOW + "Missing Client Secret in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Missing Client Secret in credentials record " + credentials, fg="yellow"), file=sys.stderr)
         if not(vault_name and tenant_id and client_id and client_secret):
             raise KsmCliException(f"Cannot find all required credentials in record UID {credentials}.")
 
@@ -1730,7 +1796,9 @@ class Sync:
                 key = m["mapKey"]
                 res = self._get_secret_az(client, key)
                 val = res.get("value", None)
-                m["dstValue"] = val.value if val else None
+                # Never place the live destination value in the output.
+                current = val.value if val else None
+                m.update(self._dst_status(current, m["srcValue"]))
                 if not res.get("not_found", False) and res.get("error", ""):
                     self.log.append(f"Error reading the value from Azure Vault for key={key}")
             self._output(maps)
@@ -1753,6 +1821,11 @@ class Sync:
                                 self.log.append(f"Failed to delete key={key}")
                                 self.logger.error("Failed to delete key=" + key)
                 else:
+                    name_error = self._validate_azure_secret_name(key)
+                    if name_error:
+                        m["error"] = f"Invalid Azure secret name: {name_error}"
+                        self.log.append(f"Invalid Azure secret name for key={key}: {name_error}")
+                        continue
                     res = self._set_secret_az(client, key, val)
                     if res.get("error", ""):
                         m["error"] = "Failed to set new value for the key."
@@ -1765,12 +1838,19 @@ class Sync:
         try:
             import boto3
         except ImportError as ie:
-            print(Fore.RED + "Missing AWS dependencies. Install the [aws] extra with: \r\n" +
-                Fore.YELLOW + "pip install keeper-secrets-manager-cli[aws]\r\n" + Style.RESET_ALL, file=sys.stderr)
+            if getattr(sys, 'frozen', False):
+                click.echo(click.style(
+                    "Missing AWS dependencies. Re-run the installer and enable the "
+                    "'Cloud Sync' component.\r\n", fg="red"), file=sys.stderr)
+            else:
+                # Quote the package name for zsh compatibility.
+                # Unquoted [] is a glob pattern in zsh and causes "no matches found" on copy-paste.
+                click.echo(click.style("Missing AWS dependencies. Install the [aws] extra with: \r\n", fg="red") +
+                    click.style("pip install 'keeper-secrets-manager-cli[aws]'\r\n", fg="yellow"), file=sys.stderr)
             raise KsmCliException("Missing AWS Dependencies: " + str(ie))
 
         if not credentials or not str(credentials).strip():
-            print(Fore.YELLOW + "Missing credentials' record UID - please provide UID with `--credentials <UID>`" + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Missing credentials' record UID - please provide UID with `--credentials <UID>`", fg="yellow"), file=sys.stderr)
             return None
 
         credentials = str(credentials).strip()
@@ -1785,11 +1865,11 @@ class Sync:
         aws_region_name = self._get_secret_field(creds, AWS_REGION_NAME_LABEL)
 
         if not aws_access_key_id:
-            print(Fore.YELLOW + "Missing AWS Access Key in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Missing AWS Access Key in credentials record " + credentials, fg="yellow"), file=sys.stderr)
         if not aws_secret_access_key:
-            print(Fore.YELLOW + "Missing AWS Secret Access Key in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Missing AWS Secret Access Key in credentials record " + credentials, fg="yellow"), file=sys.stderr)
         if not aws_region_name:
-            print(Fore.YELLOW + "Missing AWS Region Name in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Missing AWS Region Name in credentials record " + credentials, fg="yellow"), file=sys.stderr)
         if not(aws_access_key_id and aws_secret_access_key and aws_region_name):
             raise KsmCliException(f"Cannot find all required credentials in record UID {credentials}.")
 
@@ -1801,8 +1881,9 @@ class Sync:
 
         return secretsmanager
 
-    def sync_aws_json_with_client(self, secretsmanager, dry_run=False, preserve_missing=False, maps: list = []):
+    def sync_aws_json_with_client(self, secretsmanager, dry_run=False, preserve_missing=False, maps: Optional[list] = None):
         """Sync to AWS using JSON format with provided client"""
+        maps = maps or []
 
         # Group mappings by KMS key
         kms_groups = {}
@@ -1848,12 +1929,33 @@ class Sync:
 
                 # Show what would be in the JSON
                 for mapping in json_mappings:
+                    mapping["original"]["dstValue"] = None
                     if mapping["json_key"] is None:
-                        # Full JSON content (record-based)
-                        mapping["original"]["dstValue"] = current_value
+                        # Full JSON content (record-based). srcValue is a dict here,
+                        # so compare via JSON serialization the same way the real run does.
+                        mapping["original"]["dstExists"] = current_value is not None
+                        if current_value is None:
+                            mapping["original"]["dstDiffers"] = None
+                        else:
+                            src_value = mapping["srcValue"]
+                            src_json = src_value if isinstance(src_value, dict) else json.loads(src_value)
+                            try:
+                                current_json = json.loads(current_value)
+                                current_cmp = json.dumps(
+                                    {k: v for k, v in current_json.items() if k != "_preserved_plaintext"},
+                                    sort_keys=True, separators=(',', ':'))
+                                src_cmp = json.dumps(
+                                    {k: v for k, v in src_json.items() if k != "_preserved_plaintext"},
+                                    sort_keys=True, separators=(',', ':'))
+                                mapping["original"]["dstDiffers"] = current_cmp != src_cmp
+                            except (json.JSONDecodeError, TypeError, AttributeError):
+                                # Destination holds plaintext; the real run rewrites it, so it differs.
+                                mapping["original"]["dstDiffers"] = True
                     else:
                         # Partial JSON content (map-based)
-                        mapping["original"]["dstValue"] = existing_json.get(mapping["json_key"])
+                        existing_val = existing_json.get(mapping["json_key"])
+                        mapping["original"]["dstExists"] = existing_val is not None
+                        mapping["original"]["dstDiffers"] = (existing_val != mapping["srcValue"]) if existing_val is not None else None
 
                 if not res.get("not_found", False) and res.get("error", ""):
                     for mapping in json_mappings:
@@ -1959,24 +2061,27 @@ class Sync:
 
             self._output(maps, True)
 
-    def sync_aws_json(self, credentials: str = "", dry_run=False, preserve_missing=False, maps: list = []):
+    def sync_aws_json(self, credentials: str = "", dry_run=False, preserve_missing=False, maps: Optional[list] = None):
         """Sync to AWS using JSON format for KMS keys (kms_key+json_key format)"""
         if not maps or len(maps) == 0:
-            print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`" + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Nothing to sync - please provide some values with `--map \"key\" \"value\"`", fg="yellow"), file=sys.stderr)
             return
 
         secretsmanager = self._get_aws_client(credentials)
         if secretsmanager:
             self.sync_aws_json_with_client(secretsmanager, dry_run, preserve_missing, maps)
 
-    def sync_aws_with_client(self, secretsmanager, dry_run=False, preserve_missing=False, maps: list = []):
+    def sync_aws_with_client(self, secretsmanager, dry_run=False, preserve_missing=False, maps: Optional[list] = None):
+        maps = maps or []
 
         if dry_run:
             for m in maps:
                 key = m["mapKey"]
                 res = self._get_secret_aws(secretsmanager, key)
                 val = res.get("value", None)
-                m["dstValue"] = val if val else None
+                m["dstValue"] = None
+                m["dstExists"] = val is not None
+                m["dstDiffers"] = (val != m["srcValue"]) if val is not None else None
                 if not res.get("not_found", False) and res.get("error", ""):
                     m["error"] = "Error reading the value from AWS Secrets Manager."
                     self.log.append(f"Error reading the value from AWS Secrets Manager for key={key}")
@@ -2007,10 +2112,10 @@ class Sync:
                         self.logger.error("Failed to set new value for key=" + key)
             self._output(maps, True)
 
-    def sync_aws(self, credentials: str = "", dry_run=False, preserve_missing=False, maps: list = []):
+    def sync_aws(self, credentials: str = "", dry_run=False, preserve_missing=False, maps: Optional[list] = None):
         """Sync to AWS using plain format"""
         if not maps or len(maps) == 0:
-            print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`" + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Nothing to sync - please provide some values with `--map \"key\" \"value\"`", fg="yellow"), file=sys.stderr)
             return
 
         secretsmanager = self._get_aws_client(credentials)
@@ -2022,16 +2127,21 @@ class Sync:
             from google.cloud import secretmanager
             from google.oauth2 import service_account
         except ImportError as ie:
-            print(Fore.RED + "Missing GCP dependencies. To install missing packages run: \r\n" +
-                Fore.YELLOW + "pip3 install --upgrade google-cloud-secret-manager google-auth\r\n" + Style.RESET_ALL, file=sys.stderr)
+            if getattr(sys, 'frozen', False):
+                click.echo(click.style(
+                    "Missing GCP dependencies. Re-run the installer and enable the "
+                    "'Cloud Sync' component.\r\n", fg="red"), file=sys.stderr)
+            else:
+                click.echo(click.style("Missing GCP dependencies. To install missing packages run: \r\n", fg="red") +
+                    click.style("pip3 install --upgrade google-cloud-secret-manager google-auth\r\n", fg="yellow"), file=sys.stderr)
             raise KsmCliException("Missing GCP Dependencies: " + str(ie))
 
         if not maps or len(maps) == 0:
-            print(Fore.YELLOW + "Nothing to sync - please provide some values with `--map \"key\" \"value\"`" + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Nothing to sync - please provide some values with `--map \"key\" \"value\"`", fg="yellow"), file=sys.stderr)
             return
 
         if not credentials or not str(credentials).strip():
-            print(Fore.YELLOW + "Missing credentials' record UID - please provide UID with `--credentials <UID>`" + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Missing credentials' record UID - please provide UID with `--credentials <UID>`", fg="yellow"), file=sys.stderr)
             return
 
         credentials = str(credentials).strip()
@@ -2045,7 +2155,7 @@ class Sync:
         project_id = self._get_secret_field(creds, GOOGLE_CLOUD_PROJECT_ID_LABEL)
 
         if not project_id:
-            print(Fore.YELLOW + "Missing Project Id in credentials record " + credentials + Style.RESET_ALL, file=sys.stderr)
+            click.echo(click.style("Missing Project Id in credentials record " + credentials, fg="yellow"), file=sys.stderr)
             raise KsmCliException(f"Cannot find all required credentials in record UID {credentials}.")
 
         # If credentials are provided, the corresponding JSON is used first, then it defaults to ADC
@@ -2068,7 +2178,8 @@ class Sync:
                 key = m["mapKey"]
                 res = self._get_secret_gcp(client, project_id, key)
                 val = res.get("value", None)
-                m["dstValue"] = val if val else None
+                # Never place the live destination value in the output.
+                m.update(self._dst_status(val if val else None, m["srcValue"]))
                 if not res.get("not_found", False) and res.get("error", ""):
                     self.log.append(f"Error reading the value from GCP for key={key}")
             self._output(maps)
@@ -2092,6 +2203,11 @@ class Sync:
                                 self.log.append(f"Failed to delete key={key}")
                                 self.logger.error("Failed to delete key=" + key)
                 else:
+                    name_error = self._validate_gcp_secret_name(key)
+                    if name_error:
+                        m["error"] = f"Invalid GCP secret name: {name_error}"
+                        self.log.append(f"Invalid GCP secret name for key={key}: {name_error}")
+                        continue
                     res = self._set_secret_gcp(client, project_id, key, val)
                     if res.get("error", ""):
                         m["error"] = "Failed to set new value for the key."

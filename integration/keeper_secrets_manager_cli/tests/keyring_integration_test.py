@@ -110,7 +110,7 @@ class KeyringIntegrationTest(unittest.TestCase):
         self.assertIsNone(remaining, "Integrity hash entry was not deleted alongside the profile")
 
     def test_profile_name_rejected_before_keyring_write(self):
-        """KSM-829 regression: invalid profile names raise KsmCliException without touching keyring."""
+        """Invalid profile names raise KsmCliException without touching keyring."""
         from keeper_secrets_manager_cli.exception import KsmCliException
         import keyring as _keyring
 

@@ -11,7 +11,6 @@
 #
 
 import click
-from colorama import Fore, Style
 
 
 class KsmCliException(click.ClickException):
@@ -22,7 +21,7 @@ class KsmCliException(click.ClickException):
         if KsmCliException.in_a_shell is False:
             return str(self.message)
         else:
-            return Fore.RED + str(self.message) + Style.RESET_ALL
+            return click.style(str(self.message), fg="red")
 
     def format_message(self):
         return self.colorize()
@@ -39,6 +38,12 @@ class KsmCliIntegrityException(KsmCliException):
     should surface a recovery hint directing the user to
     ``ksm profile delete`` and re-initialize.
     """
+
+
+class KsmCliKeyringLockedException(KsmCliException):
+    """Raised when the OS keyring is reachable but locked and cannot be
+    unlocked without an interactive session (e.g. gnome-keyring over SSH
+    with no display server available)."""
 
 
 class KsmRecordSyntaxException:
