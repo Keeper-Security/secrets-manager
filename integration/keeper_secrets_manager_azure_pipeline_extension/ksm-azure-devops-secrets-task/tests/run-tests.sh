@@ -53,7 +53,7 @@ else
 
     # Run the tests in the Docker container
     echo "Running tests in Docker container..."
-    DOCKER_DEFAULT_PLATFORM=linux/amd64 docker run --rm -v $(pwd)/.env:/app/.env keeper-secrets-test
+    DOCKER_DEFAULT_PLATFORM=linux/amd64 docker run --rm -v "$(pwd)/.env:/app/.env" keeper-secrets-test
 
     # Capture the exit code of the Docker run command
     EXIT_CODE=$?

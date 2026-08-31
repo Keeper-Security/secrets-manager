@@ -125,9 +125,9 @@ options[:tests].each do |test_key|
 
     # Run test in subprocess to isolate failures
     if options[:verbose]
-      system("ruby -I ../../lib #{test_file}")
+      system('ruby', '-I', '../../lib', test_file)
     else
-      output = `ruby -I ../../lib #{test_file} 2>&1`
+      output = IO.popen(['ruby', '-I', '../../lib', test_file], err: [:child, :out], &:read)
 
       # Show summary
       if $?.success?
