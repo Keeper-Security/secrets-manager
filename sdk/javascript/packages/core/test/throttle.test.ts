@@ -109,6 +109,19 @@ describe('throttle retry (e2e via getSecrets)', () => {
         expect(sleeps.length).toBe(1)
     })
 
+    test('retries on a throttle body padded past the 1000-byte truncation slice', async () => {
+        const paddedBody = JSON.stringify({ error: 'throttled', message: 'throttled', padding: 'x'.repeat(1100) })
+        expect(enc.encode(paddedBody).length).toBeGreaterThan(1000)
+        let call = 0
+        const { options, sleeps } = await makeOptions(async (_url, tk) => {
+            if (call++ === 0) return { statusCode: 403, data: enc.encode(paddedBody), headers: [] }
+            return { statusCode: 200, data: await platform.encryptWithKey(enc.encode('{}'), tk.key), headers: [] }
+        })
+        const secrets = await getSecrets(options)
+        expect(secrets.records).toEqual([])
+        expect(sleeps.length).toBe(1)
+    })
+
     test('exhaustion throws KeeperThrottleError after 5 retries', async () => {
         let call = 0
         const { options, sleeps } = await makeOptions(async () => {
