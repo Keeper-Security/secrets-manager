@@ -21,8 +21,6 @@ import json
 import random
 from enum import Enum
 import traceback
-import pickle
-import io
 import base64
 import socket
 
@@ -37,6 +35,7 @@ else:
     from keeper_secrets_manager_core.core import KSMCache, CreateOptions
     from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
     from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password, strtobool
+    from keeper_secrets_manager_core.dto.dtos import Record as _Record, KeeperFile as _KeeperFile
 
     # If keeper_secrets_manager_core is installed, then these will be installed. They are deps.
     from cryptography.fernet import Fernet
@@ -45,6 +44,10 @@ else:
 
 
 display = Display()
+
+
+class CacheUnusableError(ValueError):
+    """Encrypted record cache cannot be decrypted or deserialized; treat as a cache miss."""
 
 
 class KeeperFieldType(Enum):
@@ -306,16 +309,125 @@ class KeeperAnsible:
 
         return base64.urlsafe_b64encode(kdf.derive(cache_secret.encode()))
 
-    def encrypt(self, data):
+    @staticmethod
+    def _file_to_dict(keeper_file):
+        """Serialize a KeeperFile instance to a JSON-safe dictionary."""
+        d = {
+            "name": keeper_file.name,
+            "title": keeper_file.title,
+            "type": keeper_file.type,
+            "last_modified": keeper_file.last_modified,
+            "size": keeper_file.size,
+            "f": keeper_file.f,
+            "file_key": keeper_file.file_key,
+            "meta_dict": keeper_file.meta_dict,
+        }
+        d["record_key_bytes"] = base64.b64encode(keeper_file.record_key_bytes).decode("ascii") \
+            if keeper_file.record_key_bytes is not None else None
+        d["file_data"] = base64.b64encode(keeper_file.file_data).decode("ascii") \
+            if keeper_file.file_data is not None else None
+        return d
 
+    @staticmethod
+    def _file_from_dict(d):
+        """Reconstruct a KeeperFile instance from a JSON-deserialized dictionary."""
+        f = object.__new__(_KeeperFile)
+        f.name = d["name"]
+        f.title = d["title"]
+        f.type = d["type"]
+        f.last_modified = d["last_modified"]
+        f.size = d["size"]
+        f.f = d["f"]
+        f.file_key = d["file_key"]
+        f.meta_dict = d["meta_dict"]
+        f.record_key_bytes = base64.b64decode(d["record_key_bytes"]) \
+            if d["record_key_bytes"] is not None else None
+        f.file_data = base64.b64decode(d["file_data"]) \
+            if d["file_data"] is not None else None
+        return f
+
+    @staticmethod
+    def _record_to_dict(record):
+        """Serialize a Record instance to a JSON-safe dictionary."""
+        d = {
+            "uid": record.uid,
+            "title": record.title,
+            "type": record.type,
+            "raw_json": record.raw_json,
+            "dict": record.dict,
+            "password": record.password,
+            "revision": record.revision,
+            "is_editable": record.is_editable,
+            "folder_uid": record.folder_uid,
+            "inner_folder_uid": record.inner_folder_uid,
+            "links": record.links,
+            "files": [KeeperAnsible._file_to_dict(f) for f in record.files],
+        }
+        d["record_key_bytes"] = base64.b64encode(record.record_key_bytes).decode("ascii") \
+            if record.record_key_bytes is not None else None
+        return d
+
+    @staticmethod
+    def _record_from_dict(d):
+        """Reconstruct a Record instance from a JSON-deserialized dictionary."""
+        r = object.__new__(_Record)
+        r.uid = d["uid"]
+        r.title = d["title"]
+        r.type = d["type"]
+        r.raw_json = d["raw_json"]
+        r.dict = d["dict"]
+        r.password = d["password"]
+        r.revision = d["revision"]
+        r.is_editable = d["is_editable"]
+        r.folder_uid = d["folder_uid"]
+        r.inner_folder_uid = d["inner_folder_uid"]
+        r.links = d["links"]
+        r.record_key_bytes = base64.b64decode(d["record_key_bytes"]) \
+            if d["record_key_bytes"] is not None else None
+        r.files = [KeeperAnsible._file_from_dict(fd) for fd in d["files"]]
+        return r
+
+    def encrypt(self, data):
         secret_key = self.get_encryption_key()
-        record_fh = io.BytesIO()
-        pickle.dump(data, record_fh)
-        return Fernet(secret_key).encrypt(record_fh.getvalue())
+        serializable = [KeeperAnsible._record_to_dict(r) for r in data]
+        json_bytes = json.dumps(serializable).encode("utf-8")
+        return Fernet(secret_key).encrypt(json_bytes)
 
     def decrypt(self, ciphertext):
         secret_key = self.get_encryption_key()
-        return pickle.loads(Fernet(secret_key).decrypt(ciphertext))
+        try:
+            plaintext = Fernet(secret_key).decrypt(ciphertext)
+        except Exception as err:
+            raise CacheUnusableError(
+                "Unable to decrypt the record cache. Check keeper_record_cache_secret "
+                "or regenerate the cache with keeper_cache_records."
+            ) from err
+
+        # Pickle protocol markers (e.g. 0x80) -- never call pickle.loads (CWE-502 / VM-1452).
+        if plaintext.startswith(b"\x80"):
+            raise CacheUnusableError(
+                "Unable to deserialize the record cache. The cache may be from an older "
+                "plugin version or is invalid. Regenerate the cache with keeper_cache_records."
+            )
+
+        try:
+            payload = json.loads(plaintext.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as err:
+            raise CacheUnusableError(
+                "Unable to deserialize the record cache. The cache may be from an older "
+                "plugin version or is invalid. Regenerate the cache with keeper_cache_records."
+            ) from err
+
+        if not isinstance(payload, list):
+            raise CacheUnusableError(
+                "Unable to deserialize the record cache. Expected a list of records. "
+                "Regenerate the cache with keeper_cache_records."
+            )
+
+        try:
+            return [KeeperAnsible._record_from_dict(d) for d in payload]
+        except (KeyError, TypeError, ValueError) as err:
+            raise CacheUnusableError(str(err)) from err
 
     @staticmethod
     def convert_records_into_dict(records):
@@ -460,7 +572,15 @@ class KeeperAnsible:
     def get_records(self, uids=None, titles=None, cache=None, encrypt=False):
 
         if cache is not None:
-            records = self.get_records_from_cache(cache, uids=uids, titles=titles)
+            try:
+                records = self.get_records_from_cache(cache, uids=uids, titles=titles)
+            except CacheUnusableError:
+                # Invalidate legacy/invalid cache and start from scratch via the vault.
+                display.warning(
+                    "Keeper record cache is unusable (legacy or invalid format) and was ignored. "
+                    "Fetching records from the vault. Regenerate the cache with keeper_cache_records."
+                )
+                records = self.get_records_from_vault(uids=uids, titles=titles, encrypt=encrypt)
         else:
             records = self.get_records_from_vault(uids=uids, titles=titles, encrypt=encrypt)
 
@@ -477,14 +597,14 @@ class KeeperAnsible:
 
         return records[0]
 
-    def create_record(self, new_record, shared_folder_uid):
+    def create_record(self, new_record, shared_folder_uid, folder_uid=None):
         # KSM-816: use create_secret_with_options() instead of create_secret() so
         # that folder keys are fetched via the get_folders endpoint, which returns
         # all folders including empty ones. create_secret() uses get_secrets() which
         # only returns folder keys when the folder already contains records.
         try:
             record_uid = self.client.create_secret_with_options(
-                CreateOptions(shared_folder_uid, None), new_record
+                CreateOptions(shared_folder_uid, folder_uid), new_record
             )
         except Exception as err:
             raise Exception("Cannot get create record: {}".format(err))

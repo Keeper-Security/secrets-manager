@@ -19,6 +19,17 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Changes
 
+## 1.5.0
+* **Fix**: `keeper_create` crashed with "Could not create record: list index out of range" when a playbook supplied an unpopulated complex field (address, name, host, etc.) with `value: []`. Empty-value fields are now treated as unpopulated, matching the behavior of the underlying vault schema. Root cause in the Python helper library is tracked as KSM-1119.
+* KSM-845: Added `folder_uid` parameter to `keeper_create` for subfolder targeting
+  - Records can now be created in a subfolder within a shared folder, rather than always at the shared folder root
+  - `shared_folder_uid` remains required; `folder_uid` is optional and additive
+* **Security**: VM-1452 / CWE-502 — Replaced pickle with JSON for encrypted record cache serialization
+  - Cache encrypt/decrypt no longer uses `pickle.loads`, removing insecure deserialization risk
+  - Legacy or invalid registered caches are ignored; records are fetched from the vault until
+    `keeper_cache_records` rebuilds a JSON cache
+  - Existing playbook-registered caches are ephemeral; regenerate with `keeper_cache_records` after upgrade
+
 ## 1.4.0
 * KSM-827: Fixed Tower Execution Environment Docker image missing system packages required by AAP
   - Added `openssh-clients`, `sshpass`, `rsync`, and `git` to `additional_build_packages` in `execution-environment.yml`
