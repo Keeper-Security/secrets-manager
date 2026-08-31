@@ -159,10 +159,9 @@ options[:versions].each do |version|
   image_name = "ksm-ruby-test:#{version}"
   print 'Building Docker image... '
 
-  build_cmd = "docker build -f #{dockerfile_path} -t #{image_name} #{docker_dir}"
-  build_cmd += ' > /dev/null 2>&1' unless options[:verbose]
+  quiet_opts = options[:verbose] ? {} : { out: File::NULL, err: File::NULL }
 
-  if system(build_cmd)
+  if system('docker', 'build', '-f', dockerfile_path, '-t', image_name, docker_dir, **quiet_opts)
     puts '✅'
   else
     puts '❌'
@@ -175,11 +174,9 @@ options[:versions].each do |version|
     print "  #{test_file.ljust(30)} ... "
 
     # Run test in container
-    run_cmd = "docker run --rm #{image_name} ruby /app/run_test.rb /app/test/integration/#{test_file}"
-    run_cmd += ' > /dev/null 2>&1' unless options[:verbose]
-
     test_start = Time.now
-    if system(run_cmd)
+    if system('docker', 'run', '--rm', image_name, 'ruby', '/app/run_test.rb',
+              "/app/test/integration/#{test_file}", **quiet_opts)
       test_time = Time.now - test_start
       puts "✅ (#{test_time.round(2)}s)"
       results[version][test_file] = :passed
@@ -190,7 +187,7 @@ options[:versions].each do |version|
   end
 
   # Clean up image unless keeping
-  system("docker rmi #{image_name} > /dev/null 2>&1") unless options[:keep_containers]
+  system('docker', 'rmi', image_name, out: File::NULL, err: File::NULL) unless options[:keep_containers]
 end
 
 # Print summary

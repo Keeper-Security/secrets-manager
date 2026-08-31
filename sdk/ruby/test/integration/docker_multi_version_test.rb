@@ -351,11 +351,10 @@ RUBY_VERSIONS.each do |version|
 
   # Build Docker image
   image_name = "ksm-ruby-test:#{version}"
-  build_cmd = "docker build -f #{dockerfile_path} -t #{image_name} #{test_dir} 2>&1"
 
-  if system(build_cmd, out: File::NULL)
+  if system('docker', 'build', '-f', dockerfile_path, '-t', image_name, test_dir, out: File::NULL, err: File::NULL)
     # Run the test
-    output = `docker run --rm #{image_name} 2>&1`
+    output = IO.popen(['docker', 'run', '--rm', image_name], err: [:child, :out], &:read)
 
     begin
       result = JSON.parse(output.lines.last)
@@ -417,7 +416,7 @@ puts "\nDetailed results saved to: #{results_file}"
 # Cleanup Docker images
 puts "\nCleaning up Docker images..."
 RUBY_VERSIONS.each do |version|
-  system("docker rmi ksm-ruby-test:#{version} 2>&1", out: File::NULL)
+  system('docker', 'rmi', "ksm-ruby-test:#{version}", out: File::NULL, err: File::NULL)
 end
 
 # Exit with appropriate code
