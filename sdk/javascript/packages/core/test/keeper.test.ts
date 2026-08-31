@@ -418,6 +418,68 @@ test('stale pinned server key: diagnostic message propagates to caller, key pres
     expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
 })
 
+test('id-only serverPublicKeyId pin does not reclobber a completed rotation on a later call', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    let queryCalls = 0
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKeyId: '8',
+        queryFunction: async (_url, tk) => {
+            queryCalls++
+            if (tk.publicKeyId !== 7) {
+                return { statusCode: 400, data: enc.encode(keyErrorResponse(7)), headers: [] }
+            }
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    await getSecrets(options)
+    expect(queryCalls).toBe(2) // pinned 8 rejected once, rotates to 7, succeeds
+    expect(await storage.getString('serverPublicKeyId')).toBe('7')
+
+    await getSecrets(options)
+    // Same options object, same pin, on a later call: must not re-clobber storage back to '8'
+    // and pay the rotation round trip again.
+    expect(queryCalls).toBe(3)
+    expect(await storage.getString('serverPublicKeyId')).toBe('7')
+})
+
+test('caller-supplied serverPublicKeyId outside the bundled table is rejected upfront, not persisted', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKeyId: '99',
+        queryFunction: async () => {
+            throw new Error('should not reach the network')
+        }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/serverPublicKeyId 99 is not supported/)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('an out-of-table serverPublicKeyId alongside a pinned custom key is not validated against the bundled table', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20', // outside the bundled 7-18 table; legitimate for a custom key (IL5)
+        queryFunction: async (_url, tk) => {
+            expect(tk.publicKeyId).toBe(20)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    const secrets = await getSecrets(options)
+    expect(secrets.records).toEqual([])
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
 test('IL5 dynamic key - Layer 2: lowercase il5 prefix is treated as IL5', async () => {
     const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
     const storage = inMemoryStorage({})

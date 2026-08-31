@@ -783,6 +783,26 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
     }
 }
 
+// Persists a caller-supplied serverPublicKeyId once, on the first call against a fresh config,
+// then leaves it alone. Rotation (the {"error":"key"} branch in postQuery) owns every update to
+// this value after that; re-writing the caller's pin on every call would undo a completed
+// rotation and force the client to re-rotate on every subsequent request.
+const persistServerPublicKeyIdOnce = async (storage: KeyValueStorage, serverPublicKeyId: string | undefined, hasCustomKey: boolean): Promise<void> => {
+    if (!serverPublicKeyId) {
+        return
+    }
+    const storedKeyId = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+    if (storedKeyId !== undefined) {
+        return
+    }
+    // An out-of-table id is only legitimate alongside a pinned custom key (its own key content
+    // makes the bundled table irrelevant); an id-only pin must be one of the bundled ids.
+    if (!hasCustomKey && !(Number(serverPublicKeyId) in keeperPublicKeys)) {
+        throw new Error(`serverPublicKeyId ${serverPublicKeyId} is not supported`)
+    }
+    await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId)
+}
+
 const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload | FileUploadPayload): Promise<EncryptedPayload> => {
     const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
     const encryptedPayload = await platform.encryptWithKey(payloadBytes, transmissionKey.key)
@@ -796,9 +816,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
     if (options.serverPublicKey) {
         await options.storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
     }
-    if (options.serverPublicKeyId) {
-        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
-    }
+    await persistServerPublicKeyIdOnce(options.storage, options.serverPublicKeyId, !!options.serverPublicKey)
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
         throw new Error('hostname is missing from the configuration')
@@ -903,9 +921,7 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
     if (options.serverPublicKey) {
         await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
     }
-    if (options.serverPublicKeyId) {
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
-    }
+    await persistServerPublicKeyIdOnce(storage, options.serverPublicKeyId, !!options.serverPublicKey)
     const payload = await prepareGetPayload(storage, queryOptions)
     const responseData = await postQuery(options, 'get_secret', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
