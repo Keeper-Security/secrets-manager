@@ -1,31 +1,11 @@
 import * as tmrm from "azure-pipelines-task-lib/mock-run"
 import * as path from "path"
-import * as dotenv from 'dotenv'
-import * as fs from 'fs'
-
-// Load environment variables from .env file
-dotenv.config();
-
-console.log('Debug: Starting test setup');
 
 let taskPath = path.join(__dirname, '..', 'index.js');
-console.log(`Debug: Task path is ${taskPath}`);
-
-// Check if the index.js file exists
-if (fs.existsSync(taskPath)) {
-    console.log('Debug: index.js file found');
-} else {
-    console.log('Debug: index.js file not found');
-}
-
 let tmr: tmrm.TaskMockRunner = new tmrm.TaskMockRunner(taskPath);
 
-// Use KEEPER_CONFIG from environment variables
-const keeperConfig = process.env.KEEPER_CONFIG || '';
-console.log(`Debug: KEEPER_CONFIG length: ${keeperConfig.length}`);
-console.log(`Debug: KEEPER_CONFIG starts with: ${keeperConfig.substring(0, 20)}...`);
-
-tmr.setInput('keepersecretconfig', keeperConfig);
+// Provide a dummy config (the mock below intercepts all SDK calls so this is never sent to a real server)
+tmr.setInput('keepersecretconfig', '{"clientId":"mock","privateKey":"mock","serverPublicKeyId":"10","appKey":"mock","hostname":"keepersecurity.com","appOwnerPublicKey":"mock"}');
 
 const secrets = 'xtlguWgodbpFkKJn7_7mAQ/field/password > var:MYPWD123\n' +
     'xtlguWgodbpFkKJn7_7mAQ/field/password > var:MYPWD123\n' +
@@ -33,21 +13,46 @@ const secrets = 'xtlguWgodbpFkKJn7_7mAQ/field/password > var:MYPWD123\n' +
     'xtlguWgodbpFkKJn7_7mAQ/field/password > outpwd2\n' +
     '6ya_fdc6XTsZ7i7x9Jcodg/file/build-vsix.sh > file:/tmp/build-vsix.sh';
 
-console.log(`Debug: Secrets input: ${secrets}`);
-
 tmr.setInput('secrets', secrets);
 
-// Mock any necessary functions or modules
-console.log('Debug: Setting up mocks');
+// Mock the KSM SDK so the task runs without real vault credentials
+tmr.registerMock('@keeper-security/secrets-manager-core', {
+    loadJsonConfig: function(_config: string) {
+        return { getString: function() { return '{}'; } };
+    },
+    getSecrets: async function(_options: any, _uids: string[]) {
+        return {
+            records: [
+                { recordUid: 'xtlguWgodbpFkKJn7_7mAQ' },
+                { recordUid: '6ya_fdc6XTsZ7i7x9Jcodg' }
+            ]
+        };
+    },
+    getValue: async function(_secrets: any, notation: string) {
+        if (notation.includes('/file/')) {
+            return { name: 'build-vsix.sh', title: 'build-vsix.sh', type: 'file' };
+        }
+        return 'mock-secret-value';
+    },
+    downloadFile: async function(_file: any) {
+        return Buffer.from('mock file content');
+    },
+    parseNotation: function(notation: string) {
+        const parts = notation.trim().split('/');
+        // Return structure matching SDK: [prefix, {text: [uid]}, {text: [selector]}, {text: [field]}]
+        return [
+            { text: [''] },
+            { text: [parts[0]] },
+            { text: [parts[1]] },
+            { text: [parts.slice(2).join('/')] }
+        ];
+    }
+});
 
-// Example: Mock a function
 tmr.registerMock('azure-pipelines-task-lib/toolrunner', {
-    execSync: function(cmd: string, options: any) {
-        console.log(`Debug: Mocked execSync called with command: ${cmd}`);
+    execSync: function(cmd: string, _options: any) {
         return 'mocked output';
     }
 });
 
-console.log('Debug: Starting test run');
 tmr.run();
-console.log('Debug: Test run completed');
