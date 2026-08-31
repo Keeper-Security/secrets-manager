@@ -1,0 +1,125 @@
+package com.keepersecurity.secretsManager.core
+
+import kotlinx.serialization.ExperimentalSerializationApi
+import java.net.ServerSocket
+import java.net.Socket
+import java.net.SocketTimeoutException
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.test.*
+
+// Connect/read timeouts on the built-in HTTP transport. The behavioural test points
+// postFunction at a socket that accepts the TCP connection and then goes silent, so the client
+// blocks reading the ServerHello, which is exactly the stall readTimeout has to bound. The call
+// runs under a watchdog on a daemon thread: without the timeout the read never returns, and a
+// plain assertion would hang the Gradle test JVM instead of failing it.
+@ExperimentalSerializationApi
+internal class TimeoutTest {
+
+    private val stubTransmissionKey = TransmissionKey(7, ByteArray(32), ByteArray(32))
+    private val stubPayload = EncryptedPayload(ByteArray(8), ByteArray(8))
+
+    // Generous relative to the 1s timeout under test: this is the "it hung" tripwire, not a
+    // latency assertion, so a loaded CI runner must not trip it.
+    private val watchdogSeconds = 20L
+    private val probeReadTimeoutMillis = 1_000
+
+    @Test
+    fun timeoutDefaults_matchDocumentedValues() {
+        val options = SecretsManagerOptions(InMemoryStorage())
+        assertEquals(5_000, options.connectTimeoutMillis, "documented default connect timeout")
+        assertEquals(30_000, options.readTimeoutMillis, "documented default read timeout")
+    }
+
+    @Test
+    fun timeoutOptions_acceptCustomValues() {
+        val options = SecretsManagerOptions(
+            InMemoryStorage(),
+            connectTimeoutMillis = 2_000,
+            readTimeoutMillis = 10_000
+        )
+        assertEquals(2_000, options.connectTimeoutMillis)
+        assertEquals(10_000, options.readTimeoutMillis)
+    }
+
+    // toString is hand-written rather than generated, so every field added to the class has to be
+    // added here too or it silently disappears from the one output someone reads when a timeout or
+    // a proxy misbehaves. Asserts the redaction in the same place because it is the same method.
+    @Test
+    fun toString_reportsTimeoutsAndRedactsProxyUrl() {
+        val options = SecretsManagerOptions(
+            InMemoryStorage(),
+            connectTimeoutMillis = 1_234,
+            readTimeoutMillis = 5_678,
+            // Sentinels rather than realistic values: the rendered storage field carries the
+            // package name, so a substring like "secret" would match com.keepersecurity
+            // .secretsManager and pass the leak check for the wrong reason.
+            proxyUrl = "http://zzuser:zzpassword@zzproxyhost:8080"
+        )
+        val rendered = options.toString()
+        assertTrue(rendered.contains("connectTimeoutMillis=1234"), "connect timeout missing from: $rendered")
+        assertTrue(rendered.contains("readTimeoutMillis=5678"), "read timeout missing from: $rendered")
+        assertTrue(rendered.contains("proxyUrl=<redacted>"), "proxyUrl not redacted in: $rendered")
+        assertFalse(rendered.contains("zzpassword"), "proxy password leaked into: $rendered")
+        assertFalse(rendered.contains("zzuser"), "proxy username leaked into: $rendered")
+        assertFalse(rendered.contains("zzproxyhost"), "proxy host leaked into: $rendered")
+    }
+
+    @Test
+    fun readTimeout_boundsAStalledServer() {
+        ServerSocket(0).use { server ->
+            // The accepted socket is held for the whole timeout window on purpose. Dropped, it
+            // turns unreachable the moment the acceptor thread exits, and a GC cycle closes it
+            // underneath the handshake: the client then fails in tens of milliseconds with a
+            // handshake or reset error rather than timing out, and this test fails on the wrong
+            // exception. Reproduced on JDK 8 and 21 under forced GC.
+            val accepted = AtomicReference<Socket?>(null)
+            val acceptor = Thread { runCatching { accepted.set(server.accept()) } }
+            acceptor.isDaemon = true
+            acceptor.start()
+
+            try {
+                val url = "https://127.0.0.1:${server.localPort}/"
+                val elapsedMillis = withWatchdog {
+                    val start = System.nanoTime()
+                    assertFailsWith<SocketTimeoutException> {
+                        postFunction(
+                            url,
+                            stubTransmissionKey,
+                            stubPayload,
+                            true,
+                            readTimeoutMillis = probeReadTimeoutMillis
+                        )
+                    }
+                    (System.nanoTime() - start) / 1_000_000
+                }
+                assertTrue(
+                    elapsedMillis >= probeReadTimeoutMillis / 2,
+                    "returned in ${elapsedMillis}ms, too fast to have been the read timeout"
+                )
+            } finally {
+                acceptor.join(1_000)
+                accepted.get()?.close()
+            }
+        }
+    }
+
+    // Runs [block] on a daemon thread, failing (rather than blocking) if it never returns.
+    private fun <T> withWatchdog(block: () -> T): T {
+        val executor = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "timeout-test").apply { isDaemon = true }
+        }
+        try {
+            return executor.submit(block).get(watchdogSeconds, TimeUnit.SECONDS)
+        } catch (_: TimeoutException) {
+            fail("call did not return within ${watchdogSeconds}s; the timeout was never applied")
+        } catch (e: ExecutionException) {
+            throw e.cause ?: e
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+}
