@@ -74,6 +74,14 @@ Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager
 
 ## Change Log
 
+### 1.1.1
+
+**Requirements:**
+- Minimum Python version raised to 3.10 (`urllib3>=2.7.0` requires Python 3.10+); users on Python 3.9 should pin to `<1.1.1`
+
+**Security:**
+- **KSM-1021:** Fixed CVE-2026-44431; upgraded `urllib3` to 2.7.0. Versions before 2.7.0 forward `Authorization` and `Cookie` headers across origins when following redirects via the low-level `assert_same_host=False` code path (CVSS High)
+
 ### 1.1.0
 
 **Requirements:**
