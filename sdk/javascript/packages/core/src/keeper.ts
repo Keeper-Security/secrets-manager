@@ -800,12 +800,16 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
         if (response.statusCode !== 200) {
             let errorMessage
             if (response.data) {
-                errorMessage = platform.bytesToString(response.data.slice(0, 1000))
+                // Detection runs on the full body - slicing first can cut a large throttle
+                // response mid-document and make it fail JSON.parse, silently disabling retry.
+                // The 1000-byte slice is applied only to what actually gets thrown below.
+                const fullErrorMessage = platform.bytesToString(response.data)
+                errorMessage = fullErrorMessage.slice(0, 1000)
                 // Throttle retry with exponential backoff + jitter. Checked
                 // before key-rotation so that path is untouched, and gated on the 403 status so a
                 // non-403 response carrying a {"error":"throttled"} body is not retried.
                 if (response.statusCode === 403) {
-                    const retryAfter = parseThrottle(errorMessage)
+                    const retryAfter = parseThrottle(fullErrorMessage)
                     if (retryAfter !== null) {
                         if (throttleAttempt >= MAX_THROTTLE_RETRIES) {
                             throw new KeeperThrottleError(`Request throttled by Keeper backend; exhausted ${MAX_THROTTLE_RETRIES} retries`)
