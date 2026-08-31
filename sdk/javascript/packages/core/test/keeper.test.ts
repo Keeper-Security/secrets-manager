@@ -268,6 +268,16 @@ test('IL5 dynamic key - Layer 1: generateTransmissionKey uses serverPublicKey fr
     expect(transmissionKey.key.length).toBe(32)
 })
 
+test('generateTransmissionKey falls back to the default key when the stored key id is outside the bundled table', async () => {
+    const storage = inMemoryStorage({
+        serverPublicKeyId: '99'
+    })
+    platform.getRandomBytes = () => new Uint8Array(32)
+    const transmissionKey = await generateTransmissionKey(storage)
+    expect(transmissionKey.publicKeyId).toBe(7)
+    expect(transmissionKey.key.length).toBe(32)
+})
+
 test('IL5 dynamic key - Layer 2: initializeStorage saves serverPublicKeyId and serverPublicKey from 4-segment IL5 OTT', async () => {
     const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
     const storage = inMemoryStorage({})

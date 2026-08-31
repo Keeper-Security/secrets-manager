@@ -771,13 +771,14 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
         const encryptedKey = await platform.publicEncrypt(transmissionKey, customPublicKey)
         return { publicKeyId: keyNumber, key: transmissionKey, encryptedKey }
     }
-    const keeperPublicKey = keeperPublicKeys[keyNumber]
-    if (!keeperPublicKey) {
-        throw new Error(`Key number ${keyNumber} is not supported`)
-    }
-    const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[keyNumber])
+    // A stored id outside the bundled table (e.g. an older SDK build persisted an unvalidated
+    // server-suggested key) must not permanently block every request. Fall back to the default
+    // key instead, so the request goes out and the server's rotation hint can steer it back to
+    // a valid id.
+    const effectiveKeyNumber = keyNumber in keeperPublicKeys ? keyNumber : 7
+    const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[effectiveKeyNumber])
     return {
-        publicKeyId: keyNumber,
+        publicKeyId: effectiveKeyNumber,
         key: transmissionKey,
         encryptedKey: encryptedKey
     }
