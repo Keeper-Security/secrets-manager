@@ -6,9 +6,9 @@ For more information, see our official documentation page https://docs.keeper.io
 
 ## Custom Server Public Key (Isolated Deployments)
 
-For deployments where the server public key is not shipped with the SDK,
-a caller-supplied EC P-256 public key can be supplied via any of three
-paths (precedence is programmatic > one-time token > pre-existing config):
+For deployments where the server public key is not bundled with the SDK,
+a caller can supply an EC P-256 public key via any of three paths
+(precedence: programmatic > one-time token > pre-existing config):
 
 ```python
 from keeper_secrets_manager_core import SecretsManager
@@ -32,6 +32,21 @@ For deployment-specific details (region prefixes, key id assignments)
 see the official docs link above.
 
 ## Change Log
+
+### 17.4.0
+* KSM-299 - Fixed `InMemoryKeyValueStorage` raising a cryptic `TypeError: object of type 'NoneType' has no len()` when initialized with a config string that is not valid JSON or base64-encoded JSON. The SDK now raises `KeeperError` with a clear message instead.
+* KSM-1019 - Fixed `KSMCache` silently ignoring an explicit `kms_cache_file_name` assignment when the assigned path equaled the import-time default (regression from KSM-1004). The SDK now detects the override by object identity, so an explicit assignment always takes precedence over `KSM_CACHE_DIR`. Default behavior and `KSM_CACHE_DIR` resolution are unchanged.
+* KSM-1145 - Fixed `get_secrets()` returning duplicate entries when a record is accessible both via a shared folder and as an individual share. The SDK now deduplicates records by UID before returning them.
+* KSM-747 - Fixed records created by non-SDK clients (Commander, Vault UI) inside shared folders silently disappearing from `get_secrets()` results. The SDK now uses the folder key to decrypt the record key for any flat record that has `innerFolderUid` set. This matches the behavior for records in `folders[].records[]`.
+* KSM-1080 - Fixed `get_folders()` crashing when any folder in the response contains a corrupted or missing key. The SDK now skips undecryptable folders, logs a warning for each, and returns the remaining folders normally.
+* KSM-1085 - Fixed `delete_secret()` and `delete_folder()` silently succeeding on partial failures. Both methods now raise `KeeperError` listing the UIDs the server rejected, so callers know which records the server did not delete.
+* KSM-1122 - Fixed `KSMCache` creating the cache file with world-readable permissions (mode 0644). The file contains the transmission key in cleartext. The SDK now writes new cache files with mode 0600 (owner read/write only). The SDK corrects existing files to 0600 on the next write.
+* KSM-1123 - Fixed `KSMCache` discarding a live HTTP 200 response when the cache write fails (e.g., the cache path points to a nonexistent directory). The SDK always returns the live response on success. Cache write failures are non-fatal and do not affect the caller.
+* KSM-1152 - Fixed `RecordCreate.to_dict()` omitting `"custom"` from the serialized payload when no custom fields were set. The method now always includes `"custom": []` in the payload to match the vault API expectation.
+* KSM-1131 - Fixed `get_file_data()` crashing with `MissingSchema: Invalid URL 'None'` when the vault has not yet propagated the download URL after an upload. The method now raises `KeeperError` with a retry message instead of a bare requests exception.
+* KSM-1033 - Fixed throttle backoff jitter being two-sided (`[-25%, +25%]`), which could reduce the retry delay below its computed floor and trigger an immediate re-throttle. Jitter is now one-sided (`[0%, +25%]`). The SDK also caps server-supplied `retry_after` values at `MAX_THROTTLE_DELAY_SEC` (176s) to prevent a misbehaving backend from forcing an arbitrarily long wait.
+* KSM-1069 - Fixed the `error='key'` (server key-rotation) retry path looping indefinitely. The SDK now limits retries to 3 attempts. When a custom server public key is configured (IL5 deployments), the SDK raises `KeeperError` immediately on the first key-rotation response. Accepting a standard key at that point would break the deployment.
+* **Security**: KSM-1213 - Raised `cryptography` floor from `>=46.0.5` to `>=46.0.7` (CVE-2026-39892). Versions 45.0.0 through 46.0.6 have a buffer overflow in `Hash.update()` and related buffer APIs when passed a non-contiguous buffer. The previous floor allowed a fresh install to resolve to 46.0.5 or 46.0.6, both affected.
 
 ### 17.3.0
 * KSM-992 - Added a typed `KeeperRecordLink` linked-credential accessor layer and `Record.get_links()`. Provides Java-parity accessors (`is_admin_user()`, `is_launch_credential()`, permission booleans such as `allows_rotation()`/`allows_connections()`, `get_link_data_version()`, `get_decoded_data()`, encryption detection, AES-256-GCM `get_decrypted_data()`, `get_link_data()`, and `get_ai_settings_data()`/`get_jit_settings_data()`/`get_settings_for_path()`) plus accessors for the current link payload shape verified against the live backend: `meta` self-links (`get_meta_data()`, `get_allowed_settings()`), `is_iam_user()`, `belongs_to()`, `no_update_services()`, `ai_enabled()`, `ai_session_terminate()` and `get_rotation_settings()`. Permission booleans read both top-level keys and the nested `allowedSettings`. Purely additive — the raw `record.links` list is unchanged, and each typed link keeps the untouched original dict in `.raw`.

@@ -61,10 +61,10 @@ class IL5DynamicKeyTest(unittest.TestCase):
         self.assertEqual(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY), custom_key_b64)
         self.assertEqual(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID), self.CUSTOM_KEY_ID)
 
-    def test_key_rotation_retries_with_custom_key(self):
-        """When the server sends a key-rotation error pointing at a key id not in the built-in
-        registry and a custom key is configured, the SDK updates the key_id and retries instead
-        of raising ValueError."""
+    def test_key_rotation_raises_immediately_with_custom_key(self):
+        """When a custom server public key is pinned (IL5) and the server sends error='key',
+        the SDK raises KeeperError immediately. Accepting the rotation would silently switch
+        the deployment to a standard key, breaking IL5 connectivity."""
         custom_key_b64 = keeper_public_keys['7']
         config = InMemoryKeyValueStorage(MockConfig.make_json())
 
@@ -74,7 +74,6 @@ class IL5DynamicKeyTest(unittest.TestCase):
             server_public_key_id='10',
         )
 
-        # First response: server requests key rotation to an id outside the built-in registry
         error_response = mock.Response(
             client=secrets_manager,
             content='{"error": "key", "key_id": ' + self.CUSTOM_KEY_ID + '}',
@@ -82,21 +81,14 @@ class IL5DynamicKeyTest(unittest.TestCase):
             reason="Bad Request",
         )
 
-        # Second response: success with one record
-        success_response = mock.Response()
-        rec = success_response.add_record(title="Custom-Key Record")
-        rec.field("login", "test_user")
-
         res_queue = mock.ResponseQueue(client=secrets_manager)
         res_queue.add_response(error_response)
-        res_queue.add_response(success_response)
 
-        records = secrets_manager.get_secrets([])
+        from keeper_secrets_manager_core.exceptions import KeeperError
+        with self.assertRaises(KeeperError) as ctx:
+            secrets_manager.get_secrets([])
 
-        self.assertEqual(len(records), 1)
-        self.assertEqual(records[0].title, "Custom-Key Record")
-        # key_id should have been updated by the rotation handler
-        self.assertEqual(config.get(ConfigKeys.KEY_SERVER_PUBLIC_KEY_ID), self.CUSTOM_KEY_ID)
+        self.assertIn("custom", str(ctx.exception).lower())
 
 
     def test_layer1_config_file_supplies_custom_key(self):

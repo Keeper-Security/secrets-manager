@@ -67,3 +67,13 @@ class FieldTypeTest(unittest.TestCase):
             self.fail("Should have gotten an exception get bad field class")
         except ImportError as _:
             pass
+
+    def test_complex_field_with_empty_value_list_does_not_crash(self):
+        address = Address(value=[])
+        self.assertEqual([], address.value)
+        self.assertIsNone(address.street1)
+
+    def test_complex_field_with_populated_value_list_still_works(self):
+        address = Address(value=[{"street1": "123 Main St", "city": "Anytown"}])
+        self.assertEqual("123 Main St", address.street1)
+        self.assertEqual("Anytown", address.city)

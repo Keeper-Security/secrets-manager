@@ -33,6 +33,7 @@ from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.exceptions import KeeperError, KeeperThrottleError
 from keeper_secrets_manager_core.keeper_globals import (
     BASE_THROTTLE_DELAY_SEC,
+    MAX_THROTTLE_DELAY_SEC,
     MAX_THROTTLE_RETRIES,
     logger_name,
 )
@@ -89,15 +90,19 @@ class ThrottleDelayUnitTest(unittest.TestCase):
             self.assertAlmostEqual(SecretsManager._throttle_delay(0, 0.0), 13.75)
 
     def test_jitter_lower_bound(self):
-        with patch(UNIFORM, return_value=-0.25):
-            self.assertAlmostEqual(SecretsManager._throttle_delay(0, 0.0), 8.25)
+        with patch(UNIFORM, return_value=0):
+            self.assertAlmostEqual(SecretsManager._throttle_delay(0, 0.0), 11.0)
 
     def test_jitter_within_bounds_real_random(self):
         base = BASE_THROTTLE_DELAY_SEC * (2 ** 2)  # attempt 2 -> 44
         for _ in range(1000):
             delay = SecretsManager._throttle_delay(2, 0.0)
-            self.assertGreaterEqual(delay, base * 0.75)
+            self.assertGreaterEqual(delay, base)
             self.assertLessEqual(delay, base * 1.25)
+
+    def test_parse_throttle_retry_after_capped(self):
+        r = SimpleNamespace(text=json.dumps({"error": "throttled", "retry_after": 9999}))
+        self.assertEqual(SecretsManager._parse_throttle(r), MAX_THROTTLE_DELAY_SEC)
 
     def test_parse_throttle_no_retry_after(self):
         r = SimpleNamespace(text=json.dumps({"error": "throttled"}))
