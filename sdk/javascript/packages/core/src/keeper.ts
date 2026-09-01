@@ -1,7 +1,7 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey} from './platform'
 import {webSafe64FromBytes, webSafe64ToBytes, tryParseInt} from './utils'
 import {parseNotation} from './notation'
-import {KeeperError, KeeperThrottleError} from './errors'
+import {KeeperError, KeeperThrottleError, KeeperCryptoError, KeeperCryptoFailureReason, KeeperDecryptionErrorInfo} from './errors'
 
 export {KeyValueStorage} from './platform'
 
@@ -61,11 +61,16 @@ export type SecretManagerOptions = {
     serverPublicKeyId?: string
     // Override the sleep between throttle retries (primarily for tests). Defaults to setTimeout.
     throttleSleep?: (milliseconds: number) => Promise<void>
+    // Called for each item skipped because it could not be decrypted (currently: folders from
+    // getFolders). Optional and additive: existing callers see no behavior change.
+    // Throw from this callback to abort the call instead of returning a partial result (fail closed).
+    onDecryptionError?: (info: KeeperDecryptionErrorInfo) => void
 }
 
 // Error classes live in a dependency-free module (errors.ts) to avoid a circular import with
 // utils.ts/platform code that throws them; re-exported here so the public API is unchanged.
-export {KeeperError, KeeperThrottleError} from './errors'
+export {KeeperError, KeeperThrottleError, KeeperCryptoError} from './errors'
+export type {KeeperCryptoFailureReason, KeeperDecryptionErrorInfo} from './errors'
 
 // Returns a jitter multiplier in [0, 0.25). One-sided so the delay never drops below the
 // computed floor (retrying too soon just re-triggers the throttle); kept separate so
@@ -1000,15 +1005,45 @@ const getSharedFolderUid = (folders: SecretsManagerResponseFolder[], parent: str
     }
 };
 
+// Converts a raw crypto/parse failure into a KeeperCryptoError classified by which mode this
+// call site requested (CBC -> 'format', GCM -> 'integrity') - unless it is already a
+// KeeperCryptoError (e.g. 'missing-key', thrown deep inside platform.unwrap/decrypt when the key
+// itself can't be found), in which case that mode-independent classification is kept as is.
+// Classifying by requested mode rather than by inspecting the thrown error is what keeps Node and
+// the browser - whose crypto libraries throw differently-shaped errors for the same failure -
+// agreeing on the classification (KSM-1267).
+// Native crypto errors (OpenSSL in Node, WebCrypto in the browser) are not reliably `instanceof
+// Error` in every host environment - notably, Node's own crypto bindings throw errors from a
+// different realm than the one Jest's default test environment exposes as the global `Error`,
+// so `instanceof Error` silently fails there even though `.message` is a plain string either way.
+// Reading `.message` directly sidesteps that, on top of already being how every sibling catch
+// block in this file (e.g. the console.error calls above) extracts a message from a caught error.
+const errorMessage = (e: unknown): string => typeof (e as any)?.message === 'string' ? (e as any).message : String(e)
+
+const classifyCryptoFailure = (e: unknown, modeFailure: KeeperCryptoFailureReason, uid: string): KeeperCryptoError =>
+    e instanceof KeeperCryptoError ? e : new KeeperCryptoError(errorMessage(e), modeFailure, uid)
+
+const runCrypto = async <T>(op: () => Promise<T>, modeFailure: KeeperCryptoFailureReason, uid: string): Promise<T> => {
+    try {
+        return await op()
+    } catch (e) {
+        throw classifyCryptoFailure(e, modeFailure, uid)
+    }
+}
+
 const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<KeeperFolder[]> => {
     const storage = options.storage
     const payload = await prepareGetPayload(storage)
     const responseData = await postQuery(options, 'get_folders', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
     const folders: KeeperFolder[] = []
+    const skippedUids: string[] = []
     if (response.folders) {
         for (const folder of response.folders) {
             try {
+                if (!folder.folderKey) {
+                    throw new KeeperCryptoError(`Folder key missing for UID ${folder.folderUid}`, 'missing-key', folder.folderUid)
+                }
                 let decryptedData: Uint8Array
                 const decryptedFolder: KeeperFolder = {
                     folderUid: folder.folderUid
@@ -1017,20 +1052,55 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
                     decryptedFolder.parentUid = folder.parent
                     const sharedFolderUid = getSharedFolderUid(response.folders, folder.parent)
                     if (!sharedFolderUid) {
-                        throw new Error('Folder data inconsistent - unable to locate shared folder')
+                        throw new KeeperCryptoError(`Folder data inconsistent - unable to locate shared folder for ${folder.folderUid}`, 'missing-key', folder.folderUid)
                     }
-                    await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, sharedFolderUid, storage, true, true)
-                    decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
+                    // Wrapped by the shared-folder key: the vault's storage format for this wrap is
+                    // fixed to unauthenticated AES-256-CBC server-side (KSM-1267) - the SDK cannot
+                    // change it unilaterally, and this is not a pattern to copy into new code. CBC
+                    // has no MAC of its own; the real integrity gate for this folder's contents is
+                    // the AES-GCM authentication on the record keys inside it, which already exists.
+                    await runCrypto(() => platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, sharedFolderUid, storage, true, true), 'format', folder.folderUid)
                 } else {
-                    await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true, true)
-                    decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
+                    // unwrappingKeyId === appKey always forces the WRAPPING key to be loaded as
+                    // GCM, regardless of useCBC (see nodePlatform.ts, browserPlatform.ts) - so this
+                    // call never has a real CBC path for the folder key itself (KSM-1267). useCBC
+                    // is still passed as true, though: on the browser platform it also makes
+                    // unwrap() cache a second, CBC-mode copy of the just-unwrapped folder key
+                    // (browserPlatform.ts's dual keyCache[keyId] / keyCache['cbc:'+keyId]), which
+                    // the always-CBC folder.data decrypt below needs, since a WebCrypto CryptoKey
+                    // is bound to one algorithm. Node's raw-byte keys need no second copy, so
+                    // dropping this argument would silently break browser-only folder decryption.
+                    await runCrypto(() => platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true, true), 'integrity', folder.folderUid)
                 }
-                decryptedFolder.name = JSON.parse(platform.bytesToString(decryptedData))['name']
+                // folder.data is always wrapped in CBC by the vault, regardless of which mode
+                // wrapped the folder key above (KSM-1267), so a decrypt failure here is 'format',
+                // not 'integrity'. A CBC decrypt that succeeds on tampered ciphertext without
+                // recovering the original plaintext is caught below as 'malformed-data' rather
+                // than treated as a verified result - CBC success proves nothing about integrity.
+                decryptedData = await runCrypto(() => platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true), 'format', folder.folderUid)
+                let parsedData: any
+                try {
+                    parsedData = JSON.parse(platform.bytesToString(decryptedData))
+                } catch {
+                    throw new KeeperCryptoError(`Folder ${folder.folderUid} decrypted data is not valid JSON`, 'malformed-data', folder.folderUid)
+                }
+                decryptedFolder.name = parsedData['name']
                 folders.push(decryptedFolder)
             } catch (e: Error | any) {
-                console.error(`Folder ${folder.folderUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
+                const failure: KeeperCryptoFailureReason = e instanceof KeeperCryptoError ? e.failure : 'unknown'
+                console.error(`Folder ${folder.folderUid} skipped due to error (${failure}): ${e.constructor.name}, ${e.message}`)
+                skippedUids.push(folder.folderUid)
+                if (options.onDecryptionError) {
+                    // Not caught: throwing from the caller's callback aborts getFolders() instead
+                    // of returning a partial result, letting a caller that needs strict integrity
+                    // guarantees fail closed rather than silently continue on partial data.
+                    options.onDecryptionError({uid: folder.folderUid, failure, message: e.message})
+                }
             }
         }
+    }
+    if (skippedUids.length > 0) {
+        console.error(`getFolders: ${skippedUids.length} of ${response.folders.length} folder(s) could not be decrypted and were omitted from the result: ${skippedUids.join(', ')}`)
     }
     return folders
 }
