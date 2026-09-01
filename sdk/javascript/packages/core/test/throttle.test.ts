@@ -68,11 +68,16 @@ describe('throttleDelay (unit)', () => {
 
 describe('throttleJitter (unit)', () => {
     test('is one-sided: never pushes the delay below its floor', () => {
+        const draws: number[] = []
         for (let i = 0; i < 200; i++) {
             const jitter = throttleJitter()
             expect(jitter).toBeGreaterThanOrEqual(0)
             expect(jitter).toBeLessThan(0.25)
+            draws.push(jitter)
         }
+        // A regression collapsing jitter to a constant in-range value would still pass the two
+        // bounds checks above; require actual variation across draws.
+        expect(new Set(draws).size).toBeGreaterThan(1)
     })
 })
 
@@ -152,6 +157,18 @@ describe('throttle retry (e2e via getSecrets)', () => {
         // retry_after = 3s with one-sided [0, +25%) jitter -> [3s, 3.75s]; never below the 3s floor
         expect(sleeps[0]).toBeGreaterThanOrEqual(3000)
         expect(sleeps[0]).toBeLessThanOrEqual(3750)
+        // attempt 1 falls through to the exponential branch once retry_after stops being sent:
+        // base = 11 * 2**1 = 22s, one-sided jitter -> [22s, 27.5s)
+        expect(sleeps[1]).toBeGreaterThanOrEqual(22000)
+        expect(sleeps[1]).toBeLessThan(27500)
+    })
+
+    test('caps a server-supplied retry_after at 176s through the real retry path', async () => {
+        const { options, sleeps } = await makeOptions(async () => throttle403(500))
+        await expect(getSecrets(options)).rejects.toBeInstanceOf(KeeperThrottleError)
+        // retry_after: 500 is capped to 176s inside parseThrottle, then one-sided jitter applies -> [176s, 220s)
+        expect(sleeps[0]).toBeGreaterThanOrEqual(176000)
+        expect(sleeps[0]).toBeLessThan(220000)
     })
 
     test('non-throttle 403 is not retried', async () => {
