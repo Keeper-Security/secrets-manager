@@ -13,13 +13,14 @@ const CACHE_FILENAME = 'cache.dat';
 // ⓘ This will store only last request, however you can use any tool to extend this functionality
 // ⓘ Stale cache entries can cause version mismatches if records are updated from other keepersecurity utils. Prefer fresh reads
 
-const cachingPostFunction = async (url, transmissionKey, payload, allowUnverifiedCertificate) => {
+const cachingPostFunction = async (url, transmissionKey, payload, allowUnverifiedCertificate, timeoutMs) => {
     try {
         const response = await postFunction(
             url,
             transmissionKey,
             payload,
-            allowUnverifiedCertificate
+            allowUnverifiedCertificate,
+            timeoutMs
         )
 
         if (response.statusCode == 200) {

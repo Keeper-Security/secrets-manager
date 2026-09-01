@@ -1,4 +1,5 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey, inMemoryStorage} from "../platform";
+import {KeeperError} from "../errors";
 import * as fs from 'fs';
 
 // fs.openSync's mode argument is only honored when the file is created; it is a no-op on an
@@ -75,6 +76,12 @@ export const cachingPostFunction = async (url: string, transmissionKey: Transmis
         }
         return response
     } catch (e) {
+        // A deliberate client-side timeout is not a transport failure: falling back to stale
+        // cache here would silently turn a slow/hung request into a fake success instead of
+        // surfacing it to the caller.
+        if (e instanceof KeeperError) {
+            throw e
+        }
         let cachedData
         try {
             cachedData = fs.readFileSync('cache.dat')

@@ -8,6 +8,7 @@ import {
     SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword,
     downloadFile, downloadThumbnail, uploadFile, KeeperFile, KeeperRecord, DEFAULT_REQUEST_TIMEOUT_MS
 } from '../'
+import {MAX_REQUEST_TIMEOUT_MS} from '../src/deadline'
 
 import * as fs from 'fs'
 
@@ -900,6 +901,22 @@ describe('request timeout propagation', () => {
         expect(calls).toBe(1)
     })
 
+    test('an invalid requestTimeoutMs is rejected before postQuery does any work, including a retry', async () => {
+        const storage = inMemoryStorage({})
+        await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+        let queryFunctionCalls = 0
+        const options: SecretManagerOptions = {
+            storage,
+            requestTimeoutMs: 0,
+            queryFunction: async () => {
+                queryFunctionCalls++
+                return {statusCode: 500, data: new TextEncoder().encode('nope'), headers: []}
+            }
+        }
+        await expect(getSecrets(options)).rejects.toThrow(/at least 1/)
+        expect(queryFunctionCalls).toBe(0)
+    })
+
     describe.each([
         ['downloadFile', (f: KeeperFile, t?: number, o?: SecretManagerOptions) => downloadFile(f, t, o)],
         ['downloadThumbnail', (f: KeeperFile, t?: number, o?: SecretManagerOptions) => downloadThumbnail(f, t, o)]
@@ -934,6 +951,11 @@ describe('request timeout propagation', () => {
         test('sends undefined when neither is given, so the platform default applies', async () => {
             await download(file())
             expect(seen).toEqual([undefined])
+        })
+
+        test('a value above MAX_REQUEST_TIMEOUT_MS reaches the platform call already clamped', async () => {
+            await download(file(), MAX_REQUEST_TIMEOUT_MS + 1000)
+            expect(seen).toEqual([MAX_REQUEST_TIMEOUT_MS])
         })
     })
 
@@ -973,6 +995,40 @@ describe('request timeout propagation', () => {
 
         await uploadFile(options, ownerRecord, {name: 'f.txt', title: 'f', type: 'text/plain', data: new Uint8Array([1, 2, 3])})
         expect(seen).toEqual([9000])
+    })
+
+    test('uploadFile: an explicit timeoutMs wins over options.requestTimeoutMs', async () => {
+        const storage = inMemoryStorage({})
+        await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+        await platform.generatePrivateKey('ownerKey', storage)
+        await storage.saveBytes('appOwnerPublicKey', await platform.exportPublicKey('ownerKey', storage))
+        await platform.importKey('appKey', platform.getRandomBytes(32), storage)
+
+        const seen: (number | undefined)[] = []
+        platform.fileUpload = (async (_url: string, _params: any, _data: Uint8Array, timeoutMs?: number) => {
+            seen.push(timeoutMs)
+            return {statusCode: 200, statusMessage: 'OK', headers: {}}
+        }) as typeof platform.fileUpload
+
+        const ownerRecord = {recordUid: '', data: {fields: []}, revision: 1} as unknown as KeeperRecord
+        const options: SecretManagerOptions = {
+            storage,
+            requestTimeoutMs: 9000,
+            queryFunction: async (_url, transmissionKey) => ({
+                statusCode: 200,
+                headers: [],
+                data: await platform.encryptWithKey(
+                    platform.stringToBytes(JSON.stringify({
+                        url: 'https://example.com/upload',
+                        parameters: '{}',
+                        successStatusCode: 200
+                    })),
+                    transmissionKey.key)
+            })
+        }
+
+        await uploadFile(options, ownerRecord, {name: 'f.txt', title: 'f', type: 'text/plain', data: new Uint8Array([1, 2, 3])}, 250)
+        expect(seen).toEqual([250])
     })
 })
 

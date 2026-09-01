@@ -2,6 +2,8 @@ import {connectPlatform, platform, inMemoryStorage, TransmissionKey, EncryptedPa
 import {nodePlatform} from '../src/node/nodePlatform'
 import {cachingPostFunction} from '../src/node/localConfigStorage'
 import {createCachingFunction} from '../src/browser/localConfigStorage'
+import {timeoutError} from '../src/deadline'
+import {KeeperError} from '../src/errors'
 
 connectPlatform(nodePlatform)
 
@@ -49,4 +51,19 @@ describe.each([
         expect(seen[3]).toBeUndefined()
         expect(seen[4]).toBeUndefined()
     })
+
+    test('a deliberate timeout propagates instead of being served as a fake success from cache', async () => {
+        const timeout = timeoutError('https://example.com', 4321)
+        platform.post = (async () => { throw timeout }) as typeof platform.post
+        await expect(build()('https://example.com', transmissionKey(), payload())).rejects.toBe(timeout)
+    })
+
+    test('a non-timeout failure still falls back to cache', async () => {
+        platform.post = (async () => { throw new Error('ECONNRESET') }) as typeof platform.post
+        await expect(build()('https://example.com', transmissionKey(), payload())).rejects.toThrow('Cached value does not exist')
+    })
+})
+
+test('timeoutError produces a KeeperError, distinct from a plain transport failure', () => {
+    expect(timeoutError('https://example.com', 1)).toBeInstanceOf(KeeperError)
 })

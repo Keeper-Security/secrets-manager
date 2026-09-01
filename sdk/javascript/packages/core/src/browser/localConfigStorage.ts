@@ -218,6 +218,12 @@ export function createCachingFunction(storage: KeyValueStorage): (url: string, t
             }
             return response
         } catch (e) {
+            // A deliberate client-side timeout is not a transport failure: falling back to stale
+            // cache here would silently turn a slow/hung request into a fake success instead of
+            // surfacing it to the caller.
+            if (e instanceof KeeperError) {
+                throw e
+            }
             const cachedData = await storage.getBytes('cache')
             if (!cachedData) {
                 throw new Error('Cached value does not exist')

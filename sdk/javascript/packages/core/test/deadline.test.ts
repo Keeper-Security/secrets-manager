@@ -2,7 +2,8 @@ import {
     DEFAULT_REQUEST_TIMEOUT_MS,
     MAX_REQUEST_TIMEOUT_MS,
     deadlineSignal,
-    resolveTimeoutMs
+    resolveTimeoutMs,
+    validateTimeoutMs
 } from '../src/deadline'
 import {KeeperError} from '../src/errors'
 
@@ -43,6 +44,7 @@ test.each([
 // timeout".
 test.each([
     ['zero', 0],
+    ['a fraction below 1', 0.5],
     ['a negative', -1],
     ['NaN', NaN],
     ['Infinity', Infinity],
@@ -56,7 +58,7 @@ test.each([
     }
     expect(error).toBeInstanceOf(Error)
     expect(error).not.toBeInstanceOf(KeeperError)
-    expect(error.message).toMatch(/greater than 0/)
+    expect(error.message).toMatch(/at least 1/)
 })
 
 test('a non-numeric timeout is rejected', () => {
@@ -93,6 +95,20 @@ test('deadlineSignal aborts when the deadline elapses, and not before', () => {
     } finally {
         jest.useRealTimers()
     }
+})
+
+test('validateTimeoutMs returns the resolved, clamped value, not the raw input', () => {
+    expect(validateTimeoutMs(1500.9)).toBe(1500)
+    expect(validateTimeoutMs(MAX_REQUEST_TIMEOUT_MS + 1)).toBe(MAX_REQUEST_TIMEOUT_MS)
+})
+
+test('validateTimeoutMs passes undefined/null through untouched', () => {
+    expect(validateTimeoutMs(undefined)).toBeUndefined()
+    expect(validateTimeoutMs(null)).toBeNull()
+})
+
+test('validateTimeoutMs still rejects an unusable value', () => {
+    expect(() => validateTimeoutMs(0)).toThrow(/at least 1/)
 })
 
 test('clear() disarms the deadline so a settled request cannot be aborted later', () => {

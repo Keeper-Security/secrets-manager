@@ -141,6 +141,7 @@ class MockResponse extends EventEmitter {
     statusCode = 200
     statusMessage = 'OK'
     headers = {'content-type': 'application/octet-stream'}
+    resume = jest.fn()
     push(chunk: string) { this.emit('data', Buffer.from(chunk)) }
     finish() { this.emit('end') }
     fail(err: Error) { this.emit('error', err) }
@@ -229,8 +230,25 @@ test('omitting timeoutMs defaults the deadline to DEFAULT_REQUEST_TIMEOUT_MS', a
 test('an unusable timeoutMs is rejected rather than aborting the request immediately', async () => {
     await expect(nodePlatform.get('https://example.com', {}, 0)).rejects.toBeInstanceOf(Error)
     await expect(nodePlatform.get('https://example.com', {}, 0)).rejects.not.toBeInstanceOf(KeeperError)
-    await expect(nodePlatform.get('https://example.com', {}, Infinity)).rejects.toThrow(/greater than 0/)
+    await expect(nodePlatform.get('https://example.com', {}, Infinity)).rejects.toThrow(/at least 1/)
     expect(https.request as unknown as jest.Mock).not.toHaveBeenCalled()
+})
+
+test.each([
+    ['get', () => nodePlatform.get('https://example.com', {}, 5000)],
+    ['post', () => nodePlatform.post('https://example.com', new Uint8Array([1, 2, 3]), {}, false, 5000)],
+    ['fileUpload', () => nodePlatform.fileUpload('https://example.com', {field: 'value'}, new Uint8Array([1, 2, 3]), 5000)]
+])('%s clears the deadline timer when https.request throws synchronously', async (_name, call) => {
+    jest.useFakeTimers()
+    const clearSpy = jest.spyOn(global, 'clearTimeout')
+    try {
+        ;(https.request as unknown as jest.Mock).mockImplementationOnce(() => { throw new Error('bad url') })
+        await expect(call()).rejects.toThrow('bad url')
+        expect(clearSpy).toHaveBeenCalled()
+    } finally {
+        clearSpy.mockRestore()
+        jest.useRealTimers()
+    }
 })
 
 describe('response handling', () => {
@@ -308,6 +326,9 @@ describe('response handling', () => {
         res.statusMessage = 'No Content'
         mockReq.emit('response', res)
         await expect(promise).resolves.toMatchObject({statusCode: 204, statusMessage: 'No Content'})
+        // fileUpload never reads the response body; without draining it, an unconsumed body keeps
+        // the socket (and the event loop) alive after a successful upload.
+        expect(res.resume).toHaveBeenCalled()
     })
 
     // fileUpload never reads the response body, but the response object is still an EventEmitter.

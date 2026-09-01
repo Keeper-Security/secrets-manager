@@ -226,31 +226,54 @@ const fetchData = (res, resolve, onBodyDone?: () => void, reject?: (reason: any)
     })
 }
 
+// Wires the deadline's abort and the request's own 'error' event onto a Node request object.
+// request()/https.request() can also throw synchronously (a malformed URL, for instance) before
+// this ever runs; callers wrap that call in try/catch and clear() there too, since neither
+// listener registered here would otherwise fire and the armed timer would leak for the full
+// deadline window.
+const armRequest = (
+    req: { destroy(): void, on(event: 'error', cb: (err: any) => void): void },
+    signal: AbortSignal | undefined,
+    ms: number,
+    url: string,
+    clear: () => void,
+    reject: (reason: any) => void
+): void => {
+    signal?.addEventListener('abort', () => {
+        req.destroy()
+        reject(timeoutError(url, ms))
+    })
+    req.on('error', (err) => {
+        clear()
+        reject(err)
+    })
+}
+
 const get = (
     url: string,
     headers?: { [key: string]: string },
     timeoutMs?: number
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
     const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
-    const get = request(url, {
-        method: 'get',
-        headers: {
-            'User-Agent': `Node/${process.version}`,
-            ...headers
-        },
-        agent: getProxyAgent(),
-        signal
-    }, (res) => {
-        fetchData(res, resolve, clear, reject)
-    })
-    signal?.addEventListener('abort', () => {
-        get?.destroy()
-        reject(timeoutError(url, ms))
-    })
-    get.on('error', (err) => {
+    let get: ReturnType<typeof request>
+    try {
+        get = request(url, {
+            method: 'get',
+            headers: {
+                'User-Agent': `Node/${process.version}`,
+                ...headers
+            },
+            agent: getProxyAgent(),
+            signal
+        }, (res) => {
+            fetchData(res, resolve, clear, reject)
+        })
+    } catch (e) {
         clear()
-        reject(err)
-    })
+        reject(e)
+        return
+    }
+    armRequest(get, signal, ms, url, clear, reject)
     get.end()
 })
 
@@ -267,26 +290,26 @@ const post = (
         agent: getProxyAgent(),
         signal
     }
-    const post = request(url, {
-        method: 'post',
-        ...options,
-        headers: {
-            'Content-Type': 'application/octet-stream',
-            'Content-Length': payload.length,
-            'User-Agent': `Node/${process.version}`,
-            ...headers,
-        },
-    }, (res) => {
-        fetchData(res, resolve, clear, reject)
-    })
-    signal?.addEventListener('abort', () => {
-        post?.destroy()
-        reject(timeoutError(url, ms))
-    })
-    post.on('error', (err) => {
+    let post: ReturnType<typeof request>
+    try {
+        post = request(url, {
+            method: 'post',
+            ...options,
+            headers: {
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': payload.length,
+                'User-Agent': `Node/${process.version}`,
+                ...headers,
+            },
+        }, (res) => {
+            fetchData(res, resolve, clear, reject)
+        })
+    } catch (e) {
         clear()
-        reject(err)
-    })
+        reject(e)
+        return
+    }
+    armRequest(post, signal, ms, url, clear, reject)
     post.write(payload)
     post.end()
 })
@@ -300,20 +323,31 @@ const fileUpload = (
     const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     const boundary = `----------${Date.now()}`
     const boundaryBytes = stringToBytes(`\r\n--${boundary}`)
-    let post = https.request(url, {
-        method: "post",
-        headers: {
-            'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        },
-        agent: getProxyAgent(),
-        signal
-    });
+    let post: ReturnType<typeof https.request>
+    try {
+        post = https.request(url, {
+            method: "post",
+            headers: {
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            },
+            agent: getProxyAgent(),
+            signal
+        });
+    } catch (e) {
+        clear()
+        reject(e)
+        return
+    }
     post.on('response', function (res: any) {
         // fileUpload resolves off headers alone and never reads the body, but the response object
         // is still an EventEmitter: a socket failure after this point emits 'error' on it, and with
         // no listener that throws instead of doing nothing, per Node's EventEmitter contract for
         // unhandled 'error' events.
         res.on('error', reject)
+        // An unconsumed response body leaves the socket open (paused, not closed), which keeps
+        // the event loop alive - a script with no other pending work never exits on its own after
+        // a successful upload. resume() discards the body without buffering it; nothing here reads it.
+        res.resume()
         clear()
         resolve({
             headers: res.headers,
@@ -321,14 +355,7 @@ const fileUpload = (
             statusMessage: res.statusMessage
         })
     })
-    signal?.addEventListener('abort', () => {
-        post?.destroy()
-        reject(timeoutError(url, ms))
-    })
-    post.on('error', (err) => {
-        clear()
-        reject(err)
-    })
+    armRequest(post, signal, ms, url, clear, reject)
     for (const key in uploadParameters) {
         post.write(boundaryBytes)
         post.write(stringToBytes(`\r\nContent-Disposition: form-data; name=\"${key}\"\r\n\r\n${uploadParameters[key]}`))

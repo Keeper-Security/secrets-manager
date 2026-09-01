@@ -20,7 +20,7 @@ export type Deadline = {
 /**
  * Resolve a caller-supplied timeout to the value that will actually be enforced.
  *
- * Undefined and null take the default. Everything else must be a finite number above zero:
+ * Undefined and null take the default. Everything else must be a finite number of at least 1:
  * 0, negatives, NaN and Infinity all collapse to a near-instant setTimeout, so accepting them
  * would turn a configuration mistake into every request failing in a couple of milliseconds
  * under an error message claiming a long timeout had elapsed.
@@ -33,8 +33,8 @@ export const resolveTimeoutMs = (timeoutMs?: number | null): number => {
     if (timeoutMs === undefined || timeoutMs === null) {
         return DEFAULT_REQUEST_TIMEOUT_MS
     }
-    if (typeof timeoutMs !== 'number' || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-        throw new Error(`Request timeout must be a finite number of milliseconds greater than 0, got ${timeoutMs}`)
+    if (typeof timeoutMs !== 'number' || !Number.isFinite(timeoutMs) || timeoutMs < 1) {
+        throw new Error(`Request timeout must be a finite number of milliseconds of at least 1, got ${timeoutMs}`)
     }
     return Math.min(Math.floor(timeoutMs), MAX_REQUEST_TIMEOUT_MS)
 }
@@ -67,21 +67,22 @@ export const deadlineSignal = (timeoutMs?: number | null): Deadline => {
 }
 
 /**
- * Validate a caller-supplied timeout at the public API boundary, without resolving it.
+ * Validate a caller-supplied timeout at the public API boundary, and return the resolved value.
  *
- * resolveTimeoutMs() already rejects unusable values, but it only runs inside deadlineSignal() on
- * the platform call. A caller who supplies their own queryFunction, or hits the offline cache,
- * would never reach it and their bad configuration would pass silently. Checking here reports the
- * mistake where it was made, and delegating the check keeps one rule and one message.
+ * resolveTimeoutMs() already rejects unusable values and clamps/floors the rest, but it only ran
+ * inside deadlineSignal() on the platform call. A caller who supplies their own queryFunction, or
+ * hits the offline cache, would otherwise get the raw, unresolved value: a fractional timeout, or
+ * one above MAX_REQUEST_TIMEOUT_MS, would reach them unclamped even though the SDK's own network
+ * calls never see it that way. Returning the resolved value here keeps that guarantee uniform.
  *
  * Undefined and null pass through untouched: they mean "not set", and the default is applied
  * later by resolveTimeoutMs rather than being frozen in at this layer.
  */
 export const validateTimeoutMs = <T extends number | null | undefined>(timeoutMs: T): T => {
-    if (timeoutMs !== undefined && timeoutMs !== null) {
-        resolveTimeoutMs(timeoutMs)
+    if (timeoutMs === undefined || timeoutMs === null) {
+        return timeoutMs
     }
-    return timeoutMs
+    return resolveTimeoutMs(timeoutMs) as T
 }
 
 /**
