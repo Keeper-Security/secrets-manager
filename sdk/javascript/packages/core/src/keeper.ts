@@ -783,10 +783,28 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
     }
 }
 
-// Persists a caller-supplied serverPublicKeyId once, on the first call against a fresh config,
-// then leaves it alone. Rotation (the {"error":"key"} branch in postQuery) owns every update to
-// this value after that; re-writing the caller's pin on every call would undo a completed
-// rotation and force the client to re-rotate on every subsequent request.
+/**
+ * Persists a caller-supplied serverPublicKey once, on the first call against a fresh config, then
+ * leaves it alone. Nothing else in the SDK ever updates this value once pinned, so a later call
+ * re-writing the same value on every request is a pure no-op write, not a correctness safeguard.
+ */
+const persistServerPublicKeyOnce = async (storage: KeyValueStorage, serverPublicKey: string | undefined): Promise<void> => {
+    if (!serverPublicKey) {
+        return
+    }
+    const storedKey = await storage.getString(KEY_SERVER_PUBLIC_KEY)
+    if (storedKey !== undefined) {
+        return
+    }
+    await storage.saveString(KEY_SERVER_PUBLIC_KEY, serverPublicKey)
+}
+
+/**
+ * Persists a caller-supplied serverPublicKeyId once, on the first call against a fresh config,
+ * then leaves it alone. Rotation (the {"error":"key"} branch in postQuery) owns every update to
+ * this value after that; re-writing the caller's pin on every call would undo a completed
+ * rotation and force the client to re-rotate on every subsequent request.
+ */
 const persistServerPublicKeyIdOnce = async (storage: KeyValueStorage, serverPublicKeyId: string | undefined, hasCustomKey: boolean): Promise<void> => {
     if (!serverPublicKeyId) {
         return
@@ -797,8 +815,15 @@ const persistServerPublicKeyIdOnce = async (storage: KeyValueStorage, serverPubl
     }
     // An out-of-table id is only legitimate alongside a pinned custom key (its own key content
     // makes the bundled table irrelevant); an id-only pin must be one of the bundled ids.
-    if (!hasCustomKey && !(Number(serverPublicKeyId) in keeperPublicKeys)) {
-        throw new Error(`serverPublicKeyId ${serverPublicKeyId} is not supported`)
+    if (!hasCustomKey) {
+        const parsedKeyId = Number(serverPublicKeyId)
+        if (!Number.isInteger(parsedKeyId) || parsedKeyId <= 0) {
+            throw new Error(`serverPublicKeyId '${serverPublicKeyId}' must be a positive integer`)
+        }
+        if (!(parsedKeyId in keeperPublicKeys)) {
+            const supported = Object.keys(keeperPublicKeys)
+            throw new Error(`serverPublicKeyId ${parsedKeyId} is not supported; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
+        }
     }
     await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId)
 }
@@ -813,9 +838,7 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     return {payload: encryptedPayload, signature}
 }
 const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
-    if (options.serverPublicKey) {
-        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
-    }
+    await persistServerPublicKeyOnce(options.storage, options.serverPublicKey)
     await persistServerPublicKeyIdOnce(options.storage, options.serverPublicKeyId, !!options.serverPublicKey)
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
@@ -918,9 +941,7 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
 
 const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
     const storage = options.storage
-    if (options.serverPublicKey) {
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
-    }
+    await persistServerPublicKeyOnce(storage, options.serverPublicKey)
     await persistServerPublicKeyIdOnce(storage, options.serverPublicKeyId, !!options.serverPublicKey)
     const payload = await prepareGetPayload(storage, queryOptions)
     const responseData = await postQuery(options, 'get_secret', payload)

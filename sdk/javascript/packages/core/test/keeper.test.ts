@@ -446,6 +446,25 @@ test('id-only serverPublicKeyId pin does not reclobber a completed rotation on a
     expect(await storage.getString('serverPublicKeyId')).toBe('7')
 })
 
+test('pinned serverPublicKey is not reclobbered on subsequent calls', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const saveStringSpy = jest.spyOn(storage, 'saveString')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
+        queryFunction: async (_url, tk) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
+    }
+    await getSecrets(options)
+    await getSecrets(options)
+    const serverPublicKeyWrites = saveStringSpy.mock.calls.filter(([key]) => key === 'serverPublicKey')
+    expect(serverPublicKeyWrites.length).toBe(1)
+})
+
 test('caller-supplied serverPublicKeyId outside the bundled table is rejected upfront, not persisted', async () => {
     const storage = inMemoryStorage({})
     await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
@@ -458,6 +477,36 @@ test('caller-supplied serverPublicKeyId outside the bundled table is rejected up
     }
     await expect(getSecrets(options)).rejects.toThrow(/serverPublicKeyId 99 is not supported/)
     expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('caller-supplied serverPublicKeyId in an invalid format is rejected with a format error, not a table-membership error', async () => {
+    for (const invalid of ['abc', '-1', '7.5', '0']) {
+        const storage = inMemoryStorage({})
+        await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+        const options: SecretManagerOptions = {
+            storage,
+            serverPublicKeyId: invalid,
+            queryFunction: async () => {
+                throw new Error('should not reach the network')
+            }
+        }
+        await expect(getSecrets(options)).rejects.toThrow(`serverPublicKeyId '${invalid}' must be a positive integer`)
+        expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+    }
+})
+
+test('concurrent calls against fresh storage do not corrupt the persisted serverPublicKeyId', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKeyId: '8',
+        queryFunction: async (_url, tk) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
+    }
+    await Promise.all([getSecrets(options), getSecrets(options)])
+    expect(await storage.getString('serverPublicKeyId')).toBe('8')
 })
 
 test('an out-of-table serverPublicKeyId alongside a pinned custom key is not validated against the bundled table', async () => {
