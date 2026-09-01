@@ -776,6 +776,9 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
     // key instead, so the request goes out and the server's rotation hint can steer it back to
     // a valid id.
     const effectiveKeyNumber = keyNumber in keeperPublicKeys ? keyNumber : 7
+    if (effectiveKeyNumber !== keyNumber) {
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, effectiveKeyNumber.toString())
+    }
     const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[effectiveKeyNumber])
     return {
         publicKeyId: effectiveKeyNumber,
