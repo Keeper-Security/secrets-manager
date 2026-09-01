@@ -371,8 +371,17 @@ export class KeeperRecordLink {
         return typeof value === 'number' && !Number.isNaN(value) ? Math.trunc(value) : null
     }
 
+    // The leading-character check alone is not enough: encrypted data has roughly a 1-in-128
+    // chance of coincidentally decoding to a leading '{' or '[' byte, which would otherwise get
+    // misread as plaintext JSON. Requiring an actual successful parse closes that gap.
     private static _isReadableJson(text: string): boolean {
-        return text.startsWith('{') || text.startsWith('[')
+        if (!(text.startsWith('{') || text.startsWith('['))) return false
+        try {
+            JSON.parse(text)
+            return true
+        } catch {
+            return false
+        }
     }
 
     private static _isPrintableText(text: string): boolean {
