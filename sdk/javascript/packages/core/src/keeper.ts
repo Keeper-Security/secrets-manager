@@ -62,7 +62,7 @@ export type SecretManagerOptions = {
     // Override the sleep between throttle retries (primarily for tests). Defaults to setTimeout.
     throttleSleep?: (milliseconds: number) => Promise<void>
     // Called for each item skipped because it could not be decrypted (currently: folders from
-    // getFolders/getFolders2). Optional and additive: existing callers see no behavior change.
+    // getFolders). Optional and additive: existing callers see no behavior change.
     // Throw from this callback to abort the call instead of returning a partial result (fail closed).
     onDecryptionError?: (info: KeeperDecryptionErrorInfo) => void
 }
