@@ -1,6 +1,6 @@
 import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
 import {privateDerToPublicRaw} from '../utils'
-import {KeeperError} from '../errors'
+import {KeeperError, KeeperCryptoError} from '../errors'
 import {request, RequestOptions} from 'https'
 import {
     createCipheriv,
@@ -44,7 +44,7 @@ const loadKey = async (keyId: string, storage?: KeyValueStorage): Promise<Uint8A
         ? await storage.getBytes(keyId)
         : undefined
     if (!keyBytes) {
-        throw new Error(`Unable to load the key ${keyId}`)
+        throw new KeeperCryptoError(`Unable to load the key ${keyId}`, 'missing-key', keyId)
     }
     keyCache[keyId] = keyBytes
     return keyBytes
@@ -122,6 +122,11 @@ const _encrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Pr
     return Buffer.concat([iv, encrypted, tag])
 }
 
+// AES-256-CBC carries no MAC: a decrypt failure here means malformed input, not a verified
+// integrity failure, and a decrypt success proves nothing about integrity either (see
+// KeeperCryptoError's 'format' vs 'integrity' in errors.ts). This mode exists only because the
+// vault's wire format for shared-folder key wraps and folder data is fixed to CBC server-side
+// (KSM-1267) - callers must not copy this mode into new code; prefer the AES-256-GCM path.
 const _encryptCBC = (data: Uint8Array, key: Uint8Array): Uint8Array => {
     let iv = randomBytes(16);
     let cipher = createCipheriv("aes-256-cbc", key, iv).setAutoPadding(true);
@@ -141,6 +146,7 @@ const _decrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Pr
     return Buffer.concat([cipher.update(encrypted), cipher.final()])
 }
 
+// See _encryptCBC above: no MAC, fixed server-side format, not a template for new code.
 const _decryptCBC = (data: Uint8Array, key: Uint8Array): Uint8Array => {
     let iv = data.subarray(0, 16)
     let encrypted = data.subarray(16)
@@ -148,10 +154,21 @@ const _decryptCBC = (data: Uint8Array, key: Uint8Array): Uint8Array => {
     return Buffer.concat([cipher.update(encrypted), cipher.final()])
 }
 
+const UNWRAPPED_KEY_LENGTH = 32 // every key this SDK unwraps is AES-256
+
 const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean, useCBC?: boolean): Promise<void> => {
     const cbcDecrypt = unwrappingKeyId === "appKey" ? false : useCBC
     const unwrappingKey = await loadKey(unwrappingKeyId, storage)
     const unwrappedKey = await _decrypt(key, unwrappingKey, cbcDecrypt)
+    if (unwrappedKey.length !== UNWRAPPED_KEY_LENGTH) {
+        // WebCrypto's unwrapKey/importKey only validates that a raw AES key is a valid AES size
+        // (128/192/256 bits, i.e. 16/24/32 bytes) - it happily accepts a corrupted-but-plausible
+        // 16- or 24-byte result, so the browser platform needs this same explicit AES-256 check
+        // (see browserPlatform.ts's unwrap, which checks algorithm.length on the CryptoKey since
+        // it never has the raw bytes). Without this check here, Node would cache a malformed key
+        // and only fail later, at an unrelated call site, with a much harder to diagnose error.
+        throw new Error(`Unwrapped key ${keyId} has invalid length ${unwrappedKey.length}, expected ${UNWRAPPED_KEY_LENGTH}`)
+    }
     keyCache[keyId] = unwrappedKey
     if (memoryOnly) {
         return
