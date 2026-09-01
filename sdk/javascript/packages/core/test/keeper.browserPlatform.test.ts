@@ -42,7 +42,7 @@ test('getFolders skips a folder that names itself as its own parent instead of h
     const serverResponse = {
         folders: [
             // Never decrypted: getSharedFolderUid throws before folderKey/data are read.
-            {folderUid: selfCycleUid, folderKey: '', data: '', parent: selfCycleUid},
+            {folderUid: selfCycleUid, folderKey: 'unused-folder-key', data: '', parent: selfCycleUid},
             {folderUid: rootUid, folderKey: platform.bytesToBase64(rootFolderKeyWrapped), data: platform.bytesToBase64(rootFolderData)}
         ],
         records: [],
@@ -83,8 +83,8 @@ test('getFolders detects a two-folder parent cycle and logs each folder naming t
         folders: [
             // Neither folder ever decrypts: getSharedFolderUid throws for both before
             // folderKey/data are read, so they can stay empty.
-            {folderUid: 'folder-a', folderKey: '', data: '', parent: 'folder-b'},
-            {folderUid: 'folder-b', folderKey: '', data: '', parent: 'folder-a'}
+            {folderUid: 'folder-a', folderKey: 'unused-folder-key', data: '', parent: 'folder-b'},
+            {folderUid: 'folder-b', folderKey: 'unused-folder-key', data: '', parent: 'folder-a'}
         ],
         records: [],
         expiresOn: 0,
@@ -104,15 +104,17 @@ test('getFolders detects a two-folder parent cycle and logs each folder naming t
     const folders = await getFolders(options)
 
     expect(folders.length).toBe(0)
-    expect(errorSpy).toHaveBeenCalledTimes(2)
+    // 2 per-folder skip lines plus the KSM-1267 summary line naming both skipped UIDs.
+    expect(errorSpy).toHaveBeenCalledTimes(3)
     // folder-a resolves its shared-folder lookup starting at folder-b: the walk visits folder-b
-    // then folder-a again, so the cycle closes back at folder-b.
+    // then folder-a again, so the cycle closes back at folder-b. The cycle error is a plain
+    // Error (not a KeeperCryptoError), so KSM-1267's classifier labels it "unknown".
     expect(errorSpy.mock.calls[0][0]).toBe(
-        'Folder folder-a skipped due to error: Error, Folder data inconsistent - parent cycle detected at folder UID folder-b'
+        'Folder folder-a skipped due to error (unknown): Error, Folder data inconsistent - parent cycle detected at folder UID folder-b'
     )
     // folder-b's lookup starts at folder-a and symmetrically closes back at folder-a.
     expect(errorSpy.mock.calls[1][0]).toBe(
-        'Folder folder-b skipped due to error: Error, Folder data inconsistent - parent cycle detected at folder UID folder-a'
+        'Folder folder-b skipped due to error (unknown): Error, Folder data inconsistent - parent cycle detected at folder UID folder-a'
     )
 
     errorSpy.mockRestore()
@@ -128,7 +130,7 @@ test('getFolders resolves a large folder-parent cycle quickly instead of hanging
     const ringSize = 500
     const ringFolders: { folderUid: string, folderKey: string, data: string, parent: string }[] = []
     for (let i = 0; i < ringSize; i++) {
-        ringFolders.push({folderUid: `folder-${i}`, folderKey: '', data: '', parent: `folder-${(i + 1) % ringSize}`})
+        ringFolders.push({folderUid: `folder-${i}`, folderKey: 'unused-folder-key', data: '', parent: `folder-${(i + 1) % ringSize}`})
     }
 
     const serverResponse = {folders: ringFolders, records: [], expiresOn: 0, warnings: []}

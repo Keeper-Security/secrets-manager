@@ -595,7 +595,7 @@ test('getFolders skips a folder that names itself as its own parent instead of h
 
     const serverResponse = {
         folders: [
-            { folderUid: 'self-parent-uid', folderKey: '', data: '', parent: 'self-parent-uid' },
+            { folderUid: 'self-parent-uid', folderKey: 'unused-folder-key', data: '', parent: 'self-parent-uid' },
             { folderUid: 'good-root-uid', folderKey: platform.bytesToBase64(goodFolderKeyWrapped), data: platform.bytesToBase64(goodFolderData) }
         ],
         records: [],
@@ -632,8 +632,8 @@ test('getFolders detects a two-folder parent cycle and logs each folder naming t
 
     const serverResponse = {
         folders: [
-            { folderUid: 'folder-a', folderKey: '', data: '', parent: 'folder-b' },
-            { folderUid: 'folder-b', folderKey: '', data: '', parent: 'folder-a' }
+            { folderUid: 'folder-a', folderKey: 'unused-folder-key', data: '', parent: 'folder-b' },
+            { folderUid: 'folder-b', folderKey: 'unused-folder-key', data: '', parent: 'folder-a' }
         ],
         records: [],
         expiresOn: 0,
@@ -651,7 +651,8 @@ test('getFolders detects a two-folder parent cycle and logs each folder naming t
     const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
 
     expect(folders).toEqual([])
-    expect(consoleErrorSpy).toHaveBeenCalledTimes(2)
+    // 2 per-folder skip lines plus the KSM-1267 summary line naming both skipped UIDs.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(3)
     expect(consoleErrorSpy.mock.calls[0][0]).toContain('Folder folder-a skipped due to error')
     expect(consoleErrorSpy.mock.calls[0][0]).toContain('Folder data inconsistent - parent cycle detected at folder UID folder-b')
     expect(consoleErrorSpy.mock.calls[1][0]).toContain('Folder folder-b skipped due to error')
@@ -667,9 +668,9 @@ test('getFolders detects a longer three-folder parent cycle and skips every fold
 
     const serverResponse = {
         folders: [
-            { folderUid: 'ring-a', folderKey: '', data: '', parent: 'ring-b' },
-            { folderUid: 'ring-b', folderKey: '', data: '', parent: 'ring-c' },
-            { folderUid: 'ring-c', folderKey: '', data: '', parent: 'ring-a' }
+            { folderUid: 'ring-a', folderKey: 'unused-folder-key', data: '', parent: 'ring-b' },
+            { folderUid: 'ring-b', folderKey: 'unused-folder-key', data: '', parent: 'ring-c' },
+            { folderUid: 'ring-c', folderKey: 'unused-folder-key', data: '', parent: 'ring-a' }
         ],
         records: [],
         expiresOn: 0,
@@ -687,8 +688,9 @@ test('getFolders detects a longer three-folder parent cycle and skips every fold
     const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
 
     expect(folders).toEqual([])
-    expect(consoleErrorSpy).toHaveBeenCalledTimes(3)
-    for (const call of consoleErrorSpy.mock.calls) {
+    // 3 per-folder skip lines plus the KSM-1267 summary line naming all three skipped UIDs.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(4)
+    for (const call of consoleErrorSpy.mock.calls.slice(0, 3)) {
         expect(call[0]).toContain('parent cycle detected at folder UID')
     }
 
@@ -705,7 +707,7 @@ test('getFolders resolves a large folder-parent cycle quickly instead of hanging
     const ringSize = 500
     const ringFolders: { folderUid: string, folderKey: string, data: string, parent: string }[] = []
     for (let i = 0; i < ringSize; i++) {
-        ringFolders.push({ folderUid: `folder-${i}`, folderKey: '', data: '', parent: `folder-${(i + 1) % ringSize}` })
+        ringFolders.push({ folderUid: `folder-${i}`, folderKey: 'unused-folder-key', data: '', parent: `folder-${(i + 1) % ringSize}` })
     }
 
     const serverResponse = {
@@ -729,10 +731,13 @@ test('getFolders resolves a large folder-parent cycle quickly instead of hanging
 
     expect(folders).toEqual([])
     expect(elapsed).toBeLessThan(2000)
-    expect(consoleErrorSpy).toHaveBeenCalledTimes(ringSize)
-    for (const call of consoleErrorSpy.mock.calls) {
+    // ringSize per-folder skip lines plus the KSM-1267 summary line, which is not itself a
+    // cycle message, so it is checked separately from the loop below.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(ringSize + 1)
+    for (const call of consoleErrorSpy.mock.calls.slice(0, ringSize)) {
         expect(call[0]).toContain('parent cycle detected at folder UID')
     }
+    expect(consoleErrorSpy.mock.calls[ringSize][0]).toContain(`getFolders: ${ringSize} of ${ringSize} folder(s) could not be decrypted`)
 
     consoleErrorSpy.mockRestore()
 }, 5000)
@@ -799,7 +804,7 @@ test('getFolders keeps the "unable to locate shared folder" message distinct fro
 
     const serverResponse = {
         folders: [
-            { folderUid: 'orphan-uid', folderKey: '', data: '', parent: 'missing-parent-uid' },
+            { folderUid: 'orphan-uid', folderKey: 'unused-folder-key', data: '', parent: 'missing-parent-uid' },
             { folderUid: 'good-uid', folderKey: platform.bytesToBase64(goodFolderKeyWrapped), data: platform.bytesToBase64(goodFolderData) }
         ],
         records: [],
@@ -821,8 +826,9 @@ test('getFolders keeps the "unable to locate shared folder" message distinct fro
     expect(folders.length).toBe(1)
     expect(folders[0].folderUid).toBe('good-uid')
 
-    expect(consoleErrorSpy).toHaveBeenCalledTimes(1)
-    expect(consoleErrorSpy.mock.calls[0][0]).toBe('Folder orphan-uid skipped due to error: Error, Folder data inconsistent - unable to locate shared folder')
+    // 1 per-folder skip line plus the KSM-1267 summary line.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(2)
+    expect(consoleErrorSpy.mock.calls[0][0]).toBe('Folder orphan-uid skipped due to error (missing-key): KeeperCryptoError, Folder data inconsistent - unable to locate shared folder for orphan-uid')
     expect(consoleErrorSpy.mock.calls[0][0]).not.toContain('parent cycle detected')
 
     consoleErrorSpy.mockRestore()
