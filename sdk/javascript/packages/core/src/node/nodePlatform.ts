@@ -297,6 +297,10 @@ const fileUpload = (
         // no listener that throws instead of doing nothing, per Node's EventEmitter contract for
         // unhandled 'error' events.
         res.on('error', reject)
+        // An unconsumed response body leaves the socket open (paused, not closed), which keeps
+        // the event loop alive - a script with no other pending work never exits on its own after
+        // a successful upload. resume() discards the body without buffering it; nothing here reads it.
+        res.resume()
         clear()
         resolve({
             headers: res.headers,
