@@ -2,6 +2,7 @@ import {
     KeeperHttpResponse,
     getSecrets,
     getFolders,
+    deleteSecret,
     initializeStorage,
     generateTransmissionKey,
     platform,
@@ -526,6 +527,85 @@ test('an out-of-table serverPublicKeyId alongside a pinned custom key is not val
     }
     const secrets = await getSecrets(options)
     expect(secrets.records).toEqual([])
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
+test('pinning both fields together rebinds the pair atomically, not split across two independent gates', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    await storage.saveString('serverPublicKeyId', '10') // stale id from an earlier rotation, no custom key yet
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
+        queryFunction: async (_url, tk) => {
+            expect(tk.publicKeyId).toBe(20)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    await getSecrets(options)
+    expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
+test('an id-only pin after an earlier key-only pin uses storage, not this call, to decide whether a custom key applies', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    await getSecrets({
+        storage,
+        serverPublicKey: fakeKey,
+        queryFunction: async (_url, tk) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
+    })
+    const secrets = await getSecrets({
+        storage,
+        serverPublicKeyId: '20',
+        queryFunction: async (_url, tk) => {
+            expect(tk.publicKeyId).toBe(20)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    })
+    expect(secrets.records).toEqual([])
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
+test('a custom-key-paired serverPublicKeyId still gets format-validated, not sent as NaN', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: 'not-a-number',
+        queryFunction: async () => { throw new Error('should not reach the network') }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(`serverPublicKeyId 'not-a-number' must be a positive integer`)
+    expect(await storage.getString('serverPublicKey')).toBeUndefined()
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('postQuery persists serverPublicKey/serverPublicKeyId on its own, for callers that never go through fetchAndDecryptSecrets first', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const deleteResponse = enc.encode(JSON.stringify({ records: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
+        queryFunction: async (_url, tk) => {
+            expect(tk.publicKeyId).toBe(20)
+            return { statusCode: 200, data: await platform.encryptWithKey(deleteResponse, tk.key), headers: [] }
+        }
+    }
+    await deleteSecret(options, ['fake-record-uid'])
+    expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
     expect(await storage.getString('serverPublicKeyId')).toBe('20')
 })
 

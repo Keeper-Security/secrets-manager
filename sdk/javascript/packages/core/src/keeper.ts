@@ -783,13 +783,24 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
     }
 }
 
+// Shared by every call site below that validates a caller-supplied serverPublicKeyId string
+// (the postQuery rotation branch validates an already-parsed JSON number instead, a different
+// input contract, and stays separate).
+const parseServerKeyId = (serverPublicKeyId: string): number => {
+    const parsedKeyId = Number(serverPublicKeyId)
+    if (!Number.isInteger(parsedKeyId) || parsedKeyId <= 0) {
+        throw new Error(`serverPublicKeyId '${serverPublicKeyId}' must be a positive integer`)
+    }
+    return parsedKeyId
+}
+
 /**
  * Persists a caller-supplied serverPublicKey once, on the first call against a fresh config, then
  * leaves it alone. Nothing else in the SDK ever updates this value once pinned, so a later call
  * re-writing the same value on every request is a pure no-op write, not a correctness safeguard.
  */
 const persistServerPublicKeyOnce = async (storage: KeyValueStorage, serverPublicKey: string | undefined): Promise<void> => {
-    if (!serverPublicKey) {
+    if (serverPublicKey === undefined) {
         return
     }
     const storedKey = await storage.getString(KEY_SERVER_PUBLIC_KEY)
@@ -803,29 +814,66 @@ const persistServerPublicKeyOnce = async (storage: KeyValueStorage, serverPublic
  * Persists a caller-supplied serverPublicKeyId once, on the first call against a fresh config,
  * then leaves it alone. Rotation (the {"error":"key"} branch in postQuery) owns every update to
  * this value after that; re-writing the caller's pin on every call would undo a completed
- * rotation and force the client to re-rotate on every subsequent request.
+ * rotation and force the client to re-rotate on every subsequent request. A consequence of "once,
+ * then hands off to rotation": a garbage id supplied on a later call, after a valid one already
+ * persisted, is silently ignored rather than re-validated - intentional, matching the same "once"
+ * contract, not a validation gap.
  */
 const persistServerPublicKeyIdOnce = async (storage: KeyValueStorage, serverPublicKeyId: string | undefined, hasCustomKey: boolean): Promise<void> => {
-    if (!serverPublicKeyId) {
+    if (serverPublicKeyId === undefined) {
         return
     }
     const storedKeyId = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
     if (storedKeyId !== undefined) {
         return
     }
+    const parsedKeyId = parseServerKeyId(serverPublicKeyId)
     // An out-of-table id is only legitimate alongside a pinned custom key (its own key content
     // makes the bundled table irrelevant); an id-only pin must be one of the bundled ids.
-    if (!hasCustomKey) {
-        const parsedKeyId = Number(serverPublicKeyId)
-        if (!Number.isInteger(parsedKeyId) || parsedKeyId <= 0) {
-            throw new Error(`serverPublicKeyId '${serverPublicKeyId}' must be a positive integer`)
-        }
-        if (!(parsedKeyId in keeperPublicKeys)) {
-            const supported = Object.keys(keeperPublicKeys)
-            throw new Error(`serverPublicKeyId ${parsedKeyId} is not supported; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
-        }
+    if (!hasCustomKey && !(parsedKeyId in keeperPublicKeys)) {
+        const supported = Object.keys(keeperPublicKeys)
+        throw new Error(`serverPublicKeyId ${parsedKeyId} is not supported; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
     }
     await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId)
+}
+
+/**
+ * Persists a caller-supplied serverPublicKey/serverPublicKeyId pair. When both are supplied in
+ * the same call, they're one atomic bound identity, not two independent write-once gates: writing
+ * only the field that happened to be missing (the old behavior) could pair a freshly-pinned key
+ * with a stale id left over from an earlier rotation or a partially-seeded config. Write both
+ * whenever the incoming pair differs from what's stored (first time, or a genuine rebind); no-op
+ * when it already matches, preserving this PR's point of skipping redundant writes. When only one
+ * field is supplied, fall back to that field's own write-once gate.
+ */
+const persistServerPublicKeyOptions = async (
+    storage: KeyValueStorage,
+    serverPublicKey: string | undefined,
+    serverPublicKeyId: string | undefined
+): Promise<void> => {
+    if (serverPublicKey !== undefined && serverPublicKeyId !== undefined) {
+        parseServerKeyId(serverPublicKeyId)
+        const [storedKey, storedKeyId] = await Promise.all([
+            storage.getString(KEY_SERVER_PUBLIC_KEY),
+            storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+        ])
+        if (storedKey === serverPublicKey && storedKeyId === serverPublicKeyId) {
+            return
+        }
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY, serverPublicKey)
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId)
+        return
+    }
+    if (serverPublicKey !== undefined) {
+        await persistServerPublicKeyOnce(storage, serverPublicKey)
+        return
+    }
+    if (serverPublicKeyId !== undefined) {
+        // hasCustomKey must reflect storage, not this call's options - a key pinned on an earlier
+        // call still makes an out-of-table id legitimate on this one.
+        const hasCustomKey = (await storage.getString(KEY_SERVER_PUBLIC_KEY)) !== undefined
+        await persistServerPublicKeyIdOnce(storage, serverPublicKeyId, hasCustomKey)
+    }
 }
 
 const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload | FileUploadPayload): Promise<EncryptedPayload> => {
@@ -838,8 +886,7 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     return {payload: encryptedPayload, signature}
 }
 const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
-    await persistServerPublicKeyOnce(options.storage, options.serverPublicKey)
-    await persistServerPublicKeyIdOnce(options.storage, options.serverPublicKeyId, !!options.serverPublicKey)
+    await persistServerPublicKeyOptions(options.storage, options.serverPublicKey, options.serverPublicKeyId)
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
         throw new Error('hostname is missing from the configuration')
@@ -941,8 +988,7 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
 
 const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
     const storage = options.storage
-    await persistServerPublicKeyOnce(storage, options.serverPublicKey)
-    await persistServerPublicKeyIdOnce(storage, options.serverPublicKeyId, !!options.serverPublicKey)
+    await persistServerPublicKeyOptions(storage, options.serverPublicKey, options.serverPublicKeyId)
     const payload = await prepareGetPayload(storage, queryOptions)
     const responseData = await postQuery(options, 'get_secret', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
@@ -1187,8 +1233,7 @@ export const initializeStorage = async (
                 if (tokenParts[3].length < 80) {
                     throw new Error(`IL5 token: serverPublicKey appears malformed`)
                 }
-                await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, keyId)
-                await storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
+                await persistServerPublicKeyOptions(storage, tokenParts[3], keyId)
             }
         }
     }
