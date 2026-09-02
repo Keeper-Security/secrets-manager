@@ -27,9 +27,9 @@ const stripBOM = (text: string): string => text.charCodeAt(0) === 0xFEFF ? text.
 export const localConfigStorage = (configName?: string): KeyValueStorage => {
 
     // Node validates config readability eagerly, here at construction, because fs is
-    // synchronous. The browser localConfigStorage (KSM-1332, same release) defers the equivalent
-    // check lazily to first getString/saveString/delete, because IndexedDB has no synchronous API
-    // to check eagerly against - a structural difference between the two platforms, not a
+    // synchronous. The browser localConfigStorage defers the equivalent check lazily to first
+    // getString/saveString/delete, because IndexedDB has no synchronous API to check eagerly
+    // against - a structural difference between the two platforms, not a
     // stylistic one.
     const readStorage = (): any => {
         if (!configName) {
