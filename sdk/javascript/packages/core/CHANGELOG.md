@@ -1,5 +1,17 @@
 # Change Log
 
+## 18.0.0
+- KSM-1042 - Fixed `getFolders()` failing with "appKey missing" when called as the first method on a freshly bound application. `getFolders()` now processes `encryptedAppKey` from the server binding response the same way `getSecrets()` does.
+- KSM-1058 - Fixed `createFolder()` writing folder keys and data with AES-CBC instead of AES-GCM. New folders are now created with GCM. `getFolders()` detects the cipher from the encrypted key length (60 bytes = GCM, 64 bytes = CBC) so existing CBC folders continue to decrypt correctly. `updateFolder()` accepts an optional `useGcm` flag so callers can match the cipher used when the folder was created.
+
+## 17.6.0
+- KSM-1073 - Added `dbConnectionMethod` to `PamSettingsConnection`.
+- KSM-1079 - Fixed `getFolders()` crashing when a folder in the response has a corrupted or missing key. The SDK now skips undecryptable folders and returns the remaining folders normally.
+- KSM-1084 - Fixed `deleteSecret()` and `deleteFolder()` silently reporting success when the server rejected some UIDs. The SDK now surfaces per-item error messages from the server to the caller.
+- KSM-748 - Fixed `getSecrets()` silently dropping records created by Commander or the Vault UI inside shared folders. The SDK now uses the folder key to decrypt the record key for any flat record that has `innerFolderUid` set. This matches the behavior for records in `folders[].records[]`.
+- KSM-1035 - Fixed throttle retry jitter being two-sided, which could reduce a retry delay below the computed floor. Jitter is now one-sided (0 to +25%). The SDK also caps a server-supplied `retry_after` at 176s to prevent an arbitrarily long wait.
+- Maintenance: Updated `minimatch`, `@babel/core`, and `handlebars` dev dependencies.
+
 ## 17.5.0
 - KSM-1029 - Fixed stale pinned server key error: when the server rejects a configured custom server public key, the diagnostic message now propagates to the caller instead of being swallowed by a bare catch.
 - KSM-880 - Added automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, `postQuery` now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus ±25% jitter, honoring `retry_after` from the response when present; a typed `KeeperThrottleError` is thrown once retries are exhausted. Existing key-rotation retry behavior is unchanged.
