@@ -54,5 +54,11 @@ const main = async () => {
 
 // uploadFile()'s underlying HTTP response is never drained, which leaves the process
 // alive after main() resolves - exit explicitly rather than leave a script that appears
-// to hang after printing its result.
-main().finally(() => process.exit(0))
+// to hang after printing its result. process.exit() with no argument uses process.exitCode
+// if set by the .catch() below, defaulting to 0 otherwise.
+main()
+    .catch((e) => {
+        console.error(`Failed to run file-upload example: ${e?.message ?? String(e)}`)
+        process.exitCode = 1
+    })
+    .finally(() => process.exit())
