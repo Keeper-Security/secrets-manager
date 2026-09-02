@@ -523,18 +523,20 @@ namespace SecretsManager
 
     public class KeeperFolder
     {
-        public KeeperFolder(byte[] folderKey, string folderUid, string parentUid, string name)
+        public KeeperFolder(byte[] folderKey, string folderUid, string parentUid, string name, bool useGcm = false)
         {
             FolderKey = folderKey;
             FolderUid = folderUid;
             ParentUid = parentUid;
             Name = name;
+            UseGcm = useGcm;
         }
 
         public byte[] FolderKey { get; }
         public string FolderUid { get; }
         public string ParentUid { get; }
         public string Name { get; }
+        public bool UseGcm { get; }
     }
 
     public class KeeperFolderName
@@ -998,7 +1000,7 @@ namespace SecretsManager
                 throw new Exception($"Unable to update folder - folder key for {folderUid} not found");
             }
 
-            var payload = PrepareUpdateFolderPayload(options.Storage, folderUid, folderName, sharedFolder.FolderKey);
+            var payload = PrepareUpdateFolderPayload(options.Storage, folderUid, folderName, sharedFolder.FolderKey, sharedFolder.UseGcm);
             await PostQuery(options, "update_folder", payload);
         }
 
@@ -1246,6 +1248,7 @@ namespace SecretsManager
                 try
                 {
                     byte[] folderKey;
+                    var useGcm = false;
                     if (folder.parent == null)
                     {
                         folderKey = CryptoUtils.Decrypt(folder.folderKey, appKey);
@@ -1253,12 +1256,26 @@ namespace SecretsManager
                     else
                     {
                         var sharedFolderKey = GetSharedFolderKey(folders, response.folders, folder.parent);
-                        folderKey = CryptoUtils.Decrypt(folder.folderKey, sharedFolderKey, true);
+                        var folderKeyBytes = CryptoUtils.Base64ToBytes(folder.folderKey);
+                        // GCM-wrapped subfolder keys are 60 bytes (12-byte nonce + 32-byte key + 16-byte tag);
+                        // legacy CBC-wrapped keys are 64 bytes (16-byte IV + 48-byte padded ciphertext) - always
+                        // unambiguous, mirrors the dispatch already landed in the other KSM SDKs (KSM-1043/1058/1061/1062).
+                        if (folderKeyBytes.Length == 60)
+                        {
+                            useGcm = true;
+                            folderKey = CryptoUtils.Decrypt(folderKeyBytes, sharedFolderKey);
+                        }
+                        else
+                        {
+                            folderKey = CryptoUtils.Decrypt(folderKeyBytes, sharedFolderKey, true);
+                        }
                     }
 
-                    var folderNameJson = CryptoUtils.Decrypt(folder.data, folderKey, true);
+                    // Root folders keep the existing path: key via GCM (appKey wrap), data via CBC -
+                    // all current NSF roots have CBC-encrypted data, so useGcm stays false here.
+                    var folderNameJson = CryptoUtils.Decrypt(folder.data, folderKey, !useGcm);
                     var folderName = JsonUtils.ParseJson<KeeperFolderName>(folderNameJson);
-                    folders.Add(new KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name));
+                    folders.Add(new KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name, useGcm));
                 }
                 catch (Exception ex)
                 {
@@ -1430,8 +1447,10 @@ namespace SecretsManager
             var folderDataBytes = JsonUtils.SerializeJson(new KeeperFolderName { name = folderName });
             var folderKey = CryptoUtils.GetRandomBytes(32);
             var folderUid = CryptoUtils.GetUidBytes();
-            var encryptedFolderData = CryptoUtils.Encrypt(folderDataBytes, folderKey, true);
-            var encryptedFolderKey = CryptoUtils.Encrypt(folderKey, sharedFolderKey, true);
+            // Drive (NSF) folders require AES-GCM for both the folder key wrap and folder data
+            // (KSM-1060); CBC produces "invalid sharedFolderKey" against NSF-enabled endpoints.
+            var encryptedFolderData = CryptoUtils.Encrypt(folderDataBytes, folderKey);
+            var encryptedFolderKey = CryptoUtils.Encrypt(folderKey, sharedFolderKey);
 
             return new CreateFolderPayload(GetClientVersion(), clientId,
                 CryptoUtils.WebSafe64FromBytes(folderUid), createOptions.FolderUid,
@@ -1439,7 +1458,7 @@ namespace SecretsManager
                 createOptions.SubFolderUid);
         }
 
-        private static UpdateFolderPayload PrepareUpdateFolderPayload(IKeyValueStorage storage, string folderUid, string folderName, byte[] folderKey)
+        private static UpdateFolderPayload PrepareUpdateFolderPayload(IKeyValueStorage storage, string folderUid, string folderName, byte[] folderKey, bool useGcm = false)
         {
             var clientId = storage.GetString(KeyClientId);
             if (clientId == null)
@@ -1448,7 +1467,7 @@ namespace SecretsManager
             }
 
             var folderDataBytes = JsonUtils.SerializeJson(new KeeperFolderName { name = folderName });
-            var encryptedFolderData = CryptoUtils.Encrypt(folderDataBytes, folderKey, true);
+            var encryptedFolderData = CryptoUtils.Encrypt(folderDataBytes, folderKey, !useGcm);
 
             return new UpdateFolderPayload(GetClientVersion(), clientId, folderUid, CryptoUtils.WebSafe64FromBytes(encryptedFolderData));
         }
