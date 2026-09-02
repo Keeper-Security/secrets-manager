@@ -25,6 +25,10 @@ const MAX_THROTTLE_RETRIES = 5
 const MAX_KEY_ROTATION_RETRIES = 3
 const BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 const MAX_THROTTLE_DELAY_SEC = 176 // same ceiling the exponential branch reaches at the last retry (11 * 2**4)
+// Caps how much of a non-200 response body gets decoded to detect throttle/key-rotation. Any
+// real throttle or key-rotation body is a small flat JSON object; this is generous headroom over
+// that so a pathological or malicious oversized body can't force an unbounded string decode.
+const MAX_ERROR_BODY_DECODE_BYTES = 65536
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
 
 let keeperPublicKeys: Record<number, Uint8Array>
@@ -321,6 +325,7 @@ export type KeeperFileUpload = {
 
 type KeeperApiError = {
     error?: string
+    result_code?: string
     key_id?: number
 }
 
@@ -814,11 +819,16 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
         if (response.statusCode !== 200) {
             let errorMessage
             if (response.data) {
-                // Detection runs on the full body - slicing first can cut a large throttle
-                // response mid-document and make it fail JSON.parse, silently disabling retry.
-                // The 1000-byte slice is applied only to what actually gets thrown below.
-                const fullErrorMessage = platform.bytesToString(response.data)
-                errorMessage = fullErrorMessage.slice(0, 1000)
+                // Throttle/key-rotation detection runs on the full body (bounded by
+                // MAX_ERROR_BODY_DECODE_BYTES) - slicing to 1000 bytes first can cut a large
+                // response mid-document and make it fail JSON.parse, silently disabling retry or
+                // rotation. The 1000-byte truncation is applied separately, by byte count on the
+                // raw bytes, only to the message used in the error thrown below.
+                const decodableBytes = response.data.length > MAX_ERROR_BODY_DECODE_BYTES
+                    ? response.data.slice(0, MAX_ERROR_BODY_DECODE_BYTES)
+                    : response.data
+                const fullErrorMessage = platform.bytesToString(decodableBytes)
+                errorMessage = platform.bytesToString(response.data.slice(0, 1000))
                 // Throttle retry with exponential backoff + jitter. Checked
                 // before key-rotation so that path is untouched, and gated on the 403 status so a
                 // non-403 response carrying a {"error":"throttled"} body is not retried.
@@ -836,8 +846,8 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                     }
                 }
                 let errorObj: KeeperApiError | null = null
-                try { errorObj = JSON.parse(errorMessage) } catch {}
-                if (errorObj?.error === 'key') {
+                try { errorObj = JSON.parse(fullErrorMessage) } catch {}
+                if (errorObj && (errorObj.result_code ?? errorObj.error) === 'key') {
                     const suggestedKeyId = errorObj.key_id
                     const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
                     if (customKey) {

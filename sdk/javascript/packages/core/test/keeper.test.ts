@@ -12,7 +12,8 @@ import * as fs from 'fs'
 
 const FAKE_ONE_TIME_TOKEN = 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'
 
-const keyErrorResponse = (keyId: number) => JSON.stringify({ error: 'key', key_id: keyId })
+const keyErrorResponse = (keyId: number, extra?: Record<string, unknown>) =>
+    JSON.stringify({ error: 'key', key_id: keyId, ...extra })
 
 test('Get secrets e2e', async () => {
 
@@ -366,6 +367,32 @@ test('key rotation - suggested key id is adopted and persisted', async () => {
     expect(secrets.records).toEqual([])
     expect(calls).toBe(2)
     // Verify the suggested key_id 8 was persisted to storage.
+    expect(await storage.getString('serverPublicKeyId')).toBe('8')
+})
+
+test('key rotation - suggested key id is adopted from a body padded past the 1000-byte truncation slice', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const paddedBody = keyErrorResponse(8, { padding: 'x'.repeat(1100) })
+    expect(enc.encode(paddedBody).length).toBeGreaterThan(1000)
+    let calls = 0
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async (_url, tk) => {
+            calls++
+            if (calls === 1) {
+                return { statusCode: 400, data: enc.encode(paddedBody), headers: [] }
+            }
+            // Verify the rotation was adopted: second request should use key_id 8.
+            expect(tk.publicKeyId).toBe(8)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    const secrets = await getSecrets(options)
+    expect(secrets.records).toEqual([])
+    expect(calls).toBe(2)
     expect(await storage.getString('serverPublicKeyId')).toBe('8')
 })
 

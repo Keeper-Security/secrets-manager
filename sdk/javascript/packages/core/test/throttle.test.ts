@@ -17,14 +17,15 @@ import {
 const FAKE_TOKEN = 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'
 const enc = new TextEncoder()
 
-const throttle403 = (retryAfter?: number): KeeperHttpResponse => ({
+const throttle403 = (retryAfter?: number, extra?: Record<string, unknown>): KeeperHttpResponse => ({
     statusCode: 403,
     data: enc.encode(
-        JSON.stringify(
-            retryAfter === undefined
-                ? { error: 'throttled', message: 'throttled' }
-                : { error: 'throttled', message: 'throttled', retry_after: retryAfter }
-        )
+        JSON.stringify({
+            error: 'throttled',
+            message: 'throttled',
+            ...(retryAfter === undefined ? {} : { retry_after: retryAfter }),
+            ...extra,
+        })
     ),
     headers: [],
 })
@@ -115,11 +116,11 @@ describe('throttle retry (e2e via getSecrets)', () => {
     })
 
     test('retries on a throttle body padded past the 1000-byte truncation slice', async () => {
-        const paddedBody = JSON.stringify({ error: 'throttled', message: 'throttled', padding: 'x'.repeat(1100) })
-        expect(enc.encode(paddedBody).length).toBeGreaterThan(1000)
+        const paddedResponse = throttle403(undefined, { padding: 'x'.repeat(1100) })
+        expect(paddedResponse.data.length).toBeGreaterThan(1000)
         let call = 0
         const { options, sleeps } = await makeOptions(async (_url, tk) => {
-            if (call++ === 0) return { statusCode: 403, data: enc.encode(paddedBody), headers: [] }
+            if (call++ === 0) return paddedResponse
             return { statusCode: 200, data: await platform.encryptWithKey(enc.encode('{}'), tk.key), headers: [] }
         })
         const secrets = await getSecrets(options)
