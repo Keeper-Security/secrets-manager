@@ -992,7 +992,9 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
 }
 
 const getSharedFolderUid = (folders: SecretsManagerResponseFolder[], parent: string): string | undefined => {
-    while (true) {
+    const visited = new Set<string>()
+    while (!visited.has(parent)) {
+        visited.add(parent)
         const parentFolder = folders.find(x => x.folderUid === parent)
         if (!parentFolder) {
             return undefined
@@ -1003,6 +1005,7 @@ const getSharedFolderUid = (folders: SecretsManagerResponseFolder[], parent: str
             return parent
         }
     }
+    throw new Error(`Folder data inconsistent - parent cycle detected at folder UID ${parent}`)
 };
 
 // Converts a raw crypto/parse failure into a KeeperCryptoError classified by which mode this

@@ -14,6 +14,10 @@ const FAKE_ONE_TIME_TOKEN = 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'
 
 const keyErrorResponse = (keyId: number) => JSON.stringify({ error: 'key', key_id: keyId })
 
+afterEach(() => {
+    jest.restoreAllMocks()
+})
+
 test('Get secrets e2e', async () => {
 
     const responses: { transmissionKey: string, data: string, statusCode: number } [] = JSON.parse(fs.readFileSync('../../../fake_data.json').toString())
@@ -576,4 +580,256 @@ test('flat record with innerFolderUid falls back to the app key when no matching
 
     expect(secrets.records.length).toBe(1)
     expect(secrets.records[0].data.title).toBe('Orphaned Record')
+})
+
+test('getFolders skips a folder that names itself as its own parent instead of hanging', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(11)
+    const appKey = new Uint8Array(32).fill(12)
+    const folderKey = new Uint8Array(32).fill(13)
+
+    const goodFolderKeyWrapped = await platform.encryptWithKey(folderKey, appKey)
+    const goodFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Good Root Folder' })), folderKey, true)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'self-parent-uid', folderKey: 'unused-folder-key', data: '', parent: 'self-parent-uid' },
+            { folderUid: 'good-root-uid', folderKey: platform.bytesToBase64(goodFolderKeyWrapped), data: platform.bytesToBase64(goodFolderData) }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders.length).toBe(1)
+    expect(folders[0].folderUid).toBe('good-root-uid')
+    expect(folders[0].name).toBe('Good Root Folder')
+
+    const cycleLog = consoleErrorSpy.mock.calls.map(call => call[0]).find(msg => msg.includes('self-parent-uid'))
+    expect(cycleLog).toBeDefined()
+    expect(cycleLog).toContain('parent cycle detected at folder UID self-parent-uid')
+
+    consoleErrorSpy.mockRestore()
+})
+
+test('getFolders detects a two-folder parent cycle and logs each folder naming the other as the cycle point', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(21)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'folder-a', folderKey: 'unused-folder-key', data: '', parent: 'folder-b' },
+            { folderUid: 'folder-b', folderKey: 'unused-folder-key', data: '', parent: 'folder-a' }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders).toEqual([])
+    // 2 per-folder skip lines plus the KSM-1267 summary line naming both skipped UIDs.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(3)
+    expect(consoleErrorSpy.mock.calls[0][0]).toContain('Folder folder-a skipped due to error')
+    expect(consoleErrorSpy.mock.calls[0][0]).toContain('Folder data inconsistent - parent cycle detected at folder UID folder-b')
+    expect(consoleErrorSpy.mock.calls[1][0]).toContain('Folder folder-b skipped due to error')
+    expect(consoleErrorSpy.mock.calls[1][0]).toContain('Folder data inconsistent - parent cycle detected at folder UID folder-a')
+
+    consoleErrorSpy.mockRestore()
+})
+
+test('getFolders detects a longer three-folder parent cycle and skips every folder in the ring', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(31)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'ring-a', folderKey: 'unused-folder-key', data: '', parent: 'ring-b' },
+            { folderUid: 'ring-b', folderKey: 'unused-folder-key', data: '', parent: 'ring-c' },
+            { folderUid: 'ring-c', folderKey: 'unused-folder-key', data: '', parent: 'ring-a' }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders).toEqual([])
+    // 3 per-folder skip lines plus the KSM-1267 summary line naming all three skipped UIDs.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(4)
+    for (const call of consoleErrorSpy.mock.calls.slice(0, 3)) {
+        expect(call[0]).toContain('parent cycle detected at folder UID')
+    }
+
+    consoleErrorSpy.mockRestore()
+})
+
+// The wall-clock bound below is the real regression guard: a synchronous infinite loop cannot be
+// preempted by Jest's timer-based timeout, so a future revert of the fix would hang this test
+// indefinitely rather than fail fast; the bounded implementation is what keeps this test reliable.
+test('getFolders resolves a large folder-parent cycle quickly instead of hanging the event loop', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(41)
+    const ringSize = 500
+    const ringFolders: { folderUid: string, folderKey: string, data: string, parent: string }[] = []
+    for (let i = 0; i < ringSize; i++) {
+        ringFolders.push({ folderUid: `folder-${i}`, folderKey: 'unused-folder-key', data: '', parent: `folder-${(i + 1) % ringSize}` })
+    }
+
+    const serverResponse = {
+        folders: ringFolders,
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+
+    const start = Date.now()
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+    const elapsed = Date.now() - start
+
+    expect(folders).toEqual([])
+    expect(elapsed).toBeLessThan(2000)
+    // ringSize per-folder skip lines plus the KSM-1267 summary line, which is not itself a
+    // cycle message, so it is checked separately from the loop below.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(ringSize + 1)
+    for (const call of consoleErrorSpy.mock.calls.slice(0, ringSize)) {
+        expect(call[0]).toContain('parent cycle detected at folder UID')
+    }
+    expect(consoleErrorSpy.mock.calls[ringSize][0]).toContain(`getFolders: ${ringSize} of ${ringSize} folder(s) could not be decrypted`)
+
+    consoleErrorSpy.mockRestore()
+}, 5000)
+
+test('getFolders decrypts a real two-level, non-cyclic parent chain (root then child)', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(51)
+    const appKey = new Uint8Array(32).fill(52)
+    const rootFolderKey = new Uint8Array(32).fill(53)
+    const childFolderKey = new Uint8Array(32).fill(54)
+    const rootUid = 'root-folder-uid'
+    const childUid = 'child-folder-uid'
+
+    const rootFolderKeyWrapped = await platform.encryptWithKey(rootFolderKey, appKey)
+    const rootFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Root Folder' })), rootFolderKey, true)
+
+    const childFolderKeyWrapped = await platform.encryptWithKey(childFolderKey, rootFolderKey, true)
+    const childFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Child Folder' })), childFolderKey, true)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: rootUid, folderKey: platform.bytesToBase64(rootFolderKeyWrapped), data: platform.bytesToBase64(rootFolderData) },
+            { folderUid: childUid, folderKey: platform.bytesToBase64(childFolderKeyWrapped), data: platform.bytesToBase64(childFolderData), parent: rootUid }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders.length).toBe(2)
+    const root = folders.find(f => f.folderUid === rootUid)
+    const child = folders.find(f => f.folderUid === childUid)
+    expect(root?.name).toBe('Root Folder')
+    expect(child?.name).toBe('Child Folder')
+    expect(consoleErrorSpy).not.toHaveBeenCalled()
+
+    consoleErrorSpy.mockRestore()
+})
+
+test('getFolders keeps the "unable to locate shared folder" message distinct from the cycle message', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(61)
+    const appKey = new Uint8Array(32).fill(62)
+    const folderKey = new Uint8Array(32).fill(63)
+
+    const goodFolderKeyWrapped = await platform.encryptWithKey(folderKey, appKey)
+    const goodFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Good Folder' })), folderKey, true)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'orphan-uid', folderKey: 'unused-folder-key', data: '', parent: 'missing-parent-uid' },
+            { folderUid: 'good-uid', folderKey: platform.bytesToBase64(goodFolderKeyWrapped), data: platform.bytesToBase64(goodFolderData) }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders.length).toBe(1)
+    expect(folders[0].folderUid).toBe('good-uid')
+
+    // 1 per-folder skip line plus the KSM-1267 summary line.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(2)
+    expect(consoleErrorSpy.mock.calls[0][0]).toBe('Folder orphan-uid skipped due to error (missing-key): KeeperCryptoError, Folder data inconsistent - unable to locate shared folder for orphan-uid')
+    expect(consoleErrorSpy.mock.calls[0][0]).not.toContain('parent cycle detected')
+
+    consoleErrorSpy.mockRestore()
 })
