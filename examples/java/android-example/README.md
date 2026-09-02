@@ -1,75 +1,63 @@
 # Android Example using KSM Java SDK
 
-**The absolute simplest Android app to prove the Keeper Secrets Manager Java SDK works on Android.**
+This is a minimal Android app that shows the Keeper Secrets Manager Java SDK works on Android.
 
-> **WARNING: This is a DEMO application for educational purposes only.
-> Do NOT use this code in production without implementing proper security measures.**
+> **WARNING**: This is a demo application for educational purposes only.
+> Do not use this code in production without implementing proper security measures.
 
 ## Prerequisites
 
-Before running this example, ensure you have:
+Before running this example, make sure you have:
 
-1. **Android Studio** (Arctic Fox or newer recommended)
-2. **Android SDK** with API level 26+ (minSdk requirement)
-3. **Keeper Secrets Manager Account** - [Sign up here](https://www.keepersecurity.com/)
-4. **One-Time Access Token** - Generate from Keeper Secrets Manager:
-   - Log into Keeper Secrets Manager
-   - Navigate to your application
-   - Generate a one-time access token
-   - The token format is: `US:XXXXXX` or `EU:XXXXXX` (region prefix + token)
+1. **Android Studio** (Arctic Fox or newer)
+2. **Android SDK** with API level 26 or higher (minSdk requirement)
+3. **Keeper Secrets Manager Account**: [Sign up here](https://www.keepersecurity.com/)
+4. **One-Time Access Token**: Generate from Keeper Secrets Manager:
+   - Log in to Keeper Secrets Manager.
+   - Go to your application.
+   - Generate a one-time access token.
+   - The token format is `US:XXXXXX` or `EU:XXXXXX` (region prefix followed by the token).
 
-## 🎯 Purpose
+## Purpose
 
-This is the **minimal working example** mentioned in the Android Compatibility Analysis. It demonstrates that with just proper threading, the SDK works as-is on Android.
+This example shows that with proper threading, the SDK works as-is on Android. It uses `InMemoryStorage` and the default `HttpsURLConnection` to keep the configuration as simple as possible.
 
-## ⚡ What This Proves
+## What This Example Shows
 
-✅ **SDK works on Android** with minimal changes
-✅ **InMemoryStorage works** (no file I/O issues)
-✅ **Crypto operations work** (AES/GCM, ECDH, ECDSA)
-✅ **Network communication works** (HttpsURLConnection)
-✅ **No ANR with proper threading** (Coroutines)
+- The SDK initializes on Android.
+- `InMemoryStorage` works (no file I/O required).
+- Crypto operations work (AES/GCM, ECDH, ECDSA).
+- Network communication works (`HttpsURLConnection`).
+- Running SDK calls on a background thread prevents ANR errors.
 
-## 📦 What's Included
+## Limitations
 
-**This is intentionally minimal:**
-- ❌ No encrypted storage (uses `InMemoryStorage`)
-- ❌ No OkHttp (uses default `HttpsURLConnection`)
-- ❌ No fancy UI (simple XML layout)
-- ❌ Config not persisted (lost on app restart)
-- ❌ Minimal error handling
+This example is intentionally minimal. It does not include:
 
-## 🚀 Quick Start
+- Encrypted storage (uses `InMemoryStorage`)
+- OkHttp (uses the default `HttpsURLConnection`)
+- Persisted configuration (config is lost when the app restarts)
+- Full error handling
 
-### 1. Open Project in Android Studio (30 seconds)
+## Quick Start
 
-### 2. Wait for Gradle Sync (2 minutes)
+1. Open the project in Android Studio.
+2. Wait for Gradle sync to complete.
+3. Click **Run**.
+4. Enter your Keeper one-time token.
+5. Tap **Initialize**.
+6. Wait 2-5 seconds.
+7. Tap **Load Secrets**.
 
-Let Android Studio download dependencies.
+## Expected Output
 
-### 3. Run (30 seconds)
-
-Click the green ▶️ Run button.
-
-### 4. Test (1 minute)
-
-1. Enter your Keeper one-time token
-2. Tap "1️⃣ Initialize"
-3. Wait 2-5 seconds
-4. Tap "2️⃣ Load Secrets"
-5. See your secrets!
-
-**Total time: ~4 minutes** ⚡
-
-## 📋 What You'll See
-
-### After Initialize:
+After initialization:
 ```
 ✅ Initialized successfully!
 Now tap 'Load Secrets'
 ```
 
-### After Load Secrets:
+After loading secrets:
 ```
 ✅ Secrets loaded successfully!
 
@@ -91,140 +79,100 @@ Now tap 'Load Secrets'
    (no password)
 ```
 
-## 🔍 Code Overview
+## Code Overview
 
-### MainActivity.kt (~150 lines)
-
-The entire app in one file:
+`MainActivity.kt` (~150 lines) contains the entire app. The SDK calls require only a background thread:
 
 ```kotlin
-// Initialize KSM
 private fun initializeKsm(token: String) {
     lifecycleScope.launch {
         withContext(Dispatchers.IO) {
-            // SDK call - works as-is!
             initializeStorage(storage, token)
         }
         statusText.text = "✅ Initialized!"
     }
 }
 
-// Load secrets
 private fun loadSecrets() {
     lifecycleScope.launch {
         val secrets = withContext(Dispatchers.IO) {
             val options = SecretsManagerOptions(storage)
-            getSecrets(options)  // SDK call - works!
+            getSecrets(options)
         }
         displaySecrets(secrets)
     }
 }
 ```
 
-**That's it!** The SDK works with just proper threading.
-
-## 📊 Project Structure
+## Project Structure
 
 ```
 android-example/
-├── build.gradle.kts              # Root config
-├── settings.gradle.kts           # Project settings
+├── build.gradle.kts
+├── settings.gradle.kts
 ├── gradle.properties
 ├── .gitignore
-│
 └── app/
-    ├── build.gradle.kts          # Dependencies (minimal!)
-    ├── src/main/
-    │   ├── AndroidManifest.xml   # Permissions
-    │   ├── java/com/keeper/minimal/
-    │   │   └── MainActivity.kt   # THE ENTIRE APP (150 lines)
-    │   └── res/
-    │       ├── layout/
-    │       │   └── activity_main.xml  # Simple UI
-    │       └── values/
-    │           └── strings.xml
+    ├── build.gradle.kts
+    └── src/main/
+        ├── AndroidManifest.xml
+        ├── java/com/keeper/minimal/
+        │   └── MainActivity.kt
+        └── res/
+            ├── layout/
+            │   └── activity_main.xml
+            └── values/
+                └── strings.xml
 ```
 
-**Total files: 10**
-**Total code: ~300 lines**
+Total: 10 files, ~300 lines of code.
 
-## 🔧 Dependencies
-
-**Minimal - only what's needed:**
+## Dependencies
 
 ```kotlin
 dependencies {
-    // The SDK - REQUIRED
     implementation("com.keepersecurity.secrets-manager:keeper-secrets-manager-core:17.1.2")
-
-    // Basic Android UI
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-
-    // Coroutines for background threading
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }
 ```
 
-**That's all!** No OkHttp, no encryption libraries, no compose.
-
-## ✅ What Works
-
-- ✅ SDK initialization
-- ✅ Fetching secrets
-- ✅ Displaying secrets
-- ✅ Password retrieval
-- ✅ All crypto operations
-- ✅ Network communication
-- ✅ Runs on Android 8.0-16 (API 26-36)
-
-## ❌ What Doesn't Work / Limitations
-
-Since this is **intentionally minimal**:
-
-1. **No persistence** - Config lost on app restart (uses `InMemoryStorage`)
-2. **Not optimized** - Uses `HttpsURLConnection` (battery drain)
-3. **No encryption** - Storage not encrypted (just in-memory)
-4. **Minimal error handling** - Basic try/catch only
-5. **Simple UI** - No Material3, no fancy design
-6. **No offline support** - Requires network for everything
-
+The example does not use OkHttp, encryption libraries, or Compose.
 
 ## Security Considerations for Production
 
-This example intentionally uses simplified implementations for clarity. For production apps:
+This example uses simplified implementations for educational purposes. For production apps:
 
-- **Token Storage**: Use Android Keystore or EncryptedSharedPreferences instead of in-memory storage
-- **Token Input**: Consider using biometric authentication before displaying sensitive data
-- **Network Security**: Implement certificate pinning
-- **Error Handling**: Never expose internal error details to users
-- **Logging**: Remove all sensitive data from logs
-- **Code Obfuscation**: Enable ProGuard/R8 with appropriate keep rules for the SDK
+- **Token Storage**: Use Android Keystore or `EncryptedSharedPreferences` instead of in-memory storage.
+- **Sensitive Data**: Use biometric authentication before the app displays sensitive data.
+- **Network Security**: Implement certificate pinning.
+- **Error Handling**: Do not expose internal error details to users.
+- **Logging**: Remove all sensitive data from logs before release.
+- **Code Obfuscation**: Enable ProGuard/R8 with the appropriate keep rules for the SDK.
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-### "Gradle sync failed"
+### Gradle sync fails
+
 ```bash
-# File → Invalidate Caches → Restart
+# File > Invalidate Caches > Restart
 ```
 
-### "SDK location not found"
+### SDK location not found
+
 ```bash
 echo "sdk.dir=$HOME/Library/Android/sdk" > local.properties
 ```
 
-### "App crashes on initialization"
-**Check Logcat:**
-- Look for network errors
-- Verify token format (starts with US:, EU:, etc.)
-- Check internet connection
+### App crashes on initialization
 
-### "Loading takes forever"
-**This is expected on first run:**
-- `SecureRandom.getInstanceStrong()` can take 3-5 seconds
-- Subsequent runs are faster
-- This is a known issue (see compatibility analysis)
+Check Logcat for network errors. Make sure the token format starts with a region prefix (for example, `US:` or `EU:`). Make sure the device has an internet connection.
 
-### "Config lost after restart"
-**This is by design:**
-- Using `InMemoryStorage` (not persisted)
+### Loading takes a long time on first run
+
+`SecureRandom.getInstanceStrong()` can take 3-5 seconds on the first call. Subsequent calls are faster. This is expected behavior.
+
+### Config is lost after restart
+
+This is by design. The example uses `InMemoryStorage`, which does not persist the configuration to disk.

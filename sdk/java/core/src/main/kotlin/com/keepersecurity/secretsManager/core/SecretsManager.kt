@@ -28,14 +28,15 @@ import java.util.concurrent.*
 import kotlin.random.Random
 import javax.net.ssl.*
 
-const val KEEPER_CLIENT_VERSION = "mj17.3.0"
+const val KEEPER_CLIENT_VERSION = "mj18.0.0"
 
-// Throttle retry (KSM-876 / KSM-878). The backend throttles HTTP 403 {"error":"throttled"}
+// Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
 // request, so the counter only clears after 10s of silence).
 const val MAX_THROTTLE_RETRIES = 5
 const val BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 const val MAX_THROTTLE_DELAY_SEC = 176 // caps a backend-supplied retry_after from forcing an excessive wait
+const val MAX_KEY_ROTATION_RETRIES = 3 // parity with JS SDK open PR #1078
 
 const val KEY_HOSTNAME = "hostname" // base url for the Secrets Manager service
 const val KEY_SERVER_PUBLIC_KEY_ID = "serverPublicKeyId"
@@ -67,7 +68,9 @@ data class SecretsManagerOptions @JvmOverloads constructor(
     val serverPublicKey: String? = null,
     val serverPublicKeyId: String? = null,
     // Override the sleep between throttle retries (primarily for tests). Defaults to Thread.sleep.
-    val throttleSleepMillis: ((Long) -> Unit)? = null
+    val throttleSleepMillis: ((Long) -> Unit)? = null,
+    val connectTimeoutMillis: Int = 5_000,
+    val readTimeoutMillis: Int = 30_000,
 ) {
     init {
         testSecureRandom()
@@ -238,7 +241,7 @@ private data class SecretsManagerResponseRecord(
  *   `is_launch_credential`, `is_iam_user`, `belongs_to` and `rotation_settings`; or no data at all
  *   (a pure record reference).
  * - path "ai_settings" / "jit_settings" (self-links): data is AES-256-GCM encrypted under the
- *   owning record's key — see [getDecryptedData].
+ *   owning record's key; see [getDecryptedData].
  *
  * Accessors never throw: parse, decode or decryption failures yield null/false. [getLinkData]
  * returns the complete parsed payload with nested objects and arrays preserved, so fields unknown
@@ -296,7 +299,7 @@ data class KeeperRecordLink(
      * Get a strict boolean value from the parsed JSON data; missing or non-boolean values are false.
      *
      * When [checkAllowedSettings] is true the nested `allowedSettings` object is consulted if the
-     * key is absent at the top level — a top-level boolean wins. The backend nests permission flags
+     * key is absent at the top level; a top-level boolean wins. The backend nests permission flags
      * under `allowedSettings` in `path:"meta"` links.
      */
     private fun getBooleanValue(key: String, checkAllowedSettings: Boolean = false): Boolean {
@@ -476,9 +479,8 @@ data class KeeperRecordLink(
     }
     
     /**
-     * Check if this link contains encrypted data by examining the actual content
-     * This method inspects the data to determine if it's encrypted, rather than
-     * relying on path naming conventions
+     * Check if this link contains encrypted data by examining the actual content, rather than
+     * relying on path naming conventions (see [mightBeEncrypted]).
      * @return true if the data appears to be encrypted
      */
     fun hasEncryptedData(): Boolean {
@@ -494,9 +496,8 @@ data class KeeperRecordLink(
     }
     
     /**
-     * Decrypt the link data using the provided record key
-     * This method attempts decryption only if the data appears to be encrypted
-     * 
+     * Decrypt the link data using the provided record key.
+     *
      * @param recordKey The record's encryption key
      * @return Decrypted string data, or null if decryption fails
      */
@@ -520,12 +521,11 @@ data class KeeperRecordLink(
     }
     
     /**
-     * Get link data - automatically handles both encrypted and plain JSON
-     * 
-     * This method is designed to be forward-compatible as Keeper evolves
-     * the data structures. Returns a Map to preserve all fields, even ones
-     * this SDK version doesn't know about yet.
-     * 
+     * Get link data - automatically handles both encrypted and plain JSON.
+     *
+     * Forward-compatible as Keeper evolves the data structures: returns a Map to preserve all
+     * fields, even ones this SDK version doesn't know about yet.
+     *
      * @param recordKey Optional key for decrypting encrypted link data
      * @return Parsed data as a Map, or null if parsing fails
      */
@@ -584,11 +584,7 @@ data class KeeperRecordLink(
         val sampleSize = minOf(str.length, 100)
         return (printableCount.toFloat() / sampleSize) > 0.9f
     }
-    
-    // ============================================================================
-    // Convenience Methods for Settings Access
-    // ============================================================================
-    
+
     /**
      * Get AI settings data from this link
      * 
@@ -630,12 +626,8 @@ data class KeeperRecordLink(
     }
     
     /**
-     * Get settings data for any path
-     * 
-     * This method works for current and future settings paths.
-     * It automatically detects whether the data is encrypted and
-     * handles it appropriately.
-     * 
+     * Get settings data for any current or future settings path.
+     *
      * @param settingsPath The path to check (e.g., "ai_settings", "security_settings")
      * @param recordKey The record's encryption key (required for encrypted data)
      * @return Settings data as a Map, or null if path doesn't match or parsing fails
@@ -647,7 +639,7 @@ data class KeeperRecordLink(
     }
 
     /**
-     * Get PAM settings data from this link — only when [path] == "meta".
+     * Get PAM settings data from this link; only valid when [path] == "meta".
      *
      * Meta links are self-links (recordUid == owning record) carrying the record's own PAM settings:
      * `allowedSettings`, `rotateOnTermination`, `version`, `no_update_services`. Plain JSON today;
@@ -662,7 +654,7 @@ private data class SecretsManagerResponseFile(
     val fileUid: String,
     val fileKey: String,
     val data: String,
-    val url: String?, // KSM-765: server may omit url; nullable prevents NPE on deserialization
+    val url: String?, // server may omit url; nullable prevents NPE on deserialization
     val thumbnailUrl: String?
 )
 
@@ -690,6 +682,18 @@ data class SecretsManagerDeleteResponseRecord(
 )
 
 @Serializable
+data class SecretsManagerDeleteFolderResponseRecord(
+    val errorMessage: String? = null,
+    val folderUid: String,
+    val responseCode: String
+)
+
+@Serializable
+data class SecretsManagerDeleteFolderResponse(
+    val folders: List<SecretsManagerDeleteFolderResponseRecord>
+)
+
+@Serializable
 private data class SecretsManagerAddFileResponse(
     val url: String,
     val parameters: String,
@@ -713,7 +717,7 @@ data class KeeperSecrets(val appData: AppData, val records: List<KeeperRecord>, 
 @Serializable
 data class AppData(val title: String, val type: String)
 
-data class KeeperRecord(
+data class KeeperRecord @JvmOverloads constructor(
     val recordKey: ByteArray,
     val recordUid: String,
     var folderUid: String? = null,
@@ -722,7 +726,18 @@ data class KeeperRecord(
     val data: KeeperRecordData,
     val revision: Long,
     val files: List<KeeperFile>? = null,
-    val links: List<KeeperRecordLink>? = null
+    val links: List<KeeperRecordLink>? = null,
+    // Appended rather than inserted: Java sees no default arguments, so an interior
+    // parameter would shift the constructor Java callers already compile against.
+    /**
+     * Write permission for this record, set by the backend from how the application's share was
+     * configured: `true` when the application may call [updateSecret] on it, `false` when the
+     * share is read-only. Informational only; the SDK does not enforce it before an update.
+     *
+     * The default applies only to direct construction. Records returned by [getSecrets] always
+     * carry the server's value, because the field is required in the response envelope.
+     */
+    val isEditable: Boolean = false
 ) {
     fun getPassword(): String? {
         val passwordField = data.getField<Password>() ?: return null
@@ -759,7 +774,8 @@ data class KeeperFolder(
     val folderKey: ByteArray,
     val folderUid: String,
     val parentUid: String? = null,
-    val name: String
+    val name: String,
+    val useGcm: Boolean = false
 )
 
 @Serializable
@@ -771,7 +787,7 @@ data class KeeperFile(
     val fileKey: ByteArray,
     val fileUid: String,
     val data: KeeperFileData,
-    val url: String?, // KSM-765: nullable; server may omit url for files without a download URL
+    val url: String?, // nullable; server may omit url for files without a download URL
     val thumbnailUrl: String?
 )
 
@@ -1069,14 +1085,26 @@ fun getNotationResults(options: SecretsManagerOptions, notation: String): List<S
 fun deleteSecret(options: SecretsManagerOptions, recordUids: List<String>): SecretsManagerDeleteResponse {
     val payload = prepareDeletePayload(options.storage, recordUids)
     val responseData = postQuery(options, "delete_secret", payload)
-    return nonStrictJson.decodeFromString(bytesToString(responseData))
+    val response: SecretsManagerDeleteResponse = nonStrictJson.decodeFromString(bytesToString(responseData))
+    for (r in response.records) {
+        if (r.responseCode != "ok") {
+            System.err.println("Failed to delete record ${r.recordUid}: ${r.responseCode} ${r.errorMessage ?: ""}")
+        }
+    }
+    return response
 }
 
 @ExperimentalSerializationApi
-fun deleteFolder(options: SecretsManagerOptions, folderUids: List<String>, forceDeletion: Boolean = false): SecretsManagerDeleteResponse {
+fun deleteFolder(options: SecretsManagerOptions, folderUids: List<String>, forceDeletion: Boolean = false): SecretsManagerDeleteFolderResponse {
     val payload = prepareDeleteFolderPayload(options.storage, folderUids, forceDeletion)
     val responseData = postQuery(options, "delete_folder", payload)
-    return nonStrictJson.decodeFromString(bytesToString(responseData))
+    val response: SecretsManagerDeleteFolderResponse = nonStrictJson.decodeFromString(bytesToString(responseData))
+    for (f in response.folders) {
+        if (f.responseCode != "ok") {
+            System.err.println("Failed to delete folder ${f.folderUid}: ${f.responseCode} ${f.errorMessage ?: ""}")
+        }
+    }
+    return response
 }
 
 @ExperimentalSerializationApi
@@ -1141,7 +1169,7 @@ fun createFolder(options: SecretsManagerOptions, createOptions: CreateOptions, f
 fun updateFolder(options: SecretsManagerOptions, folderUid: String, folderName: String, folders: List<KeeperFolder> = getFolders(options)) {
     val folder: KeeperFolder = folders.find { it.folderUid == folderUid }
         ?: throw SecretsManagerException("Unable to update folder - folder key for $folderUid not found")
-    val payload = prepareUpdateFolderPayload(options.storage, folderUid, folderName, folder.folderKey)
+    val payload = prepareUpdateFolderPayload(options.storage, folderUid, folderName, folder.folderKey, folder.useGcm)
     postQuery(options, "update_folder", payload)
 }
 
@@ -1150,7 +1178,13 @@ fun uploadFile(options: SecretsManagerOptions, ownerRecord: KeeperRecord, file: 
     val payloadAndFile = prepareFileUploadPayload(options.storage, ownerRecord, file)
     val responseData = postQuery(options, "add_file", payloadAndFile.payload)
     val response = nonStrictJson.decodeFromString<SecretsManagerAddFileResponse>(bytesToString(responseData))
-    val uploadResult = uploadFile(response.url, response.parameters, payloadAndFile.encryptedFile)
+    val uploadResult = uploadFile(
+        response.url,
+        response.parameters,
+        payloadAndFile.encryptedFile,
+        options.connectTimeoutMillis,
+        options.readTimeoutMillis
+    )
     if (uploadResult.statusCode != response.successStatusCode) {
         throw SecretsManagerException("Upload failed (${bytesToString(uploadResult.data)}), code ${uploadResult.statusCode}")
     }
@@ -1169,9 +1203,14 @@ fun downloadThumbnail(file: KeeperFile): ByteArray {
     return downloadFile(file, file.thumbnailUrl)
 }
 
+private const val DEFAULT_CONNECT_TIMEOUT_MS = 5_000
+private const val DEFAULT_READ_TIMEOUT_MS = 30_000
+
 private fun downloadFile(file: KeeperFile, url: String): ByteArray {
-    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection // KSM-855
+    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
     try {
+        connection.connectTimeout = DEFAULT_CONNECT_TIMEOUT_MS
+        connection.readTimeout = DEFAULT_READ_TIMEOUT_MS
         connection.requestMethod = "GET"
         val statusCode = connection.responseCode
         val data = when {
@@ -1187,14 +1226,22 @@ private fun downloadFile(file: KeeperFile, url: String): ByteArray {
     }
 }
 
-private fun uploadFile(url: String, parameters: String, fileData: ByteArray): KeeperHttpResponse {
+private fun uploadFile(
+    url: String,
+    parameters: String,
+    fileData: ByteArray,
+    connectTimeoutMillis: Int,
+    readTimeoutMillis: Int
+): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
     val boundary = String.format("----------%x", Instant.now().epochSecond)
     val boundaryBytes: ByteArray = stringToBytes("\r\n--$boundary")
     val paramJson = Json.parseToJsonElement(parameters) as JsonObject
-    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection // KSM-855
+    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
     try {
+        connection.connectTimeout = connectTimeoutMillis
+        connection.readTimeout = readTimeoutMillis
         connection.requestMethod = "POST"
         connection.useCaches = false
         connection.doInput = true
@@ -1247,7 +1294,7 @@ private fun fetchAndDecryptSecrets(
     } else {
         appKey = storage.getBytes(KEY_APP_KEY) ?: throw SecretsManagerException("App key is missing from the storage")
     }
-    // KSM-753: records created via non-SDK clients in shared folders appear in response.records[]
+    // Records created via non-SDK clients in shared folders appear in response.records[]
     // with innerFolderUid set; their recordKey is encrypted with the folder key, not the app key.
     val folderKeyMap: Map<String, ByteArray> = response.folders
         ?.mapNotNull { f ->
@@ -1402,15 +1449,16 @@ private fun decryptRecord(record: SecretsManagerResponseRecord, recordKey: ByteA
     }
 
     return if (recordData != null) KeeperRecord(
-        recordKey,
-        record.recordUid,
-        null,
-        null,
-        record.innerFolderUid,
-        recordData,
-        record.revision,
-        files,
-        record.links
+        recordKey = recordKey,
+        recordUid = record.recordUid,
+        folderUid = null,
+        folderKey = null,
+        innerFolderUid = record.innerFolderUid,
+        data = recordData,
+        revision = record.revision,
+        files = files,
+        links = record.links,
+        isEditable = record.isEditable
     ) else null
 }
 
@@ -1427,28 +1475,58 @@ private fun fetchAndDecryptFolders(
         return emptyList()
     }
     val folders: MutableList<KeeperFolder> = mutableListOf()
-    val appKey = storage.getBytes(KEY_APP_KEY) ?: throw SecretsManagerException("App key is missing from the storage")
-    response.folders.forEach { folder ->
-        val folderKey: ByteArray = if (folder.parent == null) {
-            decrypt(folder.folderKey, appKey)
-        } else {
-            val sharedFolderKey = getSharedFolderKey(folders, response.folders, folder.parent) ?: throw SecretsManagerException("Folder data inconsistent - unable to locate shared folder")
-            decrypt(folder.folderKey, sharedFolderKey, true)
+    val appKey: ByteArray
+    if (response.encryptedAppKey != null) {
+        val clientKey = storage.getBytes(KEY_CLIENT_KEY) ?: throw SecretsManagerException("Client key is missing from the storage")
+        appKey = decrypt(response.encryptedAppKey, clientKey)
+        storage.saveBytes(KEY_APP_KEY, appKey)
+        storage.delete(KEY_CLIENT_KEY)
+        storage.delete(KEY_PUBLIC_KEY)
+        response.appOwnerPublicKey?.let {
+            storage.saveString(KEY_OWNER_PUBLIC_KEY, it)
         }
-        val decryptedData = decrypt(folder.data!!, folderKey, true)
-        val folderNameJson = bytesToString(decryptedData)
-        val folderName = nonStrictJson.decodeFromString<KeeperFolderName>(folderNameJson)
-        folders.add(KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name))
+    } else {
+        appKey = storage.getBytes(KEY_APP_KEY) ?: throw SecretsManagerException("App key is missing from the storage")
+    }
+    response.folders.forEach { folder ->
+        try {
+            var useGcm = false
+            val folderKey: ByteArray = if (folder.parent == null) {
+                decrypt(folder.folderKey, appKey)
+            } else {
+                val sharedFolderKey = getSharedFolderKey(folders, response.folders, folder.parent) ?: throw SecretsManagerException("Folder data inconsistent - unable to locate shared folder")
+                val folderKeyBytes = base64ToBytes(folder.folderKey)
+                // GCM-wrapped subfolder keys are 60 bytes (12-byte nonce + 32-byte key + 16-byte tag);
+                // legacy CBC-wrapped keys are 64 bytes (16-byte IV + 48-byte padded ciphertext) - always
+                // unambiguous, mirrors the dispatch already landed in the Python/JS SDKs (KSM-1043/1058).
+                if (folderKeyBytes.size == 60) {
+                    useGcm = true
+                    decrypt(folderKeyBytes, sharedFolderKey)
+                } else {
+                    decrypt(folderKeyBytes, sharedFolderKey, true)
+                }
+            }
+            // Root folders keep the existing path: key via GCM (appKey wrap), data via CBC -
+            // all current NSF roots have CBC-encrypted data, so useGcm stays false here.
+            val decryptedData = decrypt(folder.data!!, folderKey, !useGcm)
+            val folderNameJson = bytesToString(decryptedData)
+            val folderName = nonStrictJson.decodeFromString<KeeperFolderName>(folderNameJson)
+            folders.add(KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name, useGcm))
+        } catch (e: Exception) {
+            System.err.println("Folder ${folder.folderUid} skipped due to error: ${e.message}")
+        }
     }
     return folders
 }
 
 private fun getSharedFolderKey(folders: List<KeeperFolder>, responseFolders: List<SecretsManagerResponseFolder>, parent: String): ByteArray? {
+    val visited = HashSet<String>()
     var currentParent = parent
-    while (true) {
+    while (visited.add(currentParent)) {
         val parentFolder = responseFolders.find { x -> x.folderUid == currentParent } ?: return null
         currentParent = parentFolder.parent ?: return folders.find { it.folderUid == parentFolder.folderUid }?.folderKey
     }
+    throw SecretsManagerException("Folder data inconsistent - parent cycle detected at folder UID $currentParent")
 }
 
 private fun prepareGetPayload(
@@ -1573,8 +1651,10 @@ private fun prepareCreateFolderPayload(
     val folderDataBytes = stringToBytes(Json.encodeToString(KeeperFolderName(folderName)))
     val folderKey = getRandomBytes(32)
     val folderUid = generateUid()
-    val encryptedFolderData = encrypt(folderDataBytes, folderKey, true)
-    val encryptedFolderKey = encrypt(folderKey, sharedFolderKey, true)
+    // Drive (NSF) folders require AES-GCM for both the folder key wrap and folder data (KSM-1061);
+    // CBC produces "invalid sharedFolderKey" against NSF-enabled endpoints.
+    val encryptedFolderData = encrypt(folderDataBytes, folderKey)
+    val encryptedFolderKey = encrypt(folderKey, sharedFolderKey)
     return CreateFolderPayload(KEEPER_CLIENT_VERSION, clientId,
         webSafe64FromBytes(folderUid),
         createOptions.folderUid,
@@ -1588,11 +1668,12 @@ private fun prepareUpdateFolderPayload(
     storage: KeyValueStorage,
     folderUid: String,
     folderName: String,
-    folderKey: ByteArray
+    folderKey: ByteArray,
+    useGcm: Boolean = false
 ): UpdateFolderPayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw SecretsManagerException("Client Id is missing from the configuration")
     val folderDataBytes = stringToBytes(Json.encodeToString(KeeperFolderName(folderName)))
-    val encryptedFolderData = encrypt(folderDataBytes, folderKey, true)
+    val encryptedFolderData = encrypt(folderDataBytes, folderKey, !useGcm)
     return UpdateFolderPayload(KEEPER_CLIENT_VERSION, clientId,
         folderUid,
         webSafe64FromBytes(encryptedFolderData))
@@ -1663,16 +1744,21 @@ fun cachingPostFunction(url: String, transmissionKey: TransmissionKey, payload: 
     }
 }
 
+@JvmOverloads
 fun postFunction(
     url: String,
     transmissionKey: TransmissionKey,
     payload: EncryptedPayload,
-    allowUnverifiedCertificate: Boolean
+    allowUnverifiedCertificate: Boolean,
+    connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MS,
+    readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MS,
 ): KeeperHttpResponse {
     var statusCode: Int
     var data: ByteArray
-    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection // KSM-855
+    val connection = URI.create(url).toURL().openConnection() as HttpsURLConnection
     try {
+        connection.connectTimeout = connectTimeoutMillis
+        connection.readTimeout = readTimeoutMillis
         if (allowUnverifiedCertificate) {
             connection.sslSocketFactory = trustAllSocketFactory()
         }
@@ -1752,7 +1838,7 @@ private inline fun <reified T> encryptAndSignPayload(
 @ExperimentalSerializationApi
 // Returns the throttle retry_after (>= 0) when [body] is a backend throttle error
 // (result_code/error == "throttled"), otherwise null so the caller falls through to normal
-// error handling. Non-JSON / non-object bodies return null. (KSM-876 / KSM-878)
+// error handling. Non-JSON / non-object bodies return null.
 internal fun parseThrottle(body: String): Double? {
     val obj = try {
         nonStrictJson.parseToJsonElement(body).jsonObject
@@ -1774,7 +1860,7 @@ internal fun throttleDelayMillis(attempt: Int, retryAfter: Double, jitter: Doubl
     return (sec * 1000).toLong()
 }
 
-// Random jitter multiplier in [0, 0.25) — one-sided so a delay is only ever padded, never
+// Random jitter multiplier in [0, 0.25); one-sided so a delay is only ever padded, never
 // undercuts the server-requested (or exponential-backoff) floor. Kept separate so unit tests
 // exercise throttleDelayMillis with a pinned jitter instead.
 internal fun throttleJitter(): Double = Random.nextDouble(0.0, 0.25)
@@ -1789,17 +1875,18 @@ private inline fun <reified T> postQuery(
     val url = "https://${hostName}/api/rest/sm/v1/${path}"
     val throttleSleep = options.throttleSleepMillis ?: { ms -> Thread.sleep(ms) }
     var throttleAttempt = 0
+    var keyRotationAttempt = 0
     while (true) {
         val transmissionKey = generateTransmissionKey(options.storage)
         val encryptedPayload = encryptAndSignPayload(options.storage, transmissionKey, payload)
         val response = if (options.queryFunction == null) {
-            postFunction(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate)
+            postFunction(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, options.connectTimeoutMillis, options.readTimeoutMillis)
         } else {
             options.queryFunction.invoke(url, transmissionKey, encryptedPayload)
         }
         if (response.statusCode != HTTP_OK) {
             val errorMessage = String(response.data)
-            // Throttle retry with exponential backoff + jitter (KSM-876 / KSM-878). Checked before
+            // Throttle retry with exponential backoff + jitter. Checked before
             // key-rotation so that path (incl. the IL5 custom-key suppression) is untouched, and
             // gated on the 403 status so a non-403 response carrying a {"error":"throttled"} body
             // is not mistaken for a throttle and retried.
@@ -1829,6 +1916,18 @@ private inline fun <reified T> postQuery(
                     val currentKeyId = options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
                     throw SecretsManagerException("Server rejected the custom server public key (id $currentKeyId). The server suggested key id ${error.key_id}. Please update your IL5 KSM configuration.")
                 }
+                if (!keeperPublicKeys.containsKey(error.key_id)) {
+                    val ids = keeperPublicKeys.keys.sorted()
+                    throw SecretsManagerException(
+                        "Server suggested unsupported key id ${error.key_id}; this SDK version supports key ids ${ids.first()}-${ids.last()}"
+                    )
+                }
+                if (keyRotationAttempt >= MAX_KEY_ROTATION_RETRIES) {
+                    throw SecretsManagerException(
+                        "Server key rotation exhausted $MAX_KEY_ROTATION_RETRIES retries; key id ${transmissionKey.publicKeyId} was not accepted"
+                    )
+                }
+                keyRotationAttempt++
                 options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, error.key_id.toString())
                 continue
             }

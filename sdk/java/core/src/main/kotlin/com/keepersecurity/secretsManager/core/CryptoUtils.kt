@@ -56,12 +56,12 @@ internal fun bytesToBase64(data: ByteArray): String {
 }
 
 internal fun base64ToBytes(data: String): ByteArray {
-    if (data.isEmpty()) throw SecretsManagerException("Base64-encoded value is empty") // KSM-985
+    if (data.isEmpty()) throw SecretsManagerException("Base64-encoded value is empty")
     return Base64.getDecoder().decode(data)
 }
 
 internal fun webSafe64ToBytes(data: String): ByteArray {
-    if (data.isEmpty()) throw SecretsManagerException("Base64url-encoded value is empty") // KSM-985
+    if (data.isEmpty()) throw SecretsManagerException("Base64url-encoded value is empty")
     return Base64.getUrlDecoder().decode(data)
 }
 
@@ -416,7 +416,7 @@ fun generatePassword(
         if (it.first > 0)
             passwordCharacters += randomSample(it.first, it.second)
     }
-    val pCharArray = passwordCharacters.toCharArray()
-    pCharArray.shuffle()
-    return String(pCharArray)
+    val pCharList = passwordCharacters.toMutableList()
+    Collections.shuffle(pCharList, SecureRandom.getInstanceStrong())
+    return String(pCharList.toCharArray())
 }

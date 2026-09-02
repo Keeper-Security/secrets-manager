@@ -127,7 +127,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testIL5OttFourSegmentParsing() {
-        // KSM-902: 4-segment OTT IL5:clientKey:keyId:serverPublicKey stores key and ID in storage
+        // 4-segment OTT IL5:clientKey:keyId:serverPublicKey stores key and ID in storage
         val fakeServerPublicKey = "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"
         val storage = InMemoryStorage()
         initializeStorage(storage, "IL5:FAKE_CLIENT_KEY:20:$fakeServerPublicKey")
@@ -149,7 +149,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testIL5ConstructorParamPersistsToStorage() {
-        // KSM-902: serverPublicKey constructor param is saved to storage so generateTransmissionKey can use it
+        // serverPublicKey constructor param is saved to storage so generateTransmissionKey can use it
         val fakeServerPublicKey = "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM"
         val storage = InMemoryStorage()
         SecretsManagerOptions(storage, serverPublicKey = fakeServerPublicKey)
@@ -158,7 +158,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testIL5ConfigFieldOverridesEmbeddedTable() {
-        // KSM-902: KEY_SERVER_PUBLIC_KEY in storage must be used instead of the embedded key table.
+        // KEY_SERVER_PUBLIC_KEY in storage must be used instead of the embedded key table.
         // Key ID 999 is not in the embedded table. With a custom key in storage, generateTransmissionKey
         // must use the storage key. If it falls through to the table, it throws
         // "Key number 999 is not supported" and the post function is never called.
@@ -181,8 +181,101 @@ internal class SecretsManagerTest {
     }
 
     @Test
+    fun testServerKeyIdOutOfRangeIsRejected() {
+        // Server-supplied key_id outside the known range must be rejected before storage is written.
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "fake.keepersecurity.com:FAKE_CLIENT_KEY")
+        TestStubs.transmissionKeyStub = { ByteArray(32) }
+        val testPostFunction: (String, TransmissionKey, EncryptedPayload) -> KeeperHttpResponse = { _, _, _ ->
+            KeeperHttpResponse(400, """{"error":"key","key_id":999}""".toByteArray())
+        }
+        val options = SecretsManagerOptions(storage, testPostFunction)
+        val ex = assertFailsWith<SecretsManagerException> {
+            getSecrets(options)
+        }
+        assertTrue(
+            ex.message?.contains("unsupported key id 999") == true,
+            "Exception must come from the key-table guard and name the rejected id. Got: ${ex.message}"
+        )
+        assertNull(
+            storage.getString(KEY_SERVER_PUBLIC_KEY_ID),
+            "Storage must not be poisoned with key_id=999. Got: ${storage.getString(KEY_SERVER_PUBLIC_KEY_ID)}"
+        )
+    }
+
+    @Test
+    fun testCustomServerKeyGuardTakesPriorityOverKeyTable() {
+        // When a custom server key is configured, a server key-rotation hint must reach
+        // the custom-key branch and throw the actionable error before the key-table guard.
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "fake.keepersecurity.com:FAKE_CLIENT_KEY")
+        // Use a real EC public key so webSafe64ToBytes succeeds in generateTransmissionKey.
+        // The value here is keeper public key #7 (from the embedded table).
+        storage.saveString(KEY_SERVER_PUBLIC_KEY, "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM")
+        storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, "20")
+        TestStubs.transmissionKeyStub = { ByteArray(32) }
+        val testPostFunction: (String, TransmissionKey, EncryptedPayload) -> KeeperHttpResponse = { _, _, _ ->
+            KeeperHttpResponse(400, """{"error":"key","key_id":999}""".toByteArray())
+        }
+        val options = SecretsManagerOptions(storage, testPostFunction)
+        val ex = assertFailsWith<SecretsManagerException> {
+            getSecrets(options)
+        }
+        assertTrue(
+            ex.message?.contains("custom server public key") == true,
+            "Custom-key path must fire before the key-table guard. Got: ${ex.message}"
+        )
+    }
+
+    @Test
+    fun testServerKeyRotationRetryCap() {
+        // When the server keeps returning an in-table key_id, the loop must stop after MAX_KEY_ROTATION_RETRIES.
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "fake.keepersecurity.com:FAKE_CLIENT_KEY")
+        TestStubs.transmissionKeyStub = { ByteArray(32) }
+        val callCount = intArrayOf(0)
+        val testPostFunction: (String, TransmissionKey, EncryptedPayload) -> KeeperHttpResponse = { _, _, _ ->
+            callCount[0]++
+            KeeperHttpResponse(400, """{"error":"key","key_id":10}""".toByteArray())
+        }
+        val options = SecretsManagerOptions(storage, testPostFunction)
+        val ex = assertFailsWith<SecretsManagerException> {
+            getSecrets(options)
+        }
+        assertTrue(
+            ex.message?.contains("key rotation exhausted $MAX_KEY_ROTATION_RETRIES retries") == true,
+            "Exception must name the retry limit. Got: ${ex.message}"
+        )
+        assertEquals(
+            MAX_KEY_ROTATION_RETRIES + 1, callCount[0],
+            "Must make exactly MAX_KEY_ROTATION_RETRIES+1 calls (initial + cap retries)"
+        )
+    }
+
+    @Test
+    fun testConfigFileAtomicWriteIsOwnerOnly() {
+        // KSM-1262: the config file must be written via atomic rename and be readable only by the owner.
+        // The 0600 guarantee is POSIX-only; skip rather than fail on Windows or non-POSIX file systems.
+        org.junit.Assume.assumeTrue(
+            "POSIX file permissions not supported on this file system",
+            java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix")
+        )
+        val configFile = File.createTempFile("ksm-test-", ".json").also { it.delete() }
+        try {
+            val storage = LocalConfigStorage(configFile.absolutePath)
+            initializeStorage(storage, "fake.keepersecurity.com:FAKE_CLIENT_KEY")
+            assertTrue(configFile.exists(), "Config file must exist after initializeStorage")
+            val perms = java.nio.file.Files.getPosixFilePermissions(configFile.toPath())
+            val expected = java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")
+            assertEquals(expected, perms, "Config file must be owner-read/write only. Got: $perms")
+        } finally {
+            configFile.delete()
+        }
+    }
+
+    @Test
     fun testRecordCreateEmptyCustomSerialized() {
-        // KSM-823: RecordCreate with no custom fields must include "custom": [] in JSON payload
+        // RecordCreate with no custom fields must include "custom": [] in JSON payload
         val recordData = KeeperRecordData(
             title = "Test Record",
             type = "login",
@@ -195,7 +288,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testKeeperFileDataMissingLastModified() {
-        // GH-973 / KSM-854: lastModified entirely absent — must deserialize without throwing
+        // lastModified is absent. The SDK must deserialize without throwing.
         val json = """{"title":"test.txt","name":"test.txt","type":"text/plain","size":1024}"""
         val result = Json.decodeFromString<KeeperFileData>(json)
         assertEquals(0L, result.lastModified)
@@ -212,7 +305,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testKeeperFileDataFractionalLastModified() {
-        // Regression guard for KSM-673: fractional lastModified (iOS client format)
+        // Regression guard for fractional lastModified (iOS client format)
         val json = """{"title":"test.txt","name":"test.txt","size":1024,"lastModified":1760646182.790214}"""
         val result = Json.decodeFromString<KeeperFileData>(json)
         assertEquals(1760646182L, result.lastModified)
@@ -220,7 +313,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testKeeperFileNullUrl() {
-        // KSM-765: KeeperFile.url must be nullable; server may omit url for files without a download link
+        // KeeperFile.url must be nullable. The server may omit url for files without a download link.
         val fileData = KeeperFileData("test.txt", "test.txt", "text/plain", 1024)
         val file = KeeperFile(ByteArray(32), "uid123", fileData, null, null)
         assertNull(file.url)
@@ -228,7 +321,7 @@ internal class SecretsManagerTest {
 
     @Test
     fun testBase64EmptyStringThrowsTypedException() {
-        // KSM-985: empty string must throw a typed Keeper exception, not an NPE from inside java.util.Base64
+        // Empty string must throw a typed Keeper exception, not an NPE from inside java.util.Base64.
         val base64Ex = assertFailsWith<Exception> { base64ToBytes("") }
         assertTrue(base64Ex.message?.isNotEmpty() == true)
         val webSafe64Ex = assertFailsWith<Exception> { webSafe64ToBytes("") }
@@ -269,6 +362,94 @@ internal class SecretsManagerTest {
             "flat record with innerFolderUid must decrypt with the folder key, not the app key")
         assertEquals(folderUid, record.folderUid)
     }
+
+    @Test
+    fun testIsEditableForwardedToKeeperRecord() {
+        // The server's per-record write-permission flag must survive decryptRecord() unchanged in
+        // both directions. Asserting only the true case would pass against a hardcoded value.
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+
+        val appKey = getRandomBytes(32)
+        val recordKey = getRandomBytes(32)
+        val encRecordKey = bytesToBase64(encrypt(recordKey, appKey))
+        val encData = bytesToBase64(encrypt(stringToBytes(
+            """{"title":"Test","type":"login","fields":[],"custom":[]}"""), recordKey))
+
+        fun response(isEditable: Boolean) = encrypt(stringToBytes(
+            """{"encryptedAppKey":null,"folders":null,"records":[{"recordUid":"uid1","recordKey":"$encRecordKey","data":"$encData","revision":1,"isEditable":$isEditable,"files":null,"innerFolderUid":null}]}"""
+        ), transmissionKey)
+
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+
+        // fetchAndDecryptSecrets swallows per-record failures to stderr, so assert the record
+        // survived before indexing: a decrypt regression must not surface as IndexOutOfBounds.
+        for (expected in listOf(true, false)) {
+            val options = SecretsManagerOptions(
+                storage,
+                queryFunction = { _, _, _ -> KeeperHttpResponse(200, response(expected)) }
+            )
+            val records = getSecrets(options).records
+            assertEquals(1, records.size, "record must decrypt for the isEditable:$expected case")
+            assertEquals(expected, records[0].isEditable,
+                "isEditable:$expected from server must reach KeeperRecord")
+        }
+    }
+
+    @Test
+    fun testGetFoldersSkipsUndecryptableFolder() {
+        // A single folder whose key cannot be decrypted must not abort getFolders(). The bad
+        // folder is skipped and the remaining good folder is still returned.
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+
+        val appKey = getRandomBytes(32)
+        val goodFolderKey = getRandomBytes(32)
+
+        val encGoodFolderKey = bytesToBase64(encrypt(goodFolderKey, appKey))
+        val encGoodData = bytesToBase64(encrypt(stringToBytes("""{"name":"Good Folder"}"""), goodFolderKey, true))
+        val badFolderKey = bytesToBase64(ByteArray(16) { it.toByte() })
+
+        val responseJson = """{"encryptedAppKey":null,"folders":[{"folderUid":"good-uid","folderKey":"$encGoodFolderKey","data":"$encGoodData","parent":null,"records":null},{"folderUid":"bad-uid","folderKey":"$badFolderKey","data":null,"parent":null,"records":null}],"records":null}"""
+        val encryptedResponse = encrypt(stringToBytes(responseJson), transmissionKey)
+
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+
+        val options = SecretsManagerOptions(storage, queryFunction = { _, _, _ -> KeeperHttpResponse(200, encryptedResponse) })
+        val folders = getFolders(options)
+
+        assertEquals(1, folders.size, "the undecryptable folder must be skipped, not abort the whole call")
+        assertEquals("good-uid", folders[0].folderUid)
+        assertEquals("Good Folder", folders[0].name)
+    }
+
+    @Test(timeout = 5_000)
+    fun testGetFoldersSkipsFolderParentCycle() {
+        val transmissionKey = ByteArray(32) { it.toByte() }
+        TestStubs.transmissionKeyStub = { transmissionKey }
+
+        val appKey = getRandomBytes(32)
+        val dummyFolderKey = bytesToBase64(getRandomBytes(60))
+
+        // Two folders whose parent references form a cycle: neither has a null parent,
+        // so getSharedFolderKey can never reach a root. Both must be skipped.
+        val responseJson = """{"encryptedAppKey":null,"folders":[{"folderUid":"folder-a","folderKey":"$dummyFolderKey","data":null,"parent":"folder-b","records":null},{"folderUid":"folder-b","folderKey":"$dummyFolderKey","data":null,"parent":"folder-a","records":null}],"records":null}"""
+        val encryptedResponse = encrypt(stringToBytes(responseJson), transmissionKey)
+
+        val storage = InMemoryStorage()
+        initializeStorage(storage, "US:FAKE_CLIENT_KEY")
+        storage.saveBytes(KEY_APP_KEY, appKey)
+
+        val options = SecretsManagerOptions(storage, queryFunction = { _, _, _ -> KeeperHttpResponse(200, encryptedResponse) })
+        val folders = getFolders(options)
+
+        assertEquals(0, folders.size, "both cyclic folders must be skipped; the call must complete without hanging")
+    }
+
 
 //    @Test // uncomment to debug the integration test
     fun integrationTest() {
