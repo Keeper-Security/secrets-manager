@@ -202,8 +202,9 @@ module KeeperSecretsManager
           folder_parent = encrypted_folder['parent']
 
           # Decrypt folder key based on whether it has a parent
+          use_gcm = false
           if !folder_parent || folder_parent.empty?
-            # Root folder - decrypt with app key
+            # Root folder - decrypt with app key (always GCM; data stays CBC below)
             folder_key_encrypted = Utils.base64_to_bytes(encrypted_folder['folderKey'])
             folder_key = Crypto.decrypt_aes_gcm(folder_key_encrypted, app_key)
           else
@@ -214,14 +215,23 @@ module KeeperSecretsManager
               next
             end
             folder_key_encrypted = Utils.base64_to_bytes(encrypted_folder['folderKey'])
-            folder_key = Crypto.decrypt_aes_cbc(folder_key_encrypted, shared_folder_key)
+            # GCM-wrapped subfolder keys are 60 bytes (12-byte nonce + 32-byte key + 16-byte tag);
+            # legacy CBC-wrapped keys are 64 bytes (16-byte IV + 48-byte padded ciphertext) - always
+            # unambiguous, mirrors the dispatch already landed in the other KSM SDKs (KSM-1043/1058/1061).
+            if folder_key_encrypted.bytesize == 60
+              use_gcm = true
+              folder_key = Crypto.decrypt_aes_gcm(folder_key_encrypted, shared_folder_key)
+            else
+              folder_key = Crypto.decrypt_aes_cbc(folder_key_encrypted, shared_folder_key)
+            end
           end
 
-          # Decrypt folder data if present
+          # Decrypt folder data if present. Root folders keep the existing CBC path -
+          # all current NSF roots have CBC-encrypted data, so use_gcm stays false there.
           folder_name = ''
           if encrypted_folder['data'] && !encrypted_folder['data'].empty?
             data_encrypted = Utils.base64_to_bytes(encrypted_folder['data'])
-            data_json = Crypto.decrypt_aes_cbc(data_encrypted, folder_key)
+            data_json = use_gcm ? Crypto.decrypt_aes_gcm(data_encrypted, folder_key) : Crypto.decrypt_aes_cbc(data_encrypted, folder_key)
             data = JSON.parse(data_json)
             folder_name = data['name'] || ''
           end
@@ -232,7 +242,8 @@ module KeeperSecretsManager
             'name' => folder_name,
             'folderKey' => folder_key,
             'parent' => folder_parent,
-            'records' => []
+            'records' => [],
+            'useGcm' => use_gcm
           )
 
           folders << folder
@@ -535,14 +546,14 @@ module KeeperSecretsManager
           'name' => folder_name
         }
 
-        # Encrypt folder data with NEW folder's key using AES-CBC
-        encrypted_data = Crypto.encrypt_aes_cbc(
+        # Drive (NSF) folders require AES-GCM for both the folder key wrap and folder data
+        # (KSM-1062); CBC produces "invalid sharedFolderKey" against NSF-enabled endpoints.
+        encrypted_data = Crypto.encrypt_aes_gcm(
           Utils.dict_to_json(folder_data),
           folder_key
         )
 
-        # Encrypt folder key with SHARED folder's key using AES-CBC
-        encrypted_folder_key = Crypto.encrypt_aes_cbc(folder_key, shared_folder_key)
+        encrypted_folder_key = Crypto.encrypt_aes_gcm(folder_key, shared_folder_key)
 
         # Prepare payload
         payload = prepare_create_folder_payload(
@@ -572,11 +583,12 @@ module KeeperSecretsManager
           'name' => folder_name
         }
 
-        # Encrypt folder data with folder's key using AES-CBC
-        encrypted_data = Crypto.encrypt_aes_cbc(
-          Utils.dict_to_json(folder_data),
-          folder_key
-        )
+        # Use the same cipher the folder was created with (KSM-1062)
+        encrypted_data = if folder.use_gcm
+                           Crypto.encrypt_aes_gcm(Utils.dict_to_json(folder_data), folder_key)
+                         else
+                           Crypto.encrypt_aes_cbc(Utils.dict_to_json(folder_data), folder_key)
+                         end
 
         payload = prepare_update_folder_payload(
           folder_uid: folder_uid,
