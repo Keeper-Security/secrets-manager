@@ -764,21 +764,25 @@ export const postFunction = async (url: string, transmissionKey: TransmissionKey
 export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => {
     const transmissionKey = platform.getRandomBytes(32)
     const keyNumberString = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-    const keyNumber = keyNumberString ? Number(keyNumberString) : 7
     const customPublicKeyB64 = await storage.getString(KEY_SERVER_PUBLIC_KEY)
     if (customPublicKeyB64) {
+        const keyNumber = keyNumberString ? Number(keyNumberString) : 7
+        if (!Number.isInteger(keyNumber) || keyNumber <= 0) {
+            throw new KeeperError(`Stored serverPublicKeyId '${keyNumberString}' is not a positive integer`)
+        }
         const customPublicKey = webSafe64ToBytes(customPublicKeyB64)
         const encryptedKey = await platform.publicEncrypt(transmissionKey, customPublicKey)
         return { publicKeyId: keyNumber, key: transmissionKey, encryptedKey }
     }
+    const keyNumber = keyNumberString ? Number(keyNumberString) : 7
     // A stored id outside the bundled table (e.g. an older SDK build persisted an unvalidated
     // server-suggested key) must not permanently block every request. Fall back to the default
-    // key instead, so the request goes out and the server's rotation hint can steer it back to
-    // a valid id.
+    // key for this call instead of throwing, so the request still goes out and the server's
+    // rotation hint can steer a future call back to a valid id. This fallback is never persisted:
+    // generateTransmissionKey is a read, and writing here can race a concurrent custom-key pin or
+    // a concurrent rotation write, and can stomp a newer SDK build's valid-but-unrecognized id
+    // back to 7 on a config shared across mixed-version instances.
     const effectiveKeyNumber = keyNumber in keeperPublicKeys ? keyNumber : 7
-    if (effectiveKeyNumber !== keyNumber) {
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, effectiveKeyNumber.toString())
-    }
     const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[effectiveKeyNumber])
     return {
         publicKeyId: effectiveKeyNumber,
@@ -796,13 +800,32 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
     return {payload: encryptedPayload, signature}
 }
-const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
+// Two call paths persist a caller-supplied serverPublicKey/serverPublicKeyId pair before a request
+// goes out: postQuery (every endpoint) and fetchAndDecryptSecrets, which persists ahead of
+// prepareGetPayload so IL5 custom-key config survives even if that call fails for an unrelated
+// reason (e.g. a missing client id). Both must apply the same validation, so it lives here once.
+const persistServerPublicKeyOptions = async (storage: KeyValueStorage, options: SecretManagerOptions): Promise<void> => {
     if (options.serverPublicKey) {
-        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
+        if (options.serverPublicKeyId) {
+            await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
+        }
+    } else if (options.serverPublicKeyId) {
+        // No custom key to justify an id outside the bundled table here, unlike the paired write
+        // above. Persisting an unrecognized id anyway would reproduce, via a caller-supplied
+        // option instead of a legacy config, the exact "unsupported key id" failure this SDK's
+        // fallback in generateTransmissionKey exists to avoid.
+        const idNumber = Number(options.serverPublicKeyId)
+        if (!(idNumber in keeperPublicKeys)) {
+            const supported = Object.keys(keeperPublicKeys)
+            throw new KeeperError(`serverPublicKeyId '${options.serverPublicKeyId}' is not supported without a matching serverPublicKey; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
+        }
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
     }
-    if (options.serverPublicKeyId) {
-        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
-    }
+}
+
+const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
+    await persistServerPublicKeyOptions(options.storage, options)
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
         throw new Error('hostname is missing from the configuration')
@@ -904,12 +927,7 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
 
 const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
     const storage = options.storage
-    if (options.serverPublicKey) {
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
-    }
-    if (options.serverPublicKeyId) {
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
-    }
+    await persistServerPublicKeyOptions(storage, options)
     const payload = await prepareGetPayload(storage, queryOptions)
     const responseData = await postQuery(options, 'get_secret', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse

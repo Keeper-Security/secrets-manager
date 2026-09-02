@@ -278,13 +278,48 @@ test('generateTransmissionKey falls back to the default key when the stored key 
     expect(transmissionKey.key.length).toBe(32)
 })
 
-test('generateTransmissionKey self-heals a corrupted stored key id back to the fallback value', async () => {
+test('generateTransmissionKey falls back to the default key without persisting a corrupted stored key id', async () => {
     const storage = inMemoryStorage({
         serverPublicKeyId: '9999'
     })
     platform.getRandomBytes = () => new Uint8Array(32)
+    const transmissionKey = await generateTransmissionKey(storage)
+    expect(transmissionKey.publicKeyId).toBe(7)
+    // The fallback is recomputed in memory on every call; it must never overwrite storage,
+    // or a delayed write can clobber a concurrent custom-key pin or a just-learned rotation id.
+    expect(await storage.getString('serverPublicKeyId')).toBe('9999')
+})
+
+test('generateTransmissionKey never calls saveString when falling back from a corrupted stored id', async () => {
+    const storage = inMemoryStorage({
+        serverPublicKeyId: '9999'
+    })
+    const saveSpy = jest.spyOn(storage, 'saveString')
+    platform.getRandomBytes = () => new Uint8Array(32)
     await generateTransmissionKey(storage)
-    expect(await storage.getString('serverPublicKeyId')).toBe('7')
+    expect(saveSpy).not.toHaveBeenCalled()
+})
+
+test('generateTransmissionKey throws when a custom key is pinned but the stored key id is not numeric', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: 'not-a-number'
+    })
+    platform.getRandomBytes = () => new Uint8Array(32)
+    await expect(generateTransmissionKey(storage)).rejects.toThrow(/serverPublicKeyId/)
+})
+
+test('getSecrets rejects a caller-supplied serverPublicKeyId outside the bundled table when no custom key is pinned', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKeyId: '9999',
+        queryFunction: async () => { throw new Error('should not reach the network: invalid id must be rejected before the request goes out') }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/serverPublicKeyId/)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
 })
 
 test('IL5 dynamic key - Layer 2: initializeStorage saves serverPublicKeyId and serverPublicKey from 4-segment IL5 OTT', async () => {
