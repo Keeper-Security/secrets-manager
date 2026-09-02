@@ -6,20 +6,63 @@ import * as fs from 'fs';
 // existing file, so permissions must be re-asserted after every write, not just the first one.
 const chmodSecure = (filePath: string) => fs.chmodSync(filePath, 0o600)
 
+// Node-local sibling of the browser localConfigStorage's describeCause/idbFailure convention
+// (src/browser/localConfigStorage.ts). Duck-typed rather than `instanceof Error`, same as that
+// file and as errorMessage()/classifyCryptoFailure() elsewhere in this file: native fs errors are
+// not reliably `instanceof Error` under Jest's test environment, since Node's own bindings throw
+// from a different realm than the one Jest exposes as the global Error. This also guards against
+// a non-Error throw (throw null, throw 'x') ever reaching a property access.
+const describeCause = (cause: unknown): string => {
+    const message = (cause as { message?: unknown } | null | undefined)?.message
+    return typeof message === 'string' ? message : 'unknown error'
+}
+
+const isEnoent = (cause: unknown): boolean =>
+    typeof cause === 'object' && cause !== null && (cause as NodeJS.ErrnoException).code === 'ENOENT'
+
+// A leading UTF-8 BOM is valid, non-corrupt JSON text - produced by tools like Windows Notepad or
+// PowerShell's Set-Content - and must not be treated as corruption.
+const stripBOM = (text: string): string => text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text
+
 export const localConfigStorage = (configName?: string): KeyValueStorage => {
 
+    // Node validates config readability eagerly, here at construction, because fs is
+    // synchronous. The browser localConfigStorage (KSM-1332, same release) defers the equivalent
+    // check lazily to first getString/saveString/delete, because IndexedDB has no synchronous API
+    // to check eagerly against - a structural difference between the two platforms, not a
+    // stylistic one.
     const readStorage = (): any => {
         if (!configName) {
             return {}
         }
+        let raw: string
         try {
-            return JSON.parse(fs.readFileSync(configName).toString())
-        } catch (e: Error | any) {
-            if (e.code === 'ENOENT') {
+            raw = fs.readFileSync(configName).toString()
+        } catch (e) {
+            if (isEnoent(e)) {
                 return {}
             }
-            throw new KeeperError(`Unable to read local config ${configName}: ${e.message}`)
+            throw new KeeperError(`Unable to read local config ${configName}: ${describeCause(e)}`)
         }
+        // A process killed between saveStorage's truncate and completed write (OOM, SIGKILL,
+        // container eviction, power loss) leaves an empty file - not corruption. The sibling KMS
+        // storage backends and the Python SDK already treat a zero-length file as a fresh start
+        // for exactly this reason. A partially-written (nonempty but truncated) file is not
+        // self-healed: there is no reliable way to distinguish "truncated" from "genuinely
+        // corrupt" JSON, and this fix's whole point is to fail loudly rather than guess.
+        if (raw.length === 0) {
+            return {}
+        }
+        let parsed: any
+        try {
+            parsed = JSON.parse(stripBOM(raw))
+        } catch (e) {
+            throw new KeeperError(`Unable to read local config ${configName}: ${describeCause(e)}`)
+        }
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new KeeperError(`Local config ${configName} does not contain a JSON object`)
+        }
+        return parsed
     }
 
     const storageData = readStorage()
@@ -29,13 +72,17 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
         if (!configName) {
             return
         }
-        const fd = fs.openSync(configName, 'w', 0o600)
         try {
-            fs.writeSync(fd, JSON.stringify(storageData, null, 2))
-        } finally {
-            fs.closeSync(fd)
+            const fd = fs.openSync(configName, 'w', 0o600)
+            try {
+                fs.writeSync(fd, JSON.stringify(storageData, null, 2))
+            } finally {
+                fs.closeSync(fd)
+            }
+            chmodSecure(configName)
+        } catch (e) {
+            throw new KeeperError(`Unable to save local config ${configName}: ${describeCause(e)}`)
         }
-        chmodSecure(configName)
     }
 
     return {

@@ -20,4 +20,7 @@ const getKeeperRecords = async () => {
     console.log(records)
 }
 
-getKeeperRecords().finally()
+getKeeperRecords().catch((e) => {
+    console.error(`Failed to load Keeper secrets: ${e.message}`)
+    process.exitCode = 1
+})
