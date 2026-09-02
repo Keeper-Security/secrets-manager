@@ -1794,18 +1794,21 @@ pub struct KeeperFolder {
     pub folder_uid: String,
     pub parent_uid: String,
     pub name: String,
+    pub use_gcm: bool,
 }
 
 impl KeeperFolder {
     pub fn new(
         folder_map: &HashMap<String, serde_json::Value>,
         folder_key: Vec<u8>,
+        use_gcm: bool,
     ) -> Result<Self, KSMRError> {
         let mut folder = KeeperFolder {
             folder_key,
             folder_uid: String::new(),
             parent_uid: String::new(),
             name: String::new(),
+            use_gcm,
         };
 
         if let Some(serde_json::Value::String(val)) = folder_map.get("folderUid") {
@@ -1827,15 +1830,25 @@ impl KeeperFolder {
                     }
                 }
             };
-            if let Ok(decrypted_data) = CryptoUtils::decrypt_aes_cbc(&data, &folder.folder_key) {
+            // Root folders keep the existing CBC path (use_gcm is always false there) -
+            // all current NSF roots have CBC-encrypted data. GCM plaintext needs no
+            // unpadding; CBC plaintext does (KSM-1063).
+            let decrypted = if folder.use_gcm {
+                CryptoUtils::decrypt_aes(&data, &folder.folder_key)
+            } else {
+                CryptoUtils::decrypt_aes_cbc(&data, &folder.folder_key)
+            };
+            if let Ok(decrypted_data) = decrypted {
                 #[derive(Deserialize)]
                 struct FolderName {
                     name: String,
                 }
-                let decrypted_data_unpadded = unpad_data(decrypted_data.as_slice()).unwrap();
-                if let Ok(folder_name) =
-                    serde_json::from_slice::<FolderName>(&decrypted_data_unpadded)
-                {
+                let name_bytes: Vec<u8> = if folder.use_gcm {
+                    decrypted_data
+                } else {
+                    unpad_data(decrypted_data.as_slice()).unwrap()
+                };
+                if let Ok(folder_name) = serde_json::from_slice::<FolderName>(&name_bytes) {
                     folder.name = folder_name.name;
                 } else {
                     error!("Error parsing folder name from decrypted data");

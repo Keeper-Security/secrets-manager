@@ -1696,6 +1696,7 @@ impl SecretsManager {
                     .unwrap_or("")
                     .to_string();
                 let mut _folder_key = Vec::new();
+                let mut use_gcm = false;
                 if folder_parent.is_empty() {
                     let folder_key_bytes = utils::base64_to_bytes(&folder_key_string)?;
                     _folder_key = CryptoUtils::decrypt_aes(&folder_key_bytes, &app_key)?;
@@ -1711,33 +1712,24 @@ impl SecretsManager {
                             "Folder data inconsistent - unable to locate shared folder".to_string(),
                         ))?;
                     let folder_key_bytes = utils::base64_to_bytes(&folder_key_string)?;
-                    _folder_key = CryptoUtils::decrypt_aes_cbc(&folder_key_bytes, &shared_folder_key)?;
+                    // GCM-wrapped subfolder keys are 60 bytes (12-byte nonce + 32-byte key + 16-byte
+                    // tag); legacy CBC-wrapped keys are 64 bytes (16-byte IV + 48-byte padded
+                    // ciphertext) - always unambiguous, mirrors the dispatch already landed in the
+                    // other KSM SDKs (KSM-1043/1058/1061/1062).
+                    if folder_key_bytes.len() == 60 {
+                        use_gcm = true;
+                        _folder_key = CryptoUtils::decrypt_aes(&folder_key_bytes, &shared_folder_key)?;
+                    } else {
+                        _folder_key = CryptoUtils::decrypt_aes_cbc(&folder_key_bytes, &shared_folder_key)?;
+                    }
                 }
-                let folder_data = folder_obj
-                    .get("data")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let mut _folder_name = String::new();
-                if !folder_data.is_empty() {
-                    let folder_data_bytes = utils::base64_to_bytes(&folder_data)?;
-                    _folder_key = match _folder_key.len() {
-                        32 => _folder_key,
-                        _ => unpad_data(&_folder_key)?,
-                    };
-                    let folder_data_json_bytes_decrypted =
-                        CryptoUtils::decrypt_aes_cbc(&folder_data_bytes, &_folder_key)?;
-                    let folder_data_string =
-                        utils::bytes_to_string_unpad(&folder_data_json_bytes_decrypted)?;
-                    let folder_data_dict: serde_json::Value =
-                        serde_json::from_str(&folder_data_string)?;
-                    _folder_name = folder_data_dict
-                        .get("name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                }
-                let folder_ = KeeperFolder::new(&folder_obj, _folder_key)?;
+                // The folder name itself is decrypted inside KeeperFolder::new (dispatching on
+                // use_gcm there) - only the key needs fixing up here before we hand it off.
+                _folder_key = match _folder_key.len() {
+                    32 => _folder_key,
+                    _ => unpad_data(&_folder_key)?,
+                };
+                let folder_ = KeeperFolder::new(&folder_obj, _folder_key, use_gcm)?;
                 Ok(folder_)
             })();
             match result {
@@ -2238,6 +2230,7 @@ impl SecretsManager {
         folder_uid: String,
         folder_name: String,
         folder_key: Vec<u8>,
+        use_gcm: bool,
     ) -> Result<UpdateFolderPayload, KSMRError> {
         let client_version = KEEPER_SECRETS_MANAGER_SDK_CLIENT_ID.to_string();
         let client_id = match self.config.get(ConfigKeys::KeyClientId)? {
@@ -2250,8 +2243,12 @@ impl SecretsManager {
         let folder_data_json = dict_to_json(&keeper_folder)?;
         let folder_data_bytes = utils::string_to_bytes(&folder_data_json);
 
-        let encrypted_folder_data =
-            CryptoUtils::encrypt_aes_cbc(&folder_data_bytes, &folder_key, None)?;
+        // Use the same cipher the folder was created with (KSM-1063)
+        let encrypted_folder_data = if use_gcm {
+            CryptoUtils::encrypt_aes_gcm(&folder_data_bytes, &folder_key, None)?
+        } else {
+            CryptoUtils::encrypt_aes_cbc(&folder_data_bytes, &folder_key, None)?
+        };
         let payload_data = CryptoUtils::bytes_to_url_safe_str(&encrypted_folder_data);
 
         let update_payload =
@@ -2288,9 +2285,11 @@ impl SecretsManager {
         };
 
         let mut folder_key = Vec::new();
+        let mut use_gcm = false;
         for folder in folders_copy {
             if folder.folder_uid == folder_uid {
                 folder_key = folder.folder_key;
+                use_gcm = folder.use_gcm;
                 break;
             }
         }
@@ -2306,6 +2305,7 @@ impl SecretsManager {
             folder_uid.to_string(),
             folder_name.clone(),
             folder_key.clone(),
+            use_gcm,
         )?;
 
         let _resp = self.post_query("update_folder".to_string(), &update_payload)?;
@@ -2329,8 +2329,10 @@ impl SecretsManager {
 
         let folder_key = CryptoUtils::generate_random_bytes(32);
 
+        // Drive (NSF) folders require AES-GCM for both the folder key wrap and folder data
+        // (KSM-1063); CBC produces "invalid sharedFolderKey" against NSF-enabled endpoints.
         let encrypted_folder_key_bytes =
-            CryptoUtils::encrypt_aes_cbc(&folder_key, &shared_folder_key, None)?;
+            CryptoUtils::encrypt_aes_gcm(&folder_key, &shared_folder_key, None)?;
         let encrypted_folder_key = CryptoUtils::bytes_to_url_safe_str(&encrypted_folder_key_bytes);
 
         let mut keeper_folder_name_map = HashMap::new();
@@ -2338,7 +2340,7 @@ impl SecretsManager {
         let folder_name_json = dict_to_json(&keeper_folder_name_map)?;
         let folder_name_bytes = utils::string_to_bytes(&folder_name_json);
         let encrypted_folder_name_bytes =
-            CryptoUtils::encrypt_aes_cbc(&folder_name_bytes, &folder_key, None)?;
+            CryptoUtils::encrypt_aes_gcm(&folder_name_bytes, &folder_key, None)?;
         let encrypted_folder_name_string =
             CryptoUtils::bytes_to_url_safe_str(&encrypted_folder_name_bytes);
 
