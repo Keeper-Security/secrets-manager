@@ -883,6 +883,22 @@ describe('request timeout propagation', () => {
         expect(seen).toEqual([undefined])
     })
 
+    test('getSecrets forwards a clamped requestTimeoutMs to a custom queryFunction, not the raw oversized value', async () => {
+        const storage = inMemoryStorage({})
+        await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+        const seen: (number | undefined)[] = []
+        const options: SecretManagerOptions = {
+            storage,
+            requestTimeoutMs: MAX_REQUEST_TIMEOUT_MS + 1000,
+            queryFunction: async (_url, _key, _payload, _allowUnverified, timeoutMs) => {
+                seen.push(timeoutMs)
+                return {statusCode: 500, data: new TextEncoder().encode('nope'), headers: []}
+            }
+        }
+        await expect(getSecrets(options)).rejects.toBeDefined()
+        expect(seen).toEqual([MAX_REQUEST_TIMEOUT_MS])
+    })
+
     test('a timed-out request is not retried, it propagates to the caller', async () => {
         const storage = inMemoryStorage({})
         await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
@@ -908,6 +924,8 @@ describe('request timeout propagation', () => {
         const options: SecretManagerOptions = {
             storage,
             requestTimeoutMs: 0,
+            serverPublicKey: 'fake-server-public-key',
+            serverPublicKeyId: '20',
             queryFunction: async () => {
                 queryFunctionCalls++
                 return {statusCode: 500, data: new TextEncoder().encode('nope'), headers: []}
@@ -915,6 +933,11 @@ describe('request timeout propagation', () => {
         }
         await expect(getSecrets(options)).rejects.toThrow(/at least 1/)
         expect(queryFunctionCalls).toBe(0)
+        // postQuery writes options.serverPublicKey/serverPublicKeyId to storage right after
+        // validating requestTimeoutMs - the early-validation ordering has to guard both, not
+        // just the network call above.
+        expect(await storage.getString('serverPublicKey')).toBeUndefined()
+        expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
     })
 
     describe.each([

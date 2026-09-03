@@ -906,6 +906,12 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
 
 const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
     const storage = options.storage
+    // Validated before the write below, not just inside postQuery's own later validation: this
+    // write is deliberately unconditional on anything else in this function failing (an IL5
+    // dynamic key discovered via a one-time token must persist even if, say, clientId then turns
+    // out to be missing) - but a caller-input mistake like an unusable requestTimeoutMs is a
+    // different kind of failure, one that should produce no side effects at all, not even this one.
+    validateTimeoutMs(options.requestTimeoutMs)
     if (options.serverPublicKey) {
         await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
     }
