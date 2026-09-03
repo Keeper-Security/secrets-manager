@@ -12,6 +12,7 @@ import {
     SecretManagerOptions,
     uploadFile,
 } from '../'
+import {MAX_REQUEST_TIMEOUT_MS} from '../src/deadline'
 
 const FAKE_TOKEN = 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'
 const enc = new TextEncoder()
@@ -28,9 +29,20 @@ const makeOptions = async (
 }
 
 describe('requestTimeoutMs validation and propagation through postQuery', () => {
-    test.each([0, -1, NaN, Infinity, -Infinity])('rejects requestTimeoutMs=%p before any request is attempted', async (invalid) => {
+    // Every unusable value (0, negatives, NaN, Infinity, -Infinity) is already unit-tested at the
+    // resolveTimeoutMs level in deadline.test.ts; one representative value here is enough to prove
+    // the wiring at this integration layer without re-asserting the same thing five times.
+    test('rejects an unusable requestTimeoutMs before any request is attempted, with no side effects', async () => {
+        const storage = inMemoryStorage({})
+        await initializeStorage(storage, FAKE_TOKEN, 'fake.keepersecurity.com')
         const queryFunction = jest.fn()
-        const options = await makeOptions(queryFunction, invalid)
+        const options: SecretManagerOptions = {
+            storage,
+            requestTimeoutMs: 0,
+            serverPublicKey: 'fake-server-public-key',
+            serverPublicKeyId: '20',
+            queryFunction
+        }
         let error: any
         try {
             await getSecrets(options)
@@ -41,6 +53,22 @@ describe('requestTimeoutMs validation and propagation through postQuery', () => 
         expect(error).not.toBeInstanceOf(KeeperError)
         expect(error.message).toContain('Request timeout must be')
         expect(queryFunction).not.toHaveBeenCalled()
+        // fetchAndDecryptSecrets/postQuery write serverPublicKey/serverPublicKeyId to storage
+        // right after validating requestTimeoutMs - the early-validation ordering has to guard
+        // both, not just the network call above.
+        expect(await storage.getString('serverPublicKey')).toBeUndefined()
+        expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+    })
+
+    test('forwards a clamped requestTimeoutMs to queryFunction, not the raw oversized value', async () => {
+        const received: (number | undefined)[] = []
+        const queryFunction: SecretManagerOptions['queryFunction'] = async (url, transmissionKey, payload, allowUnverifiedCertificate, timeoutMs) => {
+            received.push(timeoutMs)
+            return {statusCode: 500, data: enc.encode('{}'), headers: []}
+        }
+        const options = await makeOptions(queryFunction, MAX_REQUEST_TIMEOUT_MS + 1000)
+        await getSecrets(options).catch(() => {})
+        expect(received[0]).toBe(MAX_REQUEST_TIMEOUT_MS)
     })
 
     test('a valid requestTimeoutMs reaches queryFunction', async () => {
@@ -114,6 +142,12 @@ describe('downloadFile / downloadThumbnail requestTimeoutMs precedence', () => {
         expect(platform.get).toHaveBeenCalledWith(file.url, {}, undefined)
     })
 
+    test('a value above MAX_REQUEST_TIMEOUT_MS reaches platform.get already clamped', async () => {
+        const file = fakeFile()
+        await downloadFile(file, MAX_REQUEST_TIMEOUT_MS + 1000)
+        expect(platform.get).toHaveBeenCalledWith(file.url, {}, MAX_REQUEST_TIMEOUT_MS)
+    })
+
     test('rejects an invalid resolved timeoutMs before calling platform.get', async () => {
         const file = fakeFile()
         await expect(downloadFile(file, -1)).rejects.toThrow(/Request timeout must be/)
@@ -173,11 +207,29 @@ describe('uploadFile requestTimeoutMs propagation', () => {
         expect(fileUploadMock.mock.calls[0][3]).toBe(4567)
     })
 
-    test('rejects an invalid requestTimeoutMs before calling platform.fileUpload', async () => {
+    test('an explicit timeoutMs argument wins over options.requestTimeoutMs', async () => {
+        const fileUploadMock = jest.fn(async (_url?: string, _params?: any, _data?: any, _timeoutMs?: number) => ({statusCode: 201, statusMessage: 'Created'}))
+        platform.fileUpload = fileUploadMock
+        const {options, ownerRecord, file} = await setup(9000)
+        await uploadFile(options, ownerRecord, file, 111)
+        expect(fileUploadMock.mock.calls[0][3]).toBe(111)
+    })
+
+    test('rejects an invalid explicit timeoutMs before calling platform.fileUpload or add_file', async () => {
         const fileUploadMock = jest.fn()
         platform.fileUpload = fileUploadMock
-        const {options, ownerRecord, file} = await setup(0)
-        await expect(uploadFile(options, ownerRecord, file)).rejects.toThrow(/Request timeout must be/)
+        // options.requestTimeoutMs is valid here (9000) so postQuery's own, separate validation
+        // of that value can't be what blocks add_file below - only an invalid *explicit*
+        // timeoutMs argument to uploadFile itself is under test.
+        const {options, ownerRecord, file} = await setup(9000)
+        // add_file (reached via postQuery, through this queryFunction) allocates an upload
+        // placeholder URL on the backend - checking only that platform.fileUpload was never
+        // called doesn't actually prove the timeout is validated before that side effect, since
+        // fileUpload is the very last call in uploadFile regardless of ordering.
+        const queryFunctionSpy = jest.fn(options.queryFunction)
+        options.queryFunction = queryFunctionSpy
+        await expect(uploadFile(options, ownerRecord, file, 0)).rejects.toThrow(/Request timeout must be/)
         expect(fileUploadMock).not.toHaveBeenCalled()
+        expect(queryFunctionSpy).not.toHaveBeenCalled()
     })
 })
