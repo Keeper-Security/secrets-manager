@@ -845,12 +845,33 @@ const persistServerPublicKeyIdOnce = async (storage: KeyValueStorage, serverPubl
  * whenever the incoming pair differs from what's stored (first time, or a genuine rebind); no-op
  * when it already matches, preserving this PR's point of skipping redundant writes. When only one
  * field is supplied, fall back to that field's own write-once gate.
+ *
+ * Two cross-call gaps remain here, by design, not fixed: (1) an id-only call followed by a later
+ * key-only call can land a pair whose members were never validated together - the id validated
+ * against the bundled table on its own call, the key accepted on its own call, but the two never
+ * checked against each other; (2) postQuery's rotation branch (the {"error":"key"} handler) writes
+ * serverPublicKeyId directly, bypassing this dispatcher, so a later key-only call can pair a
+ * freshly-pinned key with an id that was actually a rotation outcome, not caller intent. Both fail
+ * loud on the next request - via postQuery's own "Server rejected the custom server public key"
+ * guard on the rotation branch - rather than corrupting silently; bounded, not fixed.
  */
 const persistServerPublicKeyOptions = async (
     storage: KeyValueStorage,
     serverPublicKey: string | undefined,
     serverPublicKeyId: string | undefined
 ): Promise<void> => {
+    // inMemoryStorage's getValue (src/platform.ts) collapses a round-tripped '' back to undefined
+    // (a falsy-check bug in the shared KeyValueStorage backend, out of scope to fix here). An empty
+    // string is never a valid public key, so normalize it to "not supplied" up front rather than
+    // let a stored '' silently defeat the storedKey === serverPublicKey comparisons below on every
+    // call, and rather than let it disable the table-membership check when paired with an id.
+    // serverPublicKeyId is deliberately NOT normalized the same way: '' can never reach storage as
+    // a persisted serverPublicKeyId - parseServerKeyId rejects it before any write, on every path
+    // below - so there is no round-trip case to guard against, and doing so here would replace
+    // today's loud format-error rejection with a silent no-op.
+    if (serverPublicKey === '') {
+        serverPublicKey = undefined
+    }
     if (serverPublicKey !== undefined && serverPublicKeyId !== undefined) {
         parseServerKeyId(serverPublicKeyId)
         const [storedKey, storedKeyId] = await Promise.all([
@@ -860,8 +881,18 @@ const persistServerPublicKeyOptions = async (
         if (storedKey === serverPublicKey && storedKeyId === serverPublicKeyId) {
             return
         }
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY, serverPublicKey)
+        // Write the id before the key. Neither write is atomic across all KeyValueStorage
+        // backends (no cross-backend batch/saveStrings primitive exists), so a failure between the
+        // two calls can still leave a mismatched pair - this ordering doesn't eliminate that, it
+        // only chooses which half survives. id-then-key means a partial failure leaves an id with
+        // no key: generateTransmissionKey falls through to the bundled key table for that id and
+        // fails loud ("Key number N is not supported") on the very next call if the id is
+        // out-of-table. key-then-id's failure mode is worse: it leaves a key with no id, so
+        // generateTransmissionKey silently defaults to id 7 while still encrypting with the
+        // leftover custom key - an opaque server-side decrypt failure instead of a loud
+        // client-side rejection.
         await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId)
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY, serverPublicKey)
         return
     }
     if (serverPublicKey !== undefined) {
@@ -1233,7 +1264,15 @@ export const initializeStorage = async (
                 if (tokenParts[3].length < 80) {
                     throw new Error(`IL5 token: serverPublicKey appears malformed`)
                 }
-                await persistServerPublicKeyOptions(storage, tokenParts[3], keyId)
+                try {
+                    await persistServerPublicKeyOptions(storage, tokenParts[3], keyId)
+                } catch (e: Error | any) {
+                    // Preserve the "IL5 token: " prefix used by the two sibling checks just above,
+                    // matching PR #1143's established convention for this branch. On this call path
+                    // (both fields, keyId already digit-regex-validated) the only reachable throw is
+                    // parseServerKeyId's positive-integer check, i.e. keyId === '0'.
+                    throw new Error(`IL5 token: ${e.message}`)
+                }
             }
         }
     }

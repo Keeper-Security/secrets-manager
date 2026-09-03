@@ -466,6 +466,40 @@ test('pinned serverPublicKey is not reclobbered on subsequent calls', async () =
     expect(serverPublicKeyWrites.length).toBe(1)
 })
 
+test('empty-string serverPublicKey is treated as not supplied, not persisted or reclobbered', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const saveStringSpy = jest.spyOn(storage, 'saveString')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: '',
+        queryFunction: async (_url, tk) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
+    }
+    await getSecrets(options)
+    await getSecrets(options)
+    const serverPublicKeyWrites = saveStringSpy.mock.calls.filter(([key]) => key === 'serverPublicKey')
+    expect(serverPublicKeyWrites.length).toBe(0)
+    expect(await storage.getString('serverPublicKey')).toBeUndefined()
+})
+
+test('empty-string serverPublicKey paired with an out-of-table id does not bypass table-membership validation', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: '',
+        serverPublicKeyId: '99',
+        queryFunction: async () => {
+            throw new Error('should not reach the network')
+        }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/serverPublicKeyId 99 is not supported/)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+    expect(await storage.getString('serverPublicKey')).toBeUndefined()
+})
+
 test('caller-supplied serverPublicKeyId outside the bundled table is rejected upfront, not persisted', async () => {
     const storage = inMemoryStorage({})
     await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
@@ -481,7 +515,7 @@ test('caller-supplied serverPublicKeyId outside the bundled table is rejected up
 })
 
 test('caller-supplied serverPublicKeyId in an invalid format is rejected with a format error, not a table-membership error', async () => {
-    for (const invalid of ['abc', '-1', '7.5', '0']) {
+    for (const invalid of ['abc', '-1', '7.5', '0', '']) {
         const storage = inMemoryStorage({})
         await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
         const options: SecretManagerOptions = {
@@ -501,13 +535,32 @@ test('concurrent calls against fresh storage do not corrupt the persisted server
     await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
     const enc = new TextEncoder()
     const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
-    const options: SecretManagerOptions = {
+    // Two different ids on the racing calls, not the same id twice: pinning the same id on both
+    // (the previous version of this test) converges on that id regardless of whether the
+    // write-once guard exists at all, so it can't detect the guard's removal.
+    await Promise.all([
+        getSecrets({
+            storage,
+            serverPublicKeyId: '8',
+            queryFunction: async (_url, tk) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
+        }),
+        getSecrets({
+            storage,
+            serverPublicKeyId: '10',
+            queryFunction: async (_url, tk) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
+        })
+    ])
+    const settled = await storage.getString('serverPublicKeyId')
+    expect(['8', '10']).toContain(settled)
+
+    // A later call with yet another id must not overwrite whatever the race settled on - this is
+    // what actually exercises the write-once guard.
+    await getSecrets({
         storage,
-        serverPublicKeyId: '8',
+        serverPublicKeyId: '12',
         queryFunction: async (_url, tk) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
-    }
-    await Promise.all([getSecrets(options), getSecrets(options)])
-    expect(await storage.getString('serverPublicKeyId')).toBe('8')
+    })
+    expect(await storage.getString('serverPublicKeyId')).toBe(settled)
 })
 
 test('an out-of-table serverPublicKeyId alongside a pinned custom key is not validated against the bundled table', async () => {
@@ -549,6 +602,34 @@ test('pinning both fields together rebinds the pair atomically, not split across
     await getSecrets(options)
     expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
     expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
+test('a storage failure between the id write and the key write fails loud on the next call, not silently', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    let saveStringCalls = 0
+    const originalSaveString = storage.saveString.bind(storage)
+    jest.spyOn(storage, 'saveString').mockImplementation(async (key: string, value: string) => {
+        saveStringCalls++
+        if (saveStringCalls === 2) {
+            throw new Error('simulated storage failure')
+        }
+        return originalSaveString(key, value)
+    })
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20', // out-of-table when unpaired with a custom key
+        queryFunction: async () => { throw new Error('should not reach the network') }
+    }
+    await expect(getSecrets(options)).rejects.toThrow('simulated storage failure')
+    // id write (call #1) succeeded; key write (call #2) is what threw.
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+    expect(await storage.getString('serverPublicKey')).toBeUndefined()
+    // The mismatched pair must fail loud on the very next transmission-key lookup, not silently
+    // default to key id 7 while still holding no custom key.
+    await expect(generateTransmissionKey(storage)).rejects.toThrow('Key number 20 is not supported')
 })
 
 test('an id-only pin after an earlier key-only pin uses storage, not this call, to decide whether a custom key applies', async () => {
@@ -637,6 +718,14 @@ test('IL5 dynamic key - Layer 2: rejects malformed (too short) serverPublicKey',
     await expect(
         initializeStorage(storage, 'IL5:ONE_TIME_TOKEN:20:tooshort')
     ).rejects.toThrow('IL5 token: serverPublicKey appears malformed')
+})
+
+test('IL5 dynamic key - Layer 2: rejects key id \'0\' with the "IL5 token:" prefix, matching its sibling checks', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await expect(
+        initializeStorage(storage, `IL5:ONE_TIME_TOKEN:0:${fakeKey}`)
+    ).rejects.toThrow("IL5 token: serverPublicKeyId '0' must be a positive integer")
 })
 
 test('getFolders skips an undecryptable folder and returns the good one', async () => {
