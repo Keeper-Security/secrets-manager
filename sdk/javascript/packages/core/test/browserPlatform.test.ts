@@ -273,6 +273,18 @@ describe.each(calls)('%s', (name, call) => {
     })
 })
 
+test('fileUpload drains the response body instead of leaving it unconsumed', async () => {
+    const cancelSpy = jest.fn().mockResolvedValue(undefined)
+    fetchMock.mockResolvedValueOnce({
+        status: 200,
+        headers: new Headers(),
+        statusText: 'OK',
+        body: {cancel: cancelSpy}
+    })
+    await browserPlatform.fileUpload('https://example.com', {field: 'value'}, new Uint8Array([1, 2, 3]), 5000)
+    expect(cancelSpy).toHaveBeenCalled()
+})
+
 test('the default deadline is the shared default', async () => {
     jest.useFakeTimers()
     try {
