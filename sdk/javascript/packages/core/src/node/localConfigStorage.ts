@@ -1,5 +1,6 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey, inMemoryStorage} from "../platform";
 import {KeeperError} from "../errors";
+import {validateTimeoutMs} from "../deadline";
 import * as fs from 'fs';
 
 // fs.openSync's mode argument is only honored when the file is created; it is a no-op on an
@@ -59,19 +60,31 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
 // Signature matches SecretManagerOptions.queryFunction so the trailing options, including
 // requestTimeoutMs, reach platform.post instead of being dropped on the floor.
 export const cachingPostFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number): Promise<KeeperHttpResponse> => {
+    // Resolved before the try below so a caller-input mistake (an unusable timeoutMs) fails
+    // fast instead of being caught and mistaken for a transport failure worth falling back to
+    // stale cache for - resolveTimeoutMs throws a plain Error, not a KeeperError, for exactly
+    // this class of failure (see deadline.ts), so it would otherwise slip past the KeeperError
+    // carve-out below.
+    const resolvedTimeoutMs = validateTimeoutMs(timeoutMs)
     try {
         const response = await platform.post(url, payload.payload, {
             PublicKeyId: transmissionKey.publicKeyId.toString(),
             TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
             Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-        }, allowUnverifiedCertificate, timeoutMs)
+        }, allowUnverifiedCertificate, resolvedTimeoutMs)
         if (response.statusCode == 200) {
-            // Create cache file with secure permissions (0600)
-            const cacheFd = fs.openSync('cache.dat', 'w', 0o600)
             try {
-                fs.writeSync(cacheFd, Buffer.concat([transmissionKey.key, response.data]))
-            } finally {
-                fs.closeSync(cacheFd)
+                // Create cache file with secure permissions (0600)
+                const cacheFd = fs.openSync('cache.dat', 'w', 0o600)
+                try {
+                    fs.writeSync(cacheFd, Buffer.concat([transmissionKey.key, response.data]))
+                } finally {
+                    fs.closeSync(cacheFd)
+                }
+            } catch {
+                // A cache-write failure (disk full, permissions) must not discard an
+                // already-successful response - it only means the next call won't have a
+                // fresh fallback to read, not that this call failed.
             }
         }
         return response

@@ -4,6 +4,7 @@ import {cachingPostFunction} from '../src/node/localConfigStorage'
 import {createCachingFunction} from '../src/browser/localConfigStorage'
 import {timeoutError} from '../src/deadline'
 import {KeeperError} from '../src/errors'
+import * as fs from 'fs'
 
 connectPlatform(nodePlatform)
 
@@ -62,8 +63,50 @@ describe.each([
         platform.post = (async () => { throw new Error('ECONNRESET') }) as typeof platform.post
         await expect(build()('https://example.com', transmissionKey(), payload())).rejects.toThrow('Cached value does not exist')
     })
+
+    test('rejects an unusable timeoutMs before calling platform.post', async () => {
+        let error: any
+        try {
+            await build()('https://example.com', transmissionKey(), payload(), false, 0)
+        } catch (e) {
+            error = e
+        }
+        expect(error).toBeInstanceOf(Error)
+        expect(error).not.toBeInstanceOf(KeeperError)
+        expect(error.message).toMatch(/at least 1/)
+        expect(seen).toEqual([])
+    })
 })
 
 test('timeoutError produces a KeeperError, distinct from a plain transport failure', () => {
     expect(timeoutError('https://example.com', 1)).toBeInstanceOf(KeeperError)
+})
+
+test('cachingPostFunction still returns the fresh response when the cache write fails', async () => {
+    const originalPost = platform.post
+    const freshData = new Uint8Array([1, 2, 3])
+    platform.post = (async () => ({statusCode: 200, headers: [], data: freshData})) as typeof platform.post
+    const openSyncSpy = jest.spyOn(fs, 'openSync').mockImplementation(() => { throw new Error('ENOSPC') })
+    try {
+        const result = await cachingPostFunction('https://example.com', transmissionKey(), payload())
+        expect(result.statusCode).toBe(200)
+        expect(result.data).toBe(freshData)
+    } finally {
+        openSyncSpy.mockRestore()
+        platform.post = originalPost
+    }
+})
+
+test('createCachingFunction still returns the fresh response when the cache write fails', async () => {
+    const originalPost = platform.post
+    const freshData = new Uint8Array([1, 2, 3])
+    platform.post = (async () => ({statusCode: 200, headers: [], data: freshData})) as typeof platform.post
+    const storage = {...inMemoryStorage({}), saveBytes: async () => { throw new Error('quota exceeded') }}
+    try {
+        const result = await createCachingFunction(storage)('https://example.com', transmissionKey(), payload())
+        expect(result.statusCode).toBe(200)
+        expect(result.data).toBe(freshData)
+    } finally {
+        platform.post = originalPost
+    }
 })

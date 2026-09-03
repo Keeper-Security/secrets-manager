@@ -1,5 +1,6 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, TransmissionKey, platform} from "../platform";
 import {KeeperError} from "../errors";
+import {validateTimeoutMs} from "../deadline";
 
 type Reject = (reason: Error) => void
 
@@ -207,14 +208,26 @@ export const secureStorage = async (dbName: string): Promise<KeyValueStorage> =>
 export function createCachingFunction(storage: KeyValueStorage): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number) => Promise<KeeperHttpResponse> {
 
     return async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number): Promise<KeeperHttpResponse> => {
+        // Resolved before the try below so a caller-input mistake (an unusable timeoutMs) fails
+        // fast instead of being caught and mistaken for a transport failure worth falling back to
+        // stale cache for - resolveTimeoutMs throws a plain Error, not a KeeperError, for exactly
+        // this class of failure (see deadline.ts), so it would otherwise slip past the KeeperError
+        // carve-out below.
+        const resolvedTimeoutMs = validateTimeoutMs(timeoutMs)
         try {
             const response = await platform.post(url, payload.payload, {
                 PublicKeyId: transmissionKey.publicKeyId.toString(),
                 TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
                 Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-            }, allowUnverifiedCertificate, timeoutMs)
+            }, allowUnverifiedCertificate, resolvedTimeoutMs)
             if (response.statusCode == 200) {
-                await storage.saveBytes('cache', new Uint8Array([...transmissionKey.key, ...response.data]))
+                try {
+                    await storage.saveBytes('cache', new Uint8Array([...transmissionKey.key, ...response.data]))
+                } catch {
+                    // A cache-write failure (IndexedDB quota, private browsing, blocked upgrade)
+                    // must not discard an already-successful response - it only means the next
+                    // call won't have a fresh fallback to read, not that this call failed.
+                }
             }
             return response
         } catch (e) {
