@@ -1,7 +1,7 @@
 import {KeeperRecordLink, getLinks, KeeperRecord, platform} from '../'
 import {createCipheriv, randomBytes} from 'crypto'
 
-// KSM-1010: KeeperRecordLink typed accessor tests (mirrors Python record_link_test.py)
+// KeeperRecordLink typed accessor tests (mirrors Python record_link_test.py)
 
 const plainLink = (payload: object, path?: string, ownerRecordUid = 'RU_owner'): KeeperRecordLink => {
     const data = platform.bytesToBase64(platform.stringToBytes(JSON.stringify(payload)))
@@ -341,4 +341,22 @@ test('ciphertext coincidentally starting with { or [ still decrypts (fallthrough
 
     // Plain JSON fast path is unaffected
     expect(await plainLink({a: 1}).getLinkData()).toEqual({a: 1})
+})
+
+// ── test 18 ────────────────────────────────────────────────────────────────────
+test('hasEncryptedData is not fooled by ciphertext coincidentally starting with { or [', () => {
+    const key = platform.getRandomBytes(32)
+    const plaintext = platform.stringToBytes(JSON.stringify({secret: 'value'}))
+
+    for (const marker of [0x7b /* { */, 0x5b /* [ */]) {
+        const iv = new Uint8Array(12)
+        iv[0] = marker
+        randomBytes(11).copy(Buffer.from(iv.buffer), 1)
+
+        const ciphertext = encryptWithCustomIv(plaintext, key, iv)
+        const link = new KeeperRecordLink({recordUid: 'RU', data: platform.bytesToBase64(ciphertext), path: undefined}, 'owner')
+
+        expect(link.getDecodedData()!.charCodeAt(0)).toBe(marker)
+        expect(link.hasEncryptedData()).toBe(true)
+    }
 })

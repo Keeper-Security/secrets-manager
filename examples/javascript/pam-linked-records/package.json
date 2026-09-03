@@ -1,9 +1,8 @@
 {
-  "name": "hello-secret",
+  "name": "pam-linked-records",
   "version": "1.0.0",
-  "description": "Secrets Manager custom caching function usage sample for Node",
+  "description": "Secrets Manager PAM linked record sample for Node",
   "license": "ISC",
-  "type": "commonjs",
   "scripts": {
     "run": "node hello.js"
   },
