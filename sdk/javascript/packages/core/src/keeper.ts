@@ -23,6 +23,10 @@ const MAX_THROTTLE_RETRIES = 5
 // pinned): one legitimate rotation should resolve it, so this only needs to tolerate a little
 // slack, not act as a real retry budget.
 const MAX_KEY_ROTATION_RETRIES = 3
+// Same value as the bundled key table's starting index in initialize() below by design (the
+// server defaults new configs to key 7), but a distinct concept - kept as a separate constant
+// rather than coupling the two.
+const DEFAULT_KEY_NUMBER = 7
 const BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 const MAX_THROTTLE_DELAY_SEC = 176 // same ceiling the exponential branch reaches at the last retry (11 * 2**4)
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
@@ -766,7 +770,7 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
     const keyNumberString = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
     const customPublicKeyB64 = await storage.getString(KEY_SERVER_PUBLIC_KEY)
     if (customPublicKeyB64) {
-        const keyNumber = keyNumberString ? Number(keyNumberString) : 7
+        const keyNumber = keyNumberString ? Number(keyNumberString) : DEFAULT_KEY_NUMBER
         if (!Number.isInteger(keyNumber) || keyNumber <= 0) {
             throw new KeeperError(`Stored serverPublicKeyId '${keyNumberString}' is not a positive integer`)
         }
@@ -774,15 +778,15 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
         const encryptedKey = await platform.publicEncrypt(transmissionKey, customPublicKey)
         return { publicKeyId: keyNumber, key: transmissionKey, encryptedKey }
     }
-    const keyNumber = keyNumberString ? Number(keyNumberString) : 7
+    const keyNumber = keyNumberString ? Number(keyNumberString) : DEFAULT_KEY_NUMBER
     // A stored id outside the bundled table (e.g. an older SDK build persisted an unvalidated
     // server-suggested key) must not permanently block every request. Fall back to the default
     // key for this call instead of throwing, so the request still goes out and the server's
     // rotation hint can steer a future call back to a valid id. This fallback is never persisted:
     // generateTransmissionKey is a read, and writing here can race a concurrent custom-key pin or
     // a concurrent rotation write, and can stomp a newer SDK build's valid-but-unrecognized id
-    // back to 7 on a config shared across mixed-version instances.
-    const effectiveKeyNumber = keyNumber in keeperPublicKeys ? keyNumber : 7
+    // back to the default on a config shared across mixed-version instances.
+    const effectiveKeyNumber = keyNumber in keeperPublicKeys ? keyNumber : DEFAULT_KEY_NUMBER
     const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[effectiveKeyNumber])
     return {
         publicKeyId: effectiveKeyNumber,
@@ -800,27 +804,52 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
     return {payload: encryptedPayload, signature}
 }
+// Shared by every call site below that validates a caller-supplied serverPublicKeyId string. The
+// postQuery rotation branch further down validates an already-parsed JSON number instead, a
+// different input contract, so it stays separate rather than routing through this helper.
+const parseServerKeyId = (serverPublicKeyId: string): number => {
+    const parsedKeyId = Number(serverPublicKeyId)
+    if (!Number.isInteger(parsedKeyId) || parsedKeyId <= 0) {
+        throw new KeeperError(`serverPublicKeyId '${serverPublicKeyId}' must be a positive integer`)
+    }
+    return parsedKeyId
+}
+
 // Two call paths persist a caller-supplied serverPublicKey/serverPublicKeyId pair before a request
 // goes out: postQuery (every endpoint) and fetchAndDecryptSecrets, which persists ahead of
 // prepareGetPayload so IL5 custom-key config survives even if that call fails for an unrelated
 // reason (e.g. a missing client id). Both must apply the same validation, so it lives here once.
 const persistServerPublicKeyOptions = async (storage: KeyValueStorage, options: SecretManagerOptions): Promise<void> => {
-    if (options.serverPublicKey) {
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
-        if (options.serverPublicKeyId) {
+    if (options.serverPublicKey !== undefined) {
+        if (options.serverPublicKeyId !== undefined) {
+            // Format only, no table-membership check: an IL5-style id outside the bundled table
+            // is legitimate here precisely because a custom key is being pinned alongside it.
+            parseServerKeyId(options.serverPublicKeyId)
+        }
+        const [storedKey, storedKeyId] = await Promise.all([
+            storage.getString(KEY_SERVER_PUBLIC_KEY),
+            storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+        ])
+        if (storedKey !== options.serverPublicKey) {
+            await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
+        }
+        if (options.serverPublicKeyId !== undefined && storedKeyId !== options.serverPublicKeyId) {
             await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
         }
-    } else if (options.serverPublicKeyId) {
-        // No custom key to justify an id outside the bundled table here, unlike the paired write
-        // above. Persisting an unrecognized id anyway would reproduce, via a caller-supplied
-        // option instead of a legacy config, the exact "unsupported key id" failure this SDK's
-        // fallback in generateTransmissionKey exists to avoid.
-        const idNumber = Number(options.serverPublicKeyId)
-        if (!(idNumber in keeperPublicKeys)) {
+    } else if (options.serverPublicKeyId !== undefined) {
+        const parsedKeyId = parseServerKeyId(options.serverPublicKeyId)
+        // hasCustomKey must reflect storage, not this call's options - a key pinned on an earlier
+        // call still makes an out-of-table id legitimate on this one, even when a later call omits
+        // the key and re-sends only the id.
+        const hasCustomKey = (await storage.getString(KEY_SERVER_PUBLIC_KEY)) !== undefined
+        if (!hasCustomKey && !(parsedKeyId in keeperPublicKeys)) {
             const supported = Object.keys(keeperPublicKeys)
             throw new KeeperError(`serverPublicKeyId '${options.serverPublicKeyId}' is not supported without a matching serverPublicKey; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
         }
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
+        const storedKeyId = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+        if (storedKeyId !== options.serverPublicKeyId) {
+            await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
+        }
     }
 }
 
@@ -1166,7 +1195,9 @@ export const initializeStorage = async (
             }
             if (tokenParts.length === 4) {
                 const keyId = tokenParts[2]
-                if (!/^\d+$/.test(keyId)) {
+                try {
+                    parseServerKeyId(keyId)
+                } catch {
                     throw new Error(`IL5 token: serverPublicKeyId '${keyId}' must be a positive integer`)
                 }
                 if (tokenParts[3].length < 80) {
