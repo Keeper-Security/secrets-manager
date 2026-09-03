@@ -23,7 +23,7 @@ const Secrets = (props: any) => {
                 })
                 setSecrets(secrets);
             }
-            catch (e) {
+            catch (e: any) {
                 setSecrets(JSON.parse(e.message));
             }
         };
