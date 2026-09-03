@@ -122,3 +122,17 @@ test('clear() disarms the deadline so a settled request cannot be aborted later'
         jest.useRealTimers()
     }
 })
+
+test('deadlineSignal returns no signal when AbortController is unavailable', () => {
+    const original = global.AbortController
+    // @ts-expect-error - simulating a runtime with no AbortController support
+    delete global.AbortController
+    try {
+        const {signal, timeoutMs, clear} = deadlineSignal(5000)
+        expect(signal).toBeUndefined()
+        expect(timeoutMs).toBe(5000)
+        expect(() => clear()).not.toThrow()
+    } finally {
+        global.AbortController = original
+    }
+})

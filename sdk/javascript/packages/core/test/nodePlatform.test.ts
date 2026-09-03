@@ -241,6 +241,22 @@ test('an unusable timeoutMs is rejected rather than aborting the request immedia
     expect(https.request as unknown as jest.Mock).not.toHaveBeenCalled()
 })
 
+test('get still resolves normally when AbortController is unavailable', async () => {
+    const original = global.AbortController
+    // @ts-expect-error - simulating a runtime with no AbortController support
+    delete global.AbortController
+    try {
+        const promise = nodePlatform.get('https://example.com', {}, 5000)
+        const res = respond()
+        res.push('ok')
+        res.finish()
+        const result = await promise
+        expect(Buffer.from(result.data).toString()).toBe('ok')
+    } finally {
+        global.AbortController = original
+    }
+})
+
 test.each([
     ['get', () => nodePlatform.get('https://example.com', {}, 5000)],
     ['post', () => nodePlatform.post('https://example.com', new Uint8Array([1, 2, 3]), {}, false, 5000)],
