@@ -4,7 +4,8 @@ const {
     getSecrets,
     initializeStorage,
     localConfigStorage,
-    postFunction
+    postFunction,
+    KeeperError
 } = require('@keeper-security/secrets-manager-core')
 
 const CACHE_FILENAME = 'cache.dat';
@@ -29,6 +30,12 @@ const cachingPostFunction = async (url, transmissionKey, payload, allowUnverifie
 
         return response
     } catch (e) {
+        // A deliberate client-side timeout is not a transport failure: falling back to stale
+        // cache here would silently turn a slow/hung request into a fake success instead of
+        // surfacing it to the caller.
+        if (e instanceof KeeperError) {
+            throw e
+        }
         console.error(e)
         let cachedData
         try {

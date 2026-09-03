@@ -1502,10 +1502,15 @@ export const downloadThumbnail = async (file: KeeperFile, timeoutMs?: number, op
 }
 
 export const uploadFile = async (options: SecretManagerOptions, ownerRecord: KeeperRecord, file: KeeperFileUpload, timeoutMs?: number): Promise<string> => {
+    // Resolved before prepareFileUploadPayload/postQuery run: postQuery's 'add_file' call
+    // allocates an upload placeholder URL on the backend, so validating this function's own
+    // upload timeout only at the platform.fileUpload call below let a bad value fail after that
+    // allocation already happened, leaving a fileRef pointing at content that was never uploaded.
+    const resolvedUploadTimeoutMs = validateTimeoutMs(timeoutMs ?? options.requestTimeoutMs)
     const { payload, encryptedFileData } = await prepareFileUploadPayload(options.storage, ownerRecord, file)
     const responseData = await postQuery(options, 'add_file', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerAddFileResponse
-    const uploadResult = await platform.fileUpload(response.url, JSON.parse(response.parameters), encryptedFileData, validateTimeoutMs(timeoutMs ?? options.requestTimeoutMs))
+    const uploadResult = await platform.fileUpload(response.url, JSON.parse(response.parameters), encryptedFileData, resolvedUploadTimeoutMs)
     if (uploadResult.statusCode !== response.successStatusCode) {
         throw new Error(`Upload failed (${uploadResult.statusMessage}), code ${uploadResult.statusCode}`)
     }
