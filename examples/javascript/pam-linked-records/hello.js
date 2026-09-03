@@ -47,4 +47,4 @@ const main = async () => {
 main().catch((e) => {
     console.error(`Failed to run pam-linked-records example: ${e?.message ?? String(e)}`)
     process.exitCode = 1
-}).finally()
+})

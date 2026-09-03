@@ -43,6 +43,6 @@ async function test() {
 }
 
 test().catch((e) => {
-    console.error(`quicktest failed: ${e.message}`)
+    console.error(`quicktest failed: ${e?.message ?? String(e)}`)
     process.exitCode = 1
 })

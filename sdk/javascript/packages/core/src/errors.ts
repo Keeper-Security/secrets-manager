@@ -73,3 +73,19 @@ export type KeeperDecryptionErrorInfo = {
     failure: KeeperCryptoFailureReason
     message: string
 }
+
+/**
+ * Thrown by Node's localConfigStorage for a failure reading or writing the local config file.
+ * `code` carries the originating fs errno code (e.g. 'EACCES', 'ENOSPC', 'EROFS') when the
+ * failure came from a filesystem call, so a caller can branch on failure type (retry on
+ * ENOSPC, alert immediately on EACCES) instead of string-matching the message. `code` is
+ * undefined for a failure with no such code (malformed or non-object JSON).
+ */
+export class KeeperStorageError extends KeeperError {
+    constructor(message: string, public readonly code: string | undefined) {
+        super(message)
+        this.name = 'KeeperStorageError'
+        // Restore the prototype chain so `instanceof` works across transpilation targets.
+        Object.setPrototypeOf(this, KeeperStorageError.prototype)
+    }
+}

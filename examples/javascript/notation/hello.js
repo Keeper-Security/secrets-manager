@@ -37,4 +37,4 @@ const main = async () => {
 main().catch((e) => {
     console.error(`Failed to run notation example: ${e?.message ?? String(e)}`)
     process.exitCode = 1
-}).finally()
+})
