@@ -61,7 +61,16 @@ describe.each([
 
     test('a non-timeout failure still falls back to cache', async () => {
         platform.post = (async () => { throw new Error('ECONNRESET') }) as typeof platform.post
-        await expect(build()('https://example.com', transmissionKey(), payload())).rejects.toThrow('Cached value does not exist')
+        // Forces the node variant's cache-read miss deterministically, instead of depending on
+        // 'cache.dat' happening not to exist in the working directory - a stray file left by an
+        // unrelated process (or this same suite run out of order) previously flipped this test's
+        // outcome. No-op for the browser variant, which never touches fs.
+        const readFileSyncSpy = jest.spyOn(fs, 'readFileSync').mockImplementation(() => { throw new Error('ENOENT') })
+        try {
+            await expect(build()('https://example.com', transmissionKey(), payload())).rejects.toThrow('Cached value does not exist')
+        } finally {
+            readFileSyncSpy.mockRestore()
+        }
     })
 
     test('rejects an unusable timeoutMs before calling platform.post', async () => {
