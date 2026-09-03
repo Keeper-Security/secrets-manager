@@ -6,8 +6,7 @@ import {
     getValue,
     KeeperFile,
     loadJsonConfig,
-    parseNotation,
-    SecretManagerOptions
+    parseNotation
 } from "@keeper-security/secrets-manager-core"
 import * as fs from "fs"
 
@@ -143,8 +142,8 @@ export const getRecordFilter = (inputs: SecretsInput[]): string[] => {
     return uidFilter
 }
 
-const downloadSecretFile = async (file: KeeperFile, destination: string, options: SecretManagerOptions): Promise<void> => {
-    const fileData = await downloadFile(file, undefined, options)
+const downloadSecretFile = async (file: KeeperFile, destination: string): Promise<void> => {
+    const fileData = await downloadFile(file)
     fs.writeFileSync(destination, fileData)
 }
 
@@ -226,7 +225,7 @@ async function run() {
                     //  See: https://www.nigelfrank.com/blog/azure-devops-output-variables/
                     break
                 case DestinationType.file:
-                    await downloadSecretFile(secret as KeeperFile, input.destination, {storage: loadJsonConfig(config)})
+                    await downloadSecretFile(secret as KeeperFile, input.destination)
                     tl.debug(`Finish downloading file to ${input.destination}`)
                     break
             }
