@@ -2,6 +2,7 @@ import {
     KeeperHttpResponse,
     getSecrets,
     getFolders,
+    deleteSecret,
     initializeStorage,
     generateTransmissionKey,
     platform,
@@ -272,6 +273,106 @@ test('IL5 dynamic key - Layer 1: generateTransmissionKey uses serverPublicKey fr
     expect(transmissionKey.key.length).toBe(32)
 })
 
+test('generateTransmissionKey falls back to the default key when the stored key id is outside the bundled table', async () => {
+    const storage = inMemoryStorage({
+        serverPublicKeyId: '99'
+    })
+    platform.getRandomBytes = () => new Uint8Array(32)
+    const transmissionKey = await generateTransmissionKey(storage)
+    expect(transmissionKey.publicKeyId).toBe(7)
+    expect(transmissionKey.key.length).toBe(32)
+})
+
+test('generateTransmissionKey never calls saveString when falling back from a corrupted stored id', async () => {
+    const storage = inMemoryStorage({
+        serverPublicKeyId: '9999'
+    })
+    // The fallback is recomputed in memory on every call; it must never overwrite storage, or a
+    // delayed write can clobber a concurrent custom-key pin or a just-learned rotation id.
+    const saveSpy = jest.spyOn(storage, 'saveString')
+    platform.getRandomBytes = () => new Uint8Array(32)
+    await generateTransmissionKey(storage)
+    expect(saveSpy).not.toHaveBeenCalled()
+})
+
+test('generateTransmissionKey throws when a custom key is pinned but the stored key id is not numeric', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: 'not-a-number'
+    })
+    platform.getRandomBytes = () => new Uint8Array(32)
+    await expect(generateTransmissionKey(storage)).rejects.toThrow(/serverPublicKeyId/)
+})
+
+test('getSecrets rejects a caller-supplied serverPublicKeyId outside the bundled table when no custom key is pinned', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKeyId: '9999',
+        queryFunction: async () => { throw new Error('should not reach the network: invalid id must be rejected before the request goes out') }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/serverPublicKeyId/)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('getSecrets rejects a non-numeric serverPublicKeyId even when paired with a valid custom serverPublicKey, and persists neither', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: 'garbage',
+        queryFunction: async () => { throw new Error('should not reach the network: invalid id must be rejected before the request goes out') }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/serverPublicKeyId/)
+    expect(await storage.getString('serverPublicKey')).toBeUndefined()
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('getSecrets accepts an out-of-table serverPublicKeyId on a later call when a custom key was already pinned by an earlier call', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+
+    const pinOptions: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
+        queryFunction: async () => { throw new Error('network not needed - only persistence from this call matters') }
+    }
+    await expect(getSecrets(pinOptions)).rejects.toThrow('network not needed - only persistence from this call matters')
+    expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+
+    // Key omitted this time - re-sending just the id that was already pinned above must not be
+    // treated as a bare out-of-table id with no custom key to justify it. The call still fails
+    // (network stub), but it must fail there, past validation, not at the table-membership check.
+    const idOnlyOptions: SecretManagerOptions = {
+        storage,
+        serverPublicKeyId: '20',
+        queryFunction: async () => { throw new Error('network not needed - only persistence from this call matters') }
+    }
+    await expect(getSecrets(idOnlyOptions)).rejects.toThrow('network not needed - only persistence from this call matters')
+})
+
+test('deleteSecret persists a caller-supplied serverPublicKey/serverPublicKeyId pair on its own, for callers that never go through fetchAndDecryptSecrets first', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
+        queryFunction: async () => { throw new Error('network not needed - persistence already happened by this point') }
+    }
+    await expect(deleteSecret(options, ['some-record-uid'])).rejects.toThrow('network not needed - persistence already happened by this point')
+    expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
 test('IL5 dynamic key - Layer 2: initializeStorage saves serverPublicKeyId and serverPublicKey from 4-segment IL5 OTT', async () => {
     const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
     const storage = inMemoryStorage({})
@@ -443,6 +544,14 @@ test('IL5 dynamic key - Layer 2: rejects non-integer serverPublicKeyId', async (
     await expect(
         initializeStorage(storage, 'IL5:ONE_TIME_TOKEN:notanumber:SOMEKEY')
     ).rejects.toThrow("IL5 token: serverPublicKeyId 'notanumber' must be a positive integer")
+})
+
+test("IL5 dynamic key - Layer 2: rejects a serverPublicKeyId of '0'", async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await expect(
+        initializeStorage(storage, `IL5:ONE_TIME_TOKEN:0:${fakeKey}`)
+    ).rejects.toThrow("IL5 token: serverPublicKeyId '0' must be a positive integer")
 })
 
 test('IL5 dynamic key - Layer 2: rejects malformed (too short) serverPublicKey', async () => {
