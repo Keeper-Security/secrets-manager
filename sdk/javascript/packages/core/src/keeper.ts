@@ -783,6 +783,130 @@ export const generateTransmissionKey = async (storage: KeyValueStorage): Promise
     }
 }
 
+// Shared by every call site below that validates a caller-supplied serverPublicKeyId string
+// (the postQuery rotation branch validates an already-parsed JSON number instead, a different
+// input contract, and stays separate).
+const parseServerKeyId = (serverPublicKeyId: string): number => {
+    const parsedKeyId = Number(serverPublicKeyId)
+    if (!Number.isInteger(parsedKeyId) || parsedKeyId <= 0) {
+        throw new Error(`serverPublicKeyId '${serverPublicKeyId}' must be a positive integer`)
+    }
+    return parsedKeyId
+}
+
+/**
+ * Persists a caller-supplied serverPublicKey once, on the first call against a fresh config, then
+ * leaves it alone. Nothing else in the SDK ever updates this value once pinned, so a later call
+ * re-writing the same value on every request is a pure no-op write, not a correctness safeguard.
+ */
+const persistServerPublicKeyOnce = async (storage: KeyValueStorage, serverPublicKey: string | undefined): Promise<void> => {
+    if (serverPublicKey === undefined) {
+        return
+    }
+    const storedKey = await storage.getString(KEY_SERVER_PUBLIC_KEY)
+    if (storedKey !== undefined) {
+        return
+    }
+    await storage.saveString(KEY_SERVER_PUBLIC_KEY, serverPublicKey)
+}
+
+/**
+ * Persists a caller-supplied serverPublicKeyId once, on the first call against a fresh config,
+ * then leaves it alone. Rotation (the {"error":"key"} branch in postQuery) owns every update to
+ * this value after that; re-writing the caller's pin on every call would undo a completed
+ * rotation and force the client to re-rotate on every subsequent request. A consequence of "once,
+ * then hands off to rotation": a garbage id supplied on a later call, after a valid one already
+ * persisted, is silently ignored rather than re-validated - intentional, matching the same "once"
+ * contract, not a validation gap.
+ */
+const persistServerPublicKeyIdOnce = async (storage: KeyValueStorage, serverPublicKeyId: string | undefined, hasCustomKey: boolean): Promise<void> => {
+    if (serverPublicKeyId === undefined) {
+        return
+    }
+    const storedKeyId = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+    if (storedKeyId !== undefined) {
+        return
+    }
+    const parsedKeyId = parseServerKeyId(serverPublicKeyId)
+    // An out-of-table id is only legitimate alongside a pinned custom key (its own key content
+    // makes the bundled table irrelevant); an id-only pin must be one of the bundled ids.
+    if (!hasCustomKey && !(parsedKeyId in keeperPublicKeys)) {
+        const supported = Object.keys(keeperPublicKeys)
+        throw new Error(`serverPublicKeyId ${parsedKeyId} is not supported; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
+    }
+    await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId)
+}
+
+/**
+ * Persists a caller-supplied serverPublicKey/serverPublicKeyId pair. When both are supplied in
+ * the same call, they're one atomic bound identity, not two independent write-once gates: writing
+ * only the field that happened to be missing (the old behavior) could pair a freshly-pinned key
+ * with a stale id left over from an earlier rotation or a partially-seeded config. Write both
+ * whenever the incoming pair differs from what's stored (first time, or a genuine rebind); no-op
+ * when it already matches, preserving this PR's point of skipping redundant writes. When only one
+ * field is supplied, fall back to that field's own write-once gate.
+ *
+ * Two cross-call gaps remain here, by design, not fixed: (1) an id-only call followed by a later
+ * key-only call can land a pair whose members were never validated together - the id validated
+ * against the bundled table on its own call, the key accepted on its own call, but the two never
+ * checked against each other; (2) postQuery's rotation branch (the {"error":"key"} handler) writes
+ * serverPublicKeyId directly, bypassing this dispatcher, so a later key-only call can pair a
+ * freshly-pinned key with an id that was actually a rotation outcome, not caller intent. Both fail
+ * loud on the next request - via postQuery's own "Server rejected the custom server public key"
+ * guard on the rotation branch - rather than corrupting silently; bounded, not fixed.
+ */
+const persistServerPublicKeyOptions = async (
+    storage: KeyValueStorage,
+    serverPublicKey: string | undefined,
+    serverPublicKeyId: string | undefined
+): Promise<void> => {
+    // inMemoryStorage's getValue (src/platform.ts) collapses a round-tripped '' back to undefined
+    // (a falsy-check bug in the shared KeyValueStorage backend, out of scope to fix here). An empty
+    // string is never a valid public key, so normalize it to "not supplied" up front rather than
+    // let a stored '' silently defeat the storedKey === serverPublicKey comparisons below on every
+    // call, and rather than let it disable the table-membership check when paired with an id.
+    // serverPublicKeyId is deliberately NOT normalized the same way: '' can never reach storage as
+    // a persisted serverPublicKeyId - parseServerKeyId rejects it before any write, on every path
+    // below - so there is no round-trip case to guard against, and doing so here would replace
+    // today's loud format-error rejection with a silent no-op.
+    if (serverPublicKey === '') {
+        serverPublicKey = undefined
+    }
+    if (serverPublicKey !== undefined && serverPublicKeyId !== undefined) {
+        parseServerKeyId(serverPublicKeyId)
+        const [storedKey, storedKeyId] = await Promise.all([
+            storage.getString(KEY_SERVER_PUBLIC_KEY),
+            storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+        ])
+        if (storedKey === serverPublicKey && storedKeyId === serverPublicKeyId) {
+            return
+        }
+        // Write the id before the key. Neither write is atomic across all KeyValueStorage
+        // backends (no cross-backend batch/saveStrings primitive exists), so a failure between the
+        // two calls can still leave a mismatched pair - this ordering doesn't eliminate that, it
+        // only chooses which half survives. id-then-key means a partial failure leaves an id with
+        // no key: generateTransmissionKey falls through to the bundled key table for that id and
+        // fails loud ("Key number N is not supported") on the very next call if the id is
+        // out-of-table. key-then-id's failure mode is worse: it leaves a key with no id, so
+        // generateTransmissionKey silently defaults to id 7 while still encrypting with the
+        // leftover custom key - an opaque server-side decrypt failure instead of a loud
+        // client-side rejection.
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId)
+        await storage.saveString(KEY_SERVER_PUBLIC_KEY, serverPublicKey)
+        return
+    }
+    if (serverPublicKey !== undefined) {
+        await persistServerPublicKeyOnce(storage, serverPublicKey)
+        return
+    }
+    if (serverPublicKeyId !== undefined) {
+        // hasCustomKey must reflect storage, not this call's options - a key pinned on an earlier
+        // call still makes an out-of-table id legitimate on this one.
+        const hasCustomKey = (await storage.getString(KEY_SERVER_PUBLIC_KEY)) !== undefined
+        await persistServerPublicKeyIdOnce(storage, serverPublicKeyId, hasCustomKey)
+    }
+}
+
 const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload | FileUploadPayload): Promise<EncryptedPayload> => {
     const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
     const encryptedPayload = await platform.encryptWithKey(payloadBytes, transmissionKey.key)
@@ -793,12 +917,7 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     return {payload: encryptedPayload, signature}
 }
 const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
-    if (options.serverPublicKey) {
-        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
-    }
-    if (options.serverPublicKeyId) {
-        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
-    }
+    await persistServerPublicKeyOptions(options.storage, options.serverPublicKey, options.serverPublicKeyId)
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
         throw new Error('hostname is missing from the configuration')
@@ -900,12 +1019,7 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
 
 const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
     const storage = options.storage
-    if (options.serverPublicKey) {
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
-    }
-    if (options.serverPublicKeyId) {
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
-    }
+    await persistServerPublicKeyOptions(storage, options.serverPublicKey, options.serverPublicKeyId)
     const payload = await prepareGetPayload(storage, queryOptions)
     const responseData = await postQuery(options, 'get_secret', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
@@ -1153,8 +1267,15 @@ export const initializeStorage = async (
                 if (tokenParts[3].length < 80) {
                     throw new Error(`IL5 token: serverPublicKey appears malformed`)
                 }
-                await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, keyId)
-                await storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
+                try {
+                    await persistServerPublicKeyOptions(storage, tokenParts[3], keyId)
+                } catch (e: Error | any) {
+                    // Preserve the "IL5 token: " prefix used by the two sibling checks just above,
+                    // matching PR #1143's established convention for this branch. On this call path
+                    // (both fields, keyId already digit-regex-validated) the only reachable throw is
+                    // parseServerKeyId's positive-integer check, i.e. keyId === '0'.
+                    throw new Error(`IL5 token: ${e.message}`)
+                }
             }
         }
     }
