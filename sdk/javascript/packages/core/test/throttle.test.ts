@@ -128,6 +128,15 @@ describe('throttle retry (e2e via getSecrets)', () => {
         expect(sleeps.length).toBe(1)
     })
 
+    test('a throttle body over the 64KB decode cap is truncated before parsing, not adopted as a valid throttle response', async () => {
+        const paddedResponse = throttle403(undefined, { padding: 'x'.repeat(70000) })
+        expect(paddedResponse.data.length).toBeGreaterThan(65536)
+        const { options, sleeps } = await makeOptions(async () => paddedResponse)
+        await expect(getSecrets(options)).rejects.toThrow()
+        await expect(getSecrets(options)).rejects.not.toBeInstanceOf(KeeperThrottleError)
+        expect(sleeps.length).toBe(0)
+    })
+
     test('exhaustion throws KeeperThrottleError after 5 retries', async () => {
         let call = 0
         const { options, sleeps } = await makeOptions(async () => {

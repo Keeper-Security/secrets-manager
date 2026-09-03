@@ -26,12 +26,13 @@ const MAX_THROTTLE_RETRIES = 5
 const MAX_KEY_ROTATION_RETRIES = 3
 const BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 const MAX_THROTTLE_DELAY_SEC = 176 // same ceiling the exponential branch reaches at the last retry (11 * 2**4)
-// Caps how much of a non-200 response body gets decoded to detect throttle/key-rotation. Any
-// real throttle or key-rotation body is a small flat JSON object; this is generous headroom over
-// that so a pathological or malicious oversized body can't force an unbounded string decode. The
-// separate, much narrower 1000-byte truncation used below for the message in a thrown error
-// serves a different purpose (bounding a human-readable snippet, not defending against unbounded
-// decode), which is why the two caps differ by 65x rather than sharing one constant.
+// Caps how much of a non-200 response body gets decoded (not buffered - both platforms already
+// buffer the whole body) to detect throttle/key-rotation. Any real throttle or key-rotation body
+// is a small flat JSON object; this is generous headroom over that so a pathological or malicious
+// oversized body can't force an unbounded string decode. The separate, much narrower 1000-byte
+// truncation used below for the message in a thrown error serves a different purpose (bounding a
+// human-readable snippet, not defending against unbounded decode), which is why the two caps
+// differ by 65x rather than sharing one constant.
 const MAX_ERROR_BODY_DECODE_BYTES = 65536
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
 
@@ -825,7 +826,8 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
         const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate)
         if (response.statusCode !== 200) {
-            if (response.data) {
+            // .length, not truthiness: browser's empty-body Uint8Array is still truthy, unlike Node's null.
+            if (response.data && response.data.length > 0) {
                 // Throttle/key-rotation detection runs on the full body (bounded by
                 // MAX_ERROR_BODY_DECODE_BYTES) - slicing to 1000 bytes first can cut a large
                 // response mid-document and make it fail JSON.parse, silently disabling retry or

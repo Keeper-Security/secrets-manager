@@ -380,6 +380,9 @@ test('key rotation - triggers via result_code when error is absent', async () =>
         storage,
         queryFunction: async (_url, tk) => {
             calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
             if (calls === 1) {
                 return { statusCode: 400, data: enc.encode(keyErrorResponse(8, { error: undefined, result_code: 'key' })), headers: [] }
             }
@@ -456,6 +459,9 @@ test('key rotation - suggested key id is adopted from a body padded past the 100
         storage,
         queryFunction: async (_url, tk) => {
             calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
             if (calls === 1) {
                 return { statusCode: 400, data: enc.encode(paddedBody), headers: [] }
             }
