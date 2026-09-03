@@ -159,8 +159,15 @@ const respond = (): MockResponse => {
 beforeEach(() => {
     mockReq = new MockRequest()
     responseCallback = undefined
-    ;(https.request as unknown as jest.Mock).mockReset().mockImplementation((_url, _options, cb) => {
+    ;(https.request as unknown as jest.Mock).mockReset().mockImplementation((_url, options, cb) => {
         responseCallback = cb
+        // Real Node destroys the request and emits 'error' on it when the signal passed into
+        // request()'s own options aborts - armRequest relies on that, so the mock has to
+        // reproduce it or every deadline-firing test below hangs until Jest's own timeout.
+        options?.signal?.addEventListener('abort', () => {
+            mockReq.destroy()
+            mockReq.emit('error', Object.assign(new Error('The operation was aborted'), {name: 'AbortError', code: 'ABORT_ERR'}))
+        })
         return mockReq
     })
 })

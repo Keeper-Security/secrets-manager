@@ -206,15 +206,17 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
 // started the request object no longer reports a mid-body socket failure and the promise would
 // otherwise never settle.
 const fetchData = (res, resolve, onBodyDone?: () => void, reject?: (reason: any) => void) => {
-    const retVal = {
+    const retVal: { statusCode: number, headers: any, data: Buffer | null } = {
         statusCode: res.statusCode,
         headers: res.headers,
         data: null
     }
+    // Chunks are concatenated once at 'end' rather than on every 'data' event: re-copying the
+    // whole accumulated buffer per chunk is O(n^2) in body size, which turns this file's own
+    // deadline into a spurious timeout on a large-but-otherwise-healthy download.
+    const chunks: Buffer[] = []
     res.on('data', data => {
-        retVal.data = retVal.data
-            ? Buffer.concat([retVal.data, data])
-            : data
+        chunks.push(data)
     })
     res.on('error', (err) => {
         onBodyDone?.()
@@ -222,30 +224,34 @@ const fetchData = (res, resolve, onBodyDone?: () => void, reject?: (reason: any)
     })
     res.on('end', () => {
         onBodyDone?.()
+        if (chunks.length) {
+            retVal.data = Buffer.concat(chunks)
+        }
         resolve(retVal)
     })
 }
 
-// Wires the deadline's abort and the request's own 'error' event onto a Node request object.
-// request()/https.request() can also throw synchronously (a malformed URL, for instance) before
-// this ever runs; callers wrap that call in try/catch and clear() there too, since neither
-// listener registered here would otherwise fire and the armed timer would leak for the full
-// deadline window.
+// Wires the request's own 'error' event onto a Node request object. request()/https.request()
+// already destroys the request and emits 'error' on it when the signal passed into its own
+// options aborts, so no separate abort listener is needed here - adding one would race Node's
+// internal handling of the same signal, on the same event, with no documented ordering guarantee
+// between the two. signal.aborted is checked synchronously instead, mirroring browserPlatform.ts's
+// asTimeout: a deadline firing is always our own timeout, so it gets our own message; any other
+// failure passes through untouched. request()/https.request() can also throw synchronously (a
+// malformed URL, for instance) before this ever runs; callers wrap that call in try/catch and
+// clear() there too, since the listener registered here would otherwise not fire and the armed
+// timer would leak for the full deadline window.
 const armRequest = (
-    req: { destroy(): void, on(event: 'error', cb: (err: any) => void): void },
+    req: { on(event: 'error', cb: (err: any) => void): void },
     signal: AbortSignal | undefined,
     ms: number,
     url: string,
     clear: () => void,
     reject: (reason: any) => void
 ): void => {
-    signal?.addEventListener('abort', () => {
-        req.destroy()
-        reject(timeoutError(url, ms))
-    })
     req.on('error', (err) => {
         clear()
-        reject(err)
+        reject(signal?.aborted ? timeoutError(url, ms) : err)
     })
 }
 
