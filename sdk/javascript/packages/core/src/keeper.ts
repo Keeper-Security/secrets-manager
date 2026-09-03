@@ -2,6 +2,7 @@ import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, Transmi
 import {webSafe64FromBytes, webSafe64ToBytes, tryParseInt} from './utils'
 import {parseNotation} from './notation'
 import {KeeperError, KeeperThrottleError, KeeperCryptoError, KeeperCryptoFailureReason, KeeperDecryptionErrorInfo} from './errors'
+import {validateTimeoutMs} from './deadline'
 
 export {KeyValueStorage} from './platform'
 
@@ -55,7 +56,7 @@ export const initialize = (pkgVersion?: string) => {
 
 export type SecretManagerOptions = {
     storage: KeyValueStorage
-    queryFunction?: (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean) => Promise<KeeperHttpResponse>
+    queryFunction?: (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number) => Promise<KeeperHttpResponse>
     allowUnverifiedCertificate?: boolean
     serverPublicKey?: string
     serverPublicKeyId?: string
@@ -65,6 +66,7 @@ export type SecretManagerOptions = {
     // getFolders). Optional and additive: existing callers see no behavior change.
     // Throw from this callback to abort the call instead of returning a partial result (fail closed).
     onDecryptionError?: (info: KeeperDecryptionErrorInfo) => void
+    requestTimeoutMs?: number
 }
 
 // Error classes live in a dependency-free module (errors.ts) to avoid a circular import with
@@ -752,13 +754,13 @@ const prepareFileUploadPayload = async (storage: KeyValueStorage, ownerRecord: K
     }
 }
 
-export const postFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean): Promise<KeeperHttpResponse> => {
+export const postFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number): Promise<KeeperHttpResponse> => {
     return platform.post(url, payload.payload,
         {
             PublicKeyId: transmissionKey.publicKeyId.toString(),
             TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
             Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-        }, allowUnverifiedCertificate)
+        }, allowUnverifiedCertificate, timeoutMs)
 }
 
 export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => {
@@ -793,6 +795,10 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     return {payload: encryptedPayload, signature}
 }
 const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
+    // Validated before any storage write or payload encryption below, so a bad requestTimeoutMs
+    // fails fast instead of mutating on-disk config first. Resolved once and reused across
+    // retries rather than re-validating the same options.requestTimeoutMs on every iteration.
+    const requestTimeoutMs = validateTimeoutMs(options.requestTimeoutMs)
     if (options.serverPublicKey) {
         await options.storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
     }
@@ -810,7 +816,7 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
     while (true) {
         const transmissionKey = await generateTransmissionKey(options.storage)
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
-        const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate)
+        const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, requestTimeoutMs)
         if (response.statusCode !== 200) {
             let errorMessage
             if (response.data) {
@@ -900,6 +906,12 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
 
 const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
     const storage = options.storage
+    // Validated before the write below, not just inside postQuery's own later validation: this
+    // write is deliberately unconditional on anything else in this function failing (an IL5
+    // dynamic key discovered via a one-time token must persist even if, say, clientId then turns
+    // out to be missing) - but a caller-input mistake like an unusable requestTimeoutMs is a
+    // different kind of failure, one that should produce no side effects at all, not even this one.
+    validateTimeoutMs(options.requestTimeoutMs)
     if (options.serverPublicKey) {
         await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
     }
@@ -1311,7 +1323,7 @@ export const getNotationResults = async (options: SecretManagerOptions, notation
                 throw new Error(`Notation error - Record ${recordToken} has multiple files matching the search criteria '${parameter}'`)
             if (numFiles < 1)
                 throw new Error(`Notation error - Record ${recordToken} has no files matching the search criteria '${parameter}'`)
-            const contents = await downloadFile(files[0])
+            const contents = await downloadFile(files[0], undefined, options)
             const text = webSafe64FromBytes(contents)
             result.push(text)
             break
@@ -1476,21 +1488,35 @@ export const updateFolder = async (options: SecretManagerOptions, folderUid: str
     await postQuery(options, 'update_folder', payload)
 }
 
-export const downloadFile = async (file: KeeperFile): Promise<Uint8Array> => {
-    const fileResponse = await platform.get(file.url!, {})
+// `timeoutMs` stays the 2nd argument (its original, pre-options position) rather than moving under
+// `options`, so an in-flight breaking change to this same file's argument shape isn't compounded
+// with a second one in the same minor release. `options` is a new, additive 3rd argument so a
+// caller who configured requestTimeoutMs once gets it applied here too, the way uploadFile already
+// does; an explicit `timeoutMs` still wins when passed, for a single oversized file that needs
+// longer than the configured default.
+//
+// options.allowUnverifiedCertificate is not honored here: platform.get has no such parameter,
+// unlike platform.post.
+export const downloadFile = async (file: KeeperFile, timeoutMs?: number, options?: SecretManagerOptions): Promise<Uint8Array> => {
+    const fileResponse = await platform.get(file.url!, {}, validateTimeoutMs(timeoutMs ?? options?.requestTimeoutMs))
     return platform.decrypt(fileResponse.data, file.fileUid)
 }
 
-export const downloadThumbnail = async (file: KeeperFile): Promise<Uint8Array> => {
-    const fileResponse = await platform.get(file.thumbnailUrl!, {})
+export const downloadThumbnail = async (file: KeeperFile, timeoutMs?: number, options?: SecretManagerOptions): Promise<Uint8Array> => {
+    const fileResponse = await platform.get(file.thumbnailUrl!, {}, validateTimeoutMs(timeoutMs ?? options?.requestTimeoutMs))
     return platform.decrypt(fileResponse.data, file.fileUid)
 }
 
-export const uploadFile = async (options: SecretManagerOptions, ownerRecord: KeeperRecord, file: KeeperFileUpload): Promise<string> => {
+export const uploadFile = async (options: SecretManagerOptions, ownerRecord: KeeperRecord, file: KeeperFileUpload, timeoutMs?: number): Promise<string> => {
+    // Resolved before prepareFileUploadPayload/postQuery run: postQuery's 'add_file' call
+    // allocates an upload placeholder URL on the backend, so validating this function's own
+    // upload timeout only at the platform.fileUpload call below let a bad value fail after that
+    // allocation already happened, leaving a fileRef pointing at content that was never uploaded.
+    const resolvedUploadTimeoutMs = validateTimeoutMs(timeoutMs ?? options.requestTimeoutMs)
     const { payload, encryptedFileData } = await prepareFileUploadPayload(options.storage, ownerRecord, file)
     const responseData = await postQuery(options, 'add_file', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerAddFileResponse
-    const uploadResult = await platform.fileUpload(response.url, JSON.parse(response.parameters), encryptedFileData)
+    const uploadResult = await platform.fileUpload(response.url, JSON.parse(response.parameters), encryptedFileData, resolvedUploadTimeoutMs)
     if (uploadResult.statusCode !== response.successStatusCode) {
         throw new Error(`Upload failed (${uploadResult.statusMessage}), code ${uploadResult.statusCode}`)
     }

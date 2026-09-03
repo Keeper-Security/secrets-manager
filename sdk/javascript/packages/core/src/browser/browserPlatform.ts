@@ -1,4 +1,5 @@
 import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
+import {deadlineSignal, timeoutError} from '../deadline'
 import {privateDerToPublicRaw} from '../utils'
 import {KeeperError, KeeperCryptoError} from '../errors'
 
@@ -359,45 +360,71 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
     return result
 }
 
-const get = async (url: string, headers: any): Promise<KeeperHttpResponse> => {
-    const resp = await fetch(url, {
-        method: 'GET',
-        headers: Object.entries(headers),
-    })
-    const body = await resp.arrayBuffer()
-    return {
-        statusCode: resp.status,
-        headers: resp.headers,
-        data: new Uint8Array(body)
+// fetch rejects an aborted request with a DOMException, not something a caller can recognise as
+// an SDK error. The signal is created per request and nothing else aborts it, so an abort here is
+// always our own deadline; translate it to the same KeeperError the node platform raises and leave
+// every other failure untouched.
+const asTimeout = (error: any, url: string, timeoutMs: number, signal: AbortSignal | undefined): any =>
+    signal?.aborted ? timeoutError(url, timeoutMs) : error
+
+const get = async (url: string, headers: any, timeoutMs?: number): Promise<KeeperHttpResponse> => {
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
+    try {
+        const resp = await fetch(url, {
+            method: 'GET',
+            headers: Object.entries(headers),
+            signal
+        })
+        const body = await resp.arrayBuffer()
+        return {
+            statusCode: resp.status,
+            headers: resp.headers,
+            data: new Uint8Array(body)
+        }
+    } catch (e) {
+        throw asTimeout(e, url, ms, signal)
+    } finally {
+        clear()
     }
 }
 
 const post = async (
     url: string,
     request: Uint8Array | string,
-    headers?: { [key: string]: string }
+    headers?: { [key: string]: string },
+    allowUnverifiedCertificate?: boolean,
+    timeoutMs?: number
 ): Promise<KeeperHttpResponse> => {
-    const resp = await fetch(url, {
-        method: 'POST',
-        headers: new Headers({
-            'Content-Type': 'application/octet-stream',
-            'Content-Length': String(request.length),
-            ...headers
-        }),
-        body: typeof request === 'string' ? request : request as Uint8Array<ArrayBuffer>,
-    })
-    const body = await resp.arrayBuffer()
-    return {
-        statusCode: resp.status,
-        headers: resp.headers,
-        data: new Uint8Array(body)
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
+    try {
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: new Headers({
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': String(request.length),
+                ...headers
+            }),
+            body: typeof request === 'string' ? request : request as Uint8Array<ArrayBuffer>,
+            signal
+        })
+        const body = await resp.arrayBuffer()
+        return {
+            statusCode: resp.status,
+            headers: resp.headers,
+            data: new Uint8Array(body)
+        }
+    } catch (e) {
+        throw asTimeout(e, url, ms, signal)
+    } finally {
+        clear()
     }
 }
 
 const fileUpload = async (
     url: string,
     uploadParameters: { [key: string]: string },
-    data: Uint8Array
+    data: Uint8Array,
+    timeoutMs?: number
 ): Promise<any> => {
     const form = new FormData();
 
@@ -406,21 +433,30 @@ const fileUpload = async (
     }
     form.append('file', new Blob([data as Uint8Array<ArrayBuffer>], {type: 'application/octet-stream'}));
 
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     const fetchCfg = {
         method: 'POST',
         body: form,
+        signal
     };
 
     try {
         const res = await fetch(url, fetchCfg);
+        // fileUpload resolves off headers alone and never reads the body, same as the Node
+        // platform's equivalent - an unconsumed body left on the response is discarded here
+        // rather than left dangling.
+        void res.body?.cancel().catch(() => {})
         return {
             headers: res.headers,
             statusCode: res.status,
             statusMessage: res.statusText
         };
     } catch (error) {
-        console.error('Error uploading file:', error);
-        throw error;
+        const e = asTimeout(error, url, ms, signal);
+        console.error('Error uploading file:', e);
+        throw e;
+    } finally {
+        clear()
     }
 };
 

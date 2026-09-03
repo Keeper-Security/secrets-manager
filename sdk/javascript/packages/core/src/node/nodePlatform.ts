@@ -1,4 +1,5 @@
 import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
+import {deadlineSignal, timeoutError} from '../deadline'
 import {privateDerToPublicRaw} from '../utils'
 import {KeeperError, KeeperCryptoError} from '../errors'
 import {request, RequestOptions} from 'https'
@@ -199,37 +200,86 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
     return Buffer.concat([ephemeralPublicKey, encryptedData])
 }
 
-const fetchData = (res, resolve) => {
-    const retVal = {
+// onBodyDone runs when the exchange is genuinely over, not when the headers land: the deadline has
+// to stay armed across the body or a server can send headers instantly and then stall or trickle
+// forever. reject is wired to the response stream's own errors too, because once the response has
+// started the request object no longer reports a mid-body socket failure and the promise would
+// otherwise never settle.
+const fetchData = (res, resolve, onBodyDone?: () => void, reject?: (reason: any) => void) => {
+    const retVal: { statusCode: number, headers: any, data: Buffer | null } = {
         statusCode: res.statusCode,
         headers: res.headers,
         data: null
     }
+    // Chunks are concatenated once at 'end' rather than on every 'data' event: re-copying the
+    // whole accumulated buffer per chunk is O(n^2) in body size, which turns this file's own
+    // deadline into a spurious timeout on a large-but-otherwise-healthy download.
+    const chunks: Buffer[] = []
     res.on('data', data => {
-        retVal.data = retVal.data
-            ? Buffer.concat([retVal.data, data])
-            : data
+        chunks.push(data)
+    })
+    res.on('error', (err) => {
+        onBodyDone?.()
+        reject?.(err)
     })
     res.on('end', () => {
+        onBodyDone?.()
+        if (chunks.length) {
+            retVal.data = Buffer.concat(chunks)
+        }
         resolve(retVal)
+    })
+}
+
+// Wires the request's own 'error' event onto a Node request object. request()/https.request()
+// already destroys the request and emits 'error' on it when the signal passed into its own
+// options aborts, so no separate abort listener is needed here - adding one would race Node's
+// internal handling of the same signal, on the same event, with no documented ordering guarantee
+// between the two. signal.aborted is checked synchronously instead, mirroring browserPlatform.ts's
+// asTimeout: a deadline firing is always our own timeout, so it gets our own message; any other
+// failure passes through untouched. request()/https.request() can also throw synchronously (a
+// malformed URL, for instance) before this ever runs; callers wrap that call in try/catch and
+// clear() there too, since the listener registered here would otherwise not fire and the armed
+// timer would leak for the full deadline window.
+const armRequest = (
+    req: { on(event: 'error', cb: (err: any) => void): void },
+    signal: AbortSignal | undefined,
+    ms: number,
+    url: string,
+    clear: () => void,
+    reject: (reason: any) => void
+): void => {
+    req.on('error', (err) => {
+        clear()
+        reject(signal?.aborted ? timeoutError(url, ms) : err)
     })
 }
 
 const get = (
     url: string,
-    headers?: { [key: string]: string }
+    headers?: { [key: string]: string },
+    timeoutMs?: number
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
-    const get = request(url, {
-        method: 'get',
-        headers: {
-            'User-Agent': `Node/${process.version}`,
-            ...headers
-        },
-        agent: getProxyAgent()
-    }, (res) => {
-        fetchData(res, resolve)
-    })
-    get.on('error', reject)
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
+    let get: ReturnType<typeof request>
+    try {
+        get = request(url, {
+            method: 'get',
+            headers: {
+                'User-Agent': `Node/${process.version}`,
+                ...headers
+            },
+            agent: getProxyAgent(),
+            signal
+        }, (res) => {
+            fetchData(res, resolve, clear, reject)
+        })
+    } catch (e) {
+        clear()
+        reject(e)
+        return
+    }
+    armRequest(get, signal, ms, url, clear, reject)
     get.end()
 })
 
@@ -237,25 +287,35 @@ const post = (
     url: string,
     payload: Uint8Array,
     headers?: { [key: string]: string },
-    allowUnverifiedCertificate?: boolean
+    allowUnverifiedCertificate?: boolean,
+    timeoutMs?: number
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     const options: RequestOptions = {
         rejectUnauthorized: !allowUnverifiedCertificate,
-        agent: getProxyAgent()
+        agent: getProxyAgent(),
+        signal
     }
-    const post = request(url, {
-        method: 'post',
-        ...options,
-        headers: {
-            'Content-Type': 'application/octet-stream',
-            'Content-Length': payload.length,
-            'User-Agent': `Node/${process.version}`,
-            ...headers,
-        },
-    }, (res) => {
-        fetchData(res, resolve)
-    })
-    post.on('error', reject)
+    let post: ReturnType<typeof request>
+    try {
+        post = request(url, {
+            method: 'post',
+            ...options,
+            headers: {
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': payload.length,
+                'User-Agent': `Node/${process.version}`,
+                ...headers,
+            },
+        }, (res) => {
+            fetchData(res, resolve, clear, reject)
+        })
+    } catch (e) {
+        clear()
+        reject(e)
+        return
+    }
+    armRequest(post, signal, ms, url, clear, reject)
     post.write(payload)
     post.end()
 })
@@ -263,25 +323,45 @@ const post = (
 const fileUpload = (
     url: string,
     uploadParameters: { [key: string]: string },
-    data: Uint8Array
+    data: Uint8Array,
+    timeoutMs?: number
 ): Promise<any> => new Promise<any>((resolve, reject) => {
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     const boundary = `----------${Date.now()}`
     const boundaryBytes = stringToBytes(`\r\n--${boundary}`)
-    let post = https.request(url, {
-        method: "post",
-        headers: {
-            'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        },
-        agent: getProxyAgent()
-    });
+    let post: ReturnType<typeof https.request>
+    try {
+        post = https.request(url, {
+            method: "post",
+            headers: {
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            },
+            agent: getProxyAgent(),
+            signal
+        });
+    } catch (e) {
+        clear()
+        reject(e)
+        return
+    }
     post.on('response', function (res: any) {
+        // fileUpload resolves off headers alone and never reads the body, but the response object
+        // is still an EventEmitter: a socket failure after this point emits 'error' on it, and with
+        // no listener that throws instead of doing nothing, per Node's EventEmitter contract for
+        // unhandled 'error' events.
+        res.on('error', reject)
+        // An unconsumed response body leaves the socket open (paused, not closed), which keeps
+        // the event loop alive - a script with no other pending work never exits on its own after
+        // a successful upload. resume() discards the body without buffering it; nothing here reads it.
+        res.resume()
+        clear()
         resolve({
             headers: res.headers,
             statusCode: res.statusCode,
             statusMessage: res.statusMessage
         })
     })
-    post.on('error', reject)
+    armRequest(post, signal, ms, url, clear, reject)
     for (const key in uploadParameters) {
         post.write(boundaryBytes)
         post.write(stringToBytes(`\r\nContent-Disposition: form-data; name=\"${key}\"\r\n\r\n${uploadParameters[key]}`))
