@@ -167,10 +167,16 @@ describe('browser createCachingFunction (KSM-1265)', () => {
         storage.saveBytes = saveBytesSpy
         const caching = createCachingFunction(storage)
 
+        // Confirms the no-op is signaled, not silent: before this fix, a caller who opted into
+        // useObjects: true had no way to know caching was doing nothing for them until their
+        // first real outage hit the exact-message assertion below.
+        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
         platform.post = async () => ({ statusCode: 200, data: enc.encode('{"ok":true}'), headers: [] })
         const first = await caching('https://example.com', fakeTransmissionKey(), fakePayload)
         expect(first.statusCode).toBe(200)
         expect(saveBytesSpy).not.toHaveBeenCalled()
+        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('useObjects: true'))
+        consoleErrorSpy.mockRestore()
 
         platform.post = async () => { throw networkFailure() }
         // Exact message, not just KeeperError: pre-fix code also throws a KeeperError here, but

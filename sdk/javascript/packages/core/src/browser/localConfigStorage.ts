@@ -1,6 +1,6 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, TransmissionKey, platform} from "../platform";
 import {KeeperError} from "../errors";
-import {KEY_APP_KEY, deriveCacheKey, encodeCacheBlob, decodeCacheBlob, DEFAULT_MAX_CACHE_AGE_MS, isRawKeyBytes} from "../cache";
+import {KEY_APP_KEY, deriveCacheKey, encodeCacheBlob, decodeCacheBlob, DEFAULT_MAX_CACHE_AGE_MS, isRawKeyBytes, concatBytes} from "../cache";
 
 const CACHE_STORAGE_KEY = 'cache'
 
@@ -248,11 +248,19 @@ export function createCachingFunction(storage: KeyValueStorage, maxCacheAgeMs: n
             try {
                 const appKey = await storage.getBytes(KEY_APP_KEY)
                 if (appKey && isRawKeyBytes(appKey)) {
-                    const blob = await encodeCacheBlob(new Uint8Array([...transmissionKey.key, ...response.data]), await deriveCacheKey(appKey))
+                    const blob = await encodeCacheBlob(concatBytes(transmissionKey.key, response.data), await deriveCacheKey(appKey))
                     await storage.saveBytes(CACHE_STORAGE_KEY, blob)
+                } else if (appKey) {
+                    // appKey exists but isn't raw bytes - useObjects: true wraps it as a
+                    // non-extractable CryptoKey, so caching is a deliberate no-op here (matches
+                    // the identical guard in the fallback branch above), not a failure. Logged
+                    // once per call, same as the fallback branch's own log a few lines up, so a
+                    // caller who opted into useObjects: true has some signal that caching isn't
+                    // doing anything for them before their first real outage.
+                    console.error('Caching is a no-op with useObjects: true - the app key is not available as raw bytes')
                 }
-            } catch (e: Error | any) {
-                console.error(`Failed to update cached response: ${e.message}`)
+            } catch (e) {
+                console.error(`Failed to update cached response: ${describeCause(e)}`)
             }
         }
         return response

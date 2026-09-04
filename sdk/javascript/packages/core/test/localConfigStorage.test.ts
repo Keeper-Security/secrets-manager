@@ -522,6 +522,23 @@ describe('createCachingFunction (KSM-1265)', () => {
         expect(Buffer.from(tk2.key)).toEqual(Buffer.from(tk.key))
     })
 
+    test('serving a stale-on-network-failure cache logs a warning, the only signal a caller gets that the data may not be fresh', async () => {
+        const storage = await makeStorageWithAppKey()
+        const caching = createCachingFunction(storage, {cachePath})
+
+        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+
+        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            platform.post = async () => { throw networkFailure() }
+            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+            expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Network request failed'))
+        } finally {
+            consoleErrorSpy.mockRestore()
+        }
+    })
+
     test('rejects a tampered cache file instead of returning a synthetic 200', async () => {
         const storage = await makeStorageWithAppKey()
         const caching = createCachingFunction(storage, {cachePath})
@@ -620,17 +637,123 @@ describe('createCachingFunction (KSM-1265)', () => {
             .rejects.toBeInstanceOf(KeeperError)
     })
 
-    test('re-asserts 0700 on the cache directory even if it started more permissive', async () => {
+    test('appKey present but not raw bytes: skipped cleanly, not logged as a confusing internal error', async () => {
+        // inMemoryStorage round-trips every saveBytes value through base64 encode/decode, so it
+        // always hands back a genuine Uint8Array on read regardless of what was stored - it
+        // can't simulate this. A custom KeyValueStorage could plausibly return a truthy
+        // non-Uint8Array directly (this SDK's own bundled storages never do).
+        //
+        // Either way the cache file ends up unwritten - deriveCacheKey's own internal
+        // isRawKeyBytes check throws even without this guard, and the outer try/catch already
+        // swallows that. What the guard on this call site actually controls is whether that
+        // throw ever happens: with it, the write is skipped before deriveCacheKey runs, no log
+        // at all; without it, deriveCacheKey's TypeError reaches the outer catch and gets logged
+        // as "Failed to update cached response: ...", indistinguishable from a real I/O failure.
+        const storage: KeyValueStorage = {
+            getString: async () => undefined,
+            saveString: async () => {},
+            getBytes: async () => 'not-actually-bytes' as unknown as Uint8Array,
+            saveBytes: async () => {},
+            delete: async () => {}
+        }
+        const caching = createCachingFunction(storage, {cachePath})
+
+        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+            expect(fs.existsSync(cachePath)).toBe(false)
+            expect(consoleErrorSpy).not.toHaveBeenCalled()
+        } finally {
+            consoleErrorSpy.mockRestore()
+        }
+    })
+
+    test('storage.getBytes throwing in the fallback path throws the documented "does not exist" error, not the raw storage error', async () => {
         const storage = await makeStorageWithAppKey()
-        const cacheDir = path.join(tmpDir, 'loose-dir')
-        fs.mkdirSync(cacheDir, { mode: 0o755 })
-        const loosePath = path.join(cacheDir, 'cache.dat')
-        const caching = createCachingFunction(storage, {cachePath: loosePath})
+        const caching = createCachingFunction(storage, {cachePath})
+        const originalGetBytes = storage.getBytes
+        storage.getBytes = async () => { throw new Error('storage backend unavailable') }
+        try {
+            platform.post = async () => { throw networkFailure() }
+            await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
+                .rejects.toThrow('Cached value does not exist')
+        } finally {
+            storage.getBytes = originalGetBytes
+        }
+    })
+
+    test('a cache entry written during backward clock skew is still treated as stale, not fresh forever', async () => {
+        const storage = await makeStorageWithAppKey()
+        const caching = createCachingFunction(storage, {cachePath, maxCacheAgeMs: 1000})
 
         platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
         await caching('https://example.com', fakeTransmissionKey(), fakePayload)
 
-        expect(fs.statSync(cacheDir).mode & 0o777).toBe(0o700)
+        const realNow = Date.now
+        try {
+            // Simulates the clock moving backward relative to when the entry was written (e.g.
+            // a VM/container before its first NTP sync) - a plain `Date.now() - written` would
+            // go negative and never exceed maxCacheAgeMs, letting this entry read as fresh
+            // indefinitely regardless of the configured age limit.
+            Date.now = () => realNow() - 10 * 60 * 1000
+            platform.post = async () => { throw networkFailure() }
+            await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
+                .rejects.toBeInstanceOf(KeeperError)
+        } finally {
+            Date.now = realNow
+        }
+    })
+
+    test('a cache file over the size cap is rejected before any decode attempt', async () => {
+        fs.mkdirSync(path.dirname(cachePath), { recursive: true })
+        fs.writeFileSync(cachePath, Buffer.alloc(11 * 1024 * 1024))
+        const storage = await makeStorageWithAppKey()
+        const caching = createCachingFunction(storage, {cachePath})
+
+        platform.post = async () => { throw networkFailure() }
+        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
+            .rejects.toThrow('exceeds the maximum expected size')
+    })
+
+    test('a stale orphaned temp file next to the cache path is removed on the next read or write', async () => {
+        fs.mkdirSync(path.dirname(cachePath), { recursive: true })
+        const orphanPath = `${cachePath}.99999.aabbccddeeff.tmp`
+        fs.writeFileSync(orphanPath, 'stale-leftover-cache-write')
+        const old = new Date(Date.now() - 5 * 60_000)
+        fs.utimesSync(orphanPath, old, old)
+
+        const storage = await makeStorageWithAppKey()
+        const caching = createCachingFunction(storage, {cachePath})
+        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+
+        expect(fs.existsSync(orphanPath)).toBe(false)
+    })
+
+    test('hardens a cache directory this call creates, but leaves a pre-existing directory\'s permissions alone', async () => {
+        const storage = await makeStorageWithAppKey()
+
+        // A directory this call creates fresh - the SDK owns it, so it gets locked to 0700.
+        const freshDir = path.join(tmpDir, 'fresh-dir')
+        const freshPath = path.join(freshDir, 'cache.dat')
+        const cachingFresh = createCachingFunction(storage, {cachePath: freshPath})
+        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+        await cachingFresh('https://example.com', fakeTransmissionKey(), fakePayload)
+        expect(fs.statSync(freshDir).mode & 0o777).toBe(0o700)
+
+        // A directory that already existed before this call - a caller-supplied cachePath can
+        // point at a directory the caller manages for other things (e.g. a file directly inside
+        // $HOME); the SDK must not narrow permissions on a directory it doesn't own. Matches
+        // established practice for this exact caller-owned-vs-SDK-owned distinction (npm's own
+        // cache-directory guidance; the same "unconditional per-run chmod on an existing
+        // directory" pattern is a filed, disputed bug in another CLI's own config-dir hardening).
+        const looseDir = path.join(tmpDir, 'loose-dir')
+        fs.mkdirSync(looseDir, { mode: 0o755 })
+        const loosePath = path.join(looseDir, 'cache.dat')
+        const cachingLoose = createCachingFunction(storage, {cachePath: loosePath})
+        await cachingLoose('https://example.com', fakeTransmissionKey(), fakePayload)
+        expect(fs.statSync(looseDir).mode & 0o777).toBe(0o755)
     })
 
     test('a write replaces the cache file via rename (new inode), not an in-place truncate', async () => {
