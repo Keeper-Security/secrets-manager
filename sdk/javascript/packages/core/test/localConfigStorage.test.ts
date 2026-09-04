@@ -1,17 +1,48 @@
-import {localConfigStorage, KeeperError, KeeperStorageError} from '../'
+import {
+    createCachingFunction,
+    inMemoryStorage,
+    localConfigStorage,
+    platform,
+    KeeperError,
+    KeeperStorageError,
+    KeyValueStorage,
+    TransmissionKey,
+    EncryptedPayload,
+} from '../'
 
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import * as childProcess from 'child_process'
 
+const enc = new TextEncoder()
+
+const makeStorageWithAppKey = async (): Promise<KeyValueStorage> => {
+    const storage = inMemoryStorage({})
+    await storage.saveBytes('appKey', new Uint8Array(32).fill(7))
+    return storage
+}
+
+const fakeTransmissionKey = (): TransmissionKey => ({
+    publicKeyId: 7,
+    key: platform.getRandomBytes(32),
+    encryptedKey: new Uint8Array(),
+})
+
+const fakePayload: EncryptedPayload = { payload: new Uint8Array(), signature: new Uint8Array() }
+const networkFailure = () => Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })
+
 let tmpDir: string
+let cachePath: string
+const originalPost = platform.post
 
 beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ksm-cache-test-'))
+    cachePath = path.join(tmpDir, 'cache.dat')
 })
 
 afterEach(() => {
+    platform.post = originalPost
     fs.rmSync(tmpDir, { recursive: true, force: true })
 })
 
@@ -219,7 +250,7 @@ describe('localConfigStorage readStorage error handling (KSM-1266)', () => {
         const kvs = localConfigStorage(symlinkPath)
 
         // Simulates an attacker swapping the symlink's target immediately after
-        // writeConfigFile's one resolution call - the narrowest version of the residual
+        // writeFileAtomic's one resolution call - the narrowest version of the residual
         // window write-file-atomic itself also leaves open. Only the first realpathSync call
         // is intercepted (mockRestore right after), so this proves the resolved path is
         // cached and reused for the eventual rename, not looked up again right before it -
@@ -271,12 +302,12 @@ describe('localConfigStorage readStorage error handling (KSM-1266)', () => {
         // Simulates an attacker swapping configPath into a symlink right after the nlink > 1
         // check passes, before the open that writes in place - the write-in-place branch has
         // no rename to fall back on for symlink safety, so it needs its own O_NOFOLLOW.
-        const originalStatSync = fs.statSync
-        const statSyncSpy = jest.spyOn(fs, 'statSync').mockImplementation((p: fs.PathLike, opts?: any) => {
-            const result = originalStatSync(p as string, opts)
+        const originalLstatSync = fs.lstatSync
+        const lstatSyncSpy = jest.spyOn(fs, 'lstatSync').mockImplementation((p: fs.PathLike, opts?: any) => {
+            const result = originalLstatSync(p as string, opts)
             fs.unlinkSync(configPath)
             fs.symlinkSync(decoyPath, configPath)
-            statSyncSpy.mockRestore()
+            lstatSyncSpy.mockRestore()
             return result
         })
 
@@ -317,7 +348,7 @@ describe('localConfigStorage readStorage error handling (KSM-1266)', () => {
     test('a file that merely looks tmp-like but does not match the exact naming shape is not swept', () => {
         const configPath = path.join(tmpDir, 'config.json')
         fs.writeFileSync(configPath, JSON.stringify({ original: 'data' }))
-        // Missing the <hex> segment writeConfigFile always adds - close enough to be a
+        // Missing the <hex> segment writeFileAtomic always adds - close enough to be a
         // plausible false match for a looser regex, not close enough to be one of ours.
         const lookalikePath = `${configPath}.12345.tmp`
         fs.writeFileSync(lookalikePath, 'not one of ours')
@@ -343,9 +374,9 @@ describe('localConfigStorage readStorage error handling (KSM-1266)', () => {
     })
 
     // The other orphan tests hand-write a fixture filename matching cleanupOrphanedTempFiles'
-    // regex - they'd stay green even if writeConfigFile's real naming and that regex silently
+    // regex - they'd stay green even if writeFileAtomic's real naming and that regex silently
     // drifted apart from each other, as long as each still matched its own fixture. This test
-    // closes that gap: it kills a real child process actually running writeConfigFile (via the
+    // closes that gap: it kills a real child process actually running writeFileAtomic (via the
     // built dist bundle, the same one the package ships), confirming the file it actually
     // leaves behind is one cleanupOrphanedTempFiles actually recognizes.
     test('a real SIGKILL between opening the temp file and the rename leaves an orphan the next read cleans up', async () => {
@@ -459,5 +490,293 @@ describe('localConfigStorage readStorage error handling (KSM-1266)', () => {
         expect(await kvs.getString('a')).toBeUndefined()
         expect(await kvs.getString('b')).toBe('2')
         expect(JSON.parse(fs.readFileSync(configPath, 'utf8'))).toEqual({ b: '2' })
+    })
+
+    test('reads through a symlinked config path, matching the Kubernetes Secret/ConfigMap volume-mount layout', async () => {
+        const configPath = path.join(tmpDir, 'config.json')
+        const target = path.join(tmpDir, 'target-config.json')
+        fs.writeFileSync(target, JSON.stringify({foo: 'bar'}))
+        fs.symlinkSync(target, configPath)
+        const kvs = localConfigStorage(configPath)
+        expect(await kvs.getString('foo')).toBe('bar')
+    })
+})
+
+describe('createCachingFunction (KSM-1265)', () => {
+    test('round-trip: caches a successful response, then serves it when the network fails', async () => {
+        const storage = await makeStorageWithAppKey()
+        const responseData = enc.encode('{"ok":true}')
+        const tk = fakeTransmissionKey()
+        const caching = createCachingFunction(storage, {cachePath})
+
+        platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
+        const first = await caching('https://example.com', tk, fakePayload)
+        expect(first.statusCode).toBe(200)
+        expect(Buffer.from(first.data)).toEqual(Buffer.from(responseData))
+
+        platform.post = async () => { throw networkFailure() }
+        const tk2 = fakeTransmissionKey()
+        const second = await caching('https://example.com', tk2, fakePayload)
+        expect(second.statusCode).toBe(200)
+        expect(Buffer.from(second.data)).toEqual(Buffer.from(responseData))
+        expect(Buffer.from(tk2.key)).toEqual(Buffer.from(tk.key))
+    })
+
+    test('rejects a tampered cache file instead of returning a synthetic 200', async () => {
+        const storage = await makeStorageWithAppKey()
+        const caching = createCachingFunction(storage, {cachePath})
+
+        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+
+        const raw = fs.readFileSync(cachePath)
+        raw[raw.length - 1] ^= 0xff
+        fs.writeFileSync(cachePath, raw)
+
+        platform.post = async () => { throw networkFailure() }
+        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
+            .rejects.toBeInstanceOf(KeeperError)
+    })
+
+    test('rejects a cache file older than maxCacheAgeMs', async () => {
+        jest.useFakeTimers()
+        try {
+            const storage = await makeStorageWithAppKey()
+            const caching = createCachingFunction(storage, {cachePath, maxCacheAgeMs: 1000})
+
+            platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+
+            jest.advanceTimersByTime(5000)
+
+            platform.post = async () => { throw networkFailure() }
+            await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
+                .rejects.toBeInstanceOf(KeeperError)
+        } finally {
+            jest.useRealTimers()
+        }
+    })
+
+    test('a forged freshness timestamp is rejected (the timestamp is now inside the AEAD boundary)', async () => {
+        const storage = await makeStorageWithAppKey()
+        const caching = createCachingFunction(storage, {cachePath})
+
+        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+
+        const raw = fs.readFileSync(cachePath)
+        // Byte 1 falls inside the GCM ciphertext now (the format-version byte at 0 is the only
+        // cleartext byte left). Flipping it used to land on the cleartext timestamp header and
+        // silently pin a stale cache as fresh; now it corrupts the ciphertext and fails the tag check.
+        raw[1] ^= 0xff
+        fs.writeFileSync(cachePath, raw)
+
+        platform.post = async () => { throw networkFailure() }
+        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
+            .rejects.toBeInstanceOf(KeeperError)
+    })
+
+    test('rejects an old-format cache file instead of misparsing it', async () => {
+        const storage = await makeStorageWithAppKey()
+        fs.mkdirSync(path.dirname(cachePath), { recursive: true })
+        fs.writeFileSync(cachePath, Buffer.concat([Buffer.alloc(32, 1), Buffer.from('legacy-plaintext-response')]))
+
+        platform.post = async () => { throw networkFailure() }
+        const caching = createCachingFunction(storage, {cachePath})
+        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
+            .rejects.toBeInstanceOf(KeeperError)
+    })
+
+    test('a write failure after a successful response is swallowed, so the caller still gets the successful response', async () => {
+        const storage = await makeStorageWithAppKey()
+        const blockerFile = path.join(tmpDir, 'blocker')
+        fs.writeFileSync(blockerFile, '')
+        const badCachePath = path.join(blockerFile, 'cache.dat')
+        const caching = createCachingFunction(storage, {cachePath: badCachePath})
+
+        const responseData = enc.encode('{"ok":true}')
+        platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
+        const result = await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        expect(result.statusCode).toBe(200)
+        expect(Buffer.from(result.data)).toEqual(Buffer.from(responseData))
+    })
+
+    test('no appKey in storage: a successful response is not cached', async () => {
+        const storage = inMemoryStorage({})
+        const caching = createCachingFunction(storage, {cachePath})
+
+        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+
+        expect(fs.existsSync(cachePath)).toBe(false)
+    })
+
+    test('no appKey in storage: the fallback path throws instead of serving a nonexistent cache', async () => {
+        const storage = inMemoryStorage({})
+        const caching = createCachingFunction(storage, {cachePath})
+
+        platform.post = async () => { throw networkFailure() }
+        await expect(caching('https://example.com', fakeTransmissionKey(), fakePayload))
+            .rejects.toBeInstanceOf(KeeperError)
+    })
+
+    test('re-asserts 0700 on the cache directory even if it started more permissive', async () => {
+        const storage = await makeStorageWithAppKey()
+        const cacheDir = path.join(tmpDir, 'loose-dir')
+        fs.mkdirSync(cacheDir, { mode: 0o755 })
+        const loosePath = path.join(cacheDir, 'cache.dat')
+        const caching = createCachingFunction(storage, {cachePath: loosePath})
+
+        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+
+        expect(fs.statSync(cacheDir).mode & 0o777).toBe(0o700)
+    })
+
+    test('a write replaces the cache file via rename (new inode), not an in-place truncate', async () => {
+        const storage = await makeStorageWithAppKey()
+        fs.mkdirSync(path.dirname(cachePath), { recursive: true })
+        fs.writeFileSync(cachePath, 'stale-loose-file')
+        fs.chmodSync(cachePath, 0o644)
+        const originalInode = fs.statSync(cachePath).ino
+        const caching = createCachingFunction(storage, {cachePath})
+
+        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+
+        // An in-place truncate-then-chmod would end up at 0600 too - the inode staying the same
+        // is what actually distinguishes a real rename from that, so mode alone isn't enough.
+        const stat = fs.statSync(cachePath)
+        expect(stat.ino).not.toBe(originalInode)
+        expect(stat.mode & 0o777).toBe(0o600)
+    })
+
+    test('a symlink at the cache path is replaced by the write, never followed; the target stays untouched and the fallback reads the healed cache', async () => {
+        const storage = await makeStorageWithAppKey()
+        const target = path.join(tmpDir, 'target.dat')
+        fs.writeFileSync(target, 'do-not-touch')
+        fs.symlinkSync(target, cachePath)
+        const caching = createCachingFunction(storage, {cachePath})
+
+        const responseData = enc.encode('{"ok":true}')
+        platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
+        const tk = fakeTransmissionKey()
+        await caching('https://example.com', tk, fakePayload)
+        // renameSync replaces the directory entry rather than following it, so the symlink's
+        // target is never written through - the arbitrary-file-overwrite this test guards
+        // against stays closed - but the symlink itself is gone, replaced by a real cache file.
+        expect(fs.readFileSync(target, 'utf8')).toBe('do-not-touch')
+        expect(fs.lstatSync(cachePath).isSymbolicLink()).toBe(false)
+
+        platform.post = async () => { throw networkFailure() }
+        const tk2 = fakeTransmissionKey()
+        const result = await caching('https://example.com', tk2, fakePayload)
+        expect(result.statusCode).toBe(200)
+        expect(Buffer.from(result.data)).toEqual(Buffer.from(responseData))
+        expect(fs.readFileSync(target, 'utf8')).toBe('do-not-touch')
+    })
+
+    test('a relative cachePath with no directory component does not touch the current working directory', async () => {
+        const storage = await makeStorageWithAppKey()
+        const originalCwd = process.cwd()
+        process.chdir(tmpDir)
+        fs.chmodSync(tmpDir, 0o755)
+        try {
+            const caching = createCachingFunction(storage, {cachePath: 'cache.dat'})
+            platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+            expect(fs.statSync(tmpDir).mode & 0o777).toBe(0o755)
+        } finally {
+            process.chdir(originalCwd)
+        }
+    })
+
+    test('refuses to write when the cache directory itself is a symlink', async () => {
+        const storage = await makeStorageWithAppKey()
+        const realDir = path.join(tmpDir, 'real-dir')
+        fs.mkdirSync(realDir)
+        const symlinkedDir = path.join(tmpDir, 'symlinked-dir')
+        fs.symlinkSync(realDir, symlinkedDir)
+        const pathThroughSymlink = path.join(symlinkedDir, 'cache.dat')
+        const caching = createCachingFunction(storage, {cachePath: pathThroughSymlink})
+
+        const responseData = enc.encode('{"ok":true}')
+        platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
+        const result = await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        // The write is swallowed, same convention as any other write failure, but nothing lands
+        // under the real directory the symlink points to.
+        expect(result.statusCode).toBe(200)
+        expect(Buffer.from(result.data)).toEqual(Buffer.from(responseData))
+        expect(fs.readdirSync(realDir)).toEqual([])
+    })
+
+    test('storage.getBytes throwing after a successful response does not propagate; the fresh response still wins', async () => {
+        const storage = await makeStorageWithAppKey()
+        const caching = createCachingFunction(storage, {cachePath})
+        const originalGetBytes = storage.getBytes
+        storage.getBytes = async () => { throw new Error('storage backend unavailable') }
+        try {
+            const responseData = enc.encode('{"ok":true}')
+            platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
+            const result = await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+            expect(result.statusCode).toBe(200)
+            expect(Buffer.from(result.data)).toEqual(Buffer.from(responseData))
+        } finally {
+            storage.getBytes = originalGetBytes
+        }
+    })
+
+    test('a successful write leaves no leftover temp file behind', async () => {
+        const storage = await makeStorageWithAppKey()
+        const caching = createCachingFunction(storage, {cachePath})
+        platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        expect(fs.readdirSync(tmpDir)).toEqual(['cache.dat'])
+    })
+
+    test('a write that fails before the rename leaves a pre-existing valid cache file intact', async () => {
+        const storage = await makeStorageWithAppKey()
+        const caching = createCachingFunction(storage, {cachePath})
+
+        const responseData = enc.encode('{"first":true}')
+        platform.post = async () => ({ statusCode: 200, data: responseData, headers: [] })
+        await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        const before = fs.readFileSync(cachePath)
+
+        // Forces the temp-file create to fail (simulating disk-full, a permission race, etc.)
+        // deterministically, rather than relying on OS-level permission bits, which some
+        // filesystems/ACL setups don't enforce the same way for every test runner.
+        const originalOpenSync = fs.openSync
+        const openSyncSpy = jest.spyOn(fs, 'openSync').mockImplementation((p: any, flags: any, mode?: any) => {
+            if (typeof p === 'string' && p.endsWith('.tmp')) {
+                throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
+            }
+            return originalOpenSync(p, flags, mode)
+        })
+        try {
+            platform.post = async () => ({ statusCode: 200, data: enc.encode('{"second":true}'), headers: [] })
+            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+        } finally {
+            openSyncSpy.mockRestore()
+        }
+
+        expect(fs.readFileSync(cachePath)).toEqual(before)
+    })
+
+    test('uses ~/.keeper/ksm-cache.dat and creates + hardens the directory on first write', async () => {
+        const storage = await makeStorageWithAppKey()
+        const originalHomedir = os.homedir
+        ;(os as any).homedir = () => tmpDir
+        try {
+            const caching = createCachingFunction(storage)
+            platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+
+            const expectedPath = path.join(tmpDir, '.keeper', 'ksm-cache.dat')
+            expect(fs.existsSync(expectedPath)).toBe(true)
+            expect(fs.statSync(path.dirname(expectedPath)).mode & 0o777).toBe(0o700)
+        } finally {
+            (os as any).homedir = originalHomedir
+        }
     })
 })
