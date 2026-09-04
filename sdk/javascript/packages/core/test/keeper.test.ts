@@ -12,7 +12,8 @@ import * as fs from 'fs'
 
 const FAKE_ONE_TIME_TOKEN = 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'
 
-const keyErrorResponse = (keyId: number) => JSON.stringify({ error: 'key', key_id: keyId })
+const keyErrorResponse = (keyId: number, extra?: Record<string, unknown>) =>
+    JSON.stringify({ error: 'key', key_id: keyId, ...extra })
 
 afterEach(() => {
     jest.restoreAllMocks()
@@ -370,6 +371,127 @@ test('key rotation - suggested key id is adopted and persisted', async () => {
     expect(secrets.records).toEqual([])
     expect(calls).toBe(2)
     // Verify the suggested key_id 8 was persisted to storage.
+    expect(await storage.getString('serverPublicKeyId')).toBe('8')
+})
+
+test('key rotation - triggers via result_code when error is absent', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    let calls = 0
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async (_url, tk) => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
+            if (calls === 1) {
+                return { statusCode: 400, data: enc.encode(keyErrorResponse(8, { error: undefined, result_code: 'key' })), headers: [] }
+            }
+            expect(tk.publicKeyId).toBe(8)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    const secrets = await getSecrets(options)
+    expect(secrets.records).toEqual([])
+    expect(await storage.getString('serverPublicKeyId')).toBe('8')
+})
+
+test('key rotation - result_code takes precedence over error when both are present', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => ({
+            statusCode: 400,
+            data: enc.encode(keyErrorResponse(8, { result_code: 'something-else' })),
+            headers: []
+        })
+    }
+    await expect(getSecrets(options)).rejects.toThrow()
+    await expect(getSecrets(options)).rejects.not.toThrow(/key rotation|unsupported key id/i)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('a response body over the 64KB decode cap is truncated before parsing, not adopted as a valid key rotation', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    // Valid, fully-closed JSON on its own - if the 64KB cap were absent or misapplied, parsing the
+    // whole thing would succeed and adopt key 8. The cap must slice this mid-padding, before the
+    // closing brace, so it fails to parse and falls through to the catch-all throw instead.
+    const oversizedBody = JSON.stringify({ error: 'key', key_id: 8, padding: 'x'.repeat(70000) })
+    const bodyBytes = enc.encode(oversizedBody)
+    expect(bodyBytes.length).toBeGreaterThan(65536)
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => ({ statusCode: 400, data: bodyBytes, headers: [] })
+    }
+    await expect(getSecrets(options)).rejects.toThrow()
+    await expect(getSecrets(options)).rejects.not.toThrow(/key rotation|unsupported key id/i)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('the catch-all throw truncates its message to 1000 bytes, not the full body', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const marker = 'MARKER_PAST_1000_BYTES'
+    const body = JSON.stringify({ error: 'not_recognized', padding: 'a'.repeat(2000) + marker })
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => ({ statusCode: 400, data: enc.encode(body), headers: [] })
+    }
+    const error: any = await getSecrets(options).catch(e => e)
+    expect(error.message.length).toBe(1000)
+    expect(error.message).not.toContain(marker)
+    expect(error.message).toContain('"error":"not_recognized"')
+})
+
+test('a zero-length response body on a non-200 response falls through to the generic error, not a blank one', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    // Node's fetchData leaves data: null for an empty body; the browser platform always
+    // constructs `new Uint8Array(body)`, so an empty body is still a truthy, zero-length
+    // array there. This models the browser shape directly - a truthiness check alone (no
+    // `.length > 0`) would take the has-content branch and throw a blank Error(''), instead
+    // of falling through to the "unknown ksm error" branch below it, exactly as Node does.
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => ({ statusCode: 400, data: new Uint8Array(0), headers: [] })
+    }
+    await expect(getSecrets(options)).rejects.toThrow('unknown ksm error, code 400')
+})
+
+test('key rotation - suggested key id is adopted from a body padded past the 1000-byte truncation slice', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const paddedBody = keyErrorResponse(8, { padding: 'x'.repeat(1100) })
+    expect(enc.encode(paddedBody).length).toBeGreaterThan(1000)
+    let calls = 0
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async (_url, tk) => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
+            if (calls === 1) {
+                return { statusCode: 400, data: enc.encode(paddedBody), headers: [] }
+            }
+            // Verify the rotation was adopted: second request should use key_id 8.
+            expect(tk.publicKeyId).toBe(8)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    const secrets = await getSecrets(options)
+    expect(secrets.records).toEqual([])
+    expect(calls).toBe(2)
     expect(await storage.getString('serverPublicKeyId')).toBe('8')
 })
 

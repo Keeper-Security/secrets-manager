@@ -19,12 +19,21 @@ const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
 // request, so the counter only clears after 10s of silence).
 const MAX_THROTTLE_RETRIES = 5
-// Bounds the server-key-rotation retry (postQuery's `error === 'key'` branch, no custom key
-// pinned): one legitimate rotation should resolve it, so this only needs to tolerate a little
-// slack, not act as a real retry budget.
+// Bounds the server-key-rotation retry (postQuery's key-rotation branch, matched on
+// `result_code` or the legacy `error` field, no custom key pinned): one legitimate rotation
+// should resolve it, so this only needs to tolerate a little slack, not act as a real retry
+// budget.
 const MAX_KEY_ROTATION_RETRIES = 3
 const BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 const MAX_THROTTLE_DELAY_SEC = 176 // same ceiling the exponential branch reaches at the last retry (11 * 2**4)
+// Caps how much of a non-200 response body gets decoded (not buffered - both platforms already
+// buffer the whole body) to detect throttle/key-rotation. Any real throttle or key-rotation body
+// is a small flat JSON object; this is generous headroom over that so a pathological or malicious
+// oversized body can't force an unbounded string decode. The separate, much narrower 1000-byte
+// truncation used below for the message in a thrown error serves a different purpose (bounding a
+// human-readable snippet, not defending against unbounded decode), which is why the two caps
+// differ by 65x rather than sharing one constant.
+const MAX_ERROR_BODY_DECODE_BYTES = 65536
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
 
 let keeperPublicKeys: Record<number, Uint8Array>
@@ -78,6 +87,11 @@ export type {KeeperCryptoFailureReason, KeeperDecryptionErrorInfo} from './error
 // pinned jitter.
 export const throttleJitter = (): number => Math.random() * 0.25
 
+// Server error envelopes use `result_code` in newer responses and the legacy `error` field in
+// older ones for the same discriminator; both throttle and key-rotation detection need whichever
+// one is present, so this is shared rather than duplicated at each call site.
+const resultCode = (obj: any): unknown => obj?.result_code ?? obj?.error
+
 /**
  * If `body` is a backend throttle error (`result_code`/`error` === "throttled") returns its
  * `retry_after` in seconds (>= 0, capped at MAX_THROTTLE_DELAY_SEC); otherwise returns `null`
@@ -94,8 +108,7 @@ export const parseThrottle = (body: string): number | null => {
     if (!obj || typeof obj !== 'object') {
         return null
     }
-    const resultCode = obj.result_code ?? obj.error
-    if (resultCode !== 'throttled') {
+    if (resultCode(obj) !== 'throttled') {
         return null
     }
     const retryAfter = Number(obj.retry_after)
@@ -321,6 +334,7 @@ export type KeeperFileUpload = {
 
 type KeeperApiError = {
     error?: string
+    result_code?: string
     key_id?: number
 }
 
@@ -812,14 +826,22 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
         const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate)
         if (response.statusCode !== 200) {
-            let errorMessage
-            if (response.data) {
-                errorMessage = platform.bytesToString(response.data.slice(0, 1000))
+            // .length, not truthiness: browser's empty-body Uint8Array is still truthy, unlike Node's null.
+            if (response.data && response.data.length > 0) {
+                // Throttle/key-rotation detection runs on the full body (bounded by
+                // MAX_ERROR_BODY_DECODE_BYTES) - slicing to 1000 bytes first can cut a large
+                // response mid-document and make it fail JSON.parse, silently disabling retry or
+                // rotation. The 1000-byte truncation below is computed lazily and only ever feeds
+                // the final "response isn't recognized" throw at the end of this block - never
+                // the throttle-exhausted or key-rotation-exhausted throws, which are synthetic
+                // strings with no body content at all.
+                const decodableBytes = response.data.slice(0, MAX_ERROR_BODY_DECODE_BYTES)
+                const fullErrorMessage = platform.bytesToString(decodableBytes)
                 // Throttle retry with exponential backoff + jitter. Checked
                 // before key-rotation so that path is untouched, and gated on the 403 status so a
                 // non-403 response carrying a {"error":"throttled"} body is not retried.
                 if (response.statusCode === 403) {
-                    const retryAfter = parseThrottle(errorMessage)
+                    const retryAfter = parseThrottle(fullErrorMessage)
                     if (retryAfter !== null) {
                         if (throttleAttempt >= MAX_THROTTLE_RETRIES) {
                             throw new KeeperThrottleError(`Request throttled by Keeper backend; exhausted ${MAX_THROTTLE_RETRIES} retries`)
@@ -832,8 +854,8 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                     }
                 }
                 let errorObj: KeeperApiError | null = null
-                try { errorObj = JSON.parse(errorMessage) } catch {}
-                if (errorObj?.error === 'key') {
+                try { errorObj = JSON.parse(fullErrorMessage) } catch {}
+                if (errorObj && resultCode(errorObj) === 'key') {
                     const suggestedKeyId = errorObj.key_id
                     const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
                     if (customKey) {
@@ -854,10 +876,9 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                     keyRotationAttempt++
                     continue
                 }
-            } else {
-                errorMessage = `unknown ksm error, code ${response.statusCode}`
+                throw new Error(platform.bytesToString(response.data.slice(0, 1000)))
             }
-            throw new Error(errorMessage)
+            throw new Error(`unknown ksm error, code ${response.statusCode}`)
         }
         return response.data && response.data.length > 0
             ? platform.decryptWithKey(response.data, transmissionKey.key)
