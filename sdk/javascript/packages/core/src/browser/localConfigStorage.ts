@@ -1,5 +1,8 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, TransmissionKey, platform} from "../platform";
 import {KeeperError} from "../errors";
+import {KEY_APP_KEY, deriveCacheKey, encodeCacheBlob, decodeCacheBlob, DEFAULT_MAX_CACHE_AGE_MS, isRawKeyBytes} from "../cache";
+
+const CACHE_STORAGE_KEY = 'cache'
 
 type Reject = (reason: Error) => void
 
@@ -202,24 +205,38 @@ export const secureStorage = async (dbName: string): Promise<KeyValueStorage> =>
     }
 }
 
-export function createCachingFunction(storage: KeyValueStorage): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload) => Promise<KeeperHttpResponse> {
+// Same cache codec (../cache) as node/localConfigStorage.ts's createCachingFunction; only the
+// storage medium differs (IndexedDB here, a file there). Replaces the old plaintext
+// key-beside-data format (CWE-312, CWE-345) with one encrypted under a key derived from the app
+// key, authenticated, and bounded by a freshness window. An old-format cached value simply fails
+// the version check and is treated as a cache miss, the same graceful degradation the Node fix
+// uses for its old-format files.
+export function createCachingFunction(storage: KeyValueStorage, maxCacheAgeMs: number = DEFAULT_MAX_CACHE_AGE_MS): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload) => Promise<KeeperHttpResponse> {
 
     return async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload): Promise<KeeperHttpResponse> => {
+        let response: KeeperHttpResponse
         try {
-            const response = await platform.post(url, payload.payload, {
+            response = await platform.post(url, payload.payload, {
                 PublicKeyId: transmissionKey.publicKeyId.toString(),
                 TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
                 Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
             })
-            if (response.statusCode == 200) {
-                await storage.saveBytes('cache', new Uint8Array([...transmissionKey.key, ...response.data]))
-            }
-            return response
         } catch (e) {
-            const cachedData = await storage.getBytes('cache')
-            if (!cachedData) {
-                throw new Error('Cached value does not exist')
+            const appKey = await storage.getBytes(KEY_APP_KEY)
+            if (!appKey || !isRawKeyBytes(appKey)) {
+                throw new KeeperError('Cached value does not exist')
             }
+            const raw = await storage.getBytes(CACHE_STORAGE_KEY)
+            if (!raw) {
+                throw new KeeperError('Cached value does not exist')
+            }
+            let cachedData: Uint8Array
+            try {
+                cachedData = await decodeCacheBlob(raw, await deriveCacheKey(appKey), maxCacheAgeMs)
+            } catch (e2: Error | any) {
+                throw new KeeperError(`Cached value is invalid: ${e2.message}`)
+            }
+            console.error(`Network request failed (${describeCause(e)}); serving cached response, which may be stale`)
             transmissionKey.key = cachedData.slice(0, 32)
             return {
                 statusCode: 200,
@@ -227,5 +244,17 @@ export function createCachingFunction(storage: KeyValueStorage): (url: string, t
                 headers: []
             }
         }
+        if (response.statusCode == 200) {
+            try {
+                const appKey = await storage.getBytes(KEY_APP_KEY)
+                if (appKey && isRawKeyBytes(appKey)) {
+                    const blob = await encodeCacheBlob(new Uint8Array([...transmissionKey.key, ...response.data]), await deriveCacheKey(appKey))
+                    await storage.saveBytes(CACHE_STORAGE_KEY, blob)
+                }
+            } catch (e: Error | any) {
+                console.error(`Failed to update cached response: ${e.message}`)
+            }
+        }
+        return response
     }
 }

@@ -1,58 +1,22 @@
-const fs = require('fs');
-
 const {
     getSecrets,
     initializeStorage,
     localConfigStorage,
-    postFunction
+    createCachingFunction
 } = require('@keeper-security/secrets-manager-core')
 
-const CACHE_FILENAME = 'cache.dat';
-
-// This is basic example of creating custom caching function
-// ⓘ This will store only last request, however you can use any tool to extend this functionality
-// ⓘ Stale cache entries can cause version mismatches if records are updated from other keepersecurity utils. Prefer fresh reads
-
-const cachingPostFunction = async (url, transmissionKey, payload, allowUnverifiedCertificate) => {
-    try {
-        const response = await postFunction(
-            url,
-            transmissionKey,
-            payload,
-            allowUnverifiedCertificate
-        )
-
-        if (response.statusCode == 200) {
-            fs.writeFileSync(CACHE_FILENAME, Buffer.concat([transmissionKey.key, response.data]))
-        }
-
-        return response
-    } catch (e) {
-        console.error(e)
-        let cachedData
-        try {
-            cachedData = fs.readFileSync(CACHE_FILENAME)
-        } catch {
-        }
-        if (!cachedData) {
-            throw new Error('Cached value does not exist')
-        }
-        console.log('Using cached data')
-        transmissionKey.key = cachedData.slice(0, 32)
-        return {
-            statusCode: 200,
-            data: cachedData.slice(32),
-            headers: []
-        }
-    }
-}
+// This is a basic example of using the SDK's built-in caching function.
+// ⓘ createCachingFunction stores only the last successful request, but you can supply your own
+//   queryFunction to extend this behavior.
+// ⓘ Stale cache entries can cause version mismatches if records are updated from other keepersecurity
+//   utils. createCachingFunction rejects cache entries older than its maxCacheAgeMs (default 24h).
 
 const getKeeperRecords = async () => {
     const storage = localConfigStorage("config.json")
 
     const options = {
         storage,
-        queryFunction: cachingPostFunction
+        queryFunction: createCachingFunction(storage)
     }
 
     // if your Keeper Account is in other region than US, update the hostname accordingly

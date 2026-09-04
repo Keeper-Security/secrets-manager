@@ -2,6 +2,7 @@ import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, Transmi
 import {webSafe64FromBytes, webSafe64ToBytes, tryParseInt} from './utils'
 import {parseNotation} from './notation'
 import {KeeperError, KeeperThrottleError, KeeperCryptoError, KeeperCryptoFailureReason, KeeperDecryptionErrorInfo} from './errors'
+import {KEY_APP_KEY} from './cache'
 
 export {KeyValueStorage} from './platform'
 
@@ -11,7 +12,6 @@ const KEY_SERVER_PUBLIC_KEY_ID = 'serverPublicKeyId'
 const KEY_SERVER_PUBLIC_KEY = 'serverPublicKey'
 const KEY_CLIENT_ID = 'clientId'
 const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the client before public key
-const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
 const KEY_OWNER_PUBLIC_KEY = 'appOwnerPublicKey' // The application owner public key, to create records
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
 
