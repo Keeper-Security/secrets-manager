@@ -1,7 +1,9 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey, inMemoryStorage} from "../platform";
-import {KeeperStorageError} from "../errors";
+import {KeeperError, KeeperStorageError} from "../errors";
+import {KEY_APP_KEY, deriveCacheKey, encodeCacheBlob, decodeCacheBlob, DEFAULT_MAX_CACHE_AGE_MS, isRawKeyBytes} from "../cache";
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import {randomBytes} from 'crypto';
 
 // fs.openSync's mode argument is only honored when the file is created; it is a no-op on an
@@ -34,7 +36,7 @@ const errorCode = (cause: unknown): string | undefined => {
 const isEnoent = (cause: unknown): boolean =>
     typeof cause === 'object' && cause !== null && (cause as NodeJS.ErrnoException).code === 'ENOENT'
 
-// Write-then-rename instead of truncate-then-write: fs.openSync(configName, 'w', ...)
+// Write-then-rename instead of truncate-then-write: fs.openSync(finalPath, 'w', ...)
 // truncates the destination before a single byte of new content lands, so a write
 // failure used to leave a 0-byte file behind, which the empty-file self-heal in
 // readStorage then treated as a legitimate fresh start on the next read - silently
@@ -44,27 +46,39 @@ const isEnoent = (cause: unknown): boolean =>
 // too. fsyncSync before the rename means this survives a real power-loss event, not
 // just a killed process.
 //
-// Resolving through realpathSync first (falling back to the literal path on ENOENT,
-// i.e. a first-ever write) means a symlinked configName - an externally-managed
-// "current config" convention, or the destination a caller's own tooling maintains -
-// gets written through rather than replaced by renameSync, which operates on the link
-// itself and never dereferences it (this is specified POSIX rename(2) behavior, not a
-// bug to work around here). This is the same approach the write-file-atomic package
-// (the de facto standard for this in the npm ecosystem) uses.
+// Deliberately does NOT resolve a symlink at finalPath - it operates on the literal path
+// given, and renameSync replaces whatever directory entry is there (a symlink included)
+// rather than dereferencing it (specified POSIX rename(2) behavior, not a bug to work around
+// here). This is the safe default: a caller-supplied or attacker-plantable symlink at the
+// write destination is never followed. The config file's write-through-a-symlink behavior
+// (an explicit, opt-in feature for an externally-managed "current config" convention) is the
+// caller's own choice, made by saveStorage resolving configName via realpathSync *before*
+// calling in here - see saveStorage below. The cache file (writeCacheFile) deliberately does
+// not do that resolution: there is no legitimate externally-managed symlink convention for a
+// path the SDK itself names and owns, so a symlink there is presumptively hostile and must be
+// replaced, never written through (this is exactly the arbitrary-file-overwrite KSM-1265's
+// security fix closes - regression test: "a symlink at the cache path is replaced by the
+// write, never followed").
 //
-// A hard link is a different problem realpathSync can't help with: it's a second
-// directory entry for the same inode, not a link to resolve, and renameSync only ever
-// updates the one entry it's given, leaving every other hard-linked path frozen at the
-// old content. Detecting nlink > 1 and writing in place instead trades away atomicity
-// for that one file - but only that file, every other config file still gets the
-// crash-safe path above. This mirrors Vim's backupcopy=auto: rename when the
-// destination is a plain, singly-linked file, write-through when it's a link.
-const writeConfigFile = (configName: string, data: string): void => {
-    let resolvedPath = configName
+// A hard link is a different problem symlink resolution can't help with either way: it's a
+// second directory entry for the same inode, not a link to resolve, and renameSync only ever
+// updates the one entry it's given, leaving every other hard-linked path frozen at the old
+// content. Detecting nlink > 1 (via lstatSync, so a symlink at finalPath is never followed
+// here either) and writing in place instead trades away atomicity for that one file - but
+// only that file, every other write through this function still gets the crash-safe path
+// above. This mirrors Vim's backupcopy=auto: rename when the destination is a plain,
+// singly-linked file, write-through when it's a link.
+//
+// Shared by both the config file (saveStorage) and the cache file (writeCacheFile) - one
+// atomic-write primitive, so a protection added for one (hard-link write-in-place,
+// fsync-before-rename) isn't something the other has to reimplement or drift out of sync with.
+//
+// fs.writeSync's overloads don't distribute over a string | Uint8Array union, so the two data
+// types need their own branch rather than one unbranched call.
+const writeFileAtomic = (finalPath: string, data: string | Uint8Array): void => {
     let stat: fs.Stats | undefined
     try {
-        resolvedPath = fs.realpathSync(configName)
-        stat = fs.statSync(resolvedPath)
+        stat = fs.lstatSync(finalPath)
     } catch (e) {
         if (!isEnoent(e)) {
             throw e
@@ -73,17 +87,17 @@ const writeConfigFile = (configName: string, data: string): void => {
 
     if (stat && stat.nlink > 1) {
         // O_NOFOLLOW: unlike the rename below, a plain open follows a symlink. Without it, an
-        // attacker with write access to this directory (the same threat the realpathSync
-        // resolution above defends against) could swap resolvedPath into a symlink between the
-        // statSync above and this open, redirecting the write to wherever it now points.
+        // attacker with write access to this directory could swap finalPath into a symlink
+        // between the lstatSync above and this open, redirecting the write to wherever it now
+        // points.
         //
         // fs.constants.O_NOFOLLOW does not exist on Windows (confirmed against Node's own
         // platform constants, the same gap KSM-1265's round-4 review found for O_DIRECTORY), so
         // this protection is accepted as POSIX-only for now, tracked alongside that same gap
         // rather than worked around here with a separate, weaker fallback.
-        const fd = fs.openSync(resolvedPath, fs.constants.O_RDWR | fs.constants.O_NOFOLLOW)
+        const fd = fs.openSync(finalPath, fs.constants.O_RDWR | fs.constants.O_NOFOLLOW)
         try {
-            const bytesWritten = fs.writeSync(fd, data)
+            const bytesWritten = typeof data === 'string' ? fs.writeSync(fd, data) : fs.writeSync(fd, data)
             fs.ftruncateSync(fd, bytesWritten)
             fs.fsyncSync(fd)
         } catch (writeError) {
@@ -96,14 +110,18 @@ const writeConfigFile = (configName: string, data: string): void => {
             throw writeError
         }
         fs.closeSync(fd)
-        chmodSecure(resolvedPath)
+        chmodSecure(finalPath)
         return
     }
 
-    const tmpPath = `${resolvedPath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
+    const tmpPath = `${finalPath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
     const fd = fs.openSync(tmpPath, 'w', 0o600)
     try {
-        fs.writeSync(fd, data)
+        if (typeof data === 'string') {
+            fs.writeSync(fd, data)
+        } else {
+            fs.writeSync(fd, data)
+        }
         fs.fsyncSync(fd)
     } catch (writeError) {
         try {
@@ -119,7 +137,7 @@ const writeConfigFile = (configName: string, data: string): void => {
     // must already be 0600 before the rename.
     chmodSecure(tmpPath)
     try {
-        fs.renameSync(tmpPath, resolvedPath)
+        fs.renameSync(tmpPath, finalPath)
     } catch (e) {
         try {
             fs.unlinkSync(tmpPath)
@@ -131,7 +149,7 @@ const writeConfigFile = (configName: string, data: string): void => {
     }
 }
 
-// A SIGKILL/OOM between opening the temp file and the rename in writeConfigFile leaves the
+// A SIGKILL/OOM between opening the temp file and the rename in writeFileAtomic leaves the
 // temp file behind permanently - it's never read back as config data, but it does hold a full
 // snapshot of every secret that was in storageData at that moment, so it shouldn't just sit on
 // disk forever. Swept here, on the next read, rather than at write time, since the crash that
@@ -170,7 +188,7 @@ const cleanupOrphanedTempFiles = (configName: string): void => {
         if (!entry.startsWith(prefix) || !entry.endsWith(suffix)) {
             continue
         }
-        // Matches the exact shape writeConfigFile produces (<pid>.<12 hex chars>) so this never
+        // Matches the exact shape writeFileAtomic produces (<pid>.<12 hex chars>) so this never
         // sweeps an unrelated file that merely shares the config's name as a prefix.
         const middle = entry.slice(prefix.length, entry.length - suffix.length)
         if (!/^\d+\.[0-9a-f]{12}$/.test(middle)) {
@@ -196,6 +214,12 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
     // getString/saveString/delete, because IndexedDB has no synchronous API to check eagerly
     // against - a structural difference between the two platforms, not a
     // stylistic one.
+    //
+    // Deliberately does not reject a symlinked configName. Kubernetes always mounts a Secret or
+    // ConfigMap as a symlink chain (configName -> ..data/<key> -> a timestamped directory), so
+    // rejecting a read through a symlink here breaks every pod that mounts config.json this way.
+    // Reading through a symlink was never the vulnerability - only a write redirected through one
+    // is - so symlink protection lives on the write path (saveStorage) instead.
     const readStorage = (): any => {
         if (!configName) {
             return {}
@@ -217,7 +241,7 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
             throw new KeeperStorageError(`Unable to read local config ${configName}: ${describeCause(e)}`, errorCode(e))
         }
         // An empty (or whitespace-only) file is a legitimate fresh start, not corruption.
-        // writeConfigFile's atomic rename path can no longer produce this by itself - a kill
+        // writeFileAtomic's atomic rename path can no longer produce this by itself - a kill
         // mid-write only ever leaves a temp file behind, configName itself is untouched until
         // the rename completes - but its hard-link write-in-place branch still writes into
         // configName directly, so a kill mid-write there can still leave it empty, and some
@@ -254,7 +278,21 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
             return
         }
         try {
-            writeConfigFile(configName, JSON.stringify(storageData, null, 2))
+            // Resolved here, not inside writeFileAtomic: this is the config file's own opt-in
+            // choice to write through a symlinked configName (an externally-managed "current
+            // config" convention some deployments use), not a default writeFileAtomic extends
+            // to every caller - the cache file (writeCacheFile) deliberately skips this
+            // resolution, see writeFileAtomic's own comment for why. Falls back to the literal
+            // path on ENOENT (a first-ever write, nothing to resolve yet).
+            let resolvedPath = configName
+            try {
+                resolvedPath = fs.realpathSync(configName)
+            } catch (e) {
+                if (!isEnoent(e)) {
+                    throw e
+                }
+            }
+            writeFileAtomic(resolvedPath, JSON.stringify(storageData, null, 2))
         } catch (e) {
             throw new KeeperStorageError(`Unable to save local config ${configName}: ${describeCause(e)}`, errorCode(e))
         }
@@ -313,37 +351,177 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
     }
 }
 
-export const cachingPostFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload): Promise<KeeperHttpResponse> => {
+// fs.constants.O_DIRECTORY/O_NOFOLLOW are undefined on Windows (same gap already tracked for
+// writeFileAtomic's hard-link branch). There, `x | undefined` coerces to plain `x` and the two
+// checks below silently stop verifying anything - not a crash, just a directory/file open with
+// no symlink protection at all. Unlike writeFileAtomic's hard-link branch (where O_NOFOLLOW is
+// one layer of defense-in-depth on top of an already-safe rename), this is the *only*
+// protection the cache directory/file has, so a silent no-op here is a bigger gap. There is no
+// good fallback available without a real openat()-style relative-to-fd primitive, which Node's
+// public fs API doesn't expose - accepted as a documented, POSIX-only limitation rather than
+// building a weaker check-then-open substitute, matching how KSM-1266's own review already
+// decided the identical Windows gap for O_NOFOLLOW.
+const hasDirectorySymlinkProtection = typeof fs.constants.O_DIRECTORY === 'number' && typeof fs.constants.O_NOFOLLOW === 'number'
+const cacheDirOpenFlags = hasDirectorySymlinkProtection ? fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW : fs.constants.O_DIRECTORY
+const cacheFileReadFlags = hasDirectorySymlinkProtection ? fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW : fs.constants.O_RDONLY
+
+const writeCacheFile = async (cachePath: string, cacheKey: Uint8Array, plaintext: Uint8Array, isDefaultCachePath: boolean): Promise<void> => {
+    cleanupOrphanedTempFiles(cachePath)
+    const dir = path.dirname(cachePath)
+    // A relative cachePath with no directory component resolves dir to '.', the process's
+    // current working directory - not a directory this function created or owns. Hardening a
+    // directory the caller never named is a surprising side effect, so directory-level
+    // hardening only applies when cachePath actually names a directory component. The default
+    // path is always absolute, so the security-relevant case is unaffected.
+    if (dir !== '.') {
+        // mkdirSync(recursive: true) follows a symlink in any existing ancestor segment - only
+        // the leaf gets an O_NOFOLLOW check below. Accepted as unclosable without a native
+        // openat2()-style RESOLVE_NO_SYMLINKS binding (Linux-only, and blanket rejection breaks
+        // legitimate ancestor symlinks like macOS's own /tmp -> /private/tmp); no fs library
+        // attempts this either.
+        //
+        // Permissions are only force-re-asserted on the SDK's own default path (~/.keeper),
+        // matching KSM-1263's file-level self-healing. A caller-supplied cachePath pointing at a
+        // pre-existing directory they own (e.g. a file directly inside $HOME) keeps its own
+        // permissions - narrowing a directory the SDK doesn't own is a bigger side effect than
+        // this fix should have, but the one directory it does own should still self-heal.
+        const dirExistedBefore = fs.existsSync(dir)
+        fs.mkdirSync(dir, {recursive: true, mode: 0o700})
+        // fchmodSync on the open fd, not chmodSync by path, pins the exact inode instead of
+        // re-resolving; O_DIRECTORY|O_NOFOLLOW on the open itself closes the mkdir-to-open gap
+        // (Windows caveat above).
+        const dfd = fs.openSync(dir, cacheDirOpenFlags)
+        try {
+            if (!dirExistedBefore || isDefaultCachePath) {
+                fs.fchmodSync(dfd, 0o700)
+            }
+        } finally {
+            fs.closeSync(dfd)
+        }
+    }
+    const blob = await encodeCacheBlob(plaintext, cacheKey)
+    writeFileAtomic(cachePath, blob)
+}
+
+// Bounds how much a corrupted, misconfigured, or maliciously-placed file at the cache path can
+// force this to allocate before decodeCacheBlob gets any chance to reject it. Real cache blobs
+// are tiny (a version byte, an 8-byte timestamp, and the encrypted response); generous headroom
+// over any real response, same shape as MAX_ERROR_BODY_DECODE_BYTES in keeper.ts.
+const MAX_CACHE_FILE_BYTES = 10 * 1024 * 1024
+
+const readCacheFile = async (cachePath: string, cacheKey: Uint8Array, maxCacheAgeMs: number): Promise<Uint8Array> => {
+    cleanupOrphanedTempFiles(cachePath)
+    let raw: Buffer
     try {
-        const response = await platform.post(url, payload.payload, {
-            PublicKeyId: transmissionKey.publicKeyId.toString(),
-            TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
-            Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-        })
-        if (response.statusCode == 200) {
-            // Create cache file with secure permissions (0600)
-            const cacheFd = fs.openSync('cache.dat', 'w', 0o600)
+        const dir = path.dirname(cachePath)
+        if (dir !== '.') {
+            // open-then-close is enough here (nothing needs to persist past the check), but it's
+            // the same O_DIRECTORY|O_NOFOLLOW atomic check-and-open writeCacheFile uses, so a
+            // symlinked cache directory is rejected on the read path too. Same residual
+            // re-resolution window as writeCacheFile's comment above.
+            const dfd = fs.openSync(dir, cacheDirOpenFlags)
+            fs.closeSync(dfd)
+        }
+        // O_NOFOLLOW folds the "not a symlink" check into the open itself, closing the gap a
+        // separate lstat-then-readFileSync would leave open (Windows caveat above).
+        const fd = fs.openSync(cachePath, cacheFileReadFlags)
+        try {
+            const size = fs.fstatSync(fd).size
+            if (size > MAX_CACHE_FILE_BYTES) {
+                throw new KeeperError(`Cache file ${cachePath} exceeds the maximum expected size`)
+            }
+            raw = fs.readFileSync(fd)
+        } finally {
+            fs.closeSync(fd)
+        }
+    } catch (e) {
+        if (e instanceof KeeperError) {
+            throw e
+        }
+        if (isEnoent(e)) {
+            throw new KeeperError('Cached value does not exist')
+        }
+        throw new KeeperError(`Unable to read cache file ${cachePath}: ${describeCause(e)}`)
+    }
+    try {
+        return await decodeCacheBlob(raw, cacheKey, maxCacheAgeMs)
+    } catch (e) {
+        throw new KeeperError(`Cache file ${cachePath} is invalid: ${describeCause(e)}`)
+    }
+}
+
+// Same closure shape and cache codec (../cache) as browser/localConfigStorage.ts's
+// createCachingFunction; only the storage medium differs (a file here, IndexedDB there).
+// Replaces the old standalone cachingPostFunction, which kept the AES key in plaintext beside
+// the ciphertext it protected, in a fixed CWD-relative file, with no integrity check on restore.
+// Fixing all three requires access to the config (to derive a cache key that isn't the
+// transmission key itself) and a chosen cache location, so the factory shape - not the old
+// zero-argument function - is what the fix needs.
+// An options object, not positional args: browser's createCachingFunction takes
+// (storage, maxCacheAgeMs?) - same position, different meaning than Node's second positional arg
+// would otherwise be. A number intended for maxCacheAgeMs silently landing on cachePath (or vice
+// versa) fails at runtime with a confusing path error; naming both fields turns that into a
+// compile-time type error instead.
+export const createCachingFunction = (
+    storage: KeyValueStorage,
+    options: {cachePath?: string, maxCacheAgeMs?: number} = {}
+): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean) => Promise<KeeperHttpResponse> => {
+    // Captured before defaulting, and threaded down to writeCacheFile: whether the SDK's own
+    // default directory (~/.keeper) always gets its permissions re-asserted, or a caller-owned
+    // directory is left alone once it exists - see writeCacheFile's own comment on this.
+    const isDefaultCachePath = options.cachePath === undefined
+    // Computed here, not at module scope: os.homedir() throws in an environment with no $HOME
+    // and no matching /etc/passwd entry for the current uid (some containers), and this only
+    // evaluates when the caller omits the field - so that failure now only reaches a caller who
+    // actually relies on the default, at call time, not every consumer who merely imports this
+    // module.
+    const cachePath = options.cachePath ?? path.join(os.homedir(), '.keeper', 'ksm-cache.dat')
+    const maxCacheAgeMs = options.maxCacheAgeMs ?? DEFAULT_MAX_CACHE_AGE_MS
+    return async (url, transmissionKey, payload, allowUnverifiedCertificate) => {
+        let response: KeeperHttpResponse
+        try {
+            response = await platform.post(url, payload.payload, {
+                PublicKeyId: transmissionKey.publicKeyId.toString(),
+                TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
+                Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
+            }, allowUnverifiedCertificate)
+        } catch (e) {
+            // A storage failure here (plausible during the same outage that took the network
+            // down, for a KMS-backed KeyValueStorage) is treated the same as "no usable app key
+            // yet" - both mean the cache can't be read, not a reason to let a different,
+            // unrelated exception replace the original network error's context.
+            let appKey: Uint8Array | undefined
             try {
-                fs.writeSync(cacheFd, Buffer.concat([transmissionKey.key, response.data]))
-            } finally {
-                fs.closeSync(cacheFd)
+                appKey = await storage.getBytes(KEY_APP_KEY)
+            } catch {
+                appKey = undefined
+            }
+            if (!appKey || !isRawKeyBytes(appKey)) {
+                throw new KeeperError('Cached value does not exist')
+            }
+            const cachedData = await readCacheFile(cachePath, await deriveCacheKey(appKey), maxCacheAgeMs)
+            console.error(`Network request failed (${describeCause(e)}); serving cached response, which may be stale`)
+            transmissionKey.key = cachedData.slice(0, 32)
+            return {
+                statusCode: 200,
+                data: cachedData.slice(32),
+                headers: []
+            }
+        }
+        if (response.statusCode == 200) {
+            try {
+                const appKey = await storage.getBytes(KEY_APP_KEY)
+                // Same isRawKeyBytes guard as the fallback branch above - without it, a
+                // non-raw-bytes value (e.g. a wrapped CryptoKey under a hypothetical Node
+                // useObjects mode) reaches deriveCacheKey unchecked and logs a confusing
+                // internal TypeError instead of just skipping the cache write cleanly.
+                if (appKey && isRawKeyBytes(appKey)) {
+                    await writeCacheFile(cachePath, await deriveCacheKey(appKey), Buffer.concat([transmissionKey.key, response.data]), isDefaultCachePath)
+                }
+            } catch (e) {
+                console.error(`Failed to update cached response: ${describeCause(e)}`)
             }
         }
         return response
-    } catch (e) {
-        let cachedData
-        try {
-            cachedData = fs.readFileSync('cache.dat')
-        } catch {
-        }
-        if (!cachedData) {
-            throw new Error('Cached value does not exist')
-        }
-        transmissionKey.key = cachedData.slice(0, 32)
-        return {
-            statusCode: 200,
-            data: cachedData.slice(32),
-            headers: []
-        }
     }
 }
