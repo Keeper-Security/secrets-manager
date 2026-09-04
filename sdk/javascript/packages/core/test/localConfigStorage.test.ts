@@ -902,4 +902,27 @@ describe('createCachingFunction (KSM-1265)', () => {
             (os as any).homedir = originalHomedir
         }
     })
+
+    test('the default ~/.keeper directory keeps self-healing even once it already exists, unlike a caller-supplied one', async () => {
+        const storage = await makeStorageWithAppKey()
+        const originalHomedir = os.homedir
+        ;(os as any).homedir = () => tmpDir
+        try {
+            const defaultDir = path.join(tmpDir, '.keeper')
+            fs.mkdirSync(defaultDir, { mode: 0o755 })
+
+            const caching = createCachingFunction(storage)
+            platform.post = async () => ({ statusCode: 200, data: enc.encode('{}'), headers: [] })
+            await caching('https://example.com', fakeTransmissionKey(), fakePayload)
+
+            // Unlike a caller-supplied cachePath (see the test above this one), the SDK's own
+            // default directory is force-reasserted to 0700 even though it already existed -
+            // it's the one directory the SDK unambiguously owns, so it should keep self-healing
+            // the same way KSM-1263 already does for the file, not silently trust whatever
+            // permissions it happens to find on a second or later run.
+            expect(fs.statSync(defaultDir).mode & 0o777).toBe(0o700)
+        } finally {
+            (os as any).homedir = originalHomedir
+        }
+    })
 })

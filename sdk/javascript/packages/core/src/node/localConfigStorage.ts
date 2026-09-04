@@ -365,7 +365,7 @@ const hasDirectorySymlinkProtection = typeof fs.constants.O_DIRECTORY === 'numbe
 const cacheDirOpenFlags = hasDirectorySymlinkProtection ? fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW : fs.constants.O_DIRECTORY
 const cacheFileReadFlags = hasDirectorySymlinkProtection ? fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW : fs.constants.O_RDONLY
 
-const writeCacheFile = async (cachePath: string, cacheKey: Uint8Array, plaintext: Uint8Array): Promise<void> => {
+const writeCacheFile = async (cachePath: string, cacheKey: Uint8Array, plaintext: Uint8Array, isDefaultCachePath: boolean): Promise<void> => {
     cleanupOrphanedTempFiles(cachePath)
     const dir = path.dirname(cachePath)
     // A relative cachePath with no directory component resolves dir to '.', the process's
@@ -374,41 +374,25 @@ const writeCacheFile = async (cachePath: string, cacheKey: Uint8Array, plaintext
     // hardening only applies when cachePath actually names a directory component. The default
     // path is always absolute, so the security-relevant case is unaffected.
     if (dir !== '.') {
-        // mkdirSync(recursive: true) follows a symlink in any existing ancestor segment of a
-        // custom, multi-segment cachePath - only the leaf gets an O_NOFOLLOW check below. A
-        // pre-planted symlink ancestor (e.g. an attacker who can write to /shared pre-creates
-        // /shared/ksm as a symlink before this code ever runs, given cachePath under
-        // /shared/ksm/nested/cache.dat) silently relocates the whole cache, no race required.
-        // Accepted as a structurally-unclosable limitation without a native openat2()-style
-        // RESOLVE_NO_SYMLINKS binding (Linux-only even then, and its own author documents that
-        // blanket rejection breaks legitimate ancestor symlinks - confirmed directly: a first
-        // attempt at a plain lstat-every-segment check broke on macOS's own /tmp -> /private/tmp
-        // convention, indistinguishable by inspection from an attacker-planted one). No portable
-        // fix exists in Node's plain fs API; none of mkdirp/make-dir/write-file-atomic attempt
-        // one either. Same shape as the Windows O_NOFOLLOW gap already documented in this file.
-        // Unlike KSM-1263's file-level re-assertion (which runs on every write, since the SDK
-        // exclusively owns that one file it names), this only re-chmods the directory when this
-        // call is the one that just created it. A directory that already existed - most
-        // plausibly a caller-supplied cachePath pointing somewhere the caller manages, e.g. a
-        // file directly inside $HOME - keeps whatever permissions its actual owner set; the SDK
-        // doesn't forcibly narrow permissions on a resource it doesn't own. This matches the
-        // pattern documented for npm's own cache/config directory ("there are times when you do
-        // not want to change ownership of the default directory... configure a different
-        // directory altogether") and avoids the exact bug shape filed against another CLI's
-        // config-dir hardening (unconditional per-run chmod silently overriding a user's own
-        // chosen mode on a directory they own) - researched this session, not just inferred.
+        // mkdirSync(recursive: true) follows a symlink in any existing ancestor segment - only
+        // the leaf gets an O_NOFOLLOW check below. Accepted as unclosable without a native
+        // openat2()-style RESOLVE_NO_SYMLINKS binding (Linux-only, and blanket rejection breaks
+        // legitimate ancestor symlinks like macOS's own /tmp -> /private/tmp); no fs library
+        // attempts this either.
+        //
+        // Permissions are only force-re-asserted on the SDK's own default path (~/.keeper),
+        // matching KSM-1263's file-level self-healing. A caller-supplied cachePath pointing at a
+        // pre-existing directory they own (e.g. a file directly inside $HOME) keeps its own
+        // permissions - narrowing a directory the SDK doesn't own is a bigger side effect than
+        // this fix should have, but the one directory it does own should still self-heal.
         const dirExistedBefore = fs.existsSync(dir)
         fs.mkdirSync(dir, {recursive: true, mode: 0o700})
-        // O_DIRECTORY|O_NOFOLLOW makes "is this a real directory, not a symlink" and the open
-        // the same syscall, so there's no gap between a check and a separate mkdirSync/chmodSync
-        // for a symlink to be swapped into (Windows caveat above). fchmodSync operates on the fd
-        // this open returned, pinning the exact inode instead of re-resolving the path a second
-        // time - though re-resolution still happens at the later file open below, since Node
-        // has no relative-to-this-fd open; that residual window is narrow (already-checked
-        // directory to already-checked file, both immediately adjacent to their use) but real.
+        // fchmodSync on the open fd, not chmodSync by path, pins the exact inode instead of
+        // re-resolving; O_DIRECTORY|O_NOFOLLOW on the open itself closes the mkdir-to-open gap
+        // (Windows caveat above).
         const dfd = fs.openSync(dir, cacheDirOpenFlags)
         try {
-            if (!dirExistedBefore) {
+            if (!dirExistedBefore || isDefaultCachePath) {
                 fs.fchmodSync(dfd, 0o700)
             }
         } finally {
@@ -480,17 +464,20 @@ const readCacheFile = async (cachePath: string, cacheKey: Uint8Array, maxCacheAg
 // compile-time type error instead.
 export const createCachingFunction = (
     storage: KeyValueStorage,
-    {
-        // Computed here, not at module scope: os.homedir() throws in an environment with no $HOME
-        // and no matching /etc/passwd entry for the current uid (some containers), and a default
-        // parameter only evaluates when the caller omits the field - so that failure now only
-        // reaches a caller who actually relies on the default, at call time, not every consumer
-        // who merely imports this module.
-        cachePath = path.join(os.homedir(), '.keeper', 'ksm-cache.dat'),
-        maxCacheAgeMs = DEFAULT_MAX_CACHE_AGE_MS
-    }: {cachePath?: string, maxCacheAgeMs?: number} = {}
-): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean) => Promise<KeeperHttpResponse> =>
-    async (url, transmissionKey, payload, allowUnverifiedCertificate) => {
+    options: {cachePath?: string, maxCacheAgeMs?: number} = {}
+): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean) => Promise<KeeperHttpResponse> => {
+    // Captured before defaulting, and threaded down to writeCacheFile: whether the SDK's own
+    // default directory (~/.keeper) always gets its permissions re-asserted, or a caller-owned
+    // directory is left alone once it exists - see writeCacheFile's own comment on this.
+    const isDefaultCachePath = options.cachePath === undefined
+    // Computed here, not at module scope: os.homedir() throws in an environment with no $HOME
+    // and no matching /etc/passwd entry for the current uid (some containers), and this only
+    // evaluates when the caller omits the field - so that failure now only reaches a caller who
+    // actually relies on the default, at call time, not every consumer who merely imports this
+    // module.
+    const cachePath = options.cachePath ?? path.join(os.homedir(), '.keeper', 'ksm-cache.dat')
+    const maxCacheAgeMs = options.maxCacheAgeMs ?? DEFAULT_MAX_CACHE_AGE_MS
+    return async (url, transmissionKey, payload, allowUnverifiedCertificate) => {
         let response: KeeperHttpResponse
         try {
             response = await platform.post(url, payload.payload, {
@@ -529,7 +516,7 @@ export const createCachingFunction = (
                 // useObjects mode) reaches deriveCacheKey unchecked and logs a confusing
                 // internal TypeError instead of just skipping the cache write cleanly.
                 if (appKey && isRawKeyBytes(appKey)) {
-                    await writeCacheFile(cachePath, await deriveCacheKey(appKey), Buffer.concat([transmissionKey.key, response.data]))
+                    await writeCacheFile(cachePath, await deriveCacheKey(appKey), Buffer.concat([transmissionKey.key, response.data]), isDefaultCachePath)
                 }
             } catch (e) {
                 console.error(`Failed to update cached response: ${describeCause(e)}`)
@@ -537,3 +524,4 @@ export const createCachingFunction = (
         }
         return response
     }
+}
