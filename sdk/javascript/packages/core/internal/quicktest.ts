@@ -42,4 +42,7 @@ async function test() {
     // console.log(fileData)
 }
 
-test().finally()
+test().catch((e) => {
+    console.error(`quicktest failed: ${e?.message ?? String(e)}`)
+    process.exitCode = 1
+})

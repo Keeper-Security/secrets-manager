@@ -69,7 +69,7 @@ export type SecretManagerOptions = {
 
 // Error classes live in a dependency-free module (errors.ts) to avoid a circular import with
 // utils.ts/platform code that throws them; re-exported here so the public API is unchanged.
-export {KeeperError, KeeperThrottleError, KeeperCryptoError} from './errors'
+export {KeeperError, KeeperThrottleError, KeeperCryptoError, KeeperStorageError} from './errors'
 export type {KeeperCryptoFailureReason, KeeperDecryptionErrorInfo} from './errors'
 
 // Returns a jitter multiplier in [0, 0.25). One-sided so the delay never drops below the
