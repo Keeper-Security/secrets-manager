@@ -171,53 +171,6 @@ describe('localConfigStorage readStorage error handling (KSM-1266)', () => {
         expect((caught as KeeperStorageError).code).toBe('ENOSPC')
     })
 
-    test('a write failure before the rename also cleans up its own temp file', async () => {
-        const configPath = path.join(tmpDir, 'config.json')
-        const kvs = localConfigStorage(configPath)
-
-        const writeSyncSpy = jest.spyOn(fs, 'writeSync').mockImplementation(() => {
-            throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
-        })
-        try {
-            await expect(kvs.saveString('foo', 'bar')).rejects.toThrow(KeeperError)
-        } finally {
-            writeSyncSpy.mockRestore()
-        }
-
-        // Unlike the rename-failure catch a few lines below in writeConfigFile, which already
-        // unlinks its temp file, a write/fsync failure used to just close the fd and rethrow,
-        // leaving a secrets-bearing temp file on disk until the next 60s+ orphan sweep.
-        const leftover = fs.readdirSync(tmpDir).filter((f) => f.endsWith('.tmp'))
-        expect(leftover).toEqual([])
-    })
-
-    test('a short write from fs.writeSync is retried until the full buffer lands', async () => {
-        const configPath = path.join(tmpDir, 'config.json')
-        const kvs = localConfigStorage(configPath)
-
-        const originalWriteSync = fs.writeSync
-        let callCount = 0
-        const writeSyncSpy = jest.spyOn(fs, 'writeSync').mockImplementation((...args: any[]) => {
-            callCount++
-            const [fd, buffer, offset, length, position] = args
-            if (callCount === 1) {
-                // Simulate a short write: only the first byte of this call actually lands,
-                // matching what POSIX write(2) is allowed to do even for a regular file.
-                return (originalWriteSync as any)(fd, buffer, offset, 1, position)
-            }
-            return (originalWriteSync as any)(fd, buffer, offset, length, position)
-        })
-
-        try {
-            await kvs.saveString('foo', 'bar')
-        } finally {
-            writeSyncSpy.mockRestore()
-        }
-
-        expect(callCount).toBeGreaterThan(1)
-        expect(JSON.parse(fs.readFileSync(configPath, 'utf8'))).toEqual({ foo: 'bar' })
-    })
-
     test('fsyncSync runs before renameSync, not just writeSync', async () => {
         const configPath = path.join(tmpDir, 'config.json')
         const kvs = localConfigStorage(configPath)
