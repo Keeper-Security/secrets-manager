@@ -447,6 +447,21 @@ test('the catch-all throw truncates its message to 1000 bytes, not the full body
     expect(error.message).toContain('"error":"not_recognized"')
 })
 
+test('a zero-length response body on a non-200 response falls through to the generic error, not a blank one', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    // Node's fetchData leaves data: null for an empty body; the browser platform always
+    // constructs `new Uint8Array(body)`, so an empty body is still a truthy, zero-length
+    // array there. This models the browser shape directly - a truthiness check alone (no
+    // `.length > 0`) would take the has-content branch and throw a blank Error(''), instead
+    // of falling through to the "unknown ksm error" branch below it, exactly as Node does.
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => ({ statusCode: 400, data: new Uint8Array(0), headers: [] })
+    }
+    await expect(getSecrets(options)).rejects.toThrow('unknown ksm error, code 400')
+})
+
 test('key rotation - suggested key id is adopted from a body padded past the 1000-byte truncation slice', async () => {
     const storage = inMemoryStorage({})
     await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
