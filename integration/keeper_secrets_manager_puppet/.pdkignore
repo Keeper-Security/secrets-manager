@@ -1,0 +1,93 @@
+# Git
+.git/
+.gitattributes
+.gitignore
+
+# Editor files
+.*.sw[op]
+*.iml
+.project
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Puppet module specific
+.metadata
+.yardoc
+.yardwarns
+.resource_types
+.modules
+.task_cache.json
+.plan_cache.json
+.rerun.json
+
+# Build artifacts
+/pkg/
+/coverage/
+/junit/
+/log/
+/tmp/
+
+# Development files
+/.bundle/
+/.vendor/
+/vendor/
+/Gemfile.local
+/Gemfile.lock
+/.fixtures.yml
+/.sync.yml
+/.rspec
+/.yardopts
+/.pdkignore
+/.puppet-lint.rc
+/Rakefile
+/rakelib/
+
+# Documentation
+/doc/
+/bin/
+
+# Testing
+/spec/fixtures/manifests/
+/spec/fixtures/modules/*
+/spec/fixtures/litmus_inventory.yaml
+/inventory.yaml
+
+# Bolt
+bolt-debug.log
+convert_report.txt
+update_report.txt
+
+# Environment
+.envrc
+
+# Python cache (for your Python scripts)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Exclude spec directory from package (tests should not be in published module)
+/spec/
+
+# Exclude development configuration
+/.github/
+/.devcontainer/
+/..yml

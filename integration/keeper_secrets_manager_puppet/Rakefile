@@ -1,0 +1,43 @@
+# frozen_string_literal: true
+
+require 'bundler'
+require 'puppet_litmus/rake_tasks' if Gem.loaded_specs.key? 'puppet_litmus'
+require 'puppetlabs_spec_helper/rake_tasks'
+require 'puppet-syntax/tasks/puppet-syntax'
+require 'puppet-strings/tasks' if Gem.loaded_specs.key? 'puppet-strings'
+require 'rake'
+require 'rspec/core/rake_task'
+
+PuppetLint.configuration.send('disable_relative')
+PuppetLint.configuration.send('disable_80chars')
+PuppetLint.configuration.send('disable_140chars')
+PuppetLint.configuration.send('disable_class_inherits_from_params_class')
+PuppetLint.configuration.send('disable_autoloader_layout')
+PuppetLint.configuration.send('disable_documentation')
+PuppetLint.configuration.send('disable_single_quote_string_with_variables')
+PuppetLint.configuration.fail_on_warnings = true
+PuppetLint.configuration.ignore_paths = [".vendor/**/*.pp", ".bundle/**/*.pp", "pkg/**/*.pp", "spec/**/*.pp", "tests/**/*.pp", "types/**/*.pp", "vendor/**/*.pp"]
+
+# Custom task for Files unit tests
+desc 'Run Files unit tests'
+task :test_files do
+  puts "Running Files unit tests..."
+  
+  test_script = File.join(__dir__, 'spec', 'files', 'run_tests.sh')
+  unless File.exist?(test_script)
+    puts "❌ Error: Test script for files not found at #{test_script}"
+    exit 1
+  end
+  
+  # Make script executable and run it
+  system("chmod +x #{test_script}")
+  result = system(test_script)
+  
+  unless result
+    puts "❌ Files unit tests failed!"
+    exit 1
+  end
+  
+  puts "✅ Files unit tests completed successfully!"
+end
+
