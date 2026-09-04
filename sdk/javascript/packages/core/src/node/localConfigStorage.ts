@@ -34,20 +34,6 @@ const errorCode = (cause: unknown): string | undefined => {
 const isEnoent = (cause: unknown): boolean =>
     typeof cause === 'object' && cause !== null && (cause as NodeJS.ErrnoException).code === 'ENOENT'
 
-// A single fs.writeSync call is not guaranteed to write the whole buffer - POSIX write(2) can
-// return fewer bytes than requested. Looping until every byte is written, rather than trusting
-// one call and fsync-ing whatever actually landed, is what keeps a rare short write from
-// silently committing truncated JSON as the new config, undercutting the "fail loudly rather
-// than guess" goal the rest of this file is built around.
-const writeFullySync = (fd: number, data: string): number => {
-    const buffer = Buffer.from(data, 'utf8')
-    let written = 0
-    while (written < buffer.length) {
-        written += fs.writeSync(fd, buffer, written, buffer.length - written)
-    }
-    return buffer.length
-}
-
 // Write-then-rename instead of truncate-then-write: fs.openSync(configName, 'w', ...)
 // truncates the destination before a single byte of new content lands, so a write
 // failure used to leave a 0-byte file behind, which the empty-file self-heal in
@@ -92,22 +78,12 @@ const writeConfigFile = (configName: string, data: string): void => {
         // statSync above and this open, redirecting the write to wherever it now points.
         //
         // fs.constants.O_NOFOLLOW does not exist on Windows (confirmed against Node's own
-        // platform constants, the same gap KSM-1265's round-4 review found for O_DIRECTORY),
-        // so `O_RDWR | O_NOFOLLOW` there would silently coerce to plain O_RDWR - not a crash,
-        // just a silent loss of this protection on that one platform. Falling back to an
-        // explicit lstatSync check right before the open keeps this loud there instead: still a
-        // narrower, race-prone check-then-open rather than one atomic syscall, but a real
-        // attacker with no timing control at all is still caught, where a silent no-op would
-        // have caught nothing.
-        if (typeof fs.constants.O_NOFOLLOW !== 'number' && fs.lstatSync(resolvedPath).isSymbolicLink()) {
-            throw new Error(`Refusing to follow symlink at ${resolvedPath}`)
-        }
-        const openFlags = typeof fs.constants.O_NOFOLLOW === 'number'
-            ? fs.constants.O_RDWR | fs.constants.O_NOFOLLOW
-            : fs.constants.O_RDWR
-        const fd = fs.openSync(resolvedPath, openFlags)
+        // platform constants, the same gap KSM-1265's round-4 review found for O_DIRECTORY), so
+        // this protection is accepted as POSIX-only for now, tracked alongside that same gap
+        // rather than worked around here with a separate, weaker fallback.
+        const fd = fs.openSync(resolvedPath, fs.constants.O_RDWR | fs.constants.O_NOFOLLOW)
         try {
-            const bytesWritten = writeFullySync(fd, data)
+            const bytesWritten = fs.writeSync(fd, data)
             fs.ftruncateSync(fd, bytesWritten)
             fs.fsyncSync(fd)
         } catch (writeError) {
@@ -125,13 +101,9 @@ const writeConfigFile = (configName: string, data: string): void => {
     }
 
     const tmpPath = `${resolvedPath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
-    // 'wx' (O_CREAT|O_EXCL) instead of plain 'w': the 48 bits of randomness in tmpPath already
-    // make guessing this exact name infeasible, but O_EXCL means opening it can never silently
-    // follow or overwrite something already there (a leftover, or an astronomically unlikely
-    // collision) instead of failing loudly.
-    const fd = fs.openSync(tmpPath, 'wx', 0o600)
+    const fd = fs.openSync(tmpPath, 'w', 0o600)
     try {
-        writeFullySync(fd, data)
+        fs.writeSync(fd, data)
         fs.fsyncSync(fd)
     } catch (writeError) {
         try {
@@ -139,14 +111,6 @@ const writeConfigFile = (configName: string, data: string): void => {
         } catch {
             // Same as above: a close failure here is secondary to the write error that
             // caused this branch, don't let it replace the error that actually matters.
-        }
-        try {
-            fs.unlinkSync(tmpPath)
-        } catch {
-            // Best-effort, same as the rename-failure cleanup below - a failed write can still
-            // have left a partial temp file (containing a full secrets snapshot) behind, no
-            // reason to wait for the next orphan sweep to remove it when we already know it's
-            // dead right here.
         }
         throw writeError
     }
