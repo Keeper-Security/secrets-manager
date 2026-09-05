@@ -2,10 +2,11 @@ import {
     KeeperHttpResponse,
     getSecrets,
     getFolders,
+    deleteSecret,
     initializeStorage,
     generateTransmissionKey,
     platform,
-    SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword
+    SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword, KeeperError
 } from '../'
 
 import * as fs from 'fs'
@@ -450,6 +451,86 @@ test('IL5 dynamic key - Layer 2: rejects malformed (too short) serverPublicKey',
     await expect(
         initializeStorage(storage, 'IL5:ONE_TIME_TOKEN:20:tooshort')
     ).rejects.toThrow('IL5 token: serverPublicKey appears malformed')
+})
+
+test('IL5 dynamic key - Layer 2: rejects a serverPublicKeyId of 0, as a typed KeeperError', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    let caught: unknown
+    try {
+        await initializeStorage(storage, `IL5:ONE_TIME_TOKEN:0:${fakeKey}`)
+    } catch (e) {
+        caught = e
+    }
+    expect(caught).toBeInstanceOf(KeeperError)
+    expect((caught as Error).message).toBe("IL5 token: serverPublicKeyId '0' must be a positive integer")
+})
+
+test('a custom serverPublicKey with no id throws instead of silently pinning', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    await expect(getSecrets({storage, serverPublicKey: fakeKey}))
+        .rejects.toThrow('serverPublicKeyId is required when serverPublicKey is supplied')
+    expect(await storage.getString('serverPublicKey')).toBeUndefined()
+})
+
+test('a stored custom key with no paired id fails loud at read time instead of defaulting the wire id to 7', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    // Simulates a config written by a pre-fix SDK build or hand-edited directly - the normal
+    // write path (persistServerPublicKeyOptions) can no longer produce this state itself.
+    await storage.saveString('serverPublicKey', fakeKey)
+    await expect(generateTransmissionKey(storage))
+        .rejects.toThrow('Stored serverPublicKey has no paired serverPublicKeyId; configuration is inconsistent')
+})
+
+test('an id-only call cannot silently overwrite an already-pinned custom key\'s id with an unrelated value', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    await getSecrets({
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
+        queryFunction: async (_url, tk) => ({statusCode: 200, data: await platform.encryptWithKey(new TextEncoder().encode(JSON.stringify({records: [], folders: [], expiresOn: 0, warnings: []})), tk.key), headers: []})
+    })
+    await expect(getSecrets({storage, serverPublicKeyId: '9999'}))
+        .rejects.toThrow("serverPublicKeyId '9999' does not match the already-pinned custom key's id")
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
+test('60 concurrent trials pinning two different (key, id) pairs never settle on a torn pair', async () => {
+    const pairA = {serverPublicKey: 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM', serverPublicKeyId: '20'}
+    const pairB = {serverPublicKey: 'BGEC5d5cCRRfyTqoKNYHj5x-LNYlUvZQ55v6xMWFNctGvKT-ao73iN1he8XCMzbT5eYkkdW5UFuJ1Z8E-_cxn58', serverPublicKeyId: '21'}
+    const okQuery = () => async (_url: string, tk: any) => ({statusCode: 200, data: await platform.encryptWithKey(new TextEncoder().encode(JSON.stringify({records: []})), tk.key), headers: []})
+    // Jitter goes on the storage layer, not the network mock - the race is in
+    // persistServerPublicKeyOptions's own read-then-write, which completes before any network
+    // call happens. A random delay on saveString gives two concurrent calls' id and key writes
+    // a real chance to interleave, the same way a controlled interleaving storage stub does.
+    // deleteSecret, not getSecrets: getSecrets persists through both fetchAndDecryptSecrets and
+    // postQuery per call, giving each side a self-correcting second attempt that masks the race;
+    // deleteSecret only goes through postQuery, exercising the single-attempt path directly.
+    const jitteredStorage = (inner: SecretManagerOptions['storage']): SecretManagerOptions['storage'] => ({
+        ...inner,
+        saveString: async (key: string, value: string) => {
+            await new Promise(resolve => setTimeout(resolve, Math.random() * 4))
+            return inner.saveString(key, value)
+        }
+    })
+    for (let trial = 0; trial < 60; trial++) {
+        const storage = jitteredStorage(inMemoryStorage({}))
+        await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+        await Promise.all([
+            deleteSecret({storage, ...pairA, queryFunction: okQuery()}, ['x']),
+            deleteSecret({storage, ...pairB, queryFunction: okQuery()}, ['y'])
+        ])
+        const settledKey = await storage.getString('serverPublicKey')
+        const settledId = await storage.getString('serverPublicKeyId')
+        const matchesA = settledKey === pairA.serverPublicKey && settledId === pairA.serverPublicKeyId
+        const matchesB = settledKey === pairB.serverPublicKey && settledId === pairB.serverPublicKeyId
+        expect(matchesA || matchesB).toBe(true)
+    }
 })
 
 test('getFolders skips an undecryptable folder and returns the good one', async () => {
