@@ -761,27 +761,74 @@ export const postFunction = async (url: string, transmissionKey: TransmissionKey
         }, allowUnverifiedCertificate)
 }
 
-export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => {
+// A stored id outside the bundled table (e.g. an older SDK build persisted an unvalidated
+// server-suggested key) must not permanently block every request. Falling back to this default
+// key for that one call, instead of throwing, means the request still goes out and a future
+// rotation hint (or a caller re-pinning a valid pair) can steer storage back to a valid id. This
+// fallback is never persisted here - generateTransmissionKey is a read, and writing here could
+// race a concurrent custom-key pin or a concurrent rotation write.
+const DEFAULT_KEY_NUMBER = 7
+
+// Serializes every read and write of the serverPublicKey/serverPublicKeyId pair against one
+// queue per storage instance, closing the torn-pair race two concurrent calls sharing one
+// SecretsManager/storage instance could otherwise hit (reproduced in 24 of 60 trials before
+// this existed). Mirrors localConfigStorage.ts's mutateAndPersist chaining, minus its snapshot/
+// rollback - there's no single in-memory blob to roll back, the invariant spans two storage keys
+// across several call sites. A WeakMap, not a Map: keeper.ts doesn't own a storage instance's
+// lifecycle, so a plain Map would leak one entry per instance forever.
+//
+// Scoped to same-process concurrency only. Two processes or tabs sharing one physical config is
+// a separate, unclosed concern - most storage backends already do a non-transactional whole-
+// config overwrite on every save regardless of this key pair, and each instance normally owns
+// its own config anyway. Documented as an accepted boundary, not fixed.
+const pendingServerKeyOperations = new WeakMap<KeyValueStorage, Promise<unknown>>()
+
+const serializeOn = <T>(storage: KeyValueStorage, fn: () => Promise<T>): Promise<T> => {
+    const pending = pendingServerKeyOperations.get(storage) ?? Promise.resolve()
+    const operation = pending.then(fn)
+    // A rejected promise stored here would permanently poison every later call chained onto it;
+    // converting to a resolved undefined only affects this internal chaining variable - the
+    // operation returned below still rejects normally for the caller that awaits it directly.
+    pendingServerKeyOperations.set(storage, operation.then(() => undefined, () => undefined))
+    return operation
+}
+
+// Shared by every call site that validates a caller-supplied serverPublicKeyId string. The
+// postQuery rotation branch validates an already-parsed JSON number instead, a different input
+// contract, so it stays separate rather than routing through this helper.
+const parseServerKeyId = (serverPublicKeyId: string): number => {
+    const parsedKeyId = Number(serverPublicKeyId)
+    if (!Number.isInteger(parsedKeyId) || parsedKeyId <= 0) {
+        throw new KeeperError(`serverPublicKeyId '${serverPublicKeyId}' must be a positive integer`)
+    }
+    return parsedKeyId
+}
+
+export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => serializeOn(storage, async () => {
     const transmissionKey = platform.getRandomBytes(32)
     const keyNumberString = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-    const keyNumber = keyNumberString ? Number(keyNumberString) : 7
     const customPublicKeyB64 = await storage.getString(KEY_SERVER_PUBLIC_KEY)
     if (customPublicKeyB64) {
+        // No safe fallback for a missing or corrupted id here: falling back to a bundled key
+        // would mean silently encrypting with a key the caller didn't choose. Self-heals once
+        // the caller supplies serverPublicKey and serverPublicKeyId together again.
+        if (!keyNumberString) {
+            throw new KeeperError('Stored serverPublicKey has no paired serverPublicKeyId; configuration is inconsistent')
+        }
+        const keyNumber = parseServerKeyId(keyNumberString)
         const customPublicKey = webSafe64ToBytes(customPublicKeyB64)
         const encryptedKey = await platform.publicEncrypt(transmissionKey, customPublicKey)
         return { publicKeyId: keyNumber, key: transmissionKey, encryptedKey }
     }
-    const keeperPublicKey = keeperPublicKeys[keyNumber]
-    if (!keeperPublicKey) {
-        throw new Error(`Key number ${keyNumber} is not supported`)
-    }
-    const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[keyNumber])
+    const keyNumber = keyNumberString ? Number(keyNumberString) : DEFAULT_KEY_NUMBER
+    const effectiveKeyNumber = keyNumber in keeperPublicKeys ? keyNumber : DEFAULT_KEY_NUMBER
+    const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[effectiveKeyNumber])
     return {
-        publicKeyId: keyNumber,
+        publicKeyId: effectiveKeyNumber,
         key: transmissionKey,
         encryptedKey: encryptedKey
     }
-}
+})
 
 const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload | FileUploadPayload): Promise<EncryptedPayload> => {
     const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
@@ -792,13 +839,85 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
     return {payload: encryptedPayload, signature}
 }
+
+// Shared by postQuery, fetchAndDecryptSecrets, and initializeStorage's custom-key token branch -
+// one place for this validation and serialization instead of three.
+//
+// A custom key is never valid without an id (no default custom key exists to fall back to), so
+// this also closes "key-only rotation leaves a stale id" and "a caller replaying a stale
+// options object silently reverts a server-driven correction" for the custom-key case.
+//
+// Still open: the same stale-options-object problem for a bundled-table, id-only pin (no custom
+// key). postQuery's rotation branch writes the server-suggested id directly; a caller replaying
+// an old `{serverPublicKeyId: '7'}` object after the server rotated to '8' will revert storage
+// back to '7' on its next call. No fix here that isn't worse than the gap - either mutate an
+// object the caller owns, or stop treating "id differs from stored" as caller intent, which
+// breaks the legitimate case of a caller actually wanting to pin a different id.
+const persistServerPublicKeyOptions = async (
+    storage: KeyValueStorage,
+    serverPublicKey: string | undefined,
+    serverPublicKeyId: string | undefined
+): Promise<void> => {
+    // inMemoryStorage's getValue (src/platform.ts) collapses a round-tripped '' back to
+    // undefined (a falsy-check bug in the shared KeyValueStorage backend, out of scope to fix
+    // here). An empty string is never a valid public key, so normalize it to "not supplied" up
+    // front rather than let a stored '' silently defeat the storedKey === serverPublicKey
+    // comparison below on every call.
+    if (serverPublicKey === '') {
+        serverPublicKey = undefined
+    }
+    if (serverPublicKey === undefined && serverPublicKeyId === undefined) {
+        return
+    }
+    return serializeOn(storage, async () => {
+        if (serverPublicKey !== undefined) {
+            if (serverPublicKeyId === undefined) {
+                throw new KeeperError('serverPublicKeyId is required when serverPublicKey is supplied')
+            }
+            parseServerKeyId(serverPublicKeyId)
+            const [storedKey, storedKeyId] = await Promise.all([
+                storage.getString(KEY_SERVER_PUBLIC_KEY),
+                storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+            ])
+            if (storedKey === serverPublicKey && storedKeyId === serverPublicKeyId) {
+                return
+            }
+            // Id before key: a partial failure between the two writes leaves a key with no id,
+            // which generateTransmissionKey's custom-key branch now fails loud on (see its own
+            // comment) instead of silently defaulting the wire's reported id to 7 while actually
+            // encrypting with the real key - the reverse order's failure mode.
+            await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId)
+            await storage.saveString(KEY_SERVER_PUBLIC_KEY, serverPublicKey)
+            return
+        }
+        // serverPublicKeyId alone: legitimate as a rotation-hint re-send when it matches what a
+        // custom key is already pinned to, or as a fresh bundled-table pin. It can never change
+        // an already-pinned custom key's id on its own - once a custom key is pinned, the id and
+        // key can only change together, through the branch above - closing the gap where an
+        // id-only call used to silently overwrite an unrelated, arbitrary id with no validation
+        // once any custom key had ever been pinned.
+        const parsedKeyId = parseServerKeyId(serverPublicKeyId as string)
+        const storedKey = await storage.getString(KEY_SERVER_PUBLIC_KEY)
+        if (storedKey !== undefined) {
+            const storedKeyId = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+            if (storedKeyId === serverPublicKeyId) {
+                return
+            }
+            throw new KeeperError(`serverPublicKeyId '${serverPublicKeyId}' does not match the already-pinned custom key's id; supply serverPublicKey and serverPublicKeyId together to change both`)
+        }
+        if (!(parsedKeyId in keeperPublicKeys)) {
+            const supported = Object.keys(keeperPublicKeys)
+            throw new KeeperError(`serverPublicKeyId ${parsedKeyId} is not supported; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
+        }
+        const storedKeyId = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+        if (storedKeyId !== serverPublicKeyId) {
+            await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId as string)
+        }
+    })
+}
+
 const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
-    if (options.serverPublicKey) {
-        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
-    }
-    if (options.serverPublicKeyId) {
-        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
-    }
+    await persistServerPublicKeyOptions(options.storage, options.serverPublicKey, options.serverPublicKeyId)
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
         throw new Error('hostname is missing from the configuration')
@@ -835,22 +954,30 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                 try { errorObj = JSON.parse(errorMessage) } catch {}
                 if (errorObj?.error === 'key') {
                     const suggestedKeyId = errorObj.key_id
-                    const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
-                    if (customKey) {
-                        const currentKeyId = await options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-                        throw new KeeperError(`Server rejected the custom server public key (id ${currentKeyId ?? transmissionKey.publicKeyId}). The server suggested key id ${suggestedKeyId}. Please update your IL5 KSM configuration.`)
-                    }
-                    if (typeof suggestedKeyId !== 'number' || !Number.isInteger(suggestedKeyId) || suggestedKeyId <= 0) {
-                        throw new KeeperError(`Server key error response contains invalid key_id: ${JSON.stringify(suggestedKeyId)}`)
-                    }
-                    if (!(suggestedKeyId in keeperPublicKeys)) {
-                        const supported = Object.keys(keeperPublicKeys)
-                        throw new KeeperError(`Server suggested unsupported key id ${suggestedKeyId}; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
-                    }
-                    if (keyRotationAttempt >= MAX_KEY_ROTATION_RETRIES) {
-                        throw new KeeperError(`Server key rotation exhausted ${MAX_KEY_ROTATION_RETRIES} retries; transmission key id ${transmissionKey.publicKeyId} was not accepted`)
-                    }
-                    await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, suggestedKeyId.toString())
+                    // The whole check-then-write goes through the same per-storage queue as
+                    // persistServerPublicKeyOptions and generateTransmissionKey - this write
+                    // bypassed both of them, wired directly to storage, until now. Without the
+                    // wrap, a concurrent call pinning a custom key between the customKey check
+                    // and this write could still land a rotation-sourced id paired with a
+                    // just-pinned key neither call actually intended.
+                    await serializeOn(options.storage, async () => {
+                        const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
+                        if (customKey) {
+                            const currentKeyId = await options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+                            throw new KeeperError(`Server rejected the custom server public key (id ${currentKeyId ?? transmissionKey.publicKeyId}). The server suggested key id ${suggestedKeyId}. Please update your IL5 KSM configuration.`)
+                        }
+                        if (typeof suggestedKeyId !== 'number' || !Number.isInteger(suggestedKeyId) || suggestedKeyId <= 0) {
+                            throw new KeeperError(`Server key error response contains invalid key_id: ${JSON.stringify(suggestedKeyId)}`)
+                        }
+                        if (!(suggestedKeyId in keeperPublicKeys)) {
+                            const supported = Object.keys(keeperPublicKeys)
+                            throw new KeeperError(`Server suggested unsupported key id ${suggestedKeyId}; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
+                        }
+                        if (keyRotationAttempt >= MAX_KEY_ROTATION_RETRIES) {
+                            throw new KeeperError(`Server key rotation exhausted ${MAX_KEY_ROTATION_RETRIES} retries; transmission key id ${transmissionKey.publicKeyId} was not accepted`)
+                        }
+                        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, suggestedKeyId.toString())
+                    })
                     keyRotationAttempt++
                     continue
                 }
@@ -900,12 +1027,7 @@ const decryptRecord = async (record: SecretsManagerResponseRecord, storage?: Key
 
 const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOptions?: QueryOptions): Promise<{ secrets: KeeperSecrets, justBound: boolean }> => {
     const storage = options.storage
-    if (options.serverPublicKey) {
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
-    }
-    if (options.serverPublicKeyId) {
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
-    }
+    await persistServerPublicKeyOptions(storage, options.serverPublicKey, options.serverPublicKeyId)
     const payload = await prepareGetPayload(storage, queryOptions)
     const responseData = await postQuery(options, 'get_secret', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
@@ -1153,8 +1275,13 @@ export const initializeStorage = async (
                 if (tokenParts[3].length < 80) {
                     throw new Error(`IL5 token: serverPublicKey appears malformed`)
                 }
-                await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, keyId)
-                await storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
+                try {
+                    await persistServerPublicKeyOptions(storage, tokenParts[3], keyId)
+                } catch (e) {
+                    // Matches the sibling checks' prefix above; a plain `new Error` here
+                    // previously lost the KeeperError type.
+                    throw new KeeperError(`IL5 token: ${e instanceof Error ? e.message : String(e)}`)
+                }
             }
         }
     }
