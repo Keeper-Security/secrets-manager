@@ -146,6 +146,43 @@ describe('localConfigStorage readStorage error handling (KSM-1266)', () => {
         expect(fs.readFileSync(configPath, 'utf8')).toBe(JSON.stringify({ original: 'data' }))
     })
 
+    test('a short write from fs.writeSync throws instead of silently committing truncated JSON', async () => {
+        const configPath = path.join(tmpDir, 'config.json')
+        fs.writeFileSync(configPath, JSON.stringify({ original: 'data' }))
+        fs.chmodSync(configPath, 0o600)
+
+        const kvs = localConfigStorage(configPath)
+        const originalWriteSync = fs.writeSync
+        const writeSyncSpy = jest.spyOn(fs, 'writeSync').mockImplementation((...args: Parameters<typeof fs.writeSync>) => {
+            const actual = (originalWriteSync as any)(...args)
+            return actual - 1 // report one byte short of what was actually written
+        })
+        try {
+            await expect(kvs.saveString('foo', 'bar')).rejects.toThrow(KeeperError)
+        } finally {
+            writeSyncSpy.mockRestore()
+        }
+
+        // Same assertion shape as the test above: a short write must not reach renameSync, so
+        // the original config survives untouched instead of being replaced by truncated JSON.
+        expect(fs.readFileSync(configPath, 'utf8')).toBe(JSON.stringify({ original: 'data' }))
+    })
+
+    test('a write failure before the rename also cleans up its own temp file', async () => {
+        const configPath = path.join(tmpDir, 'config.json')
+        const kvs = localConfigStorage(configPath)
+        const writeSyncSpy = jest.spyOn(fs, 'writeSync').mockImplementation(() => {
+            throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
+        })
+        try {
+            await expect(kvs.saveString('foo', 'bar')).rejects.toThrow(KeeperError)
+        } finally {
+            writeSyncSpy.mockRestore()
+        }
+        const leftover = fs.readdirSync(tmpDir).filter((f) => f.endsWith('.tmp'))
+        expect(leftover).toEqual([])
+    })
+
     test('a write failure is not masked by a close failure on the same fd', async () => {
         const configPath = path.join(tmpDir, 'config.json')
         const kvs = localConfigStorage(configPath)
@@ -240,7 +277,33 @@ describe('localConfigStorage readStorage error handling (KSM-1266)', () => {
         expect(fs.readlinkSync(symlinkPath)).toBe(realPathB)
     })
 
-    test('a hard-linked config path updates every link (no atomicity, matches pre-fix behavior)', async () => {
+    test('a dangling (pre-provisioned) symlink is written through, not replaced', async () => {
+        const targetPath = path.join(tmpDir, 'actual-config.json')
+        const symlinkPath = path.join(tmpDir, 'config.json')
+        fs.symlinkSync(targetPath, symlinkPath) // target does not exist yet
+
+        const kvs = localConfigStorage(symlinkPath)
+        await kvs.saveString('foo', 'bar')
+
+        expect(fs.lstatSync(symlinkPath).isSymbolicLink()).toBe(true)
+        expect(fs.readlinkSync(symlinkPath)).toBe(targetPath)
+        expect(JSON.parse(fs.readFileSync(targetPath, 'utf8'))).toEqual({ foo: 'bar' })
+    })
+
+    test('a dangling symlink with a relative target resolves against the symlink\'s own directory', async () => {
+        const symlinkPath = path.join(tmpDir, 'config.json')
+        const targetPath = path.join(tmpDir, 'actual-config.json')
+        fs.symlinkSync('actual-config.json', symlinkPath) // relative target, same directory
+
+        const kvs = localConfigStorage(symlinkPath)
+        await kvs.saveString('foo', 'bar')
+
+        expect(fs.lstatSync(symlinkPath).isSymbolicLink()).toBe(true)
+        expect(fs.readlinkSync(symlinkPath)).toBe('actual-config.json')
+        expect(JSON.parse(fs.readFileSync(targetPath, 'utf8'))).toEqual({ foo: 'bar' })
+    })
+
+    test('a hard-linked config path only updates the resolved path - a rename always creates a new inode', async () => {
         const configPath = path.join(tmpDir, 'config.json')
         const linkedPath = path.join(tmpDir, 'config-link.json')
         fs.writeFileSync(configPath, JSON.stringify({ original: 'data' }))
@@ -249,41 +312,14 @@ describe('localConfigStorage readStorage error handling (KSM-1266)', () => {
         const kvs = localConfigStorage(configPath)
         await kvs.saveString('foo', 'bar')
 
-        // A temp-file-then-rename would detach configPath into a new inode, leaving
-        // linkedPath frozen at the old content - this is the other half of the round-4
-        // regression. Writing in place instead preserves the shared inode.
-        const expected = { original: 'data', foo: 'bar' }
-        expect(JSON.parse(fs.readFileSync(configPath, 'utf8'))).toEqual(expected)
-        expect(JSON.parse(fs.readFileSync(linkedPath, 'utf8'))).toEqual(expected)
-        expect(fs.statSync(configPath).ino).toBe(fs.statSync(linkedPath).ino)
-    })
-
-    test('a hard-linked config path swapped into a symlink after the nlink check is not followed', async () => {
-        const configPath = path.join(tmpDir, 'config.json')
-        const linkedPath = path.join(tmpDir, 'config-link.json')
-        const decoyPath = path.join(tmpDir, 'decoy.json')
-        fs.writeFileSync(configPath, JSON.stringify({ original: 'data' }))
-        fs.linkSync(configPath, linkedPath)
-        fs.writeFileSync(decoyPath, JSON.stringify({ decoy: 'untouched' }))
-
-        const kvs = localConfigStorage(configPath)
-
-        // Simulates an attacker swapping configPath into a symlink right after the nlink > 1
-        // check passes, before the open that writes in place - the write-in-place branch has
-        // no rename to fall back on for symlink safety, so it needs its own O_NOFOLLOW.
-        const originalStatSync = fs.statSync
-        const statSyncSpy = jest.spyOn(fs, 'statSync').mockImplementation((p: fs.PathLike, opts?: any) => {
-            const result = originalStatSync(p as string, opts)
-            fs.unlinkSync(configPath)
-            fs.symlinkSync(decoyPath, configPath)
-            statSyncSpy.mockRestore()
-            return result
-        })
-
-        await expect(kvs.saveString('foo', 'bar')).rejects.toThrow(KeeperError)
-
+        // Renaming a temp file over configPath always creates a new inode there - there is no
+        // write-in-place special case anymore, so linkedPath (the other directory entry, still
+        // pointing at the old inode) is left stale. This trades away "every hard link stays in
+        // sync", a guarantee nothing else in this file promises, for one consistent atomic-write
+        // path on every save, matching the write-file-atomic/npm/pip convention.
+        expect(JSON.parse(fs.readFileSync(configPath, 'utf8'))).toEqual({ original: 'data', foo: 'bar' })
         expect(JSON.parse(fs.readFileSync(linkedPath, 'utf8'))).toEqual({ original: 'data' })
-        expect(JSON.parse(fs.readFileSync(decoyPath, 'utf8'))).toEqual({ decoy: 'untouched' })
+        expect(fs.statSync(configPath).ino).not.toBe(fs.statSync(linkedPath).ino)
     })
 
     const backdate = (filePath: string) => {

@@ -50,60 +50,56 @@ const isEnoent = (cause: unknown): boolean =>
 // gets written through rather than replaced by renameSync, which operates on the link
 // itself and never dereferences it (this is specified POSIX rename(2) behavior, not a
 // bug to work around here). This is the same approach the write-file-atomic package
-// (the de facto standard for this in the npm ecosystem) uses.
+// (the de facto standard for this in the npm ecosystem) uses. realpathSync's ENOENT also
+// covers a dangling symlink - configName IS a symlink, but its target doesn't exist yet
+// (e.g. ops tooling pre-provisions config.json -> /secure/actual-config.json before
+// actual-config.json exists) - and the catch below resolves that case through the link's
+// own target rather than falling back to the literal symlink path, so the same
+// written-through guarantee holds there too.
 //
-// A hard link is a different problem realpathSync can't help with: it's a second
-// directory entry for the same inode, not a link to resolve, and renameSync only ever
-// updates the one entry it's given, leaving every other hard-linked path frozen at the
-// old content. Detecting nlink > 1 and writing in place instead trades away atomicity
-// for that one file - but only that file, every other config file still gets the
-// crash-safe path above. This mirrors Vim's backupcopy=auto: rename when the
-// destination is a plain, singly-linked file, write-through when it's a link.
+// A hard link is a second directory entry for the same inode, not something realpathSync
+// resolves - renaming a temp file over one hard-linked path always creates a new inode
+// there, leaving every other hard-linked path frozen at the old content. Accepted rather
+// than worked around: write-file-atomic, npm and pip all make the same trade, since the
+// alternative - writing in place to keep the shared inode - gives up the rename path's
+// atomicity for that one file.
 const writeConfigFile = (configName: string, data: string): void => {
     let resolvedPath = configName
-    let stat: fs.Stats | undefined
     try {
         resolvedPath = fs.realpathSync(configName)
-        stat = fs.statSync(resolvedPath)
     } catch (e) {
         if (!isEnoent(e)) {
             throw e
         }
-    }
-
-    if (stat && stat.nlink > 1) {
-        // O_NOFOLLOW: unlike the rename below, a plain open follows a symlink. Without it, an
-        // attacker with write access to this directory (the same threat the realpathSync
-        // resolution above defends against) could swap resolvedPath into a symlink between the
-        // statSync above and this open, redirecting the write to wherever it now points.
-        //
-        // fs.constants.O_NOFOLLOW does not exist on Windows (confirmed against Node's own
-        // platform constants, the same gap KSM-1265's round-4 review found for O_DIRECTORY), so
-        // this protection is accepted as POSIX-only for now, tracked alongside that same gap
-        // rather than worked around here with a separate, weaker fallback.
-        const fd = fs.openSync(resolvedPath, fs.constants.O_RDWR | fs.constants.O_NOFOLLOW)
+        // ENOENT here means either nothing exists at configName at all (a true first-ever
+        // write - resolvedPath already defaults to the literal configName above, nothing more
+        // to do) or configName is itself a dangling symlink. lstatSync distinguishes the two,
+        // in its own try/catch since the first case also throws ENOENT here.
         try {
-            const bytesWritten = fs.writeSync(fd, data)
-            fs.ftruncateSync(fd, bytesWritten)
-            fs.fsyncSync(fd)
-        } catch (writeError) {
-            try {
-                fs.closeSync(fd)
-            } catch {
-                // A close failure here is secondary - the write error is what caused this and
-                // is what must propagate, not whatever closing a doomed fd produced.
+            const lstat = fs.lstatSync(configName)
+            if (lstat.isSymbolicLink()) {
+                const target = fs.readlinkSync(configName)
+                resolvedPath = path.isAbsolute(target) ? target : path.resolve(path.dirname(configName), target)
             }
-            throw writeError
+        } catch {
+            // configName doesn't exist at all - true first-ever write, fall through.
         }
-        fs.closeSync(fd)
-        chmodSecure(resolvedPath)
-        return
     }
 
     const tmpPath = `${resolvedPath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
     const fd = fs.openSync(tmpPath, 'w', 0o600)
     try {
-        fs.writeSync(fd, data)
+        // A single fs.writeSync call is not guaranteed to write the whole buffer - POSIX
+        // write(2) can return fewer bytes than requested. Comparing the result against the
+        // intended length, rather than trusting it and fsync-ing whatever actually landed, is
+        // what keeps a rare short write from silently committing truncated JSON as the new
+        // config. Deliberately not a retry loop (one existed here before and was removed for
+        // hang risk) - a short write becomes an immediate failure instead of something to retry.
+        const bytesWritten = fs.writeSync(fd, data)
+        const expectedBytes = Buffer.byteLength(data)
+        if (bytesWritten !== expectedBytes) {
+            throw new Error(`Short write: wrote ${bytesWritten} of ${expectedBytes} bytes to ${tmpPath}`)
+        }
         fs.fsyncSync(fd)
     } catch (writeError) {
         try {
@@ -111,6 +107,14 @@ const writeConfigFile = (configName: string, data: string): void => {
         } catch {
             // Same as above: a close failure here is secondary to the write error that
             // caused this branch, don't let it replace the error that actually matters.
+        }
+        try {
+            fs.unlinkSync(tmpPath)
+        } catch {
+            // Best-effort, same as the rename-failure cleanup below - a failed write can still
+            // have left a partial temp file (containing a full secrets snapshot) behind, no
+            // reason to wait for the next orphan sweep to remove it when we already know it's
+            // dead right here.
         }
         throw writeError
     }
@@ -217,13 +221,12 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
             throw new KeeperStorageError(`Unable to read local config ${configName}: ${describeCause(e)}`, errorCode(e))
         }
         // An empty (or whitespace-only) file is a legitimate fresh start, not corruption.
-        // writeConfigFile's atomic rename path can no longer produce this by itself - a kill
+        // writeConfigFile's atomic rename path can no longer produce this itself - a kill
         // mid-write only ever leaves a temp file behind, configName itself is untouched until
-        // the rename completes - but its hard-link write-in-place branch still writes into
-        // configName directly, so a kill mid-write there can still leave it empty, and some
-        // other writer entirely (a stray `echo -n > config.json`, a pre-atomic-write version of
-        // this SDK) can too. The sibling KMS storage backends and the Python SDK already treat
-        // this as a fresh start for exactly this reason. A partially-written (nonempty,
+        // the rename completes - but some other writer entirely (a stray `echo -n >
+        // config.json`, a pre-atomic-write version of this SDK) still can. The sibling KMS
+        // storage backends and the Python SDK already treat this as a fresh start for exactly
+        // this reason. A partially-written (nonempty,
         // non-whitespace but truncated) file is not self-healed: there is no reliable way to
         // distinguish "truncated" from "genuinely corrupt" JSON, and this fix's whole point is
         // to fail loudly rather than guess.
