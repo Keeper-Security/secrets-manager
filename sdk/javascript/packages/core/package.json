@@ -11,6 +11,10 @@
         "browser": "./dist/browser/index.d.ts",
         "default": "./dist/node/index.d.ts"
       },
+      "node": {
+        "import": "./dist/index.cjs.js",
+        "require": "./dist/index.cjs.js"
+      },
       "browser": "./dist/index.es.js",
       "import": "./dist/index.es.js",
       "require": "./dist/index.cjs.js",
