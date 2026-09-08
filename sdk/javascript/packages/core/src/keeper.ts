@@ -783,13 +783,24 @@ const DEFAULT_KEY_NUMBER = 7
 // its own config anyway. Documented as an accepted boundary, not fixed.
 const pendingServerKeyOperations = new WeakMap<KeyValueStorage, Promise<unknown>>()
 
+// Generous vs. a normal storage round trip; only guards against a genuine hang (a caller-
+// supplied or cloud KeyValueStorage backend that never settles), not slow-but-alive storage.
+const SERIALIZED_STORAGE_OP_TIMEOUT_MS = 30_000
+
 const serializeOn = <T>(storage: KeyValueStorage, fn: () => Promise<T>): Promise<T> => {
     const pending = pendingServerKeyOperations.get(storage) ?? Promise.resolve()
     const operation = pending.then(fn)
-    // A rejected promise stored here would permanently poison every later call chained onto it;
-    // converting to a resolved undefined only affects this internal chaining variable - the
-    // operation returned below still rejects normally for the caller that awaits it directly.
-    pendingServerKeyOperations.set(storage, operation.then(() => undefined, () => undefined))
+    // Chain variable only, never the caller's own await: a rejection here becomes a resolved
+    // undefined so it can't poison later calls, and a timeout races out a hung predecessor so it
+    // can't wedge the queue forever (at the cost of no longer serializing against it once the
+    // timer wins).
+    let timer: ReturnType<typeof setTimeout>
+    const settled = operation.then(() => undefined, () => undefined)
+    const chained = Promise.race([settled, new Promise<undefined>(resolve => {
+        timer = setTimeout(() => resolve(undefined), SERIALIZED_STORAGE_OP_TIMEOUT_MS)
+    })])
+    chained.then(() => clearTimeout(timer))
+    pendingServerKeyOperations.set(storage, chained)
     return operation
 }
 
@@ -804,10 +815,19 @@ const parseServerKeyId = (serverPublicKeyId: string): number => {
     return parsedKeyId
 }
 
+// inMemoryStorage (src/platform.ts) collapses a stored '' back to undefined on read; the
+// cloud-backed KeyValueStorage implementations and the browser secure-storage backend return a
+// stored '' or null unchanged. Every read that decides "is a custom key currently pinned" needs
+// to agree on what "not supplied" means regardless of backend.
+const readNormalizedString = async (storage: KeyValueStorage, key: string): Promise<string | undefined> => {
+    const value = await storage.getString(key)
+    return typeof value === 'string' && value !== '' ? value : undefined
+}
+
 export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => serializeOn(storage, async () => {
     const transmissionKey = platform.getRandomBytes(32)
-    const keyNumberString = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-    const customPublicKeyB64 = await storage.getString(KEY_SERVER_PUBLIC_KEY)
+    const keyNumberString = await readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY_ID)
+    const customPublicKeyB64 = await readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY)
     if (customPublicKeyB64) {
         // No safe fallback for a missing or corrupted id here: falling back to a bundled key
         // would mean silently encrypting with a key the caller didn't choose. Self-heals once
@@ -858,12 +878,11 @@ const persistServerPublicKeyOptions = async (
     serverPublicKey: string | undefined,
     serverPublicKeyId: string | undefined
 ): Promise<void> => {
-    // inMemoryStorage's getValue (src/platform.ts) collapses a round-tripped '' back to
-    // undefined (a falsy-check bug in the shared KeyValueStorage backend, out of scope to fix
-    // here). An empty string is never a valid public key, so normalize it to "not supplied" up
-    // front rather than let a stored '' silently defeat the storedKey === serverPublicKey
-    // comparison below on every call.
-    if (serverPublicKey === '') {
+    // A public key is always a non-empty base64url string; null, 0, false and NaN are reachable
+    // from a plain-JavaScript caller (no compile-time check) and must mean "not supplied", not
+    // "a key was supplied" - otherwise a falsy value permanently fails every request instead of
+    // being ignored.
+    if (typeof serverPublicKey !== 'string' || serverPublicKey === '') {
         serverPublicKey = undefined
     }
     if (serverPublicKey === undefined && serverPublicKeyId === undefined) {
@@ -871,23 +890,33 @@ const persistServerPublicKeyOptions = async (
     }
     return serializeOn(storage, async () => {
         if (serverPublicKey !== undefined) {
+            const [storedKey, storedKeyId] = await Promise.all([
+                readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY),
+                readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY_ID)
+            ])
+            // Caller replayed the key that's already pinned: a no-op, not a repin, as long as
+            // some id is already established for it - either the caller's id matches what's
+            // stored, or the caller left the id out and relies on what's already stored. Checked
+            // before the id-required throw below, so a replay of an already-consistent pin (an
+            // IL5 token re-init, a config file read back, or a key-only options object when the
+            // id already lives in storage) doesn't hard-fail on a call that changes nothing.
+            if (storedKey === serverPublicKey &&
+                (serverPublicKeyId === undefined ? storedKeyId !== undefined : storedKeyId === serverPublicKeyId)) {
+                return
+            }
             if (serverPublicKeyId === undefined) {
                 throw new KeeperError('serverPublicKeyId is required when serverPublicKey is supplied')
             }
             parseServerKeyId(serverPublicKeyId)
-            const [storedKey, storedKeyId] = await Promise.all([
-                storage.getString(KEY_SERVER_PUBLIC_KEY),
-                storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-            ])
-            if (storedKey === serverPublicKey && storedKeyId === serverPublicKeyId) {
-                return
-            }
-            // Id before key: a partial failure between the two writes leaves a key with no id,
-            // which generateTransmissionKey's custom-key branch now fails loud on (see its own
-            // comment) instead of silently defaulting the wire's reported id to 7 while actually
-            // encrypting with the real key - the reverse order's failure mode.
-            await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId)
+            // Key before id: a partial failure between the two writes leaves an id with no key,
+            // which generateTransmissionKey's bundled-key fallback branch reads as "no custom key
+            // pinned" and silently falls through to encrypting with Keeper's own key while
+            // reporting the stale id - a silent security downgrade. Key-then-id instead
+            // leaves a key with no id on partial failure, which the custom-key branch's own guard
+            // (`if (!keyNumberString) throw`, above) fails loud on. Neither write is atomic across
+            // every storage backend; this only chooses which half of a partial failure survives.
             await storage.saveString(KEY_SERVER_PUBLIC_KEY, serverPublicKey)
+            await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId)
             return
         }
         // serverPublicKeyId alone: legitimate as a rotation-hint re-send when it matches what a
@@ -897,9 +926,9 @@ const persistServerPublicKeyOptions = async (
         // id-only call used to silently overwrite an unrelated, arbitrary id with no validation
         // once any custom key had ever been pinned.
         const parsedKeyId = parseServerKeyId(serverPublicKeyId as string)
-        const storedKey = await storage.getString(KEY_SERVER_PUBLIC_KEY)
+        const storedKey = await readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY)
         if (storedKey !== undefined) {
-            const storedKeyId = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+            const storedKeyId = await readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY_ID)
             if (storedKeyId === serverPublicKeyId) {
                 return
             }
@@ -909,8 +938,15 @@ const persistServerPublicKeyOptions = async (
             const supported = Object.keys(keeperPublicKeys)
             throw new KeeperError(`serverPublicKeyId ${parsedKeyId} is not supported; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
         }
-        const storedKeyId = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-        if (storedKeyId !== serverPublicKeyId) {
+        const storedKeyId = await readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY_ID)
+        if (storedKeyId === undefined) {
+            // Write-once: once any id exists in storage - a prior caller pin or a server-driven
+            // rotation - a bare id-only option is treated as a rotation-hint replay, not caller
+            // intent to change an established pin. Otherwise a caller that keeps passing its
+            // original options object would permanently undo a completed rotation, paying a
+            // rejected round trip on every call forever. Known cost: a caller who legitimately
+            // wants to move a bundled-table pin to a different id later can't do it through this
+            // branch alone once any id is stored; they'd need the key+id branch above.
             await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId as string)
         }
     })
@@ -961,9 +997,9 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                     // and this write could still land a rotation-sourced id paired with a
                     // just-pinned key neither call actually intended.
                     await serializeOn(options.storage, async () => {
-                        const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
+                        const customKey = await readNormalizedString(options.storage, KEY_SERVER_PUBLIC_KEY)
                         if (customKey) {
-                            const currentKeyId = await options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
+                            const currentKeyId = await readNormalizedString(options.storage, KEY_SERVER_PUBLIC_KEY_ID)
                             throw new KeeperError(`Server rejected the custom server public key (id ${currentKeyId ?? transmissionKey.publicKeyId}). The server suggested key id ${suggestedKeyId}. Please update your IL5 KSM configuration.`)
                         }
                         if (typeof suggestedKeyId !== 'number' || !Number.isInteger(suggestedKeyId) || suggestedKeyId <= 0) {
