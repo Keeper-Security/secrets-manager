@@ -761,23 +761,44 @@ export const postFunction = async (url: string, transmissionKey: TransmissionKey
         }, allowUnverifiedCertificate)
 }
 
+// A stored id outside the bundled table (e.g. an older SDK build persisted an unvalidated
+// server-suggested key) must not permanently block every request. Falling back to this default
+// key for that one call, instead of throwing, means the request still goes out and a future
+// rotation hint (or a caller re-pinning a valid pair) can steer storage back to a valid id. This
+// fallback is never persisted here - generateTransmissionKey is a read, and writing here could
+// race a concurrent custom-key pin or a concurrent rotation write.
+const DEFAULT_KEY_NUMBER = 7
+
+// Shared by generateTransmissionKey's custom-key branch to validate a stored serverPublicKeyId.
+const parseServerKeyId = (serverPublicKeyId: string): number => {
+    const parsedKeyId = Number(serverPublicKeyId)
+    if (!Number.isInteger(parsedKeyId) || parsedKeyId <= 0) {
+        throw new KeeperError(`serverPublicKeyId '${serverPublicKeyId}' must be a positive integer`)
+    }
+    return parsedKeyId
+}
+
 export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => {
     const transmissionKey = platform.getRandomBytes(32)
     const keyNumberString = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-    const keyNumber = keyNumberString ? Number(keyNumberString) : 7
     const customPublicKeyB64 = await storage.getString(KEY_SERVER_PUBLIC_KEY)
     if (customPublicKeyB64) {
+        // No safe fallback for a missing or corrupted id here: falling back to a bundled key
+        // would mean silently encrypting with a key the caller didn't choose. Self-heals once
+        // the caller supplies serverPublicKey and serverPublicKeyId together again.
+        if (!keyNumberString) {
+            throw new KeeperError('Stored serverPublicKey has no paired serverPublicKeyId; configuration is inconsistent')
+        }
+        const keyNumber = parseServerKeyId(keyNumberString)
         const customPublicKey = webSafe64ToBytes(customPublicKeyB64)
         const encryptedKey = await platform.publicEncrypt(transmissionKey, customPublicKey)
         return { publicKeyId: keyNumber, key: transmissionKey, encryptedKey }
     }
-    const keeperPublicKey = keeperPublicKeys[keyNumber]
-    if (!keeperPublicKey) {
-        throw new Error(`Key number ${keyNumber} is not supported`)
-    }
-    const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[keyNumber])
+    const keyNumber = keyNumberString ? Number(keyNumberString) : DEFAULT_KEY_NUMBER
+    const effectiveKeyNumber = keyNumber in keeperPublicKeys ? keyNumber : DEFAULT_KEY_NUMBER
+    const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[effectiveKeyNumber])
     return {
-        publicKeyId: keyNumber,
+        publicKeyId: effectiveKeyNumber,
         key: transmissionKey,
         encryptedKey: encryptedKey
     }
@@ -792,6 +813,7 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
     return {payload: encryptedPayload, signature}
 }
+
 const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
     if (options.serverPublicKey) {
         await options.storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)

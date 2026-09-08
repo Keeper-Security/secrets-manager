@@ -452,6 +452,15 @@ test('IL5 dynamic key - Layer 2: rejects malformed (too short) serverPublicKey',
     ).rejects.toThrow('IL5 token: serverPublicKey appears malformed')
 })
 
+test('a stored custom key with no paired id fails loud at read time instead of defaulting the wire id to 7', async () => {
+    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const storage = inMemoryStorage({})
+    // Simulates a config written by a pre-fix SDK build or hand-edited directly.
+    await storage.saveString('serverPublicKey', fakeKey)
+    await expect(generateTransmissionKey(storage))
+        .rejects.toThrow('Stored serverPublicKey has no paired serverPublicKeyId; configuration is inconsistent')
+})
+
 test('getFolders skips an undecryptable folder and returns the good one', async () => {
     const transmissionKey = new Uint8Array(32).fill(1)
     const appKey = new Uint8Array(32).fill(2)
