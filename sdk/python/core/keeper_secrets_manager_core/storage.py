@@ -182,13 +182,16 @@ class InMemoryKeyValueStorage(KeyValueStorage):
 
         elif isinstance(config, str):
 
-            if InMemoryKeyValueStorage.is_base64(config):
+            config_str = config
+            if InMemoryKeyValueStorage.is_base64(config_str):
                 # Decode if config json was provided as base64 string
-                config = utils.base64_to_string(config)
+                config_str = utils.base64_to_string(config_str)
 
-            config = json_to_dict(config)
+            config = json_to_dict(config_str)
             if not config:
-                raise exceptions.KeeperError("Could not load config data. Json text size: %s" % str(len(config)))
+                raise exceptions.KeeperError(
+                    "Could not load config data. The configuration string is not valid JSON"
+                    " or base64-encoded JSON (text length: %s)." % len(config_str))
 
         for key in config:
             self.config[ConfigKeys.get_enum(key)] = config[key]
