@@ -2,7 +2,7 @@
 
 For more information, see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/python-sdk
 
-**Python Requirements**: Python 3.9 or higher
+**Python Requirements**: Python 3.10 or higher
 
 ## Custom Server Public Key (Isolated Deployments)
 
@@ -34,6 +34,7 @@ see the official docs link above.
 ## Change Log
 
 ### 17.4.0
+* **Breaking**: KSM-1214 - Minimum Python version raised from 3.9 to 3.10. Python 3.9 reached end-of-life 2026-10-05. The new floor also clears the `urllib3` decompression-bomb bypass (CVE-2026-44432) and cross-host-redirect header leak (CVE-2026-44431) fixes, neither of which was backported to a 3.9-compatible `urllib3` release. `urllib3` floor raised from `>=2.6.3` to `>=2.7.0`.
 * KSM-1019 - Fixed `KSMCache` silently ignoring an explicit `kms_cache_file_name` assignment when the assigned path equaled the import-time default (regression from KSM-1004). The SDK now detects the override by object identity, so an explicit assignment always takes precedence over `KSM_CACHE_DIR`. Default behavior and `KSM_CACHE_DIR` resolution are unchanged.
 * KSM-1145 - Fixed `get_secrets()` returning duplicate entries when a record is accessible both via a shared folder and as an individual share. The SDK now deduplicates records by UID before returning them.
 * KSM-747 - Fixed records created by non-SDK clients (Commander, Vault UI) inside shared folders silently disappearing from `get_secrets()` results. The SDK now uses the folder key to decrypt the record key for any flat record that has `innerFolderUid` set. This matches the behavior for records in `folders[].records[]`.

@@ -114,10 +114,10 @@ class SecretsManager:
         > pre-existing config file values.
         """
 
-        # Make sure the Python is 3.9 or higher. We'll handle Python 4 in the future :)
+        # Make sure the Python is 3.10 or higher. We'll handle Python 4 in the future :)
         python_version = sys.version_info
-        if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 9):
-            raise Exception("KSM SDK requires Python 3.9 or greater")
+        if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 10):
+            raise Exception("KSM SDK requires Python 3.10 or greater")
 
         self.token = None
         self.hostname = None
