@@ -231,16 +231,19 @@ const fetchData = (res, resolve, onBodyDone?: () => void, reject?: (reason: any)
     })
 }
 
-// Wires the request's own 'error' event onto a Node request object. request()/https.request()
-// already destroys the request and emits 'error' on it when the signal passed into its own
-// options aborts, so no separate abort listener is needed here - adding one would race Node's
-// internal handling of the same signal, on the same event, with no documented ordering guarantee
-// between the two. signal.aborted is checked synchronously instead, mirroring browserPlatform.ts's
-// asTimeout: a deadline firing is always our own timeout, so it gets our own message; any other
-// failure passes through untouched. request()/https.request() can also throw synchronously (a
-// malformed URL, for instance) before this ever runs; callers wrap that call in try/catch and
-// clear() there too, since the listener registered here would otherwise not fire and the armed
-// timer would leak for the full deadline window.
+// Wires both the request's own 'error' event and the abort signal itself onto a Node request
+// object. request()/https.request() destroys the request and emits 'error' on it when the signal
+// passed into its own options aborts, but only once a socket has been assigned - Node's
+// ClientRequest.destroy() calls this.socket?.destroy(err), which is a no-op with no socket, so a
+// request still waiting on a stalled proxy CONNECT or a saturated agent pool would otherwise never
+// settle at all. The signal's own 'abort' listener is the unconditional path for that case. Both
+// listeners are guarded against double-settlement, since a socket assigned just as the deadline
+// fires can still race the two. signal.aborted is checked synchronously in the 'error' handler,
+// mirroring browserPlatform.ts's asTimeout: a deadline firing is always our own timeout, so it
+// gets our own message; any other failure passes through untouched. request()/https.request() can
+// also throw synchronously (a malformed URL, for instance) before this ever runs; callers wrap
+// that call in try/catch and clear() there too, since neither listener registered here would
+// otherwise fire and the armed timer would leak for the full deadline window.
 const armRequest = (
     req: { on(event: 'error', cb: (err: any) => void): void },
     signal: AbortSignal | undefined,
@@ -249,9 +252,18 @@ const armRequest = (
     clear: () => void,
     reject: (reason: any) => void
 ): void => {
+    let settled = false
     req.on('error', (err) => {
+        if (settled) return
+        settled = true
         clear()
         reject(signal?.aborted ? timeoutError(url, ms) : err)
+    })
+    signal?.addEventListener('abort', () => {
+        if (settled) return
+        settled = true
+        clear()
+        reject(timeoutError(url, ms))
     })
 }
 
