@@ -1488,12 +1488,11 @@ export const updateFolder = async (options: SecretManagerOptions, folderUid: str
     await postQuery(options, 'update_folder', payload)
 }
 
-// `timeoutMs` stays the 2nd argument (its original, pre-options position) rather than moving under
-// `options`, so an in-flight breaking change to this same file's argument shape isn't compounded
-// with a second one in the same minor release. `options` is a new, additive 3rd argument so a
-// caller who configured requestTimeoutMs once gets it applied here too, the way uploadFile already
-// does; an explicit `timeoutMs` still wins when passed, for a single oversized file that needs
-// longer than the configured default.
+// `timeoutMs` is the 2nd argument and `options` an additive 3rd: neither `downloadFile` nor
+// `downloadThumbnail` has ever taken more than one argument in a published version, so no order
+// here is a breaking change on its own. `options` lets a caller who configured requestTimeoutMs
+// once get it applied here too, the way uploadFile already does; an explicit `timeoutMs` still
+// wins when passed, for a single oversized file that needs longer than the configured default.
 //
 // options.allowUnverifiedCertificate is not honored here: platform.get has no such parameter,
 // unlike platform.post.
