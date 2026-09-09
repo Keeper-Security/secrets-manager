@@ -9,10 +9,12 @@ import {
     KeeperRecord,
     KeeperHttpResponse,
     platform,
+    postFunction,
     SecretManagerOptions,
     uploadFile,
 } from '../'
 import {MAX_REQUEST_TIMEOUT_MS} from '../src/deadline'
+import {TransmissionKey, EncryptedPayload} from '../src/platform'
 
 const FAKE_TOKEN = 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'
 const enc = new TextEncoder()
@@ -103,6 +105,39 @@ describe('requestTimeoutMs validation and propagation through postQuery', () => 
     })
 })
 
+// postFunction is the default queryFunction: the one hop that carries the timeout for every
+// consumer who supplies no custom queryFunction, which is the overwhelming majority. The request
+// itself would still be bounded without this forwarding (resolveTimeoutMs falls back to
+// DEFAULT_REQUEST_TIMEOUT_MS), but options.requestTimeoutMs would become a silent no-op on the
+// default path in both directions - a caller raising it for a large payload, or lowering it for a
+// fast-fail policy, would still get 30 seconds either way.
+describe('postFunction forwards its timeoutMs argument to platform.post', () => {
+    const originalPost = platform.post
+    afterEach(() => {
+        platform.post = originalPost
+    })
+
+    test('forwards timeoutMs as platform.post\'s fifth argument', async () => {
+        const seen: any[] = []
+        platform.post = (async (...args: any[]) => {
+            seen.push(...args)
+            return {statusCode: 500, headers: [], data: new Uint8Array()}
+        }) as typeof platform.post
+
+        const transmissionKey: TransmissionKey = {
+            publicKeyId: 7,
+            key: new Uint8Array(32),
+            encryptedKey: new Uint8Array([9, 9, 9])
+        }
+        const payload: EncryptedPayload = {
+            payload: new Uint8Array([1, 2, 3]),
+            signature: new Uint8Array([4, 5, 6])
+        }
+        await postFunction('https://example.com', transmissionKey, payload, false, 7777).catch(() => {})
+        expect(seen[4]).toBe(7777)
+    })
+})
+
 describe('downloadFile / downloadThumbnail requestTimeoutMs precedence', () => {
     const originalGet = platform.get
     const originalDecrypt = platform.decrypt
@@ -124,40 +159,43 @@ describe('downloadFile / downloadThumbnail requestTimeoutMs precedence', () => {
         platform.decrypt = jest.fn(async () => new Uint8Array())
     })
 
-    test('an explicit timeoutMs argument wins over options.requestTimeoutMs', async () => {
-        const file = fakeFile()
-        await downloadFile(file, 111, {storage: inMemoryStorage({}), requestTimeoutMs: 999})
-        expect(platform.get).toHaveBeenCalledWith(file.url, {}, 111)
-    })
+    // downloadFile and downloadThumbnail are two hand-copied expressions of the identical
+    // precedence rule, five lines apart in keeper.ts, with no shared helper - so they can drift
+    // independently. describe.each runs every case against both, against their own URL field, so
+    // a regression in either one is caught without duplicating the test bodies.
+    describe.each([
+        ['downloadFile', downloadFile, (file: KeeperFile) => file.url],
+        ['downloadThumbnail', downloadThumbnail, (file: KeeperFile) => file.thumbnailUrl],
+    ])('%s', (_name, download, urlOf) => {
+        test('an explicit timeoutMs argument wins over options.requestTimeoutMs', async () => {
+            const file = fakeFile()
+            await download(file, 111, {storage: inMemoryStorage({}), requestTimeoutMs: 999})
+            expect(platform.get).toHaveBeenCalledWith(urlOf(file), {}, 111)
+        })
 
-    test('falls back to options.requestTimeoutMs when timeoutMs is omitted', async () => {
-        const file = fakeFile()
-        await downloadFile(file, undefined, {storage: inMemoryStorage({}), requestTimeoutMs: 222})
-        expect(platform.get).toHaveBeenCalledWith(file.url, {}, 222)
-    })
+        test('falls back to options.requestTimeoutMs when timeoutMs is omitted', async () => {
+            const file = fakeFile()
+            await download(file, undefined, {storage: inMemoryStorage({}), requestTimeoutMs: 222})
+            expect(platform.get).toHaveBeenCalledWith(urlOf(file), {}, 222)
+        })
 
-    test('passes undefined through (platform default applies) when neither is set', async () => {
-        const file = fakeFile()
-        await downloadFile(file)
-        expect(platform.get).toHaveBeenCalledWith(file.url, {}, undefined)
-    })
+        test('passes undefined through (platform default applies) when neither is set', async () => {
+            const file = fakeFile()
+            await download(file)
+            expect(platform.get).toHaveBeenCalledWith(urlOf(file), {}, undefined)
+        })
 
-    test('a value above MAX_REQUEST_TIMEOUT_MS reaches platform.get already clamped', async () => {
-        const file = fakeFile()
-        await downloadFile(file, MAX_REQUEST_TIMEOUT_MS + 1000)
-        expect(platform.get).toHaveBeenCalledWith(file.url, {}, MAX_REQUEST_TIMEOUT_MS)
-    })
+        test('a value above MAX_REQUEST_TIMEOUT_MS reaches platform.get already clamped', async () => {
+            const file = fakeFile()
+            await download(file, MAX_REQUEST_TIMEOUT_MS + 1000)
+            expect(platform.get).toHaveBeenCalledWith(urlOf(file), {}, MAX_REQUEST_TIMEOUT_MS)
+        })
 
-    test('rejects an invalid resolved timeoutMs before calling platform.get', async () => {
-        const file = fakeFile()
-        await expect(downloadFile(file, -1)).rejects.toThrow(/Request timeout must be/)
-        expect(platform.get).not.toHaveBeenCalled()
-    })
-
-    test('downloadThumbnail applies the same precedence against thumbnailUrl', async () => {
-        const file = fakeFile()
-        await downloadThumbnail(file, undefined, {storage: inMemoryStorage({}), requestTimeoutMs: 333})
-        expect(platform.get).toHaveBeenCalledWith(file.thumbnailUrl, {}, 333)
+        test('rejects an invalid resolved timeoutMs before calling platform.get', async () => {
+            const file = fakeFile()
+            await expect(download(file, -1)).rejects.toThrow(/Request timeout must be/)
+            expect(platform.get).not.toHaveBeenCalled()
+        })
     })
 })
 
