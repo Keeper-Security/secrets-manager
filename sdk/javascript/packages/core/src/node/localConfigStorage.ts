@@ -376,8 +376,7 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
 // protection the cache directory/file has, so a silent no-op here is a bigger gap. There is no
 // good fallback available without a real openat()-style relative-to-fd primitive, which Node's
 // public fs API doesn't expose - accepted as a documented, POSIX-only limitation rather than
-// building a weaker check-then-open substitute, matching how KSM-1266's own review already
-// decided the identical Windows gap for O_NOFOLLOW.
+// building a weaker check-then-open substitute.
 const hasDirectorySymlinkProtection = typeof fs.constants.O_DIRECTORY === 'number' && typeof fs.constants.O_NOFOLLOW === 'number'
 const cacheDirOpenFlags = hasDirectorySymlinkProtection ? fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW : fs.constants.O_DIRECTORY
 const cacheFileReadFlags = hasDirectorySymlinkProtection ? fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW : fs.constants.O_RDONLY
