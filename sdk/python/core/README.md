@@ -2,7 +2,7 @@
 
 For more information, see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/python-sdk
 
-**Python Requirements**: Python 3.9 or higher
+**Python Requirements**: Python 3.10 or higher
 
 ## Custom Server Public Key (Isolated Deployments)
 
@@ -34,6 +34,7 @@ see the official docs link above.
 ## Change Log
 
 ### 17.4.0
+* **Breaking**: KSM-1214 - Minimum Python version raised from 3.9 to 3.10. Python 3.9 reached end-of-life 2026-10-05. The new floor also clears the `urllib3` decompression-bomb bypass (CVE-2026-44432) and cross-host-redirect header leak (CVE-2026-44431) fixes, neither of which was backported to a 3.9-compatible `urllib3` release. `urllib3` floor raised from `>=2.6.3` to `>=2.7.0`.
 * KSM-299 - Fixed `InMemoryKeyValueStorage` raising a cryptic `TypeError: object of type 'NoneType' has no len()` when initialized with a config string that is not valid JSON or base64-encoded JSON. The SDK now raises `KeeperError` with a clear message instead.
 * KSM-1019 - Fixed `KSMCache` silently ignoring an explicit `kms_cache_file_name` assignment when the assigned path equaled the import-time default (regression from KSM-1004). The SDK now detects the override by object identity, so an explicit assignment always takes precedence over `KSM_CACHE_DIR`. Default behavior and `KSM_CACHE_DIR` resolution are unchanged.
 * KSM-1145 - Fixed `get_secrets()` returning duplicate entries when a record is accessible both via a shared folder and as an individual share. The SDK now deduplicates records by UID before returning them.
