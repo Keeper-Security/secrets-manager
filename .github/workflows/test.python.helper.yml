@@ -2,7 +2,9 @@ name: Test-Python-Helper
 
 on:
   pull_request:
-    branches: [ master ]
+    branches:
+      - master
+      - 'release/sdk/python/core/**'
     paths:
       - 'sdk/python/helper/**'
       - 'sdk/python/core/**'
