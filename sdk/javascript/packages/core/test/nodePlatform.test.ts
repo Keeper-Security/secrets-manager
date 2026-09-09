@@ -162,8 +162,11 @@ beforeEach(() => {
     ;(https.request as unknown as jest.Mock).mockReset().mockImplementation((_url, options, cb) => {
         responseCallback = cb
         // Real Node destroys the request and emits 'error' on it when the signal passed into
-        // request()'s own options aborts - armRequest relies on that, so the mock has to
-        // reproduce it or every deadline-firing test below hangs until Jest's own timeout.
+        // request()'s own options aborts, but only once a socket has been assigned - with no
+        // socket, ClientRequest.destroy() has nothing to propagate the error through. Most tests
+        // below want that common case reproduced so they can exercise the deadline-firing path
+        // without hanging until Jest's own timeout; 'armRequest settles even when the request has
+        // no socket yet' deliberately does not wire this, to exercise the other path.
         options?.signal?.addEventListener('abort', () => {
             mockReq.destroy()
             mockReq.emit('error', Object.assign(new Error('The operation was aborted'), {name: 'AbortError', code: 'ABORT_ERR'}))
@@ -219,6 +222,29 @@ test.each([
     }
 })
 
+// The regression this guards: Node only emits 'error' on a ClientRequest for an abort once a
+// socket has been assigned (a stalled proxy CONNECT, or a saturated agent pool, leaves req with
+// no socket at all). armRequest's own abort listener is the only settlement path for that case;
+// this test overrides the shared mock to not simulate the socket-assigned path, so it fails if
+// that listener is ever removed again.
+test('armRequest settles even when the request has no socket yet', async () => {
+    jest.useFakeTimers()
+    try {
+        ;(https.request as unknown as jest.Mock).mockImplementationOnce((_url, _options, cb) => {
+            responseCallback = cb
+            // No abort listener wired here: simulates a request with no socket, where Node's own
+            // 'error' event never fires.
+            return mockReq
+        })
+        const promise = nodePlatform.get('https://example.com', {}, 5000)
+        jest.advanceTimersByTime(5000)
+        await expect(promise).rejects.toBeInstanceOf(KeeperError)
+        await expect(promise).rejects.toThrow(/timed out after 5000ms/)
+    } finally {
+        jest.useRealTimers()
+    }
+})
+
 test('omitting timeoutMs defaults the deadline to DEFAULT_REQUEST_TIMEOUT_MS', async () => {
     jest.useFakeTimers()
     try {
@@ -247,6 +273,11 @@ test('get still resolves normally when AbortController is unavailable', async ()
     delete global.AbortController
     try {
         const promise = nodePlatform.get('https://example.com', {}, 5000)
+        // Attached before the mock is driven: if the AbortController guard this test exists to
+        // check is ever removed, get() throws synchronously and this rejection would otherwise
+        // escape unhandled after the finally block below restores the global, crashing the Jest
+        // worker instead of reporting a clean test failure.
+        void promise.catch(() => {})
         const res = respond()
         res.push('ok')
         res.finish()
@@ -340,6 +371,48 @@ describe('response handling', () => {
         res.push('partial')
         res.fail(new Error('aborted'))
         await expect(promise).rejects.toThrow(/aborted/)
+    })
+
+    // Guards the O(n^2) fix directly: re-copying the whole accumulated buffer on every 'data'
+    // event turns a large-but-healthy download into a spurious timeout purely from its own
+    // buffering cost. A byte-correctness assertion alone doesn't catch a per-chunk-concat revert,
+    // since both shapes produce identical bytes - only the call count tells them apart.
+    test('response chunks are concatenated once, not once per chunk', async () => {
+        const concatSpy = jest.spyOn(Buffer, 'concat')
+        try {
+            const promise = nodePlatform.get('https://example.com', {}, 5000)
+            const res = respond()
+            const chunkCount = 2000
+            let expected = ''
+            for (let i = 0; i < chunkCount; i++) {
+                const chunk = `c${i};`
+                expected += chunk
+                res.push(chunk)
+            }
+            res.finish()
+            const result = await promise
+            expect(Buffer.from(result.data).toString()).toBe(expected)
+            expect(concatSpy).toHaveBeenCalledTimes(1)
+        } finally {
+            concatSpy.mockRestore()
+        }
+    })
+
+    // Round 4 explicitly asked to preserve this guard: a zero-length Buffer is truthy, so treating
+    // an empty body as one would make postQuery's `if (response.data)` check misclassify an empty,
+    // non-200 response as having a body, dropping the status code from the resulting error message.
+    test('a response that ends with no data event leaves data null and never calls Buffer.concat', async () => {
+        const concatSpy = jest.spyOn(Buffer, 'concat')
+        try {
+            const promise = nodePlatform.get('https://example.com', {}, 5000)
+            const res = respond()
+            res.finish()
+            const result = await promise
+            expect(result.data).toBeNull()
+            expect(concatSpy).not.toHaveBeenCalled()
+        } finally {
+            concatSpy.mockRestore()
+        }
     })
 
     test('fileUpload resolves as soon as the response headers arrive', async () => {
