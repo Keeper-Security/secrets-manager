@@ -404,13 +404,13 @@ class Interpolate:
                 # Use atomic write for in-place editing
                 temp_path = Path(input_file).with_suffix('.tmp')
                 with open(temp_path, 'w', encoding='utf-8') as f:
-                    os.fchmod(f.fileno(), self.SECURE_FILE_PERMS)
+                    self._apply_secure_perms(f)
                     f.write(result)
                     f.flush()
                     os.fsync(f.fileno())
 
                 # Atomic rename
-                os.rename(temp_path, input_file)
+                os.replace(temp_path, input_file)
 
                 # Create safety marker
                 self._create_safety_marker(input_file)
@@ -696,6 +696,19 @@ class Interpolate:
     # FILE OPERATIONS
     # ========================================================================
 
+    def _apply_secure_perms(self, file_obj):
+        """Restrict an open file to owner-only access, where the platform allows it.
+
+        os.fchmod() only gained Windows support in Python 3.13; on older builds
+        it does not exist and calling it raises AttributeError. Windows has no
+        NTFS equivalent of the POSIX mode bits either - os.chmod() there only
+        toggles the read-only flag - so rather than approximate 0o600 with a
+        call that does not mean the same thing, the step is skipped and the file
+        inherits the permissions of its parent directory.
+        """
+        if hasattr(os, 'fchmod'):
+            os.fchmod(file_obj.fileno(), self.SECURE_FILE_PERMS)
+
     def _write_output(self, content, output_file):
         """Write content to output file with secure permissions"""
         try:
@@ -721,14 +734,13 @@ class Interpolate:
             temp_path = output_path.with_suffix('.tmp')
             try:
                 with open(temp_path, 'w', encoding='utf-8') as f:
-                    # Set permissions before writing
-                    os.fchmod(f.fileno(), self.SECURE_FILE_PERMS)
+                    self._apply_secure_perms(f)
                     f.write(content)
                     f.flush()
                     os.fsync(f.fileno())
 
                 # Atomic rename
-                os.rename(temp_path, output_path)
+                os.replace(temp_path, output_path)
 
                 # Create safety marker
                 self._create_safety_marker(output_file)
