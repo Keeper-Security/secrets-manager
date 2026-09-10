@@ -438,3 +438,60 @@ DB_PASSWORD=keeper://TEST/field/password
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestWindowsFileWrite:
+    """Regression tests for writing output files on Windows (issue #1159)"""
+
+    def test_write_output_without_fchmod(self, monkeypatch):
+        """os.fchmod is missing on Windows before Python 3.13 - must not crash"""
+        monkeypatch.delattr(os, 'fchmod', raising=False)
+
+        interpolate = Interpolate(create_mock_cli())
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, 'secrets.env')
+
+            interpolate._write_output('PLAIN=hello\n', out)
+
+            assert Path(out).read_text() == 'PLAIN=hello\n'
+
+    def test_write_output_overwrites_existing_file(self, monkeypatch):
+        """os.rename cannot replace an existing file on Windows - os.replace can
+
+        On POSIX os.rename() overwrites silently, so the Windows behaviour is
+        simulated to keep the regression meaningful on a Linux CI runner.
+        """
+        def windows_rename(*args, **kwargs):
+            raise FileExistsError(17, 'Cannot create a file when that file already exists')
+
+        monkeypatch.setattr(os, 'rename', windows_rename)
+
+        interpolate = Interpolate(create_mock_cli())
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, 'secrets.env')
+            Path(out).write_text('STALE=old\n')
+
+            interpolate._write_output('FRESH=new\n', out)
+
+            assert Path(out).read_text() == 'FRESH=new\n'
+
+    def test_write_output_leaves_no_temp_file(self):
+        """The atomic write must not leave its .tmp file behind"""
+        interpolate = Interpolate(create_mock_cli())
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, 'secrets.env')
+
+            interpolate._write_output('PLAIN=hello\n', out)
+
+            assert not Path(os.path.join(d, 'secrets.tmp')).exists()
+
+    @pytest.mark.skipif(os.name != 'posix', reason='POSIX mode bits')
+    def test_secure_perms_still_applied_on_posix(self):
+        """Guarding the call must not weaken permissions where fchmod exists"""
+        interpolate = Interpolate(create_mock_cli())
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, 'secrets.env')
+
+            interpolate._write_output('PLAIN=hello\n', out)
+
+            assert oct(os.stat(out).st_mode & 0o777) == oct(0o600)
