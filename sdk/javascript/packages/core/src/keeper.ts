@@ -793,12 +793,16 @@ const serializeOn = <T>(storage: KeyValueStorage, fn: () => Promise<T>): Promise
     // Chain variable only, never the caller's own await: a rejection here becomes a resolved
     // undefined so it can't poison later calls, and a timeout races out a hung predecessor so it
     // can't wedge the queue forever (at the cost of no longer serializing against it once the
-    // timer wins).
+    // timer wins). The timer is armed inside `pending.then(...)`, once this call's own turn
+    // actually begins, not at the moment serializeOn() is called - arming it eagerly meant queue
+    // backlog burned down the same clock meant to catch a genuinely hung fn(), so a call still
+    // legitimately waiting behind others (not stuck) could have the mutex released out from
+    // under it before its predecessor had even started running.
     let timer: ReturnType<typeof setTimeout>
     const settled = operation.then(() => undefined, () => undefined)
-    const chained = Promise.race([settled, new Promise<undefined>(resolve => {
+    const chained = pending.then(() => Promise.race([settled, new Promise<undefined>(resolve => {
         timer = setTimeout(() => resolve(undefined), SERIALIZED_STORAGE_OP_TIMEOUT_MS)
-    })])
+    })]))
     chained.then(() => clearTimeout(timer))
     pendingServerKeyOperations.set(storage, chained)
     return operation
@@ -815,13 +819,23 @@ const parseServerKeyId = (serverPublicKeyId: string): number => {
     return parsedKeyId
 }
 
-// inMemoryStorage (src/platform.ts) collapses a stored '' back to undefined on read; the
-// cloud-backed KeyValueStorage implementations and the browser secure-storage backend return a
-// stored '' or null unchanged. Every read that decides "is a custom key currently pinned" needs
-// to agree on what "not supplied" means regardless of backend.
+// "Not supplied" has to mean the same thing on every backend: inMemoryStorage collapses a
+// stored '' back to undefined on read, but the cloud-backed KeyValueStorage implementations and
+// browser secure-storage return a stored '' or null unchanged. `value` is widened to `unknown`
+// because those same cloud backends round-trip a config through JSON.stringify/JSON.parse over a
+// plain object, preserving a written number as a number rather than coercing it to a string - so
+// a non-string value here is coerced via String(), not dropped, letting a value written before
+// persistServerPublicKeyOptions guarded its own input type self-heal on the next read.
+//
+// Shared by KEY_SERVER_PUBLIC_KEY reads too: a corrupted, non-string serverPublicKey is now
+// attempted (and fails loud) instead of silently falling back to the bundled default, matching
+// how an already-string-but-garbage key has always behaved.
 const readNormalizedString = async (storage: KeyValueStorage, key: string): Promise<string | undefined> => {
-    const value = await storage.getString(key)
-    return typeof value === 'string' && value !== '' ? value : undefined
+    const value: unknown = await storage.getString(key)
+    if (value === undefined || value === null || value === '') {
+        return undefined
+    }
+    return typeof value === 'string' ? value : String(value)
 }
 
 export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => serializeOn(storage, async () => {
@@ -884,6 +898,18 @@ const persistServerPublicKeyOptions = async (
     // being ignored.
     if (typeof serverPublicKey !== 'string' || serverPublicKey === '') {
         serverPublicKey = undefined
+    }
+    // Same reachability as above, but a key id's non-string case still needs to reach
+    // parseServerKeyId rather than collapse straight to undefined - a caller-supplied number
+    // (e.g. serverPublicKeyId: 20) is a legitimate id, just the wrong JS type. Widened to
+    // `unknown` only to check the real runtime type without trusting the declared one; matches
+    // readNormalizedString's own coercion for an id that reached storage before this guard
+    // existed, so a value is never a non-string on either side of a write from here on.
+    const rawServerPublicKeyId: unknown = serverPublicKeyId
+    if (rawServerPublicKeyId === null || rawServerPublicKeyId === undefined) {
+        serverPublicKeyId = undefined
+    } else if (typeof rawServerPublicKeyId !== 'string') {
+        serverPublicKeyId = String(rawServerPublicKeyId)
     }
     if (serverPublicKey === undefined && serverPublicKeyId === undefined) {
         return

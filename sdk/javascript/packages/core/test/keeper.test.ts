@@ -546,6 +546,34 @@ test('generateTransmissionKey throws when a custom key is pinned but the stored 
     await expect(generateTransmissionKey(storage)).rejects.toThrow(/serverPublicKeyId/)
 })
 
+test('a non-string stored serverPublicKeyId self-heals on read instead of permanently breaking a custom-key config', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = nonCollapsingStorage({ serverPublicKey: fakeKey })
+    // Simulates a config backend that round-trips a value's real JS type instead of coercing it
+    // to a string - the AWS/Azure/GCP/Oracle backends persist via JSON.stringify/JSON.parse over
+    // a plain object, which preserves a number as a number - or a config written before
+    // persistServerPublicKeyOptions started guarding its own input type.
+    await storage.saveString('serverPublicKeyId', 20 as unknown as string)
+    platform.getRandomBytes = () => new Uint8Array(32)
+    const transmissionKey = await generateTransmissionKey(storage)
+    expect(transmissionKey.publicKeyId).toBe(20)
+})
+
+test('persistServerPublicKeyOptions never persists a non-string serverPublicKeyId, even from a caller bypassing the TS type', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = nonCollapsingStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    await getSecrets({
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: 20 as unknown as string, // a plain-JS caller has no compile-time check
+        queryFunction: async (_url, tk) => ({statusCode: 200, data: await platform.encryptWithKey(new TextEncoder().encode(JSON.stringify({records: [], folders: [], expiresOn: 0, warnings: []})), tk.key), headers: []})
+    })
+    const rawStoredId = await storage.getString('serverPublicKeyId')
+    expect(typeof rawStoredId).toBe('string')
+    expect(rawStoredId).toBe('20')
+})
+
 test('getSecrets rejects a caller-supplied serverPublicKeyId outside the bundled table when no custom key is pinned', async () => {
     const storage = inMemoryStorage({})
     await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
@@ -999,6 +1027,41 @@ test('a non-settling storage call does not permanently wedge later serializeOn c
     await jest.advanceTimersByTimeAsync(30_001)
     const secondCall = await generateTransmissionKey(storage)
     expect(secondCall.publicKeyId).toBe(7)
+    jest.useRealTimers()
+})
+
+test('serializeOn does not release the mutex for a queued call before its predecessor actually finishes, even once cumulative queue wait exceeds the timeout', async () => {
+    jest.useFakeTimers()
+    // Each call's own storage read takes 5s once it actually starts running; 7 of them queued
+    // back-to-back cumulatively take 35s, past the single-operation 30s timeout - but no single
+    // call is itself hung. If the timeout timer arms at enqueue time instead of at the point each
+    // call's turn actually begins, calls near the back of this queue get released early, purely
+    // from accumulated wait, and run concurrently with whichever call is genuinely active.
+    const DELAY_MS = 5_000
+    const CALL_COUNT = 7
+    let concurrent = 0
+    let maxConcurrent = 0
+    const storage: KeyValueStorage = {
+        getString: async (key: string) => {
+            if (key !== 'serverPublicKeyId') {
+                return undefined
+            }
+            concurrent++
+            maxConcurrent = Math.max(maxConcurrent, concurrent)
+            await new Promise<void>(resolve => setTimeout(resolve, DELAY_MS))
+            concurrent--
+            return undefined
+        },
+        saveString: async () => {},
+        getBytes: async () => undefined,
+        saveBytes: async () => {},
+        delete: async () => {}
+    }
+    platform.getRandomBytes = () => new Uint8Array(32)
+    const calls = Array.from({length: CALL_COUNT}, () => generateTransmissionKey(storage))
+    await jest.advanceTimersByTimeAsync(CALL_COUNT * DELAY_MS + 1_000)
+    await Promise.all(calls)
+    expect(maxConcurrent).toBe(1) // fails (>1) if the timer arms at enqueue instead of at start
     jest.useRealTimers()
 })
 
