@@ -63,28 +63,50 @@ const isEnoent = (cause: unknown): boolean =>
 // than worked around: write-file-atomic, npm and pip all make the same trade, since the
 // alternative - writing in place to keep the shared inode - gives up the rename path's
 // atomicity for that one file.
-const writeConfigFile = (configName: string, data: string): void => {
-    let resolvedPath = configName
+//
+// Same bound Linux's own symlink resolution enforces (SYMLOOP_MAX/MAXSYMLINKS is 40 on
+// every platform this package ships for), so a legitimate deep chain isn't cut short and a
+// real loop still terminates. Shared with cleanupOrphanedTempFiles so the write path and the
+// sweep always agree on where a dangling symlink's write actually landed.
+const MAX_SYMLINK_HOPS = 40
+
+const resolveWriteTargetPath = (configName: string): string => {
     try {
-        resolvedPath = fs.realpathSync(configName)
+        return fs.realpathSync(configName)
     } catch (e) {
         if (!isEnoent(e)) {
             throw e
         }
-        // ENOENT here means either nothing exists at configName at all (a true first-ever
-        // write - resolvedPath already defaults to the literal configName above, nothing more
-        // to do) or configName is itself a dangling symlink. lstatSync distinguishes the two,
-        // in its own try/catch since the first case also throws ENOENT here.
-        try {
-            const lstat = fs.lstatSync(configName)
-            if (lstat.isSymbolicLink()) {
-                const target = fs.readlinkSync(configName)
-                resolvedPath = path.isAbsolute(target) ? target : path.resolve(path.dirname(configName), target)
-            }
-        } catch {
-            // configName doesn't exist at all - true first-ever write, fall through.
-        }
     }
+    // realpathSync gives up at the first missing path component and does not report how far
+    // it got, so a dangling chain (configName is itself a symlink, possibly through further
+    // symlink hops, whose final target does not exist) is walked by hand. lstatSync's own
+    // ENOENT is not swallowed here the way readlinkSync's failure is left unhandled below - a
+    // readlink failure partway through a chain (e.g. EACCES) must reject the save rather than
+    // silently falling back to the literal path, which would let the rename below replace a
+    // symlink with a plain file.
+    let currentPath = configName
+    for (let hop = 0; hop < MAX_SYMLINK_HOPS; hop++) {
+        let lstat: fs.Stats
+        try {
+            lstat = fs.lstatSync(currentPath)
+        } catch (e) {
+            if (isEnoent(e)) {
+                return currentPath
+            }
+            throw e
+        }
+        if (!lstat.isSymbolicLink()) {
+            return currentPath
+        }
+        const target = fs.readlinkSync(currentPath)
+        currentPath = path.isAbsolute(target) ? target : path.resolve(path.dirname(currentPath), target)
+    }
+    throw new Error(`Too many levels of symbolic links resolving ${configName}`)
+}
+
+const writeConfigFile = (configName: string, data: string): void => {
+    const resolvedPath = resolveWriteTargetPath(configName)
 
     const tmpPath = `${resolvedPath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
     const fd = fs.openSync(tmpPath, 'w', 0o600)
@@ -151,13 +173,17 @@ const writeConfigFile = (configName: string, data: string): void => {
 const ORPHANED_TEMP_FILE_MAX_AGE_MS = 60_000
 
 const cleanupOrphanedTempFiles = (configName: string): void => {
-    let resolvedPath = configName
+    // Shares writeConfigFile's own resolution rather than a simpler copy, so the sweep looks in
+    // the same directory the write actually landed in - including a dangling symlink whose
+    // target lives in a different directory than the link itself. Best-effort: any failure
+    // (including a readlink error, or a chain longer than resolveWriteTargetPath tolerates)
+    // just skips the sweep for this read, matching this function's existing contract that a
+    // sweep problem never fails a read.
+    let resolvedPath: string
     try {
-        resolvedPath = fs.realpathSync(configName)
-    } catch (e) {
-        if (!isEnoent(e)) {
-            return
-        }
+        resolvedPath = resolveWriteTargetPath(configName)
+    } catch {
+        return
     }
     const dir = path.dirname(resolvedPath)
     const base = path.basename(resolvedPath)

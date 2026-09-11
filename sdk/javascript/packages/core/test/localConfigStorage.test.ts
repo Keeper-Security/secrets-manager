@@ -303,6 +303,39 @@ describe('localConfigStorage readStorage error handling (KSM-1266)', () => {
         expect(JSON.parse(fs.readFileSync(targetPath, 'utf8'))).toEqual({ foo: 'bar' })
     })
 
+    test('a chain of two dangling symlinks is written through to the final target, not the intermediate link', async () => {
+        const symlinkPath = path.join(tmpDir, 'config.json')
+        const hop1Path = path.join(tmpDir, 'hop1.json')
+        const targetPath = path.join(tmpDir, 'actual-config.json')
+        fs.symlinkSync(hop1Path, symlinkPath)
+        fs.symlinkSync(targetPath, hop1Path) // hop1 is itself a dangling symlink
+
+        const kvs = localConfigStorage(symlinkPath)
+        await kvs.saveString('foo', 'bar')
+
+        expect(fs.lstatSync(hop1Path).isSymbolicLink()).toBe(true)
+        expect(JSON.parse(fs.readFileSync(targetPath, 'utf8'))).toEqual({ foo: 'bar' })
+    })
+
+    test('a readlink failure partway through resolving a dangling symlink rejects instead of replacing the link', async () => {
+        const symlinkPath = path.join(tmpDir, 'config.json')
+        const targetPath = path.join(tmpDir, 'actual-config.json')
+        fs.symlinkSync(targetPath, symlinkPath)
+
+        const readlinkSpy = jest.spyOn(fs, 'readlinkSync').mockImplementation(() => {
+            const err: NodeJS.ErrnoException = new Error('EACCES: permission denied, readlink')
+            err.code = 'EACCES'
+            throw err
+        })
+
+        const kvs = localConfigStorage(symlinkPath)
+        await expect(kvs.saveString('foo', 'bar')).rejects.toThrow()
+
+        readlinkSpy.mockRestore()
+        expect(fs.lstatSync(symlinkPath).isSymbolicLink()).toBe(true)
+        expect(fs.existsSync(targetPath)).toBe(false)
+    })
+
     test('a hard-linked config path only updates the resolved path - a rename always creates a new inode', async () => {
         const configPath = path.join(tmpDir, 'config.json')
         const linkedPath = path.join(tmpDir, 'config-link.json')
@@ -370,6 +403,21 @@ describe('localConfigStorage readStorage error handling (KSM-1266)', () => {
         fs.writeFileSync(realPath, JSON.stringify({ original: 'data' }))
         fs.symlinkSync(realPath, symlinkPath)
         const orphanPath = `${realPath}.99999.aabbccddeeff.tmp`
+        fs.writeFileSync(orphanPath, 'stale')
+        backdate(orphanPath)
+
+        localConfigStorage(symlinkPath)
+
+        expect(fs.existsSync(orphanPath)).toBe(false)
+    })
+
+    test('an orphaned temp file next to a dangling symlink\'s target directory is still swept', () => {
+        const subDir = path.join(tmpDir, 'subdir')
+        fs.mkdirSync(subDir)
+        const targetPath = path.join(subDir, 'actual-config.json')
+        const symlinkPath = path.join(tmpDir, 'config.json')
+        fs.symlinkSync(targetPath, symlinkPath) // target does not exist yet - dangling
+        const orphanPath = `${targetPath}.99999.aabbccddeeff.tmp`
         fs.writeFileSync(orphanPath, 'stale')
         backdate(orphanPath)
 
