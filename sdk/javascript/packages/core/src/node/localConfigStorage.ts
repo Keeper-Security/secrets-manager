@@ -1,6 +1,10 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey, inMemoryStorage} from "../platform";
 import * as fs from 'fs';
 
+// fs.openSync's mode argument is only honored when the file is created; it is a no-op on an
+// existing file, so permissions must be re-asserted after every write, not just the first one.
+const chmodSecure = (filePath: string) => fs.chmodSync(filePath, 0o600)
+
 export const localConfigStorage = (configName?: string): KeyValueStorage => {
 
     const readStorage = (): any => {
@@ -21,13 +25,13 @@ export const localConfigStorage = (configName?: string): KeyValueStorage => {
         if (!configName) {
             return
         }
-        // Create file with secure permissions (0600)
         const fd = fs.openSync(configName, 'w', 0o600)
         try {
             fs.writeSync(fd, JSON.stringify(storageData, null, 2))
         } finally {
             fs.closeSync(fd)
         }
+        chmodSecure(configName)
     }
 
     return {

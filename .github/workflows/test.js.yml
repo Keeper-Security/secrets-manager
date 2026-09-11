@@ -1,8 +1,13 @@
 name: Test-JS
 
 on:
+  # Runs on the merge result (head merged into base), so it gates a change before it lands on
+  # a JS core release branch as well as on master. Deliberately not also on push to release/**,
+  # which would only re-test a commit this pull_request run already tested.
   pull_request:
-    branches: [ master ]
+    branches:
+      - master
+      - 'release/sdk/javascript/core/**'
     paths:
       - 'sdk/javascript/packages/core/**'
       - '.github/workflows/test.js.yml'

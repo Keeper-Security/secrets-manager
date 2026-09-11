@@ -7,7 +7,7 @@
     "run" : "node hello.js"
   },
   "dependencies": {
-    "@keeper-security/secrets-manager-core": "17.3.0",
+    "@keeper-security/secrets-manager-core": "17.6.0",
     "https-proxy-agent": "^7.0.6"
   }
 }

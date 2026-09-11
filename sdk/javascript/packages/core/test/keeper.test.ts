@@ -1,6 +1,7 @@
 import {
     KeeperHttpResponse,
     getSecrets,
+    getFolders,
     initializeStorage,
     generateTransmissionKey,
     platform,
@@ -8,6 +9,14 @@ import {
 } from '../'
 
 import * as fs from 'fs'
+
+const FAKE_ONE_TIME_TOKEN = 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'
+
+const keyErrorResponse = (keyId: number) => JSON.stringify({ error: 'key', key_id: keyId })
+
+afterEach(() => {
+    jest.restoreAllMocks()
+})
 
 test('Get secrets e2e', async () => {
 
@@ -316,20 +325,96 @@ test('IL5 dynamic key - rotation suppression: server key_id hint ignored when se
     expect(await storage.getString('serverPublicKeyId')).toBe('20')
 })
 
+test('key rotation - retries are bounded, not infinite', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    let calls = 0
+    const enc = new TextEncoder()
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
+            return { statusCode: 400, data: enc.encode(keyErrorResponse(7)), headers: [] }
+        }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/key rotation exhausted/i)
+    // MAX_KEY_ROTATION_RETRIES = 3: initial attempt + 3 retries = 4 total calls.
+    expect(calls).toBe(4)
+})
+
+test('key rotation - suggested key id is adopted and persisted', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    let calls = 0
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async (_url, tk) => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
+            if (calls === 1) {
+                return { statusCode: 400, data: enc.encode(keyErrorResponse(8)), headers: [] }
+            }
+            // Verify the rotation was adopted: second request should use key_id 8.
+            expect(tk.publicKeyId).toBe(8)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    const secrets = await getSecrets(options)
+    expect(secrets.records).toEqual([])
+    expect(calls).toBe(2)
+    // Verify the suggested key_id 8 was persisted to storage.
+    expect(await storage.getString('serverPublicKeyId')).toBe('8')
+})
+
+test('key rotation - unsupported suggested key id is rejected, not persisted', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    let calls = 0
+    const enc = new TextEncoder()
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
+            return { statusCode: 400, data: enc.encode(keyErrorResponse(99)), headers: [] }
+        }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/unsupported key id 99/)
+    // Rejected before the retry loop persists anything: one request, config untouched.
+    expect(calls).toBe(1)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
 test('stale pinned server key: diagnostic message propagates to caller, key preserved', async () => {
     const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
     const storage = inMemoryStorage({})
-    await initializeStorage(storage, 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c', 'fake.keepersecurity.com')
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
     await storage.saveString('serverPublicKey', fakeKey)
     await storage.saveString('serverPublicKeyId', '20')
-    const keyError = JSON.stringify({ error: 'key', key_id: 7 })
+    let calls = 0
+    const enc = new TextEncoder()
     const options: SecretManagerOptions = {
         storage,
-        queryFunction: async () => ({
-            statusCode: 400,
-            data: new TextEncoder().encode(keyError),
-            headers: []
-        })
+        queryFunction: async () => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected')
+            }
+            return {
+                statusCode: 400,
+                data: enc.encode(keyErrorResponse(7)),
+                headers: []
+            }
+        }
     }
     await expect(getSecrets(options)).rejects.toThrow(/Server rejected the custom server public key/)
     await expect(getSecrets(options)).rejects.toThrow(/Please update your IL5 KSM configuration/)
@@ -365,4 +450,386 @@ test('IL5 dynamic key - Layer 2: rejects malformed (too short) serverPublicKey',
     await expect(
         initializeStorage(storage, 'IL5:ONE_TIME_TOKEN:20:tooshort')
     ).rejects.toThrow('IL5 token: serverPublicKey appears malformed')
+})
+
+test('getFolders skips an undecryptable folder and returns the good one', async () => {
+    const transmissionKey = new Uint8Array(32).fill(1)
+    const appKey = new Uint8Array(32).fill(2)
+    const folderKey = new Uint8Array(32).fill(3)
+
+    const goodFolderKeyWrapped = await platform.encryptWithKey(folderKey, appKey)
+    const goodFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Good Folder' })), folderKey, true)
+    const badFolderKeyWrapped = new Uint8Array(16).fill(9)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'good-uid', folderKey: platform.bytesToBase64(goodFolderKeyWrapped), data: platform.bytesToBase64(goodFolderData) },
+            { folderUid: 'bad-uid', folderKey: platform.bytesToBase64(badFolderKeyWrapped), data: '' }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    // postQuery uses options.queryFunction (not platform.post); pin getRandomBytes so the
+    // transmission key matches the key used to encrypt the response above.
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders.length).toBe(1)
+    expect(folders[0].folderUid).toBe('good-uid')
+    expect(folders[0].name).toBe('Good Folder')
+})
+
+test('flat record with innerFolderUid decrypts recordKey using the folder key, not the app key', async () => {
+    const transmissionKey = new Uint8Array(32).fill(1)
+    const appKey = new Uint8Array(32).fill(2)
+    const folderKey = new Uint8Array(32).fill(3)
+    const recordKey = new Uint8Array(32).fill(4)
+    const folderUid = 'folder-uid-1'
+    const recordUid = 'record-uid-1'
+
+    const wrappedFolderKey = await platform.encryptWithKey(folderKey, appKey)
+    const wrappedRecordKey = await platform.encryptWithKey(recordKey, folderKey)
+    const recordData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ title: 'Shared Record', type: 'login', fields: [], custom: [] })), recordKey)
+
+    const serverResponse = {
+        folders: [
+            { folderUid, folderKey: platform.bytesToBase64(wrappedFolderKey), data: '', records: [] }
+        ],
+        records: [
+            {
+                recordUid,
+                recordKey: platform.bytesToBase64(wrappedRecordKey),
+                data: platform.bytesToBase64(recordData),
+                revision: 1,
+                files: [],
+                innerFolderUid: folderUid
+            }
+        ],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const secrets = await getSecrets({ storage: kvs, queryFunction: queryFn })
+
+    // Bug: the flat-records loop always unwraps recordKey with KEY_APP_KEY, ignoring
+    // innerFolderUid. Since recordKey here is wrapped with the folder key, unwrapping
+    // with the app key throws, the record is caught and silently skipped, and
+    // secrets.records comes back empty instead of containing the decrypted record.
+    expect(secrets.records.length).toBe(1)
+    expect(secrets.records[0].data.title).toBe('Shared Record')
+    expect(secrets.records[0].folderUid).toBe(folderUid)
+})
+
+test('flat record with innerFolderUid falls back to the app key when no matching folder is returned', async () => {
+    const transmissionKey = new Uint8Array(32).fill(5)
+    const appKey = new Uint8Array(32).fill(6)
+    const recordKey = new Uint8Array(32).fill(7)
+    const recordUid = 'record-uid-2'
+
+    const wrappedRecordKey = await platform.encryptWithKey(recordKey, appKey)
+    const recordData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ title: 'Orphaned Record', type: 'login', fields: [], custom: [] })), recordKey)
+
+    const serverResponse = {
+        folders: [],
+        records: [
+            {
+                recordUid,
+                recordKey: platform.bytesToBase64(wrappedRecordKey),
+                data: platform.bytesToBase64(recordData),
+                revision: 1,
+                files: [],
+                innerFolderUid: 'folder-uid-not-in-response'
+            }
+        ],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const secrets = await getSecrets({ storage: kvs, queryFunction: queryFn })
+
+    expect(secrets.records.length).toBe(1)
+    expect(secrets.records[0].data.title).toBe('Orphaned Record')
+})
+
+test('getFolders skips a folder that names itself as its own parent instead of hanging', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(11)
+    const appKey = new Uint8Array(32).fill(12)
+    const folderKey = new Uint8Array(32).fill(13)
+
+    const goodFolderKeyWrapped = await platform.encryptWithKey(folderKey, appKey)
+    const goodFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Good Root Folder' })), folderKey, true)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'self-parent-uid', folderKey: 'unused-folder-key', data: '', parent: 'self-parent-uid' },
+            { folderUid: 'good-root-uid', folderKey: platform.bytesToBase64(goodFolderKeyWrapped), data: platform.bytesToBase64(goodFolderData) }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders.length).toBe(1)
+    expect(folders[0].folderUid).toBe('good-root-uid')
+    expect(folders[0].name).toBe('Good Root Folder')
+
+    const cycleLog = consoleErrorSpy.mock.calls.map(call => call[0]).find(msg => msg.includes('self-parent-uid'))
+    expect(cycleLog).toBeDefined()
+    expect(cycleLog).toContain('parent cycle detected at folder UID self-parent-uid')
+
+    consoleErrorSpy.mockRestore()
+})
+
+test('getFolders detects a two-folder parent cycle and logs each folder naming the other as the cycle point', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(21)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'folder-a', folderKey: 'unused-folder-key', data: '', parent: 'folder-b' },
+            { folderUid: 'folder-b', folderKey: 'unused-folder-key', data: '', parent: 'folder-a' }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders).toEqual([])
+    // 2 per-folder skip lines plus the KSM-1267 summary line naming both skipped UIDs.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(3)
+    expect(consoleErrorSpy.mock.calls[0][0]).toContain('Folder folder-a skipped due to error')
+    expect(consoleErrorSpy.mock.calls[0][0]).toContain('Folder data inconsistent - parent cycle detected at folder UID folder-b')
+    expect(consoleErrorSpy.mock.calls[1][0]).toContain('Folder folder-b skipped due to error')
+    expect(consoleErrorSpy.mock.calls[1][0]).toContain('Folder data inconsistent - parent cycle detected at folder UID folder-a')
+
+    consoleErrorSpy.mockRestore()
+})
+
+test('getFolders detects a longer three-folder parent cycle and skips every folder in the ring', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(31)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'ring-a', folderKey: 'unused-folder-key', data: '', parent: 'ring-b' },
+            { folderUid: 'ring-b', folderKey: 'unused-folder-key', data: '', parent: 'ring-c' },
+            { folderUid: 'ring-c', folderKey: 'unused-folder-key', data: '', parent: 'ring-a' }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders).toEqual([])
+    // 3 per-folder skip lines plus the KSM-1267 summary line naming all three skipped UIDs.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(4)
+    for (const call of consoleErrorSpy.mock.calls.slice(0, 3)) {
+        expect(call[0]).toContain('parent cycle detected at folder UID')
+    }
+
+    consoleErrorSpy.mockRestore()
+})
+
+// The wall-clock bound below is the real regression guard: a synchronous infinite loop cannot be
+// preempted by Jest's timer-based timeout, so a future revert of the fix would hang this test
+// indefinitely rather than fail fast; the bounded implementation is what keeps this test reliable.
+test('getFolders resolves a large folder-parent cycle quickly instead of hanging the event loop', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(41)
+    const ringSize = 500
+    const ringFolders: { folderUid: string, folderKey: string, data: string, parent: string }[] = []
+    for (let i = 0; i < ringSize; i++) {
+        ringFolders.push({ folderUid: `folder-${i}`, folderKey: 'unused-folder-key', data: '', parent: `folder-${(i + 1) % ringSize}` })
+    }
+
+    const serverResponse = {
+        folders: ringFolders,
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+
+    const start = Date.now()
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+    const elapsed = Date.now() - start
+
+    expect(folders).toEqual([])
+    expect(elapsed).toBeLessThan(2000)
+    // ringSize per-folder skip lines plus the KSM-1267 summary line, which is not itself a
+    // cycle message, so it is checked separately from the loop below.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(ringSize + 1)
+    for (const call of consoleErrorSpy.mock.calls.slice(0, ringSize)) {
+        expect(call[0]).toContain('parent cycle detected at folder UID')
+    }
+    expect(consoleErrorSpy.mock.calls[ringSize][0]).toContain(`getFolders: ${ringSize} of ${ringSize} folder(s) could not be decrypted`)
+
+    consoleErrorSpy.mockRestore()
+}, 5000)
+
+test('getFolders decrypts a real two-level, non-cyclic parent chain (root then child)', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(51)
+    const appKey = new Uint8Array(32).fill(52)
+    const rootFolderKey = new Uint8Array(32).fill(53)
+    const childFolderKey = new Uint8Array(32).fill(54)
+    const rootUid = 'root-folder-uid'
+    const childUid = 'child-folder-uid'
+
+    const rootFolderKeyWrapped = await platform.encryptWithKey(rootFolderKey, appKey)
+    const rootFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Root Folder' })), rootFolderKey, true)
+
+    const childFolderKeyWrapped = await platform.encryptWithKey(childFolderKey, rootFolderKey, true)
+    const childFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Child Folder' })), childFolderKey, true)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: rootUid, folderKey: platform.bytesToBase64(rootFolderKeyWrapped), data: platform.bytesToBase64(rootFolderData) },
+            { folderUid: childUid, folderKey: platform.bytesToBase64(childFolderKeyWrapped), data: platform.bytesToBase64(childFolderData), parent: rootUid }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders.length).toBe(2)
+    const root = folders.find(f => f.folderUid === rootUid)
+    const child = folders.find(f => f.folderUid === childUid)
+    expect(root?.name).toBe('Root Folder')
+    expect(child?.name).toBe('Child Folder')
+    expect(consoleErrorSpy).not.toHaveBeenCalled()
+
+    consoleErrorSpy.mockRestore()
+})
+
+test('getFolders keeps the "unable to locate shared folder" message distinct from the cycle message', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(61)
+    const appKey = new Uint8Array(32).fill(62)
+    const folderKey = new Uint8Array(32).fill(63)
+
+    const goodFolderKeyWrapped = await platform.encryptWithKey(folderKey, appKey)
+    const goodFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Good Folder' })), folderKey, true)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'orphan-uid', folderKey: 'unused-folder-key', data: '', parent: 'missing-parent-uid' },
+            { folderUid: 'good-uid', folderKey: platform.bytesToBase64(goodFolderKeyWrapped), data: platform.bytesToBase64(goodFolderData) }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders.length).toBe(1)
+    expect(folders[0].folderUid).toBe('good-uid')
+
+    // 1 per-folder skip line plus the KSM-1267 summary line.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(2)
+    expect(consoleErrorSpy.mock.calls[0][0]).toBe('Folder orphan-uid skipped due to error (missing-key): KeeperCryptoError, Folder data inconsistent - unable to locate shared folder for orphan-uid')
+    expect(consoleErrorSpy.mock.calls[0][0]).not.toContain('parent cycle detected')
+
+    consoleErrorSpy.mockRestore()
 })

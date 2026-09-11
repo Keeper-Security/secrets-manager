@@ -1,15 +1,56 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, TransmissionKey, platform} from "../platform";
+import {KeeperError} from "../errors";
+
+type Reject = (reason: Error) => void
+
+// Duck-typed rather than `instanceof Error`. IndexedDB reports failures as a DOMException, and
+// whether that satisfies `instanceof Error` depends on the realm it was constructed in, so a
+// cross-realm failure (a worker, an iframe) would otherwise lose the diagnostic entirely.
+const describeCause = (cause: unknown): string => {
+    const {name, message} = (cause ?? {}) as { name?: unknown, message?: unknown }
+    if (typeof name === 'string' && typeof message === 'string') return `${name}: ${message}`
+    if (typeof message === 'string') return message
+    return 'unknown error'
+}
+
+const idbFailure = (operation: string, cause: unknown): KeeperError =>
+    new KeeperError(`IndexedDB ${operation} failed: ${describeCause(cause)}`)
+
+// A failing IDBRequest fires onerror and never onsuccess, so a promise that only handles
+// onsuccess stays pending forever. The caller then hangs with no error, no rejection and no
+// timeout, which is far worse than failing. Every request in this file is wired through here.
+const rejectOnError = (request: IDBRequest, reject: Reject, operation: string): void => {
+    request.onerror = () => reject(idbFailure(operation, request.error))
+}
+
+const rejectOnOpenFailure = (request: IDBOpenDBRequest, reject: Reject, dbName: string): void => {
+    rejectOnError(request, reject, `open of database '${dbName}'`)
+    // onblocked fires when another live connection holds the database at the old version during
+    // an upgrade. Neither onsuccess nor onerror follows it, so this is the only chance to settle.
+    request.onblocked = () => reject(new KeeperError(
+        `IndexedDB open of database '${dbName}' is blocked by another open connection to it`))
+}
 
 export const localConfigStorage = (client: string, useObjects: boolean): KeyValueStorage => {
+
+    const STORE_NAME = 'secrets'
 
     const getObjectStore = async (mode: IDBTransactionMode): Promise<IDBObjectStore> =>
         new Promise<IDBObjectStore>(((resolve, reject) => {
             const request = indexedDB.open(client, 1)
+            rejectOnOpenFailure(request, reject, client)
             request.onupgradeneeded = () => {
-                request.result.createObjectStore('secrets');
+                request.result.createObjectStore(STORE_NAME);
             }
             request.onsuccess = () => {
-                resolve(request.result.transaction('secrets', mode).objectStore('secrets'))
+                // transaction() throws synchronously when the store is missing, and a throw
+                // inside an event handler is not caught by the Promise executor, so it has to
+                // be turned into a rejection here or the promise never settles.
+                try {
+                    resolve(request.result.transaction(STORE_NAME, mode).objectStore(STORE_NAME))
+                } catch (e) {
+                    reject(idbFailure(`transaction on store '${STORE_NAME}'`, e))
+                }
             }
         }))
 
@@ -17,6 +58,7 @@ export const localConfigStorage = (client: string, useObjects: boolean): KeyValu
         const objectStore = await getObjectStore('readonly')
         return new Promise<string | undefined>(((resolve, reject) => {
             const request = objectStore.get(key)
+            rejectOnError(request, reject, `read of key '${key}'`)
             request.onsuccess = () => {
                 resolve(request.result)
             }
@@ -32,6 +74,7 @@ export const localConfigStorage = (client: string, useObjects: boolean): KeyValu
         const objectStore = await getObjectStore('readwrite')
         return new Promise<void>(((resolve, reject) => {
             const request = objectStore.put(value, key)
+            rejectOnError(request, reject, `write of key '${key}'`)
             request.onsuccess = () => {
                 resolve()
             }
@@ -42,6 +85,7 @@ export const localConfigStorage = (client: string, useObjects: boolean): KeyValu
         const objectStore = await getObjectStore('readwrite')
         return new Promise<void>(((resolve, reject) => {
             const request = objectStore.delete(key)
+            rejectOnError(request, reject, `delete of key '${key}'`)
             request.onsuccess = () => {
                 resolve()
             }
@@ -72,32 +116,42 @@ export const secureStorage = async (dbName: string): Promise<KeyValueStorage> =>
     const META_KEY = '__secureKey__'
 
     const getObjectStore = async (mode: IDBTransactionMode): Promise<IDBObjectStore> =>
-        new Promise<IDBObjectStore>((resolve) => {
+        new Promise<IDBObjectStore>((resolve, reject) => {
             const req = indexedDB.open(dbName, 1)
+            rejectOnOpenFailure(req, reject, dbName)
             req.onupgradeneeded = () => req.result.createObjectStore(STORE_NAME)
-            req.onsuccess = () => resolve(req.result.transaction(STORE_NAME, mode).objectStore(STORE_NAME))
+            req.onsuccess = () => {
+                try {
+                    resolve(req.result.transaction(STORE_NAME, mode).objectStore(STORE_NAME))
+                } catch (e) {
+                    reject(idbFailure(`transaction on store '${STORE_NAME}'`, e))
+                }
+            }
         })
 
     const getRaw = async (key: string): Promise<any> => {
         const store = await getObjectStore('readonly')
-        return new Promise<any>(resolve => {
+        return new Promise<any>((resolve, reject) => {
             const r = store.get(key)
+            rejectOnError(r, reject, `read of key '${key}'`)
             r.onsuccess = () => resolve(r.result)
         })
     }
 
     const putRaw = async (key: string, value: any): Promise<void> => {
         const store = await getObjectStore('readwrite')
-        return new Promise<void>(resolve => {
+        return new Promise<void>((resolve, reject) => {
             const r = store.put(value, key)
+            rejectOnError(r, reject, `write of key '${key}'`)
             r.onsuccess = () => resolve()
         })
     }
 
     const delRaw = async (key: string): Promise<void> => {
         const store = await getObjectStore('readwrite')
-        return new Promise<void>(resolve => {
+        return new Promise<void>((resolve, reject) => {
             const r = store.delete(key)
+            rejectOnError(r, reject, `delete of key '${key}'`)
             r.onsuccess = () => resolve()
         })
     }

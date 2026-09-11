@@ -1,9 +1,8 @@
 {
-  "name": "hello-secret",
+  "name": "totp",
   "version": "1.0.0",
-  "description": "Secrets Manager custom caching function usage sample for Node",
+  "description": "Secrets Manager TOTP code generation sample for Node",
   "license": "ISC",
-  "type": "commonjs",
   "scripts": {
     "run": "node hello.js"
   },
