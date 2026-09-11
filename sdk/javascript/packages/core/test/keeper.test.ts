@@ -5,7 +5,8 @@ import {
     initializeStorage,
     generateTransmissionKey,
     platform,
-    SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword
+    SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword,
+    DEFAULT_REQUEST_TIMEOUT_MS
 } from '../'
 
 import * as fs from 'fs'
@@ -832,4 +833,8 @@ test('getFolders keeps the "unable to locate shared folder" message distinct fro
     expect(consoleErrorSpy.mock.calls[0][0]).not.toContain('parent cycle detected')
 
     consoleErrorSpy.mockRestore()
+})
+
+test('DEFAULT_REQUEST_TIMEOUT_MS is exported from the package entry point', () => {
+    expect(DEFAULT_REQUEST_TIMEOUT_MS).toBe(30000)
 })

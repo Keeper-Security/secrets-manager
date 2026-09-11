@@ -163,3 +163,15 @@ describe('browser secureStorage', () => {
         expect(await s.getString('key')).toBe('value')
     })
 })
+
+// The node entry point re-exports the whole of ../platform via `export *`, so it picks up
+// DEFAULT_REQUEST_TIMEOUT_MS automatically. The browser entry point uses a narrow named list
+// instead and previously omitted it; isolateModules keeps this off the module registry the rest
+// of this file's tests share, since requiring the entry point also runs its connectPlatform/
+// initialize() side effects.
+test('DEFAULT_REQUEST_TIMEOUT_MS is exported from the browser entry point', () => {
+    jest.isolateModules(() => {
+        const {DEFAULT_REQUEST_TIMEOUT_MS} = require('../src/browser')
+        expect(DEFAULT_REQUEST_TIMEOUT_MS).toBe(30000)
+    })
+})

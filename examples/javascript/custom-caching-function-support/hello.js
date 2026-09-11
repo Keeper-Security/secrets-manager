@@ -4,7 +4,8 @@ const {
     getSecrets,
     initializeStorage,
     localConfigStorage,
-    postFunction
+    postFunction,
+    KeeperError
 } = require('@keeper-security/secrets-manager-core')
 
 const CACHE_FILENAME = 'cache.dat';
@@ -13,13 +14,14 @@ const CACHE_FILENAME = 'cache.dat';
 // ⓘ This will store only last request, however you can use any tool to extend this functionality
 // ⓘ Stale cache entries can cause version mismatches if records are updated from other keepersecurity utils. Prefer fresh reads
 
-const cachingPostFunction = async (url, transmissionKey, payload, allowUnverifiedCertificate) => {
+const cachingPostFunction = async (url, transmissionKey, payload, allowUnverifiedCertificate, timeoutMs) => {
     try {
         const response = await postFunction(
             url,
             transmissionKey,
             payload,
-            allowUnverifiedCertificate
+            allowUnverifiedCertificate,
+            timeoutMs
         )
 
         if (response.statusCode == 200) {
@@ -28,6 +30,12 @@ const cachingPostFunction = async (url, transmissionKey, payload, allowUnverifie
 
         return response
     } catch (e) {
+        // A deliberate client-side timeout is not a transport failure: falling back to stale
+        // cache here would silently turn a slow/hung request into a fake success instead of
+        // surfacing it to the caller.
+        if (e instanceof KeeperError) {
+            throw e
+        }
         console.error(e)
         let cachedData
         try {

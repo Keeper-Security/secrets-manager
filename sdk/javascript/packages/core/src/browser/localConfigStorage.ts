@@ -1,5 +1,6 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, TransmissionKey, platform} from "../platform";
 import {KeeperError} from "../errors";
+import {validateTimeoutMs} from "../deadline";
 
 type Reject = (reason: Error) => void
 
@@ -202,20 +203,40 @@ export const secureStorage = async (dbName: string): Promise<KeyValueStorage> =>
     }
 }
 
-export function createCachingFunction(storage: KeyValueStorage): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload) => Promise<KeeperHttpResponse> {
+// Signature matches SecretManagerOptions.queryFunction so the trailing options, including
+// requestTimeoutMs, reach platform.post instead of being dropped on the floor.
+export function createCachingFunction(storage: KeyValueStorage): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number) => Promise<KeeperHttpResponse> {
 
-    return async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload): Promise<KeeperHttpResponse> => {
+    return async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number): Promise<KeeperHttpResponse> => {
+        // Resolved before the try below so a caller-input mistake (an unusable timeoutMs) fails
+        // fast instead of being caught and mistaken for a transport failure worth falling back to
+        // stale cache for - resolveTimeoutMs throws a plain Error, not a KeeperError, for exactly
+        // this class of failure (see deadline.ts), so it would otherwise slip past the KeeperError
+        // carve-out below.
+        const resolvedTimeoutMs = validateTimeoutMs(timeoutMs)
         try {
             const response = await platform.post(url, payload.payload, {
                 PublicKeyId: transmissionKey.publicKeyId.toString(),
                 TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
                 Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-            })
+            }, allowUnverifiedCertificate, resolvedTimeoutMs)
             if (response.statusCode == 200) {
-                await storage.saveBytes('cache', new Uint8Array([...transmissionKey.key, ...response.data]))
+                try {
+                    await storage.saveBytes('cache', new Uint8Array([...transmissionKey.key, ...response.data]))
+                } catch {
+                    // A cache-write failure (IndexedDB quota, private browsing, blocked upgrade)
+                    // must not discard an already-successful response - it only means the next
+                    // call won't have a fresh fallback to read, not that this call failed.
+                }
             }
             return response
         } catch (e) {
+            // A deliberate client-side timeout is not a transport failure: falling back to stale
+            // cache here would silently turn a slow/hung request into a fake success instead of
+            // surfacing it to the caller.
+            if (e instanceof KeeperError) {
+                throw e
+            }
             const cachedData = await storage.getBytes('cache')
             if (!cachedData) {
                 throw new Error('Cached value does not exist')
