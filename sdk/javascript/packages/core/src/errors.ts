@@ -16,8 +16,9 @@ export class KeeperError extends Error {
 }
 
 /**
- * Thrown when the Keeper backend throttles requests (HTTP 403 {"error":"throttled"}) and the
- * SDK has exhausted its automatic retries (MAX_THROTTLE_RETRIES). Extends KeeperError so existing
+ * Thrown when the Keeper backend throttles requests (HTTP 429, or HTTP 403 for a possible second
+ * limiter, both carrying {"error":"throttled"}; see KSM-1386) and the SDK has exhausted its
+ * automatic retries (MAX_THROTTLE_RETRIES). Extends KeeperError so existing
  * `catch` handlers keep working; callers that want to react specifically to throttling can
  * check `instanceof KeeperThrottleError`.
  */

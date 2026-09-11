@@ -15,9 +15,12 @@ const KEY_APP_KEY = 'appKey' // The application key with which all secrets are e
 const KEY_OWNER_PUBLIC_KEY = 'appOwnerPublicKey' // The application owner public key, to create records
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
 
-// Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
+// Throttle retry. The backend throttles HTTP 429 {"error":"throttled"}
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
-// request, so the counter only clears after 10s of silence).
+// request, so the counter only clears after 10s of silence). The backend used HTTP 403 for
+// this until 2026-06-15, when an unrelated login-security fix (KA-8807) changed the shared
+// response code; the gate below accepts both statuses (KSM-1395) since a second, unconfirmed
+// rate limiter might still use 403 (KSM-1386).
 const MAX_THROTTLE_RETRIES = 5
 // Bounds the server-key-rotation retry (postQuery's `error === 'key'` branch, no custom key
 // pinned): one legitimate rotation should resolve it, so this only needs to tolerate a little
@@ -815,10 +818,10 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
             let errorMessage
             if (response.data) {
                 errorMessage = platform.bytesToString(response.data.slice(0, 1000))
-                // Throttle retry with exponential backoff + jitter. Checked
-                // before key-rotation so that path is untouched, and gated on the 403 status so a
-                // non-403 response carrying a {"error":"throttled"} body is not retried.
-                if (response.statusCode === 403) {
+                // Throttle retry with exponential backoff + jitter. Checked before key-rotation
+                // so that path is untouched. Gated on 403 or 429 (KSM-1395) so a response on
+                // neither status, carrying a {"error":"throttled"} body, is not retried.
+                if (response.statusCode === 403 || response.statusCode === 429) {
                     const retryAfter = parseThrottle(errorMessage)
                     if (retryAfter !== null) {
                         if (throttleAttempt >= MAX_THROTTLE_RETRIES) {

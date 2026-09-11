@@ -17,8 +17,10 @@ import {
 const FAKE_TOKEN = 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'
 const enc = new TextEncoder()
 
-const throttle403 = (retryAfter?: number): KeeperHttpResponse => ({
-    statusCode: 403,
+// The backend used 403 for this until 2026-06-15 and uses 429 now (KSM-1386); the gate accepts
+// both (KSM-1395), so the e2e cases below run once per status.
+const throttleResponse = (statusCode: 403 | 429, retryAfter?: number): KeeperHttpResponse => ({
+    statusCode,
     data: enc.encode(
         JSON.stringify(
             retryAfter === undefined
@@ -97,11 +99,11 @@ describe('parseThrottle (unit)', () => {
     })
 })
 
-describe('throttle retry (e2e via getSecrets)', () => {
+describe.each([403, 429] as const)('throttle retry (e2e via getSecrets), status %d', (status) => {
     test('retries then succeeds', async () => {
         let call = 0
         const { options, sleeps } = await makeOptions(async (_url, tk) => {
-            if (call++ === 0) return throttle403()
+            if (call++ === 0) return throttleResponse(status)
             return { statusCode: 200, data: await platform.encryptWithKey(enc.encode('{}'), tk.key), headers: [] }
         })
         const secrets = await getSecrets(options)
@@ -113,27 +115,17 @@ describe('throttle retry (e2e via getSecrets)', () => {
         let call = 0
         const { options, sleeps } = await makeOptions(async () => {
             call++
-            return throttle403()
+            return throttleResponse(status)
         })
         await expect(getSecrets(options)).rejects.toBeInstanceOf(KeeperThrottleError)
         expect(sleeps.length).toBe(5)
         expect(call).toBe(6) // 5 retries + the final throttled response
     })
 
-    // The setPrototypeOf chain must survive transpilation, otherwise consumers' `instanceof KeeperError`
-    // catches would silently break when a KeeperThrottleError is thrown.
-    test('thrown KeeperThrottleError is also instanceof KeeperError and Error', async () => {
-        const { options } = await makeOptions(async () => throttle403())
-        const err = await getSecrets(options).catch(e => e)
-        expect(err).toBeInstanceOf(KeeperThrottleError)
-        expect(err).toBeInstanceOf(KeeperError)
-        expect(err).toBeInstanceOf(Error)
-    })
-
     test('honors retry_after from the response body', async () => {
         let call = 0
         const { options, sleeps } = await makeOptions(async () =>
-            call++ === 0 ? throttle403(3) : throttle403()
+            call++ === 0 ? throttleResponse(status, 3) : throttleResponse(status)
         )
         await expect(getSecrets(options)).rejects.toBeInstanceOf(KeeperThrottleError)
         // retry_after = 3s with one-sided [0, +25%) jitter -> [3s, 3.75s]; never below the 3s floor
@@ -141,17 +133,30 @@ describe('throttle retry (e2e via getSecrets)', () => {
         expect(sleeps[0]).toBeLessThanOrEqual(3750)
     })
 
-    test('non-throttle 403 is not retried', async () => {
+    test('non-throttle body on this status is not retried', async () => {
         const { options, sleeps } = await makeOptions(async () => ({
-            statusCode: 403,
+            statusCode: status,
             data: enc.encode(JSON.stringify({ error: 'access_denied', message: 'nope' })),
             headers: [],
         }))
         await expect(getSecrets(options)).rejects.not.toBeInstanceOf(KeeperThrottleError)
         expect(sleeps.length).toBe(0)
     })
+})
 
-    test('a 502 carrying a throttled body is not retried (403 gate)', async () => {
+describe('throttle retry (e2e via getSecrets), status-independent', () => {
+    // The setPrototypeOf chain must survive transpilation, otherwise consumers' `instanceof KeeperError`
+    // catches would silently break when a KeeperThrottleError is thrown. Only needs checking once;
+    // it does not depend on which of the two gated statuses triggered it.
+    test('thrown KeeperThrottleError is also instanceof KeeperError and Error', async () => {
+        const { options } = await makeOptions(async () => throttleResponse(403))
+        const err = await getSecrets(options).catch(e => e)
+        expect(err).toBeInstanceOf(KeeperThrottleError)
+        expect(err).toBeInstanceOf(KeeperError)
+        expect(err).toBeInstanceOf(Error)
+    })
+
+    test('a 502 carrying a throttled body is not retried (403/429 gate)', async () => {
         const { options, sleeps } = await makeOptions(async () => ({
             statusCode: 502,
             data: enc.encode(JSON.stringify({ error: 'throttled' })),

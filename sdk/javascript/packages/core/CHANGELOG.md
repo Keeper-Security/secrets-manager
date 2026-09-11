@@ -1,6 +1,7 @@
 # Change Log
 
 ## 17.6.0
+- KSM-1395 - Fixed throttle retry never firing against the real backend: the retry gate checked only for HTTP 403, but the backend has returned HTTP 429 for a throttled Secrets Manager request since 2026-06-15 (an unrelated login-security fix changed a response code shared with the Secrets Manager throttle path; see KSM-1386 for the full history). The gate now accepts both 403 and 429, so a throttled request is retried as originally intended (KSM-880) instead of failing immediately.
 - KSM-1073 - Added `dbConnectionMethod` to `PamSettingsConnection`.
 - KSM-1079 - Fixed `getFolders()` crashing when a folder in the response has a corrupted or missing key. The SDK now skips undecryptable folders and returns the remaining folders normally.
 - KSM-1084 - Fixed `deleteSecret()` and `deleteFolder()` silently reporting success when the server rejected some UIDs. The SDK now surfaces per-item error messages from the server to the caller.
