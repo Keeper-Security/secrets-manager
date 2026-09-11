@@ -36,4 +36,7 @@ const main = async () => {
     console.log(`code at ${fixedTime}: ${totpAtFixedTime.code}`)
 }
 
-main().finally()
+main().catch((e) => {
+    console.error(`Failed to run totp example: ${e?.message ?? String(e)}`)
+    process.exitCode = 1
+})

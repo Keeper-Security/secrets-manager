@@ -35,4 +35,7 @@ const main = async () => {
     console.log(`delete result: ${JSON.stringify(deleteResult)}`)
 }
 
-main().finally()
+main().catch((e) => {
+    console.error(`Failed to run folders example: ${e?.message ?? String(e)}`)
+    process.exitCode = 1
+})

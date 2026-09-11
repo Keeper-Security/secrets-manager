@@ -29,4 +29,7 @@ const getKeeperRecords = async () => {
     await updateSecret({storage: storage}, firstRecord)
 }
 
-getKeeperRecords().finally()
+getKeeperRecords().catch((e) => {
+    console.error(`Failed to load Keeper secrets: ${e?.message ?? String(e)}`)
+    process.exitCode = 1
+})
