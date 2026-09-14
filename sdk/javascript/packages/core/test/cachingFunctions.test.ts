@@ -5,8 +5,15 @@ import {createCachingFunction} from '../src/browser/localConfigStorage'
 import {timeoutError} from '../src/deadline'
 import {KeeperError} from '../src/errors'
 import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
 
 connectPlatform(nodePlatform)
+
+// An explicit cachePath keeps these tests off the real default (~/.keeper/ksm-cache.dat) -
+// without it, writeCacheFile's mkdirSync(dir, ...) call runs against the real home directory
+// before the mocked fs.openSync below ever gets a chance to reject the write.
+const nodeTestCachePath = path.join(os.tmpdir(), 'ksm-caching-functions-test-cache.dat')
 
 const transmissionKey = (): TransmissionKey => ({
     publicKeyId: 7,
@@ -23,7 +30,7 @@ const payload = (): EncryptedPayload => ({
 // forward everything SecretManagerOptions.queryFunction is handed. Dropping the trailing arguments
 // silently pins every cached-mode consumer to the default timeout.
 describe.each([
-    ['createCachingFunction (node)', () => createCachingFunctionNode(inMemoryStorage({}))],
+    ['createCachingFunction (node)', () => createCachingFunctionNode(inMemoryStorage({}), {cachePath: nodeTestCachePath})],
     ['createCachingFunction (browser)', () => createCachingFunction(inMemoryStorage({}))]
 ])('%s', (_name, build) => {
     const savedPost = platform.post
@@ -98,12 +105,17 @@ test('createCachingFunction (node) still returns the fresh response when the cac
     const storage = inMemoryStorage({})
     await storage.saveBytes('appKey', new Uint8Array(32))
     const openSyncSpy = jest.spyOn(fs, 'openSync').mockImplementation(() => { throw new Error('ENOSPC') })
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     try {
-        const result = await createCachingFunctionNode(storage)('https://example.com', transmissionKey(), payload())
+        const result = await createCachingFunctionNode(storage, {cachePath: nodeTestCachePath})('https://example.com', transmissionKey(), payload())
         expect(result.statusCode).toBe(200)
         expect(result.data).toBe(freshData)
+        // Proves the write was actually attempted (and failed) rather than skipped - without
+        // this, a missing appKey would make the test pass for the wrong reason.
+        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to update cached response'))
     } finally {
         openSyncSpy.mockRestore()
+        consoleErrorSpy.mockRestore()
         platform.post = originalPost
     }
 })
@@ -112,12 +124,21 @@ test('createCachingFunction still returns the fresh response when the cache writ
     const originalPost = platform.post
     const freshData = new Uint8Array([1, 2, 3])
     platform.post = (async () => ({statusCode: 200, headers: [], data: freshData})) as typeof platform.post
-    const storage = {...inMemoryStorage({}), saveBytes: async () => { throw new Error('quota exceeded') }}
+    // appKey must be seeded through the base storage's own saveBytes before overriding it below -
+    // the override throws unconditionally, and without a raw-bytes appKey present,
+    // createCachingFunction skips the write entirely, so this test would pass without ever
+    // exercising the write-failure path it's named for.
+    const baseStorage = inMemoryStorage({})
+    await baseStorage.saveBytes('appKey', new Uint8Array(32))
+    const storage = {...baseStorage, saveBytes: async () => { throw new Error('quota exceeded') }}
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     try {
         const result = await createCachingFunction(storage)('https://example.com', transmissionKey(), payload())
         expect(result.statusCode).toBe(200)
         expect(result.data).toBe(freshData)
+        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to update cached response'))
     } finally {
+        consoleErrorSpy.mockRestore()
         platform.post = originalPost
     }
 })
