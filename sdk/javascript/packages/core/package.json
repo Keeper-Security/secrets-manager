@@ -16,7 +16,7 @@
         "require": "./dist/index.cjs.js"
       },
       "browser": "./dist/index.es.js",
-      "import": "./dist/index.es.js",
+      "import": "./dist/index.cjs.js",
       "require": "./dist/index.cjs.js",
       "default": "./dist/index.cjs.js"
     },
