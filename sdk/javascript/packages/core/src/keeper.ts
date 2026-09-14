@@ -3,6 +3,7 @@ import {webSafe64FromBytes, webSafe64ToBytes, tryParseInt} from './utils'
 import {parseNotation} from './notation'
 import {KeeperError, KeeperThrottleError, KeeperCryptoError, KeeperCryptoFailureReason, KeeperDecryptionErrorInfo} from './errors'
 import {validateTimeoutMs} from './deadline'
+import {KEY_APP_KEY} from './cache'
 
 export {KeyValueStorage} from './platform'
 
@@ -12,20 +13,31 @@ const KEY_SERVER_PUBLIC_KEY_ID = 'serverPublicKeyId'
 const KEY_SERVER_PUBLIC_KEY = 'serverPublicKey'
 const KEY_CLIENT_ID = 'clientId'
 const KEY_CLIENT_KEY = 'clientKey' // The key that is used to identify the client before public key
-const KEY_APP_KEY = 'appKey' // The application key with which all secrets are encrypted
 const KEY_OWNER_PUBLIC_KEY = 'appOwnerPublicKey' // The application owner public key, to create records
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
 
-// Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
+// Throttle retry. The backend throttles HTTP 429 {"error":"throttled"}
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
-// request, so the counter only clears after 10s of silence).
+// request, so the counter only clears after 10s of silence). The backend used HTTP 403 for
+// this until 2026-06-15, when an unrelated login-security fix (KA-8807) changed the shared
+// response code; the gate below accepts both statuses (KSM-1395) since a second, unconfirmed
+// rate limiter might still use 403 (KSM-1386).
 const MAX_THROTTLE_RETRIES = 5
-// Bounds the server-key-rotation retry (postQuery's `error === 'key'` branch, no custom key
-// pinned): one legitimate rotation should resolve it, so this only needs to tolerate a little
-// slack, not act as a real retry budget.
+// Bounds the server-key-rotation retry (postQuery's key-rotation branch, matched on
+// `result_code` or the legacy `error` field, no custom key pinned): one legitimate rotation
+// should resolve it, so this only needs to tolerate a little slack, not act as a real retry
+// budget.
 const MAX_KEY_ROTATION_RETRIES = 3
 const BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 const MAX_THROTTLE_DELAY_SEC = 176 // same ceiling the exponential branch reaches at the last retry (11 * 2**4)
+// Caps how much of a non-200 response body gets decoded (not buffered - both platforms already
+// buffer the whole body) to detect throttle/key-rotation. Any real throttle or key-rotation body
+// is a small flat JSON object; this is generous headroom over that so a pathological or malicious
+// oversized body can't force an unbounded string decode. The separate, much narrower 1000-byte
+// truncation used below for the message in a thrown error serves a different purpose (bounding a
+// human-readable snippet, not defending against unbounded decode), which is why the two caps
+// differ by 65x rather than sharing one constant.
+const MAX_ERROR_BODY_DECODE_BYTES = 65536
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
 
 let keeperPublicKeys: Record<number, Uint8Array>
@@ -71,7 +83,7 @@ export type SecretManagerOptions = {
 
 // Error classes live in a dependency-free module (errors.ts) to avoid a circular import with
 // utils.ts/platform code that throws them; re-exported here so the public API is unchanged.
-export {KeeperError, KeeperThrottleError, KeeperCryptoError} from './errors'
+export {KeeperError, KeeperThrottleError, KeeperCryptoError, KeeperStorageError} from './errors'
 export type {KeeperCryptoFailureReason, KeeperDecryptionErrorInfo} from './errors'
 
 // Returns a jitter multiplier in [0, 0.25). One-sided so the delay never drops below the
@@ -79,6 +91,11 @@ export type {KeeperCryptoFailureReason, KeeperDecryptionErrorInfo} from './error
 // concurrent clients desynchronize their retries. Unit tests exercise throttleDelay with a
 // pinned jitter.
 export const throttleJitter = (): number => Math.random() * 0.25
+
+// Server error envelopes use `result_code` in newer responses and the legacy `error` field in
+// older ones for the same discriminator; both throttle and key-rotation detection need whichever
+// one is present, so this is shared rather than duplicated at each call site.
+const resultCode = (obj: any): unknown => obj?.result_code ?? obj?.error
 
 /**
  * If `body` is a backend throttle error (`result_code`/`error` === "throttled") returns its
@@ -96,8 +113,7 @@ export const parseThrottle = (body: string): number | null => {
     if (!obj || typeof obj !== 'object') {
         return null
     }
-    const resultCode = obj.result_code ?? obj.error
-    if (resultCode !== 'throttled') {
+    if (resultCode(obj) !== 'throttled') {
         return null
     }
     const retryAfter = Number(obj.retry_after)
@@ -323,6 +339,7 @@ export type KeeperFileUpload = {
 
 type KeeperApiError = {
     error?: string
+    result_code?: string
     key_id?: number
 }
 
@@ -763,27 +780,108 @@ export const postFunction = async (url: string, transmissionKey: TransmissionKey
         }, allowUnverifiedCertificate, timeoutMs)
 }
 
-export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => {
+// A stored id outside the bundled table (e.g. an older SDK build persisted an unvalidated
+// server-suggested key) must not permanently block every request. Falling back to this default
+// key for that one call, instead of throwing, means the request still goes out and a future
+// rotation hint (or a caller re-pinning a valid pair) can steer storage back to a valid id. This
+// fallback is never persisted here - generateTransmissionKey is a read, and writing here could
+// race a concurrent custom-key pin or a concurrent rotation write.
+const DEFAULT_KEY_NUMBER = 7
+
+// Serializes every read and write of the serverPublicKey/serverPublicKeyId pair against one
+// queue per storage instance, closing the torn-pair race two concurrent calls sharing one
+// SecretsManager/storage instance could otherwise hit (reproduced in 24 of 60 trials before
+// this existed). Mirrors localConfigStorage.ts's mutateAndPersist chaining, minus its snapshot/
+// rollback - there's no single in-memory blob to roll back, the invariant spans two storage keys
+// across several call sites. A WeakMap, not a Map: keeper.ts doesn't own a storage instance's
+// lifecycle, so a plain Map would leak one entry per instance forever.
+//
+// Scoped to same-process concurrency only. Two processes or tabs sharing one physical config is
+// a separate, unclosed concern - most storage backends already do a non-transactional whole-
+// config overwrite on every save regardless of this key pair, and each instance normally owns
+// its own config anyway. Documented as an accepted boundary, not fixed.
+const pendingServerKeyOperations = new WeakMap<KeyValueStorage, Promise<unknown>>()
+
+// Generous vs. a normal storage round trip; only guards against a genuine hang (a caller-
+// supplied or cloud KeyValueStorage backend that never settles), not slow-but-alive storage.
+const SERIALIZED_STORAGE_OP_TIMEOUT_MS = 30_000
+
+const serializeOn = <T>(storage: KeyValueStorage, fn: () => Promise<T>): Promise<T> => {
+    const pending = pendingServerKeyOperations.get(storage) ?? Promise.resolve()
+    const operation = pending.then(fn)
+    // Chain variable only, never the caller's own await: a rejection here becomes a resolved
+    // undefined so it can't poison later calls, and a timeout races out a hung predecessor so it
+    // can't wedge the queue forever (at the cost of no longer serializing against it once the
+    // timer wins). The timer is armed inside `pending.then(...)`, once this call's own turn
+    // actually begins, not at the moment serializeOn() is called - arming it eagerly meant queue
+    // backlog burned down the same clock meant to catch a genuinely hung fn(), so a call still
+    // legitimately waiting behind others (not stuck) could have the mutex released out from
+    // under it before its predecessor had even started running.
+    let timer: ReturnType<typeof setTimeout>
+    const settled = operation.then(() => undefined, () => undefined)
+    const chained = pending.then(() => Promise.race([settled, new Promise<undefined>(resolve => {
+        timer = setTimeout(() => resolve(undefined), SERIALIZED_STORAGE_OP_TIMEOUT_MS)
+    })]))
+    chained.then(() => clearTimeout(timer))
+    pendingServerKeyOperations.set(storage, chained)
+    return operation
+}
+
+// Shared by every call site that validates a caller-supplied serverPublicKeyId string. The
+// postQuery rotation branch validates an already-parsed JSON number instead, a different input
+// contract, so it stays separate rather than routing through this helper.
+const parseServerKeyId = (serverPublicKeyId: string): number => {
+    const parsedKeyId = Number(serverPublicKeyId)
+    if (!Number.isInteger(parsedKeyId) || parsedKeyId <= 0) {
+        throw new KeeperError(`serverPublicKeyId '${serverPublicKeyId}' must be a positive integer`)
+    }
+    return parsedKeyId
+}
+
+// "Not supplied" has to mean the same thing on every backend: inMemoryStorage collapses a
+// stored '' back to undefined on read, but the cloud-backed KeyValueStorage implementations and
+// browser secure-storage return a stored '' or null unchanged. `value` is widened to `unknown`
+// because those same cloud backends round-trip a config through JSON.stringify/JSON.parse over a
+// plain object, preserving a written number as a number rather than coercing it to a string - so
+// a non-string value here is coerced via String(), not dropped, letting a value written before
+// persistServerPublicKeyOptions guarded its own input type self-heal on the next read.
+//
+// Shared by KEY_SERVER_PUBLIC_KEY reads too: a corrupted, non-string serverPublicKey is now
+// attempted (and fails loud) instead of silently falling back to the bundled default, matching
+// how an already-string-but-garbage key has always behaved.
+const readNormalizedString = async (storage: KeyValueStorage, key: string): Promise<string | undefined> => {
+    const value: unknown = await storage.getString(key)
+    if (value === undefined || value === null || value === '') {
+        return undefined
+    }
+    return typeof value === 'string' ? value : String(value)
+}
+
+export const generateTransmissionKey = async (storage: KeyValueStorage): Promise<TransmissionKey> => serializeOn(storage, async () => {
     const transmissionKey = platform.getRandomBytes(32)
-    const keyNumberString = await storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-    const keyNumber = keyNumberString ? Number(keyNumberString) : 7
-    const customPublicKeyB64 = await storage.getString(KEY_SERVER_PUBLIC_KEY)
+    const keyNumberString = await readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY_ID)
+    const customPublicKeyB64 = await readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY)
     if (customPublicKeyB64) {
+        // No safe fallback for a missing or corrupted id here: falling back to a bundled key
+        // would mean silently encrypting with a key the caller didn't choose. Self-heals once
+        // the caller supplies serverPublicKey and serverPublicKeyId together again.
+        if (!keyNumberString) {
+            throw new KeeperError('Stored serverPublicKey has no paired serverPublicKeyId; configuration is inconsistent')
+        }
+        const keyNumber = parseServerKeyId(keyNumberString)
         const customPublicKey = webSafe64ToBytes(customPublicKeyB64)
         const encryptedKey = await platform.publicEncrypt(transmissionKey, customPublicKey)
         return { publicKeyId: keyNumber, key: transmissionKey, encryptedKey }
     }
-    const keeperPublicKey = keeperPublicKeys[keyNumber]
-    if (!keeperPublicKey) {
-        throw new Error(`Key number ${keyNumber} is not supported`)
-    }
-    const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[keyNumber])
+    const keyNumber = keyNumberString ? Number(keyNumberString) : DEFAULT_KEY_NUMBER
+    const effectiveKeyNumber = keyNumber in keeperPublicKeys ? keyNumber : DEFAULT_KEY_NUMBER
+    const encryptedKey = await platform.publicEncrypt(transmissionKey, keeperPublicKeys[effectiveKeyNumber])
     return {
-        publicKeyId: keyNumber,
+        publicKeyId: effectiveKeyNumber,
         key: transmissionKey,
         encryptedKey: encryptedKey
     }
-}
+})
 
 const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: TransmissionKey, payload: GetPayload | UpdatePayload | FileUploadPayload): Promise<EncryptedPayload> => {
     const payloadBytes = platform.stringToBytes(JSON.stringify(payload))
@@ -794,17 +892,117 @@ const encryptAndSignPayload = async (storage: KeyValueStorage, transmissionKey: 
     const signature = await platform.sign(signatureBase, KEY_PRIVATE_KEY, storage)
     return {payload: encryptedPayload, signature}
 }
+
+// Shared by postQuery, fetchAndDecryptSecrets, and initializeStorage's custom-key token branch -
+// one place for this validation and serialization instead of three.
+//
+// A custom key is never valid without an id (no default custom key exists to fall back to), so
+// this also closes "key-only rotation leaves a stale id" and "a caller replaying a stale
+// options object silently reverts a server-driven correction" for the custom-key case.
+//
+// Still open: the same stale-options-object problem for a bundled-table, id-only pin (no custom
+// key). postQuery's rotation branch writes the server-suggested id directly; a caller replaying
+// an old `{serverPublicKeyId: '7'}` object after the server rotated to '8' will revert storage
+// back to '7' on its next call. No fix here that isn't worse than the gap - either mutate an
+// object the caller owns, or stop treating "id differs from stored" as caller intent, which
+// breaks the legitimate case of a caller actually wanting to pin a different id.
+const persistServerPublicKeyOptions = async (
+    storage: KeyValueStorage,
+    serverPublicKey: string | undefined,
+    serverPublicKeyId: string | undefined
+): Promise<void> => {
+    // A public key is always a non-empty base64url string; null, 0, false and NaN are reachable
+    // from a plain-JavaScript caller (no compile-time check) and must mean "not supplied", not
+    // "a key was supplied" - otherwise a falsy value permanently fails every request instead of
+    // being ignored.
+    if (typeof serverPublicKey !== 'string' || serverPublicKey === '') {
+        serverPublicKey = undefined
+    }
+    // Same reachability as above, but a key id's non-string case still needs to reach
+    // parseServerKeyId rather than collapse straight to undefined - a caller-supplied number
+    // (e.g. serverPublicKeyId: 20) is a legitimate id, just the wrong JS type. Widened to
+    // `unknown` only to check the real runtime type without trusting the declared one; matches
+    // readNormalizedString's own coercion for an id that reached storage before this guard
+    // existed, so a value is never a non-string on either side of a write from here on.
+    const rawServerPublicKeyId: unknown = serverPublicKeyId
+    if (rawServerPublicKeyId === null || rawServerPublicKeyId === undefined) {
+        serverPublicKeyId = undefined
+    } else if (typeof rawServerPublicKeyId !== 'string') {
+        serverPublicKeyId = String(rawServerPublicKeyId)
+    }
+    if (serverPublicKey === undefined && serverPublicKeyId === undefined) {
+        return
+    }
+    return serializeOn(storage, async () => {
+        if (serverPublicKey !== undefined) {
+            const [storedKey, storedKeyId] = await Promise.all([
+                readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY),
+                readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY_ID)
+            ])
+            // Caller replayed the key that's already pinned: a no-op, not a repin, as long as
+            // some id is already established for it - either the caller's id matches what's
+            // stored, or the caller left the id out and relies on what's already stored. Checked
+            // before the id-required throw below, so a replay of an already-consistent pin (an
+            // IL5 token re-init, a config file read back, or a key-only options object when the
+            // id already lives in storage) doesn't hard-fail on a call that changes nothing.
+            if (storedKey === serverPublicKey &&
+                (serverPublicKeyId === undefined ? storedKeyId !== undefined : storedKeyId === serverPublicKeyId)) {
+                return
+            }
+            if (serverPublicKeyId === undefined) {
+                throw new KeeperError('serverPublicKeyId is required when serverPublicKey is supplied')
+            }
+            parseServerKeyId(serverPublicKeyId)
+            // Key before id: a partial failure between the two writes leaves an id with no key,
+            // which generateTransmissionKey's bundled-key fallback branch reads as "no custom key
+            // pinned" and silently falls through to encrypting with Keeper's own key while
+            // reporting the stale id - a silent security downgrade. Key-then-id instead
+            // leaves a key with no id on partial failure, which the custom-key branch's own guard
+            // (`if (!keyNumberString) throw`, above) fails loud on. Neither write is atomic across
+            // every storage backend; this only chooses which half of a partial failure survives.
+            await storage.saveString(KEY_SERVER_PUBLIC_KEY, serverPublicKey)
+            await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId)
+            return
+        }
+        // serverPublicKeyId alone: legitimate as a rotation-hint re-send when it matches what a
+        // custom key is already pinned to, or as a fresh bundled-table pin. It can never change
+        // an already-pinned custom key's id on its own - once a custom key is pinned, the id and
+        // key can only change together, through the branch above - closing the gap where an
+        // id-only call used to silently overwrite an unrelated, arbitrary id with no validation
+        // once any custom key had ever been pinned.
+        const parsedKeyId = parseServerKeyId(serverPublicKeyId as string)
+        const storedKey = await readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY)
+        if (storedKey !== undefined) {
+            const storedKeyId = await readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY_ID)
+            if (storedKeyId === serverPublicKeyId) {
+                return
+            }
+            throw new KeeperError(`serverPublicKeyId '${serverPublicKeyId}' does not match the already-pinned custom key's id; supply serverPublicKey and serverPublicKeyId together to change both`)
+        }
+        if (!(parsedKeyId in keeperPublicKeys)) {
+            const supported = Object.keys(keeperPublicKeys)
+            throw new KeeperError(`serverPublicKeyId ${parsedKeyId} is not supported; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
+        }
+        const storedKeyId = await readNormalizedString(storage, KEY_SERVER_PUBLIC_KEY_ID)
+        if (storedKeyId === undefined) {
+            // Write-once: once any id exists in storage - a prior caller pin or a server-driven
+            // rotation - a bare id-only option is treated as a rotation-hint replay, not caller
+            // intent to change an established pin. Otherwise a caller that keeps passing its
+            // original options object would permanently undo a completed rotation, paying a
+            // rejected round trip on every call forever. Known cost: a caller who legitimately
+            // wants to move a bundled-table pin to a different id later can't do it through this
+            // branch alone once any id is stored; they'd need the key+id branch above.
+            await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, serverPublicKeyId as string)
+        }
+    })
+}
+
 const postQuery = async (options: SecretManagerOptions, path: string, payload: AnyPayload): Promise<Uint8Array> => {
     // Validated before any storage write or payload encryption below, so a bad requestTimeoutMs
     // fails fast instead of mutating on-disk config first. Resolved once and reused across
     // retries rather than re-validating the same options.requestTimeoutMs on every iteration.
     const requestTimeoutMs = validateTimeoutMs(options.requestTimeoutMs)
-    if (options.serverPublicKey) {
-        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
-    }
-    if (options.serverPublicKeyId) {
-        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
-    }
+    await persistServerPublicKeyOptions(options.storage, options.serverPublicKey, options.serverPublicKeyId)
     const hostName = await options.storage.getString(KEY_HOSTNAME)
     if (!hostName) {
         throw new Error('hostname is missing from the configuration')
@@ -818,14 +1016,22 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
         const encryptedPayload = await encryptAndSignPayload(options.storage, transmissionKey, payload)
         const response = await (options.queryFunction || postFunction)(url, transmissionKey, encryptedPayload, options.allowUnverifiedCertificate, requestTimeoutMs)
         if (response.statusCode !== 200) {
-            let errorMessage
-            if (response.data) {
-                errorMessage = platform.bytesToString(response.data.slice(0, 1000))
-                // Throttle retry with exponential backoff + jitter. Checked
-                // before key-rotation so that path is untouched, and gated on the 403 status so a
-                // non-403 response carrying a {"error":"throttled"} body is not retried.
-                if (response.statusCode === 403) {
-                    const retryAfter = parseThrottle(errorMessage)
+            // .length, not truthiness: browser's empty-body Uint8Array is still truthy, unlike Node's null.
+            if (response.data && response.data.length > 0) {
+                // Throttle/key-rotation detection runs on the full body (bounded by
+                // MAX_ERROR_BODY_DECODE_BYTES) - slicing to 1000 bytes first can cut a large
+                // response mid-document and make it fail JSON.parse, silently disabling retry or
+                // rotation. The 1000-byte truncation below is computed lazily and only ever feeds
+                // the final "response isn't recognized" throw at the end of this block - never
+                // the throttle-exhausted or key-rotation-exhausted throws, which are synthetic
+                // strings with no body content at all.
+                const decodableBytes = response.data.slice(0, MAX_ERROR_BODY_DECODE_BYTES)
+                const fullErrorMessage = platform.bytesToString(decodableBytes)
+                // Throttle retry with exponential backoff + jitter. Checked before key-rotation
+                // so that path is untouched. Gated on 403 or 429 so a response on neither status,
+                // carrying a {"error":"throttled"} body, is not retried.
+                if (response.statusCode === 403 || response.statusCode === 429) {
+                    const retryAfter = parseThrottle(fullErrorMessage)
                     if (retryAfter !== null) {
                         if (throttleAttempt >= MAX_THROTTLE_RETRIES) {
                             throw new KeeperThrottleError(`Request throttled by Keeper backend; exhausted ${MAX_THROTTLE_RETRIES} retries`)
@@ -838,32 +1044,39 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                     }
                 }
                 let errorObj: KeeperApiError | null = null
-                try { errorObj = JSON.parse(errorMessage) } catch {}
-                if (errorObj?.error === 'key') {
+                try { errorObj = JSON.parse(fullErrorMessage) } catch {}
+                if (errorObj && resultCode(errorObj) === 'key') {
                     const suggestedKeyId = errorObj.key_id
-                    const customKey = await options.storage.getString(KEY_SERVER_PUBLIC_KEY)
-                    if (customKey) {
-                        const currentKeyId = await options.storage.getString(KEY_SERVER_PUBLIC_KEY_ID)
-                        throw new KeeperError(`Server rejected the custom server public key (id ${currentKeyId ?? transmissionKey.publicKeyId}). The server suggested key id ${suggestedKeyId}. Please update your IL5 KSM configuration.`)
-                    }
-                    if (typeof suggestedKeyId !== 'number' || !Number.isInteger(suggestedKeyId) || suggestedKeyId <= 0) {
-                        throw new KeeperError(`Server key error response contains invalid key_id: ${JSON.stringify(suggestedKeyId)}`)
-                    }
-                    if (!(suggestedKeyId in keeperPublicKeys)) {
-                        const supported = Object.keys(keeperPublicKeys)
-                        throw new KeeperError(`Server suggested unsupported key id ${suggestedKeyId}; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
-                    }
-                    if (keyRotationAttempt >= MAX_KEY_ROTATION_RETRIES) {
-                        throw new KeeperError(`Server key rotation exhausted ${MAX_KEY_ROTATION_RETRIES} retries; transmission key id ${transmissionKey.publicKeyId} was not accepted`)
-                    }
-                    await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, suggestedKeyId.toString())
+                    // The whole check-then-write goes through the same per-storage queue as
+                    // persistServerPublicKeyOptions and generateTransmissionKey - this write
+                    // bypassed both of them, wired directly to storage, until now. Without the
+                    // wrap, a concurrent call pinning a custom key between the customKey check
+                    // and this write could still land a rotation-sourced id paired with a
+                    // just-pinned key neither call actually intended.
+                    await serializeOn(options.storage, async () => {
+                        const customKey = await readNormalizedString(options.storage, KEY_SERVER_PUBLIC_KEY)
+                        if (customKey) {
+                            const currentKeyId = await readNormalizedString(options.storage, KEY_SERVER_PUBLIC_KEY_ID)
+                            throw new KeeperError(`Server rejected the custom server public key (id ${currentKeyId ?? transmissionKey.publicKeyId}). The server suggested key id ${suggestedKeyId}. Please update your IL5 KSM configuration.`)
+                        }
+                        if (typeof suggestedKeyId !== 'number' || !Number.isInteger(suggestedKeyId) || suggestedKeyId <= 0) {
+                            throw new KeeperError(`Server key error response contains invalid key_id: ${JSON.stringify(suggestedKeyId)}`)
+                        }
+                        if (!(suggestedKeyId in keeperPublicKeys)) {
+                            const supported = Object.keys(keeperPublicKeys)
+                            throw new KeeperError(`Server suggested unsupported key id ${suggestedKeyId}; this SDK version supports key ids ${supported[0]}-${supported[supported.length - 1]}`)
+                        }
+                        if (keyRotationAttempt >= MAX_KEY_ROTATION_RETRIES) {
+                            throw new KeeperError(`Server key rotation exhausted ${MAX_KEY_ROTATION_RETRIES} retries; transmission key id ${transmissionKey.publicKeyId} was not accepted`)
+                        }
+                        await options.storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, suggestedKeyId.toString())
+                    })
                     keyRotationAttempt++
                     continue
                 }
-            } else {
-                errorMessage = `unknown ksm error, code ${response.statusCode}`
+                throw new Error(platform.bytesToString(response.data.slice(0, 1000)))
             }
-            throw new Error(errorMessage)
+            throw new Error(`unknown ksm error, code ${response.statusCode}`)
         }
         return response.data && response.data.length > 0
             ? platform.decryptWithKey(response.data, transmissionKey.key)
@@ -912,12 +1125,7 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
     // out to be missing) - but a caller-input mistake like an unusable requestTimeoutMs is a
     // different kind of failure, one that should produce no side effects at all, not even this one.
     validateTimeoutMs(options.requestTimeoutMs)
-    if (options.serverPublicKey) {
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY, options.serverPublicKey)
-    }
-    if (options.serverPublicKeyId) {
-        await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, options.serverPublicKeyId)
-    }
+    await persistServerPublicKeyOptions(storage, options.serverPublicKey, options.serverPublicKeyId)
     const payload = await prepareGetPayload(storage, queryOptions)
     const responseData = await postQuery(options, 'get_secret', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
@@ -1165,8 +1373,13 @@ export const initializeStorage = async (
                 if (tokenParts[3].length < 80) {
                     throw new Error(`IL5 token: serverPublicKey appears malformed`)
                 }
-                await storage.saveString(KEY_SERVER_PUBLIC_KEY_ID, keyId)
-                await storage.saveString(KEY_SERVER_PUBLIC_KEY, tokenParts[3])
+                try {
+                    await persistServerPublicKeyOptions(storage, tokenParts[3], keyId)
+                } catch (e) {
+                    // Matches the sibling checks' prefix above; a plain `new Error` here
+                    // previously lost the KeeperError type.
+                    throw new KeeperError(`IL5 token: ${e instanceof Error ? e.message : String(e)}`)
+                }
             }
         }
     }

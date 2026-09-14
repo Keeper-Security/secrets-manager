@@ -1,6 +1,6 @@
 import {connectPlatform, platform, inMemoryStorage, TransmissionKey, EncryptedPayload} from '../src/platform'
 import {nodePlatform} from '../src/node/nodePlatform'
-import {cachingPostFunction} from '../src/node/localConfigStorage'
+import {createCachingFunction as createCachingFunctionNode} from '../src/node/localConfigStorage'
 import {createCachingFunction} from '../src/browser/localConfigStorage'
 import {timeoutError} from '../src/deadline'
 import {KeeperError} from '../src/errors'
@@ -23,7 +23,7 @@ const payload = (): EncryptedPayload => ({
 // forward everything SecretManagerOptions.queryFunction is handed. Dropping the trailing arguments
 // silently pins every cached-mode consumer to the default timeout.
 describe.each([
-    ['cachingPostFunction (node)', () => cachingPostFunction],
+    ['createCachingFunction (node)', () => createCachingFunctionNode(inMemoryStorage({}))],
     ['createCachingFunction (browser)', () => createCachingFunction(inMemoryStorage({}))]
 ])('%s', (_name, build) => {
     const savedPost = platform.post
@@ -91,13 +91,15 @@ test('timeoutError produces a KeeperError, distinct from a plain transport failu
     expect(timeoutError('https://example.com', 1)).toBeInstanceOf(KeeperError)
 })
 
-test('cachingPostFunction still returns the fresh response when the cache write fails', async () => {
+test('createCachingFunction (node) still returns the fresh response when the cache write fails', async () => {
     const originalPost = platform.post
     const freshData = new Uint8Array([1, 2, 3])
     platform.post = (async () => ({statusCode: 200, headers: [], data: freshData})) as typeof platform.post
+    const storage = inMemoryStorage({})
+    await storage.saveBytes('appKey', new Uint8Array(32))
     const openSyncSpy = jest.spyOn(fs, 'openSync').mockImplementation(() => { throw new Error('ENOSPC') })
     try {
-        const result = await cachingPostFunction('https://example.com', transmissionKey(), payload())
+        const result = await createCachingFunctionNode(storage)('https://example.com', transmissionKey(), payload())
         expect(result.statusCode).toBe(200)
         expect(result.data).toBe(freshData)
     } finally {
