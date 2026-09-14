@@ -1,8 +1,10 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, TransmissionKey, platform} from "../platform";
 import {KeeperError} from "../errors";
+import {validateTimeoutMs} from "../deadline";
 import {KEY_APP_KEY, deriveCacheKey, encodeCacheBlob, decodeCacheBlob, DEFAULT_MAX_CACHE_AGE_MS, isRawKeyBytes, concatBytes} from "../cache";
 
 const CACHE_STORAGE_KEY = 'cache'
+
 
 type Reject = (reason: Error) => void
 
@@ -210,18 +212,32 @@ export const secureStorage = async (dbName: string): Promise<KeyValueStorage> =>
 // key-beside-data format (CWE-312, CWE-345) with one encrypted under a key derived from the app
 // key, authenticated, and bounded by a freshness window. An old-format cached value simply fails
 // the version check and is treated as a cache miss, the same graceful degradation the Node fix
-// uses for its old-format files.
-export function createCachingFunction(storage: KeyValueStorage, maxCacheAgeMs: number = DEFAULT_MAX_CACHE_AGE_MS): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload) => Promise<KeeperHttpResponse> {
+// uses for its old-format files. Signature matches SecretManagerOptions.queryFunction so the
+// trailing options, including requestTimeoutMs, reach platform.post instead of being dropped on
+// the floor.
+export function createCachingFunction(storage: KeyValueStorage, maxCacheAgeMs: number = DEFAULT_MAX_CACHE_AGE_MS): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number) => Promise<KeeperHttpResponse> {
 
-    return async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload): Promise<KeeperHttpResponse> => {
+    return async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number): Promise<KeeperHttpResponse> => {
+        // Resolved before the try below so a caller-input mistake (an unusable timeoutMs) fails
+        // fast instead of being caught and mistaken for a transport failure worth falling back to
+        // stale cache for - resolveTimeoutMs throws a plain Error, not a KeeperError, for exactly
+        // this class of failure (see deadline.ts), so it would otherwise slip past the KeeperError
+        // carve-out below.
+        const resolvedTimeoutMs = validateTimeoutMs(timeoutMs)
         let response: KeeperHttpResponse
         try {
             response = await platform.post(url, payload.payload, {
                 PublicKeyId: transmissionKey.publicKeyId.toString(),
                 TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
                 Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-            })
+            }, allowUnverifiedCertificate, resolvedTimeoutMs)
         } catch (e) {
+            // A deliberate client-side timeout is not a transport failure: falling back to stale
+            // cache here would silently turn a slow/hung request into a fake success instead of
+            // surfacing it to the caller.
+            if (e instanceof KeeperError) {
+                throw e
+            }
             const appKey = await storage.getBytes(KEY_APP_KEY)
             if (!appKey || !isRawKeyBytes(appKey)) {
                 throw new KeeperError('Cached value does not exist')

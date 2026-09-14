@@ -1,6 +1,7 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey, inMemoryStorage} from "../platform";
 import {KeeperError, KeeperStorageError} from "../errors";
 import {KEY_APP_KEY, deriveCacheKey, encodeCacheBlob, decodeCacheBlob, DEFAULT_MAX_CACHE_AGE_MS, isRawKeyBytes} from "../cache";
+import {validateTimeoutMs} from "../deadline";
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -481,7 +482,7 @@ const readCacheFile = async (cachePath: string, cacheKey: Uint8Array, maxCacheAg
 export const createCachingFunction = (
     storage: KeyValueStorage,
     options: {cachePath?: string, maxCacheAgeMs?: number} = {}
-): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean) => Promise<KeeperHttpResponse> => {
+): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number) => Promise<KeeperHttpResponse> => {
     // Captured before defaulting, and threaded down to writeCacheFile: whether the SDK's own
     // default directory (~/.keeper) always gets its permissions re-asserted, or a caller-owned
     // directory is left alone once it exists - see writeCacheFile's own comment on this.
@@ -493,15 +494,27 @@ export const createCachingFunction = (
     // module.
     const cachePath = options.cachePath ?? path.join(os.homedir(), '.keeper', 'ksm-cache.dat')
     const maxCacheAgeMs = options.maxCacheAgeMs ?? DEFAULT_MAX_CACHE_AGE_MS
-    return async (url, transmissionKey, payload, allowUnverifiedCertificate) => {
+    return async (url, transmissionKey, payload, allowUnverifiedCertificate, timeoutMs) => {
+        // Resolved before the try below so a caller-input mistake (an unusable timeoutMs) fails
+        // fast instead of being caught and mistaken for a transport failure worth falling back to
+        // stale cache for - resolveTimeoutMs throws a plain Error, not a KeeperError, for exactly
+        // this class of failure (see deadline.ts), so it would otherwise slip past the KeeperError
+        // carve-out below.
+        const resolvedTimeoutMs = validateTimeoutMs(timeoutMs)
         let response: KeeperHttpResponse
         try {
             response = await platform.post(url, payload.payload, {
                 PublicKeyId: transmissionKey.publicKeyId.toString(),
                 TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
                 Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-            }, allowUnverifiedCertificate)
+            }, allowUnverifiedCertificate, resolvedTimeoutMs)
         } catch (e) {
+            // A deliberate client-side timeout is not a transport failure: falling back to stale
+            // cache here would silently turn a slow/hung request into a fake success instead of
+            // surfacing it to the caller.
+            if (e instanceof KeeperError) {
+                throw e
+            }
             // A storage failure here (plausible during the same outage that took the network
             // down, for a KMS-backed KeyValueStorage) is treated the same as "no usable app key
             // yet" - both mean the cache can't be read, not a reason to let a different,
