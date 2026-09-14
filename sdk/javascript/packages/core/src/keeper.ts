@@ -15,9 +15,12 @@ const KEY_APP_KEY = 'appKey' // The application key with which all secrets are e
 const KEY_OWNER_PUBLIC_KEY = 'appOwnerPublicKey' // The application owner public key, to create records
 const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
 
-// Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
+// Throttle retry. The backend throttles HTTP 429 {"error":"throttled"}
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
-// request, so the counter only clears after 10s of silence).
+// request, so the counter only clears after 10s of silence). The backend used HTTP 403 for
+// this until 2026-06-15, when an unrelated login-security fix (KA-8807) changed the shared
+// response code; the gate below accepts both statuses (KSM-1395) since a second, unconfirmed
+// rate limiter might still use 403 (KSM-1386).
 const MAX_THROTTLE_RETRIES = 5
 // Bounds the server-key-rotation retry (postQuery's key-rotation branch, matched on
 // `result_code` or the legacy `error` field, no custom key pinned): one legitimate rotation
@@ -78,7 +81,7 @@ export type SecretManagerOptions = {
 
 // Error classes live in a dependency-free module (errors.ts) to avoid a circular import with
 // utils.ts/platform code that throws them; re-exported here so the public API is unchanged.
-export {KeeperError, KeeperThrottleError, KeeperCryptoError} from './errors'
+export {KeeperError, KeeperThrottleError, KeeperCryptoError, KeeperStorageError} from './errors'
 export type {KeeperCryptoFailureReason, KeeperDecryptionErrorInfo} from './errors'
 
 // Returns a jitter multiplier in [0, 0.25). One-sided so the delay never drops below the
@@ -837,10 +840,10 @@ const postQuery = async (options: SecretManagerOptions, path: string, payload: A
                 // strings with no body content at all.
                 const decodableBytes = response.data.slice(0, MAX_ERROR_BODY_DECODE_BYTES)
                 const fullErrorMessage = platform.bytesToString(decodableBytes)
-                // Throttle retry with exponential backoff + jitter. Checked
-                // before key-rotation so that path is untouched, and gated on the 403 status so a
-                // non-403 response carrying a {"error":"throttled"} body is not retried.
-                if (response.statusCode === 403) {
+                // Throttle retry with exponential backoff + jitter. Checked before key-rotation
+                // so that path is untouched. Gated on 403 or 429 so a response on neither status,
+                // carrying a {"error":"throttled"} body, is not retried.
+                if (response.statusCode === 403 || response.statusCode === 429) {
                     const retryAfter = parseThrottle(fullErrorMessage)
                     if (retryAfter !== null) {
                         if (throttleAttempt >= MAX_THROTTLE_RETRIES) {
@@ -1013,7 +1016,9 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
 }
 
 const getSharedFolderUid = (folders: SecretsManagerResponseFolder[], parent: string): string | undefined => {
-    while (true) {
+    const visited = new Set<string>()
+    while (!visited.has(parent)) {
+        visited.add(parent)
         const parentFolder = folders.find(x => x.folderUid === parent)
         if (!parentFolder) {
             return undefined
@@ -1024,6 +1029,7 @@ const getSharedFolderUid = (folders: SecretsManagerResponseFolder[], parent: str
             return parent
         }
     }
+    throw new Error(`Folder data inconsistent - parent cycle detected at folder UID ${parent}`)
 };
 
 // Converts a raw crypto/parse failure into a KeeperCryptoError classified by which mode this
