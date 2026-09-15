@@ -10,8 +10,8 @@ import kotlin.test.assertTrue
 /**
  * Unit tests for the [KeeperRecordLink] typed accessor layer.
  *
- * Mirrors the Python reference suite `sdk/python/core/tests/record_link_test.py` (KSM-992, PR #1036)
- * so the Java accessors match the live-verified backend payload shapes: permission booleans with an
+ * Mirrors the Python reference suite `sdk/python/core/tests/record_link_test.py` so the Java
+ * accessors match the live-verified backend payload shapes: permission booleans with an
  * `allowedSettings` fallback (top-level wins), the new credential/meta accessors, lossless
  * `getLinkData()`, and the encrypted ai/jit settings.
  */
@@ -168,7 +168,7 @@ class KeeperRecordLinkTest {
             path = "meta"
         )
 
-        // Permission booleans are absent at the top level — read via the allowedSettings fallback.
+        // Permission booleans are absent at the top level; read via the allowedSettings fallback.
         assertTrue(meta.allowsRotation())
         assertTrue(meta.allowsConnections())
         assertTrue(meta.allowsPortForwards())

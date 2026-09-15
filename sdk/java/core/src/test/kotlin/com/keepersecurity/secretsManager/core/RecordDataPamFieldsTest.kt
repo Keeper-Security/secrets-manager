@@ -7,7 +7,7 @@ import kotlinx.serialization.json.Json
 import kotlin.test.*
 
 /**
- * Test suite for PAM connection settings fields added in KSM-738 (VAUL-7662).
+ * Test suite for PAM connection settings fields.
  * Tests serialization/deserialization of new fields in:
  * - PamRbiConnection (6 new fields: audio/clipboard controls)
  * - PamSettingsPortForward (2 new fields: local port configuration)
