@@ -165,6 +165,17 @@ type UpdatePayload = CommonPayload & {
     links2Remove?: string[]
 }
 
+type RecordUpdateItem = {
+    recordUid: string
+    data: string
+    revision: number
+    links2Remove?: string[]
+}
+
+type BatchUpdatePayload = CommonPayload & {
+    records: RecordUpdateItem[]
+}
+
 type CompleteTransactionPayload = CommonPayload & {
     recordUid: string
 }
@@ -261,6 +272,16 @@ type SecretsManagerResponse = {
 type SecretsManagerDeleteResponse = {
     records: SecretsManagerDeleteResponseRecord[]
     folders: SecretsManagerDeleteResponseFolder[]
+}
+
+type SecretsManagerBatchUpdateResponseRecord = {
+    recordUid: string
+    errorMessage: string
+    responseCode: string
+}
+
+type SecretsManagerBatchUpdateResponse = {
+    records: SecretsManagerBatchUpdateResponseRecord[]
 }
 
 type SecretsManagerAddFileResponse = {
@@ -542,12 +563,7 @@ const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryO
     return payload
 }
 
-const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord, updateOptions?: UpdateOptions): Promise<UpdatePayload> => {
-    const clientId = await storage.getString(KEY_CLIENT_ID)
-    if (!clientId) {
-        throw new Error('Client Id is missing from the configuration')
-    }
-    const {transactionType, links2Remove} = updateOptions ?? {}
+const encryptRecordUpdateData = async (record: KeeperRecord, links2Remove?: string[]): Promise<{data: string, links2Remove?: string[]}> => {
     if (links2Remove && links2Remove.length > 0) {
         const fields = record.data.fields;
         const fileRef = fields.find(x => x.type == 'fileRef');
@@ -560,20 +576,62 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperReco
     }
     const recordBytes = platform.stringToBytes(JSON.stringify(record.data))
     const encryptedRecord = await platform.encrypt(recordBytes, record.recordUid || KEY_APP_KEY)
+    const result: {data: string, links2Remove?: string[]} = {
+        data: webSafe64FromBytes(encryptedRecord)
+    }
+    if (links2Remove && links2Remove.length > 0) {
+        result.links2Remove = links2Remove
+    }
+    return result
+}
+
+const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord, updateOptions?: UpdateOptions): Promise<UpdatePayload> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
+    const {transactionType, links2Remove} = updateOptions ?? {}
+    const encrypted = await encryptRecordUpdateData(record, links2Remove)
     const payload: UpdatePayload = {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
         recordUid: record.recordUid,
-        data: webSafe64FromBytes(encryptedRecord),
+        data: encrypted.data,
         revision: record.revision
     }
     if (transactionType) {
         payload.transactionType = transactionType
     }
-    if (links2Remove && links2Remove.length > 0) {
-        payload.links2Remove = links2Remove
+    if (encrypted.links2Remove) {
+        payload.links2Remove = encrypted.links2Remove
     }
     return payload
+}
+
+const prepareBatchUpdatePayload = async (storage: KeyValueStorage, records: KeeperRecord[], updateOptions?: UpdateOptions): Promise<BatchUpdatePayload> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
+    const {links2Remove} = updateOptions ?? {}
+    const items: RecordUpdateItem[] = []
+    for (const record of records) {
+        const encrypted = await encryptRecordUpdateData(record, links2Remove)
+        const item: RecordUpdateItem = {
+            recordUid: record.recordUid,
+            data: encrypted.data,
+            revision: record.revision
+        }
+        if (encrypted.links2Remove) {
+            item.links2Remove = encrypted.links2Remove
+        }
+        items.push(item)
+    }
+    return {
+        clientVersion: 'ms' + packageVersion,
+        clientId: clientId,
+        records: items
+    }
 }
 
 const prepareCompleteTransactionPayload = async (storage: KeyValueStorage, recordUid: string): Promise<CompleteTransactionPayload> => {
@@ -1321,6 +1379,18 @@ export const updateSecret = async (options: SecretManagerOptions, record: Keeper
 export const updateSecret2 = async (options: SecretManagerOptions, record: KeeperRecord, updateOptions?: UpdateOptions): Promise<void> => {
     const payload = await prepareUpdatePayload(options.storage, record, updateOptions)
     await postQuery(options, 'update_secret', payload)
+}
+
+export const updateSecrets = async (options: SecretManagerOptions, records: KeeperRecord[], updateOptions?: UpdateOptions): Promise<SecretsManagerBatchUpdateResponse> => {
+    const payload = await prepareBatchUpdatePayload(options.storage, records, updateOptions)
+    const responseData = await postQuery(options, 'update_secrets', payload)
+    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerBatchUpdateResponse
+    for (const r of (response.records || [])) {
+        if (r.responseCode !== 'ok') {
+            console.error(`Failed to update record ${r.recordUid}: ${r.responseCode} ${r.errorMessage}`)
+        }
+    }
+    return response
 }
 
 export const completeTransaction = async (options: SecretManagerOptions, recordUid: string, rollback: boolean = false): Promise<void> => {
