@@ -5,6 +5,12 @@ All notable changes to the Keeper Secrets Manager JavaScript Azure Key Vault Sto
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Maintenance
+
+- KSM-1220 - Updated js-yaml, handlebars, minimatch, brace-expansion, picomatch, and other dependencies to resolve open security advisories
+
 ## [1.0.0]
 
 ### Added
