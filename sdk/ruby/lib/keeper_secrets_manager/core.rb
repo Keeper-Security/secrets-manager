@@ -1245,11 +1245,20 @@ module KeeperSecretsManager
 
       # Prepare create payload
       def prepare_create_payload(record_uid:, record_key:, folder_uid:, folder_key:, data:, subfolder_uid: nil)
+        owner_public_key = @config.get_string(ConfigKeys::KEY_OWNER_PUBLIC_KEY)
+        unless owner_public_key && !owner_public_key.empty?
+          raise Error, 'Unable to create record - owner key is missing. Looks like application was created ' \
+                       'using out of date client (Web Vault or Commander)'
+        end
+
+        owner_public_key_bytes = Utils.url_safe_str_to_bytes(owner_public_key)
+        record_key_encrypted = Crypto.encrypt_ec(record_key, owner_public_key_bytes)
+
         payload = Dto::CreatePayload.new
         payload.client_version = KeeperGlobals.client_version
         payload.client_id = @config.get_string(ConfigKeys::KEY_CLIENT_ID)
         payload.record_uid = record_uid
-        payload.record_key = Utils.bytes_to_base64(record_key)
+        payload.record_key = Utils.bytes_to_base64(record_key_encrypted)
         payload.folder_uid = folder_uid
         payload.sub_folder_uid = subfolder_uid
         payload.data = Utils.bytes_to_base64(data)
