@@ -1,87 +1,556 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, platform, TransmissionKey, inMemoryStorage} from "../platform";
+import {KeeperError, KeeperStorageError} from "../errors";
+import {KEY_APP_KEY, deriveCacheKey, encodeCacheBlob, decodeCacheBlob, DEFAULT_MAX_CACHE_AGE_MS, isRawKeyBytes} from "../cache";
+import {validateTimeoutMs} from "../deadline";
 import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import {randomBytes} from 'crypto';
+
+// fs.openSync's mode argument is only honored when the file is created; it is a no-op on an
+// existing file, so permissions must be re-asserted after every write, not just the first one.
+const chmodSecure = (filePath: string) => fs.chmodSync(filePath, 0o600)
+
+// Duck-typed rather than `instanceof Error`: native fs errors are not reliably `instanceof
+// Error` under Jest's test environment, since Node's own bindings throw from a different realm
+// than the one Jest exposes as the global Error. This also guards against a non-Error throw
+// (throw null, throw 'x') ever reaching a property access. Unlike the browser platform's
+// describeCause (src/browser/localConfigStorage.ts), which also includes the error's `.name`
+// (IndexedDB failures surface as DOMException, where `.name` carries the meaningful category,
+// e.g. "QuotaExceededError"), this Node version only surfaces `.message` - Node's fs error
+// messages already include the error code inline (e.g. "ENOENT: no such file or directory"),
+// so a separate `.name` lookup adds nothing here.
+const describeCause = (cause: unknown): string => {
+    const message = (cause as { message?: unknown } | null | undefined)?.message
+    return typeof message === 'string' ? message : 'unknown error'
+}
+
+// Same duck-typing rationale as describeCause. Populates KeeperStorageError.code so a caller
+// can branch on failure type (retry on ENOSPC, alert immediately on EACCES) instead of
+// string-matching the message; undefined for a cause with no such code (a JSON parse/shape
+// error, not an fs failure).
+const errorCode = (cause: unknown): string | undefined => {
+    const code = (cause as { code?: unknown } | null | undefined)?.code
+    return typeof code === 'string' ? code : undefined
+}
+
+const isEnoent = (cause: unknown): boolean =>
+    typeof cause === 'object' && cause !== null && (cause as NodeJS.ErrnoException).code === 'ENOENT'
+
+// Write-then-rename instead of truncate-then-write: fs.openSync(finalPath, 'w', ...)
+// truncates the destination before a single byte of new content lands, so a write
+// failure used to leave a 0-byte file behind, which the empty-file self-heal in
+// readStorage then treated as a legitimate fresh start on the next read - silently
+// discarding the previous config. Renaming a same-directory temp file over the
+// destination is atomic on POSIX (the destination is always either fully-old or
+// fully-new content, never partial) and replaces an existing destination on Windows
+// too. fsyncSync before the rename means this survives a real power-loss event, not
+// just a killed process.
+//
+// Deliberately does NOT resolve a symlink at finalPath - it operates on the literal path
+// given, and renameSync replaces whatever directory entry is there (a symlink included)
+// rather than dereferencing it (specified POSIX rename(2) behavior, not a bug to work around
+// here). This is the safe default: a caller-supplied or attacker-plantable symlink at the
+// write destination is never followed. The config file's write-through-a-symlink behavior
+// (an explicit, opt-in feature for an externally-managed "current config" convention,
+// including a dangling/pre-provisioned symlink whose target doesn't exist yet) is the
+// caller's own choice, made by saveStorage resolving configName via realpathSync *before*
+// calling in here - see saveStorage below. The cache file (writeCacheFile) deliberately does
+// not do that resolution: there is no legitimate externally-managed symlink convention for a
+// path the SDK itself names and owns, so a symlink there is presumptively hostile and must be
+// replaced, never written through (this is exactly the arbitrary-file-overwrite KSM-1265's
+// security fix closes - regression test: "a symlink at the cache path is replaced by the
+// write, never followed").
+//
+// A hard link is a second directory entry for the same inode, not something symlink
+// resolution helps with either way - renaming a temp file over one hard-linked path always
+// creates a new inode there, leaving every other hard-linked path frozen at the old content.
+// Accepted rather than worked around, for both the config file and the cache file: write-
+// file-atomic, npm and pip all make the same trade, since the alternative - writing in place
+// to keep the shared inode - gives up this function's atomicity for that one file.
+//
+// Shared by both the config file (saveStorage) and the cache file (writeCacheFile) - one
+// atomic-write primitive, so a protection added for one (fsync-before-rename, the short-write
+// guard below) isn't something the other has to reimplement or drift out of sync with.
+//
+// fs.writeSync's overloads don't distribute over a string | Uint8Array union, so the two data
+// types need their own branch rather than one unbranched call.
+const dataByteLength = (data: string | Uint8Array): number =>
+    typeof data === 'string' ? Buffer.byteLength(data) : data.byteLength
+
+// Same bound Linux's own symlink resolution enforces (SYMLOOP_MAX/MAXSYMLINKS is 40 on
+// every platform this package ships for), so a legitimate deep chain isn't cut short and a
+// real loop still terminates. Shared by saveStorage's own opt-in symlink-following write (see
+// writeFileAtomic's comment above for why the cache path deliberately does not opt in) and by
+// cleanupOrphanedTempFiles, so the write path and the sweep always agree on where a dangling
+// symlink's write actually landed.
+const MAX_SYMLINK_HOPS = 40
+
+const resolveWriteTargetPath = (configName: string): string => {
+    try {
+        return fs.realpathSync(configName)
+    } catch (e) {
+        if (!isEnoent(e)) {
+            throw e
+        }
+    }
+    // realpathSync gives up at the first missing path component and does not report how far
+    // it got, so a dangling chain (configName is itself a symlink, possibly through further
+    // symlink hops, whose final target does not exist) is walked by hand. lstatSync's own
+    // ENOENT is not swallowed here the way readlinkSync's failure is left unhandled below - a
+    // readlink failure partway through a chain (e.g. EACCES) must reject the save rather than
+    // silently falling back to the literal path, which would let the rename below replace a
+    // symlink with a plain file.
+    let currentPath = configName
+    for (let hop = 0; hop < MAX_SYMLINK_HOPS; hop++) {
+        let lstat: fs.Stats
+        try {
+            lstat = fs.lstatSync(currentPath)
+        } catch (e) {
+            if (isEnoent(e)) {
+                return currentPath
+            }
+            throw e
+        }
+        if (!lstat.isSymbolicLink()) {
+            return currentPath
+        }
+        const target = fs.readlinkSync(currentPath)
+        currentPath = path.isAbsolute(target) ? target : path.resolve(path.dirname(currentPath), target)
+    }
+    throw new Error(`Too many levels of symbolic links resolving ${configName}`)
+}
+
+const writeFileAtomic = (finalPath: string, data: string | Uint8Array): void => {
+    const tmpPath = `${finalPath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
+    const fd = fs.openSync(tmpPath, 'w', 0o600)
+    try {
+        // A single fs.writeSync call is not guaranteed to write the whole buffer - POSIX
+        // write(2) can return fewer bytes than requested. Comparing the result against the
+        // intended length, rather than trusting it and fsync-ing whatever actually landed, is
+        // what keeps a rare short write from silently committing truncated content as the new
+        // file. Deliberately not a retry loop (one existed here before and was removed for
+        // hang risk) - a short write becomes an immediate failure instead of something to retry.
+        const bytesWritten = typeof data === 'string' ? fs.writeSync(fd, data) : fs.writeSync(fd, data)
+        const expectedBytes = dataByteLength(data)
+        if (bytesWritten !== expectedBytes) {
+            throw new Error(`Short write: wrote ${bytesWritten} of ${expectedBytes} bytes to ${tmpPath}`)
+        }
+        fs.fsyncSync(fd)
+    } catch (writeError) {
+        try {
+            fs.closeSync(fd)
+        } catch {
+            // Same as above: a close failure here is secondary to the write error that
+            // caused this branch, don't let it replace the error that actually matters.
+        }
+        try {
+            fs.unlinkSync(tmpPath)
+        } catch {
+            // Best-effort, same as the rename-failure cleanup below - a failed write can still
+            // have left a partial temp file (containing a full secrets snapshot) behind, no
+            // reason to wait for the next orphan sweep to remove it when we already know it's
+            // dead right here.
+        }
+        throw writeError
+    }
+    fs.closeSync(fd)
+    // Rename takes on the source file's mode, not the destination's, so the temp file
+    // must already be 0600 before the rename.
+    chmodSecure(tmpPath)
+    try {
+        fs.renameSync(tmpPath, finalPath)
+    } catch (e) {
+        try {
+            fs.unlinkSync(tmpPath)
+        } catch {
+            // Best-effort cleanup - the write failure below is the error that matters; a
+            // leftover temp file is cosmetic, it's never read back.
+        }
+        throw e
+    }
+}
+
+// A SIGKILL/OOM between opening the temp file and the rename in writeFileAtomic leaves the
+// temp file behind permanently - it's never read back as config data, but it does hold a full
+// snapshot of every secret that was in storageData at that moment, so it shouldn't just sit on
+// disk forever. Swept here, on the next read, rather than at write time, since the crash that
+// creates one is exactly what prevents the write that would otherwise have cleaned it up.
+//
+// Only removes a temp file older than ORPHANED_TEMP_FILE_MAX_AGE_MS. A concurrent writer (e.g.
+// another pod sharing this same mounted config path) has its own temp file open right now with
+// a name matching this same pattern; a PID-liveness check would be the more precise filter, but
+// PIDs aren't visible across the container/pod boundary this matters most for, so an age
+// threshold - a plain filesystem timestamp any process can see - is the check that actually
+// holds up here. The threshold is generous relative to how long a write+fsync+rename actually
+// takes (milliseconds, even under load).
+const ORPHANED_TEMP_FILE_MAX_AGE_MS = 60_000
+
+const cleanupOrphanedTempFiles = (configName: string): void => {
+    // Shares the same resolveWriteTargetPath the config write path (saveStorage) uses, rather
+    // than a simpler copy, so the sweep looks in the same directory the write actually landed
+    // in - including a dangling symlink whose target lives in a different directory than the
+    // link itself. Best-effort: any failure (including a readlink error, or a chain longer
+    // than resolveWriteTargetPath tolerates) just skips the sweep for this read, matching this
+    // function's existing contract that a sweep problem never fails a read.
+    let resolvedPath: string
+    try {
+        resolvedPath = resolveWriteTargetPath(configName)
+    } catch {
+        return
+    }
+    const dir = path.dirname(resolvedPath)
+    const base = path.basename(resolvedPath)
+    let entries: string[]
+    try {
+        entries = fs.readdirSync(dir)
+    } catch {
+        return
+    }
+    const prefix = `${base}.`
+    const suffix = '.tmp'
+    const now = Date.now()
+    for (const entry of entries) {
+        if (!entry.startsWith(prefix) || !entry.endsWith(suffix)) {
+            continue
+        }
+        // Matches the exact shape writeFileAtomic produces (<pid>.<12 hex chars>) so this never
+        // sweeps an unrelated file that merely shares the config's name as a prefix.
+        const middle = entry.slice(prefix.length, entry.length - suffix.length)
+        if (!/^\d+\.[0-9a-f]{12}$/.test(middle)) {
+            continue
+        }
+        const entryPath = path.join(dir, entry)
+        try {
+            if (now - fs.statSync(entryPath).mtimeMs < ORPHANED_TEMP_FILE_MAX_AGE_MS) {
+                continue
+            }
+            fs.unlinkSync(entryPath)
+        } catch {
+            // Best-effort: a concurrent writer already renamed or removed this, or a
+            // permissions quirk - not worth failing config load over either way.
+        }
+    }
+}
 
 export const localConfigStorage = (configName?: string): KeyValueStorage => {
 
+    // Node validates config readability eagerly, here at construction, because fs is
+    // synchronous. The browser localConfigStorage defers the equivalent check lazily to first
+    // getString/saveString/delete, because IndexedDB has no synchronous API to check eagerly
+    // against - a structural difference between the two platforms, not a
+    // stylistic one.
+    //
+    // Deliberately does not reject a symlinked configName. Kubernetes always mounts a Secret or
+    // ConfigMap as a symlink chain (configName -> ..data/<key> -> a timestamped directory), so
+    // rejecting a read through a symlink here breaks every pod that mounts config.json this way.
+    // Reading through a symlink was never the vulnerability - only a write redirected through one
+    // is - so symlink protection lives on the write path (saveStorage) instead.
     const readStorage = (): any => {
         if (!configName) {
             return {}
         }
+        cleanupOrphanedTempFiles(configName)
+        let raw: string
         try {
-            return JSON.parse(fs.readFileSync(configName).toString())
+            // TextDecoder with fatal:true throws on an invalid UTF-8 byte sequence instead of
+            // silently substituting U+FFFD (what Buffer#toString('utf8') does), so single-byte
+            // corruption inside a JSON string value is caught here rather than sailing through
+            // into a plausible-looking but wrong parsed value. It also strips a leading BOM per
+            // the WHATWG Encoding spec's default ignoreBOM:false for the 'utf-8' label, so no
+            // separate BOM-stripping step is needed.
+            raw = new TextDecoder('utf-8', {fatal: true}).decode(fs.readFileSync(configName))
         } catch (e) {
+            if (isEnoent(e)) {
+                return {}
+            }
+            throw new KeeperStorageError(`Unable to read local config ${configName}: ${describeCause(e)}`, errorCode(e))
+        }
+        // An empty (or whitespace-only) file is a legitimate fresh start, not corruption.
+        // writeFileAtomic's atomic rename path can no longer produce this by itself - a kill
+        // mid-write only ever leaves a temp file behind, configName itself is untouched until
+        // the rename completes - but some other writer entirely (a stray `echo -n >
+        // config.json`, a pre-atomic-write version of this SDK) still can. The sibling KMS
+        // storage backends and the Python SDK already treat this as a fresh start for exactly
+        // this reason. A partially-written (nonempty,
+        // non-whitespace but truncated) file is not self-healed: there is no reliable way to
+        // distinguish "truncated" from "genuinely corrupt" JSON, and this fix's whole point is
+        // to fail loudly rather than guess.
+        if (raw.trim().length === 0) {
             return {}
         }
+        let parsed: any
+        try {
+            parsed = JSON.parse(raw)
+        } catch {
+            // JSON.parse's SyntaxError text can echo a snippet of the surrounding malformed
+            // input, which for a corrupted config could be a fragment of an adjacent secret
+            // value - unlike the fs-error branch above, this message must not forward anything
+            // from the underlying error.
+            throw new KeeperStorageError(`Local config ${configName} contains malformed JSON`, undefined)
+        }
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new KeeperStorageError(`Local config ${configName} does not contain a JSON object`, undefined)
+        }
+        return parsed
     }
 
     const storageData = readStorage()
     const storage: KeyValueStorage = inMemoryStorage(storageData)
 
-    const saveStorage = (storage: any) => {
+    const saveStorage = () => {
         if (!configName) {
             return
         }
-        // Create file with secure permissions (0600)
-        const fd = fs.openSync(configName, 'w', 0o600)
         try {
-            fs.writeSync(fd, JSON.stringify(storageData, null, 2))
-        } finally {
-            fs.closeSync(fd)
+            // Resolved here, not inside writeFileAtomic: this is the config file's own opt-in
+            // choice to write through a symlinked configName (an externally-managed "current
+            // config" convention some deployments use, including a chain of dangling symlinks
+            // up to MAX_SYMLINK_HOPS deep), not a default writeFileAtomic extends to every
+            // caller - the cache file (writeCacheFile) deliberately skips this resolution, see
+            // writeFileAtomic's own comment for why.
+            const resolvedPath = resolveWriteTargetPath(configName)
+            writeFileAtomic(resolvedPath, JSON.stringify(storageData, null, 2))
+        } catch (e) {
+            throw new KeeperStorageError(`Unable to save local config ${configName}: ${describeCause(e)}`, errorCode(e))
         }
+    }
+
+    // storage.saveString/saveBytes/delete all mutate storageData in place (inMemoryStorage
+    // closes over this exact object, supporting nested "a/b/c" keys), before saveStorage ever
+    // runs. Without this, a failed save leaves storageData - and so this instance's getString/
+    // getBytes for the rest of its lifetime - holding a value that was never actually persisted;
+    // a caller that catches the rejection and keeps going is then acting on a value that
+    // reverts the moment the process restarts. Restoring in place (clear then reassign),
+    // rather than pointing storageData at a new object, matters because inMemoryStorage's own
+    // closure only ever sees this one object reference.
+    const snapshotStorageData = (): any => JSON.parse(JSON.stringify(storageData))
+
+    const restoreStorageData = (snapshot: any): void => {
+        for (const key of Object.keys(storageData)) {
+            delete storageData[key]
+        }
+        Object.assign(storageData, snapshot)
+    }
+
+    // storage.saveString/etc. mutate storageData synchronously, before the very first `await`
+    // in this function even suspends. Without serializing, two overlapping calls interleave:
+    // B's snapshot ends up taken after A's mutation already landed, so if A's saveStorage then
+    // fails, A's rollback reverts to a snapshot from before B ever ran - destroying B's already-
+    // applied mutation even though B never failed. Chaining every call onto pendingOperation
+    // means each call's entire snapshot-mutate-persist(-rollback) sequence fully finishes before
+    // the next one's snapshot is even taken, so this can no longer happen.
+    let pendingOperation: Promise<void> = Promise.resolve()
+
+    const mutateAndPersist = (mutate: () => Promise<void>): Promise<void> => {
+        const operation = pendingOperation.then(async () => {
+            const snapshot = snapshotStorageData()
+            await mutate()
+            try {
+                saveStorage()
+            } catch (e) {
+                restoreStorageData(snapshot)
+                throw e
+            }
+        })
+        // A rejected promise assigned here would permanently poison every later call chained
+        // onto it; swallowing the rejection only for chaining purposes still lets the rejection
+        // this function returns to its actual caller propagate normally.
+        pendingOperation = operation.catch(() => {})
+        return operation
     }
 
     return {
         getString: storage.getString,
-        saveString: async (key, value) => {
-            await storage.saveString(key, value)
-            saveStorage(storage)
-            return Promise.resolve()
-        },
+        saveString: (key, value) => mutateAndPersist(() => storage.saveString(key, value)),
         getBytes: storage.getBytes,
-        saveBytes: async (key, value) => {
-            await storage.saveBytes(key, value)
-            saveStorage(storage)
-            return Promise.resolve()
-        },
-        delete: async (key) => {
-            await storage.delete(key)
-            saveStorage(storage)
-            return Promise.resolve()
-        }
+        saveBytes: (key, value) => mutateAndPersist(() => storage.saveBytes(key, value)),
+        delete: (key) => mutateAndPersist(() => storage.delete(key))
     }
 }
 
-export const cachingPostFunction = async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload): Promise<KeeperHttpResponse> => {
+// fs.constants.O_DIRECTORY/O_NOFOLLOW are undefined on Windows (same gap already tracked for
+// writeFileAtomic's hard-link branch). There, `x | undefined` coerces to plain `x` and the two
+// checks below silently stop verifying anything - not a crash, just a directory/file open with
+// no symlink protection at all. Unlike writeFileAtomic's hard-link branch (where O_NOFOLLOW is
+// one layer of defense-in-depth on top of an already-safe rename), this is the *only*
+// protection the cache directory/file has, so a silent no-op here is a bigger gap. There is no
+// good fallback available without a real openat()-style relative-to-fd primitive, which Node's
+// public fs API doesn't expose - accepted as a documented, POSIX-only limitation rather than
+// building a weaker check-then-open substitute.
+const hasDirectorySymlinkProtection = typeof fs.constants.O_DIRECTORY === 'number' && typeof fs.constants.O_NOFOLLOW === 'number'
+const cacheDirOpenFlags = hasDirectorySymlinkProtection ? fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW : fs.constants.O_DIRECTORY
+const cacheFileReadFlags = hasDirectorySymlinkProtection ? fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW : fs.constants.O_RDONLY
+
+const writeCacheFile = async (cachePath: string, cacheKey: Uint8Array, plaintext: Uint8Array, isDefaultCachePath: boolean): Promise<void> => {
+    cleanupOrphanedTempFiles(cachePath)
+    const dir = path.dirname(cachePath)
+    // A relative cachePath with no directory component resolves dir to '.', the process's
+    // current working directory - not a directory this function created or owns. Hardening a
+    // directory the caller never named is a surprising side effect, so directory-level
+    // hardening only applies when cachePath actually names a directory component. The default
+    // path is always absolute, so the security-relevant case is unaffected.
+    if (dir !== '.') {
+        // mkdirSync(recursive: true) follows a symlink in any existing ancestor segment - only
+        // the leaf gets an O_NOFOLLOW check below. Accepted as unclosable without a native
+        // openat2()-style RESOLVE_NO_SYMLINKS binding (Linux-only, and blanket rejection breaks
+        // legitimate ancestor symlinks like macOS's own /tmp -> /private/tmp); no fs library
+        // attempts this either.
+        //
+        // Permissions are only force-re-asserted on the SDK's own default path (~/.keeper),
+        // matching KSM-1263's file-level self-healing. A caller-supplied cachePath pointing at a
+        // pre-existing directory they own (e.g. a file directly inside $HOME) keeps its own
+        // permissions - narrowing a directory the SDK doesn't own is a bigger side effect than
+        // this fix should have, but the one directory it does own should still self-heal.
+        const dirExistedBefore = fs.existsSync(dir)
+        fs.mkdirSync(dir, {recursive: true, mode: 0o700})
+        // fchmodSync on the open fd, not chmodSync by path, pins the exact inode instead of
+        // re-resolving; O_DIRECTORY|O_NOFOLLOW on the open itself closes the mkdir-to-open gap
+        // (Windows caveat above).
+        const dfd = fs.openSync(dir, cacheDirOpenFlags)
+        try {
+            if (!dirExistedBefore || isDefaultCachePath) {
+                fs.fchmodSync(dfd, 0o700)
+            }
+        } finally {
+            fs.closeSync(dfd)
+        }
+    }
+    const blob = await encodeCacheBlob(plaintext, cacheKey)
+    writeFileAtomic(cachePath, blob)
+}
+
+// Bounds how much a corrupted, misconfigured, or maliciously-placed file at the cache path can
+// force this to allocate before decodeCacheBlob gets any chance to reject it. Real cache blobs
+// are tiny (a version byte, an 8-byte timestamp, and the encrypted response); generous headroom
+// over any real response, same shape as MAX_ERROR_BODY_DECODE_BYTES in keeper.ts.
+const MAX_CACHE_FILE_BYTES = 10 * 1024 * 1024
+
+const readCacheFile = async (cachePath: string, cacheKey: Uint8Array, maxCacheAgeMs: number): Promise<Uint8Array> => {
+    cleanupOrphanedTempFiles(cachePath)
+    let raw: Buffer
     try {
-        const response = await platform.post(url, payload.payload, {
-            PublicKeyId: transmissionKey.publicKeyId.toString(),
-            TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
-            Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-        })
-        if (response.statusCode == 200) {
-            // Create cache file with secure permissions (0600)
-            const cacheFd = fs.openSync('cache.dat', 'w', 0o600)
+        const dir = path.dirname(cachePath)
+        if (dir !== '.') {
+            // open-then-close is enough here (nothing needs to persist past the check), but it's
+            // the same O_DIRECTORY|O_NOFOLLOW atomic check-and-open writeCacheFile uses, so a
+            // symlinked cache directory is rejected on the read path too. Same residual
+            // re-resolution window as writeCacheFile's comment above.
+            const dfd = fs.openSync(dir, cacheDirOpenFlags)
+            fs.closeSync(dfd)
+        }
+        // O_NOFOLLOW folds the "not a symlink" check into the open itself, closing the gap a
+        // separate lstat-then-readFileSync would leave open (Windows caveat above).
+        const fd = fs.openSync(cachePath, cacheFileReadFlags)
+        try {
+            const size = fs.fstatSync(fd).size
+            if (size > MAX_CACHE_FILE_BYTES) {
+                throw new KeeperError(`Cache file ${cachePath} exceeds the maximum expected size`)
+            }
+            raw = fs.readFileSync(fd)
+        } finally {
+            fs.closeSync(fd)
+        }
+    } catch (e) {
+        if (e instanceof KeeperError) {
+            throw e
+        }
+        if (isEnoent(e)) {
+            throw new KeeperError('Cached value does not exist')
+        }
+        throw new KeeperError(`Unable to read cache file ${cachePath}: ${describeCause(e)}`)
+    }
+    try {
+        return await decodeCacheBlob(raw, cacheKey, maxCacheAgeMs)
+    } catch (e) {
+        throw new KeeperError(`Cache file ${cachePath} is invalid: ${describeCause(e)}`)
+    }
+}
+
+// Same closure shape and cache codec (../cache) as browser/localConfigStorage.ts's
+// createCachingFunction; only the storage medium differs (a file here, IndexedDB there).
+// Replaces the old standalone cachingPostFunction, which kept the AES key in plaintext beside
+// the ciphertext it protected, in a fixed CWD-relative file, with no integrity check on restore.
+// Fixing all three requires access to the config (to derive a cache key that isn't the
+// transmission key itself) and a chosen cache location, so the factory shape - not the old
+// zero-argument function - is what the fix needs.
+// An options object, not positional args: browser's createCachingFunction takes
+// (storage, maxCacheAgeMs?) - same position, different meaning than Node's second positional arg
+// would otherwise be. A number intended for maxCacheAgeMs silently landing on cachePath (or vice
+// versa) fails at runtime with a confusing path error; naming both fields turns that into a
+// compile-time type error instead.
+export const createCachingFunction = (
+    storage: KeyValueStorage,
+    options: {cachePath?: string, maxCacheAgeMs?: number} = {}
+): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number) => Promise<KeeperHttpResponse> => {
+    // Captured before defaulting, and threaded down to writeCacheFile: whether the SDK's own
+    // default directory (~/.keeper) always gets its permissions re-asserted, or a caller-owned
+    // directory is left alone once it exists - see writeCacheFile's own comment on this.
+    const isDefaultCachePath = options.cachePath === undefined
+    // Computed here, not at module scope: os.homedir() throws in an environment with no $HOME
+    // and no matching /etc/passwd entry for the current uid (some containers), and this only
+    // evaluates when the caller omits the field - so that failure now only reaches a caller who
+    // actually relies on the default, at call time, not every consumer who merely imports this
+    // module.
+    const cachePath = options.cachePath ?? path.join(os.homedir(), '.keeper', 'ksm-cache.dat')
+    const maxCacheAgeMs = options.maxCacheAgeMs ?? DEFAULT_MAX_CACHE_AGE_MS
+    return async (url, transmissionKey, payload, allowUnverifiedCertificate, timeoutMs) => {
+        // Resolved before the try below so a caller-input mistake (an unusable timeoutMs) fails
+        // fast instead of being caught and mistaken for a transport failure worth falling back to
+        // stale cache for - resolveTimeoutMs throws a plain Error, not a KeeperError, for exactly
+        // this class of failure (see deadline.ts), so it would otherwise slip past the KeeperError
+        // carve-out below.
+        const resolvedTimeoutMs = validateTimeoutMs(timeoutMs)
+        let response: KeeperHttpResponse
+        try {
+            response = await platform.post(url, payload.payload, {
+                PublicKeyId: transmissionKey.publicKeyId.toString(),
+                TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
+                Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
+            }, allowUnverifiedCertificate, resolvedTimeoutMs)
+        } catch (e) {
+            // A deliberate client-side timeout is not a transport failure: falling back to stale
+            // cache here would silently turn a slow/hung request into a fake success instead of
+            // surfacing it to the caller.
+            if (e instanceof KeeperError) {
+                throw e
+            }
+            // A storage failure here (plausible during the same outage that took the network
+            // down, for a KMS-backed KeyValueStorage) is treated the same as "no usable app key
+            // yet" - both mean the cache can't be read, not a reason to let a different,
+            // unrelated exception replace the original network error's context.
+            let appKey: Uint8Array | undefined
             try {
-                fs.writeSync(cacheFd, Buffer.concat([transmissionKey.key, response.data]))
-            } finally {
-                fs.closeSync(cacheFd)
+                appKey = await storage.getBytes(KEY_APP_KEY)
+            } catch {
+                appKey = undefined
+            }
+            if (!appKey || !isRawKeyBytes(appKey)) {
+                throw new KeeperError('Cached value does not exist')
+            }
+            const cachedData = await readCacheFile(cachePath, await deriveCacheKey(appKey), maxCacheAgeMs)
+            console.error(`Network request failed (${describeCause(e)}); serving cached response, which may be stale`)
+            transmissionKey.key = cachedData.slice(0, 32)
+            return {
+                statusCode: 200,
+                data: cachedData.slice(32),
+                headers: []
+            }
+        }
+        if (response.statusCode == 200) {
+            try {
+                const appKey = await storage.getBytes(KEY_APP_KEY)
+                // Same isRawKeyBytes guard as the fallback branch above - without it, a
+                // non-raw-bytes value (e.g. a wrapped CryptoKey under a hypothetical Node
+                // useObjects mode) reaches deriveCacheKey unchecked and logs a confusing
+                // internal TypeError instead of just skipping the cache write cleanly.
+                if (appKey && isRawKeyBytes(appKey)) {
+                    await writeCacheFile(cachePath, await deriveCacheKey(appKey), Buffer.concat([transmissionKey.key, response.data]), isDefaultCachePath)
+                }
+            } catch (e) {
+                console.error(`Failed to update cached response: ${describeCause(e)}`)
             }
         }
         return response
-    } catch (e) {
-        let cachedData
-        try {
-            cachedData = fs.readFileSync('cache.dat')
-        } catch {
-        }
-        if (!cachedData) {
-            throw new Error('Cached value does not exist')
-        }
-        transmissionKey.key = cachedData.slice(0, 32)
-        return {
-            statusCode: 200,
-            data: cachedData.slice(32),
-            headers: []
-        }
     }
 }

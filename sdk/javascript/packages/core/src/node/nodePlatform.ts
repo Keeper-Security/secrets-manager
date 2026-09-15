@@ -1,6 +1,7 @@
 import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
+import {deadlineSignal, timeoutError} from '../deadline'
 import {privateDerToPublicRaw} from '../utils'
-import {KeeperError} from '../errors'
+import {KeeperError, KeeperCryptoError} from '../errors'
 import {request, RequestOptions} from 'https'
 import {
     createCipheriv,
@@ -44,7 +45,7 @@ const loadKey = async (keyId: string, storage?: KeyValueStorage): Promise<Uint8A
         ? await storage.getBytes(keyId)
         : undefined
     if (!keyBytes) {
-        throw new Error(`Unable to load the key ${keyId}`)
+        throw new KeeperCryptoError(`Unable to load the key ${keyId}`, 'missing-key', keyId)
     }
     keyCache[keyId] = keyBytes
     return keyBytes
@@ -122,6 +123,11 @@ const _encrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Pr
     return Buffer.concat([iv, encrypted, tag])
 }
 
+// AES-256-CBC carries no MAC: a decrypt failure here means malformed input, not a verified
+// integrity failure, and a decrypt success proves nothing about integrity either (see
+// KeeperCryptoError's 'format' vs 'integrity' in errors.ts). This mode exists only because the
+// vault's wire format for shared-folder key wraps and folder data is fixed to CBC server-side
+// (KSM-1267) - callers must not copy this mode into new code; prefer the AES-256-GCM path.
 const _encryptCBC = (data: Uint8Array, key: Uint8Array): Uint8Array => {
     let iv = randomBytes(16);
     let cipher = createCipheriv("aes-256-cbc", key, iv).setAutoPadding(true);
@@ -141,6 +147,7 @@ const _decrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Pr
     return Buffer.concat([cipher.update(encrypted), cipher.final()])
 }
 
+// See _encryptCBC above: no MAC, fixed server-side format, not a template for new code.
 const _decryptCBC = (data: Uint8Array, key: Uint8Array): Uint8Array => {
     let iv = data.subarray(0, 16)
     let encrypted = data.subarray(16)
@@ -148,10 +155,21 @@ const _decryptCBC = (data: Uint8Array, key: Uint8Array): Uint8Array => {
     return Buffer.concat([cipher.update(encrypted), cipher.final()])
 }
 
+const UNWRAPPED_KEY_LENGTH = 32 // every key this SDK unwraps is AES-256
+
 const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean, useCBC?: boolean): Promise<void> => {
     const cbcDecrypt = unwrappingKeyId === "appKey" ? false : useCBC
     const unwrappingKey = await loadKey(unwrappingKeyId, storage)
     const unwrappedKey = await _decrypt(key, unwrappingKey, cbcDecrypt)
+    if (unwrappedKey.length !== UNWRAPPED_KEY_LENGTH) {
+        // WebCrypto's unwrapKey/importKey only validates that a raw AES key is a valid AES size
+        // (128/192/256 bits, i.e. 16/24/32 bytes) - it happily accepts a corrupted-but-plausible
+        // 16- or 24-byte result, so the browser platform needs this same explicit AES-256 check
+        // (see browserPlatform.ts's unwrap, which checks algorithm.length on the CryptoKey since
+        // it never has the raw bytes). Without this check here, Node would cache a malformed key
+        // and only fail later, at an unrelated call site, with a much harder to diagnose error.
+        throw new Error(`Unwrapped key ${keyId} has invalid length ${unwrappedKey.length}, expected ${UNWRAPPED_KEY_LENGTH}`)
+    }
     keyCache[keyId] = unwrappedKey
     if (memoryOnly) {
         return
@@ -166,8 +184,8 @@ const decrypt = async (data: Uint8Array, keyId: string, storage?: KeyValueStorag
     return await _decrypt(data, key, useCBC)
 }
 
-function hash(data: Uint8Array): Promise<Uint8Array> {
-    const hash = createHmac('sha512', data).update('KEEPER_SECRETS_MANAGER_CLIENT_ID').digest()
+function hash(data: Uint8Array, tag: string): Promise<Uint8Array> {
+    const hash = createHmac('sha512', data).update(tag).digest()
     return Promise.resolve(hash)
 }
 
@@ -182,37 +200,98 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
     return Buffer.concat([ephemeralPublicKey, encryptedData])
 }
 
-const fetchData = (res, resolve) => {
-    const retVal = {
+// onBodyDone runs when the exchange is genuinely over, not when the headers land: the deadline has
+// to stay armed across the body or a server can send headers instantly and then stall or trickle
+// forever. reject is wired to the response stream's own errors too, because once the response has
+// started the request object no longer reports a mid-body socket failure and the promise would
+// otherwise never settle.
+const fetchData = (res, resolve, onBodyDone?: () => void, reject?: (reason: any) => void) => {
+    const retVal: { statusCode: number, headers: any, data: Buffer | null } = {
         statusCode: res.statusCode,
         headers: res.headers,
         data: null
     }
+    // Chunks are concatenated once at 'end' rather than on every 'data' event: re-copying the
+    // whole accumulated buffer per chunk is O(n^2) in body size, which turns this file's own
+    // deadline into a spurious timeout on a large-but-otherwise-healthy download.
+    const chunks: Buffer[] = []
     res.on('data', data => {
-        retVal.data = retVal.data
-            ? Buffer.concat([retVal.data, data])
-            : data
+        chunks.push(data)
+    })
+    res.on('error', (err) => {
+        onBodyDone?.()
+        reject?.(err)
     })
     res.on('end', () => {
+        onBodyDone?.()
+        if (chunks.length) {
+            retVal.data = Buffer.concat(chunks)
+        }
         resolve(retVal)
+    })
+}
+
+// Wires both the request's own 'error' event and the abort signal itself onto a Node request
+// object. request()/https.request() destroys the request and emits 'error' on it when the signal
+// passed into its own options aborts, but only once a socket has been assigned - Node's
+// ClientRequest.destroy() calls this.socket?.destroy(err), which is a no-op with no socket, so a
+// request still waiting on a stalled proxy CONNECT or a saturated agent pool would otherwise never
+// settle at all. The signal's own 'abort' listener is the unconditional path for that case. Both
+// listeners are guarded against double-settlement, since a socket assigned just as the deadline
+// fires can still race the two. signal.aborted is checked synchronously in the 'error' handler,
+// mirroring browserPlatform.ts's asTimeout: a deadline firing is always our own timeout, so it
+// gets our own message; any other failure passes through untouched. request()/https.request() can
+// also throw synchronously (a malformed URL, for instance) before this ever runs; callers wrap
+// that call in try/catch and clear() there too, since neither listener registered here would
+// otherwise fire and the armed timer would leak for the full deadline window.
+const armRequest = (
+    req: { on(event: 'error', cb: (err: any) => void): void },
+    signal: AbortSignal | undefined,
+    ms: number,
+    url: string,
+    clear: () => void,
+    reject: (reason: any) => void
+): void => {
+    let settled = false
+    req.on('error', (err) => {
+        if (settled) return
+        settled = true
+        clear()
+        reject(signal?.aborted ? timeoutError(url, ms) : err)
+    })
+    signal?.addEventListener('abort', () => {
+        if (settled) return
+        settled = true
+        clear()
+        reject(timeoutError(url, ms))
     })
 }
 
 const get = (
     url: string,
-    headers?: { [key: string]: string }
+    headers?: { [key: string]: string },
+    timeoutMs?: number
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
-    const get = request(url, {
-        method: 'get',
-        headers: {
-            'User-Agent': `Node/${process.version}`,
-            ...headers
-        },
-        agent: getProxyAgent()
-    }, (res) => {
-        fetchData(res, resolve)
-    })
-    get.on('error', reject)
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
+    let get: ReturnType<typeof request>
+    try {
+        get = request(url, {
+            method: 'get',
+            headers: {
+                'User-Agent': `Node/${process.version}`,
+                ...headers
+            },
+            agent: getProxyAgent(),
+            signal
+        }, (res) => {
+            fetchData(res, resolve, clear, reject)
+        })
+    } catch (e) {
+        clear()
+        reject(e)
+        return
+    }
+    armRequest(get, signal, ms, url, clear, reject)
     get.end()
 })
 
@@ -220,25 +299,35 @@ const post = (
     url: string,
     payload: Uint8Array,
     headers?: { [key: string]: string },
-    allowUnverifiedCertificate?: boolean
+    allowUnverifiedCertificate?: boolean,
+    timeoutMs?: number
 ): Promise<KeeperHttpResponse> => new Promise<KeeperHttpResponse>((resolve, reject) => {
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     const options: RequestOptions = {
         rejectUnauthorized: !allowUnverifiedCertificate,
-        agent: getProxyAgent()
+        agent: getProxyAgent(),
+        signal
     }
-    const post = request(url, {
-        method: 'post',
-        ...options,
-        headers: {
-            'Content-Type': 'application/octet-stream',
-            'Content-Length': payload.length,
-            'User-Agent': `Node/${process.version}`,
-            ...headers,
-        },
-    }, (res) => {
-        fetchData(res, resolve)
-    })
-    post.on('error', reject)
+    let post: ReturnType<typeof request>
+    try {
+        post = request(url, {
+            method: 'post',
+            ...options,
+            headers: {
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': payload.length,
+                'User-Agent': `Node/${process.version}`,
+                ...headers,
+            },
+        }, (res) => {
+            fetchData(res, resolve, clear, reject)
+        })
+    } catch (e) {
+        clear()
+        reject(e)
+        return
+    }
+    armRequest(post, signal, ms, url, clear, reject)
     post.write(payload)
     post.end()
 })
@@ -246,25 +335,45 @@ const post = (
 const fileUpload = (
     url: string,
     uploadParameters: { [key: string]: string },
-    data: Uint8Array
+    data: Uint8Array,
+    timeoutMs?: number
 ): Promise<any> => new Promise<any>((resolve, reject) => {
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     const boundary = `----------${Date.now()}`
     const boundaryBytes = stringToBytes(`\r\n--${boundary}`)
-    let post = https.request(url, {
-        method: "post",
-        headers: {
-            'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        },
-        agent: getProxyAgent()
-    });
+    let post: ReturnType<typeof https.request>
+    try {
+        post = https.request(url, {
+            method: "post",
+            headers: {
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            },
+            agent: getProxyAgent(),
+            signal
+        });
+    } catch (e) {
+        clear()
+        reject(e)
+        return
+    }
     post.on('response', function (res: any) {
+        // fileUpload resolves off headers alone and never reads the body, but the response object
+        // is still an EventEmitter: a socket failure after this point emits 'error' on it, and with
+        // no listener that throws instead of doing nothing, per Node's EventEmitter contract for
+        // unhandled 'error' events.
+        res.on('error', reject)
+        // An unconsumed response body leaves the socket open (paused, not closed), which keeps
+        // the event loop alive - a script with no other pending work never exits on its own after
+        // a successful upload. resume() discards the body without buffering it; nothing here reads it.
+        res.resume()
+        clear()
         resolve({
             headers: res.headers,
             statusCode: res.statusCode,
             statusMessage: res.statusMessage
         })
     })
-    post.on('error', reject)
+    armRequest(post, signal, ms, url, clear, reject)
     for (const key in uploadParameters) {
         post.write(boundaryBytes)
         post.write(stringToBytes(`\r\nContent-Disposition: form-data; name=\"${key}\"\r\n\r\n${uploadParameters[key]}`))

@@ -1,0 +1,12 @@
+{
+  "name": "totp",
+  "version": "1.0.0",
+  "description": "Secrets Manager TOTP code generation sample for Node",
+  "license": "ISC",
+  "scripts": {
+    "run": "node hello.js"
+  },
+  "dependencies": {
+    "@keeper-security/secrets-manager-core": "17.6.0"
+  }
+}

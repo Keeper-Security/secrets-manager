@@ -1,5 +1,3 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
-
 const {
     getSecrets,
     initializeStorage,
@@ -23,7 +21,7 @@ const getKeeperRecords = async () => {
 
     const file = firstRecord.files.find(x => x.data.name === 'acme.cer')
     if (file) {
-        const fileBytes = await downloadFile(file)
+        const fileBytes = await downloadFile(file, undefined, {storage: storage})
         fs.writeFileSync(file.data.name, fileBytes)
     }
 
@@ -31,4 +29,7 @@ const getKeeperRecords = async () => {
     await updateSecret({storage: storage}, firstRecord)
 }
 
-getKeeperRecords().finally()
+getKeeperRecords().catch((e) => {
+    console.error(`Failed to load Keeper secrets: ${e?.message ?? String(e)}`)
+    process.exitCode = 1
+})

@@ -1,0 +1,12 @@
+{
+  "name": "pam-linked-records",
+  "version": "1.0.0",
+  "description": "Secrets Manager PAM linked record sample for Node",
+  "license": "ISC",
+  "scripts": {
+    "run": "node hello.js"
+  },
+  "dependencies": {
+    "@keeper-security/secrets-manager-core": "17.6.0"
+  }
+}
