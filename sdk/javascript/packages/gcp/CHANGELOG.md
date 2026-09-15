@@ -5,6 +5,12 @@ All notable changes to the Keeper Secrets Manager JavaScript GCP KMS Storage wil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Maintenance
+
+- KSM-1218 - Updated axios, protobufjs, handlebars, js-yaml, and other dependencies to resolve open security advisories
+
 ## [1.0.0]
 
 ### Added
