@@ -1,3 +1,5 @@
+import io
+import sys
 import unittest
 import pytest
 from unittest.mock import Mock, MagicMock, patch
@@ -164,10 +166,11 @@ class SyncTest(unittest.TestCase):
         # Verify it read the existing value
         mock_client.get_secret_value.assert_called_with(SecretId='kms_key')
 
-        # Verify output shows existing values
         self.assertEqual(len(output_data), 1)
-        self.assertIsNone(output_data[0][0]["dstValue"])  # json_key1 doesn't exist yet
-        self.assertIsNone(output_data[0][1]["dstValue"])  # json_key2 doesn't exist yet
+        self.assertIsNone(output_data[0][0]["dstValue"])
+        self.assertFalse(output_data[0][0]["dstExists"])
+        self.assertIsNone(output_data[0][1]["dstValue"])
+        self.assertFalse(output_data[0][1]["dstExists"])
 
     @requires_boto3
     @patch('boto3.client')
@@ -1060,6 +1063,389 @@ class SyncTest(unittest.TestCase):
             self.assertIn("between 1 and 512 character", error_msg)
             # Valid record should not appear in errors
             self.assertNotIn("uid1", error_msg)
+
+    def test_dst_status_never_exposes_value(self):
+        """_dst_status reports existence and difference but never the live value."""
+        self.assertEqual(
+            self.sync._dst_status("LIVE_VALUE", "new_value"),
+            {"dstValue": None, "dstExists": True, "dstDiffers": True})
+        self.assertEqual(
+            self.sync._dst_status("same", "same"),
+            {"dstValue": None, "dstExists": True, "dstDiffers": False})
+        self.assertEqual(
+            self.sync._dst_status(None, "new_value"),
+            {"dstValue": None, "dstExists": False, "dstDiffers": None})
+        # The live value is never present in the returned fields.
+        self.assertNotIn("LIVE_VALUE", json.dumps(self.sync._dst_status("LIVE_VALUE", "x")))
+
+    def test_validate_azure_secret_name(self):
+        """Azure Key Vault names allow only alphanumerics and dashes."""
+        self.assertIsNone(self.sync._validate_azure_secret_name("valid-Name123"))
+        # Documented-valid edge shapes: secret names have no first-character or
+        # hyphen-placement rules (those apply to vault names, not secret names).
+        self.assertIsNone(self.sync._validate_azure_secret_name("123-secret"))
+        self.assertIsNone(self.sync._validate_azure_secret_name("name-"))
+        self.assertIsNone(self.sync._validate_azure_secret_name("a--b"))
+        # Length boundary: 1 to 127 characters.
+        self.assertIsNone(self.sync._validate_azure_secret_name("A" * 127))
+        self.assertIsNotNone(self.sync._validate_azure_secret_name("A" * 128))
+        self.assertIsNotNone(self.sync._validate_azure_secret_name("has_underscore"))
+        self.assertIsNotNone(self.sync._validate_azure_secret_name("has/slash"))
+        self.assertIsNotNone(self.sync._validate_azure_secret_name(""))
+
+    def test_validate_gcp_secret_name(self):
+        """GCP Secret Manager ids allow letters, digits, '-' and '_'."""
+        self.assertIsNone(self.sync._validate_gcp_secret_name("valid_Name-123"))
+        # No first-character rule; length boundary is 1 to 255 characters.
+        self.assertIsNone(self.sync._validate_gcp_secret_name("123_id"))
+        self.assertIsNone(self.sync._validate_gcp_secret_name("a" * 255))
+        self.assertIsNotNone(self.sync._validate_gcp_secret_name("a" * 256))
+        self.assertIsNotNone(self.sync._validate_gcp_secret_name("has/slash"))
+        self.assertIsNotNone(self.sync._validate_gcp_secret_name("has.dot"))
+        self.assertIsNotNone(self.sync._validate_gcp_secret_name(""))
+
+    def test_resolve_records_by_title_warns(self):
+        """Resolving a --record token by title (not UID) warns and still resolves."""
+        s1 = Mock(uid="AAAAAAAAAAAAAAAAAAAAAA", title="prod-db")
+        self.cli_mock.client.get_secrets.return_value = [s1]
+        with patch('keeper_secrets_manager_cli.sync.click.echo') as mock_echo:
+            by_title = self.sync._resolve_records(["prod-db"])
+            by_uid = self.sync._resolve_records(["AAAAAAAAAAAAAAAAAAAAAA"])
+        self.assertEqual(by_title[0].uid, "AAAAAAAAAAAAAAAAAAAAAA")
+        self.assertEqual(by_uid[0].uid, "AAAAAAAAAAAAAAAAAAAAAA")
+        warnings = " ".join(str(c) for c in mock_echo.call_args_list)
+        # One warning, from the by-title resolution only.
+        self.assertEqual(warnings.count("resolved by title"), 1)
+
+    def test_resolve_folders_by_name_warns(self):
+        """Resolving a --folder token by name/path warns; UID resolution stays silent."""
+        folder = Mock()
+        folder.folder_uid = "BBBBBBBBBBBBBBBBBBBBBB"
+        folder.name = "prod"
+        folder.parent_uid = ""
+        self.cli_mock.client.get_folders.return_value = [folder]
+        with patch('keeper_secrets_manager_cli.sync.click.echo') as mock_echo:
+            by_name = self.sync._resolve_folders(["prod"])
+            by_uid = self.sync._resolve_folders(["BBBBBBBBBBBBBBBBBBBBBB"])
+        self.assertEqual(len(by_name), 1)
+        self.assertEqual(by_name[0].folder_uid, "BBBBBBBBBBBBBBBBBBBBBB")
+        self.assertEqual(len(by_uid), 1)
+        self.assertEqual(by_uid[0].folder_uid, "BBBBBBBBBBBBBBBBBBBBBB")
+        warnings = " ".join(str(c) for c in mock_echo.call_args_list)
+        # Exactly one warning, from by-name only, and it names the resolved UID.
+        self.assertEqual(warnings.count("resolved by name or path"), 1)
+        self.assertIn("BBBBBBBBBBBBBBBBBBBBBB", warnings)
+
+
+    def test_sync_prefix_prepended_to_record_title(self):
+        mock_record = Mock()
+        mock_record.uid = "test_uid"
+        mock_record.title = "my-secret"
+        mock_record.fields = []
+        mock_record.custom = []
+
+        with patch.object(self.sync, '_resolve_records') as mock_resolve, \
+             patch.object(self.sync, '_validate_aws_secret_name') as mock_validate, \
+             patch.object(self.sync, '_generate_record_json') as mock_generate, \
+             patch.object(self.sync, '_get_aws_client') as mock_get_client, \
+             patch.object(self.sync, 'sync_aws_json_with_client'):
+
+            mock_resolve.return_value = [mock_record]
+            mock_validate.return_value = ("keeper/my-secret", None)
+            mock_generate.return_value = '{"password":"x"}'
+            mock_get_client.return_value = Mock()
+
+            self.sync.sync_values(
+                sync_type='aws',
+                records=['my-secret'],
+                prefix='keeper/',
+                raw_json=False
+            )
+
+            mock_validate.assert_called_once_with("keeper/my-secret")
+
+    def test_sync_map_does_not_require_prefix(self):
+        with patch.object(self.sync, '_get_secret') as mock_get_secret, \
+             patch.object(self.sync, '_get_aws_client') as mock_get_client, \
+             patch.object(self.sync, 'sync_aws_with_client'):
+
+            mock_get_secret.return_value = "val"
+            mock_get_client.return_value = Mock()
+
+            self.sync.sync_values(
+                sync_type='aws',
+                maps=[('my-key', 'keeper://UID1234567890123456789/field/password')],
+                prefix=None
+            )
+
+    def test_sync_aws_prefix_enforcement(self):
+        from keeper_secrets_manager_cli.__main__ import sync_command
+        runner = CliRunner()
+
+        # Missing prefix with --record: rejected
+        result = runner.invoke(sync_command, ['-c', 'UID', '-t', 'aws', '-r', 'rec'],
+                               obj={'cli': Mock()})
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("--prefix/-px is required", result.output)
+
+        # Alphanumeric-terminated prefix: rejected
+        result = runner.invoke(sync_command, ['-c', 'UID', '-t', 'aws', '-r', 'rec', '-px', 'keeper'],
+                               obj={'cli': Mock()})
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("--prefix must end with a separator", result.output)
+
+        # Valid prefix: passes validation and reaches sync_values
+        with patch('keeper_secrets_manager_cli.__main__.Sync') as mock_sync_cls:
+            mock_sync_cls.return_value.sync_values.return_value = None
+            result = runner.invoke(sync_command, ['-c', 'UID', '-t', 'aws', '-r', 'rec', '-px', 'keeper/'],
+                                   obj={'cli': Mock()})
+        self.assertNotIn("--prefix/-px is required", result.output)
+        self.assertNotIn("--prefix must end with a separator", result.output)
+        mock_sync_cls.return_value.sync_values.assert_called_once()
+
+    def test_dry_run_does_not_disclose_dst_value(self):
+        mock_secretsmanager = Mock()
+        mock_secretsmanager.get_secret_value.return_value = {"SecretString": "live-secret-value"}
+
+        maps = [{"mapKey": "my-key", "mapNotation": "keeper://UID/field/password", "srcValue": "new-value", "dstValue": None}]
+
+        with patch.object(self.sync, '_get_secret_aws') as mock_get:
+            mock_get.return_value = {"value": "live-secret-value"}
+
+            self.sync.sync_aws_with_client(mock_secretsmanager, dry_run=True, maps=maps)
+
+        self.assertIsNone(maps[0]["dstValue"])
+        self.assertIn("dstExists", maps[0])
+        self.assertIn("dstDiffers", maps[0])
+        self.assertTrue(maps[0]["dstExists"])
+        self.assertTrue(maps[0]["dstDiffers"])
+
+
+    def test_sanitize_title_strips_leading_slash(self):
+        result, error = self.sync._sanitize_title_for_prefix("/foo/bar")
+        self.assertEqual(result, "foo/bar")
+        self.assertIsNone(error)
+
+    def test_sanitize_title_rejects_dotdot(self):
+        _, error = self.sync._sanitize_title_for_prefix("../foo")
+        self.assertIsNotNone(error)
+        _, error2 = self.sync._sanitize_title_for_prefix("foo/../bar")
+        self.assertIsNotNone(error2)
+
+    @requires_boto3
+    def test_dry_run_record_based_does_not_disclose_dst_value(self):
+        mock_secretsmanager = Mock()
+
+        # srcValue is a dict, matching what _generate_record_json returns in production.
+        src_dict = {"password": "new-value"}
+        maps = [{"mapKey": "keeper/my-secret", "mapNotation": "record:rec_uid", "srcValue": src_dict, "dstValue": None}]
+
+        with patch.object(self.sync, '_get_secret_aws') as mock_get:
+            mock_get.return_value = {"value": '{"password":"live-value"}'}
+            self.sync.sync_aws_json_with_client(mock_secretsmanager, dry_run=True, maps=maps)
+
+        self.assertIsNone(maps[0]["dstValue"])
+        self.assertTrue(maps[0]["dstExists"])
+        self.assertTrue(maps[0]["dstDiffers"])
+
+    def test_dry_run_record_based_dst_differs_false_when_content_matches(self):
+        mock_secretsmanager = Mock()
+
+        # AWS already holds exactly what the sync would write.
+        src_dict = {"login": "admin", "password": "p@ss"}
+        aws_current = json.dumps(src_dict, separators=(',', ':'))
+        maps = [{"mapKey": "keeper/my-secret", "mapNotation": "record:rec_uid", "srcValue": src_dict, "dstValue": None}]
+
+        with patch.object(self.sync, '_get_secret_aws') as mock_get:
+            mock_get.return_value = {"value": aws_current}
+            self.sync.sync_aws_json_with_client(mock_secretsmanager, dry_run=True, maps=maps)
+
+        self.assertIsNone(maps[0]["dstValue"])
+        self.assertTrue(maps[0]["dstExists"])
+        self.assertFalse(maps[0]["dstDiffers"])
+
+    def test_sync_prefix_prepended_to_folder_record(self):
+        mock_record = Mock()
+        mock_record.uid = "record_uid"
+        mock_record.title = "my-secret"
+        mock_record.inner_folder_uid = "folder_uid"
+        mock_record.folder_uid = "folder_uid"
+
+        mock_folder = Mock()
+        mock_folder.folder_uid = "folder_uid"
+        mock_folder.parent_uid = None
+
+        mock_full_response = Mock()
+        mock_full_response.records = [mock_record]
+
+        with patch.object(self.sync, '_resolve_folders') as mock_resolve_folders, \
+             patch.object(self.sync, '_validate_aws_secret_name') as mock_validate, \
+             patch.object(self.sync, '_generate_record_json'):
+
+            mock_resolve_folders.return_value = [mock_folder]
+            mock_validate.return_value = ("keeper/my-secret", None)
+            self.sync.cli.client.get_secrets = Mock(return_value=mock_full_response)
+            self.sync.cli.client.get_folders = Mock(return_value=[mock_folder])
+
+            result = []
+            self.sync._process_aws_records_and_folders(
+                result=result,
+                records=[],
+                folders=['folder_uid'],
+                folders_recursive=[],
+                raw_json=False,
+                maps=[],
+                prefix='keeper/'
+            )
+
+            mock_validate.assert_called_once_with("keeper/my-secret")
+
+
+    def test_sync_dotdot_title_aborts_record_sync(self):
+        mock_record = Mock()
+        mock_record.uid = "uid1"
+        mock_record.title = "../escape"
+        mock_record.fields = []
+        mock_record.custom = []
+
+        with patch.object(self.sync, '_resolve_records') as mock_resolve:
+            mock_resolve.return_value = [mock_record]
+
+            with self.assertRaises(KsmCliException) as context:
+                self.sync.sync_values(
+                    sync_type='aws',
+                    credentials='cred_uid',
+                    dry_run=False,
+                    preserve_missing=False,
+                    maps=None,
+                    records=['../escape'],
+                    prefix='keeper/',
+                    raw_json=False
+                )
+
+        self.assertIn("'..'", str(context.exception))
+
+    def test_sync_dotdot_title_aborts_folder_sync(self):
+        mock_record = Mock()
+        mock_record.uid = "uid1"
+        mock_record.title = "foo/../bar"
+        mock_record.inner_folder_uid = "folder_uid"
+        mock_record.folder_uid = "folder_uid"
+        mock_record.fields = []
+        mock_record.custom = []
+
+        mock_folder = Mock()
+        mock_folder.folder_uid = "folder_uid"
+        mock_folder.parent_uid = None
+
+        mock_full_response = Mock()
+        mock_full_response.records = [mock_record]
+
+        with patch.object(self.sync, '_resolve_folders') as mock_resolve_folders:
+            mock_resolve_folders.return_value = [mock_folder]
+            self.sync.cli.client.get_secrets = Mock(return_value=mock_full_response)
+            self.sync.cli.client.get_folders = Mock(return_value=[mock_folder])
+
+            with self.assertRaises(KsmCliException) as context:
+                self.sync._process_aws_records_and_folders(
+                    result=[],
+                    records=[],
+                    folders=['folder_uid'],
+                    folders_recursive=[],
+                    raw_json=False,
+                    maps=[],
+                    prefix='keeper/'
+                )
+
+        self.assertIn("'..'", str(context.exception))
+
+
+class SyncMissingCloudDependencyTest(unittest.TestCase):
+    """The cloud providers ship as optional dependencies of the CLI.
+
+    A pip install fixes them with a pip command. A frozen binary has no pip, so the
+    only fix is re-running the installer with the 'Cloud Sync' component selected.
+    Each handler picks its advice off sys.frozen.
+    """
+
+    FROZEN_ADVICE = "Cloud Sync"
+
+    AZURE_MODULES = ("azure.keyvault.secrets", "azure.identity")
+    AZURE_PIP = "pip3 install azure-identity azure-keyvault-secrets"
+
+    AWS_MODULES = ("boto3",)
+    AWS_PIP_QUOTED = "pip install 'keeper-secrets-manager-cli[aws]'"
+    AWS_PIP_UNQUOTED = "pip install keeper-secrets-manager-cli[aws]"
+
+    GCP_MODULES = ("google.cloud", "google.oauth2")
+    GCP_PIP = "pip3 install --upgrade google-cloud-secret-manager google-auth"
+
+    def setUp(self):
+        super().setUp()
+        cli_mock = Mock()
+        cli_mock.client = Mock()
+        with patch('keeper_secrets_manager_cli.sync.logging.getLogger') as mock_get_logger:
+            mock_get_logger.return_value = Mock()
+            self.sync = Sync(cli=cli_mock)
+            self.sync.logger = Mock()
+
+        self._had_frozen = hasattr(sys, "frozen")
+        self._frozen_val = getattr(sys, "frozen", None)
+        if self._had_frozen:
+            del sys.frozen
+
+    def tearDown(self):
+        try:
+            if self._had_frozen:
+                sys.frozen = self._frozen_val
+            elif hasattr(sys, "frozen"):
+                del sys.frozen
+        finally:
+            super().tearDown()
+
+    def _stderr_for_missing(self, modules, call):
+        """Run call() with modules unimportable, returning what it wrote to stderr."""
+        captured = io.StringIO()
+        with patch.dict(sys.modules, {name: None for name in modules}), \
+                patch('sys.stderr', captured):
+            with self.assertRaises(KsmCliException):
+                call()
+        return captured.getvalue()
+
+    def test_azure_frozen_binary_names_installer_component(self):
+        sys.frozen = True
+        output = self._stderr_for_missing(self.AZURE_MODULES, self.sync.sync_azure)
+        self.assertIn(self.FROZEN_ADVICE, output)
+        self.assertNotIn("pip", output)
+
+    def test_azure_pip_install_keeps_pip_advice(self):
+        output = self._stderr_for_missing(self.AZURE_MODULES, self.sync.sync_azure)
+        self.assertIn(self.AZURE_PIP, output)
+        self.assertNotIn(self.FROZEN_ADVICE, output)
+
+    def test_aws_frozen_binary_names_installer_component(self):
+        sys.frozen = True
+        output = self._stderr_for_missing(self.AWS_MODULES, self.sync._get_aws_client)
+        self.assertIn(self.FROZEN_ADVICE, output)
+        self.assertNotIn("pip", output)
+
+    def test_aws_pip_install_keeps_pip_advice(self):
+        output = self._stderr_for_missing(self.AWS_MODULES, self.sync._get_aws_client)
+        self.assertIn(self.AWS_PIP_QUOTED, output)
+        self.assertNotIn(self.FROZEN_ADVICE, output)
+        # Unquoted brackets are a glob in zsh, so copy-pasting hits "no matches found".
+        self.assertNotIn(self.AWS_PIP_UNQUOTED, output)
+
+    def test_gcp_frozen_binary_names_installer_component(self):
+        sys.frozen = True
+        output = self._stderr_for_missing(self.GCP_MODULES, self.sync.sync_gcp)
+        self.assertIn(self.FROZEN_ADVICE, output)
+        self.assertNotIn("pip", output)
+
+    def test_gcp_pip_install_keeps_pip_advice(self):
+        output = self._stderr_for_missing(self.GCP_MODULES, self.sync.sync_gcp)
+        self.assertIn(self.GCP_PIP, output)
+        self.assertNotIn(self.FROZEN_ADVICE, output)
 
 
 if __name__ == '__main__':

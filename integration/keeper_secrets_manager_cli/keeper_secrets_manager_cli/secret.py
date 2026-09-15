@@ -15,7 +15,7 @@ import yaml
 import os
 import re
 import sys
-from colorama import Fore, Style
+import click
 from pathlib import Path
 from jsonpath_rw_ext import parse
 from keeper_secrets_manager_cli.exception import KsmCliException
@@ -23,11 +23,12 @@ from keeper_secrets_manager_cli.common import launch_editor
 from keeper_secrets_manager_core.core import SecretsManager, CreateOptions, KeeperFolder, KeeperFileUpload, QueryOptions
 from keeper_secrets_manager_core.dto.payload import UpdateOptions
 from keeper_secrets_manager_core.utils import get_totp_code, generate_password as sdk_generate_password
-from keeper_secrets_manager_core.dto.dtos import KeeperRecordLink, RecordCreate as _RecordCreate
+from keeper_secrets_manager_core.dto.dtos import KeeperRecordLink, RecordCreate as _RecordCreate, RecordField
 from keeper_secrets_manager_helper.record import Record
 from keeper_secrets_manager_helper.v3.record import Record as RecordV3
 from keeper_secrets_manager_helper.field_type import FieldType
 from keeper_secrets_manager_helper.exception import FileSyntaxException
+from keeper_secrets_manager_helper.common import load_file
 from .table import Table, ColumnAlign
 from typing import List, Tuple
 import uuid
@@ -204,29 +205,32 @@ class Secret:
         return links
 
     @staticmethod
-    def _color_it(value, color=Style.RESET_ALL, use_color=True):
-        if use_color is True:
-            value = color + value + Style.RESET_ALL
+    def _color_it(value, color=None, use_color=True):
+        if use_color is True and color is not None:
+            value = click.style(value, fg=color)
         return value
 
     @staticmethod
-    def _replace_redact_placeholder(value, use_color=True, reset_color=Style.RESET_ALL):
+    def _replace_redact_placeholder(value, use_color=True, reset_color=None):
         redact_str = Secret.redact_str
         if use_color is True:
-            redact_str = Fore.RED + redact_str + reset_color
+            # reset_color resumes the color of the text surrounding the redacted
+            # segment (e.g. the table cell's color) instead of fully clearing it.
+            redact_str = click.style(redact_str, fg="red", reset=False) + \
+                click.style("", fg=reset_color, reset=(reset_color is None))
         return value.replace(Secret.redact_placeholder, redact_str)
 
     @staticmethod
     def _format_record(record_dict, use_color=True):
         ret = "\n"
-        ret += " Record: {}\n".format(Secret._color_it(record_dict["uid"], Fore.YELLOW, use_color))
-        ret += " Title: {}\n".format(Secret._color_it(record_dict["title"], Fore.YELLOW, use_color))
-        ret += " Record Type: {}\n".format(Secret._color_it(record_dict["type"], Fore.YELLOW, use_color))
+        ret += " Record: {}\n".format(Secret._color_it(record_dict["uid"], "yellow", use_color))
+        ret += " Title: {}\n".format(Secret._color_it(record_dict["title"], "yellow", use_color))
+        ret += " Record Type: {}\n".format(Secret._color_it(record_dict["type"], "yellow", use_color))
         ret += "\n"
 
         table = Table(use_color=use_color)
-        table.add_column("Field", data_color=Fore.GREEN)
-        table.add_column("Value", data_color=Fore.YELLOW, allow_wrap=True)
+        table.add_column("Field", data_color="green")
+        table.add_column("Value", data_color="yellow", allow_wrap=True)
         for field in record_dict["fields"]:
             value = field["value"]
             if len(value) == 0:
@@ -237,7 +241,7 @@ class Secret:
                 value = value[0]
                 value = value.replace('\n', '\\n')
 
-            value = Secret._replace_redact_placeholder(value, use_color=use_color, reset_color=Fore.YELLOW)
+            value = Secret._replace_redact_placeholder(value, use_color=use_color, reset_color="yellow")
 
             # Don't show blank value pairs
             if value == "":
@@ -250,9 +254,9 @@ class Secret:
         if len(record_dict["custom"]) > 0:
             ret += "\n"
             table = Table(use_color=use_color)
-            table.add_column("Custom Field", data_color=Fore.GREEN)
+            table.add_column("Custom Field", data_color="green")
             table.add_column("Type")
-            table.add_column("Value", data_color=Fore.YELLOW, allow_wrap=True)
+            table.add_column("Value", data_color="yellow", allow_wrap=True)
 
             problems = []
             seen = {}
@@ -270,7 +274,7 @@ class Secret:
                 if value == "":
                     continue
 
-                value = Secret._replace_redact_placeholder(value, use_color=use_color, reset_color=Fore.YELLOW)
+                value = Secret._replace_redact_placeholder(value, use_color=use_color, reset_color="yellow")
 
                 label = field["label"]
                 if field["label"] in seen:
@@ -288,7 +292,7 @@ class Secret:
         if len(record_dict["files"]) > 0:
             ret += "\n"
             table = Table(use_color=use_color)
-            table.add_column("File Name", allow_wrap=True, data_color=Fore.GREEN)
+            table.add_column("File Name", allow_wrap=True, data_color="green")
             table.add_column("Type")
             table.add_column("Size", align=ColumnAlign.RIGHT)
             table.add_column("File UID")
@@ -305,9 +309,9 @@ class Secret:
         if len(record_dict.get("links", [])) > 0:
             ret += "\n"
             table = Table(use_color=use_color)
-            table.add_column("Linked Record UID", data_color=Fore.GREEN)
-            table.add_column("Path", data_color=Fore.YELLOW)
-            table.add_column("Link Data", allow_wrap=True, data_color=Fore.YELLOW)
+            table.add_column("Linked Record UID", data_color="green")
+            table.add_column("Path", data_color="yellow")
+            table.add_column("Link Data", allow_wrap=True, data_color="yellow")
             for link in record_dict["links"]:
                 # Self-links (recordUid == this record) carry the record's own
                 # settings: "meta" (PAM settings), "ai_settings", "jit_settings".
@@ -522,9 +526,9 @@ class Secret:
             for record in record_dict:
                 table.add_row([record.get(x[0], "") for x in columns])
         else:
-            table.add_column("UID", data_color=Fore.GREEN)
+            table.add_column("UID", data_color="green")
             table.add_column("Record Type")
-            table.add_column("Title", data_color=Fore.YELLOW)
+            table.add_column("Title", data_color="yellow")
             for record in record_dict:
                 table.add_row([record["uid"], record["type"], record["title"]])
         return "\n" + table.get_string() + "\n"
@@ -545,7 +549,7 @@ class Secret:
         if query:
             items = self._query_jsonpath_list(query, record_dict)
             if output_format == 'text':
-                columns = [("uid", "UID", Fore.GREEN), ("type", "Record Type", Style.RESET_ALL), ("query_result", "Value", Fore.YELLOW)] if show_value else []
+                columns = [("uid", "UID", "green"), ("type", "Record Type", None), ("query_result", "Value", "yellow")] if show_value else []
                 self.cli.output(self._format_list(items, use_color=use_color, columns=columns))
             elif output_format == 'json':
                 records = [{
@@ -600,6 +604,17 @@ class Secret:
             file = record[0].find_file_by_title(name)
         if file is None:
             raise KsmCliException("Cannot find a file named {} for UID {}. Cannot download file".format(name, uid))
+
+        # KSM-1131: vault may not have propagated the download URL yet (upload→download race).
+        # The Python SDK fix will add this guard in get_file_data(); remove this workaround
+        # when the CLI bumps its SDK dependency past that fix.
+        if not file.f.get("url"):
+            raise KsmCliException(
+                "File '{}' does not have a download URL yet. "
+                "The vault may still be processing the upload. Please retry in a few seconds.".format(
+                    file.f.get("title") or file.f.get("fileUid") or name
+                )
+            )
 
         if file_output == 'stdout':
             sys.stdout.buffer.write(file.get_file_data())
@@ -790,9 +805,9 @@ class Secret:
                 if use_color is None:
                     use_color = self.cli.use_color
                 table = Table(use_color=use_color)
-                table.add_column("UID", data_color=Fore.GREEN)
-                table.add_column("Response Code", data_color=Fore.YELLOW)
-                table.add_column("Error", data_color=Fore.RED, allow_wrap=True)
+                table.add_column("UID", data_color="green")
+                table.add_column("Response Code", data_color="yellow")
+                table.add_column("Error", data_color="red", allow_wrap=True)
                 for x in output:
                     table.add_row([x["uid"], x["responseCode"], x["error"]])
                 self.cli.output(f"\n{table.get_string()}\n")
@@ -857,9 +872,11 @@ class Secret:
                     record_data = fh.read()
                     fh.close()
                     if re.search(r'<#ADD', record_data, re.MULTILINE) is not None:
-                        print(Fore.RED + "Found template markers (#ADD) still in the record data. Either " +
-                              "add a value or remove the line completely. Enter 'r' to recheck " +
-                              "the file if the file was processed before you finished editing. " + Style.RESET_ALL)
+                        click.echo(click.style(
+                            "Found template markers (#ADD) still in the record data. Either "
+                            "add a value or remove the line completely. Enter 'r' to recheck "
+                            "the file if the file was processed before you finished editing. ",
+                            fg="red"))
                         ynq = input("Do you wish to edit? Y/n/r/q: ")
                         if ynq == "" or ynq[0].lower() == "y":
                             launch_the_editor = True
@@ -882,10 +899,10 @@ class Secret:
                     # All is good break out of the loop
                     break
                 except FileSyntaxException as err:
-                    ynq = input(Fore.RED + str(err) + Style.RESET_ALL +
+                    ynq = input(click.style(str(err), fg="red") +
                                 "Do you wish to edit and try again? Y/n/q: ")
                 except Exception as err:
-                    ynq = input(Fore.RED + f"Could not create the record: {err}. " + Style.RESET_ALL +
+                    ynq = input(click.style(f"Could not create the record: {err}. ", fg="red") +
                                 "Do you wish to edit and try again? Y/n/q: ")
 
                 if ynq == "" or ynq[0].lower() == "y":
@@ -907,12 +924,37 @@ class Secret:
 
         try:
             folders = self.cli.client.get_folders()
-            records = Record.create_from_file(file, password_generate=password_generate_flag)
+            record_data = load_file(file)
+            # Workaround: helper FieldType.__init__ crashes with IndexError when a dict-typed
+            # field (address, name, host, passkey, etc.) has value: []. Load the file and strip
+            # empty-value fields before passing to create_from_data so the helper never sees
+            # value: [] for a complex field. Stripped standard fields are recreated empty from
+            # the record type schema; stripped custom fields are re-attached below so the created
+            # record keeps them (type/label/flags) instead of silently dropping them.
+            # Remove once helper ships the "if self.value:" guard in FieldType.__init__.
+            stripped_custom_per_record = []
+            for rec in record_data.get("data", []):
+                stripped = [f for key in ("customFields", "custom_fields")
+                            for f in rec.get(key, []) if not f.get("value")]
+                stripped_custom_per_record.append(stripped)
+                rec["fields"] = [f for f in rec.get("fields", []) if f.get("value")]
+                for key in ("customFields", "custom_fields"):
+                    if key in rec:
+                        rec[key] = [f for f in rec[key] if f.get("value")]
+            records = RecordV3.create_from_data(record_data, password_generate=password_generate_flag)
             record_uids = []
-            for record in records:
+            for record, stripped_custom in zip(records, stripped_custom_per_record):
                 record_create_obj = record.get_record_create_obj()
                 if record_create_obj.custom is None:   # KSM-702: ensure custom: [] is always present
                     record_create_obj.custom = []
+                for f in stripped_custom:
+                    record_create_obj.custom.append(RecordField(
+                        field_type=f.get("type"),
+                        value=[],
+                        label=f.get("label"),
+                        required=f.get("required"),
+                        privacyScreen=f.get("privacyScreen"),
+                    ))
                 folder_options, folders = self.build_folder_options(folder_uid, folders)
                 record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj, folders)
                 record_uids.append(record_uid)
@@ -968,8 +1010,13 @@ class Secret:
                             "recordType": rec.type,
                             "title": title if title else rec.title,
                             "notes": rec.dict.get("notes", ""),
-                            "fields": rec.dict.get("fields", []),
-                            "customFields": rec.dict.get("custom", [])
+                            # Workaround: strip value: [] fields before create_from_data to avoid
+                            # IndexError in helper FieldType.__init__. Remove once helper ships
+                            # the "if self.value:" guard in FieldType.__init__. Stripped standard
+                            # fields are recreated empty from the record type schema; stripped
+                            # custom fields belong to no schema and are re-attached below.
+                            "fields": [f for f in rec.dict.get("fields", []) if f.get("value")],
+                            "customFields": [f for f in rec.dict.get("custom", []) if f.get("value")]
                         }]
                     }
                     records = RecordV3.create_from_data(record_data)
@@ -977,11 +1024,22 @@ class Secret:
                     record_create_obj = record.get_record_create_obj()
                     if record_create_obj.custom is None:   # KSM-702
                         record_create_obj.custom = []
+                    # Re-attach empty-value custom fields stripped above so the clone keeps
+                    # them (type/label/flags) instead of silently dropping them.
+                    for f in rec.dict.get("custom", []):
+                        if not f.get("value"):
+                            record_create_obj.custom.append(RecordField(
+                                field_type=f.get("type"),
+                                value=[],
+                                label=f.get("label"),
+                                required=f.get("required"),
+                                privacyScreen=f.get("privacyScreen"),
+                            ))
                     record_uid = self.cli.client.create_secret_with_options(folder_options, record_create_obj)
                 else:
                     print(f"Unable to find the parent shared folder for record {uid} - individually shared records cannot be cloned.", file=sys.stderr)
             else:
-                print(f"Record UID not found {uid}", file=sys.stderr)
+                raise KsmCliException(f"Record UID not found {uid}")
         except Exception as err:
             raise KsmCliException(f"{err}")
 
@@ -1035,7 +1093,7 @@ class Secret:
         record_type_list = Record(version).get_template_list()
 
         table = Table(use_color=self.cli.use_color)
-        table.add_column("Record Type", allow_wrap=True, data_color=Fore.GREEN)
+        table.add_column("Record Type", allow_wrap=True, data_color="green")
 
         for record_type in record_type_list:
             table.add_row([record_type])
@@ -1046,7 +1104,7 @@ class Secret:
         field_type_list = FieldType.get_field_type_list(version)
 
         table = Table(use_color=self.cli.use_color)
-        table.add_column("Field Type", allow_wrap=True, data_color=Fore.GREEN)
+        table.add_column("Field Type", allow_wrap=True, data_color="green")
 
         for field_type in field_type_list:
             table.add_row([field_type])

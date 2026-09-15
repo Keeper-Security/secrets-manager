@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-from colorama import Fore, Style
+import click
 from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_cli.exception import KsmCliException
 
@@ -681,15 +681,16 @@ class Interpolate:
                 raise KsmCliException(error_msg)
             else:
                 # User explicitly allowed - warn them!
-                color = Fore.RED if self.cli.use_color else ''
-                reset = Style.RESET_ALL if self.cli.use_color else ''
+                warning_header = f"SECURITY WARNING: Secret {notation} contains shell metacharacters"
+                if self.cli.use_color:
+                    warning_header = click.style(warning_header, fg="red")
                 warning = (
-                    f"\n{color}SECURITY WARNING: Secret {notation} contains shell metacharacters{reset}\n"
+                    f"\n{warning_header}\n"
                     f"  Characters found: {', '.join(found_dangerous)}\n"
                     f"  This could enable command injection if used with eval/source!\n"
                     f"  Proceeding because --allow-unsafe-for-eval flag was used.\n"
                 )
-                print(warning, file=sys.stderr)
+                click.echo(warning, file=sys.stderr)
                 self.warnings.append(f"Secret {notation} contains dangerous shell characters")
 
     # ========================================================================
@@ -706,7 +707,7 @@ class Interpolate:
             # Check git safety
             git_check = self._check_git_safety(output_file)
             if not git_check["safe"] and self.cli.use_color:
-                print(f"\n{Fore.YELLOW}Git safety warnings:{Style.RESET_ALL}", file=sys.stderr)
+                click.echo(f"\n{click.style('Git safety warnings:', fg='yellow')}", file=sys.stderr)
                 for warning in git_check["warnings"]:
                     print(f"  - {warning}", file=sys.stderr)
             elif not git_check["safe"]:
@@ -752,17 +753,19 @@ class Interpolate:
             return
 
         # Success summary
-        color = Fore.GREEN if self.cli.use_color else ''
-        reset = Style.RESET_ALL if self.cli.use_color else ''
-
-        print(f"\n{color}Interpolation complete{reset}", file=sys.stderr)
+        header = "Interpolation complete"
+        if self.cli.use_color:
+            header = click.style(header, fg="green")
+        click.echo(f"\n{header}", file=sys.stderr)
         print(f"  - Replaced {self.replacements_count} secret reference(s)", file=sys.stderr)
         print(f"  - Accessed {len(self.accessed_records)} unique record(s)", file=sys.stderr)
 
         # Report defaults used
         if self.used_defaults:
-            color = Fore.YELLOW if self.cli.use_color else ''
-            print(f"\n{color}Used {len(self.used_defaults)} default value(s){reset}", file=sys.stderr)
+            header = f"Used {len(self.used_defaults)} default value(s)"
+            if self.cli.use_color:
+                header = click.style(header, fg="yellow")
+            click.echo(f"\n{header}", file=sys.stderr)
             for notation, default in self.used_defaults[:5]:  # Show first 5
                 print(f"  - {notation} -> {default}", file=sys.stderr)
             if len(self.used_defaults) > 5:
@@ -770,14 +773,18 @@ class Interpolate:
 
         # Report warnings
         if self.warnings:
-            color = Fore.YELLOW if self.cli.use_color else ''
-            print(f"\n{color}Warnings ({len(self.warnings)}){reset}", file=sys.stderr)
+            header = f"Warnings ({len(self.warnings)})"
+            if self.cli.use_color:
+                header = click.style(header, fg="yellow")
+            click.echo(f"\n{header}", file=sys.stderr)
             for warning in self.warnings:
                 print(f"  - {warning}", file=sys.stderr)
 
         # Report errors
         if self.errors:
-            color = Fore.RED if self.cli.use_color else ''
-            print(f"\n{color}Errors ({len(self.errors)}){reset}", file=sys.stderr)
+            header = f"Errors ({len(self.errors)})"
+            if self.cli.use_color:
+                header = click.style(header, fg="red")
+            click.echo(f"\n{header}", file=sys.stderr)
             for error in self.errors:
                 print(f"  - {error}", file=sys.stderr)

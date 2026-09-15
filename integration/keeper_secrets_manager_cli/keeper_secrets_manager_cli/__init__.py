@@ -12,6 +12,7 @@
 
 import os
 import sys
+import click
 
 
 def _default_cache_dir():
@@ -177,7 +178,9 @@ class KeeperCli:
         if is_bytes is True:
             output_fh.buffer.write(msg)
         else:
-            output_fh.write(msg)
+            # click.echo (not a raw write) so ANSI color codes get stripped on non-tty
+            # output (files, pipes) and translated on legacy Windows consoles.
+            click.echo(msg, file=output_fh, nl=False)
 
         if is_file is True:
             output_fh.close()

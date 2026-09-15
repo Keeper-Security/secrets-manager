@@ -1,4 +1,5 @@
 import base64
+import logging
 import os
 import unittest
 from unittest.mock import patch
@@ -404,9 +405,9 @@ color = True
                 ('my profile',  'space in name'),
                 ('a' * 65,      '65-char name'),
                 ('my\tprofile', 'tab in name'),
-                ('../escape',   'path traversal'),   # KSM-829
-                ('/path',       'leading slash'),    # KSM-829
-                ('abc!@#',      'special chars'),    # KSM-829
+                ('../escape',   'path traversal'),
+                ('/path',       'leading slash'),
+                ('abc!@#',      'special chars'),
             ]:
                 result = runner.invoke(
                     cli, ['profile', 'init', '-t', 'XX:YY', '-p', invalid_name],
@@ -474,7 +475,7 @@ color = True
             )
 
     def test_ini_file_flag_respected_by_profile_list(self):
-        """Regression test for KSM-814: --ini-file flag must be respected by profile subcommands.
+        """Regression test: --ini-file flag must be respected by profile subcommands.
 
         Before the fix, profile_list_command created a fresh Profile() ignoring the --ini-file
         value, so it fell back to default discovery (finding no profiles in the temp cwd).
@@ -519,7 +520,7 @@ color = True
             profiles = json.loads(result.output)
             profile_names = [p["name"] for p in profiles]
             self.assertIn(custom_profile_name, profile_names,
-                          "--ini-file was ignored by 'profile list' (KSM-814 regression)")
+                          "--ini-file was ignored by 'profile list'")
 
 
     def test_ini_file_flag_respected_by_profile_init(self):
@@ -578,7 +579,7 @@ color = True
             config.read(ini_path)
             self.assertIn('ini-global-profile', config.sections(),
                           "global --ini-file was ignored by 'profile init'; "
-                          "new profile was routed to default keeper.ini instead (KSM-814 regression)")
+                          "new profile was routed to default keeper.ini instead")
             # The existing profile must still be present — we're adding, not overwriting.
             self.assertIn(existing_profile, config.sections(),
                           "existing ini file profile was lost after profile init")
@@ -627,7 +628,7 @@ color = True
                              "global --ini-file profile export failed: " + str(result.output))
             self.assertIn(unique_client_id, result.output,
                           "global --ini-file was ignored by 'profile export'; "
-                          "exported credentials do not match the ini file profile (KSM-814 regression)")
+                          "exported credentials do not match the ini file profile")
 
 
     def test_ini_file_flag_respected_by_profile_setup(self):
@@ -1004,12 +1005,12 @@ color = True
 
 
 class KeyringWarningMessageTest(unittest.TestCase):
-    """KSM-975: keyring fallback warning must give context-appropriate advice.
+    """The keyring fallback warning must give context-appropriate advice.
 
     When keyring is unavailable the warning should:
     - Direct *pip* users to install with quoted brackets (zsh-safe).
     - Direct *binary* users (sys.frozen=True) to the installer's
-      'OS Keyring Support' component, not pip (KSM-1014).
+      'OS Keyring Support' component, not pip.
     """
 
     def setUp(self):
@@ -1072,7 +1073,7 @@ class KeyringWarningMessageTest(unittest.TestCase):
         return res_queue.get('result')
 
     def test_pip_warning_uses_quoted_brackets(self):
-        """KSM-975: pip path warning must quote brackets — unquoted [] fails on zsh."""
+        """pip path warning must quote brackets; unquoted [] fails on zsh."""
         runner = CliRunner()
         with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
                    return_value=False):
@@ -1083,7 +1084,7 @@ class KeyringWarningMessageTest(unittest.TestCase):
                     del _sys.frozen  # ensure we're in pip path
                 result = runner.invoke(
                     cli,
-                    ['profile', 'init', '-t', 'US:FAKE_TOKEN_KSM975'],
+                    ['profile', 'init', '-t', 'US:FAKE_TOKEN_PIP_WARNING'],
                     catch_exceptions=True,
                 )
             finally:
@@ -1100,11 +1101,11 @@ class KeyringWarningMessageTest(unittest.TestCase):
         self.assertNotIn(
             "pip install keeper-secrets-manager-cli[keyring]\n",
             combined,
-            "unquoted pip command found — will fail on zsh"
+            "unquoted pip command found, will fail on zsh"
         )
 
     def test_binary_warning_points_to_installer_component_not_pip(self):
-        """KSM-1014: binary path (sys.frozen=True) must direct users to the installer's
+        """binary path (sys.frozen=True) must direct users to the installer's
         'OS Keyring Support' component, not a non-existent '-keyring' binary or pip."""
         runner = CliRunner()
         import sys as _sys
@@ -1115,7 +1116,7 @@ class KeyringWarningMessageTest(unittest.TestCase):
                        return_value=False):
                 result = runner.invoke(
                     cli,
-                    ['profile', 'init', '-t', 'US:FAKE_TOKEN_KSM1014_BINARY'],
+                    ['profile', 'init', '-t', 'US:FAKE_TOKEN_BINARY_WARNING'],
                     catch_exceptions=True,
                 )
         finally:
@@ -1142,6 +1143,186 @@ class KeyringWarningMessageTest(unittest.TestCase):
             combined,
             "binary users should not be told to use pip install"
         )
+
+
+class KsmConfigKeyringWarningTest(unittest.TestCase):
+    """KSM_CONFIG must warn when it overrides an existing keyring setup (KSM-805).
+
+    The warning fires only when a keyring profile exists — pure CI/container
+    environments that use KSM_CONFIG exclusively see no output.
+    """
+
+    def setUp(self):
+        self.orig_dir = os.getcwd()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        os.chdir(self.temp_dir.name)
+        os.environ.pop("KSM_CONFIG", None)
+
+    def tearDown(self):
+        os.chdir(self.orig_dir)
+        self.temp_dir.cleanup()
+        os.environ.pop("KSM_CONFIG", None)
+
+    def _make_ksm_config(self):
+        return MockConfig.make_base64(config=MockConfig.make_config())
+
+    def test_warns_when_keyring_profiles_exist(self):
+        os.environ["KSM_CONFIG"] = self._make_ksm_config()
+        runner = CliRunner()
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=True), \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.list_profiles',
+                   return_value=['_default']):
+            result = runner.invoke(cli, ['profile', 'list', '--json'], catch_exceptions=False)
+        combined = (result.output or '') + (result.stderr if hasattr(result, 'stderr') else '')
+        self.assertIn("KSM_CONFIG", combined)
+        self.assertIn("keyring integrity", combined)
+
+    def test_no_warn_when_keyring_is_empty(self):
+        os.environ["KSM_CONFIG"] = self._make_ksm_config()
+        runner = CliRunner()
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=True), \
+             patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.list_profiles',
+                   return_value=[]):
+            result = runner.invoke(cli, ['profile', 'list', '--json'], catch_exceptions=False)
+        combined = (result.output or '') + (result.stderr if hasattr(result, 'stderr') else '')
+        self.assertNotIn("keyring integrity", combined)
+
+    def test_no_warn_when_keyring_unavailable(self):
+        os.environ["KSM_CONFIG"] = self._make_ksm_config()
+        runner = CliRunner()
+        with patch('keeper_secrets_manager_cli.keyring_config.KeyringConfigStorage.is_available',
+                   return_value=False):
+            result = runner.invoke(cli, ['profile', 'list', '--json'], catch_exceptions=False)
+        combined = (result.output or '') + (result.stderr if hasattr(result, 'stderr') else '')
+        self.assertNotIn("keyring integrity", combined)
+
+
+class IniDiscoveryTest(unittest.TestCase):
+    """Regression tests for keeper.ini discovery bugs (KSM-1163).
+
+    Defect A: KSM_INI_DIR is ignored when a keeper.ini exists in CWD.
+    Defect B: find_ksm_path probes _NOTSET_/ relative paths when Windows
+              env vars are unset on POSIX hosts.
+    """
+
+    def setUp(self):
+        self.orig_dir = os.getcwd()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        os.chdir(self.temp_dir.name)
+        for var in ("KSM_INI_DIR", "KSM_INI_DIR_SKIP_CONFLICT_WARNING"):
+            os.environ.pop(var, None)
+
+    def tearDown(self):
+        os.chdir(self.orig_dir)
+        self.temp_dir.cleanup()
+        for var in ("KSM_INI_DIR", "KSM_INI_DIR_SKIP_CONFLICT_WARNING"):
+            os.environ.pop(var, None)
+
+    def _make_ini(self, directory):
+        """Write a minimal keeper.ini in directory and return its path."""
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, "keeper.ini")
+        with open(path, "w") as f:
+            f.write("[ksm_config]\n[_default]\n")
+        return path
+
+    def _bare_profile(self):
+        """Profile instance with no __init__ side effects."""
+        p = object.__new__(Profile)
+        p.logger = logging.getLogger("test")
+        return p
+
+    # -- Defect A (failing before fix) ----------------------------------------
+
+    def test_ini_dir_cwd_conflict_emits_warning(self):
+        # Both KSM_INI_DIR and CWD have a keeper.ini; CWD wins but a warning must fire.
+        ini_dir = os.path.join(self.temp_dir.name, "inidir")
+        cwd_dir = os.path.join(self.temp_dir.name, "cwd")
+        self._make_ini(ini_dir)
+        cwd_ini = self._make_ini(cwd_dir)
+
+        os.chdir(cwd_dir)
+        os.environ["KSM_INI_DIR"] = ini_dir
+
+        with patch("click.echo") as mock_echo:
+            result = self._bare_profile()._find_ini_file()
+
+        self.assertEqual(os.path.realpath(cwd_ini), os.path.realpath(result), "CWD keeper.ini must still be loaded")
+        warning_emitted = any(
+            "KSM_INI_DIR" in str(call) for call in mock_echo.call_args_list
+        )
+        self.assertTrue(warning_emitted, "Expected a KSM_INI_DIR conflict warning on stderr")
+
+    # -- Defect A opt-out + no-conflict (pass before and after fix) -----------
+
+    def test_ini_dir_cwd_conflict_warning_suppressed(self):
+        ini_dir = os.path.join(self.temp_dir.name, "inidir")
+        cwd_dir = os.path.join(self.temp_dir.name, "cwd")
+        self._make_ini(ini_dir)
+        cwd_ini = self._make_ini(cwd_dir)
+
+        os.chdir(cwd_dir)
+        os.environ["KSM_INI_DIR"] = ini_dir
+        os.environ["KSM_INI_DIR_SKIP_CONFLICT_WARNING"] = "TRUE"
+
+        with patch("click.echo") as mock_echo:
+            result = self._bare_profile()._find_ini_file()
+
+        self.assertEqual(os.path.realpath(cwd_ini), os.path.realpath(result), "CWD keeper.ini must still be loaded")
+        warning_emitted = any(
+            "KSM_INI_DIR" in str(call) for call in mock_echo.call_args_list
+        )
+        self.assertFalse(
+            warning_emitted,
+            "No warning expected when KSM_INI_DIR_SKIP_CONFLICT_WARNING=TRUE"
+        )
+
+    def test_ini_dir_no_file_there_no_warning(self):
+        # KSM_INI_DIR set but has no keeper.ini; CWD wins silently with no warning.
+        ini_dir = os.path.join(self.temp_dir.name, "inidir")
+        cwd_dir = os.path.join(self.temp_dir.name, "cwd")
+        os.makedirs(ini_dir)  # intentionally no keeper.ini
+        cwd_ini = self._make_ini(cwd_dir)
+
+        os.chdir(cwd_dir)
+        os.environ["KSM_INI_DIR"] = ini_dir
+
+        with patch("click.echo") as mock_echo:
+            result = self._bare_profile()._find_ini_file()
+
+        self.assertIsNotNone(result)
+        warning_emitted = any(
+            "KSM_INI_DIR" in str(call) for call in mock_echo.call_args_list
+        )
+        self.assertFalse(warning_emitted, "No warning expected when KSM_INI_DIR has no keeper.ini")
+
+    # -- Defect B (failing before fix) ----------------------------------------
+
+    def test_find_ksm_path_skips_notset_dirs(self):
+        from keeper_secrets_manager_cli.common import find_ksm_path
+
+        # Place keeper.ini only inside a literal _NOTSET_/ subdirectory of CWD.
+        notset_dir = os.path.join(self.temp_dir.name, "_NOTSET_")
+        os.makedirs(notset_dir)
+        with open(os.path.join(notset_dir, "keeper.ini"), "w") as f:
+            f.write("[ksm_config]\n[_default]\n")
+
+        os.chdir(self.temp_dir.name)
+
+        saved = {}
+        for var in ("KSM_INI_DIR", "HOME", "USERPROFILE", "APPDATA", "PROGRAMDATA", "PROGRAMFILES"):
+            saved[var] = os.environ.pop(var, None)
+
+        try:
+            result = find_ksm_path("keeper.ini")
+        finally:
+            for var, val in saved.items():
+                if val is not None:
+                    os.environ[var] = val
+
+        self.assertIsNone(result, "A literal _NOTSET_/ directory must never be probed by find_ksm_path")
 
 
 if __name__ == '__main__':
