@@ -5,7 +5,8 @@ import {
     initializeStorage,
     generateTransmissionKey,
     platform,
-    SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword
+    SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword,
+    updateSecrets, KeeperRecord
 } from '../'
 
 import * as fs from 'fs'
@@ -496,4 +497,55 @@ test('flat record with innerFolderUid falls back to the app key when no matching
 
     expect(secrets.records.length).toBe(1)
     expect(secrets.records[0].data.title).toBe('Orphaned Record')
+})
+
+test('updateSecrets batch e2e - reports partial success per record', async () => {
+    const transmissionKey = new Uint8Array(32).fill(8)
+    const appKey = new Uint8Array(32).fill(9)
+    const record1Uid = 'batch-record-uid-1'
+    const record1Key = new Uint8Array(32).fill(11)
+    const record2Uid = 'batch-record-uid-2'
+    const record2Key = new Uint8Array(32).fill(12)
+
+    const serverResponse = {
+        records: [
+            { recordUid: record1Uid, errorMessage: '', responseCode: 'ok' },
+            { recordUid: record2Uid, errorMessage: 'Record is out of sync', responseCode: 'access_denied' }
+        ]
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    // postQuery uses options.queryFunction (not platform.post); pin getRandomBytes so the
+    // transmission key matches the key used to encrypt the response above.
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    // unique key-id: loadKey() checks a process-wide in-memory cache before storage, and other
+    // tests in this file already cache the literal id 'appKey' with different bytes
+    const batchAppKeyId = 'batch-app-key'
+    await kvs.saveBytes(batchAppKeyId, appKey)
+
+    // encrypt() looks up each record's key by recordUid via loadKey(), which only succeeds
+    // from its in-memory cache - in real usage that cache gets populated by getSecrets()
+    // decrypting the record first; here we populate it directly via unwrap(), the same
+    // mechanism getSecrets() uses internally.
+    await platform.unwrap(await platform.encryptWithKey(record1Key, appKey), record1Uid, batchAppKeyId, kvs)
+    await platform.unwrap(await platform.encryptWithKey(record2Key, appKey), record2Uid, batchAppKeyId, kvs)
+
+    const records: KeeperRecord[] = [
+        { recordUid: record1Uid, data: { title: 'Rotated 1', type: 'login', fields: [], custom: [] }, revision: 5 },
+        { recordUid: record2Uid, data: { title: 'Rotated 2', type: 'login', fields: [], custom: [] }, revision: 9 }
+    ]
+
+    const result = await updateSecrets({ storage: kvs, queryFunction: queryFn }, records)
+
+    expect(result.records.length).toBe(2)
+    expect(result.records[0].recordUid).toBe(record1Uid)
+    expect(result.records[0].responseCode).toBe('ok')
+    expect(result.records[1].recordUid).toBe(record2Uid)
+    expect(result.records[1].responseCode).toBe('access_denied')
+    expect(result.records[1].errorMessage).toBe('Record is out of sync')
 })
