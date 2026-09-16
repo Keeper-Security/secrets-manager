@@ -36,7 +36,7 @@ python-dateutil==2.9.0.post0
     # via oci
 pytz==2025.1
     # via oci
-requests==2.32.4
+requests==2.34.2
     # via
     #   keeper-secrets-manager-storage-oracle-kms (pyproject.toml)
     #   keeper-secrets-manager-core
