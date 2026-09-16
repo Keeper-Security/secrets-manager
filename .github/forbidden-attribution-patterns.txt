@@ -1,4 +1,44 @@
-co-?authored-?by:.*(claude|anthropic|opencode)
-generated (with|by).*(claude|anthropic|opencode)
+# Vendor/product names, anchored to an attribution phrase so an unrelated
+# mention of the product (e.g. a changelog note about a "Copilot" feature)
+# doesn't trip this on its own. Signed-off-by/Authorized-by are included
+# alongside Co-authored-by since some tools (and the DCO convention) use
+# those trailers instead.
+#
+# Bare "claude" is deliberately excluded from this line only: "Claude" is a
+# common human first name, and a trailer is exactly where a real co-author
+# named Claude would appear. "claude code" (two words) is used instead;
+# noreply@anthropic.com below covers the actual default trailer regardless.
+(co-?authored-?by|signed-?off-?by|authorized-?by):.*(claude code|anthropic|opencode|openai|chatgpt|gpt-?[0-9]|codex|copilot|gemini|grok|mistral ai|deepseek|qwen|cursor|windsurf|codeium|aider|tabnine|amazon q|codewhisperer)
+generated (with|by).*(claude|anthropic|opencode|openai|chatgpt|gpt-?[0-9]|codex|copilot|gemini|grok|mistral ai|deepseek|qwen|cursor|windsurf|codeium|aider|tabnine|amazon q|codewhisperer)
+(written|authored|created|made) by (claude|anthropic|opencode|openai|chatgpt|gpt-?[0-9]|codex|copilot|gemini|grok|mistral ai|deepseek|qwen|cursor|windsurf|codeium|aider|tabnine|amazon q|codewhisperer)
+powered by (claude|anthropic|openai|chatgpt|gpt-?[0-9]|copilot|gemini|grok|codex)
 🤖 generated with
-(written|authored|created|made) by (claude|anthropic|opencode)
+
+# Self-identification text, for raw model output pasted in without editing.
+as an? (ai|large) language model
+
+# Reference URLs unique to one vendor's own tooling; safe to match bare
+# since nothing unrelated would ever cite these exact paths.
+claude\.ai/code
+claude\.com/claude-code
+
+# Tool-name suffixes some CLIs append straight to the git author/committer
+# name field instead of writing a message trailer. Aider's default (opt-out)
+# behavior uses parens; a common Codex CLI wrapper pattern uses the same
+# convention, and both parenthesized and bracketed forms show up in the wild.
+\(aider\)
+\[aider\]
+\(codex\)
+
+# Bot identities that are unambiguous on their own, so they don't need an
+# attribution-phrase anchor. Deliberately NOT matching bare "devin" or
+# "jules" or "cody" in the phrase patterns above: those are common human
+# first names and would false-positive on a real co-author.
+devin-ai-integration\[bot\]
+google-labs-jules\[bot\]
+gemini-code-assist\[bot\]
+github-copilot\[bot\]
+noreply@anthropic\.com
+noreply@openai\.com
+cursoragent@cursor\.com
+[0-9]+\+copilot@users\.noreply\.github\.com

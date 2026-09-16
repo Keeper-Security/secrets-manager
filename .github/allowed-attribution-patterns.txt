@@ -1,0 +1,12 @@
+# Deliberate policy exemptions, checked against lines that already matched
+# forbidden-attribution-patterns.txt. A matching line here is treated as fine
+# and dropped before the check decides whether to fail.
+#
+# GitHub's own Copilot Autofix feature (tied to the CodeQL code scanning
+# already enabled on this repo) inserts this exact trailer automatically
+# whenever someone accepts one of its automated security-remediation
+# suggestions. Treated as a first-party security feature, not an
+# AI-authorship shortcut. A plain "Co-authored-by: Copilot <...>" (the
+# separate PR-suggestion feature, not tied to a security fix) is NOT covered
+# by this line and still gets blocked.
+copilot autofix powered by ai
