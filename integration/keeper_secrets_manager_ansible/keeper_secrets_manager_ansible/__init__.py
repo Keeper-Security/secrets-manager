@@ -477,14 +477,14 @@ class KeeperAnsible:
 
         return records[0]
 
-    def create_record(self, new_record, shared_folder_uid):
+    def create_record(self, new_record, shared_folder_uid, subfolder_uid=None):
         # KSM-816: use create_secret_with_options() instead of create_secret() so
         # that folder keys are fetched via the get_folders endpoint, which returns
         # all folders including empty ones. create_secret() uses get_secrets() which
         # only returns folder keys when the folder already contains records.
         try:
             record_uid = self.client.create_secret_with_options(
-                CreateOptions(shared_folder_uid, None), new_record
+                CreateOptions(shared_folder_uid, subfolder_uid), new_record
             )
         except Exception as err:
             raise Exception("Cannot get create record: {}".format(err))

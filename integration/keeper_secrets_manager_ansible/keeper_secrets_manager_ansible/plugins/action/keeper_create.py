@@ -40,6 +40,15 @@ options:
     - Must be a shared folder UID, not a subfolder UID.
     type: str
     required: yes
+  subfolder_uid:
+    description:
+    - The UID of a subfolder, nested under shared_folder_uid, to create the record in.
+    - The subfolder must already exist and must live under the shared folder given
+      in shared_folder_uid.
+    - If omitted, the record is created directly in the shared folder.
+    type: str
+    required: no
+    version_added: '1.4.1'
   record_type:
     description:
     - The type if record to create.
@@ -221,6 +230,17 @@ EXAMPLES = r'''
         label: Custom Field
         value: This is a value is a custom field.
   register: my_new_record
+
+- name: Create a new record in a subfolder
+  keeper_create:
+    shared_folder_uid: XXX
+    subfolder_uid: YYY
+    record_type: login
+    title: My Title
+    fields:
+      - type: login
+        value: john.doe@nowhere.com
+  register: my_new_record
 '''
 
 RETURN = r'''
@@ -245,6 +265,7 @@ class ActionModule(ActionBase):
         shared_folder_uid = self._task.args.get("shared_folder_uid")
         if shared_folder_uid is None:
             raise AnsibleError("The shared_folder_uid is blank. keeper_create requires this value to be set.")
+        subfolder_uid = self._task.args.get("subfolder_uid")
         record_type = self._task.args.get("record_type")
         if record_type is None:
             raise AnsibleError("The record_type is blank. keeper_create requires this value to be set.")
@@ -313,7 +334,7 @@ class ActionModule(ActionBase):
                 password_complexity=password_complexity
             )
             record_create = record[0].get_record_create_obj()
-            record_uid = keeper.create_record(record_create, shared_folder_uid=shared_folder_uid)
+            record_uid = keeper.create_record(record_create, shared_folder_uid=shared_folder_uid, subfolder_uid=subfolder_uid)
         except Exception as err:
             raise AnsibleError("Could not create record: {}".format(err))
 

@@ -29,6 +29,15 @@ options:
     - Must be a shared folder UID, not a subfolder UID.
     type: str
     required: yes
+  subfolder_uid:
+    description:
+    - The UID of a subfolder, nested under shared_folder_uid, to create the record in.
+    - The subfolder must already exist and must live under the shared folder given
+      in shared_folder_uid.
+    - If omitted, the record is created directly in the shared folder.
+    type: str
+    required: no
+    version_added: '1.4.1'
   record_type:
     description:
     - The type if record to create.
@@ -198,6 +207,17 @@ EXAMPLES = r'''
       - type: text
         label: Custom Field
         value: This is a value is a custom field.
+  register: my_new_record
+
+- name: Create a new record in a subfolder
+  keeper_create:
+    shared_folder_uid: XXX
+    subfolder_uid: YYY
+    record_type: login
+    title: My Title
+    fields:
+      - type: login
+        value: john.doe@nowhere.com
   register: my_new_record
 '''
 
