@@ -42,7 +42,8 @@ dependencies = [
     "google-crc32c>=1.0.0",
     "pycryptodome>=3.21.0",
     "protobuf>=6.33.5",
-    "cryptography>=46.0.5",
+    "cryptography>=50.0.0",
+    "pyasn1>=0.6.4",
     "requests>=2.32.0",
 ]
 

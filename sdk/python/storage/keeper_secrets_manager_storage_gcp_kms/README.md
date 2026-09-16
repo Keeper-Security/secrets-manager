@@ -81,6 +81,8 @@ Once setup, the Secrets Manager GCP KMS integration supports all Secrets Manager
 
 **Security:**
 - **KSM-1021:** Fixed CVE-2026-44431; upgraded `urllib3` to 2.7.0. Versions before 2.7.0 forward `Authorization` and `Cookie` headers across origins when following redirects via the low-level `assert_same_host=False` code path (CVSS High)
+- **KSM-1240:** Upgraded `cryptography` to 50.0.0, fixing CVE-2026-69249 (exponential path-building via duplicate self-signed intermediates), CVE-2026-69248 (wildcard DNS name verifier escape from `permittedSubtrees`), CVE-2026-69247 (Bleichenbacher oracle in PKCS#7 `EnvelopedData` decryption), and GHSA-537c-gmf6-5ccf (vulnerable OpenSSL bundled in wheels before 48.0.1)
+- **KSM-1240:** Added `pyasn1` as a direct dependency floored at 0.6.4, fixing CVE-2026-59884 (BER/CER/DER decoder DoS via unbounded long-form tag IDs), CVE-2026-59885 (quadratic complexity in OBJECT IDENTIFIER / RELATIVE-OID processing), and CVE-2026-59886 (uncontrolled resource consumption converting decoded REAL values); previously pulled in transitively via `google-auth` with no floor of our own
 
 ### 1.1.0
 
