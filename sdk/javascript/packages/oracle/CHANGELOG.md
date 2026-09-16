@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Maintenance
 
 - KSM-1221 - Updated js-yaml, handlebars, minimatch, brace-expansion, picomatch, and other dependencies to resolve open security advisories
+- KSM-1221 - Bumped oci-common and oci-keymanagement from 2.127.0 to 2.140.1 to pick up a fixed nested uuid dependency and clear its security advisory
 
 ## [1.0.0]
 
