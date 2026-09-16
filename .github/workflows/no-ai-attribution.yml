@@ -6,9 +6,14 @@ name: No AI attribution
 #
 # Runs on push to master as well as on PRs. An org ruleset requires a PR to reach master, but
 # repo admins can bypass it, and a bypassed push would otherwise skip this check entirely.
+#
+# 'edited' is listed explicitly: the default pull_request type set (opened, synchronize,
+# reopened) never fires on a title/body-only edit, so a PR that adds attribution to its
+# description after the last commit would otherwise go unscanned indefinitely.
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [master]
 
