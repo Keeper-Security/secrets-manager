@@ -1,0 +1,77 @@
+name: No AI attribution
+
+# Blocks AI-tool attribution from entering the repo via files, commit messages, or PRs.
+# The literal banned patterns live in .github/forbidden-attribution-patterns.txt (excluded
+# from the file scan so the list cannot flag itself).
+#
+# Runs on push to master as well as on PRs. An org ruleset requires a PR to reach master, but
+# repo admins can bypass it, and a bypassed push would otherwise skip this check entirely.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan for forbidden AI attribution
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -uo pipefail
+          # Strip blank lines: an empty pattern in a -f file matches every line.
+          grep -vE '^[[:space:]]*$' .github/forbidden-attribution-patterns.txt > /tmp/patterns.txt
+          fail=0
+
+          echo "::group::File contents"
+          if git grep -inIE -f /tmp/patterns.txt -- . ':!.github/forbidden-attribution-patterns.txt'; then
+            echo "::error::Forbidden AI attribution found in tracked files (see matches above)."
+            fail=1
+          fi
+          echo "::endgroup::"
+
+          echo "::group::Commit messages"
+          # A first push, a force push, or a squash merge can leave BASE_SHA absent, all
+          # zeroes, or unreachable. Scan the head commit alone rather than failing the range.
+          if [ -n "${BASE_SHA}" ] \
+             && [ "${BASE_SHA}" != "0000000000000000000000000000000000000000" ] \
+             && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            set -- "${BASE_SHA}..${HEAD_SHA}"
+          else
+            echo "No usable base commit; scanning ${HEAD_SHA} only."
+            set -- -1 "${HEAD_SHA}"
+          fi
+          if git log --format='%H %B' "$@" | grep -inIE -f /tmp/patterns.txt; then
+            echo "::error::Forbidden AI attribution found in commit messages."
+            fail=1
+          fi
+          echo "::endgroup::"
+
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            echo "::group::PR title and body"
+            if printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | grep -inIE -f /tmp/patterns.txt; then
+              echo "::error::Forbidden AI attribution found in the PR title or body."
+              fail=1
+            fi
+            echo "::endgroup::"
+          fi
+
+          if [ "$fail" -ne 0 ]; then
+            echo "Remove the flagged attribution, then amend the commit or edit the PR."
+            exit 1
+          fi
+          echo "OK - no forbidden attribution found."

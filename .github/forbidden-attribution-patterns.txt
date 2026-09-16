@@ -1,0 +1,4 @@
+co-?authored-?by:.*(claude|anthropic|opencode)
+generated (with|by).*(claude|anthropic|opencode)
+🤖 generated with
+(written|authored|created|made) by (claude|anthropic|opencode)
