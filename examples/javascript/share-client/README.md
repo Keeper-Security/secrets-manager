@@ -1,9 +1,9 @@
 # Keeper Share
 
-This is an application that allows for anybody with a link receive a shared secret from Keeper
+This application lets any user with a link receive a shared secret from Keeper.
 
-Only the first user that clicks on the link will be able to access the secret
+Only the first user who clicks the link can access the secret.
 
-Keys are stored in the IndexedDb:
+The SDK stores keys in IndexedDB:
 https://blog.engelke.com/2014/09/19/saving-cryptographic-keys-in-the-browser/
 

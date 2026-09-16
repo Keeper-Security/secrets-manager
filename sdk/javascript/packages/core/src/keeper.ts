@@ -20,6 +20,7 @@ const KEY_PRIVATE_KEY = 'privateKey' // The client's private key
 // request, so the counter only clears after 10s of silence).
 const MAX_THROTTLE_RETRIES = 5
 const BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
+const MAX_THROTTLE_DELAY_SEC = 176 // same ceiling the exponential branch reaches at the last retry (11 * 2**4)
 const CLIENT_ID_HASH_TAG = 'KEEPER_SECRETS_MANAGER_CLIENT_ID' // Tag for hashing the client key to client id
 
 let keeperPublicKeys: Record<number, Uint8Array>
@@ -62,14 +63,17 @@ export type SecretManagerOptions = {
 // utils.ts/platform code that throws them; re-exported here so the public API is unchanged.
 export {KeeperError, KeeperThrottleError} from './errors'
 
-// Returns a jitter multiplier in [-0.25, 0.25). Kept separate so concurrent clients
-// desynchronize their retries; unit tests exercise throttleDelay with a pinned jitter.
-export const throttleJitter = (): number => Math.random() * 0.5 - 0.25
+// Returns a jitter multiplier in [0, 0.25). One-sided so the delay never drops below the
+// computed floor (retrying too soon just re-triggers the throttle); kept separate so
+// concurrent clients desynchronize their retries. Unit tests exercise throttleDelay with a
+// pinned jitter.
+export const throttleJitter = (): number => Math.random() * 0.25
 
 /**
  * If `body` is a backend throttle error (`result_code`/`error` === "throttled") returns its
- * `retry_after` in seconds (>= 0); otherwise returns `null` so the caller falls through to
- * normal error handling. Non-JSON / non-object bodies return `null`.
+ * `retry_after` in seconds (>= 0, capped at MAX_THROTTLE_DELAY_SEC); otherwise returns `null`
+ * so the caller falls through to normal error handling. Non-JSON / non-object bodies return
+ * `null`.
  */
 export const parseThrottle = (body: string): number | null => {
     let obj: any
@@ -86,13 +90,13 @@ export const parseThrottle = (body: string): number | null => {
         return null
     }
     const retryAfter = Number(obj.retry_after)
-    return Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 0
+    return Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, MAX_THROTTLE_DELAY_SEC) : 0
 }
 
 /**
  * Computes the backoff delay (milliseconds) for a 0-based `attempt`: `retryAfter` seconds when
  * provided (> 0), otherwise exponential backoff (BASE_THROTTLE_DELAY_SEC * 2**attempt -> 11, 22,
- * 44, 88, 176s). The `jitter` fraction (typically in [-0.25, 0.25)) is then applied.
+ * 44, 88, 176s). The `jitter` fraction (typically in [0, 0.25)) is then applied.
  */
 export const throttleDelay = (attempt: number, retryAfter: number, jitter: number = throttleJitter()): number => {
     const baseSec = retryAfter > 0 ? retryAfter : BASE_THROTTLE_DELAY_SEC * Math.pow(2, attempt)
@@ -159,6 +163,17 @@ type UpdatePayload = CommonPayload & {
     revision: number
     transactionType?: UpdateTransactionType
     links2Remove?: string[]
+}
+
+type RecordUpdateItem = {
+    recordUid: string
+    data: string
+    revision: number
+    links2Remove?: string[]
+}
+
+type BatchUpdatePayload = CommonPayload & {
+    records: RecordUpdateItem[]
 }
 
 type CompleteTransactionPayload = CommonPayload & {
@@ -259,6 +274,16 @@ type SecretsManagerDeleteResponse = {
     folders: SecretsManagerDeleteResponseFolder[]
 }
 
+type SecretsManagerBatchUpdateResponseRecord = {
+    recordUid: string
+    errorMessage: string
+    responseCode: string
+}
+
+type SecretsManagerBatchUpdateResponse = {
+    records: SecretsManagerBatchUpdateResponseRecord[]
+}
+
 type SecretsManagerAddFileResponse = {
     url: string
     parameters: string
@@ -290,6 +315,7 @@ export type KeeperFolder = {
     folderUid: string
     parentUid?: string
     name?: string
+    useGcm?: boolean
 }
 
 export type KeeperFile = {
@@ -537,12 +563,7 @@ const prepareGetPayload = async (storage: KeyValueStorage, queryOptions?: QueryO
     return payload
 }
 
-const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord, updateOptions?: UpdateOptions): Promise<UpdatePayload> => {
-    const clientId = await storage.getString(KEY_CLIENT_ID)
-    if (!clientId) {
-        throw new Error('Client Id is missing from the configuration')
-    }
-    const {transactionType, links2Remove} = updateOptions ?? {}
+const encryptRecordUpdateData = async (record: KeeperRecord, links2Remove?: string[]): Promise<{data: string, links2Remove?: string[]}> => {
     if (links2Remove && links2Remove.length > 0) {
         const fields = record.data.fields;
         const fileRef = fields.find(x => x.type == 'fileRef');
@@ -555,20 +576,62 @@ const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperReco
     }
     const recordBytes = platform.stringToBytes(JSON.stringify(record.data))
     const encryptedRecord = await platform.encrypt(recordBytes, record.recordUid || KEY_APP_KEY)
+    const result: {data: string, links2Remove?: string[]} = {
+        data: webSafe64FromBytes(encryptedRecord)
+    }
+    if (links2Remove && links2Remove.length > 0) {
+        result.links2Remove = links2Remove
+    }
+    return result
+}
+
+const prepareUpdatePayload = async (storage: KeyValueStorage, record: KeeperRecord, updateOptions?: UpdateOptions): Promise<UpdatePayload> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
+    const {transactionType, links2Remove} = updateOptions ?? {}
+    const encrypted = await encryptRecordUpdateData(record, links2Remove)
     const payload: UpdatePayload = {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
         recordUid: record.recordUid,
-        data: webSafe64FromBytes(encryptedRecord),
+        data: encrypted.data,
         revision: record.revision
     }
     if (transactionType) {
         payload.transactionType = transactionType
     }
-    if (links2Remove && links2Remove.length > 0) {
-        payload.links2Remove = links2Remove
+    if (encrypted.links2Remove) {
+        payload.links2Remove = encrypted.links2Remove
     }
     return payload
+}
+
+const prepareBatchUpdatePayload = async (storage: KeyValueStorage, records: KeeperRecord[], updateOptions?: UpdateOptions): Promise<BatchUpdatePayload> => {
+    const clientId = await storage.getString(KEY_CLIENT_ID)
+    if (!clientId) {
+        throw new Error('Client Id is missing from the configuration')
+    }
+    const {links2Remove} = updateOptions ?? {}
+    const items: RecordUpdateItem[] = []
+    for (const record of records) {
+        const encrypted = await encryptRecordUpdateData(record, links2Remove)
+        const item: RecordUpdateItem = {
+            recordUid: record.recordUid,
+            data: encrypted.data,
+            revision: record.revision
+        }
+        if (encrypted.links2Remove) {
+            item.links2Remove = encrypted.links2Remove
+        }
+        items.push(item)
+    }
+    return {
+        clientVersion: 'ms' + packageVersion,
+        clientId: clientId,
+        records: items
+    }
 }
 
 const prepareCompleteTransactionPayload = async (storage: KeyValueStorage, recordUid: string): Promise<CompleteTransactionPayload> => {
@@ -646,8 +709,8 @@ const prepareCreateFolderPayload = async (storage: KeyValueStorage, createOption
     }))
     const folderKey = platform.getRandomBytes(32)
     const folderUid = getUidBytes()
-    const encryptedFolderData = await platform.encryptWithKey(folderDataBytes, folderKey, true)
-    const encryptedFolderKey = await platform.encrypt(folderKey, createOptions.folderUid, undefined, true)
+    const encryptedFolderData = await platform.encryptWithKey(folderDataBytes, folderKey)
+    const encryptedFolderKey = await platform.encrypt(folderKey, createOptions.folderUid)
     return {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
@@ -659,7 +722,7 @@ const prepareCreateFolderPayload = async (storage: KeyValueStorage, createOption
     }
 }
 
-const prepareUpdateFolderPayload = async (storage: KeyValueStorage, folderUid: string, folderName: string): Promise<UpdateFolderPayload> => {
+const prepareUpdateFolderPayload = async (storage: KeyValueStorage, folderUid: string, folderName: string, useGcm?: boolean): Promise<UpdateFolderPayload> => {
     const clientId = await storage.getString(KEY_CLIENT_ID)
     if (!clientId) {
         throw new Error('Client Id is missing from the configuration')
@@ -667,7 +730,7 @@ const prepareUpdateFolderPayload = async (storage: KeyValueStorage, folderUid: s
     const folderDataBytes = platform.stringToBytes(JSON.stringify({
         name: folderName
     }))
-    const encryptedFolderData = await platform.encrypt(folderDataBytes, folderUid, undefined, true)
+    const encryptedFolderData = await platform.encrypt(folderDataBytes, folderUid, undefined, !useGcm)
     return {
         clientVersion: 'ms' + packageVersion,
         clientId: clientId,
@@ -883,13 +946,34 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
         await storage.delete(KEY_CLIENT_KEY)
         await storage.saveString(KEY_OWNER_PUBLIC_KEY, response.appOwnerPublicKey!)
     }
+    const folderKeyIds = new Set<string>()
+    if (response.folders) {
+        for (const folder of response.folders) {
+            try {
+                if (!folder.folderKey) continue
+                await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
+                folderKeyIds.add(folder.folderUid)
+            } catch (e: Error | any) {
+                // ignored here; the folders loop below re-attempts the same unwrap and logs the failure
+            }
+        }
+    }
     if (response.records) {
         for (const record of response.records) {
             try {
                 if (record.recordKey) {
-                    await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, KEY_APP_KEY, storage, true)
+                    // Records created outside the SDK in a shared folder arrive in the flat
+                    // response.records[] with innerFolderUid set; their recordKey is wrapped
+                    // with the folder key, not the app key.
+                    const unwrappingKeyId = record.innerFolderUid && folderKeyIds.has(record.innerFolderUid)
+                        ? record.innerFolderUid
+                        : KEY_APP_KEY
+                    await platform.unwrap(platform.base64ToBytes(record.recordKey), record.recordUid, unwrappingKeyId, storage, true)
                 }
                 const decryptedRecord = await decryptRecord(record, storage)
+                if (record.innerFolderUid && folderKeyIds.has(record.innerFolderUid)) {
+                    decryptedRecord.folderUid = record.innerFolderUid
+                }
                 records.push(decryptedRecord)
             } catch (e: Error | any) {
                 console.error(`Record ${record.recordUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
@@ -899,7 +983,7 @@ const fetchAndDecryptSecrets = async (options: SecretManagerOptions, queryOption
     if (response.folders) {
         for (const folder of response.folders) {
             try {
-                if (!folder.folderKey) throw new Error(`Folder key missing for UID ${folder.folderUid} — reinitialize with a fresh One-Time Token`)
+                if (!folder.folderKey) throw new Error(`Folder key missing for UID ${folder.folderUid}; reinitialize with a fresh One-Time Token`)
                 await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true)
                 for (const record of folder.records) {
                     try {
@@ -954,27 +1038,41 @@ const fetchAndDecryptFolders = async (options: SecretManagerOptions): Promise<Ke
     const payload = await prepareGetPayload(storage)
     const responseData = await postQuery(options, 'get_folders', payload)
     const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerResponse
+    if (response.encryptedAppKey) {
+        await platform.unwrap(platform.base64ToBytes(response.encryptedAppKey), KEY_APP_KEY, KEY_CLIENT_KEY, storage)
+        await storage.delete(KEY_CLIENT_KEY)
+        if (response.appOwnerPublicKey) {
+            await storage.saveString(KEY_OWNER_PUBLIC_KEY, response.appOwnerPublicKey)
+        }
+    }
     const folders: KeeperFolder[] = []
     if (response.folders) {
         for (const folder of response.folders) {
-            let decryptedData: Uint8Array
-            const decryptedFolder: KeeperFolder = {
-                folderUid: folder.folderUid
-            }
-            if (folder.parent) {
-                decryptedFolder.parentUid = folder.parent
-                const sharedFolderUid = getSharedFolderUid(response.folders, folder.parent)
-                if (!sharedFolderUid) {
-                    throw new Error('Folder data inconsistent - unable to locate shared folder')
+            try {
+                let decryptedData: Uint8Array
+                const decryptedFolder: KeeperFolder = {
+                    folderUid: folder.folderUid
                 }
-                await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, sharedFolderUid, storage, true, true)
-                decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
-            } else {
-                await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true, true)
-                decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
+                if (folder.parent) {
+                    decryptedFolder.parentUid = folder.parent
+                    const sharedFolderUid = getSharedFolderUid(response.folders, folder.parent)
+                    if (!sharedFolderUid) {
+                        throw new Error('Folder data inconsistent - unable to locate shared folder')
+                    }
+                    const folderKeyBytes = platform.base64ToBytes(folder.folderKey)
+                    const useCBC = folderKeyBytes.length !== 60
+                    decryptedFolder.useGcm = !useCBC
+                    await platform.unwrap(folderKeyBytes, folder.folderUid, sharedFolderUid, storage, true, useCBC)
+                    decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, useCBC)
+                } else {
+                    await platform.unwrap(platform.base64ToBytes(folder.folderKey), folder.folderUid, KEY_APP_KEY, storage, true, true)
+                    decryptedData = await platform.decrypt(platform.base64ToBytes(folder.data), folder.folderUid, storage, true)
+                }
+                decryptedFolder.name = JSON.parse(platform.bytesToString(decryptedData))['name']
+                folders.push(decryptedFolder)
+            } catch (e: Error | any) {
+                console.error(`Folder ${folder.folderUid} skipped due to error: ${e.constructor.name}, ${e.message}`)
             }
-            decryptedFolder.name = JSON.parse(platform.bytesToString(decryptedData))['name']
-            folders.push(decryptedFolder)
         }
     }
     return folders
@@ -1283,6 +1381,18 @@ export const updateSecret2 = async (options: SecretManagerOptions, record: Keepe
     await postQuery(options, 'update_secret', payload)
 }
 
+export const updateSecrets = async (options: SecretManagerOptions, records: KeeperRecord[], updateOptions?: UpdateOptions): Promise<SecretsManagerBatchUpdateResponse> => {
+    const payload = await prepareBatchUpdatePayload(options.storage, records, updateOptions)
+    const responseData = await postQuery(options, 'update_secrets', payload)
+    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerBatchUpdateResponse
+    for (const r of (response.records || [])) {
+        if (r.responseCode !== 'ok') {
+            console.error(`Failed to update record ${r.recordUid}: ${r.responseCode} ${r.errorMessage}`)
+        }
+    }
+    return response
+}
+
 export const completeTransaction = async (options: SecretManagerOptions, recordUid: string, rollback: boolean = false): Promise<void> => {
     const payload = await prepareCompleteTransactionPayload(options.storage, recordUid)
     const route = (rollback ? "rollback_secret_update" : "finalize_secret_update")
@@ -1292,13 +1402,25 @@ export const completeTransaction = async (options: SecretManagerOptions, recordU
 export const deleteSecret = async (options: SecretManagerOptions, recordUids: string[]): Promise<SecretsManagerDeleteResponse> => {
     const payload = await prepareDeletePayload(options.storage, recordUids)
     const responseData = await postQuery(options, 'delete_secret', payload)
-    return JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
+    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
+    for (const r of (response.records || [])) {
+        if (r.responseCode !== 'ok') {
+            console.error(`Failed to delete record ${r.recordUid}: ${r.responseCode} ${r.errorMessage}`)
+        }
+    }
+    return response
 }
 
 export const deleteFolder = async (options: SecretManagerOptions, folderUids: string[], forceDeletion?: boolean): Promise<SecretsManagerDeleteResponse> => {
     const payload = await prepareDeleteFolderPayload(options.storage, folderUids, forceDeletion)
     const responseData = await postQuery(options, 'delete_folder', payload)
-    return JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
+    const response = JSON.parse(platform.bytesToString(responseData)) as SecretsManagerDeleteResponse
+    for (const f of (response.folders || [])) {
+        if (f.responseCode !== 'ok') {
+            console.error(`Failed to delete folder ${f.folderUid}: ${f.responseCode} ${f.errorMessage}`)
+        }
+    }
+    return response
 }
 
 export const createSecret = async (options: SecretManagerOptions, folderUid: string, recordData: any): Promise<string> => {
@@ -1328,11 +1450,11 @@ export const createFolder = async (options: SecretManagerOptions, createOptions:
     return payload.folderUid
 }
 
-export const updateFolder = async (options: SecretManagerOptions, folderUid: string, folderName: string): Promise<void> => {
+export const updateFolder = async (options: SecretManagerOptions, folderUid: string, folderName: string, useGcm?: boolean): Promise<void> => {
     if (!platform.hasKeysCached()) {
         await getSecrets(options) // need to warm up keys cache before posting a record
     }
-    const payload = await prepareUpdateFolderPayload(options.storage, folderUid, folderName)
+    const payload = await prepareUpdateFolderPayload(options.storage, folderUid, folderName, useGcm)
     await postQuery(options, 'update_folder', payload)
 }
 
@@ -1956,6 +2078,7 @@ export type PamSettingsConnection = {
     ignoreCert?: boolean
     resizeMethod?: string
     colorScheme?: string
+    dbConnectionMethod?: string
 }
 
 export type PamSettingsPortForward = {

@@ -1,10 +1,12 @@
 import {
     KeeperHttpResponse,
     getSecrets,
+    getFolders,
     initializeStorage,
     generateTransmissionKey,
     platform,
-    SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword
+    SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword,
+    updateSecrets, KeeperRecord
 } from '../'
 
 import * as fs from 'fs'
@@ -365,4 +367,185 @@ test('IL5 dynamic key - Layer 2: rejects malformed (too short) serverPublicKey',
     await expect(
         initializeStorage(storage, 'IL5:ONE_TIME_TOKEN:20:tooshort')
     ).rejects.toThrow('IL5 token: serverPublicKey appears malformed')
+})
+
+test('getFolders skips an undecryptable folder and returns the good one', async () => {
+    const transmissionKey = new Uint8Array(32).fill(1)
+    const appKey = new Uint8Array(32).fill(2)
+    const folderKey = new Uint8Array(32).fill(3)
+
+    const goodFolderKeyWrapped = await platform.encryptWithKey(folderKey, appKey)
+    const goodFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Good Folder' })), folderKey, true)
+    const badFolderKeyWrapped = new Uint8Array(16).fill(9)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'good-uid', folderKey: platform.bytesToBase64(goodFolderKeyWrapped), data: platform.bytesToBase64(goodFolderData) },
+            { folderUid: 'bad-uid', folderKey: platform.bytesToBase64(badFolderKeyWrapped), data: '' }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    // postQuery uses options.queryFunction (not platform.post); pin getRandomBytes so the
+    // transmission key matches the key used to encrypt the response above.
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders.length).toBe(1)
+    expect(folders[0].folderUid).toBe('good-uid')
+    expect(folders[0].name).toBe('Good Folder')
+})
+
+test('flat record with innerFolderUid decrypts recordKey using the folder key, not the app key', async () => {
+    const transmissionKey = new Uint8Array(32).fill(1)
+    const appKey = new Uint8Array(32).fill(2)
+    const folderKey = new Uint8Array(32).fill(3)
+    const recordKey = new Uint8Array(32).fill(4)
+    const folderUid = 'folder-uid-1'
+    const recordUid = 'record-uid-1'
+
+    const wrappedFolderKey = await platform.encryptWithKey(folderKey, appKey)
+    const wrappedRecordKey = await platform.encryptWithKey(recordKey, folderKey)
+    const recordData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ title: 'Shared Record', type: 'login', fields: [], custom: [] })), recordKey)
+
+    const serverResponse = {
+        folders: [
+            { folderUid, folderKey: platform.bytesToBase64(wrappedFolderKey), data: '', records: [] }
+        ],
+        records: [
+            {
+                recordUid,
+                recordKey: platform.bytesToBase64(wrappedRecordKey),
+                data: platform.bytesToBase64(recordData),
+                revision: 1,
+                files: [],
+                innerFolderUid: folderUid
+            }
+        ],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const secrets = await getSecrets({ storage: kvs, queryFunction: queryFn })
+
+    // Bug: the flat-records loop always unwraps recordKey with KEY_APP_KEY, ignoring
+    // innerFolderUid. Since recordKey here is wrapped with the folder key, unwrapping
+    // with the app key throws, the record is caught and silently skipped, and
+    // secrets.records comes back empty instead of containing the decrypted record.
+    expect(secrets.records.length).toBe(1)
+    expect(secrets.records[0].data.title).toBe('Shared Record')
+    expect(secrets.records[0].folderUid).toBe(folderUid)
+})
+
+test('flat record with innerFolderUid falls back to the app key when no matching folder is returned', async () => {
+    const transmissionKey = new Uint8Array(32).fill(5)
+    const appKey = new Uint8Array(32).fill(6)
+    const recordKey = new Uint8Array(32).fill(7)
+    const recordUid = 'record-uid-2'
+
+    const wrappedRecordKey = await platform.encryptWithKey(recordKey, appKey)
+    const recordData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ title: 'Orphaned Record', type: 'login', fields: [], custom: [] })), recordKey)
+
+    const serverResponse = {
+        folders: [],
+        records: [
+            {
+                recordUid,
+                recordKey: platform.bytesToBase64(wrappedRecordKey),
+                data: platform.bytesToBase64(recordData),
+                revision: 1,
+                files: [],
+                innerFolderUid: 'folder-uid-not-in-response'
+            }
+        ],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const secrets = await getSecrets({ storage: kvs, queryFunction: queryFn })
+
+    expect(secrets.records.length).toBe(1)
+    expect(secrets.records[0].data.title).toBe('Orphaned Record')
+})
+
+test('updateSecrets batch e2e - reports partial success per record', async () => {
+    const transmissionKey = new Uint8Array(32).fill(8)
+    const appKey = new Uint8Array(32).fill(9)
+    const record1Uid = 'batch-record-uid-1'
+    const record1Key = new Uint8Array(32).fill(11)
+    const record2Uid = 'batch-record-uid-2'
+    const record2Key = new Uint8Array(32).fill(12)
+
+    const serverResponse = {
+        records: [
+            { recordUid: record1Uid, errorMessage: '', responseCode: 'ok' },
+            { recordUid: record2Uid, errorMessage: 'Record is out of sync', responseCode: 'access_denied' }
+        ]
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    // postQuery uses options.queryFunction (not platform.post); pin getRandomBytes so the
+    // transmission key matches the key used to encrypt the response above.
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    // unique key-id: loadKey() checks a process-wide in-memory cache before storage, and other
+    // tests in this file already cache the literal id 'appKey' with different bytes
+    const batchAppKeyId = 'batch-app-key'
+    await kvs.saveBytes(batchAppKeyId, appKey)
+
+    // encrypt() looks up each record's key by recordUid via loadKey(), which only succeeds
+    // from its in-memory cache - in real usage that cache gets populated by getSecrets()
+    // decrypting the record first; here we populate it directly via unwrap(), the same
+    // mechanism getSecrets() uses internally.
+    await platform.unwrap(await platform.encryptWithKey(record1Key, appKey), record1Uid, batchAppKeyId, kvs)
+    await platform.unwrap(await platform.encryptWithKey(record2Key, appKey), record2Uid, batchAppKeyId, kvs)
+
+    const records: KeeperRecord[] = [
+        { recordUid: record1Uid, data: { title: 'Rotated 1', type: 'login', fields: [], custom: [] }, revision: 5 },
+        { recordUid: record2Uid, data: { title: 'Rotated 2', type: 'login', fields: [], custom: [] }, revision: 9 }
+    ]
+
+    const result = await updateSecrets({ storage: kvs, queryFunction: queryFn }, records)
+
+    expect(result.records.length).toBe(2)
+    expect(result.records[0].recordUid).toBe(record1Uid)
+    expect(result.records[0].responseCode).toBe('ok')
+    expect(result.records[1].recordUid).toBe(record2Uid)
+    expect(result.records[1].responseCode).toBe('access_denied')
+    expect(result.records[1].errorMessage).toBe('Record is out of sync')
 })
