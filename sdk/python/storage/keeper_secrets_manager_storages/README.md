@@ -6,6 +6,11 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 1.1.1
+
+- Raised `cryptography` floor to 50.0.0, closing 4 open Dependabot alerts on this package: GHSA-537c-gmf6-5ccf (vulnerable OpenSSL in wheels, fixed 48.0.1), GHSA-jwv3-5hgf-82ww / CVE-2026-69249 (exponential path-building via duplicate self-signed intermediates, fixed 49.0.0), GHSA-m2h6-j472-rp4c / CVE-2026-69248 (wildcard DNS name verifier escape, fixed 49.0.0), GHSA-g6cj-pr64-35w5 / CVE-2026-69247 (PKCS#7 EnvelopedData Bleichenbacher oracle, fixed 50.0.0). `cryptography` is now declared as a direct dependency instead of a purely transitive one.
+- Raised minimum Python version from 3.9.2 to 3.10. `cryptography>=49.0.0` drops Python 3.9 support, matching the same floor move already made on the sibling Oracle KMS and GCP KMS storage packages. Users on Python 3.9 should pin to `keeper-secrets-manager-storage<1.1.1`.
+
 ## 1.1.0
 
 - Raised minimum Python version to 3.9.2. Python 3.9.0 and 3.9.1 are excluded by the transitive `cryptography>=46.0.5` constraint pulled in via `keeper-secrets-manager-core>=17.2.0`. Users on Python 3.6 – 3.8 should pin to `keeper-secrets-manager-storage<1.1.0`; pip will auto-route them.

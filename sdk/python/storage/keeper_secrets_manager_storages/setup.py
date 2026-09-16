@@ -8,12 +8,13 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 install_requires = [
-    'keeper-secrets-manager-core>=17.2.0'
+    'keeper-secrets-manager-core>=17.2.0',
+    'cryptography>=50.0.0'
 ]
 
 setup(
     name="keeper-secrets-manager-storage",
-    version="1.1.0",
+    version="1.1.1",
     description="Keeper Secrets Manager SDK helper for managing configurations key-value storage.",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -27,7 +28,7 @@ setup(
     package_data={},
     include_package_data=True,
     install_requires=install_requires,
-    python_requires='>=3.9.2',
+    python_requires='>=3.10',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
         "Documentation": "https://docs.keeper.io/secrets-manager/secrets-manager/overview",
@@ -40,7 +41,6 @@ setup(
         "Operating System :: OS Independent",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
