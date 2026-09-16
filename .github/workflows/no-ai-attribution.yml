@@ -1,0 +1,104 @@
+name: No AI attribution
+
+# Blocks AI-tool attribution from entering the repo via files, commit messages, PRs, or the
+# author/committer identity of a commit. The banned patterns live in
+# .github/forbidden-attribution-patterns.txt, with deliberate exemptions (see that file's
+# header) carved out in .github/allowed-attribution-patterns.txt. All three of this workflow,
+# the pattern file, and the allowlist file are excluded from the file-contents scan below so
+# the check cannot flag its own configuration or its own explanatory comments.
+#
+# Runs on push to every branch, not just master: an org ruleset requires a PR to reach master,
+# but repo admins can bypass it, and pushes to non-master branches (release/**, feature/**)
+# would otherwise go unscanned until, or unless, a PR is ever opened for them.
+#
+# 'edited' is listed explicitly: the default pull_request type set (opened, synchronize,
+# reopened) never fires on a title/body-only edit, so a PR that adds attribution to its
+# description after the last commit would otherwise go unscanned indefinitely.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  no-ai-attribution:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan for forbidden AI attribution
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -uo pipefail
+          # Strip blank lines and '#' comment lines: an empty pattern in a -f file matches
+          # every line, and grep would otherwise treat a comment as a literal pattern too.
+          grep -vE '^[[:space:]]*($|#)' .github/forbidden-attribution-patterns.txt > /tmp/patterns.txt
+          grep -vE '^[[:space:]]*($|#)' .github/allowed-attribution-patterns.txt > /tmp/allowed.txt
+          fail=0
+
+          # Takes candidate deny-pattern matches as $2, drops any that are explicitly
+          # allow-listed, and fails only on what's left. $1 names the surface for the
+          # error message. Deliberately takes text as an argument rather than over a
+          # pipe: each side of a pipe runs in its own subshell, so a `fail=1` set while
+          # reading piped stdin would never make it back to the calling shell.
+          report() {
+            local matches
+            matches="$(printf '%s\n' "$2" | grep -viE -f /tmp/allowed.txt || true)"
+            if [ -n "$matches" ]; then
+              printf '%s\n' "$matches"
+              echo "::error::Forbidden AI attribution found in $1."
+              fail=1
+            fi
+          }
+
+          echo "::group::File contents"
+          file_matches="$(git grep -inIE -f /tmp/patterns.txt -- . \
+              ':!.github/forbidden-attribution-patterns.txt' \
+              ':!.github/allowed-attribution-patterns.txt' \
+              ':!.github/workflows/no-ai-attribution.yml' || true)"
+          report "tracked files (see matches above)" "$file_matches"
+          echo "::endgroup::"
+
+          echo "::group::Commit messages and author/committer identity"
+          # A first push, a force push, or a squash merge can leave BASE_SHA absent, all
+          # zeroes, or unreachable. Scan the head commit alone rather than failing the range.
+          if [ -n "${BASE_SHA}" ] \
+             && [ "${BASE_SHA}" != "0000000000000000000000000000000000000000" ] \
+             && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            set -- "${BASE_SHA}..${HEAD_SHA}"
+          else
+            echo "No usable base commit; scanning ${HEAD_SHA} only."
+            set -- -1 "${HEAD_SHA}"
+          fi
+          # %an/%ae/%cn/%ce catch tools that identify themselves only via the commit's
+          # author or committer identity (e.g. Aider's default "(aider)" name suffix)
+          # rather than in the message body.
+          commit_matches="$(git log --format='%H %an <%ae> %cn <%ce>%n%B' "$@" \
+            | grep -inIE -f /tmp/patterns.txt || true)"
+          report "commit messages or author/committer identity" "$commit_matches"
+          echo "::endgroup::"
+
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            echo "::group::PR title and body"
+            pr_matches="$(printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" \
+              | grep -inIE -f /tmp/patterns.txt || true)"
+            report "the PR title or body" "$pr_matches"
+            echo "::endgroup::"
+          fi
+
+          if [ "$fail" -ne 0 ]; then
+            echo "Remove the flagged attribution, then amend the commit or edit the PR."
+            exit 1
+          fi
+          echo "OK - no forbidden attribution found."
