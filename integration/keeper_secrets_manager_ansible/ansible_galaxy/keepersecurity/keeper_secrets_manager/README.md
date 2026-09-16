@@ -68,6 +68,7 @@ If you omit the `collections` , you will need to use the full plugin name.
 * `keepersecurity.keeper_secrets_manager.keeper_get_record` - Get record as a dictionary.
 * `keepersecurity.keeper_secrets_manager.keeper_set` - Set a value of an existing record in your vault.
 * `keepersecurity.keeper_secrets_manager.keeper_create` - Create a new record.
+* `keepersecurity.keeper_secrets_manager.keeper_create_folder` - Create a new folder.
 * `keepersecurity.keeper_secrets_manager.keeper_remove` - Remove a record from your vault.
 * `keepersecurity.keeper_secrets_manager.keeper_password` - Generate a random password.
 * `keepersecurity.keeper_secrets_manager.keeper_cleanup` - Clean up Keeper related files.

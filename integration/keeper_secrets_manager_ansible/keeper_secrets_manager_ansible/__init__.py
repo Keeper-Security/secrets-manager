@@ -477,19 +477,52 @@ class KeeperAnsible:
 
         return records[0]
 
-    def create_record(self, new_record, shared_folder_uid):
+    def create_record(self, new_record, shared_folder_uid, subfolder_uid=None):
         # KSM-816: use create_secret_with_options() instead of create_secret() so
         # that folder keys are fetched via the get_folders endpoint, which returns
         # all folders including empty ones. create_secret() uses get_secrets() which
         # only returns folder keys when the folder already contains records.
         try:
             record_uid = self.client.create_secret_with_options(
-                CreateOptions(shared_folder_uid, None), new_record
+                CreateOptions(shared_folder_uid, subfolder_uid), new_record
             )
         except Exception as err:
             raise Exception("Cannot get create record: {}".format(err))
 
         return record_uid
+
+    def create_folder(self, folder_name, shared_folder_uid, subfolder_uid=None):
+        # shared_folder_uid must be the top-level shared folder UID. subfolder_uid, if given,
+        # must be an existing folder nested (at any depth) under that shared folder; the new
+        # folder is created inside it. If subfolder_uid is omitted, the new folder is created
+        # directly inside the shared folder.
+        #
+        # Keeper allows more than one folder with the same name under the same parent, and the
+        # create_folder API call itself has no create-if-missing behavior, so this method makes
+        # the module idempotent by treating "a folder with this name already exists directly
+        # under the target parent" as success instead of creating a duplicate.
+        parent_uid = subfolder_uid if subfolder_uid else shared_folder_uid
+
+        try:
+            folders = self.client.get_folders()
+        except Exception as err:
+            raise Exception("Cannot get existing folders: {}".format(err))
+
+        existing_folder = next(
+            (f for f in folders if f.parent_uid == parent_uid and f.name == folder_name),
+            None
+        )
+        if existing_folder is not None:
+            return existing_folder.folder_uid, False
+
+        try:
+            folder_uid = self.client.create_folder(
+                CreateOptions(shared_folder_uid, subfolder_uid), folder_name, folders=folders
+            )
+        except Exception as err:
+            raise Exception("Cannot create folder: {}".format(err))
+
+        return folder_uid, True
 
     def remove_record(self, uids=None, titles=None, cache=None):
 

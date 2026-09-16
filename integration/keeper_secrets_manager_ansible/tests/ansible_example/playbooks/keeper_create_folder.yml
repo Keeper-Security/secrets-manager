@@ -1,0 +1,29 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Create Folder
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Create Folder Directly In Shared Folder"
+    keeper_create_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "My New Folder"
+    register: "new_folder"
+
+  - name: "Print New Folder UID"
+    debug:
+      var: new_folder.folder_uid
+      verbosity: 0
+
+  - name: "Create Folder In Subfolder"
+    keeper_create_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      subfolder_uid: "{{ subfolder_uid }}"
+      folder_name: "My New Nested Folder"
+    register: "new_nested_folder"
+
+  - name: "Print New Nested Folder UID"
+    debug:
+      var: new_nested_folder.folder_uid
+      verbosity: 0
