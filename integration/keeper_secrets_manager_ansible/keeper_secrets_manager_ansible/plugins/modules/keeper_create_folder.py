@@ -25,7 +25,7 @@ description:
       parent (shared_folder_uid, or subfolder_uid when given), that folder's UID is
       returned and no new folder is created.
 author:
-    - John Walstra
+    - RABOUIN Geoffroy
 options:
   shared_folder_uid:
     description:
