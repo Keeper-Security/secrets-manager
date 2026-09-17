@@ -68,6 +68,7 @@ If you omit the `collections` , you will need to use the full plugin name.
 * `keepersecurity.keeper_secrets_manager.keeper_get_record` - Get record as a dictionary.
 * `keepersecurity.keeper_secrets_manager.keeper_set` - Set a value of an existing record in your vault.
 * `keepersecurity.keeper_secrets_manager.keeper_create` - Create a new record.
+* `keepersecurity.keeper_secrets_manager.keeper_create_folder` - Create a new folder.
 * `keepersecurity.keeper_secrets_manager.keeper_remove` - Remove a record from your vault.
 * `keepersecurity.keeper_secrets_manager.keeper_password` - Generate a random password.
 * `keepersecurity.keeper_secrets_manager.keeper_cleanup` - Clean up Keeper related files.
@@ -118,6 +119,19 @@ The content of this YAML file can then be cut-n-pasted into a **group_vars**, **
 configuration file or even a playbook.
 
 # Changes
+
+## 1.5.0
+* KSM-845: Added `folder_uid` parameter to `keeper_create` for subfolder targeting
+  - Records can now be created in a subfolder within a shared folder, rather than always at the shared folder root
+  - `shared_folder_uid` remains required; `folder_uid` is optional and additive
+* KSM-1445: Added `keeper_create_folder` module for idempotent folder creation
+  - Creates a folder directly in a shared folder, or nested inside an existing subfolder of that shared folder
+  - Idempotent: if a folder with the given name already exists directly under the target parent, its UID is returned instead of creating a duplicate
+* **Security**: VM-1452 / CWE-502 — Replaced pickle with JSON for encrypted record cache serialization
+  - Cache encrypt/decrypt no longer uses `pickle.loads`, removing insecure deserialization risk
+  - Legacy or invalid registered caches are ignored; records are fetched from the vault until
+    `keeper_cache_records` rebuilds a JSON cache
+  - Existing playbook-registered caches are ephemeral; regenerate with `keeper_cache_records` after upgrade
 
 ## 1.4.0
 * KSM-827: Fixed Tower Execution Environment Docker image missing system packages required by AAP
