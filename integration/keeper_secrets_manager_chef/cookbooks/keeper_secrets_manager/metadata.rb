@@ -6,5 +6,12 @@ description 'Installs/Configures keeper_secrets_manager'
 version '1.0.0'
 chef_version '>= 18.0'
 
+supports 'ubuntu'
+supports 'debian'
+supports 'centos'
+supports 'redhat'
+supports 'mac_os_x'
+supports 'windows'
+
 issues_url 'https://github.com/Keeper-Security/secrets-manager/issues'
 source_url 'https://github.com/Keeper-Security/secrets-manager/tree/master/integration/keeper_secrets_manager_chef'
