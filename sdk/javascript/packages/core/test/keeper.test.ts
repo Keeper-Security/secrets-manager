@@ -1,13 +1,39 @@
 import {
     KeeperHttpResponse,
     getSecrets,
+    getFolders,
+    deleteSecret,
     initializeStorage,
     generateTransmissionKey,
     platform,
-    SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword
+    SecretManagerOptions, inMemoryStorage, loadJsonConfig, getTotpCode, generatePassword, KeeperError, KeyValueStorage,
+    DEFAULT_REQUEST_TIMEOUT_MS
 } from '../'
 
 import * as fs from 'fs'
+
+const FAKE_ONE_TIME_TOKEN = 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c'
+
+const keyErrorResponse = (keyId: number, extra?: Record<string, unknown>) =>
+    JSON.stringify({ error: 'key', key_id: keyId, ...extra })
+
+// Unlike inMemoryStorage, does not collapse a stored '' or null back to undefined on read -
+// matching the shape of the cloud KeyValueStorage backends (aws/azure/gcp/oracle) and browser
+// secure-storage, which return a stored falsy value unchanged.
+const nonCollapsingStorage = (initial: Record<string, string> = {}): KeyValueStorage => {
+    const data: Record<string, string> = { ...initial }
+    return {
+        getString: async (key: string) => data[key],
+        saveString: async (key: string, value: string) => { data[key] = value },
+        getBytes: async (key: string) => key in data ? platform.base64ToBytes(data[key]) : undefined,
+        saveBytes: async (key: string, value: Uint8Array) => { data[key] = platform.bytesToBase64(value) },
+        delete: async (key: string) => { delete data[key] }
+    }
+}
+
+afterEach(() => {
+    jest.restoreAllMocks()
+})
 
 test('Get secrets e2e', async () => {
 
@@ -252,7 +278,7 @@ test('GeneratePassword', async () => {
 })
 
 test('IL5 dynamic key - Layer 1: generateTransmissionKey uses serverPublicKey from storage', async () => {
-    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
     const storage = inMemoryStorage({
         serverPublicKey: fakeKey,
         serverPublicKeyId: '20'
@@ -264,7 +290,7 @@ test('IL5 dynamic key - Layer 1: generateTransmissionKey uses serverPublicKey fr
 })
 
 test('IL5 dynamic key - Layer 2: initializeStorage saves serverPublicKeyId and serverPublicKey from 4-segment IL5 OTT', async () => {
-    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
     const storage = inMemoryStorage({})
     await initializeStorage(storage, `IL5:ONE_TIME_TOKEN:20:${fakeKey}`)
     expect(await storage.getString('hostname')).toBe('il5.keepersecurity.us')
@@ -280,7 +306,7 @@ test('IL5 dynamic key - Layer 2: initializeStorage ignores extra segments for no
 })
 
 test('IL5 dynamic key - Layer 3: getSecrets writes serverPublicKey and serverPublicKeyId from options to storage', async () => {
-    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
     const storage = inMemoryStorage({})
     const options: SecretManagerOptions = {
         storage,
@@ -295,7 +321,7 @@ test('IL5 dynamic key - Layer 3: getSecrets writes serverPublicKey and serverPub
 })
 
 test('IL5 dynamic key - rotation suppression: server key_id hint ignored when serverPublicKey is in storage', async () => {
-    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
     const storage = inMemoryStorage({
         hostname: 'il5.keepersecurity.us',
         serverPublicKey: fakeKey,
@@ -316,20 +342,217 @@ test('IL5 dynamic key - rotation suppression: server key_id hint ignored when se
     expect(await storage.getString('serverPublicKeyId')).toBe('20')
 })
 
-test('stale pinned server key: diagnostic message propagates to caller, key preserved', async () => {
-    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+test('key rotation - retries are bounded, not infinite', async () => {
     const storage = inMemoryStorage({})
-    await initializeStorage(storage, 'YyIhK5wXFHj36wGBAOmBsxI3v5rIruINrC8KXjyM58c', 'fake.keepersecurity.com')
-    await storage.saveString('serverPublicKey', fakeKey)
-    await storage.saveString('serverPublicKeyId', '20')
-    const keyError = JSON.stringify({ error: 'key', key_id: 7 })
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    let calls = 0
+    const enc = new TextEncoder()
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
+            return { statusCode: 400, data: enc.encode(keyErrorResponse(7)), headers: [] }
+        }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/key rotation exhausted/i)
+    // MAX_KEY_ROTATION_RETRIES = 3: initial attempt + 3 retries = 4 total calls.
+    expect(calls).toBe(4)
+})
+
+test('key rotation - suggested key id is adopted and persisted', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    let calls = 0
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async (_url, tk) => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
+            if (calls === 1) {
+                return { statusCode: 400, data: enc.encode(keyErrorResponse(8)), headers: [] }
+            }
+            // Verify the rotation was adopted: second request should use key_id 8.
+            expect(tk.publicKeyId).toBe(8)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    const secrets = await getSecrets(options)
+    expect(secrets.records).toEqual([])
+    expect(calls).toBe(2)
+    // Verify the suggested key_id 8 was persisted to storage.
+    expect(await storage.getString('serverPublicKeyId')).toBe('8')
+})
+
+test('key rotation - triggers via result_code when error is absent', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    let calls = 0
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async (_url, tk) => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
+            if (calls === 1) {
+                return { statusCode: 400, data: enc.encode(keyErrorResponse(8, { error: undefined, result_code: 'key' })), headers: [] }
+            }
+            expect(tk.publicKeyId).toBe(8)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    const secrets = await getSecrets(options)
+    expect(secrets.records).toEqual([])
+    expect(await storage.getString('serverPublicKeyId')).toBe('8')
+})
+
+test('key rotation - result_code takes precedence over error when both are present', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
     const options: SecretManagerOptions = {
         storage,
         queryFunction: async () => ({
             statusCode: 400,
-            data: new TextEncoder().encode(keyError),
+            data: enc.encode(keyErrorResponse(8, { result_code: 'something-else' })),
             headers: []
         })
+    }
+    await expect(getSecrets(options)).rejects.toThrow()
+    await expect(getSecrets(options)).rejects.not.toThrow(/key rotation|unsupported key id/i)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('a response body over the 64KB decode cap is truncated before parsing, not adopted as a valid key rotation', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    // Valid, fully-closed JSON on its own - if the 64KB cap were absent or misapplied, parsing the
+    // whole thing would succeed and adopt key 8. The cap must slice this mid-padding, before the
+    // closing brace, so it fails to parse and falls through to the catch-all throw instead.
+    const oversizedBody = JSON.stringify({ error: 'key', key_id: 8, padding: 'x'.repeat(70000) })
+    const bodyBytes = enc.encode(oversizedBody)
+    expect(bodyBytes.length).toBeGreaterThan(65536)
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => ({ statusCode: 400, data: bodyBytes, headers: [] })
+    }
+    await expect(getSecrets(options)).rejects.toThrow()
+    await expect(getSecrets(options)).rejects.not.toThrow(/key rotation|unsupported key id/i)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('the catch-all throw truncates its message to 1000 bytes, not the full body', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const marker = 'MARKER_PAST_1000_BYTES'
+    const body = JSON.stringify({ error: 'not_recognized', padding: 'a'.repeat(2000) + marker })
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => ({ statusCode: 400, data: enc.encode(body), headers: [] })
+    }
+    const error: any = await getSecrets(options).catch(e => e)
+    expect(error.message.length).toBe(1000)
+    expect(error.message).not.toContain(marker)
+    expect(error.message).toContain('"error":"not_recognized"')
+})
+
+test('a zero-length response body on a non-200 response falls through to the generic error, not a blank one', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    // Node's fetchData leaves data: null for an empty body; the browser platform always
+    // constructs `new Uint8Array(body)`, so an empty body is still a truthy, zero-length
+    // array there. This models the browser shape directly - a truthiness check alone (no
+    // `.length > 0`) would take the has-content branch and throw a blank Error(''), instead
+    // of falling through to the "unknown ksm error" branch below it, exactly as Node does.
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => ({ statusCode: 400, data: new Uint8Array(0), headers: [] })
+    }
+    await expect(getSecrets(options)).rejects.toThrow('unknown ksm error, code 400')
+})
+
+test('key rotation - suggested key id is adopted from a body padded past the 1000-byte truncation slice', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const paddedBody = keyErrorResponse(8, { padding: 'x'.repeat(1100) })
+    expect(enc.encode(paddedBody).length).toBeGreaterThan(1000)
+    let calls = 0
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async (_url, tk) => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
+            if (calls === 1) {
+                return { statusCode: 400, data: enc.encode(paddedBody), headers: [] }
+            }
+            // Verify the rotation was adopted: second request should use key_id 8.
+            expect(tk.publicKeyId).toBe(8)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    const secrets = await getSecrets(options)
+    expect(secrets.records).toEqual([])
+    expect(calls).toBe(2)
+    expect(await storage.getString('serverPublicKeyId')).toBe('8')
+})
+
+test('key rotation - unsupported suggested key id is rejected, not persisted', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    let calls = 0
+    const enc = new TextEncoder()
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected in key rotation retry')
+            }
+            return { statusCode: 400, data: enc.encode(keyErrorResponse(99)), headers: [] }
+        }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/unsupported key id 99/)
+    // Rejected before the retry loop persists anything: one request, config untouched.
+    expect(calls).toBe(1)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('stale pinned server key: diagnostic message propagates to caller, key preserved', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    await storage.saveString('serverPublicKey', fakeKey)
+    await storage.saveString('serverPublicKeyId', '20')
+    let calls = 0
+    const enc = new TextEncoder()
+    const options: SecretManagerOptions = {
+        storage,
+        queryFunction: async () => {
+            calls++
+            if (calls > 50) {
+                throw new Error('runaway loop detected')
+            }
+            return {
+                statusCode: 400,
+                data: enc.encode(keyErrorResponse(7)),
+                headers: []
+            }
+        }
     }
     await expect(getSecrets(options)).rejects.toThrow(/Server rejected the custom server public key/)
     await expect(getSecrets(options)).rejects.toThrow(/Please update your IL5 KSM configuration/)
@@ -338,7 +561,7 @@ test('stale pinned server key: diagnostic message propagates to caller, key pres
 })
 
 test('IL5 dynamic key - Layer 2: lowercase il5 prefix is treated as IL5', async () => {
-    const fakeKey = 'BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM'
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
     const storage = inMemoryStorage({})
     await initializeStorage(storage, `il5:ONE_TIME_TOKEN:20:${fakeKey}`)
     expect(await storage.getString('hostname')).toBe('il5.keepersecurity.us')
@@ -365,4 +588,1021 @@ test('IL5 dynamic key - Layer 2: rejects malformed (too short) serverPublicKey',
     await expect(
         initializeStorage(storage, 'IL5:ONE_TIME_TOKEN:20:tooshort')
     ).rejects.toThrow('IL5 token: serverPublicKey appears malformed')
+})
+
+test('a stored custom key with no paired id fails loud at read time instead of defaulting the wire id to 7', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    // Simulates a config written by a pre-fix SDK build or hand-edited directly - the normal
+    // write path (persistServerPublicKeyOptions) can no longer produce this state itself.
+    await storage.saveString('serverPublicKey', fakeKey)
+    await expect(generateTransmissionKey(storage))
+        .rejects.toThrow('Stored serverPublicKey has no paired serverPublicKeyId; configuration is inconsistent')
+})
+
+test('IL5 dynamic key - Layer 2: rejects a serverPublicKeyId of 0, as a typed KeeperError', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    let caught: unknown
+    try {
+        await initializeStorage(storage, `IL5:ONE_TIME_TOKEN:0:${fakeKey}`)
+    } catch (e) {
+        caught = e
+    }
+    expect(caught).toBeInstanceOf(KeeperError)
+    expect((caught as Error).message).toBe("IL5 token: serverPublicKeyId '0' must be a positive integer")
+})
+
+test('a custom serverPublicKey with no id throws instead of silently pinning', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    await expect(getSecrets({storage, serverPublicKey: fakeKey}))
+        .rejects.toThrow('serverPublicKeyId is required when serverPublicKey is supplied')
+    expect(await storage.getString('serverPublicKey')).toBeUndefined()
+})
+
+test('an id-only call cannot silently overwrite an already-pinned custom key\'s id with an unrelated value', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    await getSecrets({
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
+        queryFunction: async (_url, tk) => ({statusCode: 200, data: await platform.encryptWithKey(new TextEncoder().encode(JSON.stringify({records: [], folders: [], expiresOn: 0, warnings: []})), tk.key), headers: []})
+    })
+    await expect(getSecrets({storage, serverPublicKeyId: '9999'}))
+        .rejects.toThrow("serverPublicKeyId '9999' does not match the already-pinned custom key's id")
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
+test('generateTransmissionKey falls back to the default key when the stored key id is outside the bundled table', async () => {
+    const storage = inMemoryStorage({
+        serverPublicKeyId: '99'
+    })
+    platform.getRandomBytes = () => new Uint8Array(32)
+    const transmissionKey = await generateTransmissionKey(storage)
+    expect(transmissionKey.publicKeyId).toBe(7)
+    expect(transmissionKey.key.length).toBe(32)
+})
+
+test('generateTransmissionKey never calls saveString when falling back from a corrupted stored id', async () => {
+    const storage = inMemoryStorage({
+        serverPublicKeyId: '9999'
+    })
+    // The fallback is recomputed in memory on every call; it must never overwrite storage, or a
+    // delayed write can clobber a concurrent custom-key pin or a just-learned rotation id.
+    const saveSpy = jest.spyOn(storage, 'saveString')
+    platform.getRandomBytes = () => new Uint8Array(32)
+    await generateTransmissionKey(storage)
+    expect(saveSpy).not.toHaveBeenCalled()
+})
+
+test('generateTransmissionKey throws when a custom key is pinned but the stored key id is not numeric', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: 'not-a-number'
+    })
+    platform.getRandomBytes = () => new Uint8Array(32)
+    await expect(generateTransmissionKey(storage)).rejects.toThrow(/serverPublicKeyId/)
+})
+
+test('a non-string stored serverPublicKeyId self-heals on read instead of permanently breaking a custom-key config', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = nonCollapsingStorage({ serverPublicKey: fakeKey })
+    // Simulates a config backend that round-trips a value's real JS type instead of coercing it
+    // to a string - the AWS/Azure/GCP/Oracle backends persist via JSON.stringify/JSON.parse over
+    // a plain object, which preserves a number as a number - or a config written before
+    // persistServerPublicKeyOptions started guarding its own input type.
+    await storage.saveString('serverPublicKeyId', 20 as unknown as string)
+    platform.getRandomBytes = () => new Uint8Array(32)
+    const transmissionKey = await generateTransmissionKey(storage)
+    expect(transmissionKey.publicKeyId).toBe(20)
+})
+
+test('persistServerPublicKeyOptions never persists a non-string serverPublicKeyId, even from a caller bypassing the TS type', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = nonCollapsingStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    await getSecrets({
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: 20 as unknown as string, // a plain-JS caller has no compile-time check
+        queryFunction: async (_url, tk) => ({statusCode: 200, data: await platform.encryptWithKey(new TextEncoder().encode(JSON.stringify({records: [], folders: [], expiresOn: 0, warnings: []})), tk.key), headers: []})
+    })
+    const rawStoredId = await storage.getString('serverPublicKeyId')
+    expect(typeof rawStoredId).toBe('string')
+    expect(rawStoredId).toBe('20')
+})
+
+test('getSecrets rejects a caller-supplied serverPublicKeyId outside the bundled table when no custom key is pinned', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKeyId: '9999',
+        queryFunction: async () => { throw new Error('should not reach the network: invalid id must be rejected before the request goes out') }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/serverPublicKeyId/)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('getSecrets rejects a non-numeric serverPublicKeyId even when paired with a valid custom serverPublicKey, and persists neither', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: 'garbage',
+        queryFunction: async () => { throw new Error('should not reach the network: invalid id must be rejected before the request goes out') }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/serverPublicKeyId/)
+    expect(await storage.getString('serverPublicKey')).toBeUndefined()
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('getSecrets accepts an out-of-table serverPublicKeyId on a later call when a custom key was already pinned by an earlier call', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+
+    const pinOptions: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
+        queryFunction: async () => { throw new Error('network not needed - only persistence from this call matters') }
+    }
+    await expect(getSecrets(pinOptions)).rejects.toThrow('network not needed - only persistence from this call matters')
+    expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+
+    // Key omitted this time - re-sending just the id that was already pinned above must not be
+    // treated as a bare out-of-table id with no custom key to justify it. The call still fails
+    // (network stub), but it must fail there, past validation, not at the table-membership check.
+    const idOnlyOptions: SecretManagerOptions = {
+        storage,
+        serverPublicKeyId: '20',
+        queryFunction: async () => { throw new Error('network not needed - only persistence from this call matters') }
+    }
+    await expect(getSecrets(idOnlyOptions)).rejects.toThrow('network not needed - only persistence from this call matters')
+})
+
+test('deleteSecret persists a caller-supplied serverPublicKey/serverPublicKeyId pair on its own, for callers that never go through fetchAndDecryptSecrets first', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
+        queryFunction: async () => { throw new Error('network not needed - persistence already happened by this point') }
+    }
+    await expect(deleteSecret(options, ['some-record-uid'])).rejects.toThrow('network not needed - persistence already happened by this point')
+    expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
+test('id-only serverPublicKeyId pin does not reclobber a completed rotation on a later call', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    let queryCalls = 0
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKeyId: '8',
+        queryFunction: async (_url, tk) => {
+            queryCalls++
+            if (tk.publicKeyId !== 7) {
+                return { statusCode: 400, data: enc.encode(keyErrorResponse(7)), headers: [] }
+            }
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    await getSecrets(options)
+    expect(queryCalls).toBe(2) // pinned 8 rejected once, rotates to 7, succeeds
+    expect(await storage.getString('serverPublicKeyId')).toBe('7')
+
+    await getSecrets(options)
+    // Same options object, same pin, on a later call: must not re-clobber storage back to '8'
+    // and pay the rotation round trip again.
+    expect(queryCalls).toBe(3)
+    expect(await storage.getString('serverPublicKeyId')).toBe('7')
+})
+
+test('pinned serverPublicKey is not reclobbered on subsequent calls', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const saveStringSpy = jest.spyOn(storage, 'saveString')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
+        queryFunction: async (_url, tk) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
+    }
+    await getSecrets(options)
+    await getSecrets(options)
+    const serverPublicKeyWrites = saveStringSpy.mock.calls.filter(([key]) => key === 'serverPublicKey')
+    expect(serverPublicKeyWrites.length).toBe(1)
+})
+
+test('empty-string serverPublicKey is treated as not supplied, not persisted or reclobbered', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const saveStringSpy = jest.spyOn(storage, 'saveString')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: '',
+        queryFunction: async (_url, tk) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
+    }
+    await getSecrets(options)
+    await getSecrets(options)
+    const serverPublicKeyWrites = saveStringSpy.mock.calls.filter(([key]) => key === 'serverPublicKey')
+    expect(serverPublicKeyWrites.length).toBe(0)
+    expect(await storage.getString('serverPublicKey')).toBeUndefined()
+})
+
+test('empty-string serverPublicKey paired with an out-of-table id does not bypass table-membership validation', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: '',
+        serverPublicKeyId: '99',
+        queryFunction: async () => {
+            throw new Error('should not reach the network')
+        }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/serverPublicKeyId 99 is not supported/)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+    expect(await storage.getString('serverPublicKey')).toBeUndefined()
+})
+
+test('caller-supplied serverPublicKeyId outside the bundled table is rejected upfront, not persisted', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKeyId: '99',
+        queryFunction: async () => {
+            throw new Error('should not reach the network')
+        }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(/serverPublicKeyId 99 is not supported/)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('caller-supplied serverPublicKeyId in an invalid format is rejected with a format error, not a table-membership error', async () => {
+    for (const invalid of ['abc', '-1', '7.5', '0', '']) {
+        const storage = inMemoryStorage({})
+        await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+        const options: SecretManagerOptions = {
+            storage,
+            serverPublicKeyId: invalid,
+            queryFunction: async () => {
+                throw new Error('should not reach the network')
+            }
+        }
+        await expect(getSecrets(options)).rejects.toThrow(`serverPublicKeyId '${invalid}' must be a positive integer`)
+        expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+    }
+})
+
+test('concurrent calls against fresh storage do not corrupt the persisted serverPublicKeyId', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    // Two different ids on the racing calls, not the same id twice: pinning the same id on both
+    // (the previous version of this test) converges on that id regardless of whether the
+    // write-once guard exists at all, so it can't detect the guard's removal.
+    await Promise.all([
+        getSecrets({
+            storage,
+            serverPublicKeyId: '8',
+            queryFunction: async (_url, tk) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
+        }),
+        getSecrets({
+            storage,
+            serverPublicKeyId: '10',
+            queryFunction: async (_url, tk) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
+        })
+    ])
+    const settled = await storage.getString('serverPublicKeyId')
+    expect(['8', '10']).toContain(settled)
+
+    // A later call with yet another id must not overwrite whatever the race settled on - this is
+    // what actually exercises the write-once guard.
+    await getSecrets({
+        storage,
+        serverPublicKeyId: '12',
+        queryFunction: async (_url, tk) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
+    })
+    expect(await storage.getString('serverPublicKeyId')).toBe(settled)
+})
+
+test('non-string falsy serverPublicKey values (null, 0, false, NaN) are treated as not supplied, not as a key', async () => {
+    for (const invalid of [null, 0, false, NaN]) {
+        const storage = inMemoryStorage({})
+        await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+        const enc = new TextEncoder()
+        const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+        const options = {
+            storage,
+            serverPublicKey: invalid as any,
+            queryFunction: async (_url: string, tk: any) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
+        }
+        const secrets = await getSecrets(options)
+        expect(secrets.records).toEqual([])
+        expect(await storage.getString('serverPublicKey')).toBeUndefined()
+    }
+})
+
+test('a stored empty-string serverPublicKey does not lock out a valid id-only pin on a non-collapsing storage backend', async () => {
+    const storage = nonCollapsingStorage({ serverPublicKey: '' })
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const secrets = await getSecrets({
+        storage,
+        serverPublicKeyId: '8',
+        queryFunction: async (_url, tk) => {
+            expect(tk.publicKeyId).toBe(8)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    })
+    expect(secrets.records).toEqual([])
+    expect(await storage.getString('serverPublicKeyId')).toBe('8')
+})
+
+test('a config with a pinned key and id, replayed via options with only the key, is a no-op that still reaches the network', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    await storage.saveString('serverPublicKey', fakeKey)
+    await storage.saveString('serverPublicKeyId', '20')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const secrets = await getSecrets({
+        storage,
+        serverPublicKey: fakeKey, // no serverPublicKeyId this call
+        queryFunction: async (_url, tk) => {
+            expect(tk.publicKeyId).toBe(20)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    })
+    expect(secrets.records).toEqual([])
+})
+
+test('a config with a pinned key and id, replayed via options with both fields, is a no-op that still reaches the network', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    await storage.saveString('serverPublicKey', fakeKey)
+    await storage.saveString('serverPublicKeyId', '20')
+    const saveStringSpy = jest.spyOn(storage, 'saveString')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const secrets = await getSecrets({
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
+        queryFunction: async (_url, tk) => {
+            expect(tk.publicKeyId).toBe(20)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    })
+    expect(secrets.records).toEqual([])
+    expect(saveStringSpy).not.toHaveBeenCalled()
+})
+
+test('a custom key repinned with a new id (same key, different id) still updates the stored id', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    await storage.saveString('serverPublicKey', fakeKey)
+    await storage.saveString('serverPublicKeyId', '20')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const secrets = await getSecrets({
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '21', // same key, new id - a genuine repin, not a replay
+        queryFunction: async (_url, tk) => {
+            expect(tk.publicKeyId).toBe(21)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    })
+    expect(secrets.records).toEqual([])
+    expect(await storage.getString('serverPublicKeyId')).toBe('21')
+})
+
+test('an out-of-table serverPublicKeyId alongside a pinned custom key is not validated against the bundled table', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20', // outside the bundled 7-18 table; legitimate for a custom key (IL5)
+        queryFunction: async (_url, tk) => {
+            expect(tk.publicKeyId).toBe(20)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    const secrets = await getSecrets(options)
+    expect(secrets.records).toEqual([])
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
+test('pinning both fields together rebinds the pair atomically, not split across two independent gates', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    await storage.saveString('serverPublicKeyId', '10') // stale id from an earlier rotation, no custom key yet
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
+        queryFunction: async (_url, tk) => {
+            expect(tk.publicKeyId).toBe(20)
+            return { statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] }
+        }
+    }
+    await getSecrets(options)
+    expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
+test('a storage failure between the key write and the id write fails loud on the next call, not silently', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    let saveStringCalls = 0
+    const originalSaveString = storage.saveString.bind(storage)
+    jest.spyOn(storage, 'saveString').mockImplementation(async (key: string, value: string) => {
+        saveStringCalls++
+        if (saveStringCalls === 2) {
+            throw new Error('simulated storage failure')
+        }
+        return originalSaveString(key, value)
+    })
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20', // out-of-table when unpaired with a custom key
+        queryFunction: async () => { throw new Error('should not reach the network') }
+    }
+    await expect(getSecrets(options)).rejects.toThrow('simulated storage failure')
+    // Key write (call #1) succeeded; id write (call #2) is what threw.
+    expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+    // A key with no id must fail loud on the very next transmission-key lookup, not silently fall
+    // through to the bundled-key table and encrypt with Keeper's own key while reporting whatever
+    // stale id happens to survive.
+    await expect(generateTransmissionKey(storage)).rejects.toThrow(
+        'Stored serverPublicKey has no paired serverPublicKeyId; configuration is inconsistent')
+})
+
+test('a custom-key-paired serverPublicKeyId still gets format-validated, not sent as NaN', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: 'not-a-number',
+        queryFunction: async () => { throw new Error('should not reach the network') }
+    }
+    await expect(getSecrets(options)).rejects.toThrow(`serverPublicKeyId 'not-a-number' must be a positive integer`)
+    expect(await storage.getString('serverPublicKey')).toBeUndefined()
+    expect(await storage.getString('serverPublicKeyId')).toBeUndefined()
+})
+
+test('postQuery persists serverPublicKey/serverPublicKeyId on its own, for callers that never go through fetchAndDecryptSecrets first', async () => {
+    const fakeKey = 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg'
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const deleteResponse = enc.encode(JSON.stringify({ records: [] }))
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKey: fakeKey,
+        serverPublicKeyId: '20',
+        queryFunction: async (_url, tk) => {
+            expect(tk.publicKeyId).toBe(20)
+            return { statusCode: 200, data: await platform.encryptWithKey(deleteResponse, tk.key), headers: [] }
+        }
+    }
+    await deleteSecret(options, ['fake-record-uid'])
+    expect(await storage.getString('serverPublicKey')).toBe(fakeKey)
+    expect(await storage.getString('serverPublicKeyId')).toBe('20')
+})
+
+test('an id-only serverPublicKeyId pin is not re-saved on a later call once persisted (write-once guard)', async () => {
+    const storage = inMemoryStorage({})
+    await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+    const enc = new TextEncoder()
+    const emptyResponse = enc.encode(JSON.stringify({ records: [], folders: [], expiresOn: 0, warnings: [] }))
+    const saveStringSpy = jest.spyOn(storage, 'saveString')
+    const options: SecretManagerOptions = {
+        storage,
+        serverPublicKeyId: '10',
+        queryFunction: async (_url, tk) => ({ statusCode: 200, data: await platform.encryptWithKey(emptyResponse, tk.key), headers: [] })
+    }
+    await getSecrets(options)
+    await getSecrets(options)
+    const idWrites = saveStringSpy.mock.calls.filter(([key]) => key === 'serverPublicKeyId')
+    expect(idWrites.length).toBe(1) // fails at 2 if the write-once guard is removed or regresses
+})
+
+test('a non-settling storage call does not permanently wedge later serializeOn calls', async () => {
+    jest.useFakeTimers()
+    let hangNextIdRead = true
+    const storage: KeyValueStorage = {
+        getString: async (key: string) => {
+            if (key === 'serverPublicKeyId' && hangNextIdRead) {
+                hangNextIdRead = false
+                return new Promise<string | undefined>(() => {}) // never settles
+            }
+            return undefined
+        },
+        saveString: async () => {},
+        getBytes: async () => undefined,
+        saveBytes: async () => {},
+        delete: async () => {}
+    }
+    platform.getRandomBytes = () => new Uint8Array(32)
+    // Not awaited: this call hangs forever on its own id read, inside serializeOn's queue.
+    generateTransmissionKey(storage)
+    await jest.advanceTimersByTimeAsync(30_001)
+    const secondCall = await generateTransmissionKey(storage)
+    expect(secondCall.publicKeyId).toBe(7)
+    jest.useRealTimers()
+})
+
+test('serializeOn does not release the mutex for a queued call before its predecessor actually finishes, even once cumulative queue wait exceeds the timeout', async () => {
+    jest.useFakeTimers()
+    // Each call's own storage read takes 5s once it actually starts running; 7 of them queued
+    // back-to-back cumulatively take 35s, past the single-operation 30s timeout - but no single
+    // call is itself hung. If the timeout timer arms at enqueue time instead of at the point each
+    // call's turn actually begins, calls near the back of this queue get released early, purely
+    // from accumulated wait, and run concurrently with whichever call is genuinely active.
+    const DELAY_MS = 5_000
+    const CALL_COUNT = 7
+    let concurrent = 0
+    let maxConcurrent = 0
+    const storage: KeyValueStorage = {
+        getString: async (key: string) => {
+            if (key !== 'serverPublicKeyId') {
+                return undefined
+            }
+            concurrent++
+            maxConcurrent = Math.max(maxConcurrent, concurrent)
+            await new Promise<void>(resolve => setTimeout(resolve, DELAY_MS))
+            concurrent--
+            return undefined
+        },
+        saveString: async () => {},
+        getBytes: async () => undefined,
+        saveBytes: async () => {},
+        delete: async () => {}
+    }
+    platform.getRandomBytes = () => new Uint8Array(32)
+    const calls = Array.from({length: CALL_COUNT}, () => generateTransmissionKey(storage))
+    await jest.advanceTimersByTimeAsync(CALL_COUNT * DELAY_MS + 1_000)
+    await Promise.all(calls)
+    expect(maxConcurrent).toBe(1) // fails (>1) if the timer arms at enqueue instead of at start
+    jest.useRealTimers()
+})
+
+test('60 concurrent trials pinning two different (key, id) pairs never settle on a torn pair', async () => {
+    const pairA = {serverPublicKey: 'BK_YEAUHu6SPGh8kYFohu4fYsc0tyEMLLDcZ_JwrKSkVa8Mii7HpqS3gbLUkJwq4i5b3HZ_jPLHZkbTn1y2AkYg', serverPublicKeyId: '20'}
+    const pairB = {serverPublicKey: 'BGEC5d5cCRRfyTqoKNYHj5x-LNYlUvZQ55v6xMWFNctGvKT-ao73iN1he8XCMzbT5eYkkdW5UFuJ1Z8E-_cxn58', serverPublicKeyId: '21'}
+    const okQuery = () => async (_url: string, tk: any) => ({statusCode: 200, data: await platform.encryptWithKey(new TextEncoder().encode(JSON.stringify({records: []})), tk.key), headers: []})
+    // Jitter goes on the storage layer, not the network mock - the race is in
+    // persistServerPublicKeyOptions's own read-then-write, which completes before any network
+    // call happens. A random delay on saveString gives two concurrent calls' id and key writes
+    // a real chance to interleave, the same way a controlled interleaving storage stub does.
+    // deleteSecret, not getSecrets: getSecrets persists through both fetchAndDecryptSecrets and
+    // postQuery per call, giving each side a self-correcting second attempt that masks the race;
+    // deleteSecret only goes through postQuery, exercising the single-attempt path directly.
+    const jitteredStorage = (inner: SecretManagerOptions['storage']): SecretManagerOptions['storage'] => ({
+        ...inner,
+        saveString: async (key: string, value: string) => {
+            await new Promise(resolve => setTimeout(resolve, Math.random() * 4))
+            return inner.saveString(key, value)
+        }
+    })
+    for (let trial = 0; trial < 60; trial++) {
+        const storage = jitteredStorage(inMemoryStorage({}))
+        await initializeStorage(storage, FAKE_ONE_TIME_TOKEN, 'fake.keepersecurity.com')
+        await Promise.all([
+            deleteSecret({storage, ...pairA, queryFunction: okQuery()}, ['x']),
+            deleteSecret({storage, ...pairB, queryFunction: okQuery()}, ['y'])
+        ])
+        const settledKey = await storage.getString('serverPublicKey')
+        const settledId = await storage.getString('serverPublicKeyId')
+        const matchesA = settledKey === pairA.serverPublicKey && settledId === pairA.serverPublicKeyId
+        const matchesB = settledKey === pairB.serverPublicKey && settledId === pairB.serverPublicKeyId
+        expect(matchesA || matchesB).toBe(true)
+    }
+})
+
+test('getFolders skips an undecryptable folder and returns the good one', async () => {
+    const transmissionKey = new Uint8Array(32).fill(1)
+    const appKey = new Uint8Array(32).fill(2)
+    const folderKey = new Uint8Array(32).fill(3)
+
+    const goodFolderKeyWrapped = await platform.encryptWithKey(folderKey, appKey)
+    const goodFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Good Folder' })), folderKey, true)
+    const badFolderKeyWrapped = new Uint8Array(16).fill(9)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'good-uid', folderKey: platform.bytesToBase64(goodFolderKeyWrapped), data: platform.bytesToBase64(goodFolderData) },
+            { folderUid: 'bad-uid', folderKey: platform.bytesToBase64(badFolderKeyWrapped), data: '' }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    // postQuery uses options.queryFunction (not platform.post); pin getRandomBytes so the
+    // transmission key matches the key used to encrypt the response above.
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders.length).toBe(1)
+    expect(folders[0].folderUid).toBe('good-uid')
+    expect(folders[0].name).toBe('Good Folder')
+})
+
+test('flat record with innerFolderUid decrypts recordKey using the folder key, not the app key', async () => {
+    const transmissionKey = new Uint8Array(32).fill(1)
+    const appKey = new Uint8Array(32).fill(2)
+    const folderKey = new Uint8Array(32).fill(3)
+    const recordKey = new Uint8Array(32).fill(4)
+    const folderUid = 'folder-uid-1'
+    const recordUid = 'record-uid-1'
+
+    const wrappedFolderKey = await platform.encryptWithKey(folderKey, appKey)
+    const wrappedRecordKey = await platform.encryptWithKey(recordKey, folderKey)
+    const recordData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ title: 'Shared Record', type: 'login', fields: [], custom: [] })), recordKey)
+
+    const serverResponse = {
+        folders: [
+            { folderUid, folderKey: platform.bytesToBase64(wrappedFolderKey), data: '', records: [] }
+        ],
+        records: [
+            {
+                recordUid,
+                recordKey: platform.bytesToBase64(wrappedRecordKey),
+                data: platform.bytesToBase64(recordData),
+                revision: 1,
+                files: [],
+                innerFolderUid: folderUid
+            }
+        ],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const secrets = await getSecrets({ storage: kvs, queryFunction: queryFn })
+
+    // Bug: the flat-records loop always unwraps recordKey with KEY_APP_KEY, ignoring
+    // innerFolderUid. Since recordKey here is wrapped with the folder key, unwrapping
+    // with the app key throws, the record is caught and silently skipped, and
+    // secrets.records comes back empty instead of containing the decrypted record.
+    expect(secrets.records.length).toBe(1)
+    expect(secrets.records[0].data.title).toBe('Shared Record')
+    expect(secrets.records[0].folderUid).toBe(folderUid)
+})
+
+test('flat record with innerFolderUid falls back to the app key when no matching folder is returned', async () => {
+    const transmissionKey = new Uint8Array(32).fill(5)
+    const appKey = new Uint8Array(32).fill(6)
+    const recordKey = new Uint8Array(32).fill(7)
+    const recordUid = 'record-uid-2'
+
+    const wrappedRecordKey = await platform.encryptWithKey(recordKey, appKey)
+    const recordData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ title: 'Orphaned Record', type: 'login', fields: [], custom: [] })), recordKey)
+
+    const serverResponse = {
+        folders: [],
+        records: [
+            {
+                recordUid,
+                recordKey: platform.bytesToBase64(wrappedRecordKey),
+                data: platform.bytesToBase64(recordData),
+                revision: 1,
+                files: [],
+                innerFolderUid: 'folder-uid-not-in-response'
+            }
+        ],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const secrets = await getSecrets({ storage: kvs, queryFunction: queryFn })
+
+    expect(secrets.records.length).toBe(1)
+    expect(secrets.records[0].data.title).toBe('Orphaned Record')
+})
+
+test('getFolders skips a folder that names itself as its own parent instead of hanging', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(11)
+    const appKey = new Uint8Array(32).fill(12)
+    const folderKey = new Uint8Array(32).fill(13)
+
+    const goodFolderKeyWrapped = await platform.encryptWithKey(folderKey, appKey)
+    const goodFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Good Root Folder' })), folderKey, true)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'self-parent-uid', folderKey: 'unused-folder-key', data: '', parent: 'self-parent-uid' },
+            { folderUid: 'good-root-uid', folderKey: platform.bytesToBase64(goodFolderKeyWrapped), data: platform.bytesToBase64(goodFolderData) }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders.length).toBe(1)
+    expect(folders[0].folderUid).toBe('good-root-uid')
+    expect(folders[0].name).toBe('Good Root Folder')
+
+    const cycleLog = consoleErrorSpy.mock.calls.map(call => call[0]).find(msg => msg.includes('self-parent-uid'))
+    expect(cycleLog).toBeDefined()
+    expect(cycleLog).toContain('parent cycle detected at folder UID self-parent-uid')
+
+    consoleErrorSpy.mockRestore()
+})
+
+test('getFolders detects a two-folder parent cycle and logs each folder naming the other as the cycle point', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(21)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'folder-a', folderKey: 'unused-folder-key', data: '', parent: 'folder-b' },
+            { folderUid: 'folder-b', folderKey: 'unused-folder-key', data: '', parent: 'folder-a' }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders).toEqual([])
+    // 2 per-folder skip lines plus the KSM-1267 summary line naming both skipped UIDs.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(3)
+    expect(consoleErrorSpy.mock.calls[0][0]).toContain('Folder folder-a skipped due to error')
+    expect(consoleErrorSpy.mock.calls[0][0]).toContain('Folder data inconsistent - parent cycle detected at folder UID folder-b')
+    expect(consoleErrorSpy.mock.calls[1][0]).toContain('Folder folder-b skipped due to error')
+    expect(consoleErrorSpy.mock.calls[1][0]).toContain('Folder data inconsistent - parent cycle detected at folder UID folder-a')
+
+    consoleErrorSpy.mockRestore()
+})
+
+test('getFolders detects a longer three-folder parent cycle and skips every folder in the ring', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(31)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'ring-a', folderKey: 'unused-folder-key', data: '', parent: 'ring-b' },
+            { folderUid: 'ring-b', folderKey: 'unused-folder-key', data: '', parent: 'ring-c' },
+            { folderUid: 'ring-c', folderKey: 'unused-folder-key', data: '', parent: 'ring-a' }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders).toEqual([])
+    // 3 per-folder skip lines plus the KSM-1267 summary line naming all three skipped UIDs.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(4)
+    for (const call of consoleErrorSpy.mock.calls.slice(0, 3)) {
+        expect(call[0]).toContain('parent cycle detected at folder UID')
+    }
+
+    consoleErrorSpy.mockRestore()
+})
+
+// The wall-clock bound below is the real regression guard: a synchronous infinite loop cannot be
+// preempted by Jest's timer-based timeout, so a future revert of the fix would hang this test
+// indefinitely rather than fail fast; the bounded implementation is what keeps this test reliable.
+test('getFolders resolves a large folder-parent cycle quickly instead of hanging the event loop', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(41)
+    const ringSize = 500
+    const ringFolders: { folderUid: string, folderKey: string, data: string, parent: string }[] = []
+    for (let i = 0; i < ringSize; i++) {
+        ringFolders.push({ folderUid: `folder-${i}`, folderKey: 'unused-folder-key', data: '', parent: `folder-${(i + 1) % ringSize}` })
+    }
+
+    const serverResponse = {
+        folders: ringFolders,
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+
+    const start = Date.now()
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+    const elapsed = Date.now() - start
+
+    expect(folders).toEqual([])
+    expect(elapsed).toBeLessThan(2000)
+    // ringSize per-folder skip lines plus the KSM-1267 summary line, which is not itself a
+    // cycle message, so it is checked separately from the loop below.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(ringSize + 1)
+    for (const call of consoleErrorSpy.mock.calls.slice(0, ringSize)) {
+        expect(call[0]).toContain('parent cycle detected at folder UID')
+    }
+    expect(consoleErrorSpy.mock.calls[ringSize][0]).toContain(`getFolders: ${ringSize} of ${ringSize} folder(s) could not be decrypted`)
+
+    consoleErrorSpy.mockRestore()
+}, 5000)
+
+test('getFolders decrypts a real two-level, non-cyclic parent chain (root then child)', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(51)
+    const appKey = new Uint8Array(32).fill(52)
+    const rootFolderKey = new Uint8Array(32).fill(53)
+    const childFolderKey = new Uint8Array(32).fill(54)
+    const rootUid = 'root-folder-uid'
+    const childUid = 'child-folder-uid'
+
+    const rootFolderKeyWrapped = await platform.encryptWithKey(rootFolderKey, appKey)
+    const rootFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Root Folder' })), rootFolderKey, true)
+
+    const childFolderKeyWrapped = await platform.encryptWithKey(childFolderKey, rootFolderKey, true)
+    const childFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Child Folder' })), childFolderKey, true)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: rootUid, folderKey: platform.bytesToBase64(rootFolderKeyWrapped), data: platform.bytesToBase64(rootFolderData) },
+            { folderUid: childUid, folderKey: platform.bytesToBase64(childFolderKeyWrapped), data: platform.bytesToBase64(childFolderData), parent: rootUid }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders.length).toBe(2)
+    const root = folders.find(f => f.folderUid === rootUid)
+    const child = folders.find(f => f.folderUid === childUid)
+    expect(root?.name).toBe('Root Folder')
+    expect(child?.name).toBe('Child Folder')
+    expect(consoleErrorSpy).not.toHaveBeenCalled()
+
+    consoleErrorSpy.mockRestore()
+})
+
+test('getFolders keeps the "unable to locate shared folder" message distinct from the cycle message', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+    const transmissionKey = new Uint8Array(32).fill(61)
+    const appKey = new Uint8Array(32).fill(62)
+    const folderKey = new Uint8Array(32).fill(63)
+
+    const goodFolderKeyWrapped = await platform.encryptWithKey(folderKey, appKey)
+    const goodFolderData = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify({ name: 'Good Folder' })), folderKey, true)
+
+    const serverResponse = {
+        folders: [
+            { folderUid: 'orphan-uid', folderKey: 'unused-folder-key', data: '', parent: 'missing-parent-uid' },
+            { folderUid: 'good-uid', folderKey: platform.bytesToBase64(goodFolderKeyWrapped), data: platform.bytesToBase64(goodFolderData) }
+        ],
+        records: [],
+        expiresOn: 0,
+        warnings: []
+    }
+    const encryptedResponse = await platform.encryptWithKey(
+        platform.stringToBytes(JSON.stringify(serverResponse)), transmissionKey)
+
+    platform.getRandomBytes = () => transmissionKey
+    const queryFn = (): Promise<KeeperHttpResponse> => Promise.resolve({ data: encryptedResponse, statusCode: 200, headers: [] })
+
+    const kvs = inMemoryStorage({})
+    await initializeStorage(kvs, 'US:FAKE_CLIENT_KEY')
+    await kvs.saveBytes('appKey', appKey)
+
+    const folders = await getFolders({ storage: kvs, queryFunction: queryFn })
+
+    expect(folders.length).toBe(1)
+    expect(folders[0].folderUid).toBe('good-uid')
+
+    // 1 per-folder skip line plus the KSM-1267 summary line.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(2)
+    expect(consoleErrorSpy.mock.calls[0][0]).toBe('Folder orphan-uid skipped due to error (missing-key): KeeperCryptoError, Folder data inconsistent - unable to locate shared folder for orphan-uid')
+    expect(consoleErrorSpy.mock.calls[0][0]).not.toContain('parent cycle detected')
+
+    consoleErrorSpy.mockRestore()
+})
+
+test('DEFAULT_REQUEST_TIMEOUT_MS is exported from the package entry point', () => {
+    expect(DEFAULT_REQUEST_TIMEOUT_MS).toBe(30000)
 })

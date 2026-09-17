@@ -1,6 +1,7 @@
 import {KeeperHttpResponse, KeyValueStorage, Platform} from '../platform'
+import {deadlineSignal, timeoutError} from '../deadline'
 import {privateDerToPublicRaw} from '../utils'
-import {KeeperError} from '../errors'
+import {KeeperError, KeeperCryptoError} from '../errors'
 
 const bytesToBase64 = (data: Uint8Array): string => {
     const chunkSize = 0x8000 // String.fromCharCode has limitations
@@ -56,7 +57,7 @@ const loadPrivateKey = async (keyId: string, storage: KeyValueStorage): Promise<
         }
     }
     if (!privateKey) {
-        throw new Error(`Unable to load the private key ${keyId}`)
+        throw new KeeperCryptoError(`Unable to load the private key ${keyId}`, 'missing-key', keyId)
     }
     keyCache[keyId] = privateKey
     return privateKey
@@ -82,7 +83,10 @@ const loadKey = async (keyId: string, storage?: KeyValueStorage, useCBC?: boolea
         }
     }
     if (!key) {
-        throw new Error(`Unable to load the key ${cacheKey}`)
+        // Report the caller-facing keyId, not cacheKey: the `cbc:` cache-slot prefix is an
+        // internal detail of this platform's dual GCM/CBC key cache (see unwrap below), not
+        // something a caller of SecretManagerOptions.onDecryptionError should have to know about.
+        throw new KeeperCryptoError(`Unable to load the key ${keyId}`, 'missing-key', keyId)
     }
     keyCache[cacheKey] = key
     return key
@@ -208,6 +212,9 @@ const _encrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Pr
     return __encrypt(data, _key, useCBC)
 }
 
+// useCBC selects AES-256-CBC, which carries no MAC: this mode exists only because the vault's
+// wire format for shared-folder key wraps and folder data is fixed to CBC server-side (KSM-1267)
+// - it is not a template for new code; prefer the AES-256-GCM (default) path.
 const __encrypt = async (data: Uint8Array, key: CryptoKey, useCBC?: boolean): Promise<Uint8Array> => {
     const ivLen = useCBC ? 16 : 12
     const algorithmName = useCBC ? 'AES-CBC' : 'AES-GCM'
@@ -220,6 +227,22 @@ const __encrypt = async (data: Uint8Array, key: CryptoKey, useCBC?: boolean): Pr
     encrypted.set(iv, 0)
     encrypted.set(new Uint8Array(res), iv.length)
     return encrypted
+}
+
+const UNWRAPPED_KEY_LENGTH_BITS = 256 // every key this SDK unwraps is AES-256
+
+// WebCrypto's unwrapKey only validates that the recovered raw bytes are a valid AES key size
+// (128/192/256 bits, i.e. 16/24/32 bytes) - it does not know or enforce that this SDK's keys must
+// specifically be AES-256, so a corrupted-but-plausible 16- or 24-byte result would otherwise be
+// cached and used without error (see nodePlatform.ts's UNWRAPPED_KEY_LENGTH check, which performs
+// the equivalent guard on Node's raw key bytes). CryptoKey has no raw bytes to check directly
+// (unless exported, which requires extractable), but AesKeyAlgorithm.length reports the key size
+// in bits without needing to export, so that is checked here instead.
+const assertUnwrappedKeyLength = (unwrappedKey: CryptoKey, keyId: string): void => {
+    const lengthBits = (unwrappedKey.algorithm as AesKeyAlgorithm).length
+    if (lengthBits !== UNWRAPPED_KEY_LENGTH_BITS) {
+        throw new Error(`Unwrapped key ${keyId} has invalid length ${lengthBits / 8}, expected ${UNWRAPPED_KEY_LENGTH_BITS / 8}`)
+    }
 }
 
 const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, storage?: KeyValueStorage, memoryOnly?: boolean, useCBC?: boolean): Promise<void> => {
@@ -239,12 +262,18 @@ const unwrap = async (key: Uint8Array, keyId: string, unwrappingKeyId: string, s
     const unwrappedKeyGCM = await crypto.subtle.unwrapKey('raw',
         key.subarray(ivLen) as Uint8Array<ArrayBuffer>, unwrappingKey, unwrappingAlgo,
         'AES-GCM', storage ? !storage.saveObject : false, ['encrypt', 'decrypt', 'unwrapKey'])
+    assertUnwrappedKeyLength(unwrappedKeyGCM, keyId)
     keyCache[keyId] = unwrappedKeyGCM
 
     if (useCBC) {
+        // A WebCrypto CryptoKey is bound to one algorithm, unlike Node's raw key bytes which work
+        // with either cipher - so the same unwrapped folder key must be imported a second time
+        // under the AES-CBC algorithm (cached separately as 'cbc:'+keyId) to also decrypt folder.data,
+        // which the vault always wraps in CBC regardless of which mode wrapped the folder key itself.
         const unwrappedKeyCBC = await crypto.subtle.unwrapKey('raw',
             key.subarray(ivLen) as Uint8Array<ArrayBuffer>, unwrappingKey, unwrappingAlgo,
             'AES-CBC', storage ? !storage.saveObject : false, ['encrypt', 'decrypt', 'unwrapKey'])
+        assertUnwrappedKeyLength(unwrappedKeyCBC, keyId)
         keyCache[keyIdCBC] = unwrappedKeyCBC
     }
 
@@ -278,6 +307,9 @@ const _decrypt = async (data: Uint8Array, key: Uint8Array, useCBC?: boolean): Pr
     return __decrypt(data, _key, useCBC)
 }
 
+// See __encrypt above: no MAC, fixed server-side format, not a template for new code. A failure
+// here means malformed input, not a verified integrity failure - and a decrypt success proves
+// nothing about integrity either, since CBC has no MAC to fail (see KeeperCryptoError in errors.ts).
 const __decrypt = async (data: Uint8Array, key: CryptoKey, useCBC?: boolean): Promise<Uint8Array> => {
     const ivLen = useCBC ? 16 : 12
     const algorithmName = useCBC ? 'AES-CBC' : 'AES-GCM'
@@ -328,45 +360,71 @@ const publicEncrypt = async (data: Uint8Array, key: Uint8Array, id?: Uint8Array)
     return result
 }
 
-const get = async (url: string, headers: any): Promise<KeeperHttpResponse> => {
-    const resp = await fetch(url, {
-        method: 'GET',
-        headers: Object.entries(headers),
-    })
-    const body = await resp.arrayBuffer()
-    return {
-        statusCode: resp.status,
-        headers: resp.headers,
-        data: new Uint8Array(body)
+// fetch rejects an aborted request with a DOMException, not something a caller can recognise as
+// an SDK error. The signal is created per request and nothing else aborts it, so an abort here is
+// always our own deadline; translate it to the same KeeperError the node platform raises and leave
+// every other failure untouched.
+const asTimeout = (error: any, url: string, timeoutMs: number, signal: AbortSignal | undefined): any =>
+    signal?.aborted ? timeoutError(url, timeoutMs) : error
+
+const get = async (url: string, headers: any, timeoutMs?: number): Promise<KeeperHttpResponse> => {
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
+    try {
+        const resp = await fetch(url, {
+            method: 'GET',
+            headers: Object.entries(headers),
+            signal
+        })
+        const body = await resp.arrayBuffer()
+        return {
+            statusCode: resp.status,
+            headers: resp.headers,
+            data: new Uint8Array(body)
+        }
+    } catch (e) {
+        throw asTimeout(e, url, ms, signal)
+    } finally {
+        clear()
     }
 }
 
 const post = async (
     url: string,
     request: Uint8Array | string,
-    headers?: { [key: string]: string }
+    headers?: { [key: string]: string },
+    allowUnverifiedCertificate?: boolean,
+    timeoutMs?: number
 ): Promise<KeeperHttpResponse> => {
-    const resp = await fetch(url, {
-        method: 'POST',
-        headers: new Headers({
-            'Content-Type': 'application/octet-stream',
-            'Content-Length': String(request.length),
-            ...headers
-        }),
-        body: typeof request === 'string' ? request : request as Uint8Array<ArrayBuffer>,
-    })
-    const body = await resp.arrayBuffer()
-    return {
-        statusCode: resp.status,
-        headers: resp.headers,
-        data: new Uint8Array(body)
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
+    try {
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: new Headers({
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': String(request.length),
+                ...headers
+            }),
+            body: typeof request === 'string' ? request : request as Uint8Array<ArrayBuffer>,
+            signal
+        })
+        const body = await resp.arrayBuffer()
+        return {
+            statusCode: resp.status,
+            headers: resp.headers,
+            data: new Uint8Array(body)
+        }
+    } catch (e) {
+        throw asTimeout(e, url, ms, signal)
+    } finally {
+        clear()
     }
 }
 
 const fileUpload = async (
     url: string,
     uploadParameters: { [key: string]: string },
-    data: Uint8Array
+    data: Uint8Array,
+    timeoutMs?: number
 ): Promise<any> => {
     const form = new FormData();
 
@@ -375,21 +433,30 @@ const fileUpload = async (
     }
     form.append('file', new Blob([data as Uint8Array<ArrayBuffer>], {type: 'application/octet-stream'}));
 
+    const {signal, timeoutMs: ms, clear} = deadlineSignal(timeoutMs)
     const fetchCfg = {
         method: 'POST',
         body: form,
+        signal
     };
 
     try {
         const res = await fetch(url, fetchCfg);
+        // fileUpload resolves off headers alone and never reads the body, same as the Node
+        // platform's equivalent - an unconsumed body left on the response is discarded here
+        // rather than left dangling.
+        void res.body?.cancel().catch(() => {})
         return {
             headers: res.headers,
             statusCode: res.status,
             statusMessage: res.statusText
         };
     } catch (error) {
-        console.error('Error uploading file:', error);
-        throw error;
+        const e = asTimeout(error, url, ms, signal);
+        console.error('Error uploading file:', e);
+        throw e;
+    } finally {
+        clear()
     }
 };
 

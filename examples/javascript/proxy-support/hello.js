@@ -1,5 +1,3 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
-
 const {
     getSecrets,
     initializeStorage,
@@ -22,4 +20,7 @@ const getKeeperRecords = async () => {
     console.log(records)
 }
 
-getKeeperRecords().finally()
+getKeeperRecords().catch((e) => {
+    console.error(`Failed to load Keeper secrets: ${e?.message ?? String(e)}`)
+    process.exitCode = 1
+})

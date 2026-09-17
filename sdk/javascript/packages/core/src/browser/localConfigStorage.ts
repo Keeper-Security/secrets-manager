@@ -1,15 +1,61 @@
 import {EncryptedPayload, KeeperHttpResponse, KeyValueStorage, TransmissionKey, platform} from "../platform";
+import {KeeperError} from "../errors";
+import {validateTimeoutMs} from "../deadline";
+import {KEY_APP_KEY, deriveCacheKey, encodeCacheBlob, decodeCacheBlob, DEFAULT_MAX_CACHE_AGE_MS, isRawKeyBytes, concatBytes} from "../cache";
+
+const CACHE_STORAGE_KEY = 'cache'
+
+
+type Reject = (reason: Error) => void
+
+// Duck-typed rather than `instanceof Error`. IndexedDB reports failures as a DOMException, and
+// whether that satisfies `instanceof Error` depends on the realm it was constructed in, so a
+// cross-realm failure (a worker, an iframe) would otherwise lose the diagnostic entirely.
+const describeCause = (cause: unknown): string => {
+    const {name, message} = (cause ?? {}) as { name?: unknown, message?: unknown }
+    if (typeof name === 'string' && typeof message === 'string') return `${name}: ${message}`
+    if (typeof message === 'string') return message
+    return 'unknown error'
+}
+
+const idbFailure = (operation: string, cause: unknown): KeeperError =>
+    new KeeperError(`IndexedDB ${operation} failed: ${describeCause(cause)}`)
+
+// A failing IDBRequest fires onerror and never onsuccess, so a promise that only handles
+// onsuccess stays pending forever. The caller then hangs with no error, no rejection and no
+// timeout, which is far worse than failing. Every request in this file is wired through here.
+const rejectOnError = (request: IDBRequest, reject: Reject, operation: string): void => {
+    request.onerror = () => reject(idbFailure(operation, request.error))
+}
+
+const rejectOnOpenFailure = (request: IDBOpenDBRequest, reject: Reject, dbName: string): void => {
+    rejectOnError(request, reject, `open of database '${dbName}'`)
+    // onblocked fires when another live connection holds the database at the old version during
+    // an upgrade. Neither onsuccess nor onerror follows it, so this is the only chance to settle.
+    request.onblocked = () => reject(new KeeperError(
+        `IndexedDB open of database '${dbName}' is blocked by another open connection to it`))
+}
 
 export const localConfigStorage = (client: string, useObjects: boolean): KeyValueStorage => {
+
+    const STORE_NAME = 'secrets'
 
     const getObjectStore = async (mode: IDBTransactionMode): Promise<IDBObjectStore> =>
         new Promise<IDBObjectStore>(((resolve, reject) => {
             const request = indexedDB.open(client, 1)
+            rejectOnOpenFailure(request, reject, client)
             request.onupgradeneeded = () => {
-                request.result.createObjectStore('secrets');
+                request.result.createObjectStore(STORE_NAME);
             }
             request.onsuccess = () => {
-                resolve(request.result.transaction('secrets', mode).objectStore('secrets'))
+                // transaction() throws synchronously when the store is missing, and a throw
+                // inside an event handler is not caught by the Promise executor, so it has to
+                // be turned into a rejection here or the promise never settles.
+                try {
+                    resolve(request.result.transaction(STORE_NAME, mode).objectStore(STORE_NAME))
+                } catch (e) {
+                    reject(idbFailure(`transaction on store '${STORE_NAME}'`, e))
+                }
             }
         }))
 
@@ -17,6 +63,7 @@ export const localConfigStorage = (client: string, useObjects: boolean): KeyValu
         const objectStore = await getObjectStore('readonly')
         return new Promise<string | undefined>(((resolve, reject) => {
             const request = objectStore.get(key)
+            rejectOnError(request, reject, `read of key '${key}'`)
             request.onsuccess = () => {
                 resolve(request.result)
             }
@@ -32,6 +79,7 @@ export const localConfigStorage = (client: string, useObjects: boolean): KeyValu
         const objectStore = await getObjectStore('readwrite')
         return new Promise<void>(((resolve, reject) => {
             const request = objectStore.put(value, key)
+            rejectOnError(request, reject, `write of key '${key}'`)
             request.onsuccess = () => {
                 resolve()
             }
@@ -42,6 +90,7 @@ export const localConfigStorage = (client: string, useObjects: boolean): KeyValu
         const objectStore = await getObjectStore('readwrite')
         return new Promise<void>(((resolve, reject) => {
             const request = objectStore.delete(key)
+            rejectOnError(request, reject, `delete of key '${key}'`)
             request.onsuccess = () => {
                 resolve()
             }
@@ -72,32 +121,42 @@ export const secureStorage = async (dbName: string): Promise<KeyValueStorage> =>
     const META_KEY = '__secureKey__'
 
     const getObjectStore = async (mode: IDBTransactionMode): Promise<IDBObjectStore> =>
-        new Promise<IDBObjectStore>((resolve) => {
+        new Promise<IDBObjectStore>((resolve, reject) => {
             const req = indexedDB.open(dbName, 1)
+            rejectOnOpenFailure(req, reject, dbName)
             req.onupgradeneeded = () => req.result.createObjectStore(STORE_NAME)
-            req.onsuccess = () => resolve(req.result.transaction(STORE_NAME, mode).objectStore(STORE_NAME))
+            req.onsuccess = () => {
+                try {
+                    resolve(req.result.transaction(STORE_NAME, mode).objectStore(STORE_NAME))
+                } catch (e) {
+                    reject(idbFailure(`transaction on store '${STORE_NAME}'`, e))
+                }
+            }
         })
 
     const getRaw = async (key: string): Promise<any> => {
         const store = await getObjectStore('readonly')
-        return new Promise<any>(resolve => {
+        return new Promise<any>((resolve, reject) => {
             const r = store.get(key)
+            rejectOnError(r, reject, `read of key '${key}'`)
             r.onsuccess = () => resolve(r.result)
         })
     }
 
     const putRaw = async (key: string, value: any): Promise<void> => {
         const store = await getObjectStore('readwrite')
-        return new Promise<void>(resolve => {
+        return new Promise<void>((resolve, reject) => {
             const r = store.put(value, key)
+            rejectOnError(r, reject, `write of key '${key}'`)
             r.onsuccess = () => resolve()
         })
     }
 
     const delRaw = async (key: string): Promise<void> => {
         const store = await getObjectStore('readwrite')
-        return new Promise<void>(resolve => {
+        return new Promise<void>((resolve, reject) => {
             const r = store.delete(key)
+            rejectOnError(r, reject, `delete of key '${key}'`)
             r.onsuccess = () => resolve()
         })
     }
@@ -148,24 +207,52 @@ export const secureStorage = async (dbName: string): Promise<KeyValueStorage> =>
     }
 }
 
-export function createCachingFunction(storage: KeyValueStorage): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload) => Promise<KeeperHttpResponse> {
+// Same cache codec (../cache) as node/localConfigStorage.ts's createCachingFunction; only the
+// storage medium differs (IndexedDB here, a file there). Replaces the old plaintext
+// key-beside-data format (CWE-312, CWE-345) with one encrypted under a key derived from the app
+// key, authenticated, and bounded by a freshness window. An old-format cached value simply fails
+// the version check and is treated as a cache miss, the same graceful degradation the Node fix
+// uses for its old-format files. Signature matches SecretManagerOptions.queryFunction so the
+// trailing options, including requestTimeoutMs, reach platform.post instead of being dropped on
+// the floor.
+export function createCachingFunction(storage: KeyValueStorage, maxCacheAgeMs: number = DEFAULT_MAX_CACHE_AGE_MS): (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number) => Promise<KeeperHttpResponse> {
 
-    return async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload): Promise<KeeperHttpResponse> => {
+    return async (url: string, transmissionKey: TransmissionKey, payload: EncryptedPayload, allowUnverifiedCertificate?: boolean, timeoutMs?: number): Promise<KeeperHttpResponse> => {
+        // Resolved before the try below so a caller-input mistake (an unusable timeoutMs) fails
+        // fast instead of being caught and mistaken for a transport failure worth falling back to
+        // stale cache for - resolveTimeoutMs throws a plain Error, not a KeeperError, for exactly
+        // this class of failure (see deadline.ts), so it would otherwise slip past the KeeperError
+        // carve-out below.
+        const resolvedTimeoutMs = validateTimeoutMs(timeoutMs)
+        let response: KeeperHttpResponse
         try {
-            const response = await platform.post(url, payload.payload, {
+            response = await platform.post(url, payload.payload, {
                 PublicKeyId: transmissionKey.publicKeyId.toString(),
                 TransmissionKey: platform.bytesToBase64(transmissionKey.encryptedKey),
                 Authorization: `Signature ${platform.bytesToBase64(payload.signature)}`
-            })
-            if (response.statusCode == 200) {
-                await storage.saveBytes('cache', new Uint8Array([...transmissionKey.key, ...response.data]))
-            }
-            return response
+            }, allowUnverifiedCertificate, resolvedTimeoutMs)
         } catch (e) {
-            const cachedData = await storage.getBytes('cache')
-            if (!cachedData) {
-                throw new Error('Cached value does not exist')
+            // A deliberate client-side timeout is not a transport failure: falling back to stale
+            // cache here would silently turn a slow/hung request into a fake success instead of
+            // surfacing it to the caller.
+            if (e instanceof KeeperError) {
+                throw e
             }
+            const appKey = await storage.getBytes(KEY_APP_KEY)
+            if (!appKey || !isRawKeyBytes(appKey)) {
+                throw new KeeperError('Cached value does not exist')
+            }
+            const raw = await storage.getBytes(CACHE_STORAGE_KEY)
+            if (!raw) {
+                throw new KeeperError('Cached value does not exist')
+            }
+            let cachedData: Uint8Array
+            try {
+                cachedData = await decodeCacheBlob(raw, await deriveCacheKey(appKey), maxCacheAgeMs)
+            } catch (e2: Error | any) {
+                throw new KeeperError(`Cached value is invalid: ${e2.message}`)
+            }
+            console.error(`Network request failed (${describeCause(e)}); serving cached response, which may be stale`)
             transmissionKey.key = cachedData.slice(0, 32)
             return {
                 statusCode: 200,
@@ -173,5 +260,25 @@ export function createCachingFunction(storage: KeyValueStorage): (url: string, t
                 headers: []
             }
         }
+        if (response.statusCode == 200) {
+            try {
+                const appKey = await storage.getBytes(KEY_APP_KEY)
+                if (appKey && isRawKeyBytes(appKey)) {
+                    const blob = await encodeCacheBlob(concatBytes(transmissionKey.key, response.data), await deriveCacheKey(appKey))
+                    await storage.saveBytes(CACHE_STORAGE_KEY, blob)
+                } else if (appKey) {
+                    // appKey exists but isn't raw bytes - useObjects: true wraps it as a
+                    // non-extractable CryptoKey, so caching is a deliberate no-op here (matches
+                    // the identical guard in the fallback branch above), not a failure. Logged
+                    // once per call, same as the fallback branch's own log a few lines up, so a
+                    // caller who opted into useObjects: true has some signal that caching isn't
+                    // doing anything for them before their first real outage.
+                    console.error('Caching is a no-op with useObjects: true - the app key is not available as raw bytes')
+                }
+            } catch (e) {
+                console.error(`Failed to update cached response: ${describeCause(e)}`)
+            }
+        }
+        return response
     }
 }

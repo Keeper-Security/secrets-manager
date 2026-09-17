@@ -10,7 +10,7 @@ import {
 import {nodePlatform} from '../src/node/nodePlatform';
 import {connectPlatform} from '../src/platform';
 import {inspect} from 'util';
-import {cachingPostFunction, localConfigStorage} from "../src/node";
+import {createCachingFunction, localConfigStorage} from "../src/node";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 
@@ -26,7 +26,7 @@ async function test() {
     await initializeStorage(kvs, oneTimeToken)
     const options: SecretManagerOptions = {
         storage: kvs,
-        // queryFunction: cachingPostFunction
+        // queryFunction: createCachingFunction(kvs)
         allowUnverifiedCertificate: true
     }
     const { records } = await getSecrets(options)
@@ -42,4 +42,7 @@ async function test() {
     // console.log(fileData)
 }
 
-test().finally()
+test().catch((e) => {
+    console.error(`quicktest failed: ${e?.message ?? String(e)}`)
+    process.exitCode = 1
+})
