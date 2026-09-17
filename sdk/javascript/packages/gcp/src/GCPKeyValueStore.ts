@@ -424,15 +424,21 @@ export class GCPKeyValueStorage implements KeyValueStorage {
   }
 
   private async createConfigFileIfMissing(): Promise<void> {
+    // Ensure the config file path is absolute
+    const configPath = resolve(this.configFileLocation);
     try {
-      // Ensure the config file path is absolute
-      const configPath = resolve(this.configFileLocation);
-
       // Check if the config file exists
       await fs.access(configPath);
       this.logger.info(`Config file already exists at: ${configPath}`);
-    } catch {
-      // If file does not exist, proceed to create it
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+      if (error?.code !== "ENOENT") {
+        this.logger.error(
+          `Failed to check config file at ${configPath}: ${error?.message?.toString()}`
+        );
+        throw error;
+      }
+      // File genuinely does not exist, proceed to create it
 
       try {
         const dir = dirname(resolve(this.configFileLocation)); // Ensure absolute directory path
@@ -445,7 +451,6 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       } catch {
         await fs.mkdir(process.cwd(), { recursive: true }); // Use the working directory as fallback
       }
-      const configPath = resolve(this.configFileLocation);
       await fs.writeFile(configPath, Buffer.from("{}"));
 
       let token: string | null | undefined = null;
