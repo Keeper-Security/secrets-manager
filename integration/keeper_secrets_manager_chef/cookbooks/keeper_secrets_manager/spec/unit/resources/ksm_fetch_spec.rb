@@ -115,6 +115,24 @@ describe 'ksm_fetch resource' do
       expect(::File.read(target_path)).to eq('CERT-CONTENT')
       expect(::File.stat(target_path).mode & 0o777).to eq(0o600)
     end
+
+    context 'when a symlink is already sitting at the destination' do
+      let(:attacker_owned_file) { "#{Dir.tmpdir}/ksm_fetch_spec_attacker_#{Process.pid}.txt" }
+
+      before do
+        ::File.write(attacker_owned_file, 'attacker-original-content')
+        ::File.symlink(attacker_owned_file, target_path)
+      end
+
+      after { ::File.delete(attacker_owned_file) if ::File.exist?(attacker_owned_file) }
+
+      it 'replaces the symlink instead of writing through it' do
+        chef_run
+        expect(::File.symlink?(target_path)).to be false
+        expect(::File.read(target_path)).to eq('CERT-CONTENT')
+        expect(::File.read(attacker_owned_file)).to eq('attacker-original-content')
+      end
+    end
   end
 
   context 'with the base64 authentication method' do

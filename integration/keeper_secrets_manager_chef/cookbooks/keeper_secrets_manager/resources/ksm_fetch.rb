@@ -35,8 +35,18 @@ action :run do
       Chef::Log.info("Keeper secret exported to ENV['#{output_name}']")
     when :file
       ::FileUtils.mkdir_p(::File.dirname(output_name))
-      ::File.binwrite(output_name, value)
-      ::File.chmod(0o600, output_name)
+      # Write-then-rename, not write-then-chmod: a plain File.binwrite
+      # would follow a pre-existing symlink at output_name (writing the
+      # secret through it) and briefly leave the file at the default
+      # umask before the chmod line ran. rename(2) replaces whatever is
+      # at the destination - including an attacker's symlink - without
+      # ever following it, and the temp file is already at 0600 before
+      # it's visible at output_name, so there's no window either way.
+      temp_path = "#{output_name}.tmp.#{Process.pid}"
+      ::File.open(temp_path, ::File::WRONLY | ::File::CREAT | ::File::EXCL | ::File::BINARY, 0o600) do |f|
+        f.write(value)
+      end
+      ::File.rename(temp_path, output_name)
       Chef::Log.info("Keeper secret written to #{output_name}")
     else
       node.run_state['keeper_secrets'] ||= {}
