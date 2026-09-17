@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.1]
 
+### Fixed
+
+- KSM-1370 - `createConfigFileIfMissing()` no longer overwrites the config file on a transient `fs.access` failure (`EACCES`, `EPERM`, `ESTALE`) — only a genuinely missing file (`ENOENT`) triggers recreation
+
 ### Maintenance
 
 - KSM-1218 - Updated axios, protobufjs, handlebars, js-yaml, and other dependencies to resolve open security advisories
