@@ -10,7 +10,7 @@ The Keeper Secrets Manager cookbook allows Chef-managed nodes to integrate with 
 
 ## Features
 
-* Install and configure Keeper Secrets Manager Python SDK on Chef-managed nodes
+* Install and configure the Keeper Secrets Manager Ruby SDK gem on Chef-managed nodes
 * Retrieve secrets from the Keeper vault during Chef runs using Keeper Notation
 * Secure authentication through encrypted data bags
 * Cross-platform support (Linux, macOS, Windows)
@@ -139,22 +139,21 @@ The notation follows the pattern: `"KEEPER_NOTATION > OUTPUT_SPECIFICATION"`
 ```json
 "UID/custom_field/Label1 > Label2"
 ```
-**Result**: `{ "Label2": "VALUE_HERE" }` in output JSON
+**Result**: `node.run_state['keeper_secrets']['Label2']` is set to the value. Nothing is written to disk - read it in a later resource via `lazy { node.run_state['keeper_secrets']['Label2'] }`.
 
 #### 2. Environment Variable Output
 ```json
 "secret-uid/field/password > env:DB_PASSWORD"
 ```
-**Result**: Sets `DB_PASSWORD` environment variable on the Chef node
-**Note**: `env:Label2` will be exported as environment variable, and `Label2` will not be included in output JSON
+**Result**: Sets the real `DB_PASSWORD` environment variable in the chef-client process, during `ksm_fetch`'s converge step.
+**Note**: A later resource reads it the same way as any other environment variable - `lazy { ENV['DB_PASSWORD'] }`.
 
 #### 3. File Output
 ```json
 "secret-uid/file/ssl_cert.pem > file:/opt/ssl/cert.pem"
 ```
-**Result**: Downloads file to specified path on the Chef node
-**Output JSON**: `{ "ssl_cert.pem": "/opt/ssl/cert.pem" }`
-**Note**: Filename becomes the key, file path becomes the value
+**Result**: Writes the file to the specified path on the Chef node, then restricts it to `chmod 0600`.
+**Note**: Reference the path directly in a later resource; nothing is added to `node.run_state` for this mode.
 
 ### Complete input.json Example
 
@@ -187,8 +186,6 @@ You can find the Record UID in:
 ```ruby
 # Install Keeper Secrets Manager
 ksm_install 'keeper_setup' do
-  python_sdk true
-  cli_tool false
   action :install
 end
 ```
@@ -199,13 +196,11 @@ end
 # Fetch secrets from Keeper vault using custom input.json path
 ksm_fetch 'fetch_app_secrets' do
   input_path '/path/to/your/input.json'
-  timeout 300
   action :run
 end
 
 # Or use default path (/opt/keeper_secrets_manager/input.json)
 ksm_fetch 'fetch_app_secrets' do
-  timeout 300
   action :run
 end
 ```
@@ -215,8 +210,6 @@ end
 ```ruby
 # Install Keeper Secrets Manager
 ksm_install 'keeper_setup' do
-  python_sdk true
-  cli_tool true
   base_dir '/opt/keeper_secrets_manager'
   action :install
 end
@@ -231,7 +224,6 @@ end
 # Retrieve secrets from Keeper vault
 ksm_fetch 'fetch_app_secrets' do
   input_path '/opt/keeper_secrets_manager/input.json'
-  timeout 300
   action :run
 end
 
@@ -258,32 +250,31 @@ end
 
 ### ksm_install
 
-Installs Keeper Secrets Manager Python SDK and CLI tools.
+Installs the Keeper Secrets Manager Ruby SDK gem via `chef_gem`.
 
 #### Properties
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `python_sdk` | Boolean | `true` | Install Python SDK |
-| `cli_tool` | Boolean | `false` | Install CLI tool |
-| `user_install` | Boolean | `false` | Install for current user only |
-| `base_dir` | String | Platform-specific | Base installation directory |
+| `base_dir` | String | Platform-specific (`node['keeper_secrets_manager']['base_dir']`) | Base directory for the config file |
+| `sdk_version` | String | `17.2.1` | Pinned `keeper_secrets_manager` gem version |
 
 #### Actions
 
-- `:install` - Install Keeper Secrets Manager (default)
+- `:install` - Install the gem and write the config file (default)
+- `:remove` - Remove the gem and delete `base_dir`
+- `:upgrade` - Upgrade the gem to `sdk_version`
 
 ### ksm_fetch
 
-Retrieves secrets from the Keeper vault using the input.json configuration file.
+Retrieves secrets from the Keeper vault using the input.json configuration file, directly via the Ruby SDK.
 
 #### Properties
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `input_path` | String | `/opt/keeper_secrets_manager/input.json` | Path to input.json configuration file |
-| `timeout` | Integer | `300` | Timeout for script execution |
-| `deploy_path` | String | `/opt/keeper_secrets_manager/ksm.py` | Script deployment path |
+| `input_path` | String | `base_dir/input.json` | Path to input.json configuration file |
+| `base_dir` | String | Platform-specific (`node['keeper_secrets_manager']['base_dir']`) | Where the `token` auth method persists its bound config |
 
 #### Actions
 
@@ -303,14 +294,13 @@ The following platforms are supported:
 
 ### Chef
 
-- Chef Infra Client 16.0+
+- Chef Infra Client 18.0+ (the `keeper_secrets_manager` Ruby SDK gem requires Ruby >= 3.1, which Chef 18 is the first line to ship on all supported platforms)
 - Chef Workstation 21.0+ (for development)
 
 ### Dependencies
 
-- Python 3.6+ (automatically installed if not present)
-- pip (automatically installed)
-- Internet connection for downloading Keeper SDK
+- `keeper_secrets_manager` Ruby gem (installed automatically via `chef_gem`)
+- Internet connection for installing the gem
 
 ## Contributing
 
@@ -322,7 +312,7 @@ The following platforms are supported:
 
 ## License
 
-All Rights Reserved
+This module is licensed under the Apache License, Version 2.0. See [LICENSE](keeper_secrets_manager/LICENSE).
 
 ## Support
 

@@ -1,345 +1,219 @@
 require 'spec_helper'
 require 'chefspec'
 require 'chefspec/solo_runner'
-
-describe 'keeper_secrets_manager::fetch (ksm_fetch resource)' do
-  let(:runner) { ChefSpec::SoloRunner.new(platform: 'windows', version: '2019') }
-
-  before do
-    # Generic fallback for any shell_out calls not explicitly stubbed
-    shellout_not_found = double('shell_out', run_command: nil, error!: nil, stdout: '', exitstatus: 1)
-    allow_any_instance_of(Chef::Provider).to receive(:shell_out).and_return(shellout_not_found)
-  end
-
-  let(:chef_run) do
-    # Simulate that installer persisted a discovered python in run_state
-    runner.node.run_state['ksm_python'] = 'C:\\Python\\python.exe'
-    runner.converge('keeper_secrets_manager::fetch')
-  end
-
-  context 'on Windows' do
-    it 'converges the fetch recipe and declares a ksm_fetch resource' do
-      expect { chef_run }.to_not raise_error
-      expect(chef_run.run_context.resource_collection.select { |r| r.resource_name == :ksm_fetch }.length).to be > 0
-    end
-  end
-
-  context 'on Linux' do
-    let(:runner) { ChefSpec::SoloRunner.new(platform: 'ubuntu', version: '22.04') }
-    let(:chef_run) do
-      runner.converge('keeper_secrets_manager::fetch')
-    end
-
-    it 'converges the fetch recipe and declares a ksm_fetch resource' do
-      expect { chef_run }.to_not raise_error
-      expect(chef_run.run_context.resource_collection.select { |r| r.resource_name == :ksm_fetch }.length).to be > 0
-    end
-  end
-end
+require 'keeper_secrets_manager'
+require 'tmpdir'
 
 describe 'ksm_fetch resource' do
   step_into :ksm_fetch
   platform 'ubuntu'
+  # step_into + recipe do...end (ChefSpec's synthetic recipe) doesn't load
+  # this cookbook's own attributes/default.rb the way a real chef-client run
+  # or a named-recipe .converge() call does, so base_dir's lazy default
+  # would otherwise evaluate against a nil node['keeper_secrets_manager'].
+  default_attributes['keeper_secrets_manager']['base_dir'] = '/opt/keeper_secrets_manager'
 
-  let(:shellout_double_python3) do
-    double('shell_out', run_command: nil, error!: nil, stdout: '/usr/bin/python3', exitstatus: 0)
-  end
+  let(:secrets_manager_double) { instance_double(KeeperSecretsManager::Core::SecretsManager) }
 
   before do
-    # Generic fallback for any shell_out calls not explicitly stubbed
-    shellout_not_found = double('shell_out', run_command: nil, error!: nil, stdout: '', exitstatus: 1)
-    allow_any_instance_of(Chef::Provider).to receive(:shell_out).and_return(shellout_not_found)
-
     allow(::File).to receive(:exist?).and_call_original
-    allow(::File).to receive(:exist?).with('/custom/input.json').and_return(true)
-
-    allow_any_instance_of(Chef::Provider).to receive(:shell_out).with('which python3').and_return(shellout_double_python3)
-    allow_any_instance_of(Chef::Provider).to receive(:shell_out).with('which python').and_return(shellout_double_python3)
-    stub_command('which python3').and_return(true)
+    allow(::File).to receive(:exist?).with('/opt/keeper_secrets_manager/input.json').and_return(true)
+    allow(::KeeperSecretsManager::Core::SecretsManager).to receive(:new).and_return(secrets_manager_double)
   end
 
-  context 'with default configuration' do
+  def stub_input_json(content)
+    allow(::File).to receive(:read).and_call_original
+    allow(::File).to receive(:read).with('/opt/keeper_secrets_manager/input.json').and_return(content.to_json)
+  end
+
+  context 'when the input file is missing' do
     before do
-      stub_data_bag_item('keeper', 'keeper_config').and_return({
-        'config_json' => '{"token":"test-token"}',
-      })
+      allow(::File).to receive(:exist?).with('/opt/keeper_secrets_manager/input.json').and_return(false)
     end
 
     recipe do
-      ksm_fetch 'run_default' do
+      ksm_fetch 'missing_input' do
         action :run
       end
     end
 
-    it 'deploys the keeper secret script' do
-      expect(chef_run).to create_cookbook_file('/opt/keeper_secrets_manager/scripts/ksm.py').with(
-        source: 'ksm.py',
-        mode: '0755'
-      )
-    end
-
-    it 'executes the keeper secret script with default path' do
-      expect(chef_run).to run_execute('keeper_fetch_run_default').with(
-        command: 'python3 /opt/keeper_secrets_manager/scripts/ksm.py',
-        timeout: 300,
-        live_stream: true,
-        environment: hash_including('KEEPER_CONFIG' => '{"token":"test-token"}')
-      )
-    end
-  end
-
-  context 'with input_path set' do
-    before do
-      stub_data_bag_item('keeper', 'keeper_config').and_return({
-        'config_json' => '{"token":"test-token"}',
-      })
-    end
-    recipe do
-      ksm_fetch 'run_with_input' do
-        input_path '/custom/input.json'
-        action :run
-      end
-    end
-
-    it 'executes the keeper script with the input path' do
-      expect(chef_run).to run_execute('keeper_fetch_run_with_input').with(
-        command: 'python3 /opt/keeper_secrets_manager/scripts/ksm.py --input /custom/input.json',
-        environment: hash_including('KEEPER_CONFIG' => '{"token":"test-token"}')
-      )
-    end
-  end
-
-  context 'when input_path is specified but file is missing' do
-    before do
-      allow(::File).to receive(:exist?).with('/missing/input.json').and_return(false)
-      stub_data_bag_item('keeper', 'keeper_config').and_return({
-        'config_json' => '{"token":"test-token"}',
-      })
-    end
-
-    recipe do
-      ksm_fetch 'run_missing_input' do
-        input_path '/missing/input.json'
-        action :run
-      end
-    end
-
-    it 'raises a file not found error' do
+    it 'raises a clear error instead of a bare LoadError/NoMethodError' do
       expect { chef_run }.to raise_error(RuntimeError, /Input file not found/)
     end
   end
 
-  context 'when python3 and python are not found' do
+  context 'with a direct-output (no prefix) secret' do
     before do
-      allow_any_instance_of(Chef::Provider).to receive(:shell_out).with('which python3')
-                                                                  .and_return(double('shell_out', run_command: nil, error!: nil, stdout: '', exitstatus: 1))
-      allow_any_instance_of(Chef::Provider).to receive(:shell_out).with('which python')
-                                                                  .and_return(double('shell_out', run_command: nil, error!: nil, stdout: '', exitstatus: 1))
-      stub_data_bag_item('keeper', 'keeper_config').and_return({
-        'config_json' => '{"token":"test-token"}',
-      })
+      stub_input_json(
+        'authentication' => ['base64'],
+        'secrets' => ['UID/field/password > DB_PASSWORD']
+      )
+      allow(secrets_manager_double).to receive(:get_notation).with('keeper://UID/field/password').and_return('s3cr3t')
+      # SecretsManager.new is stubbed above; this just needs to be valid
+      # JSON so the real InMemoryStorage.new constructor doesn't raise.
+      stub_data_bag_item('keeper', 'keeper_config').and_return('config_json' => '{}')
     end
 
     recipe do
-      ksm_fetch 'fallback_python' do
+      ksm_fetch 'direct_output' do
         action :run
       end
     end
 
-    it 'falls back to python3 in command' do
-      expect(chef_run).to run_execute('keeper_fetch_fallback_python').with(
-        command: 'python3 /opt/keeper_secrets_manager/scripts/ksm.py'
-      )
+    it 'stores the value in node.run_state, never on disk' do
+      chef_run
+      expect(chef_run.node.run_state['keeper_secrets']['DB_PASSWORD']).to eq('s3cr3t')
     end
   end
 
-  context 'with custom timeout' do
+  context 'with an env: secret' do
     before do
-      stub_data_bag_item('keeper', 'keeper_config').and_return({
-        'config_json' => '{"token":"test-token"}',
-      })
+      stub_input_json(
+        'authentication' => ['base64'],
+        'secrets' => ['UID/custom_field/Token > env:API_TOKEN']
+      )
+      allow(secrets_manager_double).to receive(:get_notation).with('keeper://UID/custom_field/Token').and_return('tok-123')
+      stub_data_bag_item('keeper', 'keeper_config').and_return('config_json' => '{}')
     end
+
     recipe do
-      ksm_fetch 'with_timeout' do
-        timeout 120
+      ksm_fetch 'env_output' do
         action :run
       end
     end
 
-    it 'uses custom timeout in execute' do
-      expect(chef_run).to run_execute('keeper_fetch_with_timeout').with(
-        timeout: 120
-      )
+    after { ENV.delete('API_TOKEN') }
+
+    it 'sets the real process ENV variable' do
+      chef_run
+      expect(ENV.fetch('API_TOKEN', nil)).to eq('tok-123')
     end
   end
 
-  context 'with python' do
+  context 'with a file: secret' do
+    let(:target_path) { "#{Dir.tmpdir}/ksm_fetch_spec_cert_#{Process.pid}.pem" }
+
     before do
-      stub_data_bag_item('keeper', 'keeper_config').and_return({
-        'config_json' => '{"token":"test-token"}',
-      })
+      stub_input_json(
+        'authentication' => ['base64'],
+        'secrets' => ["UID/file/cert.pem > file:#{target_path}"]
+      )
+      allow(secrets_manager_double).to receive(:get_notation).with('keeper://UID/file/cert.pem').and_return('CERT-CONTENT')
+      stub_data_bag_item('keeper', 'keeper_config').and_return('config_json' => '{}')
     end
+
+    after { ::File.delete(target_path) if ::File.exist?(target_path) }
+
     recipe do
-      ksm_fetch 'test_script' do
+      ksm_fetch 'file_output' do
         action :run
       end
     end
 
-    it 'deploys the Python script with correct permissions' do
-      expect(chef_run).to create_cookbook_file('/opt/keeper_secrets_manager/scripts/ksm.py').with(
-        source: 'ksm.py',
-        mode: '0755'
-      )
+    it 'writes the file and restricts it to 0600' do
+      chef_run
+      expect(::File.read(target_path)).to eq('CERT-CONTENT')
+      expect(::File.stat(target_path).mode & 0o777).to eq(0o600)
     end
   end
 
-  context 'when encrypted data bag is missing' do
+  context 'with the base64 authentication method' do
     before do
-      # This is how ChefSpec expects data_bag_item to be stubbed if you want it to raise
+      stub_input_json('authentication' => ['base64'], 'secrets' => [])
+      stub_data_bag_item('keeper', 'keeper_config').and_return('config_json' => 'fake-base64-config')
+    end
+
+    recipe do
+      ksm_fetch 'base64_auth' do
+        action :run
+      end
+    end
+
+    it 'builds an InMemoryStorage from load_keeper_config, never from input.json' do
+      expect(::KeeperSecretsManager::Storage::InMemoryStorage).to receive(:new)
+        .with('fake-base64-config')
+        .and_return(instance_double(::KeeperSecretsManager::Storage::InMemoryStorage))
+      chef_run
+    end
+  end
+
+  context 'with the base64 authentication method and no config anywhere' do
+    before do
+      stub_input_json('authentication' => ['base64'], 'secrets' => [])
       stub_data_bag_item('keeper', 'keeper_config').and_raise(Chef::Exceptions::InvalidDataBagPath)
-
-      # Stub ENV fallback
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with('KEEPER_CONFIG').and_return('{"token":"env-token"}')
+      allow(ENV).to receive(:[]).with('KEEPER_CONFIG').and_return(nil)
     end
 
     recipe do
-      ksm_fetch 'fallback_to_env' do
+      ksm_fetch 'base64_no_config' do
         action :run
       end
     end
 
-    it 'uses fallback env variable for config' do
-      expect(chef_run).to run_execute('keeper_fetch_fallback_to_env').with(
-        environment: hash_including('KEEPER_CONFIG' => '{"token":"env-token"}')
-      )
+    it 'raises instead of silently constructing an unbound SecretsManager' do
+      expect { chef_run }.to raise_error(/No Keeper config found/)
     end
   end
-end
 
-describe 'ksm_fetch resource on Windows' do
-  step_into :ksm_fetch
-  platform 'windows'
-
-  let(:real_python_path) { 'C:\Users\test\AppData\Local\Programs\Python\Python312\python.exe' }
-  let(:windows_store_stub) { 'C:\Users\test\AppData\Local\Microsoft\WindowsApps\python3.exe' }
-  let(:python_with_spaces) { 'C:\Program Files\Python313\python.exe' }
-
-  let(:shellout_where_python3_multiple) do
-    double('shell_out', run_command: nil, error!: nil,
-           stdout: "#{windows_store_stub}\n#{real_python_path}", exitstatus: 0)
-  end
-
-  let(:shellout_where_python3_spaces) do
-    double('shell_out', run_command: nil, error!: nil,
-           stdout: "#{windows_store_stub}\n#{python_with_spaces}", exitstatus: 0)
-  end
-
-  let(:shellout_where_python) do
-    double('shell_out', run_command: nil, error!: nil,
-           stdout: real_python_path, exitstatus: 0)
-  end
-
-  let(:shellout_not_found) do
-    double('shell_out', run_command: nil, error!: nil, stdout: '', exitstatus: 1)
-  end
-
-  before do
-    # Generic fallback for any shell_out calls not explicitly stubbed
-    allow_any_instance_of(Chef::Provider).to receive(:shell_out).and_return(shellout_not_found)
-
-    allow(::File).to receive(:exist?).and_call_original
-    allow(::File).to receive(:exist?).with(real_python_path).and_return(true)
-    allow(::File).to receive(:exist?).with(python_with_spaces).and_return(true)
-  end
-
-  context 'with default Windows configuration' do
+  context 'with the token authentication method' do
     before do
-      stub_data_bag_item('keeper', 'keeper_config').and_return({
-        'config_json' => '{"token":"test-token"}',
-      })
-
-      # Stub where commands - filter out Windows Store stub
-      allow_any_instance_of(Chef::Provider).to receive(:shell_out).with('where python3').and_return(shellout_where_python3_multiple)
-      allow_any_instance_of(Chef::Provider).to receive(:shell_out).with('where python').and_return(shellout_where_python)
+      stub_input_json('authentication' => %w(token ONE-TIME-TOKEN), 'secrets' => [])
     end
 
     recipe do
-      ksm_fetch 'run_default' do
+      ksm_fetch 'token_auth' do
         action :run
       end
     end
 
-    it 'uses Windows default deploy path' do
-      expect(chef_run).to create_cookbook_file('C:\ProgramData\keeper_secrets_manager\scripts\ksm.py').with(
-        source: 'ksm.py',
-        mode: '0755'
-      )
-    end
-
-    it 'filters out Windows Store Python stub' do
-      expect(chef_run).to run_execute('keeper_fetch_run_default')
-      execute_resource = chef_run.execute('keeper_fetch_run_default')
-      # Should use real_python_path, not windows_store_stub
-      expect(execute_resource.command).to include(real_python_path)
-      expect(execute_resource.command).not_to include('WindowsApps')
-    end
-
-    it 'quotes paths in command' do
-      expect(chef_run).to run_execute('keeper_fetch_run_default')
-      execute_resource = chef_run.execute('keeper_fetch_run_default')
-      # Paths should be quoted
-      expect(execute_resource.command).to match(/^"[^"]*python[^"]*" "[^"]*ksm\.py"/)
+    it 'uses the literal token from input.json, not load_keeper_config' do
+      expect(::KeeperSecretsManager::Storage::FileStorage).to receive(:new)
+        .with('/opt/keeper_secrets_manager/config/keeper_config.json')
+        .and_return(instance_double(::KeeperSecretsManager::Storage::FileStorage))
+      expect(::KeeperSecretsManager::Core::SecretsManager).to receive(:new)
+        .with(hash_including(token: 'ONE-TIME-TOKEN')).and_return(secrets_manager_double)
+      chef_run
     end
   end
 
-  context 'with Python in path with spaces' do
+  context 'with the json authentication method' do
     before do
-      stub_data_bag_item('keeper', 'keeper_config').and_return({
-        'config_json' => '{"token":"test-token"}',
-      })
-
-      allow_any_instance_of(Chef::Provider).to receive(:shell_out).with('where python3').and_return(shellout_where_python3_spaces)
-      allow_any_instance_of(Chef::Provider).to receive(:shell_out).with('where python').and_return(shellout_not_found)
+      stub_input_json('authentication' => ['json', '/etc/keeper/my-config.json'], 'secrets' => [])
+      # A KEEPER_CONFIG env var is set, simulating the exact scenario that
+      # silently hijacked the old Python script's "json" method - this test
+      # fails if that regression comes back.
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with('KEEPER_CONFIG').and_return('should-never-be-used')
     end
 
     recipe do
-      ksm_fetch 'run_with_spaces' do
+      ksm_fetch 'json_auth' do
         action :run
       end
     end
 
-    it 'quotes Python path with spaces' do
-      expect(chef_run).to run_execute('keeper_fetch_run_with_spaces')
-      execute_resource = chef_run.execute('keeper_fetch_run_with_spaces')
-      # Path with spaces should be quoted
-      expect(execute_resource.command).to match(/^"C:\\Program Files\\Python/)
+    it 'uses the literal path from input.json, unconditionally, ignoring KEEPER_CONFIG' do
+      expect(::KeeperSecretsManager::Storage::FileStorage).to receive(:new)
+        .with('/etc/keeper/my-config.json')
+        .and_return(instance_double(::KeeperSecretsManager::Storage::FileStorage))
+      chef_run
     end
   end
 
-  context 'with input_path on Windows' do
+  context 'with an unsupported authentication method' do
     before do
-      stub_data_bag_item('keeper', 'keeper_config').and_return({
-        'config_json' => '{"token":"test-token"}',
-      })
-
-      allow(::File).to receive(:exist?).with('C:\custom\input.json').and_return(true)
-      allow_any_instance_of(Chef::Provider).to receive(:shell_out).with('where python3').and_return(shellout_where_python3_multiple)
-      allow_any_instance_of(Chef::Provider).to receive(:shell_out).with('where python').and_return(shellout_where_python)
+      stub_input_json('authentication' => ['carrier-pigeon'], 'secrets' => [])
     end
 
     recipe do
-      ksm_fetch 'run_with_input' do
-        input_path 'C:\custom\input.json'
+      ksm_fetch 'bad_auth' do
         action :run
       end
     end
 
-    it 'quotes input path in command' do
-      expect(chef_run).to run_execute('keeper_fetch_run_with_input')
-      execute_resource = chef_run.execute('keeper_fetch_run_with_input')
-      # Input path should be quoted
-      expect(execute_resource.command).to match(/--input "C:\\custom\\input\.json"/)
+    it 'raises ArgumentError naming the unsupported method' do
+      expect { chef_run }.to raise_error(ArgumentError, /Unsupported authentication method/)
     end
   end
 end

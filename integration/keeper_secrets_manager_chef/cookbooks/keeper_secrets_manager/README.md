@@ -1,8 +1,8 @@
 # Keeper Secrets Manager Cookbook
 
 [![Cookbook Version](https://img.shields.io/badge/cookbook-v1.0.0-blue)](https://github.com/Keeper-Security/secrets-manager/tree/master/integration/keeper_secrets_manager_chef)
-[![Chef](https://img.shields.io/badge/chef-%3E%3D16.0-orange)](https://www.chef.io/)
-[![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-red)](LICENSE)
+[![Chef](https://img.shields.io/badge/chef-%3E%3D18.0-orange)](https://www.chef.io/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 Install and configure Keeper Secrets Manager for secure secret retrieval in Chef-managed infrastructure.
 
@@ -22,14 +22,13 @@ The following platforms have been certified with integration tests:
 
 ### Chef
 
-- Chef Infra Client 16.0+
+- Chef Infra Client 18.0+ (the `keeper_secrets_manager` Ruby SDK gem requires Ruby >= 3.1, which Chef 18 is the first line to ship on all supported platforms)
 - Chef Workstation 21.0+ (for development)
 
 ### Dependencies
 
-- Python 3.6+ (automatically installed if not present)
-- pip (automatically installed)
-- Internet connection for downloading Keeper SDK
+- `keeper_secrets_manager` Ruby gem (installed automatically via `chef_gem`, pinned to a specific version by `ksm_install`'s `sdk_version` property)
+- Internet connection for installing the gem
 
 ## Usage
 
@@ -40,8 +39,6 @@ This cookbook provides custom resources for installing and configuring Keeper Se
 ```ruby
 # Install Keeper Secrets Manager
 ksm_install 'keeper_setup' do
-  python_sdk true
-  cli_tool true
   action :install
 end
 
@@ -55,23 +52,21 @@ end
 ### Advanced Configuration
 
 ```ruby
-# Custom installation directory
+# Custom installation directory and gem version
 ksm_install 'keeper_custom' do
-  python_sdk true
-  cli_tool true
   base_dir '/custom/keeper/path'
+  sdk_version '17.2.1'
   action :install
 end
 
-# Retrieve secrets with custom timeout
 ksm_fetch 'database_secrets' do
   input_path '/opt/keeper_secrets_manager/input.json'
-  timeout 600
   action :run
 end
 
-# Use retrieved secrets in templates
-secrets = lazy { JSON.parse(File.read('/opt/keeper_secrets_manager/keeper_output.txt')) }
+# Secrets with no env:/file: prefix in input.json are stored in
+# node.run_state, never written to disk
+secrets = lazy { node.run_state['keeper_secrets'] }
 
 template '/etc/myapp/config.yml' do
   source 'config.yml.erb'
@@ -85,11 +80,14 @@ end
 
 ## Authentication
 
-The cookbook supports multiple authentication methods with the following priority:
+`input.json`'s `authentication` array selects one of three methods. Where the
+credential value comes from depends on which method is chosen:
 
-1. **Encrypted Data Bags** (Production)
-2. **Environment Variables** (Development)
-3. **Input File Configuration** (Testing)
+| Method | Value source | Typical use |
+|--------|---------------|-------------|
+| `base64` | Encrypted data bag (`keeper`/`keeper_config`), falling back to the `KEEPER_CONFIG` environment variable. Never read from `input.json` itself. | Production - a persistent, reusable vault credential |
+| `token` | The literal one-time token, as `input.json`'s `authentication[1]`. Binds once, then persists the result to `base_dir/config/keeper_config.json` so a spent token is never reused. | First-run bootstrap |
+| `json` | A literal config file path, as `input.json`'s `authentication[1]`, unconditionally - never overridden by `KEEPER_CONFIG` | An existing config file already on the node |
 
 ### Encrypted Data Bags
 
@@ -113,13 +111,16 @@ knife data bag from file keeper keeper_config.json --secret-file /path/to/secret
 
 **Usage in recipes:**
 ```ruby
-# The cookbook automatically checks for encrypted data bags
-# Priority: 1. Encrypted data bags, 2. Environment variables, 3. Input file
+# With authentication: ["base64"] in input.json, the data bag above is
+# checked first; KEEPER_CONFIG is only a fallback if it's missing.
 include_recipe 'keeper_secrets_manager::install'
 include_recipe 'keeper_secrets_manager::fetch'
 ```
 
 ### Environment Variables
+
+Only consulted as a fallback for the `base64` method when the encrypted data
+bag above isn't available:
 
 ```bash
 export KEEPER_CONFIG='eyJhcHBLZXkiOiJCaU...'
@@ -141,20 +142,20 @@ export KEEPER_CONFIG='eyJhcHBLZXkiOiJCaU...'
 
 ### `ksm_install`
 
-Installs Keeper Secrets Manager components.
+Installs the `keeper_secrets_manager` Ruby SDK gem and writes the encrypted-data-bag config file.
 
 #### Actions
 
-- `:install` (default) - Installs all components
+- `:install` (default) - Installs the gem and writes the config file
+- `:remove` - Removes the gem and deletes `base_dir`
+- `:upgrade` - Upgrades the gem to `sdk_version`
 
 #### Properties
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `python_sdk` | Boolean | `true` | Install Python SDK |
-| `cli_tool` | Boolean | `true` | Install CLI tool |
-| `user_install` | Boolean | `false` | Install for user only |
-| `base_dir` | String | Platform-specific | Base installation directory |
+| `base_dir` | String | From the `node['keeper_secrets_manager']['base_dir']` attribute (platform-specific) | Base directory for the config file |
+| `sdk_version` | String | `17.2.1` | Pinned `keeper_secrets_manager` gem version |
 
 #### Examples
 
@@ -164,16 +165,15 @@ ksm_install 'keeper_setup'
 
 # Custom configuration
 ksm_install 'keeper_custom' do
-  python_sdk true
-  cli_tool false
   base_dir '/opt/keeper'
+  sdk_version '17.2.1'
   action :install
 end
 ```
 
 ### `ksm_fetch`
 
-Retrieves secrets from Keeper vault.
+Retrieves secrets from Keeper vault directly via the Ruby SDK - no subprocess, no Python.
 
 #### Actions
 
@@ -183,9 +183,8 @@ Retrieves secrets from Keeper vault.
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `input_path` | String | Required | Path to input JSON file |
-| `deploy_path` | String | Auto-generated | Path to deploy Python script |
-| `timeout` | Integer | `300` | Execution timeout in seconds |
+| `input_path` | String | `base_dir/input.json` | Path to input JSON file |
+| `base_dir` | String | From the `node['keeper_secrets_manager']['base_dir']` attribute (platform-specific) | Where the `token` method persists its bound config |
 
 #### Examples
 
@@ -193,13 +192,6 @@ Retrieves secrets from Keeper vault.
 # Basic secret retrieval
 ksm_fetch 'fetch_secrets' do
   input_path '/opt/keeper_secrets_manager/input.json'
-end
-
-# With custom timeout
-ksm_fetch 'long_running_secrets' do
-  input_path '/opt/keeper_secrets_manager/input.json'
-  timeout 600
-  action :run
 end
 ```
 
@@ -219,7 +211,9 @@ Demonstrates secret retrieval using the `ksm_fetch` resource.
 
 ## Attributes
 
-This cookbook uses no node attributes. All configuration is done through resource properties.
+| Attribute | Default | Description |
+|-----------|---------|--------------|
+| `node['keeper_secrets_manager']['base_dir']` | `/opt/keeper_secrets_manager` (Linux/macOS), `C:\ProgramData\keeper_secrets_manager` (Windows) | Shared default for both `ksm_install` and `ksm_fetch`'s `base_dir` property, so a `token`-method bind in `ksm_fetch` persists to the same directory `ksm_install` writes the encrypted-data-bag config to |
 
 ## Testing
 
@@ -228,6 +222,9 @@ This cookbook uses no node attributes. All configuration is done through resourc
 ```bash
 # Set up testing environment
 export KEEPER_CONFIG='your-base64-config'
+
+# Install pinned test/dev gems (chefspec, keeper_secrets_manager) from the Gemfile
+chef exec bundle install
 ```
 
 ### Running Tests
@@ -237,23 +234,22 @@ export KEEPER_CONFIG='your-base64-config'
 ./run_all_tests.sh
 
 # Run individual test types
-./test_python.sh          # Python unit tests
-chef exec rspec           # ChefSpec tests
-chef exec cookstyle .     # Style checks
+chef exec bundle exec rspec       # RSpec + ChefSpec tests
+chef exec cookstyle .              # Style checks
 ```
 
 ### Test Coverage
 
-- Python Unit Tests (11 tests)
+- RSpec (Ruby notation-parsing logic in `libraries/ksm_helpers.rb`)
 - ChefSpec Tests (Resource and recipe testing)
-- Integration Tests (Docker-based end-to-end testing)
+- Integration Tests (Docker-based end-to-end testing, Test Kitchen + InSpec)
 - Style Tests (Cookstyle compliance)
 
 ## External Documentation
 
 - [Keeper Secrets Manager Documentation](https://docs.keeper.io/secrets-manager/)
 - [Keeper Developer Portal](https://developer.keeper.io/)
-- [Python SDK Documentation](https://github.com/Keeper-Security/secrets-manager)
+- [Ruby SDK Documentation](https://github.com/Keeper-Security/secrets-manager/tree/master/sdk/ruby)
 
 ## Contributing
 
@@ -270,13 +266,11 @@ chef exec cookstyle .     # Style checks
 
 - Chef Workstation 21.0+
 - Docker (for integration tests)
-- Python 3.6+ (for unit tests)
 
 ### Code Style
 
 - Follow [Chef Style Guide](https://docs.chef.io/ruby/)
 - Use Cookstyle for Ruby code formatting
-- Follow PEP 8 for Python code
 - Write clear, descriptive commit messages
 
 ## License

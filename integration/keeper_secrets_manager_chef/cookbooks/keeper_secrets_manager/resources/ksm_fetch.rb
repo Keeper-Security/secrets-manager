@@ -1,3 +1,6 @@
+require 'json'
+require 'fileutils'
+
 unified_mode true
 
 provides :ksm_fetch
@@ -5,142 +8,96 @@ provides :ksm_fetch
 property :input_path, String,
          description: 'Path to input.json file (optional - uses default if not provided)'
 
-property :timeout, Integer,
-         default: 300,
-         description: 'Timeout for script execution'
-
-property :deploy_path, String,
-         default: lazy {
-           platform_family?('windows') ? 'C:\ProgramData\keeper_secrets_manager\scripts\ksm.py' : '/opt/keeper_secrets_manager/scripts/ksm.py'
-         },
-         description: 'Where to deploy the script for execution'
+property :base_dir, String,
+         default: lazy { node['keeper_secrets_manager']['base_dir'] },
+         description: 'Base directory holding input.json and, for the token auth method, the persisted config file'
 
 action :run do
-  # Check input file if provided
-  if new_resource.input_path
-    unless ::File.exist?(new_resource.input_path)
-      raise "Input file not found: #{new_resource.input_path}"
+  # The keeper_secrets_manager gem is installed by ksm_install's chef_gem
+  # resource at converge time, so this require must stay inside the action
+  # block, not at the top of the file - a top-of-file require runs at
+  # compile time, before ksm_install's chef_gem has had a chance to run.
+  require 'keeper_secrets_manager'
+
+  path = new_resource.input_path || ::File.join(new_resource.base_dir, 'input.json')
+  raise "Input file not found: #{path}" unless ::File.exist?(path)
+
+  config = ::JSON.parse(::File.read(path))
+  sm = build_secrets_manager(config['authentication'])
+
+  Array(config['secrets']).each do |entry|
+    keeper_notation, output_name, action_type = parse_secret_notation(entry)
+    value = sm.get_notation("keeper://#{keeper_notation}")
+
+    case action_type
+    when :env
+      ENV[output_name] = value.to_s
+      Chef::Log.info("Keeper secret exported to ENV['#{output_name}']")
+    when :file
+      ::FileUtils.mkdir_p(::File.dirname(output_name))
+      ::File.binwrite(output_name, value)
+      ::File.chmod(0o600, output_name)
+      Chef::Log.info("Keeper secret written to #{output_name}")
+    else
+      node.run_state['keeper_secrets'] ||= {}
+      node.run_state['keeper_secrets'][output_name] = value
+      Chef::Log.info("Keeper secret stored in node.run_state['keeper_secrets']['#{output_name}']")
     end
   end
 
-  # Always deploy the script from the cookbook to a known location
-  cookbook_file new_resource.deploy_path do
-    source 'ksm.py'
-    cookbook 'keeper_secrets_manager'
-    mode '0755'
-    action :create
-  end
-
-  run_keeper_script
+  Chef::Log.info('Keeper secrets fetched successfully')
 end
 
 action_class do
-  def run_keeper_script
-    # Prefer python discovered during install (persisted into run_state),
-    # then validated candidate (Windows only), then fallback
-    python_cmd = node.run_state['ksm_python'] || (platform_family?('windows') ? find_valid_python : nil) || which_python
-    script_path = new_resource.deploy_path
+  include KeeperSecretsManagerCookbook::Helpers
 
-    if platform_family?('windows')
-      # Quote paths on Windows to handle spaces
-      if new_resource.input_path
-        full_command = "\"#{python_cmd}\" \"#{script_path}\" --input \"#{new_resource.input_path}\""
-        Chef::Log.info("Running Keeper script with: #{new_resource.input_path}")
-      else
-        full_command = "\"#{python_cmd}\" \"#{script_path}\""
-        Chef::Log.info('Running Keeper script with default input.json')
+  # input.json's "authentication" array is [method, value]. Where that value
+  # comes from depends on the method:
+  #
+  # - base64: value is never read from input.json itself (that file is
+  #   deployed at mode 0644 by recipes/fetch.rb, so it's not a safe place for
+  #   a persistent vault credential). Sourced from load_keeper_config instead
+  #   (encrypted data bag, falling back to KEEPER_CONFIG env).
+  # - token: value is the one-time token literally, taken from input.json -
+  #   a token is meant to be handed over inline and is single-use, unlike a
+  #   base64 config. The bound result persists to base_dir/config so a spent
+  #   token is never reused on the next run.
+  # - json: value is a literal config file path, taken from input.json,
+  #   never overridden by KEEPER_CONFIG - the old Python script's env-first
+  #   check applied to every method regardless of which one was requested,
+  #   which meant an unrelated ambient env var could silently hijack a
+  #   json-configured run.
+  def build_secrets_manager(auth_config)
+    method = Array(auth_config).first
+
+    case method
+    when 'base64'
+      config_value = load_keeper_config
+      unless config_value
+        raise 'No Keeper config found in encrypted data bag or KEEPER_CONFIG environment variable'
       end
+
+      ::KeeperSecretsManager::Core::SecretsManager.new(
+        config: ::KeeperSecretsManager::Storage::InMemoryStorage.new(config_value)
+      )
+    when 'token'
+      token = Array(auth_config)[1]
+      raise "authentication method 'token' requires the one-time token as the second element" if token.to_s.empty?
+
+      persisted_config_path = ::File.join(new_resource.base_dir, 'config', 'keeper_config.json')
+      ::KeeperSecretsManager::Core::SecretsManager.new(
+        config: ::KeeperSecretsManager::Storage::FileStorage.new(persisted_config_path),
+        token: token
+      )
+    when 'json'
+      config_path = Array(auth_config)[1]
+      raise "authentication method 'json' requires a config file path as the second element" if config_path.to_s.empty?
+
+      ::KeeperSecretsManager::Core::SecretsManager.new(
+        config: ::KeeperSecretsManager::Storage::FileStorage.new(config_path)
+      )
     else
-      command_parts = [python_cmd, script_path]
-      if new_resource.input_path
-        command_parts << '--input'
-        command_parts << new_resource.input_path
-        Chef::Log.info("Running Keeper script with: #{new_resource.input_path}")
-      else
-        Chef::Log.info('Running Keeper script with default input.json')
-      end
-      full_command = command_parts.join(' ')
+      raise ArgumentError, "Unsupported authentication method: #{method.inspect}"
     end
-
-    # Load Keeper config from data bag or ENV
-    keeper_config = load_keeper_config
-
-    execute "keeper_fetch_#{new_resource.name}" do
-      command full_command
-      timeout new_resource.timeout
-      live_stream true
-      environment('PYTHONUNBUFFERED' => '1', 'KEEPER_CONFIG' => keeper_config)
-    end
-
-    Chef::Log.info('Keeper script completed')
-  end
-
-  def which_python
-    if platform_family?('windows')
-      # Prefer the validated python from find_valid_python (skips WindowsApps shims)
-      valid = find_valid_python
-      return valid if valid
-
-      # Fallback: try simple where/query and common locations
-      %w(python3 python).each do |cmd|
-        result = shell_out("where #{cmd}")
-        next unless result.exitstatus == 0
-        paths = result.stdout.strip.split(/\r?\n/)
-        real_path = paths.find { |p| !p.downcase.include?('windowsapps') && ::File.exist?(p) }
-        return real_path if real_path
-      end
-
-      common_paths = [
-        'C:\Program Files\Python313\python.exe',
-        'C:\Program Files\Python312\python.exe',
-        "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python313\\python.exe",
-        "#{ENV['LOCALAPPDATA']}\\Programs\\Python\\Python312\\python.exe",
-      ]
-      found = common_paths.find { |p| ::File.exist?(p) }
-      return found if found
-      'python'
-    else
-      %w(python3 python).each do |cmd|
-        result = shell_out("which #{cmd}")
-        return cmd if result.exitstatus == 0
-      end
-      'python3'
-    end
-  rescue
-    platform_family?('windows') ? 'python' : 'python3'
-  end
-
-  # --- Encrypted Data Bag Loader ---
-  def load_keeper_config
-    begin
-      # Chef automatically uses encrypted_data_bag_secret from config
-      keeper_config = data_bag_item('keeper', 'keeper_config')
-      keeper_config['config_json'] || keeper_config['token']
-    rescue Net::HTTPClientException, Chef::Exceptions::InvalidDataBagPath, Errno::ENOENT, Chef::Exceptions::SecretNotFound
-      Chef::Log.warn('No Encrypted Data Bag found, falling back to KEEPER_CONFIG environment variable')
-      ENV['KEEPER_CONFIG']
-    end
-  end
-
-  # helper: find a real python executable on Windows (avoid WindowsApps shims)
-  def find_valid_python
-    # Only run this on Windows
-    return unless platform_family?('windows')
-    begin
-      %w(python3 python).each do |c|
-        res = shell_out("where #{c}")
-        next unless res.exitstatus == 0
-        candidates = res.stdout.split(/\r?\n/).map(&:strip)
-        candidates.each do |p|
-          next unless ::File.exist?(p)
-          next if p.downcase.include?('windowsapps')
-          v = shell_out("\"#{p}\" --version")
-          return p if v.exitstatus == 0
-        end
-      end
-    rescue
-      nil
-    end
-    nil
   end
 end

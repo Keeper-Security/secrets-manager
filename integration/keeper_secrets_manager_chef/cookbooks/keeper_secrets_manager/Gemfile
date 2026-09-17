@@ -1,0 +1,8 @@
+source 'https://rubygems.org'
+
+group :development, :test do
+  gem 'chefspec', '~> 9.0'
+  # Pinned to match resources/ksm_install.rb's sdk_version default, so the
+  # test suite always exercises the same SDK version that ships to nodes.
+  gem 'keeper_secrets_manager', '17.2.1'
+end

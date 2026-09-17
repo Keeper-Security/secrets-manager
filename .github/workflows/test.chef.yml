@@ -1,0 +1,46 @@
+name: Test Chef Cookbook
+
+on:
+  pull_request:
+    branches: [master, 'release/**']
+    paths:
+      - 'integration/keeper_secrets_manager_chef/**'
+      - '.github/workflows/test.chef.yml'
+  push:
+    branches: [master, 'release/**']
+    paths:
+      - 'integration/keeper_secrets_manager_chef/**'
+      - '.github/workflows/test.chef.yml'
+
+jobs:
+  test-chef-cookbook:
+    name: Test Chef Cookbook
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
+
+    steps:
+      - name: Get the source code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@984c0c890880bbf811283d6f09c4607c62d210a4 # v1
+        with:
+          ruby-version: '3.3'
+          working-directory: ./integration/keeper_secrets_manager_chef/cookbooks/keeper_secrets_manager
+
+      - name: Install dependencies
+        run: bundle install
+
+      - name: Run cookstyle
+        run: bundle exec cookstyle .
+
+      - name: Run RSpec/ChefSpec
+        run: bundle exec rspec

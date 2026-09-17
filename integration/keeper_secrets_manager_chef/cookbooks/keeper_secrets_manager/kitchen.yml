@@ -10,7 +10,7 @@ platforms:
 suites:
   - name: default
     run_list:
-      - recipe[keeper_secrets_manager_chef::default]
+      - recipe[keeper_secrets_manager::install]
     verifier:
       inspec_tests:
         - test/integration/default
