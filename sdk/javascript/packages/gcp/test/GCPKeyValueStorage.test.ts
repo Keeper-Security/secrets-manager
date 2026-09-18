@@ -32,9 +32,11 @@ jest.mock('fs', () => ({
         writeFile: jest.fn(),
         mkdir: jest.fn(),
         access: jest.fn(),
+        chmod: jest.fn(),
     }
 }));
 
+import { promises as fs } from 'fs';
 import { GCPKeyValueStorage } from '../src/GCPKeyValueStore';
 import { GCPKeyConfig } from '../src/GcpKeyConfig';
 import { GCPKSMClient } from '../src/GcpKmsClient';
@@ -417,5 +419,33 @@ describe('GCPKeyValueStorage', () => {
             // Should not throw; saveStorage still called
             await expect(storage.delete('missing')).resolves.toBeUndefined();
         });
+    });
+
+    describe('createConfigFileIfMissing() fs.access error handling', () => {
+        let storage: GCPKeyValueStorage;
+
+        beforeEach(() => {
+            jest.clearAllMocks();
+            const gcpKeyConfig = new GCPKeyConfig(
+                'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
+            );
+            storage = new GCPKeyValueStorage('./test-config.json', gcpKeyConfig, mockSessionConfig);
+        });
+
+        it('should not overwrite the config file when fs.access fails with EACCES', async () => {
+            const accessError = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+            (fs.access as jest.Mock).mockRejectedValue(accessError);
+
+            // Any downstream encryption error past the write is irrelevant to this assertion
+            await (storage as any).createConfigFileIfMissing().catch(() => undefined);
+
+            expect(fs.writeFile).not.toHaveBeenCalled();
+        });
+
+        // The ENOENT-still-creates case, and the config-file-permission assertions that used
+        // to live here, moved to GCPKeyValueStorage.atomicWrite.test.ts. The write path now goes
+        // through writeFileAtomicSync (real sync fs calls), which this file's blanket
+        // jest.mock('fs', ...) can't exercise meaningfully - asserting against the old
+        // fs.promises.writeFile/chmod mocks would just prove those mocks are never called.
     });
 });
