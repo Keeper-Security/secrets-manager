@@ -1,14 +1,14 @@
 # vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
 ---
-- name: Keeper Create Subfolder
+- name: Keeper Create Subfolder With Stale Key
   hosts: "my_systems"
   gather_facts: no
 
   tasks:
-  - name: "Create Record in Subfolder"
+  - name: "Create Record Using The Old folder_uid Key"
     keeper_create:
       shared_folder_uid: "{{ shared_folder_uid }}"
-      subfolder_uid: "{{ subfolder_uid | default(omit) }}"
+      folder_uid: "{{ subfolder_uid }}"
       record_type: login
       generate_password: True
       title: "My Subfolder Record"
@@ -16,8 +16,3 @@
         - type: login
           value: "johndoe@localhost"
     register: "new_record"
-
-  - name: "Print Record UID"
-    debug:
-      var: new_record.record_uid
-      verbosity: 0
