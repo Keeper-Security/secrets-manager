@@ -1,6 +1,6 @@
 {
     "name": "@keeper-security/secrets-manager-azure",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Keeper Secrets Manager Azure storage",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
