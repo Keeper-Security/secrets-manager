@@ -597,14 +597,19 @@ class KeeperAnsible:
 
         return records[0]
 
-    def create_record(self, new_record, shared_folder_uid, folder_uid=None):
+    def create_record(self, new_record, shared_folder_uid, subfolder_uid=None):
         # KSM-816: use create_secret_with_options() instead of create_secret() so
         # that folder keys are fetched via the get_folders endpoint, which returns
         # all folders including empty ones. create_secret() uses get_secrets() which
         # only returns folder keys when the folder already contains records.
+        #
+        # Normalize a falsy subfolder_uid to None: the SDK sets payload.subFolderUid
+        # unconditionally and serializes the whole payload, so an empty string from a
+        # playbook would otherwise reach the server as subFolderUid: "".
+        subfolder_uid = subfolder_uid or None
         try:
             record_uid = self.client.create_secret_with_options(
-                CreateOptions(shared_folder_uid, folder_uid), new_record
+                CreateOptions(shared_folder_uid, subfolder_uid), new_record
             )
         except Exception as err:
             raise Exception("Cannot get create record: {}".format(err))

@@ -26,16 +26,18 @@ options:
   shared_folder_uid:
     description:
     - The UID of the top-level shared folder in your Keeper application.
-    - To create in a subfolder, also provide C(folder_uid).
+    - To create in a subfolder, also provide C(subfolder_uid).
     type: str
     required: yes
-  folder_uid:
+  subfolder_uid:
     description:
-    - The UID of a subfolder within the shared folder where the record should be created.
-    - When omitted, the record is created at the shared folder root.
-    - The subfolder must already exist and be accessible to the KSM application.
+    - The UID of an existing subfolder, nested under shared_folder_uid, to create the
+      record in.
+    - The subfolder must already exist and must be accessible to the KSM application.
+    - If omitted, the record is created directly in the shared folder.
     type: str
     required: no
+    version_added: "1.5.0"
   record_type:
     description:
     - The type if record to create.
@@ -210,7 +212,7 @@ EXAMPLES = r'''
 - name: Create a record in a subfolder
   keeper_create:
     shared_folder_uid: SHARED_FOLDER_UID
-    folder_uid: SUBFOLDER_UID
+    subfolder_uid: SUBFOLDER_UID
     record_type: login
     title: My Subfolder Record
     generate_password: True

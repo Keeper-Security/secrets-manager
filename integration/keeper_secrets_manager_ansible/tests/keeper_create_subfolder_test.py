@@ -13,8 +13,9 @@ class KeeperCreateSubfolderTest(unittest.TestCase):
     """
     Unit tests for KeeperAnsible.create_record() subfolder support (KSM-845).
 
-    Tests that folder_uid flows through to CreateOptions.subfolder_uid,
-    and that omitting folder_uid preserves backward-compatible None behavior.
+    Tests that subfolder_uid flows through to CreateOptions.subfolder_uid, that
+    omitting it leaves CreateOptions.subfolder_uid as None, and that an empty
+    string normalizes to None instead of reaching CreateOptions as "".
     """
 
     def _make_keeper(self):
@@ -24,19 +25,29 @@ class KeeperCreateSubfolderTest(unittest.TestCase):
         keeper.client = mock_client
         return keeper, mock_client
 
-    def test_folder_uid_passed_as_subfolder_uid(self):
+    def test_subfolder_uid_passed_to_create_options(self):
         keeper, mock_client = self._make_keeper()
-        keeper.create_record(MagicMock(), "SHARED_UID", folder_uid="SUB_UID")
+        keeper.create_record(MagicMock(), "SHARED_UID", subfolder_uid="SUB_UID")
         create_options = mock_client.create_secret_with_options.call_args[0][0]
         self.assertIsInstance(create_options, CreateOptions)
         self.assertEqual(create_options.folder_uid, "SHARED_UID")
         self.assertEqual(create_options.subfolder_uid, "SUB_UID")
 
-    def test_no_folder_uid_defaults_to_none(self):
+    def test_no_subfolder_uid_defaults_to_none(self):
         keeper, mock_client = self._make_keeper()
         keeper.create_record(MagicMock(), "SHARED_UID")
         create_options = mock_client.create_secret_with_options.call_args[0][0]
         self.assertIsInstance(create_options, CreateOptions)
+        self.assertEqual(create_options.folder_uid, "SHARED_UID")
+        self.assertIsNone(create_options.subfolder_uid)
+
+    def test_empty_subfolder_uid_normalizes_to_none(self):
+        # An empty string must not reach the wire. The SDK sets payload.subFolderUid
+        # unconditionally and serializes the whole payload, so "" would otherwise be
+        # sent as subFolderUid: "".
+        keeper, mock_client = self._make_keeper()
+        keeper.create_record(MagicMock(), "SHARED_UID", subfolder_uid="")
+        create_options = mock_client.create_secret_with_options.call_args[0][0]
         self.assertEqual(create_options.folder_uid, "SHARED_UID")
         self.assertIsNone(create_options.subfolder_uid)
 
@@ -85,7 +96,7 @@ class KeeperCreateSubfolderPlaybookTest(unittest.TestCase):
                     playbook="keeper_create_subfolder.yml",
                     vars={
                         "shared_folder_uid": "SHARED_UID",
-                        "folder_uid": "SUB_UID",
+                        "subfolder_uid": "SUB_UID",
                     },
                     mock_responses=[mock_response]
                 )
@@ -102,3 +113,46 @@ class KeeperCreateSubfolderPlaybookTest(unittest.TestCase):
         finally:
             if os.path.exists(capture_path):
                 os.remove(capture_path)
+
+
+class KeeperCreateStaleFolderUidKeyTest(unittest.TestCase):
+    """
+    Integration test proving a playbook that still uses the old folder_uid key
+    fails loudly instead of silently creating the record at the shared folder root.
+
+    No plugin in this integration declares an argument_spec, so ansible does not
+    reject an unknown task argument on its own; without this guard, a task that
+    still says folder_uid would have that key silently dropped by
+    self._task.args.get("subfolder_uid"), and the record would be created at the
+    shared folder root rather than the subfolder the playbook author intended.
+
+    A task that raises AnsibleError makes ansible-playbook exit non-zero, which
+    AnsibleTestFramework.run() converts into a caught exception rather than a
+    parsed PLAY RECAP line: its "results" return value is {} in that case, so
+    result["failed"] would raise KeyError instead of failing the assertion
+    cleanly. stdout/stderr are still captured before that exception propagates,
+    so this test reads the guard's message from there instead of from result.
+    """
+
+    def test_stale_folder_uid_key_fails_loudly(self):
+        mock_response = Response()
+        mock_record = Record(title="Record 1", record_type="login")
+        mock_record.field("password", "MYPASSWORD")
+        mock_response.add_record(record=mock_record)
+
+        a = AnsibleTestFramework(
+            playbook="keeper_create_subfolder_stale_key.yml",
+            vars={
+                "shared_folder_uid": "SHARED_UID",
+                "subfolder_uid": "SUB_UID",
+            },
+            mock_responses=[mock_response]
+        )
+        result, out, err = a.run()
+
+        self.assertEqual(result, {}, "expected the task to fail, not report a normal PLAY RECAP")
+        self.assertIn(
+            "The folder_uid parameter for keeper_create has been renamed to subfolder_uid.",
+            out + err,
+            "expected the rename guard's AnsibleError message in the playbook output"
+        )
