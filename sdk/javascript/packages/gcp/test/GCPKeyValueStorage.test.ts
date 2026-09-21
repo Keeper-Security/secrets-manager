@@ -32,9 +32,11 @@ jest.mock('fs', () => ({
         writeFile: jest.fn(),
         mkdir: jest.fn(),
         access: jest.fn(),
+        chmod: jest.fn(),
     }
 }));
 
+import { promises as fs } from 'fs';
 import { GCPKeyValueStorage } from '../src/GCPKeyValueStore';
 import { GCPKeyConfig } from '../src/GcpKeyConfig';
 import { GCPKSMClient } from '../src/GcpKmsClient';
@@ -417,5 +419,54 @@ describe('GCPKeyValueStorage', () => {
             // Should not throw; saveStorage still called
             await expect(storage.delete('missing')).resolves.toBeUndefined();
         });
+    });
+
+    describe('createConfigFileIfMissing() fs.access error handling', () => {
+        let storage: GCPKeyValueStorage;
+
+        beforeEach(() => {
+            jest.clearAllMocks();
+            const gcpKeyConfig = new GCPKeyConfig(
+                'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
+            );
+            storage = new GCPKeyValueStorage('./test-config.json', gcpKeyConfig, mockSessionConfig);
+            const cryptoClient = mockSessionConfig.getCryptoClient();
+            (cryptoClient.getCryptoKey as jest.Mock).mockResolvedValue([
+                { purpose: 'ENCRYPT_DECRYPT', versionTemplate: { algorithm: 'GOOGLE_SYMMETRIC_ENCRYPTION' } },
+            ]);
+        });
+
+        // Table-driven so narrowing the ENOENT check later (e.g. to `!== "ENOENT" && !== "EPERM"`)
+        // reopens the hole for one code without this test noticing. Goes through the public
+        // init() entry point (getKeyDetails() -> loadConfig() -> createConfigFileIfMissing()),
+        // not the private method directly, so a regression that swallows the rejection instead
+        // of throwing it - the actual security property KSM-1370 exists to guarantee - fails
+        // this test. A `.catch(() => undefined)` assertion on write-not-called alone can't tell
+        // the difference between "rejected" and "silently returned".
+        it.each(['EACCES', 'EPERM', 'ESTALE', 'EIO', 'EBUSY'])(
+            'init() rejects and writes nothing when fs.access fails with %s',
+            async (code) => {
+                const accessError = Object.assign(new Error(`${code}: access failure`), { code });
+                (fs.access as jest.Mock).mockRejectedValue(accessError);
+
+                await expect(storage.init()).rejects.toMatchObject({ code });
+                expect(fs.writeFile).not.toHaveBeenCalled();
+            }
+        );
+
+        it('saveString() also rejects and writes nothing when fs.access fails with EACCES', async () => {
+            const accessError = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+            (fs.access as jest.Mock).mockRejectedValue(accessError);
+
+            await expect(storage.saveString('clientId', 'x')).rejects.toMatchObject({ code: 'EACCES' });
+            expect(fs.writeFile).not.toHaveBeenCalled();
+        });
+
+        // The ENOENT-still-creates case and the config-file-permission assertions that used to
+        // live here both moved to GCPKeyValueStorage.atomicWrite.test.ts: on ENOENT, this method
+        // falls through to writeFileAtomicSync's real, unmocked sync fs calls (openSync/writeSync/
+        // renameSync), and this file's blanket jest.mock('fs', ...) only stubs `fs.promises` - so
+        // `fs.openSync` etc. don't exist under it, and asserting against the old
+        // fs.promises.writeFile/chmod mocks would just prove those mocks are never called.
     });
 });
