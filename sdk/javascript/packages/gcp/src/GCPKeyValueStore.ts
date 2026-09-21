@@ -295,8 +295,15 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         }
       }
 
-      // Check if saving is necessary
-      if (!force && configHash === this.lastSavedConfigHash) {
+      // A matching hash only proves the in-memory config is unchanged, not that the file on disk
+      // still holds it. A file deleted underneath a running process must fall through to a real
+      // save of this.config, because createConfigFileIfMissing() would otherwise recreate it
+      // holding only an empty "{}" placeholder.
+      if (
+        !force &&
+        configHash === this.lastSavedConfigHash &&
+        (await this.configFileExists())
+      ) {
         this.logger.warn("Skipped config JSON save. No changes detected.");
         return;
       }
@@ -426,6 +433,19 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       );
     }
     return true;
+  }
+
+  // Matches fs.existsSync semantics: any access failure, not just ENOENT, reports false. The
+  // caller only uses this to decide whether a save can be skipped, and a save that cannot be
+  // skipped goes on to createConfigFileIfMissing(), which is where the ENOENT-only policy for
+  // acting on an access failure lives.
+  private async configFileExists(): Promise<boolean> {
+    try {
+      await fs.access(resolve(this.configFileLocation));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async createConfigFileIfMissing(): Promise<void> {
