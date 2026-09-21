@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - KSM-1370 - `createConfigFileIfMissing()` no longer overwrites the config file on a transient `fs.access` failure (`EACCES`, `EPERM`, `ESTALE`). Only a genuinely missing file (`ENOENT`) triggers recreation.
 - KSM-1450 - Config file writes now use restrictive file permissions (0600), including on a config file that already exists from an earlier SDK version. Writes go through an atomic temp-file-then-rename (also fixes KSM-1458).
+- KSM-1457 - A blank `KSM_CONFIG_FILE` environment variable, or a blank `keyVaultConfigFileLocation` argument, now falls back to the next source instead of being used as the config file path. `??` falls back only on `null` and `undefined`, so an empty value (a common result of a Docker `--env-file` or a Kubernetes ConfigMap entry with no value) resolved to the current working directory, which `fs.access` reported as an existing config file.
 
 ### Maintenance
 

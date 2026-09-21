@@ -24,6 +24,12 @@ import { getLogger } from "./Logger";
 import { KMSClient } from "./interface/UtilOptions";
 import { Logger } from "pino";
 
+// `??` falls back only on null and undefined, so a blank value would otherwise be taken as a
+// real path (a common result of a Docker --env-file or a Kubernetes ConfigMap entry with no
+// value), and resolve("") is the current working directory, which fs.access reports as existing.
+const nonBlank = (value: string | null | undefined): string | undefined =>
+  value == null || value.trim() === "" ? undefined : value;
+
 export class GCPKeyValueStorage implements KeyValueStorage {
   private defaultConfigFileLocation: string = "client-config.json";
   private cryptoClient!: KMSClient;
@@ -85,8 +91,8 @@ export class GCPKeyValueStorage implements KeyValueStorage {
    * Initializes GCPKeyValueStorage
    *
    * @param {string | null} keyVaultConfigFileLocation Custom config file location.
-   *    If null or undefined, reads from env KSM_CONFIG_FILE.
-   *    If env KSM_CONFIG_FILE is not set, uses default location.
+   *    If null, undefined, or blank, reads from env KSM_CONFIG_FILE.
+   *    If env KSM_CONFIG_FILE is not set or is blank, uses default location.
    * @param {GCPKeyConfig} gcpKeyConfig The configuration for the GCP KMS key.
    * @param {GCPKSMClient} gcpSessionConfig The GCP KMS client session configuration.
    * @param {LoggerLogLevelOptions } logLevel The log level to use for the logger.
@@ -98,8 +104,8 @@ export class GCPKeyValueStorage implements KeyValueStorage {
     logLevel?: LoggerLogLevelOptions
   ) {
     this.configFileLocation =
-      keyVaultConfigFileLocation ??
-      process.env.KSM_CONFIG_FILE ??
+      nonBlank(keyVaultConfigFileLocation) ??
+      nonBlank(process.env.KSM_CONFIG_FILE) ??
       this.defaultConfigFileLocation;
 
     this.logger = logLevel == null ? getLogger(DEFAULT_LOG_LEVEL) : getLogger(logLevel);
