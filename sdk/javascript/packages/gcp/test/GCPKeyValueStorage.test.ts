@@ -35,6 +35,7 @@ jest.mock('fs', () => ({
     }
 }));
 
+import { promises as fs } from 'fs';
 import { GCPKeyValueStorage } from '../src/GCPKeyValueStore';
 import { GCPKeyConfig } from '../src/GcpKeyConfig';
 import { GCPKSMClient } from '../src/GcpKmsClient';
@@ -416,6 +417,57 @@ describe('GCPKeyValueStorage', () => {
 
             // Should not throw; saveStorage still called
             await expect(storage.delete('missing')).resolves.toBeUndefined();
+        });
+    });
+
+    describe('createConfigFileIfMissing() fs.access error handling', () => {
+        let storage: GCPKeyValueStorage;
+
+        beforeEach(() => {
+            jest.clearAllMocks();
+            const gcpKeyConfig = new GCPKeyConfig(
+                'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
+            );
+            storage = new GCPKeyValueStorage('./test-config.json', gcpKeyConfig, mockSessionConfig);
+            const cryptoClient = mockSessionConfig.getCryptoClient();
+            (cryptoClient.getCryptoKey as jest.Mock).mockResolvedValue([
+                { purpose: 'ENCRYPT_DECRYPT', versionTemplate: { algorithm: 'GOOGLE_SYMMETRIC_ENCRYPTION' } },
+            ]);
+        });
+
+        // Table-driven so narrowing the ENOENT check later (e.g. to `!== "ENOENT" && !== "EPERM"`)
+        // reopens the hole for one code without this test noticing. Goes through the public
+        // init() entry point (getKeyDetails() -> loadConfig() -> createConfigFileIfMissing()),
+        // not the private method directly, so a regression that swallows the rejection instead
+        // of throwing it - the actual security property KSM-1370 exists to guarantee - fails
+        // this test. A `.catch(() => undefined)` assertion on write-not-called alone can't tell
+        // the difference between "rejected" and "silently returned".
+        it.each(['EACCES', 'EPERM', 'ESTALE', 'EIO', 'EBUSY'])(
+            'init() rejects and writes nothing when fs.access fails with %s',
+            async (code) => {
+                const accessError = Object.assign(new Error(`${code}: access failure`), { code });
+                (fs.access as jest.Mock).mockRejectedValue(accessError);
+
+                await expect(storage.init()).rejects.toMatchObject({ code });
+                expect(fs.writeFile).not.toHaveBeenCalled();
+            }
+        );
+
+        it('saveString() also rejects and writes nothing when fs.access fails with EACCES', async () => {
+            const accessError = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+            (fs.access as jest.Mock).mockRejectedValue(accessError);
+
+            await expect(storage.saveString('clientId', 'x')).rejects.toMatchObject({ code: 'EACCES' });
+            expect(fs.writeFile).not.toHaveBeenCalled();
+        });
+
+        it('should still create the config file when fs.access fails with ENOENT', async () => {
+            const accessError = Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
+            (fs.access as jest.Mock).mockRejectedValue(accessError);
+
+            await (storage as any).createConfigFileIfMissing().catch(() => undefined);
+
+            expect(fs.writeFile).toHaveBeenCalledWith(expect.any(String), Buffer.from('{}'));
         });
     });
 });
