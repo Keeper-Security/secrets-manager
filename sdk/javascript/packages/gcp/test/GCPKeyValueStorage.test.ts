@@ -32,6 +32,7 @@ jest.mock('fs', () => ({
         writeFile: jest.fn(),
         mkdir: jest.fn(),
         access: jest.fn(),
+        chmod: jest.fn(),
     }
 }));
 
@@ -461,13 +462,11 @@ describe('GCPKeyValueStorage', () => {
             expect(fs.writeFile).not.toHaveBeenCalled();
         });
 
-        it('should still create the config file when fs.access fails with ENOENT', async () => {
-            const accessError = Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
-            (fs.access as jest.Mock).mockRejectedValue(accessError);
-
-            await (storage as any).createConfigFileIfMissing().catch(() => undefined);
-
-            expect(fs.writeFile).toHaveBeenCalledWith(expect.any(String), Buffer.from('{}'));
-        });
+        // The ENOENT-still-creates case and the config-file-permission assertions that used to
+        // live here both moved to GCPKeyValueStorage.atomicWrite.test.ts: on ENOENT, this method
+        // falls through to writeFileAtomicSync's real, unmocked sync fs calls (openSync/writeSync/
+        // renameSync), and this file's blanket jest.mock('fs', ...) only stubs `fs.promises` - so
+        // `fs.openSync` etc. don't exist under it, and asserting against the old
+        // fs.promises.writeFile/chmod mocks would just prove those mocks are never called.
     });
 });

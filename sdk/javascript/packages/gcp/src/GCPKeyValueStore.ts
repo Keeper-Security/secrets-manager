@@ -19,6 +19,7 @@ import {
   supportedKeyPurpose,
 } from "./constants";
 import { decryptBuffer, encryptBuffer } from "./utils";
+import { writeFileAtomicSync } from "./atomicWrite";
 import { getLogger } from "./Logger";
 import { KMSClient } from "./interface/UtilOptions";
 import { Logger } from "pino";
@@ -257,6 +258,10 @@ export class GCPKeyValueStorage implements KeyValueStorage {
     }
   }
 
+  private async writeSecureConfigFile(path: string, data: Buffer | string): Promise<void> {
+    writeFileAtomicSync(path, data);
+  }
+
   private async saveConfig(
     updatedConfig: Record<string, string> = {},
     force = false
@@ -322,7 +327,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         keyProperties: this.gcpKeyConfig,
         token: token
       }, this.logger);
-      await fs.writeFile(this.configFileLocation, blob);
+      await this.writeSecureConfigFile(this.configFileLocation, blob);
       this.logger.debug("writing to the file completed successfully.");
       // Update the last saved config hash
       this.lastSavedConfigHash = configHash;
@@ -377,7 +382,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         // Optionally autosave the decrypted content
         this.logger.debug("Autosave is true here. hence saving to file the decrypted configuration.");
         this.logger.warn("Saving the credentials file as plaintext file, please consider encrypting.");
-        await fs.writeFile(this.configFileLocation, plaintext);
+        await this.writeSecureConfigFile(this.configFileLocation, plaintext);
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
@@ -451,7 +456,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       } catch {
         await fs.mkdir(process.cwd(), { recursive: true }); // Use the working directory as fallback
       }
-      await fs.writeFile(configPath, Buffer.from("{}"));
+      await this.writeSecureConfigFile(configPath, Buffer.from("{}"));
 
       let token: string | null | undefined = null;
       if (this.keyType === "RAW_ENCRYPT_DECRYPT") {
@@ -468,7 +473,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         keyProperties: this.gcpKeyConfig,
         token: token
       }, this.logger);
-      await fs.writeFile(configPath, blob);
+      await this.writeSecureConfigFile(configPath, blob);
       this.logger.info(`Config file created at: ${configPath}`);
     }
   }
