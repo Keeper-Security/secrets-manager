@@ -37,16 +37,18 @@ options:
   shared_folder_uid:
     description:
     - The UID of the top-level shared folder in your Keeper application.
-    - To create in a subfolder, also provide C(folder_uid).
+    - To create in a subfolder, also provide C(subfolder_uid).
     type: str
     required: yes
-  folder_uid:
+  subfolder_uid:
     description:
-    - The UID of a subfolder within the shared folder where the record should be created.
-    - When omitted, the record is created at the shared folder root.
-    - The subfolder must already exist and be accessible to the KSM application.
+    - The UID of an existing subfolder, nested under shared_folder_uid, to create the
+      record in.
+    - The subfolder must already exist and must be accessible to the KSM application.
+    - If omitted, the record is created directly in the shared folder.
     type: str
     required: no
+    version_added: "1.5.0"
   record_type:
     description:
     - The type if record to create.
@@ -232,7 +234,7 @@ EXAMPLES = r'''
 - name: Create a record in a subfolder
   keeper_create:
     shared_folder_uid: SHARED_FOLDER_UID
-    folder_uid: SUBFOLDER_UID
+    subfolder_uid: SUBFOLDER_UID
     record_type: login
     title: My Subfolder Record
     generate_password: True
@@ -264,7 +266,12 @@ class ActionModule(ActionBase):
         shared_folder_uid = self._task.args.get("shared_folder_uid")
         if shared_folder_uid is None:
             raise AnsibleError("The shared_folder_uid is blank. keeper_create requires this value to be set.")
-        folder_uid = self._task.args.get("folder_uid")
+        if self._task.args.get("folder_uid") is not None:
+            raise AnsibleError(
+                "The folder_uid parameter for keeper_create has been renamed to subfolder_uid. "
+                "Please update your playbook."
+            )
+        subfolder_uid = self._task.args.get("subfolder_uid")
         record_type = self._task.args.get("record_type")
         if record_type is None:
             raise AnsibleError("The record_type is blank. keeper_create requires this value to be set.")
@@ -338,7 +345,7 @@ class ActionModule(ActionBase):
             )
             record_create = record[0].get_record_create_obj()
             record_uid = keeper.create_record(record_create, shared_folder_uid=shared_folder_uid,
-                                              folder_uid=folder_uid)
+                                              subfolder_uid=subfolder_uid)
         except Exception as err:
             raise AnsibleError("Could not create record: {}".format(err))
 

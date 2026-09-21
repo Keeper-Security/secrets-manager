@@ -21,9 +21,10 @@ For more information see our official documentation page https://docs.keeper.io/
 
 ## 1.5.0
 * **Fix**: `keeper_create` crashed with "Could not create record: list index out of range" when a playbook supplied an unpopulated complex field (address, name, host, etc.) with `value: []`. Empty-value fields are now treated as unpopulated, matching the behavior of the underlying vault schema. Root cause in the Python helper library is tracked as KSM-1119.
-* KSM-845: Added `folder_uid` parameter to `keeper_create` for subfolder targeting
+* KSM-845: Added `subfolder_uid` parameter to `keeper_create` for subfolder targeting
   - Records can now be created in a subfolder within a shared folder, rather than always at the shared folder root
-  - `shared_folder_uid` remains required; `folder_uid` is optional and additive
+  - `shared_folder_uid` remains required; `subfolder_uid` is optional and additive
+  - Matches the `subfolder_uid` parameter name used by `keeper_create_folder` and by the Python SDK's `CreateOptions`
 * KSM-1445: Added `keeper_create_folder` module for idempotent folder creation
   - Creates a folder directly in a shared folder, or nested inside an existing subfolder of that shared folder
   - Idempotent: if a folder with the given name already exists directly under the target parent, its UID is returned instead of creating a duplicate
