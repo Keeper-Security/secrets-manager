@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - KSM-1370 - `createConfigFileIfMissing()` no longer overwrites the config file on a transient `fs.access` failure (`EACCES`, `EPERM`, `ESTALE`). Only a genuinely missing file (`ENOENT`) triggers recreation.
 - KSM-1450 - Config file writes now use restrictive file permissions (0600), including on a config file that already exists from an earlier SDK version. Writes go through an atomic temp-file-then-rename (also fixes KSM-1458).
+- KSM-1461 - A failed `changeKey()` now restores `keyType`, `isAsymmetric`, and `encryptionAlgorithm` alongside the key config and crypto client. Previously the old key was left paired with the new key's algorithm, and the next save encrypted the config into a file that no key could decrypt, permanently losing the client ID, app key, and device private key. `getKeyDetails()` also assigns no key metadata at all when it rejects an unsupported key purpose.
 
 ### Maintenance
 
