@@ -26,9 +26,18 @@ options:
   shared_folder_uid:
     description:
     - The UID of the top-level shared folder in your Keeper application.
-    - Must be a shared folder UID, not a subfolder UID.
+    - To create in a subfolder, also provide C(subfolder_uid).
     type: str
     required: yes
+  subfolder_uid:
+    description:
+    - The UID of an existing subfolder, nested under shared_folder_uid, to create the
+      record in.
+    - The subfolder must already exist and must be accessible to the KSM application.
+    - If omitted, the record is created directly in the shared folder.
+    type: str
+    required: no
+    version_added: "1.5.0"
   record_type:
     description:
     - The type if record to create.
@@ -182,9 +191,9 @@ options:
 '''
 
 EXAMPLES = r'''
-- name: Create a new record
+- name: Create a record in a shared folder
   keeper_create:
-    share_folder_uid: XXX
+    shared_folder_uid: SHARED_FOLDER_UID
     record_type: login
     title: My Title
     notes: This record was created from Ansible
@@ -199,6 +208,18 @@ EXAMPLES = r'''
         label: Custom Field
         value: This is a value is a custom field.
   register: my_new_record
+
+- name: Create a record in a subfolder
+  keeper_create:
+    shared_folder_uid: SHARED_FOLDER_UID
+    subfolder_uid: SUBFOLDER_UID
+    record_type: login
+    title: My Subfolder Record
+    generate_password: True
+    fields:
+      - type: login
+        value: jane.doe@nowhere.com
+  register: my_subfolder_record
 '''
 
 RETURN = r'''
