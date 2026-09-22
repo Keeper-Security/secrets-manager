@@ -37,6 +37,7 @@ jest.mock('fs', () => ({
 }));
 
 import { promises as fs } from 'fs';
+import { resolve } from 'path';
 import { GCPKeyValueStorage } from '../src/GCPKeyValueStore';
 import { GCPKeyConfig } from '../src/GcpKeyConfig';
 import { GCPKSMClient } from '../src/GcpKmsClient';
@@ -468,5 +469,91 @@ describe('GCPKeyValueStorage', () => {
         // renameSync), and this file's blanket jest.mock('fs', ...) only stubs `fs.promises` - so
         // `fs.openSync` etc. don't exist under it, and asserting against the old
         // fs.promises.writeFile/chmod mocks would just prove those mocks are never called.
+    });
+
+    describe('configFileLocation resolution (KSM-1457 regression)', () => {
+        const DEFAULT_CONFIG_FILE = 'client-config.json';
+        let savedConfigFileEnv: string | undefined;
+
+        beforeEach(() => {
+            savedConfigFileEnv = process.env.KSM_CONFIG_FILE;
+            delete process.env.KSM_CONFIG_FILE;
+            // mockReset, not mockClear: an earlier describe leaves a mockRejectedValue on this
+            // shared mock, and the call history has to be empty for the path assertions below.
+            (fs.access as jest.Mock).mockReset();
+            (fs.access as jest.Mock).mockResolvedValue(undefined);
+        });
+
+        afterEach(() => {
+            if (savedConfigFileEnv === undefined) {
+                delete process.env.KSM_CONFIG_FILE;
+            } else {
+                process.env.KSM_CONFIG_FILE = savedConfigFileEnv;
+            }
+        });
+
+        const makeStorage = (location: string | null): GCPKeyValueStorage => {
+            const gcpKeyConfig = new GCPKeyConfig(
+                'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
+            );
+            return new GCPKeyValueStorage(location, gcpKeyConfig, mockSessionConfig);
+        };
+
+        const configFileLocationOf = (storage: GCPKeyValueStorage): string =>
+            (storage as any).configFileLocation;
+
+        // Table-driven: '' is the case the ticket reports, the whitespace-only values are the
+        // same accident from an env file or ConfigMap that pads the value instead of emptying it.
+        it.each(['', ' ', '   ', '\t', '\n'])(
+            'uses the default config file when the explicit location is blank (%j)',
+            (location) => {
+                expect(configFileLocationOf(makeStorage(location))).toBe(DEFAULT_CONFIG_FILE);
+            }
+        );
+
+        it.each(['', ' ', '   ', '\t', '\n'])(
+            'uses the default config file when KSM_CONFIG_FILE is blank (%j)',
+            (envValue) => {
+                process.env.KSM_CONFIG_FILE = envValue;
+
+                expect(configFileLocationOf(makeStorage(null))).toBe(DEFAULT_CONFIG_FILE);
+            }
+        );
+
+        it('falls back to KSM_CONFIG_FILE when only the explicit location is blank', () => {
+            process.env.KSM_CONFIG_FILE = '/etc/keeper/from-env.json';
+
+            expect(configFileLocationOf(makeStorage(''))).toBe('/etc/keeper/from-env.json');
+        });
+
+        it('still uses a non-empty KSM_CONFIG_FILE when no location is passed', () => {
+            process.env.KSM_CONFIG_FILE = '/etc/keeper/from-env.json';
+
+            expect(configFileLocationOf(makeStorage(null))).toBe('/etc/keeper/from-env.json');
+        });
+
+        it('still prefers a non-empty explicit location over KSM_CONFIG_FILE', () => {
+            process.env.KSM_CONFIG_FILE = '/etc/keeper/from-env.json';
+
+            expect(configFileLocationOf(makeStorage('./explicit-config.json'))).toBe('./explicit-config.json');
+        });
+
+        it('still uses the default config file when neither source is set', () => {
+            expect(configFileLocationOf(makeStorage(null))).toBe(DEFAULT_CONFIG_FILE);
+        });
+
+        // The field assertions above pin the value; this pins the consequence the ticket is
+        // actually about. resolve('') is the current working directory, and fs.access on a
+        // directory succeeds, so a blank value made createConfigFileIfMissing() report the
+        // working directory itself as an existing config file.
+        it('does not check the current working directory as the config file when KSM_CONFIG_FILE is blank', async () => {
+            process.env.KSM_CONFIG_FILE = '';
+            const storage = makeStorage(null);
+
+            await (storage as any).createConfigFileIfMissing();
+
+            expect(fs.access).toHaveBeenCalledWith(resolve(DEFAULT_CONFIG_FILE));
+            expect(fs.access).not.toHaveBeenCalledWith(process.cwd());
+        });
     });
 });
