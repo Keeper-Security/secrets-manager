@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - KSM-1370 - `createConfigFileIfMissing()` no longer overwrites the config file on a transient `fs.access` failure (`EACCES`, `EPERM`, `ESTALE`). Only a genuinely missing file (`ENOENT`) triggers recreation.
 - KSM-1450 - Config file writes now use restrictive file permissions (0600), including on a config file that already exists from an earlier SDK version. Writes go through an atomic temp-file-then-rename (also fixes KSM-1458).
 - KSM-1459 - `saveConfig()` no longer skips the write when the config file was deleted while the process was running. A missing file now forces a full save of the current config, so `saveString()` and `saveStorage()` can no longer resolve successfully without persisting anything.
+- KSM-1460 - A KMS failure while auto-encrypting a plaintext config file is no longer misreported as a damaged config file. `loadConfig()` now encrypts outside the try/catch that detects whether the file is plain JSON, so a KMS outage, a revoked permission, or a disabled key version propagates as the real KMS error instead of `Decryption failed : Invalid header`. Operators are no longer told to distrust an intact config file.
 
 ### Maintenance
 
