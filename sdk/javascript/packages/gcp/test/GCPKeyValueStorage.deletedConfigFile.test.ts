@@ -176,4 +176,26 @@ describe('saveConfig() when the config file is deleted underneath a running proc
             spy.mockRestore();
         }
     });
+
+    // Recreating a deleted file must not detour through createConfigFileIfMissing()'s own
+    // encrypt-and-write of a "{}" placeholder, since the code right after it immediately
+    // encrypts and writes the real config over it. One recovery should mean one KMS call and
+    // one disk write, not two of each.
+    it('recreates a deleted config file with exactly one encrypt call and one write', async () => {
+        const storage = makeStorage(configPath);
+        await storage.saveString('clientId', 'ABC');
+        fs.rmSync(configPath);
+
+        const encryptSpy = (storage as any).cryptoClient.encrypt as jest.Mock;
+        encryptSpy.mockClear();
+        const atomicWrite = require('../src/atomicWrite');
+        const writeSpy = jest.spyOn(atomicWrite, 'writeFileAtomicSync');
+        try {
+            await storage.saveString('clientId', 'ABC');
+            expect(encryptSpy).toHaveBeenCalledTimes(1);
+            expect(writeSpy).toHaveBeenCalledTimes(1);
+        } finally {
+            writeSpy.mockRestore();
+        }
+    });
 });
