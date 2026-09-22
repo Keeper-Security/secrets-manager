@@ -124,7 +124,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         name: this.gcpKeyConfig.toKeyName(),
       };
       const [key] = await this.cryptoClient.getCryptoKey(input);
-      this.encryptionAlgorithm = key?.versionTemplate?.algorithm?.toString() || "";
+      const algorithm = key?.versionTemplate?.algorithm?.toString() || "";
       const keyPurposeDetails = key?.purpose?.toString() || "";
 
       if (!supportedKeyPurpose.includes(keyPurposeDetails)) {
@@ -135,13 +135,13 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       }
 
       this.logger.debug(`Key purpose for key provided: ${keyPurposeDetails}`);
-      if (keyPurposeDetails === KeyPurpose.ASYMMETRIC_DECRYPT) {
-        this.isAsymmetric = true;
-      } else {
-        this.isAsymmetric = false;
-      }
-      this.logger.debug(`key is ${this.isAsymmetric ? "asymmetric" : "symmetric"}`);
+      const isAsymmetric = keyPurposeDetails === KeyPurpose.ASYMMETRIC_DECRYPT;
+      this.logger.debug(`key is ${isAsymmetric ? "asymmetric" : "symmetric"}`);
 
+      // Assigned only once the key is known to be usable, so a rejected key leaves the
+      // previous key's metadata intact instead of half-replacing it.
+      this.encryptionAlgorithm = algorithm;
+      this.isAsymmetric = isAsymmetric;
       this.keyType = keyPurposeDetails;
       //eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
@@ -404,6 +404,9 @@ export class GCPKeyValueStorage implements KeyValueStorage {
   public async changeKey(newGcpKeyConfig: GCPKeyConfig): Promise<boolean> {
     const oldKeyConfiguration = this.gcpKeyConfig;
     const oldCryptoClient = this.cryptoClient;
+    const oldKeyType = this.keyType;
+    const oldIsAsymmetric = this.isAsymmetric;
+    const oldEncryptionAlgorithm = this.encryptionAlgorithm;
 
     try {
       // Update the key and reinitialize the CryptographyClient
@@ -420,9 +423,15 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       this.logger.info("saving configuration with new key successful");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-      // Restore the previous key and crypto client if the operation fails
+      // Restore the previous key and crypto client if the operation fails.
+      // The key metadata below has to be restored with them: getKeyDetails() has already
+      // switched it to the new key, and pairing the old key with the new key's algorithm
+      // encrypts the config into a blob that neither key can decrypt.
       this.gcpKeyConfig = oldKeyConfiguration;
       this.cryptoClient = oldCryptoClient;
+      this.keyType = oldKeyType;
+      this.isAsymmetric = oldIsAsymmetric;
+      this.encryptionAlgorithm = oldEncryptionAlgorithm;
       this.logger.error(
         `Failed to change the key to '${newGcpKeyConfig.toString()}' for config '${this.configFileLocation.toString()}': ${error.message.toString()}`
       );
