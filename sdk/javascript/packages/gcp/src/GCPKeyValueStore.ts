@@ -176,8 +176,12 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       }
 
       if (contents.length === 0) {
-        this.logger.warn(`Empty config file ${this.configFileLocation.toString()}`);
-        contents = Buffer.from("{}");
+        this.logger.error(
+          `Config file ${this.configFileLocation.toString()} is empty, which indicates an interrupted write or a corrupted file`
+        );
+        throw new Error(
+          `Config file ${this.configFileLocation.toString()} is empty and may be corrupted. Restore it from a backup, or delete it to create a new configuration.`
+        );
       }
 
       // Check if the content is plain JSON
