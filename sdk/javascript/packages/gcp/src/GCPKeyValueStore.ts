@@ -181,6 +181,15 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       try {
         const configData = contents.toString();
         config = JSON.parse(configData);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } catch (err: any) {
+        this.logger.debug("given file is encrypted file. trying to decrypt the configuration into a json from it");
+        jsonError = err;
+      }
+
+      // A successful parse already proves the file is plaintext, so encrypting it is a
+      // side effect of that result and must not be mistaken for a failed parse.
+      if (!jsonError) {
         // Encrypt and save the config if it's plain JSON
         this.logger.info("given config file is not encrypted, starting encryption");
         if (config) {
@@ -196,10 +205,6 @@ export class GCPKeyValueStorage implements KeyValueStorage {
             )
             .digest(HEX_DIGEST);
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } catch (err: any) {
-        this.logger.debug("given file is encrypted file. trying to decrypt the configuration into a json from it");
-        jsonError = err;
       }
 
 
