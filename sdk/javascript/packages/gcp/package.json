@@ -41,7 +41,7 @@
   },
   "dependencies": {
     "@aws-crypto/crc32c": "^5.2.0",
-    "@google-cloud/kms": "^5.2.1",
+    "@google-cloud/kms": "^6.2.0",
     "@keeper-security/secrets-manager-core": "^17.6.0",
     "axios": "^1.13.5",
     "pino": "^10.1.0",
