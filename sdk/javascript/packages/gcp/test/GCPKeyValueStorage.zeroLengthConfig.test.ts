@@ -170,3 +170,61 @@ describe('loadConfig() against a zero-length config file (real fs)', () => {
         expect(fs.readFileSync(configPath, 'utf8')).not.toBe(JSON.stringify({ clientId: 'abc' }));
     });
 });
+
+// decryptConfig() (the plaintext-export path used for migration and backup, per KSM-1486) has
+// its own, independent fs.readFile call and its own zero-length check. It does not call
+// loadConfig() or init(), so the KSM-1455 fix above does not cover it. Before this fix,
+// a zero-length file logged a warning and resolved to "", indistinguishable from a config
+// that legitimately decrypted to nothing - the caller had no way to detect the corruption.
+describe('decryptConfig() against a zero-length config file (real fs)', () => {
+    let tmpDir: string;
+    let configPath: string;
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcp-kms-zero-length-decrypt-'));
+        configPath = path.join(tmpDir, 'config.json');
+    });
+
+    afterEach(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('rejects instead of resolving to an empty string', async () => {
+        fs.writeFileSync(configPath, '', { mode: 0o600 });
+        expect(fs.statSync(configPath).size).toBe(0);
+
+        const storage = makeStorage(configPath);
+
+        await expect(storage.decryptConfig(false)).rejects.toThrow(/is empty/);
+    });
+
+    it('names the offending config file in the error so the caller can recover it', async () => {
+        fs.writeFileSync(configPath, '', { mode: 0o600 });
+
+        const storage = makeStorage(configPath);
+
+        await expect(storage.decryptConfig(false)).rejects.toThrow(configPath);
+    });
+
+    it('leaves the file untouched even when autosave is requested', async () => {
+        fs.writeFileSync(configPath, '', { mode: 0o600 });
+
+        const storage = makeStorage(configPath);
+
+        await expect(storage.decryptConfig(true)).rejects.toThrow();
+
+        // autosave writes the decrypted plaintext back through the same file; a config that
+        // never made it past the zero-length check must never reach that write.
+        expect(fs.statSync(configPath).size).toBe(0);
+    });
+
+    it('still decrypts a genuine non-empty config', async () => {
+        const storage = makeStorage(configPath);
+        await storage.init();
+        await storage.saveString('clientId', 'abc');
+
+        const decrypted = await storage.decryptConfig(false);
+
+        expect(JSON.parse(decrypted)).toMatchObject({ clientId: 'abc' });
+    });
+});
