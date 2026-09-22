@@ -134,6 +134,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
 
     defaults:
       run:
@@ -149,6 +150,11 @@ jobs:
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Upgrade npm
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: npm ci
@@ -156,13 +162,5 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Retrieve secrets from KSM
-        id: ksmsecrets
-        uses: Keeper-Security/ksm-action@560d170bea253481a48eae617f0493aab7436c28 # master
-        with:
-          keeper-secret-config: ${{ secrets.KSM_NPM_PUBLISHER_NPM_SDK_CONFIG }}
-          secrets: |
-            2LmZq2z682qhTKYUizehow/field/password > env:NPM_TOKEN
-
       - name: Publish package
-        run: npm publish --ignore-scripts
+        run: npm publish --ignore-scripts --provenance
