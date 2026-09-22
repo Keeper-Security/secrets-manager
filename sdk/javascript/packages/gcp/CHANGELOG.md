@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Maintenance
 
 - KSM-1218 - Updated axios, protobufjs, handlebars, js-yaml, and other dependencies to resolve open security advisories
+- KSM-1500 - Bumped the `@keeper-security/secrets-manager-core` dependency from 17.3.0 to 17.6.0. Core 17.6.0 declares an `engines.node` floor of 20; this package's own CI already tests on Node 20, so no other change was needed here.
 
 ## [1.0.0]
 

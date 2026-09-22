@@ -33,7 +33,11 @@ jest.mock('fs', () => ({
         mkdir: jest.fn(),
         access: jest.fn(),
         chmod: jest.fn(),
-    }
+    },
+    // Real, static flag values only, no I/O. secrets-manager-core reads fs.constants at
+    // module load time (cache directory symlink protection), so a mock missing it entirely
+    // fails every test in this file before any test body runs.
+    constants: jest.requireActual('fs').constants,
 }));
 
 import { promises as fs } from 'fs';
