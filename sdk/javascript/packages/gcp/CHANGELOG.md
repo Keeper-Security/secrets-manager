@@ -7,10 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.0]
 
+### Changed
+
+Both entries below follow from the move to an atomic temp-file-then-rename in KSM-1450 and KSM-1458. Neither changes an API signature, so a `^1.0.0` range upgrades into them automatically. Check your config file layout against both before you upgrade.
+
+- KSM-1450, KSM-1458 - **The directory holding the config file must now be writable, not only the config file itself.** A write creates a temporary file alongside the config file and renames it into place, so it needs permission to create and rename entries in that directory. An in-place write needed permission on the file alone. A deployment that mounts a writable config file inside a read-only directory now fails with `EACCES` on every `init()`, `saveString()`, `saveBytes()`, `saveObject()`, and `delete()`.
+- KSM-1450, KSM-1458 - **A config path that is a symbolic link, or that has a hard-linked peer, is now replaced rather than written through.** `rename` does not follow a symbolic link at its destination, it replaces the link with a regular file. A config path symlinked into a shared or externally mounted location therefore stops updating the link target, and a hard-linked backup stops tracking the config. This one is silent: the write reports success and raises no error. Point `keyVaultConfigFileLocation`, or `KSM_CONFIG_FILE`, at the real file rather than at a link.
+
 ### Security
 
 - KSM-1370 - `createConfigFileIfMissing()` no longer overwrites the config file on a transient `fs.access` failure (`EACCES`, `EPERM`, `ESTALE`). Only a genuinely missing file (`ENOENT`) triggers recreation.
 - KSM-1450 - Config file writes now use restrictive file permissions (0600), including on a config file that already exists from an earlier SDK version. Writes go through an atomic temp-file-then-rename (also fixes KSM-1458).
+- KSM-1450 - That same atomic temp-file-then-rename removes a write-through-symbolic-link weakness. Every write previously used `fs.writeFile`, which follows a symbolic link at its destination, and one of those writes is the `decryptConfig()` autosave path, which writes the configuration in plaintext. Anyone able to create a file in the config file's directory could plant a symbolic link there and have the SDK write the decrypted client ID, app key, and device private key to any file the SDK's process could write. `rename` replaces the link instead of following it, so that is no longer reachable.
 - KSM-1455 - `loadConfig()` no longer treats a zero-length config file as an empty config and re-encrypts it back over the top, which destroyed the client ID, app key, and device private key. A zero-length file is a truncated or interrupted write, so `loadConfig()` now throws and leaves the file untouched for recovery.
 - KSM-1486 - `decryptConfig()` no longer resolves to an empty string for a zero-length config file, hiding the same corruption KSM-1455 fixed in `loadConfig()`. `decryptConfig()` reads the file independently of `loadConfig()`, so it needed the same fix on its own path. It now throws, names the config file, and leaves the file untouched, matching KSM-1455.
 - KSM-1457 - A blank `KSM_CONFIG_FILE` environment variable, or a blank `keyVaultConfigFileLocation` argument, now falls back to the next source instead of being used as the config file path. `??` falls back only on `null` and `undefined`, so an empty value (a common result of a Docker `--env-file` or a Kubernetes ConfigMap entry with no value) resolved to the current working directory, which `fs.access` reported as an existing config file.
