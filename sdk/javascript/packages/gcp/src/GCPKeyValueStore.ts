@@ -372,16 +372,21 @@ export class GCPKeyValueStorage implements KeyValueStorage {
     try {
       // Read the config file
       ciphertext = await fs.readFile(this.configFileLocation);
-      if (ciphertext.length === 0) {
-        this.logger.warn(`Empty config file ${this.configFileLocation.toString()}`);
-        return "";
-      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       this.logger.error(
         `Failed to load config file ${this.configFileLocation.toString()}: ${err.message.toString()}`
       );
       throw new GCPKeyValueStorageError(`Failed to load config file ${this.configFileLocation.toString()}`);
+    }
+
+    if (ciphertext.length === 0) {
+      this.logger.error(
+        `Config file ${this.configFileLocation.toString()} is empty, which indicates an interrupted write or a corrupted file`
+      );
+      throw new GCPKeyValueStorageError(
+        `Config file ${this.configFileLocation.toString()} is empty and may be corrupted. Restore it from a backup, or delete it to create a new configuration.`
+      );
     }
 
 
