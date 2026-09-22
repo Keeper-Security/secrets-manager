@@ -6,20 +6,32 @@ const chmodSecure = (filePath: string) => fsSync.chmodSync(filePath, 0o600);
 
 // Rename replaces finalPath's directory entry, but that entry isn't durable until the
 // containing directory's own fd is fsynced - the file's data being fsynced (below) doesn't
-// cover the rename itself surviving a crash. EPERM/EISDIR (Windows, where a directory can't be
-// opened this way) is tolerated: the file's data is already durable at that point, and this is
-// a smaller, platform-specific gap, not a reason to fail a write that otherwise succeeded.
+// cover the rename itself surviving a crash.
+//
+// Deliberately best effort, and deliberately never throws. By the time this runs the file's data
+// is already fsynced and the rename has already committed, so the write has succeeded and the
+// caller must be told so. The only thing at stake here is the directory entry surviving a power
+// loss, which is never worth reporting a successful write as a failed one: a caller that treats a
+// rejected save as "not persisted" would retry or abandon a credential rotation that already
+// landed. Both calls are inside the try because the open is what fails on the platforms that
+// cannot give us a directory fd at all (Windows), and on a directory we may write but not read;
+// an allow-list of error codes would also rethrow the unanticipated ones that network and
+// container filesystems produce, such as ENOTSUP, EINVAL and EBADF.
 const fsyncDirectory = (filePath: string): void => {
-  const dirFd = fsSync.openSync(dirname(filePath), "r");
+  let dirFd: number | undefined;
   try {
+    dirFd = fsSync.openSync(dirname(filePath), "r");
     fsSync.fsyncSync(dirFd);
-  } catch (e) {
-    const code = (e as NodeJS.ErrnoException)?.code;
-    if (code !== "EPERM" && code !== "EISDIR") {
-      throw e;
-    }
+  } catch {
+    // durability of the rename only, see above
   } finally {
-    fsSync.closeSync(dirFd);
+    if (dirFd !== undefined) {
+      try {
+        fsSync.closeSync(dirFd);
+      } catch {
+        // the descriptor is unusable either way
+      }
+    }
   }
 };
 
