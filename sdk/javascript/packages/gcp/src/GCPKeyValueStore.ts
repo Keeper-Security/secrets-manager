@@ -300,14 +300,26 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         }
       }
 
-      // Check if saving is necessary
+      // A matching hash only proves the in-memory config is unchanged, not that the file on disk
+      // still holds it. A file deleted underneath a running process must fall through to a real
+      // save of this.config; skipping here would leave the file missing indefinitely.
+      let fileConfirmedMissing = false;
       if (!force && configHash === this.lastSavedConfigHash) {
-        this.logger.warn("Skipped config JSON save. No changes detected.");
-        return;
+        if (await this.configFileExists()) {
+          this.logger.warn("Skipped config JSON save. No changes detected.");
+          return;
+        }
+        fileConfirmedMissing = true;
       }
 
-      // Ensure the config file exists
-      await this.createConfigFileIfMissing();
+      // A file already confirmed missing above needs only its directory, since the write below
+      // creates it. Routing it through createConfigFileIfMissing() as well would encrypt and
+      // write a "{}" placeholder that this same call immediately overwrites with the real config.
+      if (fileConfirmedMissing) {
+        await this.ensureConfigDirectoryExists(resolve(this.configFileLocation));
+      } else {
+        await this.createConfigFileIfMissing();
+      }
 
       // Encrypt the config JSON and write to the file
       const stringifiedValue = JSON.stringify(
@@ -442,6 +454,33 @@ export class GCPKeyValueStorage implements KeyValueStorage {
     return true;
   }
 
+  // Matches fs.existsSync semantics: any access failure, not just ENOENT, reports false. The
+  // caller only uses this to decide whether a save can be skipped, and a save that cannot be
+  // skipped goes on to createConfigFileIfMissing(), which is where the ENOENT-only policy for
+  // acting on an access failure lives.
+  private async configFileExists(): Promise<boolean> {
+    try {
+      await fs.access(resolve(this.configFileLocation));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async ensureConfigDirectoryExists(configPath: string): Promise<void> {
+    try {
+      const dir = dirname(configPath); // configPath is already absolute (resolved above)
+
+      try {
+        await fs.access(dir); // Check if directory exists
+      } catch {
+        await fs.mkdir(dir, { recursive: true }); // Create directory if missing
+      }
+    } catch {
+      await fs.mkdir(process.cwd(), { recursive: true }); // Use the working directory as fallback
+    }
+  }
+
   private async createConfigFileIfMissing(): Promise<void> {
     // Ensure the config file path is absolute
     const configPath = resolve(this.configFileLocation);
@@ -458,18 +497,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         throw error;
       }
       // File genuinely does not exist, proceed to create it
-
-      try {
-        const dir = dirname(configPath); // configPath is already absolute (resolved above)
-
-        try {
-          await fs.access(dir); // Check if directory exists
-        } catch {
-          await fs.mkdir(dir, { recursive: true }); // Create directory if missing
-        }
-      } catch {
-        await fs.mkdir(process.cwd(), { recursive: true }); // Use the working directory as fallback
-      }
+      await this.ensureConfigDirectoryExists(configPath);
       await this.writeSecureConfigFile(configPath, Buffer.from("{}"));
 
       let token: string | null | undefined = null;
