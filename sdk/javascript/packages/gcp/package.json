@@ -43,7 +43,7 @@
     "@aws-crypto/crc32c": "^5.2.0",
     "@google-cloud/kms": "^6.2.0",
     "@keeper-security/secrets-manager-core": "^17.6.0",
-    "axios": "^1.13.5",
+    "axios": "^1.19.0",
     "pino": "^10.1.0",
     "pino-pretty": "^13.0.0"
   },
