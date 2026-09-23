@@ -31,6 +31,7 @@ Both entries below follow from the move to an atomic temp-file-then-rename in KS
 - KSM-1218 - Updated axios, protobufjs, handlebars, js-yaml, and other dependencies to resolve open security advisories
 - KSM-1500 - Bumped the `@keeper-security/secrets-manager-core` dependency from 17.3.0 to 17.6.0. Core 17.6.0 declares an `engines.node` floor of 20; this package's own CI already tests on Node 20, so no other change was needed here.
 - KSM-1510 - Bumped `@google-cloud/kms` from `^5.2.1` to `^6.2.0`. The 6.x line drops `cross-spawn`, `eastasianwidth`, `gtoken`, `package-json-from-dist`, `path-key`, `shebang-command`, `shebang-regex`, and `signal-exit` from the resolved dependency tree — all flagged as unmaintained by our SBOM scan. No API surface this package calls was affected.
+- KSM-1530 - The publish workflow's `build-npm` job, which runs the tests that gate the release, now installs with `npm ci` instead of `npm install`, so those tests run against the exact curated lockfile rather than whatever `npm install` resolves inside each declared range. Added `get-version`/`validate-version` jobs (matching core's `publish.npm.yml` pattern) that check `registry.npmjs.org` before `generate-sbom` or `publish-npm` run, so a mistaken or repeated dispatch aborts before producing an SBOM for a version that will never exist or paging a Release Manager for an approval that npm will reject anyway.
 
 ## [1.0.0]
 
