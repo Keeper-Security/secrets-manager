@@ -199,3 +199,91 @@ describe('saveConfig() when the config file is deleted underneath a running proc
         }
     });
 });
+
+// The existence probe above recovers a genuinely deleted file, which requires acting on a failed
+// fs.access. These tests pin the other half of that: an access failure which is NOT a missing file
+// must never be acted on the same way, because the recovery path writes the whole in-memory config
+// over whatever is on disk.
+//
+// The sibling test 'rejects instead of skipping when the config file path cannot be checked' looks
+// like it already covers this, but it cannot distinguish the two outcomes. It produces the failure
+// with ENOTDIR by replacing the parent directory with a regular file, and that same ENOTDIR also
+// fails the temp-file open in the write that follows. The rejection it observes is the write's, so
+// it passes whether or not the probe itself propagates. These tests inject the failure directly and
+// leave the directory fully writable, so the write would succeed if it were attempted, and the only
+// thing that can produce a rejection is the probe.
+describe('saveConfig() when the config file existence check fails for a reason other than ENOENT', () => {
+    let tmpDir: string;
+    let configPath: string;
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcp-kms-access-errno-'));
+        configPath = path.join(tmpDir, 'config.json');
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    // ESTALE is the realistic trigger: it is routine on NFS and on container volume remounts, and
+    // it says nothing about whether the file exists. The credential that gets destroyed here is a
+    // rotated device private key, which cannot be recovered from anywhere else.
+    it('leaves a config another process rotated intact, instead of overwriting it with stale data', async () => {
+        const first = makeStorage(configPath);
+        await first.saveString('clientId', 'CID');
+        await first.saveString('appKey', 'APP-KEY-V1');
+
+        // A second process rotates the credentials. `first` has no way to know, and its own
+        // lastSavedConfigHash still describes the pre-rotation config.
+        const second = await makeStorage(configPath).init();
+        await second.saveString('appKey', 'APP-KEY-V2-ROTATED');
+        await second.saveString('privateKey', 'ROTATED-DEVICE-PRIVATE-KEY');
+
+        const stale: NodeJS.ErrnoException = new Error('ESTALE: stale file handle');
+        stale.code = 'ESTALE';
+        jest.spyOn(fs.promises, 'access').mockRejectedValueOnce(stale);
+
+        // A no-op save against `first`'s own in-memory config, so the hash still matches and the
+        // existence check is the only thing standing between it and an unconditional rewrite.
+        await expect(first.saveString('appKey', 'APP-KEY-V1')).rejects.toMatchObject({
+            code: 'ESTALE',
+        });
+
+        expect(await readConfigFromDisk(second)).toEqual({
+            clientId: 'CID',
+            appKey: 'APP-KEY-V2-ROTATED',
+            privateKey: 'ROTATED-DEVICE-PRIVATE-KEY',
+        });
+    });
+
+    // Asserts the absence of the write rather than the survival of the content, so it still fails
+    // if a future change makes the overwrite produce byte-identical output by coincidence.
+    it('attempts no write at all when the existence check cannot answer', async () => {
+        const storage = makeStorage(configPath);
+        await storage.saveString('clientId', 'CID');
+
+        const denied: NodeJS.ErrnoException = new Error('EACCES: permission denied');
+        denied.code = 'EACCES';
+        jest.spyOn(fs.promises, 'access').mockRejectedValueOnce(denied);
+
+        const atomicWrite = require('../src/atomicWrite');
+        const writeSpy = jest.spyOn(atomicWrite, 'writeFileAtomicSync');
+
+        await expect(storage.saveString('clientId', 'CID')).rejects.toMatchObject({
+            code: 'EACCES',
+        });
+        expect(writeSpy).not.toHaveBeenCalled();
+    });
+
+    // The recovery path must keep working: only ENOENT is treated as absence, and it still
+    // rewrites the real config rather than reporting an error.
+    it('still recovers a genuinely missing file, so the ENOENT path is unaffected', async () => {
+        const storage = makeStorage(configPath);
+        await storage.saveString('clientId', 'CID');
+        fs.rmSync(configPath);
+
+        await expect(storage.saveString('clientId', 'CID')).resolves.toBeUndefined();
+        expect(await readConfigFromDisk(storage)).toEqual({ clientId: 'CID' });
+    });
+});

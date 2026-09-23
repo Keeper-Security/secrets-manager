@@ -469,16 +469,24 @@ export class GCPKeyValueStorage implements KeyValueStorage {
     return true;
   }
 
-  // Matches fs.existsSync semantics: any access failure, not just ENOENT, reports false. The
-  // caller only uses this to decide whether a save can be skipped, and a save that cannot be
-  // skipped goes on to createConfigFileIfMissing(), which is where the ENOENT-only policy for
-  // acting on an access failure lives.
+  // Only ENOENT means the file is genuinely gone, and only that answer may be acted on by
+  // rewriting the whole config over whatever is on disk. Any other access failure means the
+  // file's existence could not be determined, which is not the same as absence, so it propagates
+  // to the caller instead.
+  //
+  // Deliberately not fs.existsSync semantics. The caller's "confirmed missing" branch writes
+  // unconditionally and skips createConfigFileIfMissing(), so that method's own ENOENT check
+  // never sees this path and cannot be relied on to stop a transient failure here from
+  // overwriting a config another process just updated.
   private async configFileExists(): Promise<boolean> {
     try {
       await fs.access(resolve(this.configFileLocation));
       return true;
-    } catch {
-      return false;
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+        return false;
+      }
+      throw error;
     }
   }
 
