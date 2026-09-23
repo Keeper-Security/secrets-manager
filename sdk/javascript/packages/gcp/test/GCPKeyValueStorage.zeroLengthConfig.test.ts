@@ -105,7 +105,7 @@ describe('loadConfig() against a zero-length config file (real fs)', () => {
 
         const storage = makeStorage(configPath);
 
-        await expect(storage.init()).rejects.toThrow();
+        await expect(storage.init()).rejects.toThrow(/is empty/);
 
         // Still recognisably damaged. Re-encrypting an empty config over the top would leave a
         // file that looks valid to every later reader, hiding the fact that data was lost.
@@ -123,7 +123,7 @@ describe('loadConfig() against a zero-length config file (real fs)', () => {
         const spy = jest.spyOn(atomicWrite, 'writeFileAtomicSync');
         const storage = makeStorage(configPath);
 
-        await expect(storage.init()).rejects.toThrow();
+        await expect(storage.init()).rejects.toThrow(/is empty/);
 
         expect(spy).not.toHaveBeenCalled();
         spy.mockRestore();
@@ -211,7 +211,7 @@ describe('decryptConfig() against a zero-length config file (real fs)', () => {
 
         const storage = makeStorage(configPath);
 
-        await expect(storage.decryptConfig(true)).rejects.toThrow();
+        await expect(storage.decryptConfig(true)).rejects.toThrow(/is empty/);
 
         // autosave writes the decrypted plaintext back through the same file; a config that
         // never made it past the zero-length check must never reach that write.
