@@ -29,6 +29,7 @@ Both entries below follow from the move to an atomic temp-file-then-rename in KS
 ### Maintenance
 
 - KSM-1218 - Updated axios, protobufjs, handlebars, js-yaml, and other dependencies to resolve open security advisories
+- KSM-1534 - Declared an `engines.node` floor of `>=20`, matching the floor core 17.6.0 already pulls into this package's tree. Removed the `@tootallnate/once` override pinning it to `3.0.1`; it resolved nothing in the current dependency tree (`http-proxy-agent` is on `7.0.2`, which does not depend on `@tootallnate/once`), so the override was unnecessary regardless of its version.
 - KSM-1500 - Bumped the `@keeper-security/secrets-manager-core` dependency from 17.3.0 to 17.6.0. Core 17.6.0 declares an `engines.node` floor of 20; this package's own CI already tests on Node 20, so no other change was needed here.
 - KSM-1510 - Bumped `@google-cloud/kms` from `^5.2.1` to `^6.2.0`. The 6.x line drops `cross-spawn`, `eastasianwidth`, `gtoken`, `package-json-from-dist`, `path-key`, `shebang-command`, `shebang-regex`, and `signal-exit` from the resolved dependency tree — all flagged as unmaintained by our SBOM scan. No API surface this package calls was affected.
 
