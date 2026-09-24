@@ -32,6 +32,9 @@ jest.mock('fs', () => ({
         writeFile: jest.fn(),
         mkdir: jest.fn(),
         access: jest.fn(),
+        // KSM-1514: configFileExists() switched from fs.access to fs.lstat, so it can tell a
+        // real file apart from a symlink (dangling or not) rather than just "exists or not".
+        lstat: jest.fn(),
         chmod: jest.fn(),
     },
     // Real, static flag values only, no I/O. secrets-manager-core reads fs.constants at
@@ -426,7 +429,7 @@ describe('GCPKeyValueStorage', () => {
         });
     });
 
-    describe('createConfigFileIfMissing() fs.access error handling', () => {
+    describe('createConfigFileIfMissing() fs.lstat error handling', () => {
         let storage: GCPKeyValueStorage;
 
         beforeEach(() => {
@@ -449,19 +452,19 @@ describe('GCPKeyValueStorage', () => {
         // this test. A `.catch(() => undefined)` assertion on write-not-called alone can't tell
         // the difference between "rejected" and "silently returned".
         it.each(['EACCES', 'EPERM', 'ESTALE', 'EIO', 'EBUSY'])(
-            'init() rejects and writes nothing when fs.access fails with %s',
+            'init() rejects and writes nothing when fs.lstat fails with %s',
             async (code) => {
-                const accessError = Object.assign(new Error(`${code}: access failure`), { code });
-                (fs.access as jest.Mock).mockRejectedValue(accessError);
+                const lstatError = Object.assign(new Error(`${code}: lstat failure`), { code });
+                (fs.lstat as jest.Mock).mockRejectedValue(lstatError);
 
                 await expect(storage.init()).rejects.toMatchObject({ code });
                 expect(fs.writeFile).not.toHaveBeenCalled();
             }
         );
 
-        it('saveString() also rejects and writes nothing when fs.access fails with EACCES', async () => {
-            const accessError = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
-            (fs.access as jest.Mock).mockRejectedValue(accessError);
+        it('saveString() also rejects and writes nothing when fs.lstat fails with EACCES', async () => {
+            const lstatError = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+            (fs.lstat as jest.Mock).mockRejectedValue(lstatError);
 
             await expect(storage.saveString('clientId', 'x')).rejects.toMatchObject({ code: 'EACCES' });
             expect(fs.writeFile).not.toHaveBeenCalled();
@@ -486,6 +489,11 @@ describe('GCPKeyValueStorage', () => {
             // shared mock, and the call history has to be empty for the path assertions below.
             (fs.access as jest.Mock).mockReset();
             (fs.access as jest.Mock).mockResolvedValue(undefined);
+            // KSM-1514: configFileExists() (called from createConfigFileIfMissing()) now uses
+            // fs.lstat instead of fs.access, so the "file already exists, not a symlink" happy
+            // path needs a Stats-shaped resolution, not just any resolved value.
+            (fs.lstat as jest.Mock).mockReset();
+            (fs.lstat as jest.Mock).mockResolvedValue({ isSymbolicLink: () => false });
         });
 
         afterEach(() => {
@@ -547,17 +555,18 @@ describe('GCPKeyValueStorage', () => {
         });
 
         // The field assertions above pin the value; this pins the consequence the ticket is
-        // actually about. resolve('') is the current working directory, and fs.access on a
-        // directory succeeds, so a blank value made createConfigFileIfMissing() report the
-        // working directory itself as an existing config file.
+        // actually about. resolve('') is the current working directory, and fs.lstat on a
+        // directory succeeds (and isn't a symlink), so a blank value made
+        // createConfigFileIfMissing() report the working directory itself as an existing config
+        // file.
         it('does not check the current working directory as the config file when KSM_CONFIG_FILE is blank', async () => {
             process.env.KSM_CONFIG_FILE = '';
             const storage = makeStorage(null);
 
             await (storage as any).createConfigFileIfMissing();
 
-            expect(fs.access).toHaveBeenCalledWith(resolve(DEFAULT_CONFIG_FILE));
-            expect(fs.access).not.toHaveBeenCalledWith(process.cwd());
+            expect(fs.lstat).toHaveBeenCalledWith(resolve(DEFAULT_CONFIG_FILE));
+            expect(fs.lstat).not.toHaveBeenCalledWith(process.cwd());
         });
     });
 });
