@@ -306,6 +306,10 @@ describe('GCPKeyValueStorage', () => {
                 'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
             );
             storage = new GCPKeyValueStorage(null, gcpKeyConfig, mockSessionConfig);
+            // KSM-1516: contains() now asserts init() has run before it does anything else, so
+            // a test that spies over readStorage()/saveStorage() to isolate contains() from real
+            // I/O also needs this instance to look already-initialized to that guard.
+            (storage as any).initialized = true;
 
             mockConfig = { clientId: 'abc', appKey: 'xyz' };
 
@@ -337,6 +341,8 @@ describe('GCPKeyValueStorage', () => {
                 'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
             );
             storage = new GCPKeyValueStorage(null, gcpKeyConfig, mockSessionConfig);
+            // KSM-1516: see the identical note in the contains() describe block above.
+            (storage as any).initialized = true;
         });
 
         afterEach(() => {
@@ -390,6 +396,8 @@ describe('GCPKeyValueStorage', () => {
                 'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
             );
             storage = new GCPKeyValueStorage(null, gcpKeyConfig, mockSessionConfig);
+            // KSM-1516: see the identical note in the contains() describe block above.
+            (storage as any).initialized = true;
         });
 
         afterEach(() => {
@@ -460,6 +468,10 @@ describe('GCPKeyValueStorage', () => {
         );
 
         it('saveString() also rejects and writes nothing when fs.access fails with EACCES', async () => {
+            // KSM-1516: unlike the it.each block above (which deliberately exercises init() on a
+            // never-initialized instance), this test is about saveString()'s own EACCES handling,
+            // so it needs the new init guard out of the way to reach that code at all.
+            (storage as any).initialized = true;
             const accessError = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
             (fs.access as jest.Mock).mockRejectedValue(accessError);
 

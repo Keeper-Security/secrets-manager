@@ -42,16 +42,35 @@ export class GCPKeyValueStorage implements KeyValueStorage {
   private gcpSessionConfig: GCPKSMClient;
   private isAsymmetric: boolean = false;
   private encryptionAlgorithm!: string;
+  private initialized: boolean = false;
 
-  public getString(key: string): Promise<string | undefined> {
+  // Every public method below depends on state init() assigns (the key metadata
+  // getKeyDetails() sets, and the config loadConfig() reads), so each one calls this first
+  // rather than trusting a caller to have awaited init() themselves. init() itself is exempt:
+  // it is what makes the guard pass.
+  private assertInitialized(): void {
+    if (!this.initialized) {
+      throw new GCPKeyValueStorageError(
+        "GCPKeyValueStorage has not been initialized. Call init() before using this instance."
+      );
+    }
+  }
+
+  // async, not a bare passthrough: assertInitialized() throws synchronously, and only an async
+  // function turns a synchronous throw into a rejected promise instead of an uncaught exception
+  // that skips straight past a caller's own .catch() chain.
+  public async getString(key: string): Promise<string | undefined> {
+    this.assertInitialized();
     return this.get(key);
   }
 
-  public saveString(key: string, value: string): Promise<void> {
+  public async saveString(key: string, value: string): Promise<void> {
+    this.assertInitialized();
     return this.set(key, value);
   }
 
   public async getBytes(key: string): Promise<Uint8Array | undefined> {
+    this.assertInitialized();
     const bytesString = await this.get(key);
     if (bytesString !== undefined) {
       return platform.base64ToBytes(bytesString);
@@ -59,12 +78,14 @@ export class GCPKeyValueStorage implements KeyValueStorage {
     return undefined;
   }
 
-  public saveBytes(key: string, value: Uint8Array): Promise<void> {
+  public async saveBytes(key: string, value: Uint8Array): Promise<void> {
+    this.assertInitialized();
     const bytesString = platform.bytesToBase64(value);
     return this.set(key, bytesString);
   }
 
   public async delete(key: string): Promise<void> {
+    this.assertInitialized();
     const config = await this.readStorage();
 
     if (key in config) {
@@ -76,13 +97,15 @@ export class GCPKeyValueStorage implements KeyValueStorage {
     await this.saveStorage(config);
   }
 
-  public getObject?<T>(key: string): Promise<T | undefined> {
+  public async getObject?<T>(key: string): Promise<T | undefined> {
+    this.assertInitialized();
     return this.getString(key).then((value) =>
       value ? (JSON.parse(value) as T) : undefined
     );
   }
 
-  public saveObject?<T>(key: string, value: T): Promise<void> {
+  public async saveObject?<T>(key: string, value: T): Promise<void> {
+    this.assertInitialized();
     const json = JSON.stringify(value);
     return this.saveString(key, json);
   }
@@ -120,6 +143,9 @@ export class GCPKeyValueStorage implements KeyValueStorage {
   public async init() {
     await this.getKeyDetails();
     await this.loadConfig();
+    // Set only after both steps above have fully succeeded, so a failed init() (or one still
+    // in flight) never lets another method proceed on partially-assigned state.
+    this.initialized = true;
     this.logger.info(`Loaded config file from ${this.configFileLocation}`);
     return this; // Return the instance to allow chaining
   }
@@ -366,6 +392,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
   }
 
   public async decryptConfig(autosave: boolean): Promise<string> {
+    this.assertInitialized();
     let ciphertext: Buffer;
     let plaintext: string = "";
 
@@ -429,6 +456,7 @@ export class GCPKeyValueStorage implements KeyValueStorage {
   }
 
   public async changeKey(newGcpKeyConfig: GCPKeyConfig): Promise<boolean> {
+    this.assertInitialized();
     const oldKeyConfiguration = this.gcpKeyConfig;
     const oldCryptoClient = this.cryptoClient;
     const oldKeyType = this.keyType;
@@ -544,10 +572,12 @@ export class GCPKeyValueStorage implements KeyValueStorage {
   }
 
   public async readStorage(): Promise<Record<string, string>> {
+    this.assertInitialized();
     return this.config;
   }
 
-  public saveStorage(updatedConfig: Record<string, string>): Promise<void> {
+  public async saveStorage(updatedConfig: Record<string, string>): Promise<void> {
+    this.assertInitialized();
     return this.saveConfig(updatedConfig);
   }
 
@@ -563,17 +593,20 @@ export class GCPKeyValueStorage implements KeyValueStorage {
   }
 
   public async deleteAll(): Promise<void> {
+    this.assertInitialized();
     await this.readStorage();
     Object.keys(this.config).forEach((key) => delete this.config[key]);
     await this.saveStorage({});
   }
 
   public async contains(key: string): Promise<boolean> {
+    this.assertInitialized();
     const config = await this.readStorage();
     return Promise.resolve(key in config);
   }
 
   public async isEmpty(): Promise<boolean> {
+    this.assertInitialized();
     const config = await this.readStorage();
     return Promise.resolve(Object.keys(config).length === 0);
   }
