@@ -1,4 +1,4 @@
-import { promises as fs } from "fs";
+import { constants, promises as fs } from "fs";
 import { dirname, resolve } from "path";
 import { createHash } from "crypto";
 
@@ -40,6 +40,58 @@ function isValidConfigShape(value: unknown): value is Record<string, string> {
     return false;
   }
   return Object.values(value).every((entry) => typeof entry === "string");
+}
+
+// fs.constants.O_NOFOLLOW has no equivalent on Windows and is undefined there. Feature-detect
+// rather than relying on `O_RDONLY | undefined` silently coercing to a no-op, matching the same
+// check secrets-manager-core's readCacheFile() in src/node/localConfigStorage.ts already uses
+// for the identical platform gap. (That file's separate config-file read, readStorage(), is
+// deliberately unprotected instead, to keep a Kubernetes-mounted config symlink working; the
+// cache read is the one that matches this file's own policy.)
+const hasNoFollowSupport = typeof constants.O_NOFOLLOW === "number";
+const CONFIG_READ_FLAGS = hasNoFollowSupport
+  ? constants.O_RDONLY | constants.O_NOFOLLOW
+  : constants.O_RDONLY;
+
+const symlinkRefusalMessage = (configPath: string): string =>
+  `Refusing to use ${configPath}: it is a symbolic link, not the config file itself. ` +
+  "Point the config file location, or KSM_CONFIG_FILE, at the real file.";
+
+// O_NOFOLLOW keeps the config path itself from being a symlink, but an attacker able to create
+// files in the config directory does not need a symlink at all: a plain regular file at the
+// config path gets past every check above just as well, and for an asymmetric key, forging one
+// that decrypts cleanly under the victim's key needs only the PUBLIC key (a far weaker GCP
+// permission, cloudkms.cryptoKeyVersions.viewPublicKey, than decrypting one). Ownership and mode
+// are checked here on the already-open file descriptor (fstat, not a second stat(path) call
+// that could race against a swap between the check and the read), the same "StrictModes" rule
+// OpenSSH applies to authorized_keys: refuse a file this process does not own (unless it is
+// root-owned, which is a normal provision-as-root-then-run-as-a-service-account layout) or one
+// that grants group or world write access.
+//
+// process.getuid is absent on Windows, which has no equivalent POSIX ownership model; this layer
+// is POSIX-only, the same accepted gap already documented for the O_NOFOLLOW flag above, and for
+// the same reason (CI only runs ubuntu-latest).
+async function readConfigFileStrict(configPath: string): Promise<Buffer> {
+  const handle = await fs.open(configPath, CONFIG_READ_FLAGS);
+  try {
+    if (typeof process.getuid === "function") {
+      const stat = await handle.stat();
+      const ownedByProcessOrRoot = stat.uid === process.getuid() || stat.uid === 0;
+      if (!ownedByProcessOrRoot) {
+        throw new GCPKeyValueStorageError(
+          `Refusing to use ${configPath}: it is owned by uid ${stat.uid}, neither this process (uid ${process.getuid()}) nor root.`
+        );
+      }
+      if ((stat.mode & 0o022) !== 0) {
+        throw new GCPKeyValueStorageError(
+          `Refusing to use ${configPath}: its permissions (${(stat.mode & 0o777).toString(8).padStart(3, "0")}) allow group or world write access.`
+        );
+      }
+    }
+    return await handle.readFile();
+  } finally {
+    await handle.close();
+  }
 }
 
 export class GCPKeyValueStorage implements KeyValueStorage {
@@ -215,10 +267,21 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       // Read the config file
       let contents: Buffer;
       try {
-        contents = await fs.readFile(this.configFileLocation);
+        // O_NOFOLLOW makes the open itself fail with ELOOP on a symlink, closing the gap a
+        // separate lstat-then-read would leave between the check and the read. Ownership and
+        // mode are also checked on that same open descriptor; see readConfigFileStrict().
+        contents = await readConfigFileStrict(this.configFileLocation);
         this.logger.info(`Loaded config file ${this.configFileLocation.toString()}`);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (err: any) {
+        if (err instanceof GCPKeyValueStorageError) {
+          throw err;
+        }
+        if (err?.code === "ELOOP") {
+          throw new GCPKeyValueStorageError(
+            symlinkRefusalMessage(resolve(this.configFileLocation))
+          );
+        }
         this.logger.error(
           `Failed to load config file ${this.configFileLocation.toString()}: ${err.message.toString()}`
         );
@@ -437,10 +500,18 @@ export class GCPKeyValueStorage implements KeyValueStorage {
     let plaintext: string = "";
 
     try {
-      // Read the config file
-      ciphertext = await fs.readFile(this.configFileLocation);
+      // Read the config file. See loadConfig()'s identical comment on readConfigFileStrict().
+      ciphertext = await readConfigFileStrict(this.configFileLocation);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
+      if (err instanceof GCPKeyValueStorageError) {
+        throw err;
+      }
+      if (err?.code === "ELOOP") {
+        throw new GCPKeyValueStorageError(
+          symlinkRefusalMessage(resolve(this.configFileLocation))
+        );
+      }
       this.logger.error(
         `Failed to load config file ${this.configFileLocation.toString()}: ${err.message.toString()}`
       );
@@ -540,22 +611,34 @@ export class GCPKeyValueStorage implements KeyValueStorage {
   // Only ENOENT means the file is genuinely gone, and only that answer may be acted on by
   // rewriting the whole config over whatever is on disk. Any other access failure means the
   // file's existence could not be determined, which is not the same as absence, so it propagates
-  // to the caller instead.
+  // to the caller instead. A symbolic link at this path is treated the same way: never acted on
+  // as either "missing" or "present", regardless of whether it resolves to a real file.
+  //
+  // lstat, not access: access() follows a symlink and cannot tell one apart from a real file, and
+  // it cannot tell a dangling symlink (target does not exist) apart from no file at all - both
+  // fail ENOENT. lstat() reports the path's own directory entry without following it, so a
+  // dangling symlink is correctly reported as "a symlink is present", not "missing"; a target
+  // that later vanished is not the same thing as no file ever having existed at this path.
   //
   // Deliberately not fs.existsSync semantics. The caller's "confirmed missing" branch writes
   // unconditionally and skips createConfigFileIfMissing(), so that method's own ENOENT check
   // never sees this path and cannot be relied on to stop a transient failure here from
   // overwriting a config another process just updated.
   private async configFileExists(): Promise<boolean> {
+    const configPath = resolve(this.configFileLocation);
+    let stat: Awaited<ReturnType<typeof fs.lstat>>;
     try {
-      await fs.access(resolve(this.configFileLocation));
-      return true;
+      stat = await fs.lstat(configPath);
     } catch (error: unknown) {
       if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
         return false;
       }
       throw error;
     }
+    if (stat.isSymbolicLink()) {
+      throw new GCPKeyValueStorageError(symlinkRefusalMessage(configPath));
+    }
+    return true;
   }
 
   private async ensureConfigDirectoryExists(configPath: string): Promise<void> {
@@ -565,7 +648,13 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       try {
         await fs.access(dir); // Check if directory exists
       } catch {
-        await fs.mkdir(dir, { recursive: true }); // Create directory if missing
+        // mode is explicit rather than left to the umask, and only applies to a directory this
+        // call actually creates: an existing directory (whatever its mode) is left untouched by
+        // the fs.access check above, so a consumer who deliberately chose a looser layout isn't
+        // silently tightened underneath them. Ancestor segments already covered by { recursive:
+        // true } still resolve through a symlink exactly as before (e.g. macOS's /tmp); this
+        // only ever sets the mode of dir itself, the config file's own immediate directory.
+        await fs.mkdir(dir, { recursive: true, mode: 0o700 }); // Create directory if missing
       }
     } catch {
       await fs.mkdir(process.cwd(), { recursive: true }); // Use the working directory as fallback
@@ -575,40 +664,43 @@ export class GCPKeyValueStorage implements KeyValueStorage {
   private async createConfigFileIfMissing(): Promise<void> {
     // Ensure the config file path is absolute
     const configPath = resolve(this.configFileLocation);
+    // Reuses the same lstat-based check saveConfig()'s skip-if-unchanged path uses, rather than
+    // a second, separate fs.access probe: a dangling symlink at a not-yet-created config path
+    // must be refused the same way an existing one is, not silently treated as "missing" here
+    // and then replaced by writeFileAtomicSync's rename below, which would otherwise destroy the
+    // attacker's symlink and any evidence of it on the very first write.
     try {
-      // Check if the config file exists
-      await fs.access(configPath);
-      this.logger.info(`Config file already exists at: ${configPath}`);
+      if (await this.configFileExists()) {
+        this.logger.info(`Config file already exists at: ${configPath}`);
+        return;
+      }
     } catch (error: unknown) {
-      const code = (error as NodeJS.ErrnoException | undefined)?.code;
-      if (code !== "ENOENT") {
-        this.logger.error(
-          `Failed to check config file at ${configPath}: ${error instanceof Error ? error.message : String(error)}`
-        );
-        throw error;
-      }
-      // File genuinely does not exist, proceed to create it
-      await this.ensureConfigDirectoryExists(configPath);
-      await this.writeSecureConfigFile(configPath, Buffer.from("{}"));
-
-      let token: string | null | undefined = null;
-      if (this.keyType === "RAW_ENCRYPT_DECRYPT") {
-        this.logger.debug("using raw symmetric key to encrypt the config.");
-        token = await this.gcpSessionConfig.getToken();
-      }
-      // Encrypt an empty configuration and write to the file
-      const blob = await encryptBuffer({
-        isAsymmetric: this.isAsymmetric,
-        message: "{}",
-        keyType: this.keyType,
-        cryptoClient: this.cryptoClient,
-        encryptionAlgorithm: this.encryptionAlgorithm,
-        keyProperties: this.gcpKeyConfig,
-        token: token
-      }, this.logger);
-      await this.writeSecureConfigFile(configPath, blob);
-      this.logger.info(`Config file created at: ${configPath}`);
+      this.logger.error(
+        `Failed to check config file at ${configPath}: ${error instanceof Error ? error.message : String(error)}`
+      );
+      throw error;
     }
+    // File genuinely does not exist, proceed to create it
+    await this.ensureConfigDirectoryExists(configPath);
+    await this.writeSecureConfigFile(configPath, Buffer.from("{}"));
+
+    let token: string | null | undefined = null;
+    if (this.keyType === "RAW_ENCRYPT_DECRYPT") {
+      this.logger.debug("using raw symmetric key to encrypt the config.");
+      token = await this.gcpSessionConfig.getToken();
+    }
+    // Encrypt an empty configuration and write to the file
+    const blob = await encryptBuffer({
+      isAsymmetric: this.isAsymmetric,
+      message: "{}",
+      keyType: this.keyType,
+      cryptoClient: this.cryptoClient,
+      encryptionAlgorithm: this.encryptionAlgorithm,
+      keyProperties: this.gcpKeyConfig,
+      token: token
+    }, this.logger);
+    await this.writeSecureConfigFile(configPath, blob);
+    this.logger.info(`Config file created at: ${configPath}`);
   }
 
   public async readStorage(): Promise<Record<string, string>> {
