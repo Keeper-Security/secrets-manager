@@ -10,9 +10,18 @@ Keeper Secrets Manager integrates with GCP KMS in order to provide protection fo
 * Supports the JavaScript Secrets Manager SDK
 * `@google-cloud/kms` is bundled — no separate install required
 * These are permissions required for service account:
-  * Cloud KMS CryptoKey Decrypter
-  * Cloud KMS CryptoKey Encrypter
-  * Cloud KMS CryptoKey Public Key Viewer
+  * Cloud KMS CryptoKey Decrypter (`roles/cloudkms.cryptoKeyDecrypter`)
+  * Cloud KMS CryptoKey Encrypter (`roles/cloudkms.cryptoKeyEncrypter`)
+  * Cloud KMS CryptoKey Public Key Viewer (`roles/cloudkms.publicKeyViewer`)
+  * Cloud KMS Viewer (`roles/cloudkms.viewer`) — needed for `cloudkms.cryptoKeys.get`, which none of the three roles above include
+
+## Behavior Notes (v1.1.0)
+
+* **Node.js 20 or later is required.** Earlier versions are no longer supported.
+* **The directory holding the config file must be writable, not only the config file itself.** Writes create a temporary file alongside the config file and rename it into place, which needs permission to create and rename entries in that directory. A deployment that mounts a writable config file inside a read-only directory now fails with `EACCES` on every `init()`, `saveString()`, `saveBytes()`, `saveObject()`, and `delete()`.
+* **A config path that is a symbolic link, or that has a hard-linked peer, is now replaced rather than written through.** A config path symlinked into a shared or externally mounted location stops updating the link target, and a hard-linked backup stops tracking the config. This is silent: the write reports success and raises no error. Point your config file location, or `KSM_CONFIG_FILE`, at the real file rather than at a link.
+* **A zero-length config file is now a hard error instead of being treated as an empty config.** A zero-length file means an interrupted or truncated write, not "no config yet". `init()` and `decryptConfig()` now both throw and leave the file untouched, so you can restore it from a backup rather than have it silently re-encrypted over the top (which would have destroyed the client ID, app key, and device private key).
+* **Config file writes land at file mode `0600`** (owner read/write only), including correcting a pre-existing file's mode from an earlier SDK version.
 
 ## Setup
 
@@ -50,6 +59,8 @@ The storage will require a GCP Key ID, as well as the name of the Secrets Manage
         // example key : projects/<project>/locations/<location>/keyRings/<key>/cryptoKeys/<key_name>/cryptoKeyVersions/<key_version>
         const keyConfig = new GCPKeyConfig("<key_version_resource_url>");
         const gcpSessionConfig = new GCPKSMClient().createClientFromCredentialsFile('<gcp_credentials_json_location>')
+        // Falls back to the KSM_CONFIG_FILE environment variable if this is null, undefined,
+        // or blank, and to a default location if KSM_CONFIG_FILE is also unset or blank.
         const configPath = "<path to client-config-gcp.json>"
         const logLevel = LoggerLogLevelOptions.info;
 
@@ -89,6 +100,10 @@ const plaintext = await storage.decryptConfig(false);
 // OR: returns plaintext and saves config as plaintext
 const saved = await storage.decryptConfig(true);
 ```
+
+**Warning**: `decryptConfig(true)` writes the client ID, app key, and device private key to disk **in plaintext** at the config file's path, replacing the encrypted file. Anything that can read that file, including backups, snapshots, and container image layers, can read those credentials until you re-encrypt it. The write does land at file mode `0600` (owner read/write only), which limits exposure to other local users on the same machine, but the data itself is plaintext on disk.
+
+To return to an encrypted config, call `init()` again (for example by constructing a new `GCPKeyValueStorage` against the same path and calling `.init()`): `loadConfig()` detects a plaintext config file automatically and re-encrypts it in place before returning.
 
 ## Logging
 We support logging for the GCP KMS integration. Supported log levels are as follows
