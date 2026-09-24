@@ -29,7 +29,7 @@ namespace SecretsManager.Test
             Task<KeeperHttpResponse> TestPostFunction(string s, TransmissionKey transmissionKey, EncryptedPayload encryptedPayload, string proxyUrl = null)
             {
                 var response = testResponses[responseNo++];
-                return Task.FromResult(new KeeperHttpResponse(CryptoUtils.Base64ToBytes(response.data), response.statusCode != 200));
+                return Task.FromResult(new KeeperHttpResponse(CryptoUtils.Base64ToBytes(response.data), response.statusCode != 200, response.statusCode));
             }
 
             var storage = new LocalConfigStorage();

@@ -596,6 +596,7 @@ namespace SecretsManager
         public bool? ignoreCert { get; set; }
         public string resizeMethod { get; set; }
         public string colorScheme { get; set; }
+        public string dbConnectionMethod { get; set; }
     }
 
     public class PamSettingsPortForward
