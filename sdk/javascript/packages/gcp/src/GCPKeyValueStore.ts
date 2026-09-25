@@ -30,6 +30,18 @@ import { Logger } from "pino";
 const nonBlank = (value: string | null | undefined): string | undefined =>
   value == null || value.trim() === "" ? undefined : value;
 
+// JSON.parse() succeeds for null, 0, false, "", [], and any other valid-but-wrong-shaped JSON,
+// none of which is the declared Record<string, string> the rest of this class assumes. Used by
+// both loadConfig() parse sites (the plaintext path and the decrypted path) right after their
+// own JSON.parse succeeds, so a bad shape is rejected before either site acts on it, rather than
+// taking a different silently wrong path depending on which shape it happened to be.
+function isValidConfigShape(value: unknown): value is Record<string, string> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value).every((entry) => typeof entry === "string");
+}
+
 export class GCPKeyValueStorage implements KeyValueStorage {
   private defaultConfigFileLocation: string = "client-config.json";
   private cryptoClient!: KMSClient;
@@ -182,6 +194,20 @@ export class GCPKeyValueStorage implements KeyValueStorage {
     }
   }
 
+  // Called as its own statement after the JSON.parse that fed it has already returned, never
+  // nested inside that parse's own try/catch. A throw from inside that try would be caught by
+  // its own catch instead, which would misread a bad shape as "must be encrypted, try
+  // decrypting" (the plaintext site) or fold it into the generic decrypted-parse failure (the
+  // decryption site), losing the specific reason in both cases.
+  private rejectInvalidConfigShape(configPath: string): never {
+    this.logger.error(
+      `Config file ${configPath} parsed as valid JSON but is not a configuration object, which indicates a corrupted or foreign file`
+    );
+    throw new GCPKeyValueStorageError(
+      `Config file ${configPath} is not a valid configuration object and may be corrupted. Restore it from a backup, or delete it to create a new configuration.`
+    );
+  }
+
   private async loadConfig(): Promise<void> {
     await this.createConfigFileIfMissing();
 
@@ -221,6 +247,14 @@ export class GCPKeyValueStorage implements KeyValueStorage {
       } catch (err: any) {
         this.logger.debug("given file is encrypted file. trying to decrypt the configuration into a json from it");
         jsonError = err;
+      }
+
+      // Checked before anything below acts on config: a parse that succeeded but produced the
+      // wrong shape (null, 0, false, "", an array, a primitive) must not reach the "not
+      // encrypted, starting encryption" log two lines down, which is what invites the silent
+      // plaintext-left-on-disk and no-op-save failure modes this closes.
+      if (!jsonError && !isValidConfigShape(config)) {
+        this.rejectInvalidConfigShape(this.configFileLocation.toString());
       }
 
       // A successful parse already proves the file is plaintext, so encrypting it is a
@@ -263,16 +297,6 @@ export class GCPKeyValueStorage implements KeyValueStorage {
         this.logger.debug("decrypted configuration, trying to parse decrypted configuration into a json");
         try {
           config = JSON.parse(configJson);
-          this.config = config ?? {};
-          this.lastSavedConfigHash = createHash(MD5_HASH)
-            .update(
-              JSON.stringify(
-                config,
-                Object.keys(this.config).sort(),
-                DEFAULT_JSON_INDENT
-              )
-            )
-            .digest(HEX_DIGEST);
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (err: any) {
           decryptionError = true;
@@ -283,6 +307,22 @@ export class GCPKeyValueStorage implements KeyValueStorage {
             `Failed to parse decrypted config file ${this.configFileLocation.toString()}`
           );
         }
+        // Same shape check as the plaintext site above, and the half most likely to be missed:
+        // this.config = config ?? {} below accepts any non-null value, so an array or a
+        // primitive decrypted here would otherwise reach it unexamined.
+        if (!isValidConfigShape(config)) {
+          this.rejectInvalidConfigShape(this.configFileLocation.toString());
+        }
+        this.config = config ?? {};
+        this.lastSavedConfigHash = createHash(MD5_HASH)
+          .update(
+            JSON.stringify(
+              config,
+              Object.keys(this.config).sort(),
+              DEFAULT_JSON_INDENT
+            )
+          )
+          .digest(HEX_DIGEST);
       }
       if (jsonError && decryptionError) {
         this.logger.info(
