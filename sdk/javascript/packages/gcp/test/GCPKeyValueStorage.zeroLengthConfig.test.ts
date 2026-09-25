@@ -203,7 +203,7 @@ describe('decryptConfig() against a zero-length config file (real fs)', () => {
 
         const storage = makeStorage(configPath);
 
-        await expect(storage.decryptConfig(false)).rejects.toThrow(configPath);
+        await expect(storage.decryptConfig(false)).rejects.toThrow(/is empty/);
     });
 
     it('leaves the file untouched even when autosave is requested', async () => {
