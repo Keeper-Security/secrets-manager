@@ -462,8 +462,16 @@ describe('GCPKeyValueStorage', () => {
                 const accessError = Object.assign(new Error(`${code}: access failure`), { code });
                 (fs.access as jest.Mock).mockRejectedValue(accessError);
 
+                // fs.writeFile isn't in the write path anymore (writeFileAtomicSync is); asserting
+                // against it would pass unconditionally regardless of what init() actually does.
+                // mockImplementation stops a regression that does reach this call from performing
+                // a real filesystem write in this test's temp-free setup.
+                const atomicWrite = require('../src/atomicWrite');
+                const spy = jest.spyOn(atomicWrite, 'writeFileAtomicSync').mockImplementation(() => undefined);
+
                 await expect(storage.init()).rejects.toMatchObject({ code });
-                expect(fs.writeFile).not.toHaveBeenCalled();
+                expect(spy).not.toHaveBeenCalled();
+                spy.mockRestore();
             }
         );
 
@@ -475,8 +483,12 @@ describe('GCPKeyValueStorage', () => {
             const accessError = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
             (fs.access as jest.Mock).mockRejectedValue(accessError);
 
+            const atomicWrite = require('../src/atomicWrite');
+            const spy = jest.spyOn(atomicWrite, 'writeFileAtomicSync').mockImplementation(() => undefined);
+
             await expect(storage.saveString('clientId', 'x')).rejects.toMatchObject({ code: 'EACCES' });
-            expect(fs.writeFile).not.toHaveBeenCalled();
+            expect(spy).not.toHaveBeenCalled();
+            spy.mockRestore();
         });
 
         // The ENOENT-still-creates case and the config-file-permission assertions that used to
