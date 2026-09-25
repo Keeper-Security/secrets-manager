@@ -79,6 +79,11 @@ function makeStorage(configPath: string): GCPKeyValueStorage {
     (storage as any).keyType = 'ENCRYPT_DECRYPT';
     (storage as any).isAsymmetric = false;
     (storage as any).encryptionAlgorithm = 'GOOGLE_SYMMETRIC_ENCRYPTION';
+    // KSM-1516: several tests in this file are specifically about odd file states (missing,
+    // rotated by another process, ESTALE) that a real eager init() read would interact with
+    // awkwardly, so this helper pokes the flag directly rather than calling init() for real,
+    // the same as it already does for keyType/isAsymmetric/encryptionAlgorithm above.
+    (storage as any).initialized = true;
     return storage;
 }
 

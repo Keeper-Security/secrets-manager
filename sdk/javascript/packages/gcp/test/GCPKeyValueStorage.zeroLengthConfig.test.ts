@@ -74,6 +74,10 @@ function makeStorage(configPath: string): GCPKeyValueStorage {
             plaintextCrc32c: { value: calculate(plaintext) },
         }];
     });
+    // KSM-1516: some of this file's decryptConfig() tests can't call the real init() (init()
+    // itself rejects against the zero-length file under test), so this helper pokes the flag
+    // directly instead.
+    (storage as any).initialized = true;
     return storage;
 }
 
