@@ -12,7 +12,44 @@ permissions:
   contents: read
 
 jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Extract version
+        id: extract-version
+        run: |
+          VERSION=$(grep -o '"version": "[^"]*"' sdk/javascript/packages/gcp/package.json | cut -d'"' -f4)
+          echo "Version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  validate-version:
+    name: Validate version not yet published
+    needs: get-version
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check version not on npm
+        env:
+          VERSION: ${{ needs.get-version.outputs.version }}
+        run: |
+          PACKAGE="@keeper-security%2Fsecrets-manager-gcp"
+          CHECK_URL="https://registry.npmjs.org/${PACKAGE}/${VERSION}"
+          echo "Checking npm for @keeper-security/secrets-manager-gcp $VERSION..."
+          STATUS=$(curl -sS --retry 3 --retry-delay 2 -o /dev/null -w "%{http_code}" "$CHECK_URL")
+          case "$STATUS" in
+            404) echo "@keeper-security/secrets-manager-gcp $VERSION not yet on npm - ok to proceed" ;;
+            200) echo "::error::@keeper-security/secrets-manager-gcp ${VERSION} is already on npm. Aborting."; exit 1 ;;
+            *)   echo "::error::Unexpected status $STATUS from npm registry. Aborting."; exit 1 ;;
+          esac
+
   generate-sbom:
+    needs: validate-version
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -111,7 +148,7 @@ jobs:
           node-version: '24'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run tests
         run: npm test
@@ -128,12 +165,13 @@ jobs:
             ${{ github.workspace }}/sdk/javascript/packages/gcp/package.json
 
   publish-npm:
-    needs: build-npm
+    needs: [build-npm, validate-version]
     if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
 
     defaults:
       run:
@@ -149,6 +187,11 @@ jobs:
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Upgrade npm
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: npm ci
@@ -156,13 +199,5 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Retrieve secrets from KSM
-        id: ksmsecrets
-        uses: Keeper-Security/ksm-action@560d170bea253481a48eae617f0493aab7436c28 # master
-        with:
-          keeper-secret-config: ${{ secrets.KSM_NPM_PUBLISHER_NPM_SDK_CONFIG }}
-          secrets: |
-            2LmZq2z682qhTKYUizehow/field/password > env:NPM_TOKEN
-
       - name: Publish package
-        run: npm publish --ignore-scripts
+        run: npm publish --ignore-scripts --provenance

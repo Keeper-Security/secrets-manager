@@ -32,9 +32,16 @@ jest.mock('fs', () => ({
         writeFile: jest.fn(),
         mkdir: jest.fn(),
         access: jest.fn(),
-    }
+        chmod: jest.fn(),
+    },
+    // Real, static flag values only, no I/O. secrets-manager-core reads fs.constants at
+    // module load time (cache directory symlink protection), so a mock missing it entirely
+    // fails every test in this file before any test body runs.
+    constants: jest.requireActual('fs').constants,
 }));
 
+import { promises as fs } from 'fs';
+import { resolve } from 'path';
 import { GCPKeyValueStorage } from '../src/GCPKeyValueStore';
 import { GCPKeyConfig } from '../src/GcpKeyConfig';
 import { GCPKSMClient } from '../src/GcpKmsClient';
@@ -299,6 +306,10 @@ describe('GCPKeyValueStorage', () => {
                 'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
             );
             storage = new GCPKeyValueStorage(null, gcpKeyConfig, mockSessionConfig);
+            // KSM-1516: contains() now asserts init() has run before it does anything else, so
+            // a test that spies over readStorage()/saveStorage() to isolate contains() from real
+            // I/O also needs this instance to look already-initialized to that guard.
+            (storage as any).initialized = true;
 
             mockConfig = { clientId: 'abc', appKey: 'xyz' };
 
@@ -330,6 +341,8 @@ describe('GCPKeyValueStorage', () => {
                 'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
             );
             storage = new GCPKeyValueStorage(null, gcpKeyConfig, mockSessionConfig);
+            // KSM-1516: see the identical note in the contains() describe block above.
+            (storage as any).initialized = true;
         });
 
         afterEach(() => {
@@ -383,6 +396,8 @@ describe('GCPKeyValueStorage', () => {
                 'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
             );
             storage = new GCPKeyValueStorage(null, gcpKeyConfig, mockSessionConfig);
+            // KSM-1516: see the identical note in the contains() describe block above.
+            (storage as any).initialized = true;
         });
 
         afterEach(() => {
@@ -416,6 +431,145 @@ describe('GCPKeyValueStorage', () => {
 
             // Should not throw; saveStorage still called
             await expect(storage.delete('missing')).resolves.toBeUndefined();
+        });
+    });
+
+    describe('createConfigFileIfMissing() fs.access error handling', () => {
+        let storage: GCPKeyValueStorage;
+
+        beforeEach(() => {
+            jest.clearAllMocks();
+            const gcpKeyConfig = new GCPKeyConfig(
+                'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
+            );
+            storage = new GCPKeyValueStorage('./test-config.json', gcpKeyConfig, mockSessionConfig);
+            const cryptoClient = mockSessionConfig.getCryptoClient();
+            (cryptoClient.getCryptoKey as jest.Mock).mockResolvedValue([
+                { purpose: 'ENCRYPT_DECRYPT', versionTemplate: { algorithm: 'GOOGLE_SYMMETRIC_ENCRYPTION' } },
+            ]);
+        });
+
+        // Table-driven so narrowing the ENOENT check later (e.g. to `!== "ENOENT" && !== "EPERM"`)
+        // reopens the hole for one code without this test noticing. Goes through the public
+        // init() entry point (getKeyDetails() -> loadConfig() -> createConfigFileIfMissing()),
+        // not the private method directly, so a regression that swallows the rejection instead
+        // of throwing it - the actual security property KSM-1370 exists to guarantee - fails
+        // this test. A `.catch(() => undefined)` assertion on write-not-called alone can't tell
+        // the difference between "rejected" and "silently returned".
+        it.each(['EACCES', 'EPERM', 'ESTALE', 'EIO', 'EBUSY'])(
+            'init() rejects and writes nothing when fs.access fails with %s',
+            async (code) => {
+                const accessError = Object.assign(new Error(`${code}: access failure`), { code });
+                (fs.access as jest.Mock).mockRejectedValue(accessError);
+
+                await expect(storage.init()).rejects.toMatchObject({ code });
+                expect(fs.writeFile).not.toHaveBeenCalled();
+            }
+        );
+
+        it('saveString() also rejects and writes nothing when fs.access fails with EACCES', async () => {
+            // KSM-1516: unlike the it.each block above (which deliberately exercises init() on a
+            // never-initialized instance), this test is about saveString()'s own EACCES handling,
+            // so it needs the new init guard out of the way to reach that code at all.
+            (storage as any).initialized = true;
+            const accessError = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+            (fs.access as jest.Mock).mockRejectedValue(accessError);
+
+            await expect(storage.saveString('clientId', 'x')).rejects.toMatchObject({ code: 'EACCES' });
+            expect(fs.writeFile).not.toHaveBeenCalled();
+        });
+
+        // The ENOENT-still-creates case and the config-file-permission assertions that used to
+        // live here both moved to GCPKeyValueStorage.atomicWrite.test.ts: on ENOENT, this method
+        // falls through to writeFileAtomicSync's real, unmocked sync fs calls (openSync/writeSync/
+        // renameSync), and this file's blanket jest.mock('fs', ...) only stubs `fs.promises` - so
+        // `fs.openSync` etc. don't exist under it, and asserting against the old
+        // fs.promises.writeFile/chmod mocks would just prove those mocks are never called.
+    });
+
+    describe('configFileLocation resolution (KSM-1457 regression)', () => {
+        const DEFAULT_CONFIG_FILE = 'client-config.json';
+        let savedConfigFileEnv: string | undefined;
+
+        beforeEach(() => {
+            savedConfigFileEnv = process.env.KSM_CONFIG_FILE;
+            delete process.env.KSM_CONFIG_FILE;
+            // mockReset, not mockClear: an earlier describe leaves a mockRejectedValue on this
+            // shared mock, and the call history has to be empty for the path assertions below.
+            (fs.access as jest.Mock).mockReset();
+            (fs.access as jest.Mock).mockResolvedValue(undefined);
+        });
+
+        afterEach(() => {
+            if (savedConfigFileEnv === undefined) {
+                delete process.env.KSM_CONFIG_FILE;
+            } else {
+                process.env.KSM_CONFIG_FILE = savedConfigFileEnv;
+            }
+        });
+
+        const makeStorage = (location: string | null): GCPKeyValueStorage => {
+            const gcpKeyConfig = new GCPKeyConfig(
+                'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1'
+            );
+            return new GCPKeyValueStorage(location, gcpKeyConfig, mockSessionConfig);
+        };
+
+        const configFileLocationOf = (storage: GCPKeyValueStorage): string =>
+            (storage as any).configFileLocation;
+
+        // Table-driven: '' is the case the ticket reports, the whitespace-only values are the
+        // same accident from an env file or ConfigMap that pads the value instead of emptying it.
+        it.each(['', ' ', '   ', '\t', '\n'])(
+            'uses the default config file when the explicit location is blank (%j)',
+            (location) => {
+                expect(configFileLocationOf(makeStorage(location))).toBe(DEFAULT_CONFIG_FILE);
+            }
+        );
+
+        it.each(['', ' ', '   ', '\t', '\n'])(
+            'uses the default config file when KSM_CONFIG_FILE is blank (%j)',
+            (envValue) => {
+                process.env.KSM_CONFIG_FILE = envValue;
+
+                expect(configFileLocationOf(makeStorage(null))).toBe(DEFAULT_CONFIG_FILE);
+            }
+        );
+
+        it('falls back to KSM_CONFIG_FILE when only the explicit location is blank', () => {
+            process.env.KSM_CONFIG_FILE = '/etc/keeper/from-env.json';
+
+            expect(configFileLocationOf(makeStorage(''))).toBe('/etc/keeper/from-env.json');
+        });
+
+        it('still uses a non-empty KSM_CONFIG_FILE when no location is passed', () => {
+            process.env.KSM_CONFIG_FILE = '/etc/keeper/from-env.json';
+
+            expect(configFileLocationOf(makeStorage(null))).toBe('/etc/keeper/from-env.json');
+        });
+
+        it('still prefers a non-empty explicit location over KSM_CONFIG_FILE', () => {
+            process.env.KSM_CONFIG_FILE = '/etc/keeper/from-env.json';
+
+            expect(configFileLocationOf(makeStorage('./explicit-config.json'))).toBe('./explicit-config.json');
+        });
+
+        it('still uses the default config file when neither source is set', () => {
+            expect(configFileLocationOf(makeStorage(null))).toBe(DEFAULT_CONFIG_FILE);
+        });
+
+        // The field assertions above pin the value; this pins the consequence the ticket is
+        // actually about. resolve('') is the current working directory, and fs.access on a
+        // directory succeeds, so a blank value made createConfigFileIfMissing() report the
+        // working directory itself as an existing config file.
+        it('does not check the current working directory as the config file when KSM_CONFIG_FILE is blank', async () => {
+            process.env.KSM_CONFIG_FILE = '';
+            const storage = makeStorage(null);
+
+            await (storage as any).createConfigFileIfMissing();
+
+            expect(fs.access).toHaveBeenCalledWith(resolve(DEFAULT_CONFIG_FILE));
+            expect(fs.access).not.toHaveBeenCalledWith(process.cwd());
         });
     });
 });

@@ -14,11 +14,13 @@ import { DEFAULT_LOG_LEVEL } from "./constants";
  * @param {string} [project] The project ID
  * @param {string} [location] The location (region or multi-region)
  * @param {string} [keyVersion] The version of the key. If not provided, the latest version will be used.
- * The permissions provided should have the following roles
- *     - Cloud KMS Admin (`roles/cloudkms.admin`): Manage key rings and keys.
+ * The permissions provided should have the following roles. This package never calls a key- or
+ * keyring-management operation, so `roles/cloudkms.admin` is not needed and should not be granted.
  *     - Cloud KMS CryptoKey Decrypter (`roles/cloudkms.cryptoKeyDecrypter`): Decrypt data using a given key.
  *     - Cloud KMS CryptoKey Encrypter (`roles/cloudkms.cryptoKeyEncrypter`): Encrypt data using a given key.
  *     - Cloud KMS CryptoKey Public Key Viewer (`roles/cloudkms.publicKeyViewer`): Get public keys for a given key.
+ *     - Cloud KMS Viewer (`roles/cloudkms.viewer`): Provides `cloudkms.cryptoKeys.get`, which
+ *       none of the three roles above include, and which `getKeyDetails()` calls via `getCryptoKey()`.
  */
 export class GCPKeyConfig {
     /**
