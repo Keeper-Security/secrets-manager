@@ -203,7 +203,11 @@ describe('decryptConfig() against a zero-length config file (real fs)', () => {
 
         const storage = makeStorage(configPath);
 
+        // Both halves matter: /is empty/ alone doesn't prove this is the zero-length rejection
+        // rather than some other error that happens to mention the path (the bug this test
+        // exists to catch); configPath alone doesn't prove the message actually names the cause.
         await expect(storage.decryptConfig(false)).rejects.toThrow(/is empty/);
+        await expect(storage.decryptConfig(false)).rejects.toThrow(configPath);
     });
 
     it('leaves the file untouched even when autosave is requested', async () => {
