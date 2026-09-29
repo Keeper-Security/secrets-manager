@@ -24,6 +24,7 @@ Keeper Secrets Manager integrates with GCP KMS in order to provide protection fo
 * **A zero-length config file is now a hard error instead of being treated as an empty config.** A zero-length file means an interrupted or truncated write, not "no config yet". `init()` and `decryptConfig()` now both throw and leave the file untouched, so you can restore it from a backup rather than have it silently re-encrypted over the top (which would have destroyed the client ID, app key, and device private key).
 * **Config file writes land at file mode `0600`** (owner read/write only), including correcting a pre-existing file's mode from an earlier SDK version.
 * **The config directory is created at mode `0700`** (owner read/write/execute only) the first time the SDK creates it. An already-existing directory is left at whatever mode it already had.
+* **On Windows, the file mode and ownership protections above do not apply.** Node.js does not apply POSIX file modes on Windows, so the `0600` and `0700` modes have no effect there. The config read does not check file ownership or mode, and `decryptConfig()` does not refuse a symbolic link. Restrict access to the config directory with Windows ACLs instead.
 
 ## Setup
 
