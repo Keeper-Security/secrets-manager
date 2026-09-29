@@ -17,6 +17,9 @@
     "url": "git+https://github.com/Keeper-Security/secrets-manager.git"
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "tsc",
@@ -47,8 +50,5 @@
     "axios": "^1.19.0",
     "pino": "^10.1.0",
     "pino-pretty": "^13.0.0"
-  },
-  "overrides": {
-    "@tootallnate/once": "3.0.1"
   }
 }

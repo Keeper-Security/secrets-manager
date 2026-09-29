@@ -17,7 +17,7 @@ Keeper Secrets Manager integrates with GCP KMS in order to provide protection fo
 
 ## Behavior Notes (v1.1.0)
 
-* **Node.js 20 or later is required.** Earlier versions are no longer supported.
+* **Node.js 22 or later is required.** Earlier versions are no longer supported.
 * **The directory holding the config file must be writable, not only the config file itself.** Writes create a temporary file alongside the config file and rename it into place, which needs permission to create and rename entries in that directory. A deployment that mounts a writable config file inside a read-only directory now fails with `EACCES` on every `init()`, `saveString()`, `saveBytes()`, `saveObject()`, and `delete()`.
 * **A config path that is a symbolic link, or that has a hard-linked peer, is now replaced rather than written through.** A config path symlinked into a shared or externally mounted location stops updating the link target, and a hard-linked backup stops tracking the config. This is silent: the write reports success and raises no error. Point your config file location, or `KSM_CONFIG_FILE`, at the real file rather than at a link.
 * **A config path that is a symbolic link is also refused on read, not only replaced on write.** `init()` and `decryptConfig()` both throw a clear error naming the path instead of reading through the link, including when the link is dangling (its target does not exist yet). Point your config file location, or `KSM_CONFIG_FILE`, at the real file, the same as for writes above.
