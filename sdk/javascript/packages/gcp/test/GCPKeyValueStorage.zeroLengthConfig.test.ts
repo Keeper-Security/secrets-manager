@@ -74,6 +74,10 @@ function makeStorage(configPath: string): GCPKeyValueStorage {
             plaintextCrc32c: { value: calculate(plaintext) },
         }];
     });
+    // KSM-1516: some of this file's decryptConfig() tests can't call the real init() (init()
+    // itself rejects against the zero-length file under test), so this helper pokes the flag
+    // directly instead.
+    (storage as any).initialized = true;
     return storage;
 }
 
@@ -105,7 +109,7 @@ describe('loadConfig() against a zero-length config file (real fs)', () => {
 
         const storage = makeStorage(configPath);
 
-        await expect(storage.init()).rejects.toThrow();
+        await expect(storage.init()).rejects.toThrow(/is empty/);
 
         // Still recognisably damaged. Re-encrypting an empty config over the top would leave a
         // file that looks valid to every later reader, hiding the fact that data was lost.
@@ -123,7 +127,7 @@ describe('loadConfig() against a zero-length config file (real fs)', () => {
         const spy = jest.spyOn(atomicWrite, 'writeFileAtomicSync');
         const storage = makeStorage(configPath);
 
-        await expect(storage.init()).rejects.toThrow();
+        await expect(storage.init()).rejects.toThrow(/is empty/);
 
         expect(spy).not.toHaveBeenCalled();
         spy.mockRestore();
@@ -203,6 +207,10 @@ describe('decryptConfig() against a zero-length config file (real fs)', () => {
 
         const storage = makeStorage(configPath);
 
+        // Both halves matter: /is empty/ alone doesn't prove this is the zero-length rejection
+        // rather than some other error that happens to mention the path (the bug this test
+        // exists to catch); configPath alone doesn't prove the message actually names the cause.
+        await expect(storage.decryptConfig(false)).rejects.toThrow(/is empty/);
         await expect(storage.decryptConfig(false)).rejects.toThrow(configPath);
     });
 
@@ -211,7 +219,7 @@ describe('decryptConfig() against a zero-length config file (real fs)', () => {
 
         const storage = makeStorage(configPath);
 
-        await expect(storage.decryptConfig(true)).rejects.toThrow();
+        await expect(storage.decryptConfig(true)).rejects.toThrow(/is empty/);
 
         // autosave writes the decrypted plaintext back through the same file; a config that
         // never made it past the zero-length check must never reach that write.

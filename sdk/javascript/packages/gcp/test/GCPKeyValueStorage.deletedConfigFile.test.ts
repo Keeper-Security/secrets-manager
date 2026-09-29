@@ -79,6 +79,11 @@ function makeStorage(configPath: string): GCPKeyValueStorage {
     (storage as any).keyType = 'ENCRYPT_DECRYPT';
     (storage as any).isAsymmetric = false;
     (storage as any).encryptionAlgorithm = 'GOOGLE_SYMMETRIC_ENCRYPTION';
+    // KSM-1516: several tests in this file are specifically about odd file states (missing,
+    // rotated by another process, ESTALE) that a real eager init() read would interact with
+    // awkwardly, so this helper pokes the flag directly rather than calling init() for real,
+    // the same as it already does for keyType/isAsymmetric/encryptionAlgorithm above.
+    (storage as any).initialized = true;
     return storage;
 }
 
@@ -242,7 +247,8 @@ describe('saveConfig() when the config file existence check fails for a reason o
 
         const stale: NodeJS.ErrnoException = new Error('ESTALE: stale file handle');
         stale.code = 'ESTALE';
-        jest.spyOn(fs.promises, 'access').mockRejectedValueOnce(stale);
+        // KSM-1514: configFileExists() now uses fs.lstat instead of fs.access.
+        jest.spyOn(fs.promises, 'lstat').mockRejectedValueOnce(stale);
 
         // A no-op save against `first`'s own in-memory config, so the hash still matches and the
         // existence check is the only thing standing between it and an unconditional rewrite.
@@ -265,7 +271,8 @@ describe('saveConfig() when the config file existence check fails for a reason o
 
         const denied: NodeJS.ErrnoException = new Error('EACCES: permission denied');
         denied.code = 'EACCES';
-        jest.spyOn(fs.promises, 'access').mockRejectedValueOnce(denied);
+        // KSM-1514: configFileExists() now uses fs.lstat instead of fs.access.
+        jest.spyOn(fs.promises, 'lstat').mockRejectedValueOnce(denied);
 
         const atomicWrite = require('../src/atomicWrite');
         const writeSpy = jest.spyOn(atomicWrite, 'writeFileAtomicSync');

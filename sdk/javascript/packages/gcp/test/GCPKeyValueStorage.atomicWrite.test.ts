@@ -74,6 +74,10 @@ function makeStorage(configPath: string): { storage: GCPKeyValueStorage; mockSes
     (storage as any).keyType = 'ENCRYPT_DECRYPT';
     (storage as any).isAsymmetric = false;
     (storage as any).encryptionAlgorithm = 'GOOGLE_SYMMETRIC_ENCRYPTION';
+    // KSM-1516: this helper never calls the real init() (its KMS mock has no getCryptoKey), so
+    // it has always poked the private fields init() would have set. The new init guard is one
+    // more of those fields.
+    (storage as any).initialized = true;
     return { storage, mockSessionConfig };
 }
 
