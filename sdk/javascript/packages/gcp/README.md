@@ -105,7 +105,10 @@ const saved = await storage.decryptConfig(true);
 
 **Warning**: `decryptConfig(true)` writes the client ID, app key, and device private key to disk **in plaintext** at the config file's path, replacing the encrypted file. Anything that can read that file, including backups, snapshots, and container image layers, can read those credentials until you re-encrypt it. The write does land at file mode `0600` (owner read/write only), which limits exposure to other local users on the same machine, but the data itself is plaintext on disk.
 
-To return to an encrypted config, call `init()` again (for example by constructing a new `GCPKeyValueStorage` against the same path and calling `.init()`): `loadConfig()` detects a plaintext config file automatically and re-encrypts it in place before returning.
+To return to an encrypted config, construct a new `GCPKeyValueStorage` against the same path and call `.init()` on it.
+`loadConfig()` detects the plaintext config file and re-encrypts it in place before `init()` returns.
+Do not call `init()` again on the instance that called `decryptConfig(true)`.
+That instance does not re-encrypt the file, and the file stays in plaintext.
 
 ## Logging
 We support logging for the GCP KMS integration. Supported log levels are as follows
