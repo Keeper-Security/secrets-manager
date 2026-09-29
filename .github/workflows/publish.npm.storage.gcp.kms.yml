@@ -192,12 +192,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
+          # Do not lower to Node 22: it bundles npm 10, and OIDC trusted publishing needs npm >=11.5.1 (Node 24.5+).
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
-
-      - name: Upgrade npm
-        run: npm install -g npm@11.6.2 # pinned: OIDC trusted publishing needs npm >=11.5.1
 
       - name: Publish package
         run: npm publish --ignore-scripts --provenance
