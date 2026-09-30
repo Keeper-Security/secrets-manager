@@ -227,7 +227,7 @@ class FieldType:
             # Default to the passed in args for attribute variables. However if the value args exists, then use that
             # to get the attribute values.
             attr_dict = kwargs
-            if self.value is not None:
+            if self.value:
                 attr_dict = self.value[0]
 
             # This will create and set the attribute variables.
@@ -850,11 +850,22 @@ class PamRemoteBrowserSettings(FieldType):
                 "schema": {
                     "protocol": {"value_type": str},
                     "userRecords": {"value_type": list},
+                    "recordingIncludeKeys": {"value_type": bool},
                     "allowUrlManipulation": {"value_type": bool},
                     "allowedUrlPatterns": {"value_type": str},
                     "allowedResourceUrlPatterns": {"value_type": str},
                     "httpCredentialsUid": {"value_type": str},
-                    "autofillConfiguration": {"value_type": str}
+                    "autofillConfiguration": {"value_type": str},
+                    "ignoreInitialSslCert": {"value_type": bool},
+                    "disableAudio": {"value_type": bool},
+                    "disableCopy": {"value_type": bool},
+                    "disablePaste": {"value_type": bool},
+                    "audioChannels": {"value_type": int},
+                    "audioBps": {"value_type": int},
+                    "audioSampleRate": {"value_type": int},
+                    "sessionPersistence": {"value_type": str},
+                    "allowFileUploads": {"value_type": bool},
+                    "allowFileDownloads": {"value_type": bool},
                 }
             },
         }
@@ -866,6 +877,7 @@ class PamSettings(FieldType):
     schema = {
         "value_type": dict,
         "schema": {
+            "allowSupplyHost": {"value_type": bool},
             "connection": {
                 "value_type": dict,
                 "desc": "PAM Settings",
@@ -887,7 +899,9 @@ class PamSettings(FieldType):
                             "security": {"value_type": str},
                             "ignoreCert": {"value_type": bool},
                             "resizeMethod": {"value_type": str},
-                            "colorScheme": {"value_type": str}
+                            "colorScheme": {"value_type": str},
+                            "database": {"value_type": str},
+                            "dbConnectionMethod": {"value_type": str},
                         }
                     },
                 }
