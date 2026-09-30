@@ -2,7 +2,7 @@ import { KeyManagementServiceClient } from "@google-cloud/kms";
 import { GCPKeyValueStorageError } from "./error";
 import pino from "pino";
 import { getLogger } from "./Logger";
-import { DEFAULT_LOG_LEVEL, SCOPES } from "./constants";
+import { DEFAULT_LOG_LEVEL } from "./constants";
 import { readFileSync } from "fs";
 
 export class GCPKSMClient {
@@ -52,12 +52,14 @@ export class GCPKSMClient {
     const rawKeyFile = readFileSync(credentialsKeyFilePath, 'utf-8');
     const keyFileJson = JSON.parse(rawKeyFile);
 
+    // No `scopes` option here: omitting it keeps the per-call credential a self-signed JWT
+    // bound to the Cloud KMS request audience. Adding scopes switches to an OAuth access token
+    // scoped to all of cloud-platform, usable against any Google API for its 1h life if leaked.
     this.KMSClient = new KeyManagementServiceClient({
       credentials: {
         client_email: keyFileJson.client_email,
         private_key: keyFileJson.private_key,
       },
-      scopes: SCOPES,
     });
 
     return this;
@@ -80,12 +82,12 @@ export class GCPKSMClient {
 
   public createClientUsingCredentials(clientEmail: string, privateKey: string) {
     this.logger.debug(`Creating KMS client using credentials: ${clientEmail}`);
+    // See the comment in createClientFromCredentialsFile: no `scopes` option, same reason.
     this.KMSClient = new KeyManagementServiceClient({
       credentials: {
         client_email: clientEmail,
         private_key: privateKey
       },
-      scopes: SCOPES,
     });
     return this;
   }
@@ -110,7 +112,17 @@ export class GCPKSMClient {
       this.logger.error("KMS client not initialized. Neither createClientFromCredentialsFile nor createClientUsingCredentials have been called first.");
       throw new GCPKeyValueStorageError("KMS client not initialized. Please call createClientFromCredentialsFile or createClientUsingCredentials first.");
     }
-    const token = await this.KMSClient.auth.getAccessToken();
-    return token ?? undefined;
+    try {
+      const token = await this.KMSClient.auth.getAccessToken();
+      return token ?? undefined;
+    } catch (err: unknown) {
+      // google-auth-library's error keeps the failed request's config, which can hold credential
+      // material (a refresh token for authorized_user/impersonated ADC, a subject token for
+      // external_account). Its own redactor strips grant_type/assertion/*secret*, but not
+      // refresh_token, so the raw error must never cross this boundary. Pass on only the message.
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to get a GCP access token: ${reason}`);
+      throw new GCPKeyValueStorageError(`Failed to get a GCP access token: ${reason}`);
+    }
   }
 }

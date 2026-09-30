@@ -120,6 +120,25 @@ describe('utils', () => {
             expect(axios.post).toHaveBeenCalledTimes(1);
         });
 
+        it('should throw, not silently fall through to gRPC, when a RAW_ENCRYPT_DECRYPT key has an empty-string token', async () => {
+            // Given: an empty string is falsy but not null/undefined, exactly what getToken() can
+            // return if a token endpoint responds 200 with no access_token field.
+            const message = 'test message';
+
+            // When / Then
+            await expect(encryptBuffer({
+                message,
+                cryptoClient: mockCryptoClient,
+                keyProperties: mockKeyProperties,
+                isAsymmetric: false,
+                keyType: 'RAW_ENCRYPT_DECRYPT',
+                encryptionAlgorithm: '',
+                token: '',
+            }, mockLogger)).rejects.toThrow(/non-empty access token/);
+            expect(mockCryptoClient.encrypt).not.toHaveBeenCalled();
+            expect(axios.post).not.toHaveBeenCalled();
+        });
+
         it('should throw when encryption fails', async () => {
             // Given
             const message = 'test message';
@@ -256,6 +275,32 @@ describe('utils', () => {
                 encryptionAlgorithm: '',
                 token: null,
             }, mockLogger)).rejects.toThrow('GCP API error');
+        });
+
+        it('should throw, not silently fall through to gRPC, when a RAW_ENCRYPT_DECRYPT key has an empty-string token', async () => {
+            // Given - a well-formed blob so the failure comes from the token check, not parsing
+            const header = Buffer.from([0xFF, 0xFF]);
+            const parts = [Buffer.from('encrypted-key-data'), Buffer.from('1234567890123456'), Buffer.from('1234567890123456'), Buffer.from('encrypted-data')];
+            const buffers = [header];
+            for (const part of parts) {
+                const lengthBuffer = Buffer.alloc(2);
+                lengthBuffer.writeUInt16BE(part.length, 0);
+                buffers.push(lengthBuffer, part);
+            }
+            const validBuffer = Buffer.concat(buffers);
+
+            // When / Then
+            await expect(decryptBuffer({
+                ciphertext: validBuffer,
+                cryptoClient: mockCryptoClient,
+                keyProperties: mockKeyProperties,
+                isAsymmetric: false,
+                keyType: 'RAW_ENCRYPT_DECRYPT',
+                encryptionAlgorithm: '',
+                token: '',
+            }, mockLogger)).rejects.toThrow(/non-empty access token/);
+            expect(mockCryptoClient.decrypt).not.toHaveBeenCalled();
+            expect(axios.post).not.toHaveBeenCalled();
         });
     });
 
