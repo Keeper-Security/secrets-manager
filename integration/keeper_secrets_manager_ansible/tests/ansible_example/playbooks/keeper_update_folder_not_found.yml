@@ -1,0 +1,30 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Update Folder That Does Not Exist
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Rename A Folder That Does Not Exist"
+    keeper_update_folder:
+      folder_uid: "{{ missing_folder_uid }}"
+      new_folder_name: "Production"
+    register: "missing"
+    ignore_errors: yes
+
+  - name: "Rename A Folder That Is Not Shared To The Application"
+    keeper_update_folder:
+      folder_uid: "{{ not_shared_folder_uid }}"
+      new_folder_name: "Production"
+    register: "not_shared"
+    ignore_errors: yes
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - missing is failed
+        - missing is not changed
+        - "missing.msg == 'Could not update folder: The folder ' ~ missing_folder_uid ~ ' was not found, or it is not shared to this KSM application.'"
+        - not_shared is failed
+        - not_shared is not changed
+        - "not_shared.msg == 'Could not update folder: The folder ' ~ not_shared_folder_uid ~ ' was not found, or it is not shared to this KSM application.'"

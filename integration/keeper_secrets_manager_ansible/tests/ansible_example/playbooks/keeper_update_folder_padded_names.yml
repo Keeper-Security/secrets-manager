@@ -1,0 +1,124 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Update Folder With Whitespace At The Start Or The End Of The New Name
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    name_with_newline: "Production\n"
+    message: "Could not update folder: The new_folder_name {} has leading or trailing whitespace. Remove it. In YAML, a block scalar (| or >) keeps the newline at its end."
+    # The message shows the name with repr(), so these are the texts that it must show. YAML turns "\\" into "\".
+    shown_newline: "'Production\\n'"
+    shown_leading_space: "' Production'"
+    shown_trailing_space: "'Production '"
+    shown_tab: "'\\tProduction'"
+    shown_carriage_return: "'Production\\r'"
+    shown_crlf: "'Production\\r\\n'"
+
+  tasks:
+  - name: "Rename To A Block Scalar, Which Keeps The Newline At Its End"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: |
+        Production
+    register: "block_scalar"
+    ignore_errors: yes
+
+  - name: "Rename To A Folded Scalar, Which Keeps The Newline At Its End"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: >
+        Production
+    register: "folded_scalar"
+    ignore_errors: yes
+
+  - name: "Rename To A Name With A Space At The Start"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: " Production"
+    register: "leading_space"
+    ignore_errors: yes
+
+  - name: "Rename To A Name With A Space At The End"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "Production "
+    register: "trailing_space"
+    ignore_errors: yes
+
+  - name: "Rename To A Name With A Tab At The Start"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "\tProduction"
+    register: "leading_tab"
+    ignore_errors: yes
+
+  - name: "Rename To A Name With A Carriage Return At The End"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "Production\r"
+    register: "carriage_return"
+    ignore_errors: yes
+
+  - name: "Rename To A Name With A Windows Line End"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "Production\r\n"
+    register: "crlf"
+    ignore_errors: yes
+
+  - name: "Rename To A Variable Whose Value Ends With A Newline"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "{{ name_with_newline }}"
+    register: "variable_newline"
+    ignore_errors: yes
+
+  - name: "Rename To A Block Scalar With Strip Chomping, Which Has No Newline"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: |-
+        Production
+    register: "strip_chomping"
+
+  - name: "Rename To A Name With A Newline Inside"
+    keeper_update_folder:
+      folder_uid: "{{ sibling_uid }}"
+      new_folder_name: "Prod\nEU"
+    register: "inside_newline"
+
+  - name: "Rename To A Name With A Tab Inside"
+    keeper_update_folder:
+      folder_uid: "{{ reports_uid }}"
+      new_folder_name: "Prod\tEU"
+    register: "inside_tab"
+
+  - name: "Rename A Folder Whose Current Name Ends With A Space To The Clean Name"
+    keeper_update_folder:
+      folder_uid: "{{ archive_uid }}"
+      new_folder_name: "Archive"
+    register: "clean_name"
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - block_scalar is failed
+        - block_scalar is not changed
+        - block_scalar.msg == message.format(shown_newline)
+        - folded_scalar is failed
+        - folded_scalar.msg == message.format(shown_newline)
+        - leading_space.msg == message.format(shown_leading_space)
+        - trailing_space.msg == message.format(shown_trailing_space)
+        - leading_tab.msg == message.format(shown_tab)
+        - carriage_return.msg == message.format(shown_carriage_return)
+        - crlf.msg == message.format(shown_crlf)
+        - variable_newline.msg == message.format(shown_newline)
+        - strip_chomping is changed
+        - strip_chomping.folder_name == "Production"
+        - inside_newline is changed
+        - inside_newline.folder_name == "Prod\nEU"
+        - inside_tab is changed
+        - inside_tab.folder_name == "Prod\tEU"
+        - clean_name is changed
+        - clean_name.previous_folder_name == "Archive "
+        - clean_name.folder_name == "Archive"

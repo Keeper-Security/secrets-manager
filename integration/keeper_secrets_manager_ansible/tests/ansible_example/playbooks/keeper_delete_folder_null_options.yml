@@ -1,0 +1,69 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# Every option of the module set to null, in the ways that a playbook can do it: a YAML null, a tilde, and a
+# template variable with no value. Each task must fail on the option check, before any request reaches the
+# server. For force_deletion, null must never mean the default: a force_deletion from a null variable must not
+# delete anything.
+- name: Keeper Delete Folder With Null Options
+  hosts: "my_systems"
+  gather_facts: no
+  vars:
+    null_variable: null
+
+  tasks:
+  - name: "Delete With folder_uid Set To Null"
+    keeper_delete_folder:
+      folder_uid: null
+    register: "null_uid"
+    ignore_errors: yes
+
+  - name: "Delete A Folder That Is Not Empty With force_deletion Set To Null"
+    keeper_delete_folder:
+      folder_uid: "{{ tree_folder_uid }}"
+      force_deletion: null
+    register: "null_force"
+    ignore_errors: yes
+
+  - name: "Delete An Empty Folder With force_deletion Set To A Tilde"
+    keeper_delete_folder:
+      folder_uid: "{{ empty_folder_uid }}"
+      force_deletion: ~
+    register: "tilde_force"
+    ignore_errors: yes
+
+  - name: "Delete With Every Option Set To Null"
+    keeper_delete_folder:
+      folder_uid: null
+      force_deletion: null
+    register: "all_null"
+    ignore_errors: yes
+
+  - name: "Delete With A folder_uid From A Null Variable"
+    keeper_delete_folder:
+      folder_uid: "{{ null_variable }}"
+    register: "null_variable_uid"
+    ignore_errors: yes
+
+  - name: "Delete A Folder That Is Not Empty With A force_deletion From A Null Variable"
+    keeper_delete_folder:
+      folder_uid: "{{ tree_folder_uid }}"
+      force_deletion: "{{ null_variable }}"
+    register: "null_variable_force"
+    ignore_errors: yes
+
+  - name: "Delete With A Null folder_uid And The Old Option force"
+    keeper_delete_folder:
+      folder_uid: null
+      force: yes
+    register: "null_and_old_force"
+    ignore_errors: yes
+
+  - name: "Check That Every Task Failed On The Null Option"
+    assert:
+      that:
+        - item.0 is failed
+        - item.0 is not changed
+        - item.0.msg == item.1
+    loop: "{{ [null_uid, null_force, tilde_force, all_null, null_variable_uid, null_variable_force, null_and_old_force] | zip(expected.msgs) | list }}"
+    loop_control:
+      label: "{{ item.1 }}"

@@ -1,0 +1,265 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+#
+# Every lookup here must fail with a clear message, and must not return a folder. The plugin returns the
+# failure (it does not raise it), so the registered msg is exactly the message, on every ansible-core version,
+# and each check compares it in full.
+---
+- name: Keeper Get Folder Errors
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    expected:
+      name_not_found: 'Could not look up folder: No folder named "Nope" was found in the folder "Infrastructure" (UID {{ shared_folder_uid }}).'
+      name_in_other_shared_folder: 'Could not look up folder: No folder named "Dup" was found in the folder "Infrastructure" (UID {{ shared_folder_uid }}).'
+      top_not_found: 'Could not look up folder: No folder named "Nope" was found at the top level (the shared folders of this KSM application).'
+      middle_not_found: 'Could not look up folder: No folder named "Nope" was found in the folder "Infrastructure/Databases" (UID {{ databases_uid }}).'
+      wrong_case: 'Could not look up folder: No folder named "databases" was found in the folder "Infrastructure" (UID {{ shared_folder_uid }}).'
+      grandchild: 'Could not look up folder: No folder named "Production" was found in the folder "Infrastructure" (UID {{ shared_folder_uid }}).'
+      unicode_not_found: 'Could not look up folder: No folder named "Données" was found in the folder "Infrastructure" (UID {{ shared_folder_uid }}).'
+      duplicates: 'Could not look up folder: Found 2 folders named "Dup" in the folder "Applications" (UID {{ other_shared_folder_uid }}): {{ dup_1_uid }}, {{ dup_2_uid }}. Rename one of them in the vault. Or set subfolder_uid to the UID of the folder that you want, and remove "Dup" from folder_name or folder_path.'
+      duplicates_in_path: 'Could not look up folder: Found 2 folders named "Dup" in the folder "Applications" (UID {{ other_shared_folder_uid }}): {{ dup_1_uid }}, {{ dup_2_uid }}. Rename one of them in the vault. Or set subfolder_uid to the UID of the folder that you want, and remove "Dup" from folder_name or folder_path.'
+      not_inside: 'Could not look up folder: The subfolder "Infrastructure/Databases/Production" (UID {{ production_uid }}) is not inside the shared folder "Applications" (UID {{ other_shared_folder_uid }}).'
+      is_subfolder: 'Could not look up folder: The folder "Infrastructure/Databases" (UID {{ databases_uid }}) is a subfolder, not a shared folder. Set it as subfolder_uid instead.'
+      shared_missing: 'Could not look up folder: The shared folder NO_SUCH_FOLDER_UID was not found, or it is not shared to this KSM application.'
+      subfolder_missing: 'Could not look up folder: The subfolder NO_SUCH_FOLDER_UID was not found, or it is not shared to this KSM application.'
+      blank_uid: 'Could not look up folder: The shared_folder_uid is set but blank. Set it to a folder UID, or remove it.'
+      space_uid: 'Could not look up folder: The shared_folder_uid ''{{ shared_folder_uid }} '' has leading or trailing whitespace.'
+      newline_uid: 'Could not look up folder: The subfolder_uid ''DATABASES_UID\n'' has leading or trailing whitespace.'
+      double_slash: 'Could not look up folder: The folder_path ["Infrastructure", "", "Databases"] has an empty folder name. Look for a leading, trailing, or double "/", or an empty list item.'
+      trailing_slash: 'Could not look up folder: The folder_path ["Databases", ""] has an empty folder name. Look for a leading, trailing, or double "/", or an empty list item.'
+      empty_list: 'Could not look up folder: The folder_path [] has an empty folder name. Look for a leading, trailing, or double "/", or an empty list item.'
+      null_item: 'Could not look up folder: The folder_path ["Databases", ""] has an empty folder name. Look for a leading, trailing, or double "/", or an empty list item.'
+      wrong_type: 'Could not look up folder: The folder_path must be a string or a list of folder names.'
+      bool_item: 'Could not look up folder: Each folder_path item must be a folder name, but one item is a boolean (True). Put quotes around the folder names.'
+      float_item: 'Could not look up folder: Each folder_path item must be a folder name, but one item is a number (1.1). Put quotes around the folder names.'
+      int_item: 'Could not look up folder: Each folder_path item must be a folder name, but one item is a number (2024). Put quotes around the folder names.'
+      nothing: 'Could not look up folder: There is nothing to look up. Set shared_folder_uid, subfolder_uid, folder_name, or folder_path.'
+      blank_name: 'Could not look up folder: The folder_name is set but blank. Set it to a folder name, or remove it.'
+
+  tasks:
+  - name: "A Name That Does Not Exist In The Shared Folder"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Nope"
+    register: "name_not_found"
+    ignore_errors: yes
+
+  - name: "A Name That Exists Only In Another Shared Folder"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Dup"
+    register: "name_in_other_shared_folder"
+    ignore_errors: yes
+
+  - name: "A Name That Does Not Exist At The Top Level"
+    keeper_get_folder:
+      folder_name: "Nope"
+    register: "top_not_found"
+    ignore_errors: yes
+
+  - name: "A Path With A Missing Level In The Middle"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path: "Databases/Nope/EU"
+    register: "middle_not_found"
+    ignore_errors: yes
+
+  - name: "A Name With The Wrong Case"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "databases"
+    register: "wrong_case"
+    ignore_errors: yes
+
+  - name: "A Grandchild Name Is Not A Direct Child"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Production"
+    register: "grandchild"
+    ignore_errors: yes
+
+  - name: "A Unicode Name That Is Only The Start Of A Folder Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Données"
+    register: "unicode_not_found"
+    ignore_errors: yes
+
+  - name: "Two Folders With The Same Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ other_shared_folder_uid }}"
+      folder_name: "Dup"
+    register: "duplicates"
+    ignore_errors: yes
+
+  - name: "Two Folders With The Same Name In A Path"
+    keeper_get_folder:
+      folder_path: "Applications/Dup/Leaf"
+    register: "duplicates_in_path"
+    ignore_errors: yes
+
+  - name: "A Subfolder That Is Not Inside The Shared Folder"
+    keeper_get_folder:
+      shared_folder_uid: "{{ other_shared_folder_uid }}"
+      subfolder_uid: "{{ production_uid }}"
+    register: "not_inside"
+    ignore_errors: yes
+
+  - name: "A Subfolder UID In shared_folder_uid"
+    keeper_get_folder:
+      shared_folder_uid: "{{ databases_uid }}"
+      folder_name: "Production"
+    register: "is_subfolder"
+    ignore_errors: yes
+
+  - name: "A Shared Folder UID That Does Not Exist"
+    keeper_get_folder:
+      shared_folder_uid: "NO_SUCH_FOLDER_UID"
+    register: "shared_missing"
+    ignore_errors: yes
+
+  - name: "A Subfolder UID That Does Not Exist"
+    keeper_get_folder:
+      subfolder_uid: "NO_SUCH_FOLDER_UID"
+    register: "subfolder_missing"
+    ignore_errors: yes
+
+  - name: "A Blank Shared Folder UID"
+    keeper_get_folder:
+      shared_folder_uid: ""
+      folder_name: "Databases"
+    register: "blank_uid"
+    ignore_errors: yes
+
+  - name: "A Shared Folder UID With A Trailing Space From A Template"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }} "
+      folder_name: "Databases"
+    register: "space_uid"
+    ignore_errors: yes
+
+  - name: "A Subfolder UID With A Trailing Newline"
+    keeper_get_folder:
+      subfolder_uid: "DATABASES_UID\n"
+    register: "newline_uid"
+    ignore_errors: yes
+
+  - name: "A Path With A Double Slash"
+    keeper_get_folder:
+      folder_path: "Infrastructure//Databases"
+    register: "double_slash"
+    ignore_errors: yes
+
+  - name: "A Path With A Trailing Slash"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path: "Databases/"
+    register: "trailing_slash"
+    ignore_errors: yes
+
+  - name: "An Empty List Path"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path: []
+    register: "empty_list"
+    ignore_errors: yes
+
+  - name: "A List Path With A Null Item"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path:
+        - "Databases"
+        - ~
+    register: "null_item"
+    ignore_errors: yes
+
+  - name: "A Path That Is A Dictionary"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path:
+        name: "Databases"
+    register: "dict_path"
+    ignore_errors: yes
+
+  - name: "A Path That Is A Number"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path: 2024
+    register: "int_path"
+    ignore_errors: yes
+
+  - name: "A List Path With An Unquoted yes"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path:
+        - "Databases"
+        - yes
+    register: "bool_item"
+    ignore_errors: yes
+
+  - name: "A List Path With An Unquoted 1.10"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path: ["Databases", 1.10]
+    register: "float_item"
+    ignore_errors: yes
+
+  - name: "A List Path With An Unquoted 2024"
+    keeper_get_folder:
+      folder_path:
+        - "Infrastructure"
+        - 2024
+    register: "int_item"
+    ignore_errors: yes
+
+  - name: "Nothing To Look Up"
+    keeper_get_folder: {}
+    register: "nothing"
+    ignore_errors: yes
+
+  - name: "A Blank Folder Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: ""
+    register: "blank_name"
+    ignore_errors: yes
+
+  - name: "Check The Errors"
+    assert:
+      that:
+        - item.0 is failed
+        - item.0 is not changed
+        - item.0.folder_uid is not defined
+        - item.0.folder_name is not defined
+        - item.0.msg == item.1
+    loop:
+      - ["{{ name_not_found }}", "{{ expected.name_not_found }}"]
+      - ["{{ name_in_other_shared_folder }}", "{{ expected.name_in_other_shared_folder }}"]
+      - ["{{ top_not_found }}", "{{ expected.top_not_found }}"]
+      - ["{{ middle_not_found }}", "{{ expected.middle_not_found }}"]
+      - ["{{ wrong_case }}", "{{ expected.wrong_case }}"]
+      - ["{{ grandchild }}", "{{ expected.grandchild }}"]
+      - ["{{ unicode_not_found }}", "{{ expected.unicode_not_found }}"]
+      - ["{{ duplicates }}", "{{ expected.duplicates }}"]
+      - ["{{ duplicates_in_path }}", "{{ expected.duplicates_in_path }}"]
+      - ["{{ not_inside }}", "{{ expected.not_inside }}"]
+      - ["{{ is_subfolder }}", "{{ expected.is_subfolder }}"]
+      - ["{{ shared_missing }}", "{{ expected.shared_missing }}"]
+      - ["{{ subfolder_missing }}", "{{ expected.subfolder_missing }}"]
+      - ["{{ blank_uid }}", "{{ expected.blank_uid }}"]
+      - ["{{ space_uid }}", "{{ expected.space_uid }}"]
+      - ["{{ newline_uid }}", "{{ expected.newline_uid }}"]
+      - ["{{ double_slash }}", "{{ expected.double_slash }}"]
+      - ["{{ trailing_slash }}", "{{ expected.trailing_slash }}"]
+      - ["{{ empty_list }}", "{{ expected.empty_list }}"]
+      - ["{{ null_item }}", "{{ expected.null_item }}"]
+      - ["{{ dict_path }}", "{{ expected.wrong_type }}"]
+      - ["{{ int_path }}", "{{ expected.wrong_type }}"]
+      - ["{{ bool_item }}", "{{ expected.bool_item }}"]
+      - ["{{ float_item }}", "{{ expected.float_item }}"]
+      - ["{{ int_item }}", "{{ expected.int_item }}"]
+      - ["{{ nothing }}", "{{ expected.nothing }}"]
+      - ["{{ blank_name }}", "{{ expected.blank_name }}"]
+    loop_control:
+      label: "{{ item.1 }}"

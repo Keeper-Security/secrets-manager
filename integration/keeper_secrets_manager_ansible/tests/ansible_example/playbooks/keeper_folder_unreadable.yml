@@ -1,0 +1,20 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Delete Of A Folder That The SDK Cannot Read
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete The Folder"
+    keeper_delete_folder:
+      folder_uid: "{{ folder_uid }}"
+    register: "deleted"
+    ignore_errors: yes
+
+  - name: "Check That The Task Failed, And Did Not Say Not Found"
+    assert:
+      that:
+        - deleted is failed
+        - deleted is not changed
+        - "'exists, but keeper-secrets-manager-core could not read it' in deleted.msg"
+        - "'was not found' not in deleted.msg"
