@@ -37,9 +37,18 @@ options:
   shared_folder_uid:
     description:
     - The UID of the top-level shared folder in your Keeper application.
-    - Must be a shared folder UID, not a subfolder UID.
+    - To create in a subfolder, also provide C(subfolder_uid).
     type: str
     required: yes
+  subfolder_uid:
+    description:
+    - The UID of an existing subfolder, nested under shared_folder_uid, to create the
+      record in.
+    - The subfolder must already exist and must be accessible to the KSM application.
+    - If omitted, the record is created directly in the shared folder.
+    type: str
+    required: no
+    version_added: "1.5.0"
   record_type:
     description:
     - The type if record to create.
@@ -204,9 +213,9 @@ options:
 '''
 
 EXAMPLES = r'''
-- name: Create a new record
+- name: Create a record in a shared folder
   keeper_create:
-    share_folder_uid: XXX
+    shared_folder_uid: SHARED_FOLDER_UID
     record_type: login
     title: My Title
     notes: This record was created from Ansible
@@ -221,6 +230,18 @@ EXAMPLES = r'''
         label: Custom Field
         value: This is a value is a custom field.
   register: my_new_record
+
+- name: Create a record in a subfolder
+  keeper_create:
+    shared_folder_uid: SHARED_FOLDER_UID
+    subfolder_uid: SUBFOLDER_UID
+    record_type: login
+    title: My Subfolder Record
+    generate_password: True
+    fields:
+      - type: login
+        value: jane.doe@nowhere.com
+  register: my_subfolder_record
 '''
 
 RETURN = r'''
@@ -245,6 +266,12 @@ class ActionModule(ActionBase):
         shared_folder_uid = self._task.args.get("shared_folder_uid")
         if shared_folder_uid is None:
             raise AnsibleError("The shared_folder_uid is blank. keeper_create requires this value to be set.")
+        if self._task.args.get("folder_uid") is not None:
+            raise AnsibleError(
+                "The folder_uid parameter for keeper_create has been renamed to subfolder_uid. "
+                "Please update your playbook."
+            )
+        subfolder_uid = self._task.args.get("subfolder_uid")
         record_type = self._task.args.get("record_type")
         if record_type is None:
             raise AnsibleError("The record_type is blank. keeper_create requires this value to be set.")
@@ -272,20 +299,24 @@ class ActionModule(ActionBase):
 
         try:
             for field in self._task.args.get("fields", []):
+                # Workaround: convert value: [] to None so helper FieldType.__init__ skips the
+                # dict-field index (value[0]) that crashes on empty lists. Remove once helper
+                # ships the "if self.value:" guard in FieldType.__init__.
                 fields.append(Field(
                     field_section=FieldSectionEnum.STANDARD,
                     type=field.get("type"),
                     label=field.get("label"),
-                    value=field.get("value")
+                    value=field.get("value") or None
                 ))
                 keeper.stash_secret_value(str(field.get("value")))
 
             for field in self._task.args.get("custom_fields", []):
+                # Same workaround as above for custom fields.
                 fields.append(Field(
                     field_section=FieldSectionEnum.CUSTOM,
                     type=field.get("type"),
                     label=field.get("label"),
-                    value=field.get("value", "text")
+                    value=field.get("value", "text") or None
                 ))
                 keeper.stash_secret_value(str(field.get("value")))
 
@@ -313,7 +344,8 @@ class ActionModule(ActionBase):
                 password_complexity=password_complexity
             )
             record_create = record[0].get_record_create_obj()
-            record_uid = keeper.create_record(record_create, shared_folder_uid=shared_folder_uid)
+            record_uid = keeper.create_record(record_create, shared_folder_uid=shared_folder_uid,
+                                              subfolder_uid=subfolder_uid)
         except Exception as err:
             raise AnsibleError("Could not create record: {}".format(err))
 

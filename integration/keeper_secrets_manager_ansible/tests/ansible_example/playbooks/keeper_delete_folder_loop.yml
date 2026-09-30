@@ -1,0 +1,37 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# The loop example from the keeper_delete_folder EXAMPLES. Each item sees the folders as the item before it
+# left them: Apps is empty after its only subfolder, Archive, is deleted. The second loop changes nothing.
+- name: Keeper Delete More Than One Folder
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete More Than One Folder"
+    keeper_delete_folder:
+      folder_uid: "{{ item }}"
+    loop:
+      - "{{ empty_folder_uid }}"
+      - "{{ parent_child_uid }}"
+      - "{{ parent_folder_uid }}"
+    register: "first_loop"
+
+  - name: "Delete The Same Folders Again"
+    keeper_delete_folder:
+      folder_uid: "{{ item }}"
+    loop:
+      - "{{ empty_folder_uid }}"
+      - "{{ parent_child_uid }}"
+      - "{{ parent_folder_uid }}"
+    register: "second_loop"
+
+  - name: "Check The Loops"
+    assert:
+      that:
+        - first_loop is changed
+        - first_loop.results | map(attribute='changed') | list == [true, true, true]
+        - first_loop.results | map(attribute='folder_name') | list == ["Staging", "Archive", "Apps"]
+        - second_loop is not changed
+        - second_loop.results | map(attribute='changed') | list == [false, false, false]
+        - second_loop.results | map(attribute='folder_name') | select('none') | list | length == 3
+        - second_loop.results | map(attribute='msg') | list == expected.second_loop_msgs

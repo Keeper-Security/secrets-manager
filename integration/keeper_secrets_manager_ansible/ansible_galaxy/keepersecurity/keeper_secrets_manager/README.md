@@ -68,6 +68,10 @@ If you omit the `collections` , you will need to use the full plugin name.
 * `keepersecurity.keeper_secrets_manager.keeper_get_record` - Get record as a dictionary.
 * `keepersecurity.keeper_secrets_manager.keeper_set` - Set a value of an existing record in your vault.
 * `keepersecurity.keeper_secrets_manager.keeper_create` - Create a new record.
+* `keepersecurity.keeper_secrets_manager.keeper_create_folder` - Create a new folder.
+* `keepersecurity.keeper_secrets_manager.keeper_get_folder` - Look up a folder by name or path, and get its UID.
+* `keepersecurity.keeper_secrets_manager.keeper_update_folder` - Rename a folder.
+* `keepersecurity.keeper_secrets_manager.keeper_delete_folder` - Delete a folder.
 * `keepersecurity.keeper_secrets_manager.keeper_remove` - Remove a record from your vault.
 * `keepersecurity.keeper_secrets_manager.keeper_password` - Generate a random password.
 * `keepersecurity.keeper_secrets_manager.keeper_cleanup` - Clean up Keeper related files.
@@ -118,6 +122,42 @@ The content of this YAML file can then be cut-n-pasted into a **group_vars**, **
 configuration file or even a playbook.
 
 # Changes
+
+## 1.5.0
+* KSM-845: Added `subfolder_uid` parameter to `keeper_create` for subfolder targeting
+  - Records can now be created in a subfolder within a shared folder, rather than always at the shared folder root
+  - `shared_folder_uid` remains required; `subfolder_uid` is optional and additive
+  - Matches the `subfolder_uid` parameter name used by `keeper_create_folder` and by the Python SDK's `CreateOptions`
+* KSM-1445: Added `keeper_create_folder` module for idempotent folder creation
+  - Creates a folder directly in a shared folder, or nested inside an existing subfolder of that shared folder
+  - Idempotent: if a folder with the given name already exists directly under the target parent, its UID is returned instead of creating a duplicate
+* KSM-1478: Added `keeper_get_folder` module to look up a folder and get its UID
+  - Finds a folder by name in a shared folder or in a subfolder, or by a path of names such as `Databases/Production`
+  - With no start UID, the first name is the name of a shared folder, so a playbook can find a folder with no UID
+  - Returns the folder UID, name, parent UID, and shared folder UID. `include_subfolders: yes` also returns every folder below it
+  - Fails with a clear error if no folder matches, or if more than one folder matches. It never returns an empty result
+* KSM-1479: Added `keeper_update_folder` module to rename a folder
+  - Idempotent: if the folder already has the new name, it reports `changed: false` and sends no update
+  - Fails with a clear error if the folder does not exist or is not shared to the KSM application
+  - A new name with a space, a tab, or a newline at the start or the end fails the task, because a later lookup of the name would not find the folder
+  - A rename to the name of another folder in the same parent works, with a warning, because a lookup of that name is then not unique
+* KSM-1480: Added `keeper_delete_folder` module to delete a folder
+  - Idempotent: if the folder does not exist, it reports `changed: false` and does not fail
+  - Deletes only an empty folder, unless `force_deletion: yes` is set. A folder with records or subfolders fails the task
+  - Reads the result that the server returns for the folder, so a delete that the server refuses fails the task
+  - A folder that exists, but that keeper-secrets-manager-core cannot read, fails the task and is not deleted. It is not reported as not found. (keeper-secrets-manager-core 17.4.0 and later leave such a folder out of the folder list, with only a warning in the log)
+  - The option is named `force_deletion`, not `force`, because `keeper_copy` in the same action group has a `force` option with a different meaning
+* KSM-1478, KSM-1479, KSM-1480: The three new folder modules check their options
+  - An unknown or misspelled option, an option set to null, or a value of the wrong type fails the task, instead of being ignored
+  - A UID or a folder name must be a string. Put quotes around a number, or use the `string` filter (for example `"{{ year | string }}"`), because YAML can change the text of a number (`007` becomes `7`). A value that Ansible Vault encrypts is accepted
+  - An option that a `module_defaults` entry for the action group of this collection sets, and that the module does not have, is ignored
+  - A lookup, rename, or delete failure is a normal task failure, so `failed_when`, `ignore_errors`, and `rescue` work on it. An error in the KSM configuration still stops the task
+  - `keeper_update_folder` and `keeper_delete_folder` support check mode
+* **Security**: VM-1452 / CWE-502 — Replaced pickle with JSON for encrypted record cache serialization
+  - Cache encrypt/decrypt no longer uses `pickle.loads`, removing insecure deserialization risk
+  - Legacy or invalid registered caches are ignored; records are fetched from the vault until
+    `keeper_cache_records` rebuilds a JSON cache
+  - Existing playbook-registered caches are ephemeral; regenerate with `keeper_cache_records` after upgrade
 
 ## 1.4.0
 * KSM-827: Fixed Tower Execution Environment Docker image missing system packages required by AAP

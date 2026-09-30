@@ -1,0 +1,174 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Get Folder
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Get A Subfolder UID From The Shared Folder UID And The Subfolder Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Databases"
+    register: "subfolder"
+
+  - name: "Get The Shared Folder From Its UID Only"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+    register: "shared_folder"
+
+  - name: "Get A Nested Folder By A Path From The Shared Folder"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path: "Databases/Production/EU"
+    register: "by_path"
+
+  - name: "Get A Nested Folder By A Full Path From The Top Level"
+    keeper_get_folder:
+      folder_path: "Infrastructure/Databases/Production/EU"
+    register: "by_full_path"
+
+  - name: "Get A Shared Folder By Its Name At The Top Level"
+    keeper_get_folder:
+      folder_name: "Applications"
+    register: "top_level"
+
+  - name: "Get A Folder Whose Name Contains A Slash With A List Path"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path:
+        - "Prod/EU"
+    register: "slash_name"
+
+  - name: "Get A Folder Named 2024 With A Quoted Number In A List Path"
+    keeper_get_folder:
+      folder_path:
+        - "Infrastructure"
+        - "2024"
+    register: "number_name"
+
+  - name: "Get A Folder Named 2024 With A Quoted Number In folder_name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "2024"
+    register: "number_folder_name"
+
+  - name: "Get A Folder With A Unicode Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Données 数据库 🔐"
+    register: "unicode_name"
+
+  - name: "Get A Folder From A Subfolder UID Only"
+    keeper_get_folder:
+      subfolder_uid: "{{ databases_uid }}"
+      folder_name: "Production"
+    register: "from_subfolder"
+
+  - name: "Get A Folder From Both UIDs"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      subfolder_uid: "{{ production_uid }}"
+      folder_name: "EU"
+    register: "from_both"
+
+  - name: "Get The Shared Folder When Both UIDs Are The Same"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      subfolder_uid: "{{ shared_folder_uid }}"
+    register: "same_uids"
+
+  - name: "Get A Folder And Every Folder Below It"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Databases"
+      include_subfolders: yes
+    register: "with_subfolders"
+
+  - name: "Get A Folder With include_subfolders Set To No"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Databases"
+      include_subfolders: no
+    register: "without_subfolders"
+
+  - name: "Get A Leaf Folder And Its Subfolders"
+    keeper_get_folder:
+      subfolder_uid: "{{ eu_uid }}"
+      include_subfolders: yes
+    register: "leaf"
+
+  - name: "Get A Subfolder In Check Mode"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Databases"
+    register: "in_check_mode"
+    check_mode: yes
+
+  - name: "Check The Lookups"
+    assert:
+      that:
+        # The subfolder UID from a shared folder UID and a subfolder name.
+        - subfolder is not failed
+        - subfolder is not changed
+        - subfolder.folder_uid == databases_uid
+        - subfolder.folder_name == "Databases"
+        - subfolder.parent_uid == shared_folder_uid
+        - subfolder.shared_folder_uid == shared_folder_uid
+        - subfolder.subfolders is not defined
+
+        # The shared folder itself, from its UID only.
+        - shared_folder is not changed
+        - shared_folder.folder_uid == shared_folder_uid
+        - shared_folder.folder_name == "Infrastructure"
+        - shared_folder.parent_uid == ""
+        - shared_folder.shared_folder_uid == shared_folder_uid
+
+        # Paths.
+        - by_path.folder_uid == eu_uid
+        - by_path.folder_name == "EU"
+        - by_path.parent_uid == production_uid
+        - by_path.shared_folder_uid == shared_folder_uid
+        - by_full_path.folder_uid == eu_uid
+        - by_full_path.shared_folder_uid == shared_folder_uid
+
+        # The top level.
+        - top_level.folder_uid == other_shared_folder_uid
+        - top_level.folder_name == "Applications"
+        - top_level.parent_uid == ""
+        - top_level.shared_folder_uid == other_shared_folder_uid
+
+        # Special names.
+        - slash_name.folder_uid == slash_uid
+        - slash_name.folder_name == "Prod/EU"
+        - number_name.folder_uid == year_uid
+        - number_name.folder_name == "2024"
+        - number_folder_name.folder_uid == year_uid
+        - number_folder_name.folder_name == "2024"
+        - unicode_name.folder_uid == unicode_uid
+        - unicode_name.folder_name == "Données 数据库 🔐"
+
+        # Start folders.
+        - from_subfolder.folder_uid == production_uid
+        - from_subfolder.parent_uid == databases_uid
+        - from_subfolder.shared_folder_uid == shared_folder_uid
+        - from_both.folder_uid == eu_uid
+        - same_uids.folder_uid == shared_folder_uid
+        - same_uids.parent_uid == ""
+
+        # Subfolders: depth first, each parent before its children, in the order of the server.
+        - "with_subfolders.subfolders == [
+            {'folder_uid': production_uid, 'folder_name': 'Production', 'parent_uid': databases_uid},
+            {'folder_uid': eu_uid, 'folder_name': 'EU', 'parent_uid': production_uid},
+            {'folder_uid': staging_uid, 'folder_name': 'Staging', 'parent_uid': databases_uid}]"
+        - with_subfolders.folder_uid == databases_uid
+        - without_subfolders.subfolders is not defined
+        - without_subfolders.folder_uid == databases_uid
+        - leaf.subfolders is defined
+        - leaf.subfolders == []
+        - leaf.folder_uid == eu_uid
+
+        # Check mode runs the same lookup, and the task is not skipped.
+        - in_check_mode is not skipped
+        - in_check_mode is not changed
+        - in_check_mode.folder_uid == databases_uid
+        - in_check_mode.shared_folder_uid == shared_folder_uid

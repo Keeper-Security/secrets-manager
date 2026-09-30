@@ -1,0 +1,60 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# An empty folder is deleted, a second delete of it is a no-op, a folder that never existed is a no-op, and an
+# empty shared folder is deleted. The test sets the exact messages in "expected".
+- name: Keeper Delete Folder
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete The Empty Folder"
+    keeper_delete_folder:
+      folder_uid: "{{ empty_folder_uid }}"
+    register: "deleted"
+
+  - name: "Delete The Empty Folder Again"
+    keeper_delete_folder:
+      folder_uid: "{{ empty_folder_uid }}"
+    register: "deleted_again"
+
+  - name: "Delete A Folder That Never Existed"
+    keeper_delete_folder:
+      folder_uid: "NO_SUCH_FOLDER_UID"
+    register: "never_existed"
+
+  - name: "Delete An Empty Shared Folder"
+    keeper_delete_folder:
+      folder_uid: "{{ sandbox_shared_uid }}"
+    register: "deleted_shared"
+
+  - name: "Look Up The Deleted Folder By Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Staging"
+    register: "lookup_after_delete"
+    ignore_errors: yes
+
+  - name: "Check The Deletes"
+    assert:
+      that:
+        - deleted is changed
+        - deleted is not failed
+        - deleted.folder_uid == empty_folder_uid
+        - deleted.folder_name == "Staging"
+        - deleted.msg is not defined
+        - deleted_again is not changed
+        - deleted_again is not failed
+        - deleted_again.folder_uid == empty_folder_uid
+        - deleted_again.folder_name is none
+        - deleted_again.msg == expected.not_found_empty
+        - never_existed is not changed
+        - never_existed is not failed
+        - never_existed.folder_uid == "NO_SUCH_FOLDER_UID"
+        - never_existed.folder_name is none
+        - never_existed.msg == expected.not_found_never
+        - deleted_shared is changed
+        - deleted_shared.folder_uid == sandbox_shared_uid
+        - deleted_shared.folder_name == "Sandbox"
+        - deleted_shared.msg is not defined
+        - lookup_after_delete is failed
+        - lookup_after_delete.msg == expected.lookup_after_delete

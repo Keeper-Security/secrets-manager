@@ -1,0 +1,47 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+#
+# The reason for the module: a playbook finds a folder UID by name, and gives it to another Keeper module.
+---
+- name: Keeper Get Folder Chain
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Look Up The Parent Folder By Its Path"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path: "Databases/Production"
+    register: "parent"
+
+  - name: "Create A Folder In The Folder That The Lookup Found"
+    keeper_create_folder:
+      shared_folder_uid: "{{ parent.shared_folder_uid }}"
+      subfolder_uid: "{{ parent.folder_uid }}"
+      folder_name: "Canary"
+    register: "created"
+
+  - name: "Look Up The New Folder By Its Full Path"
+    keeper_get_folder:
+      folder_path: "Infrastructure/Databases/Production/Canary"
+    register: "canary"
+
+  - name: "Look Up The Parent Folder With Its Subfolders"
+    keeper_get_folder:
+      subfolder_uid: "{{ parent.folder_uid }}"
+      include_subfolders: yes
+    register: "parent_tree"
+
+  - name: "Check The Chain"
+    assert:
+      that:
+        - parent.folder_uid == production_uid
+        - parent.shared_folder_uid == shared_folder_uid
+        - created is changed
+        - canary is not changed
+        - canary.folder_uid == created.folder_uid
+        - canary.folder_name == "Canary"
+        - canary.parent_uid == production_uid
+        - canary.shared_folder_uid == shared_folder_uid
+        - "parent_tree.subfolders == [
+            {'folder_uid': eu_uid, 'folder_name': 'EU', 'parent_uid': production_uid},
+            {'folder_uid': created.folder_uid, 'folder_name': 'Canary', 'parent_uid': production_uid}]"

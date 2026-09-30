@@ -1,0 +1,28 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+#
+# The QA test instructions, steps 2 to 4, without ignore_errors: the failed lookup must stop the play.
+---
+- name: Keeper Get Folder Not Found
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Look Up The Subfolder"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "{{ subfolder_name }}"
+    register: "lookup"
+
+  - name: "Show The Subfolder UID"
+    debug:
+      msg: "FOUND_SUBFOLDER_UID={{ lookup.folder_uid }}"
+
+  - name: "Look Up A Name That Does Not Exist"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "{{ missing_name }}"
+    register: "missing"
+
+  - name: "A Task After The Failed Lookup"
+    debug:
+      msg: "AFTER_FAILED_LOOKUP_{{ 'MARKER' }}"
