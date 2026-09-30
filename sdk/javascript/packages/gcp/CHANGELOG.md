@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.0]
 
+### Fixed
+
+- KSM-1553 - Declared no direct dependency on `google-auth-library`, while `GcpKmsClient.ts` imported it directly. npm hid this, because `@google-cloud/kms` pulls a copy in transitively through `google-gax` and npm hoists it to where a plain `require` can still find it. Yarn's default Plug'n'Play linker (Yarn 2 and later, including the zero-config default set by `yarn set version stable`) and pnpm with `hoist=false` both refuse this: `require('@keeper-security/secrets-manager-gcp')` failed immediately with `tried to access google-auth-library, but it isn't declared in its dependencies`. Removed the direct import; `getToken()` now reads the access token from the `GoogleAuth` instance `@google-cloud/kms` already constructs internally (`KMSClient.auth`), so no separate copy of `google-auth-library` is needed at all.
+- KSM-1524 - `getToken()` resolved to `undefined` when `GCPKSMClient` was constructed with no arguments, the Application Default Credentials (ADC) path documented first in this README. A `RAW_ENCRYPT_DECRYPT` key on that path silently took the gRPC `encrypt()`/`decrypt()` path instead of the raw REST path it requires, and failed against live Cloud KMS with an error about the wrong method rather than about a missing token. Fixed by the same change as KSM-1553: `getToken()` now sources the token from `KMSClient.auth`, which is set on every construction path, not only the two that built a standalone credentials object.
+
 ### Changed
 
 The next two entries follow from the move to an atomic temp-file-then-rename in KSM-1450 and KSM-1458 (documented in KSM-1509). Neither changes an API signature, so a `^1.0.0` range upgrades into them automatically. Check your config file layout against both before you upgrade.

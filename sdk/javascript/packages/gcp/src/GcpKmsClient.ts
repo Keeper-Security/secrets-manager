@@ -1,5 +1,4 @@
 import { KeyManagementServiceClient } from "@google-cloud/kms";
-import { JWT } from 'google-auth-library';
 import { GCPKeyValueStorageError } from "./error";
 import pino from "pino";
 import { getLogger } from "./Logger";
@@ -9,7 +8,6 @@ import { readFileSync } from "fs";
 export class GCPKSMClient {
   private logger: pino.Logger;
   private KMSClient: KeyManagementServiceClient | null = null;
-  private credentials: JWT | null = null;
 
 
   /**
@@ -54,17 +52,12 @@ export class GCPKSMClient {
     const rawKeyFile = readFileSync(credentialsKeyFilePath, 'utf-8');
     const keyFileJson = JSON.parse(rawKeyFile);
 
-    this.credentials = new JWT({
-      email: keyFileJson.client_email,
-      key: keyFileJson.private_key,
-      scopes: SCOPES,
-    });
-
     this.KMSClient = new KeyManagementServiceClient({
       credentials: {
         client_email: keyFileJson.client_email,
         private_key: keyFileJson.private_key,
-      }
+      },
+      scopes: SCOPES,
     });
 
     return this;
@@ -87,16 +80,12 @@ export class GCPKSMClient {
 
   public createClientUsingCredentials(clientEmail: string, privateKey: string) {
     this.logger.debug(`Creating KMS client using credentials: ${clientEmail}`);
-    this.credentials = new JWT({
-      email: clientEmail,
-      key: privateKey,
-      scopes: SCOPES,
-    });
     this.KMSClient = new KeyManagementServiceClient({
       credentials: {
         client_email: clientEmail,
         private_key: privateKey
-      }
+      },
+      scopes: SCOPES,
     });
     return this;
   }
@@ -121,7 +110,7 @@ export class GCPKSMClient {
       this.logger.error("KMS client not initialized. Neither createClientFromCredentialsFile nor createClientUsingCredentials have been called first.");
       throw new GCPKeyValueStorageError("KMS client not initialized. Please call createClientFromCredentialsFile or createClientUsingCredentials first.");
     }
-    const token = await this.credentials?.authorize();
-    return token?.access_token;
+    const token = await this.KMSClient.auth.getAccessToken();
+    return token ?? undefined;
   }
 }
