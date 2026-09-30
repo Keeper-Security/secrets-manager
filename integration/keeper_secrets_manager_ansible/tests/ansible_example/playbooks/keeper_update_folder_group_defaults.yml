@@ -1,0 +1,114 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# The folder modules by their full collection names, with group module_defaults. Ansible gives the group defaults to
+# every module in the group: a module that has the option uses the default, and a module that does not have it must
+# ignore it. A misspelled option written in a task must still fail.
+- name: Keeper Folder Modules With Group Module Defaults
+  hosts: "my_systems"
+  gather_facts: no
+
+  module_defaults:
+    group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      cache: "not-a-real-record-cache"
+
+  vars:
+    # ansible-core 2.12 lists the supported parameters in set order, later versions sort them. So the checks compare
+    # the text before the list exactly, and the names in the list as a set.
+    supported: "Supported parameters include: "
+
+  tasks:
+  - name: "Create A Folder In The Default Shared Folder"
+    keepersecurity.keeper_secrets_manager.keeper_create_folder:
+      folder_name: "Group Defaults"
+    register: "created"
+
+  - name: "Look Up The Folder In The Default Shared Folder"
+    keepersecurity.keeper_secrets_manager.keeper_get_folder:
+      folder_name: "Group Defaults"
+    register: "found"
+
+  - name: "Rename The Folder, With Group Defaults That This Module Does Not Have"
+    keepersecurity.keeper_secrets_manager.keeper_update_folder:
+      folder_uid: "{{ created.folder_uid }}"
+      new_folder_name: "Group Defaults Renamed"
+    register: "renamed"
+
+  - name: "Rename The Folder With A Misspelled Option"
+    keepersecurity.keeper_secrets_manager.keeper_update_folder:
+      folder_uid: "{{ created.folder_uid }}"
+      new_name: "Must Not Be Used"
+    register: "misspelled_rename"
+    ignore_errors: yes
+
+  - name: "Delete The Folder With A Misspelled Option"
+    keepersecurity.keeper_secrets_manager.keeper_delete_folder:
+      folder_uid: "{{ created.folder_uid }}"
+      forse: yes
+    register: "misspelled_delete"
+    ignore_errors: yes
+
+  - name: "Look Up The Folder By Its New Name"
+    keepersecurity.keeper_secrets_manager.keeper_get_folder:
+      folder_name: "Group Defaults Renamed"
+    register: "found_renamed"
+
+  - name: "Delete The Folder, With Group Defaults That This Module Does Not Have"
+    keepersecurity.keeper_secrets_manager.keeper_delete_folder:
+      folder_uid: "{{ created.folder_uid }}"
+    register: "deleted"
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - created is changed
+        - found is not changed
+        - found.folder_uid == created.folder_uid
+        - found.parent_uid == shared_folder_uid
+        - found.shared_folder_uid == shared_folder_uid
+        - renamed is changed
+        - renamed.folder_uid == created.folder_uid
+        - renamed.previous_folder_name == "Group Defaults"
+        - renamed.folder_name == "Group Defaults Renamed"
+        - misspelled_rename is failed
+        - "misspelled_rename.msg.split(supported)[0] == 'missing required arguments: new_folder_name; Unsupported parameters for (keeper_update_folder) module: new_name. '"
+        - "misspelled_rename.msg.split(supported)[1].rstrip('.').split(', ') | sort == ['folder_uid', 'new_folder_name']"
+        - misspelled_delete is failed
+        - "misspelled_delete.msg.split(supported)[0] == 'Unsupported parameters for (keeper_delete_folder) module: forse. '"
+        - "misspelled_delete.msg.split(supported)[1].rstrip('.').split(', ') | sort == ['folder_uid', 'force_deletion']"
+        - found_renamed.folder_uid == created.folder_uid
+        - deleted is changed
+        - deleted.folder_name == "Group Defaults Renamed"
+
+# The same group defaults, given as one template string. Ansible resolves the template before it gives the defaults to
+# the modules, so the modules must resolve it too, to know which options to ignore.
+- name: Keeper Folder Modules With Group Module Defaults From A Variable
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    keeper_group_defaults:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      cache: "not-a-real-record-cache"
+
+  module_defaults:
+    group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager: "{{ keeper_group_defaults }}"
+
+  tasks:
+  - name: "Look Up A Subfolder In The Default Shared Folder"
+    keepersecurity.keeper_secrets_manager.keeper_get_folder:
+      folder_name: "Databases"
+    register: "templated_found"
+
+  - name: "Rename The Subfolder, With Templated Group Defaults"
+    keepersecurity.keeper_secrets_manager.keeper_update_folder:
+      folder_uid: "{{ templated_found.folder_uid }}"
+      new_folder_name: "Data Stores"
+    register: "templated_renamed"
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - templated_found.folder_uid == databases_folder_uid
+        - templated_renamed is changed
+        - templated_renamed.previous_folder_name == "Databases"

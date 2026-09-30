@@ -1,0 +1,80 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# Every task has a wrong option. Each one must fail on its options, before any request reaches the server.
+# force is the old name of force_deletion, and keeper_copy has a force option with another meaning, so a task that
+# writes force must fail, even on a folder that is not empty.
+# The names after "Supported parameters include:" are in set order on ansible-core 2.12, so they are compared as a
+# sorted list; the text before them is compared exactly.
+- name: Keeper Delete Folder With Wrong Options
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete A Folder That Is Not Empty With The Old Option force"
+    keeper_delete_folder:
+      folder_uid: "{{ tree_folder_uid }}"
+      force: yes
+    register: "old_force_yes"
+    ignore_errors: yes
+
+  - name: "Delete An Empty Folder With The Old Option force Set To No"
+    keeper_delete_folder:
+      folder_uid: "{{ empty_folder_uid }}"
+      force: no
+    register: "old_force_no"
+    ignore_errors: yes
+
+  - name: "Delete With The Misspelled Option force_delete"
+    keeper_delete_folder:
+      folder_uid: "{{ tree_folder_uid }}"
+      force_delete: yes
+    register: "typo_force_delete"
+    ignore_errors: yes
+
+  - name: "Delete An Empty Folder With The Misspelled Option forse"
+    keeper_delete_folder:
+      folder_uid: "{{ empty_folder_uid }}"
+      forse: yes
+    register: "typo_forse"
+    ignore_errors: yes
+
+  - name: "Delete With An Option Of Another Folder Module"
+    keeper_delete_folder:
+      folder_uid: "{{ empty_folder_uid }}"
+      folder_name: "Staging"
+    register: "wrong_option"
+    ignore_errors: yes
+
+  - name: "Delete Without A folder_uid"
+    keeper_delete_folder:
+      force_deletion: yes
+    register: "no_uid"
+    ignore_errors: yes
+
+  - name: "Delete With A force_deletion Value That Is Not A Boolean"
+    keeper_delete_folder:
+      folder_uid: "{{ empty_folder_uid }}"
+      force_deletion: "maybe"
+    register: "bad_force"
+    ignore_errors: yes
+
+  - name: "Check The Unsupported Options"
+    assert:
+      that:
+        - item.0 is failed
+        - item.0 is not changed
+        - item.0.msg.split(expected.supported_marker)[0] == item.1
+        - (item.0.msg.split(expected.supported_marker)[1] | regex_replace('[.]$', '')).split(', ') | sort == ['folder_uid', 'force_deletion']
+    loop: "{{ [old_force_yes, old_force_no, typo_force_delete, typo_forse, wrong_option] | zip(expected.unsupported_before) | list }}"
+    loop_control:
+      label: "{{ item.1 }}"
+
+  - name: "Check The Other Option Errors"
+    assert:
+      that:
+        - no_uid is failed
+        - no_uid.msg == expected.no_uid
+        - bad_force is failed
+        - bad_force.msg.startswith(expected.bad_force_start)
+        - expected.bad_force_middle in bad_force.msg
+        - expected.bad_force_detail in bad_force.msg

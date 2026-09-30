@@ -1,0 +1,23 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# A list is not a folder UID, not even a list of real folder UIDs with force_deletion. The task must fail on the option
+# check, and nothing may be deleted.
+- name: Keeper Delete Folder With A List As The Folder UID
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete With A List Of Folder UIDs As The Folder UID"
+    keeper_delete_folder:
+      folder_uid: "{{ [empty_folder_uid, parent_child_uid] }}"
+      force_deletion: yes
+    register: "list_uid"
+    ignore_errors: yes
+
+  - name: "Check That The List Failed"
+    assert:
+      that:
+        - list_uid is failed
+        - list_uid is not changed
+        - list_uid.msg == expected.msg
+        - list_uid.folder_name is not defined

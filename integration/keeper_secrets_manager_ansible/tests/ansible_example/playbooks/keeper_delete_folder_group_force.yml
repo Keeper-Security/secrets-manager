@@ -1,0 +1,42 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# keeper_copy has an option named force, so a play can give force: yes to the whole action group of this
+# collection. Ansible merges it into the options of every module in the group, keeper_delete_folder too. This
+# module has force_deletion, not force, so it ignores the group default force, and no delete is forced. A task that
+# also writes force is not forced either: the group default has the same name, so the option is ignored.
+- name: Keeper Delete Folder With A Group Default force
+  hosts: "my_systems"
+  gather_facts: no
+
+  module_defaults:
+    group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager:
+      force: yes
+
+  tasks:
+  - name: "Delete A Folder That Is Not Empty, With The Group Default force"
+    keepersecurity.keeper_secrets_manager.keeper_delete_folder:
+      folder_uid: "{{ tree_folder_uid }}"
+    register: "group_force_not_empty"
+    ignore_errors: yes
+
+  - name: "Delete A Folder That Is Not Empty With force In The Task, With The Group Default force"
+    keepersecurity.keeper_secrets_manager.keeper_delete_folder:
+      folder_uid: "{{ tree_folder_uid }}"
+      force: yes
+    register: "task_force_not_empty"
+    ignore_errors: yes
+
+  - name: "Delete An Empty Folder, With The Group Default force"
+    keepersecurity.keeper_secrets_manager.keeper_delete_folder:
+      folder_uid: "{{ empty_folder_uid }}"
+    register: "group_force_empty"
+
+  - name: "Check That No Delete Was Forced"
+    assert:
+      that:
+        - group_force_not_empty is failed
+        - group_force_not_empty.msg == expected.tree_not_empty
+        - task_force_not_empty is failed
+        - task_force_not_empty.msg == expected.tree_not_empty
+        - group_force_empty is changed
+        - group_force_empty.folder_name == "Staging"

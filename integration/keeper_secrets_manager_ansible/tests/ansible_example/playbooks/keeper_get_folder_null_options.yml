@@ -1,0 +1,103 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+#
+# A template variable with no value gives null. Every lookup with a null option must fail before it sends a
+# request. As "not set", the first two lookups used to return a folder with no error: the top-level shared
+# folder "Infrastructure", and the shared folder itself instead of a subfolder.
+---
+- name: Keeper Get Folder Null Options
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    null_var: ~
+    null_hint: "Give it a value, or leave the option out of the task."
+    expected:
+      shared_folder_uid: "The shared_folder_uid option is null. {{ null_hint }}"
+      subfolder_uid: "The subfolder_uid option is null. {{ null_hint }}"
+      folder_name: "The folder_name option is null. {{ null_hint }}"
+      folder_path: "The folder_path option is null. {{ null_hint }}"
+      include_subfolders: "The include_subfolders option is null. {{ null_hint }}"
+      blank_name: "Could not look up folder: The folder_name is set but blank. Set it to a folder name, or remove it."
+
+  tasks:
+  - name: "A Null shared_folder_uid With The Name Of A Shared Folder"
+    keeper_get_folder:
+      shared_folder_uid: "{{ null_var }}"
+      folder_name: "Infrastructure"
+    register: "null_shared_folder_uid"
+    ignore_errors: yes
+
+  - name: "A Null folder_name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "{{ null_var }}"
+    register: "null_folder_name"
+    ignore_errors: yes
+
+  - name: "A Null subfolder_uid"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      subfolder_uid: "{{ null_var }}"
+    register: "null_subfolder_uid"
+    ignore_errors: yes
+
+  - name: "A Null folder_path"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path: "{{ null_var }}"
+    register: "null_folder_path"
+    ignore_errors: yes
+
+  - name: "A Null include_subfolders"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      include_subfolders: "{{ null_var }}"
+    register: "null_include_subfolders"
+    ignore_errors: yes
+
+  - name: "A Literal Null folder_name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: ~
+    register: "literal_null"
+    ignore_errors: yes
+
+  # default(omit) acts only on an undefined variable, not on a variable that is null. So this task still fails:
+  # with the null message on ansible-core 2.19 and later, and as a blank name on older versions, where the filter
+  # output is the empty string.
+  - name: "default(omit) Does Not Omit A Null Variable"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "{{ null_var | default(omit) }}"
+    register: "default_omit"
+    ignore_errors: yes
+
+  - name: "Check That No Null Option Was Used As Not Set"
+    assert:
+      that:
+        - item.0 is failed
+        - item.0 is not changed
+        - item.0.folder_uid is not defined
+        - item.0.msg == item.1
+    loop:
+      - ["{{ null_shared_folder_uid }}", "{{ expected.shared_folder_uid }}"]
+      - ["{{ null_folder_name }}", "{{ expected.folder_name }}"]
+      - ["{{ null_subfolder_uid }}", "{{ expected.subfolder_uid }}"]
+      - ["{{ null_folder_path }}", "{{ expected.folder_path }}"]
+      - ["{{ null_include_subfolders }}", "{{ expected.include_subfolders }}"]
+      - ["{{ literal_null }}", "{{ expected.folder_name }}"]
+      - ["{{ default_omit }}", "{{ expected.folder_name if ansible_version.full is version('2.19', '>=') else expected.blank_name }}"]
+    loop_control:
+      label: "{{ item.1 }}"
+
+  - name: "default(omit, true) Omits A Null Variable"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "{{ null_var | default(omit, true) }}"
+    register: "default_omit_true"
+
+  - name: "Check The Lookup Without The Null Option"
+    assert:
+      that:
+        - default_omit_true is not failed
+        - default_omit_true.folder_uid == shared_folder_uid

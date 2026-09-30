@@ -1,0 +1,62 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Update Folder With Blank Or Padded Values
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    empty_value: ""
+    # The messages show the UID with repr(), so a newline is shown as a backslash and an "n".
+    padded_uid_message: "The folder_uid ' FOLDER_UID' has leading or trailing whitespace."
+    newline_uid_message: "The folder_uid 'FOLDER_UID\\n' has leading or trailing whitespace."
+
+  tasks:
+  - name: "Rename To A Name Of Only Spaces"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "   "
+    register: "spaces_name"
+    ignore_errors: yes
+
+  - name: "Rename To An Empty Variable"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "{{ empty_value }}"
+    register: "empty_name"
+    ignore_errors: yes
+
+  - name: "Rename With An Empty Folder UID"
+    keeper_update_folder:
+      folder_uid: ""
+      new_folder_name: "Production"
+    register: "empty_uid"
+    ignore_errors: yes
+
+  - name: "Rename With A Folder UID That Has A Leading Space"
+    keeper_update_folder:
+      folder_uid: " FOLDER_UID"
+      new_folder_name: "Production"
+    register: "padded_uid"
+    ignore_errors: yes
+
+  - name: "Rename With A Folder UID That Has A Trailing Newline"
+    keeper_update_folder:
+      folder_uid: "FOLDER_UID\n"
+      new_folder_name: "Production"
+    register: "newline_uid"
+    ignore_errors: yes
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - spaces_name is failed
+        - spaces_name is not changed
+        - 'spaces_name.msg == "Could not update folder: The new_folder_name is blank."'
+        - empty_name is failed
+        - 'empty_name.msg == "Could not update folder: The new_folder_name is blank."'
+        - empty_uid is failed
+        - 'empty_uid.msg == "Could not update folder: The folder_uid is blank."'
+        - padded_uid is failed
+        - 'padded_uid.msg == "Could not update folder: " ~ padded_uid_message'
+        - newline_uid is failed
+        - 'newline_uid.msg == "Could not update folder: " ~ newline_uid_message'
