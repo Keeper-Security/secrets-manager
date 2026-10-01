@@ -33,6 +33,9 @@ see the official docs link above.
 
 ## Change Log
 
+### 18.0.0
+* KSM-1051 - Added write support for Keeper Drive (NSF) folders that are shared directly to the application. `create_secret()`, `create_secret_with_options()`, `create_folder()`, and `update_folder()` now detect a Keeper Drive folder. For such a folder, they send the payload that the Keeper Drive path of the server requires. For a new record, the SDK wraps the record key with the folder key and pads the record data to at least 384 bytes. For a new folder, the SDK wraps the folder key with the parent folder key and sends no `sharedFolderUid`. `update_folder()` always encrypts a Keeper Drive folder name with AES-GCM. The write methods find Keeper Drive folders in the `get_secrets()` response, because `get_folders()` does not list them. `get_folders()` now reads a top-level folder name that is encrypted with AES-GCM, instead of skipping the folder. The SDK also reads a Keeper Drive folder name that the server sends zero-padded to its column size. A new `is_drive` attribute on `KeeperFolder` and on the `get_secrets()` folders identifies Keeper Drive folders.
+
 ### 17.4.0
 * **Breaking**: KSM-1214 - Minimum Python version raised from 3.9 to 3.10. Python 3.9 reached end-of-life 2026-10-05. The new floor also clears the `urllib3` decompression-bomb bypass (CVE-2026-44432) and cross-host-redirect header leak (CVE-2026-44431) fixes, neither of which was backported to a 3.9-compatible `urllib3` release. `urllib3` floor raised from `>=2.6.3` to `>=2.7.0`.
 * KSM-299 - Fixed `InMemoryKeyValueStorage` raising a cryptic `TypeError: object of type 'NoneType' has no len()` when initialized with a config string that is not valid JSON or base64-encoded JSON. The SDK now raises `KeeperError` with a clear message instead.

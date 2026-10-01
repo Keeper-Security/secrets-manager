@@ -618,12 +618,13 @@ class KeeperRecordLink:
 
 
 class KeeperFolder:
-    def __init__(self, folder_key, folder_uid:str, parent_uid:str, name:str, use_gcm:bool=False):
+    def __init__(self, folder_key, folder_uid:str, parent_uid:str, name:str, use_gcm:bool=False, is_drive:bool=False):
         self.folder_key = folder_key
         self.folder_uid = folder_uid
         self.parent_uid = parent_uid
         self.name = name
         self.use_gcm = use_gcm
+        self.is_drive = is_drive
 
 
 class Folder:
@@ -645,6 +646,12 @@ class Folder:
         self.uid = folder_uid
         self.parent_uid = folder.get('parentUid', '')
         self.name = folder.get('name', '')
+
+        # Only Keeper Drive folders carry their name in "data" here; legacy shared folders do not
+        drive_folder_name = helpers.get_drive_folder_name(folder.get('data'), folder_key)
+        self.is_drive = drive_folder_name is not None
+        if self.is_drive:
+            self.name = drive_folder_name
 
         for r in folder_records:
 
