@@ -121,11 +121,10 @@ describe('utils', () => {
         });
 
         it('should throw, not silently fall through to gRPC, when a RAW_ENCRYPT_DECRYPT key has an empty-string token', async () => {
-            // Given: an empty string is falsy but not null/undefined, exactly what getToken() can
+            // An empty string is falsy but not null/undefined, exactly what getToken() can
             // return if a token endpoint responds 200 with no access_token field.
             const message = 'test message';
 
-            // When / Then
             await expect(encryptBuffer({
                 message,
                 cryptoClient: mockCryptoClient,
@@ -278,7 +277,7 @@ describe('utils', () => {
         });
 
         it('should throw, not silently fall through to gRPC, when a RAW_ENCRYPT_DECRYPT key has an empty-string token', async () => {
-            // Given - a well-formed blob so the failure comes from the token check, not parsing
+            // A well-formed blob so the failure comes from the token check, not parsing
             const header = Buffer.from([0xFF, 0xFF]);
             const parts = [Buffer.from('encrypted-key-data'), Buffer.from('1234567890123456'), Buffer.from('1234567890123456'), Buffer.from('encrypted-data')];
             const buffers = [header];
@@ -289,7 +288,6 @@ describe('utils', () => {
             }
             const validBuffer = Buffer.concat(buffers);
 
-            // When / Then
             await expect(decryptBuffer({
                 ciphertext: validBuffer,
                 cryptoClient: mockCryptoClient,

@@ -159,7 +159,7 @@ jobs:
       - name: Load the packed tarball under Yarn Plug'n'Play
         # This job, not test.javascript.storage.gcp.kms.yml, is what gates a release: no branch
         # ruleset requires that workflow to pass on a release branch. Mirrors its PnP guard here so
-        # an undeclared dependency (KSM-1553) fails this job instead of reaching npm.
+        # an undeclared transitive dependency fails this job instead of reaching npm.
         run: |
           set -euo pipefail
           export COREPACK_HOME="${COREPACK_HOME:-$HOME/.cache/node/corepack}"

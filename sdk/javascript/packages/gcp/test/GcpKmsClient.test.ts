@@ -20,13 +20,8 @@ import { GCPKSMClient } from '../src/GcpKmsClient';
 
 describe('GCPKSMClient.getToken', () => {
     it('returns an access token on the default (Application Default Credentials) construction path', async () => {
-        // Given
         const client = new GCPKSMClient();
-
-        // When
         const token = await client.getToken();
-
-        // Then
         expect(token).toBe('test-access-token');
     });
 });
