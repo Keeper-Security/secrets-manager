@@ -78,7 +78,16 @@ jobs:
           // require() above.
           const client = new GCPKSMClient();
           assert.strictEqual(typeof client.getCryptoClient().auth.getAccessToken, 'function');
-          setTimeout(() => { console.log('SMOKE_OK'); process.exit(0); }, 2000);
+          // Calls into getToken(), so an undeclared dependency reachable only from inside that
+          // method (not just from the constructor) still fails this step. No ADC file or network
+          // access is available here, so the only valid outcome is the no-credentials error.
+          client.getToken()
+            .then(() => { throw new Error('getToken() unexpectedly resolved with no ADC available'); })
+            .catch((err) => {
+              assert.match(err.message, /Could not load the default credentials/);
+              console.log('SMOKE_OK');
+              process.exit(0);
+            });
           EOF
           env -u GOOGLE_APPLICATION_CREDENTIALS METADATA_SERVER_DETECTION=none GOOGLE_CLOUD_PROJECT=smoke-project \
             corepack yarn node smoke.cjs 2>&1 | tee smoke.out

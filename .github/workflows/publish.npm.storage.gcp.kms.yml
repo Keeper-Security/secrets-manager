@@ -156,6 +156,48 @@ jobs:
       - name: Build package
         run: npm run build
 
+      - name: Load the packed tarball under Yarn Plug'n'Play
+        # This job, not test.javascript.storage.gcp.kms.yml, is what gates a release: no branch
+        # ruleset requires that workflow to pass on a release branch. Mirrors its PnP guard here so
+        # an undeclared dependency (KSM-1553) fails this job instead of reaching npm.
+        run: |
+          set -euo pipefail
+          export COREPACK_HOME="${COREPACK_HOME:-$HOME/.cache/node/corepack}"
+          TARBALL="$PWD/$(npm pack --silent | tail -n 1)"
+          SMOKE_DIR="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/gcp-pnp-smoke.XXXXXX")"
+          cp "$TARBALL" "$SMOKE_DIR/package.tgz"
+          cd "$SMOKE_DIR"
+          cat > package.json <<'EOF'
+          {
+            "name": "gcp-pnp-smoke",
+            "private": true,
+            "packageManager": "yarn@4.18.1",
+            "dependencies": { "@keeper-security/secrets-manager-gcp": "file:./package.tgz" }
+          }
+          EOF
+          printf 'nodeLinker: pnp\npnpFallbackMode: none\nenableGlobalCache: false\n' > .yarnrc.yml
+          touch yarn.lock
+          COREPACK_ENABLE_DOWNLOAD_PROMPT=0 YARN_ENABLE_IMMUTABLE_INSTALLS=false corepack yarn install
+          cat > smoke.cjs <<'EOF'
+          'use strict';
+          const assert = require('assert');
+          const gcp = require('@keeper-security/secrets-manager-gcp');
+          assert.deepStrictEqual(Object.keys(gcp).sort(), ['GCPKSMClient', 'GCPKeyConfig', 'GCPKeyValueStorage', 'LoggerLogLevelOptions']);
+          const { GCPKSMClient } = gcp;
+          const client = new GCPKSMClient();
+          assert.strictEqual(typeof client.getCryptoClient().auth.getAccessToken, 'function');
+          client.getToken()
+            .then(() => { throw new Error('getToken() unexpectedly resolved with no ADC available'); })
+            .catch((err) => {
+              assert.match(err.message, /Could not load the default credentials/);
+              console.log('SMOKE_OK');
+              process.exit(0);
+            });
+          EOF
+          env -u GOOGLE_APPLICATION_CREDENTIALS METADATA_SERVER_DETECTION=none GOOGLE_CLOUD_PROJECT=smoke-project \
+            corepack yarn node smoke.cjs 2>&1 | tee smoke.out
+          grep -q '^SMOKE_OK$' smoke.out
+
       - name: Upload NPM package
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
