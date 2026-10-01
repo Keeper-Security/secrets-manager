@@ -184,6 +184,20 @@ def json_to_dict(json_str):
     return resp
 
 
+def pad_aes_gcm(data: bytes) -> bytes:
+    """Pad JSON bytes with trailing spaces before AES-GCM encryption.
+
+    AES-GCM does not hide the plaintext length, so the data is padded to at least 384 bytes
+    and then to a multiple of 16 bytes, the same rule that Commander uses. The server rejects
+    Keeper Drive record data under 412 encrypted bytes (384 bytes plus the 12-byte nonce and
+    the 16-byte tag). JSON parsers ignore trailing whitespace.
+    """
+    padded_len = max(384, len(data))
+    if padded_len % 16:
+        padded_len += 16 - padded_len % 16
+    return data + b' ' * (padded_len - len(data))
+
+
 def now_milliseconds():
     return int(time.time() * 1000)
 
