@@ -246,6 +246,11 @@ describe('GCPKeyValueStorage over ADC with the real auth stack', () => {
             const reread = await new GCPKeyValueStorage(configPath, new GCPKeyConfig(KEY), session).init();
 
             await expect(reread.getString('clientId')).resolves.toBe('raw-client');
+            // decryptConfig() fetches its own token, separately from init().
+            const rawDecrypts = () => post.mock.calls.filter((call) => String(call[0]).endsWith(':rawDecrypt')).length;
+            const decryptsBefore = rawDecrypts();
+            await expect(reread.decryptConfig(false)).resolves.toContain('raw-client');
+            expect(rawDecrypts()).toBe(decryptsBefore + 1);
             expect(post.mock.calls.map((call) => String(call[0]).split(':').pop())).toEqual(expect.arrayContaining(['rawEncrypt', 'rawDecrypt']));
             post.mock.calls.forEach((call) => expect((call[2] as { headers: Record<string, string> }).headers.Authorization).toBe('Bearer ya29.adc-token'));
             expect(grpc.encrypt).not.toHaveBeenCalled();

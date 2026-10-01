@@ -79,15 +79,19 @@ jobs:
           const client = new GCPKSMClient();
           assert.strictEqual(typeof client.getCryptoClient().auth.getAccessToken, 'function');
           // Calls into getToken(), so an undeclared dependency reachable only from inside that
-          // method (not just from the constructor) still fails this step. No ADC file or network
-          // access is available here, so the only valid outcome is the no-credentials error.
+          // method (not just from the constructor) still fails this step. No ADC file exists, and
+          // METADATA_SERVER_DETECTION=none skips the metadata server, so the only valid outcome is
+          // the no-credentials error.
           client.getToken()
             .then(() => { throw new Error('getToken() unexpectedly resolved with no ADC available'); })
             .catch((err) => {
               assert.match(err.message, /Could not load the default credentials/);
               console.log('SMOKE_OK');
-              process.exit(0);
             });
+          // No process.exit() here: the process ends once the pino-pretty worker has loaded or
+          // failed, so a failure inside the worker still fails this step. The watchdog only turns
+          // a hang into a failure; unref() keeps it from holding the process open.
+          setTimeout(() => { console.error('SMOKE_TIMEOUT'); process.exit(1); }, 60000).unref();
           EOF
           env -u GOOGLE_APPLICATION_CREDENTIALS METADATA_SERVER_DETECTION=none GOOGLE_CLOUD_PROJECT=smoke-project \
             corepack yarn node smoke.cjs 2>&1 | tee smoke.out

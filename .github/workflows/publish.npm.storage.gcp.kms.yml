@@ -156,10 +156,23 @@ jobs:
       - name: Build package
         run: npm run build
 
+      - name: Upload NPM package
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: npm-package-gcp-kms-${{ github.run_number }}
+          path: |
+            ${{ github.workspace }}/sdk/javascript/packages/gcp/dist/
+            ${{ github.workspace }}/sdk/javascript/packages/gcp/package.json
+            ${{ github.workspace }}/sdk/javascript/packages/gcp/README.md
+            ${{ github.workspace }}/sdk/javascript/packages/gcp/CHANGELOG.md
+
       - name: Load the packed tarball under Yarn Plug'n'Play
         # This job, not test.javascript.storage.gcp.kms.yml, is what gates a release: no branch
         # ruleset requires that workflow to pass on a release branch. Mirrors its PnP guard here so
-        # an undeclared transitive dependency fails this job instead of reaching npm.
+        # an undeclared transitive dependency fails this job instead of reaching npm. It runs after
+        # the upload on purpose: it installs the newest in-range dependencies with no lockfile and
+        # runs their code, so the artifact publish-npm ships must already be fixed by then. A
+        # failure here still fails this job, and publish-npm needs this job.
         run: |
           set -euo pipefail
           export COREPACK_HOME="${COREPACK_HOME:-$HOME/.cache/node/corepack}"
@@ -191,22 +204,15 @@ jobs:
             .catch((err) => {
               assert.match(err.message, /Could not load the default credentials/);
               console.log('SMOKE_OK');
-              process.exit(0);
             });
+          // No process.exit() here: the process ends once the pino-pretty worker has loaded or
+          // failed, so a failure inside the worker still fails this step. The watchdog only turns
+          // a hang into a failure; unref() keeps it from holding the process open.
+          setTimeout(() => { console.error('SMOKE_TIMEOUT'); process.exit(1); }, 60000).unref();
           EOF
           env -u GOOGLE_APPLICATION_CREDENTIALS METADATA_SERVER_DETECTION=none GOOGLE_CLOUD_PROJECT=smoke-project \
             corepack yarn node smoke.cjs 2>&1 | tee smoke.out
           grep -q '^SMOKE_OK$' smoke.out
-
-      - name: Upload NPM package
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        with:
-          name: npm-package-gcp-kms-${{ github.run_number }}
-          path: |
-            ${{ github.workspace }}/sdk/javascript/packages/gcp/dist/
-            ${{ github.workspace }}/sdk/javascript/packages/gcp/package.json
-            ${{ github.workspace }}/sdk/javascript/packages/gcp/README.md
-            ${{ github.workspace }}/sdk/javascript/packages/gcp/CHANGELOG.md
 
   publish-npm:
     needs: [build-npm, validate-version]
