@@ -19,11 +19,23 @@ import {
     RAW_ENCRYPT_GCP_API_URL,
     RAW_DECRYPT_GCP_API_URL,
 } from "./constants";
+import { KeyPurpose } from "./enum";
 import { publicEncrypt } from "crypto";
 import { RSA_PKCS1_OAEP_PADDING } from "constants";
 import { GCPKeyValueStorageError } from "./error";
 import pino from "pino";
 import axios from "axios";
+
+function requireRawToken(token: string | null | undefined, logger: pino.Logger): string {
+    // A falsy-but-not-nullish token (an empty string a broken token endpoint can hand back)
+    // must not silently fall through to the gRPC symmetric path: that sends a RAW_ENCRYPT_DECRYPT
+    // key to the wrong crypto operation with no error naming the missing token.
+    if (!token) {
+        logger.error(`${KeyPurpose.RAW_ENCRYPT_DECRYPT} key requires a non-empty access token`);
+        throw new GCPKeyValueStorageError(`${KeyPurpose.RAW_ENCRYPT_DECRYPT} key requires a non-empty access token`);
+    }
+    return token;
+}
 
 
 export async function encryptBuffer(
@@ -50,11 +62,16 @@ export async function encryptBuffer(
             cryptoClient: options.cryptoClient,
             keyProperties: options.keyProperties,
             isAsymmetric: options.isAsymmetric,
+            keyType: options.keyType,
             encryptionAlgorithm: options.encryptionAlgorithm,
             token: options.token
         };
 
-        const CiphertextBlob: Buffer = options.isAsymmetric ? await encryptDataAndValidateCRCAsymmetric(encryptOptions, logger) : (options.token ? await encryptDataSymmetricRaw(encryptOptions, logger) : await encryptDataAndValidateCRC(encryptOptions, logger));
+        const CiphertextBlob: Buffer = options.isAsymmetric
+            ? await encryptDataAndValidateCRCAsymmetric(encryptOptions, logger)
+            : (options.keyType === KeyPurpose.RAW_ENCRYPT_DECRYPT
+                ? await encryptDataSymmetricRaw({ ...encryptOptions, token: requireRawToken(options.token, logger) }, logger)
+                : await encryptDataAndValidateCRC(encryptOptions, logger));
 
         const parts = [CiphertextBlob, nonce, tag, ciphertext];
 
@@ -256,6 +273,7 @@ export async function decryptBuffer(
             cryptoClient: options.cryptoClient,
             keyProperties: options.keyProperties,
             isAsymmetric: options.isAsymmetric,
+            keyType: options.keyType,
             encryptionAlgorithm: options.encryptionAlgorithm,
             token: options.token
         }, logger);
@@ -362,11 +380,10 @@ async function decryptDataAndValidateCRC(
         input.name = keyNameForAsymmetricDecrypt;
         const [decryptResponse] = await KMSClient.asymmetricDecrypt(input);
         decryptResponseData = decryptResponse;
+    } else if (options.keyType === KeyPurpose.RAW_ENCRYPT_DECRYPT) {
+        const plaintext = await decryptDataSymmetricRaw({ ...options, token: requireRawToken(options.token, logger) }, logger);
+        return plaintext;
     } else {
-        if (options.token) {
-            const plaintext = await decryptDataSymmetricRaw(options, logger);
-            return plaintext;
-        }
         logger.debug(`decrypting using symmetric key ${keyName}`);
         const [decryptResponse] = await KMSClient.decrypt(input);
         decryptResponseData = decryptResponse;

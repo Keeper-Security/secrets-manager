@@ -9,10 +9,15 @@ on:
       - '.github/workflows/test.javascript.storage.gcp.kms.yml'
   pull_request:
     branches:
+      - master
       - 'release/storage/javascript/gcp-kms/**'
     paths:
       - 'sdk/javascript/packages/gcp/**'
+      - '.github/workflows/test.javascript.storage.gcp.kms.yml'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -22,17 +27,72 @@ jobs:
         working-directory: ./sdk/javascript/packages/gcp
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 20.x
-        uses: actions/setup-node@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          node-version: '20.x'
-          cache: 'npm'
-          cache-dependency-path: sdk/javascript/packages/gcp/package-lock.json
+          persist-credentials: false
+
+      - name: Setup Node.js 22.x
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22.x'
+          package-manager-cache: false
 
       - name: Install dependencies
         run: npm ci
 
       - name: Run tests
         run: npm test
+
+      - name: Load the packed tarball under Yarn Plug'n'Play
+        # npm's flat node_modules hoists an undeclared transitive dependency (KSM-1553) to where a
+        # plain require() can still find it. Yarn's default PnP linker refuses that: it only lets a
+        # package require what its own package.json declares. This step is the regression guard
+        # for that defect class; npm ci + npm test above cannot catch it.
+        run: |
+          set -euo pipefail
+          export COREPACK_HOME="${COREPACK_HOME:-$HOME/.cache/node/corepack}"
+          npm run build
+          TARBALL="$PWD/$(npm pack --silent | tail -n 1)"
+          SMOKE_DIR="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/gcp-pnp-smoke.XXXXXX")"
+          cp "$TARBALL" "$SMOKE_DIR/package.tgz"
+          cd "$SMOKE_DIR"
+          cat > package.json <<'EOF'
+          {
+            "name": "gcp-pnp-smoke",
+            "private": true,
+            "packageManager": "yarn@4.18.1",
+            "dependencies": { "@keeper-security/secrets-manager-gcp": "file:./package.tgz" }
+          }
+          EOF
+          printf 'nodeLinker: pnp\npnpFallbackMode: none\nenableGlobalCache: false\n' > .yarnrc.yml
+          touch yarn.lock
+          COREPACK_ENABLE_DOWNLOAD_PROMPT=0 YARN_ENABLE_IMMUTABLE_INSTALLS=false corepack yarn install
+          cat > smoke.cjs <<'EOF'
+          'use strict';
+          const assert = require('assert');
+          const gcp = require('@keeper-security/secrets-manager-gcp');
+          assert.deepStrictEqual(Object.keys(gcp).sort(), ['GCPKSMClient', 'GCPKeyConfig', 'GCPKeyValueStorage', 'LoggerLogLevelOptions']);
+          const { GCPKSMClient } = gcp;
+          // Constructing starts a pino-pretty worker thread, so an undeclared dependency reachable
+          // only from that worker's require() graph fails here too, not only at the top-level
+          // require() above.
+          const client = new GCPKSMClient();
+          assert.strictEqual(typeof client.getCryptoClient().auth.getAccessToken, 'function');
+          // Calls into getToken(), so an undeclared dependency reachable only from inside that
+          // method (not just from the constructor) still fails this step. No ADC file exists, and
+          // METADATA_SERVER_DETECTION=none skips the metadata server, so the only valid outcome is
+          // the no-credentials error.
+          client.getToken()
+            .then(() => { throw new Error('getToken() unexpectedly resolved with no ADC available'); })
+            .catch((err) => {
+              assert.match(err.message, /Could not load the default credentials/);
+              console.log('SMOKE_OK');
+            });
+          // No process.exit() here: the process ends once the pino-pretty worker has loaded or
+          // failed, so a failure inside the worker still fails this step. The watchdog only turns
+          // a hang into a failure; unref() keeps it from holding the process open.
+          setTimeout(() => { console.error('SMOKE_TIMEOUT'); process.exit(1); }, 60000).unref();
+          EOF
+          env -u GOOGLE_APPLICATION_CREDENTIALS METADATA_SERVER_DETECTION=none GOOGLE_CLOUD_PROJECT=smoke-project \
+            corepack yarn node smoke.cjs 2>&1 | tee smoke.out
+          grep -q '^SMOKE_OK$' smoke.out
