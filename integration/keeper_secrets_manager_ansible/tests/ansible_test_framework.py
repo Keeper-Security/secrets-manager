@@ -20,11 +20,17 @@ class AnsibleTestFramework:
         self.plugin_base_dir = os.path.join(os.path.dirname(keeper_secrets_manager_ansible.plugins.__file__))
         self.playbook = playbook
         self.connection = kwargs.get("connection", "local")
+        self.check_mode = kwargs.get("check_mode", False)
+        self.diff = kwargs.get("diff", False)
         self.extra_vars = kwargs.get("vars", [])
         if self.extra_vars is None:
             self.extra_vars = []
 
         self.mock_responses = kwargs.get("mock_responses", [])
+
+        # A file that gets one JSON line for each SDK client that a plugin asks for. get_client is mocked, so this
+        # is the only way to see the config storage and the post function that the plugin chose.
+        self.client_log = kwargs.get("client_log")
 
     def ansible_config(self):
 
@@ -65,6 +71,20 @@ enable_plugins=ini,host_list,script
 
             with patch('keeper_secrets_manager_ansible.KeeperAnsible.get_client') as mock_client:
                 mock_client.return_value = secrets_manager
+                if self.client_log is not None:
+                    client_log = self.client_log
+
+                    # Ansible forks a worker for each task, so the worker writes the arguments to a file.
+                    def record_client(**client_kwargs):
+                        post_function = client_kwargs.get("custom_post_function")
+                        with open(client_log, "a") as fh:
+                            fh.write(json.dumps({
+                                "config": type(client_kwargs.get("config")).__name__,
+                                "custom_post_function": getattr(post_function, "__qualname__", None),
+                            }) + "\n")
+                        return secrets_manager
+
+                    mock_client.side_effect = record_client
 
                 self.generate_ansible_config()
 
@@ -79,6 +99,11 @@ enable_plugins=ini,host_list,script
                     "-i",
                     os.path.join(self.base_dir, "inventory", "all")
                 ]
+
+                if self.check_mode:
+                    args.append("--check")
+                if self.diff:
+                    args.append("--diff")
 
                 if len(self.extra_vars) > 0:
                     for key in self.extra_vars:
@@ -183,5 +208,4 @@ enable_plugins=ini,host_list,script
             sys.stderr = old_stderr
 
         return results, stdout_text, stderr_text
-
 

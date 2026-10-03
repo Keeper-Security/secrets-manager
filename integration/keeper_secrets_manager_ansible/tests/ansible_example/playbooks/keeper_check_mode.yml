@@ -1,0 +1,60 @@
+---
+- name: Keeper check mode and change reporting
+  hosts: my_systems
+  gather_facts: no
+
+  tasks:
+    - name: Create a record
+      keeper_create:
+        shared_folder_uid: SHARED_FOLDER_UID
+        subfolder_uid: SUBFOLDER_UID
+        record_type: login
+        title: Check Mode New Record
+        fields:
+          - type: login
+            value: test-user
+      register: created_record
+
+    - name: Set a record field
+      keeper_set:
+        uid: "{{ record_uid }}"
+        field: password
+        value: NEW_PASSWORD
+      register: updated_record
+
+    - name: Create a folder
+      keeper_create_folder:
+        shared_folder_uid: SHARED_FOLDER_UID
+        subfolder_uid: SUBFOLDER_UID
+        folder_name: New Folder
+      register: created_folder
+
+    - name: Remove a record
+      keeper_remove:
+        uid: "{{ record_uid }}"
+      register: removed_record
+
+    - name: Initialize a one-time token
+      keeper_init:
+        token: US:UNUSED_TOKEN
+        filename: "{{ config_filename }}"
+      register: initialized
+
+    - name: Clean up the cache
+      keeper_cleanup:
+      register: cleaned
+
+    - name: Verify change reporting
+      ansible.builtin.assert:
+        that:
+          - created_record.changed
+          - created_record.record_uid == (none if expect_check_mode else "NEW_RECORD_UID")
+          - updated_record.changed
+          - updated_record.updated == (not expect_check_mode)
+          - created_folder.changed == (not expect_existing_folder)
+          - created_folder.folder_uid == ("EXISTING_FOLDER_UID" if expect_existing_folder else
+            (none if expect_check_mode else "NEW_FOLDER_UID"))
+          - removed_record.changed
+          - ((initialized is skipped) if expect_check_mode else initialized.changed)
+          - cleaned.changed == expect_cleanup_changed
+          - cleaned.removed_ksm_cache == (expect_cleanup_changed and not expect_check_mode)

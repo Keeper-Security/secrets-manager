@@ -27,6 +27,12 @@ description:
     - Currently cannot add files to the record.
 author:
     - John Walstra
+attributes:
+  check_mode:
+    support: full
+    description: Validates the record and field update without saving the record.
+notes:
+  - Check mode requires an initialized Keeper configuration.
 options:
   uid:
     description:
@@ -42,6 +48,8 @@ options:
   cache:
     description:
     - The cache registered by keeper_get_records_cache
+    - Accepted for compatibility. keeper_set reads the record from the vault, not from the cache, so an outdated
+      cache cannot hide a needed save or bring back old values of other fields.
     - Using keeper_set will not update the cache. Use the keeper_get_records_cache action again to get a new cache.
     type: str
     required: no
@@ -72,18 +80,22 @@ options:
     version_added: '1.3.0'
   value:
     description:
-    - The Keeper notation to access record that contains the value.
-    - Use notation when you want a specific value.
-    -
-    - See https://docs.keeper.io/secrets-manager/secrets-manager/about/keeper-notation for more information/
+    - The new value of the field. A field with more than one value takes a list.
     type: str
     required: no
     version_added: '1.0.1'  
 '''
 
 RETURN = r'''
+changed:
+  description: Whether the record was saved, or would be saved in check mode. False when the record
+    already has the value.
+  returned: success
+  type: bool
+  sample: true
 updated:
-  description: The record was updated.
+  description: Whether the record was saved. False in check mode, and when the record already has the
+    value.
   returned: success
   type: bool
   sample: True
@@ -114,12 +126,15 @@ class ActionModule(ActionBase):
         field_type_enum, field_key = keeper.get_field_type_enum_and_key(args=self._task.args)
 
         value = self._task.args.get("value")
+        check_mode = bool(self._task.check_mode)
 
         try:
-            keeper.set_value(uid=uid, title=title, field_type=field_type_enum, key=field_key, value=value, cache=cache)
+            changed = keeper.set_value(uid=uid, title=title, field_type=field_type_enum, key=field_key, value=value,
+                                       cache=cache, check_mode=check_mode)
         except Exception as err:
             raise AnsibleError("Cannot update record: {}".format(str(err)))
 
         return {
-            "updated": True
+            "changed": changed,
+            "updated": changed and not check_mode
         }

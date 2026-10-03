@@ -118,3 +118,108 @@ class KeeperCopyTest(unittest.TestCase):
             # Verify the output contains the notes
             self.assertRegex(out, r'NOTES: These are my secret notes',
                            "Output should contain the notes content")
+
+
+class KeeperCopyDiffTest(unittest.TestCase):
+
+    def test_keeper_copy_diff_does_not_show_the_secret(self):
+        import sys
+        # keeper_redact_test imports the callback. Then KeeperAnsible adds the _secrets key for it, but these runs
+        # use the default callback, which prints the key.
+        redact_modules = {name: module for name, module in sys.modules.items() if name.endswith(".keeper_redact")}
+        for name in redact_modules:
+            sys.modules.pop(name)
+        self.addCleanup(sys.modules.update, redact_modules)
+        for check_mode in (True, False):
+            with self.subTest(check_mode=check_mode), tempfile.TemporaryDirectory() as temp_dir, \
+                    patch('requests.get', side_effect=mock_download_get):
+                result, out, err = AnsibleTestFramework(
+                    playbook="keeper_copy.yml",
+                    check_mode=check_mode,
+                    diff=True,
+                    vars={
+                        "tmp_dir": temp_dir,
+                        "password_uid": mock_record_1.uid,
+                        "password_title": mock_record_1.title,
+                        "file_uid": mock_record_1.uid,
+                        "file_name": "Nailing It"
+                    },
+                    mock_responses=[all_respones]
+                ).run()
+                self.assertEqual(result["failed"], 0, out + err)
+                self.assertEqual(result["ok"], 4, out + err)
+                for secret in ("MYPASSWORD_2", "MYLOGIN_1"):
+                    self.assertNotIn(secret, out + err)
+                self.assertIn("the Keeper secret after the change is not shown", out + err)
+
+    def test_hide_diff_content_keeps_the_headers_and_an_empty_side(self):
+        import sys
+        from keeper_secrets_manager_ansible.plugins.action.keeper_copy import ActionModule
+        self.addCleanup(lambda: [sys.modules.pop(m, None) for m in list(sys.modules) if m.startswith("ansible")])
+        result = {"diff": [
+            {"before": "", "after": "SECRET", "before_header": "/tmp/a", "after_header": "dynamically generated"},
+            {"before": "OLD SECRET", "after": "NEW SECRET"},
+            {"dst_binary": 1, "after": "SECRET"},
+            "not a dictionary",
+        ]}
+        ActionModule._hide_diff_content(result)
+        hidden_after = "<the Keeper secret after the change is not shown>\n"
+        self.assertEqual(result["diff"][0], {"before": "", "after": hidden_after,
+                                             "before_header": "/tmp/a", "after_header": "dynamically generated"})
+        self.assertEqual(result["diff"][1], {"before": "<the Keeper secret before the change is not shown>\n",
+                                             "after": "<the Keeper secret after the change is not shown>\n"})
+        self.assertEqual(result["diff"][2]["after"], "<the Keeper secret after the change is not shown>\n")
+        single = {"diff": {"before": "OLD", "after": "NEW"}}
+        ActionModule._hide_diff_content(single)
+        self.assertNotIn("NEW", json_text(single))
+        ActionModule._hide_diff_content({"msg": "no diff"})
+        ActionModule._hide_diff_content("not a dictionary")
+
+
+def json_text(value):
+    import json
+    return json.dumps(value)
+
+
+class KeeperCopyNoLogTest(unittest.TestCase):
+
+    def test_keeper_copy_with_no_log_runs_in_check_mode(self):
+        import yaml
+        playbook = os.path.join(os.path.dirname(__file__), "ansible_example", "playbooks", "keeper_copy.yml")
+        with open(playbook) as fh:
+            plays = yaml.safe_load(fh)
+        for task in plays[0]["tasks"]:
+            task["no_log"] = True
+        for check_mode in (True, False):
+            with self.subTest(check_mode=check_mode), tempfile.TemporaryDirectory() as temp_dir, \
+                    patch('requests.get', side_effect=mock_download_get):
+                destination = os.path.join(temp_dir, "no-log.yml")
+                with open(destination, "w") as fh:
+                    yaml.safe_dump(plays, fh)
+                result, out, err = AnsibleTestFramework(
+                    playbook=destination,
+                    check_mode=check_mode,
+                    vars={
+                        "tmp_dir": temp_dir,
+                        "password_uid": mock_record_1.uid,
+                        "password_title": mock_record_1.title,
+                        "file_uid": mock_record_1.uid,
+                        "file_name": "Nailing It"
+                    },
+                    mock_responses=[all_respones]
+                ).run()
+                self.assertEqual(result["failed"], 0, out + err)
+                self.assertEqual(result["ok"], 4, out + err)
+
+    def test_remove_content_from_invocation_accepts_a_censored_invocation(self):
+        import sys
+        from keeper_secrets_manager_ansible.plugins.action.keeper_copy import ActionModule
+        self.addCleanup(lambda: [sys.modules.pop(m, None) for m in list(sys.modules) if m.startswith("ansible")])
+        for invocation in ("CENSORED: no_log is set", None, {"module_args": None}, {"module_args": "text"}):
+            with self.subTest(invocation=invocation):
+                result = {"invocation": invocation}
+                ActionModule._remove_content_from_invocation(result)
+                self.assertEqual(result, {"invocation": invocation})
+        result = {"invocation": {"module_args": {"content": "SECRET", "src": "/tmp/x", "dest": "/tmp/y"}}}
+        ActionModule._remove_content_from_invocation(result)
+        self.assertEqual(result, {"invocation": {"module_args": {"dest": "/tmp/y"}}})

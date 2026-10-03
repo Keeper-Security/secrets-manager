@@ -37,7 +37,8 @@ description:
     - With no folder_name and no folder_path, the module gets the start folder itself. That is also the
       result when a template leaves the name out, for example with default(omit). Keep this in mind before
       you give the result to keeper_update_folder or keeper_delete_folder.
-    - This module does not change the vault, so it runs normally in check mode.
+    - This module does not change the vault. It runs in check mode with an initialized Keeper
+      configuration.
     - The module checks its options. An unknown or misspelled option, an option set to null, or a value
       of the wrong type fails the task. There is one exception. An option that a module_defaults entry
       for an action group of this collection sets, and that this module does not have, is ignored.

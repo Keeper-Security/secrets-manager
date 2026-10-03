@@ -29,6 +29,10 @@ description:
 attributes:
   check_mode:
     support: full
+    description: Looks up the record without sending a delete request. Server permissions are checked
+      only in a real run.
+notes:
+  - Check mode requires an initialized Keeper configuration.
 author:
     - John Walstra
 options:
