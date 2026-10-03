@@ -98,7 +98,7 @@ def _not_empty_msg(label, records, subfolders):
 
 
 def _unsupported_before(option):
-    # The text before the list of supported names. That list is in set order on ansible-core 2.12.
+    # The text before the list of supported names. The tests compare that list as a set, not in order.
     return "Unsupported parameters for (keeper_delete_folder) module: {}. ".format(option)
 
 

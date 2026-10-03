@@ -11,7 +11,7 @@ with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
 install_requires = [
     'keeper-secrets-manager-core>=17.3.0',
     'keeper-secrets-manager-helper>=1.1.2',
-    'ansible-core>=2.12.0'  # Use ansible-core instead of ansible to avoid community collections
+    'ansible-core>=2.15.13,!=2.17.*'  # Use ansible-core instead of ansible to avoid community collections
 ]
 
 setup(
@@ -28,7 +28,7 @@ setup(
     packages=find_packages(exclude=["tests", "tests.*"]),
     zip_safe=False,
     install_requires=install_requires,
-    python_requires='>=3.9',
+    python_requires='>=3.9.2',
     project_urls={
         "Bug Tracker": "https://github.com/Keeper-Security/secrets-manager/issues",
         "Documentation": "https://app.gitbook.com/@keeper-security/s/secrets-manager/secrets-manager/"

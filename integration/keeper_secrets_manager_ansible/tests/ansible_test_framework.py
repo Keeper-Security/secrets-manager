@@ -108,14 +108,7 @@ enable_plugins=ini,host_list,script
                     C.DEFAULT_ACTION_PLUGIN_PATH = os.path.join(self.plugin_base_dir, "action")
                     C.DEFAULT_LOOKUP_PLUGIN_PATH = os.path.join(self.plugin_base_dir, "lookup")
 
-                    # Are we running 3.8 or greater?
-                    if sys.version_info[:2] >= (3, 8):
-                        playbook = import_module("ansible.cli.playbook")
-                    else:
-                        print("USING Python 3.7/ANSIBLE 4.0 HACK")
-                        # Python 3.7 will use Ansible 4, which CLI does not have a main() method. So we need
-                        # to make a fake ansible-playbook which does.
-                        playbook = import_module("tests.playbook_python_3_7")
+                    playbook = import_module("ansible.cli.playbook")
 
                     redirected_output = StringIO()
                     redirected_error = StringIO()

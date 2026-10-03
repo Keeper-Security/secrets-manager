@@ -81,15 +81,6 @@ def _current_ansible_objects(warnings_path):
         yield
 
 
-def _worker_display_reaches_the_output():
-    """
-    ansible-core 2.13 and later send the display of a worker process to the main process, which prints it. ansible-core
-    2.12 writes it straight to the worker's own stdout and stderr. In a terminal it is shown the same way, but the test
-    framework captures only the main process, so there a warning of an action plugin is not in the captured output.
-    """
-    return hasattr(importlib.import_module("ansible.utils.display").Display, "set_queue")
-
-
 class _PlaybookTestCase(unittest.TestCase):
 
     @classmethod
@@ -398,10 +389,10 @@ class KeeperUpdateFolderPlaybookTest(_PlaybookTestCase):
                 '"Prod\\nEU" (NEWLINE_SIBLING_UID).' + after,
             ]
             self.assertEqual(self.warnings, expected, "each rename must show exactly its own warning")
-            if _worker_display_reaches_the_output():
-                output = _normalized(out + err)
-                for warning in expected:
-                    self.assertIn("[WARNING]: " + warning, output)
+            # The main process prints the display of a worker process, so the captured output has the warnings.
+            output = _normalized(out + err)
+            for warning in expected:
+                self.assertIn("[WARNING]: " + warning, output)
         finally:
             server.cleanup()
 
