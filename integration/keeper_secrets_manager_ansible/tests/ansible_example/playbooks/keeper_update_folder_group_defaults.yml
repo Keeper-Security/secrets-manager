@@ -13,8 +13,8 @@
       cache: "not-a-real-record-cache"
 
   vars:
-    # ansible-core 2.12 lists the supported parameters in set order, later versions sort them. So the checks compare
-    # the text before the list exactly, and the names in the list as a set.
+    # The checks compare the text before the list of supported parameters exactly, and the names in the list as a
+    # set, so they do not depend on the order of the names.
     supported: "Supported parameters include: "
 
   tasks:

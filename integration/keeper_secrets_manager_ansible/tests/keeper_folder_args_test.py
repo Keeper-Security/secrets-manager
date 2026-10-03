@@ -1,11 +1,8 @@
-import ast
 import datetime
-import inspect
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import keeper_secrets_manager_ansible
 from keeper_secrets_manager_ansible import KeeperAnsible, KeeperArgumentError
 
 SPEC = dict(
@@ -23,8 +20,8 @@ def validate(args, **kwargs):
 
 
 def split_supported(message):
-    # ansible-core 2.12 lists the supported parameters in set order, and newer versions sort them. Compare the text
-    # before the list exactly, and the list as a set.
+    # Compare the text before the list of supported parameters exactly, and the list as a set, so the test does not
+    # depend on the order of the names. ansible-core releases before 2.15 did not always sort them.
     head, _, names = message.partition(" Supported parameters include: ")
     return head, set(names.rstrip(".").split(", "))
 
@@ -290,24 +287,3 @@ class MessageHelperTest(unittest.TestCase):
         self.assertEqual(KeeperAnsible._quote("a\tb"), '"a\\tb"')
         self.assertEqual(KeeperAnsible._quote('say "hi"'), '"say \\"hi\\""')
         self.assertEqual(KeeperAnsible._quote("Données"), '"Données"')
-
-
-class LazyImportTest(unittest.TestCase):
-    """
-    ArgumentSpecValidator needs ansible-core 2.11. It must be imported only inside validate_task_args, so that
-    every module that does not validate its options keeps working on an older Ansible.
-    """
-
-    def test_arg_spec_is_not_imported_when_the_module_loads(self):
-        lazy = ("ansible.module_utils.common.arg_spec", "ansible.module_utils.errors")
-        found = []
-
-        def visit(node, in_function):
-            for child in ast.iter_child_nodes(node):
-                if isinstance(child, ast.ImportFrom) and child.module in lazy:
-                    found.append(child.module)
-                    self.assertTrue(in_function, "{} is imported when the module loads".format(child.module))
-                visit(child, in_function or isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)))
-
-        visit(ast.parse(inspect.getsource(keeper_secrets_manager_ansible)), False)
-        self.assertEqual(sorted(found), sorted(lazy), "the lazy imports were not found")

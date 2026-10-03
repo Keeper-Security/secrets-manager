@@ -1,8 +1,8 @@
 # vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
 #
 # Option errors. The module must reject them before it connects, so the fake server must receive no request.
-# ansible-core 2.12 lists the names after "Supported parameters include:" in set order, so the checks compare
-# the text before that list exactly, and the names in the list as a sorted list.
+# The checks compare the text before "Supported parameters include:" exactly, and the names in that list as a sorted
+# list, so they do not depend on the order of the names.
 ---
 - name: Keeper Get Folder Bad Options
   hosts: "my_systems"

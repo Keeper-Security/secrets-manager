@@ -13,7 +13,9 @@
 from ansible.utils.display import Display
 from ansible.errors import AnsibleError
 from ansible.module_utils.basic import missing_required_lib
+from ansible.module_utils.common.arg_spec import ArgumentSpecValidator
 from ansible.module_utils.common.text.converters import jsonify
+from ansible.module_utils.errors import UnsupportedError
 import os
 import sys
 import re
@@ -194,14 +196,9 @@ class KeeperAnsible:
         and so is a str option whose value is not a string (see _is_text). The option names in ignore are removed
         first if the module does not have them (see group_default_options).
 
-        This calls ArgumentSpecValidator directly because ActionBase.validate_argument_spec needs ansible-core
-        2.13, and this package supports ansible-core 2.12.
+        This calls ArgumentSpecValidator directly so the action plugin can handle invalid options as a normal
+        task failure, without ActionBase.validate_argument_spec raising an AnsibleActionFail.
         """
-        # Imported here, not at the top of the module: ArgumentSpecValidator needs ansible-core 2.11, and only the
-        # modules that validate their arguments must need it. Every other module keeps working on older Ansible.
-        from ansible.module_utils.common.arg_spec import ArgumentSpecValidator
-        from ansible.module_utils.errors import UnsupportedError
-
         ignore = set(ignore or [])
         # group_default_options gives names as text, so compare the text of each option name.
         task_args = {k: v for k, v in dict(task_args).items() if k in argument_spec or str(k) not in ignore}

@@ -9,6 +9,16 @@ document portal.
 
 # Installation
 
+Python 3.9.2 or later and ansible-core 2.15.13 or later, but not the 2.17 series, are required. We recommend Python
+3.12 or later with ansible-core 2.20 or later.
+
+The collection declares the ansible-core minimum in `meta/runtime.yml`. On an unsupported ansible-core, Ansible shows a
+warning and still runs the collection. To stop with an error, set `collections_on_ansible_version_mismatch = error` in
+the `[defaults]` section of `ansible.cfg`.
+
+From version 1.5.0, the Tower Execution Environment image uses Python 3.12 and ansible-core 2.16 (2.16.19 or later).
+Its managed nodes need Python 2.7, or Python 3.6 or later.
+
 ## Ansible Tower
 
 In your playbook's source repository, add `keepersecurity.keeper_secrets_manager` to the
@@ -128,6 +138,13 @@ configuration file or even a playbook.
   - Records can now be created in a subfolder within a shared folder, rather than always at the shared folder root
   - `shared_folder_uid` remains required; `subfolder_uid` is optional and additive
   - Matches the `subfolder_uid` parameter name used by `keeper_create_folder` and by the Python SDK's `CreateOptions`
+* **Breaking change**: KSM-1561: Raised the minimum ansible-core version to 2.15.13, and excluded the 2.17 series
+  - ansible-base 2.10, ansible-core versions before 2.15.13, and ansible-core 2.17.x are no longer supported
+  - Python 3.9 stays supported, from Python 3.9.2. A later release removes it
+  - The new minimum removes ansible-core releases that are affected by CVE-2023-5115, CVE-2023-5764, CVE-2024-0690, CVE-2024-8775, and CVE-2024-9902
+  - pip can no longer install the Python package with an unsupported ansible-core. For this collection, an unsupported ansible-core shows a warning, and the collection still runs
+  - The Tower Execution Environment now uses Python 3.12 and ansible-core 2.16 (2.16.19 or later), instead of Python 3.9 and ansible-core 2.15.13
+  - CI tests the 2.15, 2.16, 2.18, 2.19, 2.20, and 2.21 series, and a test checks that every file that declares the ansible-core or Python requirement agrees
 * KSM-1445: Added `keeper_create_folder` module for idempotent folder creation
   - Creates a folder directly in a shared folder, or nested inside an existing subfolder of that shared folder
   - Idempotent: if a folder with the given name already exists directly under the target parent, its UID is returned instead of creating a duplicate
