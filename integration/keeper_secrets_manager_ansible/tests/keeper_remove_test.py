@@ -5,6 +5,10 @@ from .ansible_test_framework import AnsibleTestFramework
 import tempfile
 
 
+def confirmed_delete(record_uids):
+    # A real server confirms each delete with an "ok" status. keeper_remove fails without it.
+    return [{"recordUid": uid, "responseCode": "ok"} for uid in record_uids]
+
 
 mock_record_1 = Record(title="Record 1", record_type="login")
 mock_record_1.field("password", "PASS 1")
@@ -30,7 +34,7 @@ class KeeperRemoveTest(unittest.TestCase):
     def test_keeper_remove(self):
 
         with patch(f'keeper_secrets_manager_core.SecretsManager.delete_secret') as mock_delete:
-            mock_delete.return_value = None
+            mock_delete.side_effect = confirmed_delete
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 a = AnsibleTestFramework(
@@ -45,12 +49,12 @@ class KeeperRemoveTest(unittest.TestCase):
                 result, out, err = a.run()
                 self.assertEqual(result["ok"], 2, "2 things didn't happen")
                 self.assertEqual(result["failed"], 0, "failed was not 0")
-                self.assertEqual(result["changed"], 0, "0 things didn't change")
+                self.assertEqual(result["changed"], 2, "both record deletions should report changed")
 
     def test_keeper_remove_cache(self):
 
         with patch(f'keeper_secrets_manager_core.SecretsManager.delete_secret') as mock_delete:
-            mock_delete.return_value = None
+            mock_delete.side_effect = confirmed_delete
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 a = AnsibleTestFramework(
@@ -65,4 +69,4 @@ class KeeperRemoveTest(unittest.TestCase):
                 result, out, err = a.run()
                 self.assertEqual(result["ok"], 5, "5 things didn't happen")
                 self.assertEqual(result["failed"], 0, "failed was not 0")
-                self.assertEqual(result["changed"], 0, "0 things didn't change")
+                self.assertEqual(result["changed"], 2, "both record deletions should report changed")

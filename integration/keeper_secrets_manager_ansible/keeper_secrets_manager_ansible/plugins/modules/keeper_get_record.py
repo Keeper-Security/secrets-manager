@@ -30,6 +30,8 @@ description:
     - Only alphanumeric values and underscores will be used in the key.
 author:
     - John Walstra
+notes:
+  - Check mode requires an initialized Keeper configuration.
 options:
   uid:
     description:

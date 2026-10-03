@@ -121,9 +121,70 @@ keeper_server_public_key_id: '10'
 The content of this YAML file can then be cut-n-pasted into a **group_vars**, **host_vars**, **all**
 configuration file or even a playbook.
 
+# Configuration notes
+
+The plugins read the Keeper configuration from the file in `keeper_config_file`,
+from the base64 `keeper_config` variable, or from `keeper_*` variables. They do
+not read the `KSM_CONFIG` and `KSM_CONFIG_FILE` environment variables of the
+Keeper SDK. With a configuration file, `keeper_hostname` and
+`keeper_verify_ssl_certs_skip` have no effect: the hostname comes from the file,
+and only `KSM_SKIP_VERIFY` can turn certificate verification off.
+
+# Check mode
+
+Use `ansible-playbook --check` or `check_mode: yes` on a play or task to preview
+Keeper changes. `keeper_create`, `keeper_set`, `keeper_create_folder`,
+`keeper_update_folder`, `keeper_delete_folder`, `keeper_remove`, and
+`keeper_cleanup` perform their read-only checks and report `changed` without
+changing the vault or writing or deleting local files. `keeper_init` is skipped
+because redeeming a one-time token cannot be undone.
+
+Use an initialized Keeper configuration for a dry run. Modules that read the vault
+reject a configuration that has only a one-time token before connecting.
+`keeper_password`, `keeper_info`, and `keeper_cleanup` never contact the vault, so
+they also run with a token. Configurations are loaded into memory and the DR file
+cache is not refreshed in check mode.
+
+The `keeper` lookup follows `--check` on every ansible-core version. It follows a
+play or task `check_mode` keyword only on ansible-core 2.19 and later. With an
+older ansible-core, use `--check`, or read with `keeper_get` in a dry run.
+
+New records and folders have no UID in check mode, so their `record_uid` or
+`folder_uid` is null. An existing folder still returns its UID and `changed: false`.
+Skip tasks that depend on newly created UIDs during a dry run, for example with
+`when: created_record.record_uid is not none`. A `when: not ansible_check_mode`
+condition does not see a play or task `check_mode` keyword. An empty or null
+`subfolder_uid` means no subfolder, so a later task that runs for real with a null
+UID from check mode uses the shared folder.
+
+`keeper_set` returns `updated: false` and `keeper_cleanup` returns
+`removed_ksm_cache: false` in check mode, even when they predict `changed: true`.
+`keeper_cleanup` predicts from the cache file as it is before the run. In a real
+run, the reads of earlier tasks can create the file first.
+
+A task that reports `changed: true` notifies its handlers in check mode too.
+Handlers run in check mode, but a handler with `check_mode: false` makes real
+changes.
+
 # Changes
 
 ## 1.5.0
+* KSM-1560: Prevented vault mutations and local file changes in Ansible check mode
+  - Added read-only previews for `keeper_create`, `keeper_set`, `keeper_create_folder`, `keeper_remove`, and `keeper_cleanup`
+  - `keeper_init` is skipped in check mode, preserving the one-time token and leaving configuration files untouched
+  - Initialized configurations are loaded into memory, unbound tokens are rejected, and the DR file cache is not refreshed in check mode
+  - The `keeper` lookup follows `--check`, and a play or task `check_mode` keyword on ansible-core 2.19 and later
+  - **Behavior change in this minor release**: record creation, record deletion, and token initialization now report `changed: true` in normal runs. `keeper_set` reports `changed: true` only when the value changes, and does not save a value that the record already has. It reads the record from the vault, also when a registered cache is given. Cache cleanup reports changed only when a cache file exists, and `removed_ksm_cache` is false when there is no cache file. Handlers and play recap counts now reflect these operations
+  - **Behavior change in this minor release**: `keeper_remove` fails when the Keeper server refuses or does not confirm a delete
+  - **Behavior change in this minor release**: in check mode, modules that read the vault fail with a configuration that has only a one-time token. `keeper_password`, `keeper_info`, and `keeper_cleanup` still run
+* **Security**: Configuration files that the plugin writes, and the DR cache file, are created with mode 0600. Before, a configuration file that `keeper_init` or the Ansible variables created, and the DR cache with keeper-secrets-manager-core 17.3.0, got the umask mode (often 0644), so other local users could read the keys
+* **Security**: `keeper_copy` with `--diff` shows a placeholder instead of the old and the new file content. Before, the diff and the task result showed the secret, also with the `keeper_redact` callback
+* **Security**: `keeper_verify_ssl_certs_skip` and `keeper_force_config_write` read text values correctly. Before, `-e keeper_verify_ssl_certs_skip=false` or an INI inventory gave the text "false", which turned TLS certificate verification off, and `keeper_force_config_write=false` wrote the keys to a file. A value that is not a boolean now fails the task, and a warning shows when certificate verification is off
+* **Fix**: `keeper_copy` with `no_log: true` failed in check mode on ansible-core 2.15 to 2.20, because those versions replace the invocation of the task result with a text
+* **Fix**: A `keeper` lookup in a task name runs in the controller, and the `KSM_CACHE_DIR` value that it set reached every later task. So later tasks wrote the DR cache to the directory of the first task, not to their own `keeper_cache_dir`. The plugin now replaces or removes a value that it set for an earlier task. A `KSM_CACHE_DIR` that the user sets still wins over `keeper_cache_dir`
+* **Fix**: When a request to the Keeper server fails and the DR cache replaces it, a warning shows the type of the error, the cache file, and the time of the cached response. Before, the old data was used with no message, also for a TLS certificate error. Without a cache file, the error names both the failed request and the cache file. A failed save of the cache no longer replaces a fresh response with the old cached one
+* **Fix**: The documentation of `keeper_get`, `keeper_cache_records`, and the `keeper` lookup renders in ansible-doc, and the module documentation of `keeper_copy`, `keeper_create`, `keeper_get`, and `keeper_set` lists every option. The error messages of `keeper_remove`, the `keeper` lookup, and the field check name the right plugin. `keeper_init` fails with a clear message for a token with more than two parts, for example an IL5 token
+* **Fix**: `keeper_remove` and `keeper_set` read the record from the vault, never from the DR cache. A cached copy can be older than the vault, so a title could select a record that was renamed, and the delete or the save went to that record. During an outage, these tasks now fail, as their delete or save would
 * KSM-845: Added `subfolder_uid` parameter to `keeper_create` for subfolder targeting
   - Records can now be created in a subfolder within a shared folder, rather than always at the shared folder root
   - `shared_folder_uid` remains required; `subfolder_uid` is optional and additive

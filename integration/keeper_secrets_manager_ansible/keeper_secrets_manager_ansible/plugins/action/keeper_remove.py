@@ -25,6 +25,14 @@ version_added: "1.2.1"
 
 description:
     - Remove a secret from the vault.
+    - A delete that the Keeper server refuses or does not confirm fails the task.
+attributes:
+  check_mode:
+    support: full
+    description: Looks up the record without sending a delete request. Server permissions are checked
+      only in a real run.
+notes:
+  - Check mode requires an initialized Keeper configuration.
 author:
     - John Walstra
 options:
@@ -59,13 +67,12 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-existed:
-  description: Indicates that the record did exist in the Vault.
+changed:
+  description: Whether the Keeper server confirmed the delete, or whether a delete would be sent in check
+    mode.
   returned: success
-  sample: |
-    {
-      "existed": True
-    },
+  type: bool
+  sample: true
 '''
 
 display = Display()
@@ -86,10 +93,13 @@ class ActionModule(ActionBase):
         uid = self._task.args.get("uid")
         title = self._task.args.pop("title", None)
         if uid is None and title is None:
-            raise AnsibleError("The uid and title are blank. keeper_get requires one to be set.")
+            raise AnsibleError("The uid and title are blank. keeper_remove requires one to be set.")
         if uid is not None and title is not None:
-            raise AnsibleError("The uid and title are both set. keeper_get requires one to be set, but not both.")
+            raise AnsibleError("The uid and title are both set. keeper_remove requires one to be set, but not both.")
 
-        keeper.remove_record(uids=uid, titles=title, cache=cache)
+        try:
+            keeper.remove_record(uids=uid, titles=title, cache=cache, check_mode=bool(self._task.check_mode))
+        except Exception as err:
+            raise AnsibleError("Could not remove record: {}".format(err))
 
-        return {}
+        return {"changed": True}

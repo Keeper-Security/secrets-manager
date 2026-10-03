@@ -29,9 +29,11 @@ description:
     - The encrypted serialization is only valid within the running playbook.
     - To store the encrypted serialized cache, use 'register' within the Task step.
     - For action that accept a cache, template the registered value into the cache variables.
-    - To hide the cache string, set 'no_log: True' in the variables.
+    - "To hide the cache string, set 'no_log: True' in the variables."
 author:
     - John Walstra
+notes:
+  - Check mode requires an initialized Keeper configuration.
 options:
   uids:
     description:

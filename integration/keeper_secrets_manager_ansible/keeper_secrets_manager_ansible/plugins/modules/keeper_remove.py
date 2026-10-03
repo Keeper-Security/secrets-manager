@@ -21,6 +21,14 @@ version_added: "1.2.1"
 
 description:
     - Remove a secret from the vault.
+    - A delete that the Keeper server refuses or does not confirm fails the task.
+attributes:
+  check_mode:
+    support: full
+    description: Looks up the record without sending a delete request. Server permissions are checked
+      only in a real run.
+notes:
+  - Check mode requires an initialized Keeper configuration.
 author:
     - John Walstra
 options:
@@ -55,11 +63,10 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-existed:
-  description: Indicates that the record did exist in the Vault.
+changed:
+  description: Whether the Keeper server confirmed the delete, or whether a delete would be sent in check
+    mode.
   returned: success
-  sample: |
-    {
-      "existed": True
-    },
+  type: bool
+  sample: true
 '''
