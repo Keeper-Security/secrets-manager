@@ -28,6 +28,8 @@ description:
     - If value is not a literal value, the structure will be retrieved.
 author:
     - John Walstra
+notes:
+  - Check mode requires an initialized Keeper configuration.
 options:
   uid:
     description:
@@ -102,7 +104,6 @@ options:
     - The Keeper notation to access record that contains the value.
     - Use notation when you want a specific value.
     - The 'cache' setting currently does not work with notation.
-    - 
     - See https://docs.keeper.io/secrets-manager/secrets-manager/about/keeper-notation for more information/
     type: str
     required: no

@@ -18,6 +18,8 @@ import os
 import sys
 import re
 import json
+import copy
+import contextlib
 import random
 from enum import Enum
 import traceback
@@ -34,9 +36,11 @@ except ImportError:
     KSM_SDK_ERR = traceback.format_exc()
 else:
     from keeper_secrets_manager_core import SecretsManager
-    from keeper_secrets_manager_core.core import KSMCache, CreateOptions
+    from keeper_secrets_manager_core.core import KSMCache, CreateOptions, KSMHttpResponse
+    from keeper_secrets_manager_core.configkeys import ConfigKeys
     from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
-    from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password, strtobool
+    from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password, strtobool, \
+        check_config_mode
     from keeper_secrets_manager_core.dto.dtos import Record as _Record, KeeperFile as _KeeperFile
 
     # If keeper_secrets_manager_core is installed, then these will be installed. They are deps.
@@ -119,6 +123,140 @@ class KeeperAnsible:
     @staticmethod
     def get_client(**kwargs):
         return SecretsManager(**kwargs)
+
+    @staticmethod
+    def _open_private(path, mode="w"):
+        # A configuration file and the DR cache hold keys, so only their owner may read them. open() gives a new
+        # file the umask mode, often 0644, and keeps the mode of an existing file.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+        except (AttributeError, OSError):
+            pass
+        return os.fdopen(fd, mode)
+
+    @staticmethod
+    def _make_cache_file_private():
+        path = KeeperAnsible._cache_file_path()
+        try:
+            if os.path.isfile(path) and os.stat(path).st_mode & 0o077:
+                os.chmod(path, 0o600)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _save_cache(data):
+        # The cache holds the transmission key of the response. The mode of an existing file is fixed first, and
+        # the umask makes a new file private, so the file is never readable by other users. SDK 17.3.0 writes the
+        # cache with the umask mode.
+        KeeperAnsible._make_cache_file_private()
+        old_umask = os.umask(0o077)
+        try:
+            KSMCache.save_cache(data)
+        except OSError as err:
+            # The fresh response is still good. SDK 17.3.0 used the old cached response when the save failed.
+            display.warning("The DR cache {} cannot be saved: {}".format(KeeperAnsible._cache_file_path(), err))
+        finally:
+            os.umask(old_umask)
+
+    # A read that decides a delete or a save must come from the vault. A DR cache that is older than the vault can
+    # hold a record under its old title, so the change could go to a record that no longer matches.
+    _dr_cache_allowed = True
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _vault_reads_only():
+        previous = KeeperAnsible._dr_cache_allowed
+        KeeperAnsible._dr_cache_allowed = False
+        try:
+            yield
+        finally:
+            KeeperAnsible._dr_cache_allowed = previous
+
+    @staticmethod
+    def _cache_fallback(transmission_key, error):
+        # The DR cache replaces a request that fails for any reason, also for a TLS certificate error. So the
+        # warning says that the response is old, and why the request failed. Only the class of the error is in
+        # the warning, because its text can hold the address of a proxy.
+        if not KeeperAnsible._dr_cache_allowed:
+            raise ConnectionError("The request to the Keeper server failed ({}). A delete or a save needs the "
+                                  "current vault, so the DR cache is not used.".format(type(error).__name__)) from error
+        cache_file = KeeperAnsible._cache_file_path()
+        try:
+            cached_data = KSMCache.get_cached_data()
+        except OSError as read_error:
+            raise ConnectionError("The request to the Keeper server failed ({}), and the DR cache {} cannot be "
+                                  "read: {}".format(type(error).__name__, cache_file, read_error)) from error
+        try:
+            written = datetime.datetime.fromtimestamp(os.path.getmtime(cache_file)).isoformat(timespec="seconds")
+        except OSError:
+            written = "an unknown time"
+        display.warning("The request to the Keeper server failed ({}). The response from the DR cache {}, which "
+                        "was written at {}, is used instead.".format(type(error).__name__, cache_file, written))
+        display.vvv("The request to the Keeper server failed: {}".format(error))
+        transmission_key.key = cached_data[:32]
+        return KSMHttpResponse(200, cached_data[32:], None)
+
+    @staticmethod
+    def _caching_post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True,
+                               proxy_url=None):
+        # The SDK caching function, with a private cache file and a warning when the cache replaces a request.
+        try:
+            response = SecretsManager.post_function(
+                url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs, proxy_url
+            )
+        except Exception as err:
+            return KeeperAnsible._cache_fallback(transmission_key, err)
+        if response.status_code == 200:
+            KeeperAnsible._save_cache(transmission_key.key + response.data)
+        return response
+
+    @staticmethod
+    def _check_mode_caching_post_function(url, transmission_key, encrypted_payload_and_signature,
+                                         verify_ssl_certs=True, proxy_url=None):
+        # Keep the DR cache fallback, but never replace the cache after a successful read.
+        try:
+            return SecretsManager.post_function(
+                url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs, proxy_url
+            )
+        except Exception as err:
+            return KeeperAnsible._cache_fallback(transmission_key, err)
+
+    # The KSM_CACHE_DIR value that this plugin set, or None. A lookup in a task name runs in the controller, so a value
+    # that it sets reaches every later worker. A value that the plugin set is not a user setting, so a later task
+    # replaces it with its own keeper_cache_dir, or removes it.
+    _plugin_cache_dir = None
+
+    @staticmethod
+    def _set_cache_dir(cache_dir):
+        # SDK 17.3.0 reads the cache directory only from KSM_CACHE_DIR, so the plugin sets the variable. A value
+        # that the user set wins over keeper_cache_dir.
+        current = os.environ.get(KeeperAnsible.ENV_CACHE_DIR)
+        set_by_plugin = current is not None and current == KeeperAnsible._plugin_cache_dir
+        if current is not None and not set_by_plugin:
+            return
+        if cache_dir is not None:
+            os.environ[KeeperAnsible.ENV_CACHE_DIR] = cache_dir
+            KeeperAnsible._plugin_cache_dir = cache_dir
+            # Update the cache file path after setting the environment variable
+            KSMCache.kms_cache_file_name = os.path.join(cache_dir, 'ksm_cache.bin')
+        elif set_by_plugin:
+            del os.environ[KeeperAnsible.ENV_CACHE_DIR]
+            KeeperAnsible._plugin_cache_dir = None
+            # SDK 17.4.0 and later read KSM_CACHE_DIR again only when the path is their default object.
+            KSMCache.kms_cache_file_name = getattr(KSMCache, "_default_cache_file_name", "ksm_cache.bin")
+
+    @staticmethod
+    def _bool_var(task_vars, key):
+        # A value from -e key=value or an INI inventory is text, and bool("false") is True. So the text is
+        # converted, and a value that is not a boolean fails instead of turning the option on.
+        value = task_vars.get(key)
+        if value is None:
+            return False
+        try:
+            return bool(strtobool(str(value)))
+        except ValueError:
+            raise ValueError("The {} variable must be true or false, not {!r}.".format(key, value))
 
     @staticmethod
     def keeper_key(key):
@@ -277,13 +415,17 @@ class KeeperAnsible:
                     names.update(str(k) for k in values)
         return names
 
-    def __init__(self, task_vars, action_module=None, task_attributes=None, force_in_memory=False):
+    def __init__(self, task_vars, action_module=None, task_attributes=None, force_in_memory=False, check_mode=None,
+                 requires_vault=True):
 
         """
         Build the config used by the Keeper Python SDK
 
         The configuration is mainly read from a JSON file.
 
+        An action plugin gets check mode from its task. A lookup has no task, so it passes check_mode. A plugin
+        that never sends a request to the vault sets requires_vault to False: in check mode, it can then run
+        with a configuration that has only a one-time token, because nothing can redeem the token.
         """
 
         if KSM_SDK_ERR is not None:
@@ -294,6 +436,10 @@ class KeeperAnsible:
 
         # This is an instance of ActionModule
         self.action_module = action_module
+        if check_mode is None:
+            check_mode = getattr(getattr(action_module, "_task", None), "check_mode", False)
+        self.check_mode = bool(check_mode)
+        self.requires_vault = requires_vault
 
         # These are the attributes of the task or kwargs of a lookup action
         if task_attributes is None:
@@ -338,7 +484,7 @@ class KeeperAnsible:
             keeper_ssl_verify_skip = KeeperAnsible.keeper_key(KeeperAnsible.KEY_SSL_VERIFY_SKIP)
 
             # By default, we don't want to skip verify the certs.
-            ssl_certs_skip = task_vars.get(keeper_ssl_verify_skip, False)
+            ssl_certs_skip = KeeperAnsible._bool_var(task_vars, keeper_ssl_verify_skip)
 
             # If the config location is defined, or a file exists at the default location.
             self.config_file = self._template_value(task_vars.get(keeper_config_file_key))
@@ -349,15 +495,14 @@ class KeeperAnsible:
             use_cache_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_USE_CACHE)
             custom_post_function = None
             if bool(strtobool(str(task_vars.get(use_cache_key, "False")))) is True:
-                custom_post_function = KSMCache.caching_post_function
+                # A successful read through the DR cache also writes a file.
+                custom_post_function = (KeeperAnsible._check_mode_caching_post_function if self.check_mode
+                                        else KeeperAnsible._caching_post_function)
 
                 # We are using the cache, what directory should the cache file be stored in.
                 cache_dir_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CACHE_DIR)
                 cache_dir_val = self._template_value(task_vars.get(cache_dir_key))
-                if cache_dir_val is not None and os.environ.get(KeeperAnsible.ENV_CACHE_DIR) is None:
-                    os.environ[KeeperAnsible.ENV_CACHE_DIR] = cache_dir_val
-                    # Update the cache file path after setting the environment variable
-                    KSMCache.kms_cache_file_name = os.path.join(os.environ.get(KeeperAnsible.ENV_CACHE_DIR, ""), 'ksm_cache.bin')
+                KeeperAnsible._set_cache_dir(cache_dir_val)
 
                 display.vvv("Keeper Secrets Manager is using DR file cache. Cache directory is {}.".format(
                     os.environ.get(KeeperAnsible.ENV_CACHE_DIR)
@@ -369,8 +514,13 @@ class KeeperAnsible:
 
             if os.path.isfile(self.config_file) is True and force_in_memory is False:
                 display.vvv("Loading keeper config file file {}.".format(self.config_file))
+                if self.check_mode:
+                    # The SDK updates its configuration even when it only reads the vault.
+                    config_instance = InMemoryKeyValueStorage(config=self._read_config_file(self.config_file))
+                else:
+                    config_instance = FileKeyValueStorage(config_file_location=self.config_file)
                 self.client = KeeperAnsible.get_client(
-                    config=FileKeyValueStorage(config_file_location=self.config_file),
+                    config=self._check_mode_config(config_instance, "the file {}".format(self.config_file)),
                     log_level=log_level,
                     custom_post_function=custom_post_function
                 )
@@ -389,9 +539,11 @@ class KeeperAnsible:
                 base64_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CONFIG_BASE64)
                 if base64_key in task_vars:
                     config_option = task_vars.get(base64_key)
+                    config_source = "the {} variable".format(base64_key)
                     force_in_memory = True
                 # Else try to discover the config values.
                 else:
+                    config_source = "the keeper_* variables"
 
                     # Config is not a Base64 string, make a dictionary to hold config values.
                     config_option = {}
@@ -422,14 +574,14 @@ class KeeperAnsible:
                                            " Will not be able to connect to the Keeper server.")
 
                     # Does the user want to write the config to a file? Then don't use the in memory storage.
-                    if bool(task_vars.get(KeeperAnsible.keeper_key(KeeperAnsible.FORCE_CONFIG_FILE), False)) is True:
+                    if KeeperAnsible._bool_var(task_vars, KeeperAnsible.keeper_key(KeeperAnsible.FORCE_CONFIG_FILE)):
                         in_memory_storage = False
                     # If the is only 1 key, we want to force the config to write to the file.
                     elif len(config_option) == 1 and KeeperAnsible.CONFIG_CLIENT_KEY in config_option:
                         in_memory_storage = False
 
                 # Sometimes we don't want a JSON file, ever. Force the config to be in memory.
-                if force_in_memory is True:
+                if force_in_memory is True or self.check_mode:
                     in_memory_storage = True
 
                 if in_memory_storage is True:
@@ -444,22 +596,78 @@ class KeeperAnsible:
                     # Write the variables we have to a JSON file.
                     # If we are in here, config_option is a dictionary,
                     # not a Base64 string.
-                    with open(self.config_file, "w") as fh:
+                    with KeeperAnsible._open_private(self.config_file) as fh:
                         json.dump(config_option, fh, indent=4)
-                        fh.close()
 
                     config_instance = FileKeyValueStorage(config_file_location=self.config_file)
                     config_instance.read_storage()
 
                 self.client = KeeperAnsible.get_client(
-                    config=config_instance,
+                    config=self._check_mode_config(config_instance, config_source),
                     verify_ssl_certs=not ssl_certs_skip,
                     log_level=log_level,
                     custom_post_function=custom_post_function
                 )
 
+            # The SDK logs its own warning only when logging is on, and it is off by default.
+            if getattr(self.client, "verify_ssl_certs", True) is False:
+                display.warning("Keeper Secrets Manager does not verify the TLS certificate of the Keeper server, "
+                                "because keeper_verify_ssl_certs_skip or KSM_SKIP_VERIFY turns the check off.")
+
         except Exception as err:
             raise AnsibleError("Keeper Ansible error: {}".format(err))
+
+    def _check_mode_config(self, config, source):
+        # The SDK binds a configuration without an app key on its first request, and that redeems the one-time
+        # token. A plugin that sends no request cannot redeem it, so it does not need a bound configuration.
+        if not self.check_mode or not self.requires_vault:
+            return config
+        bound_keys = (
+            (ConfigKeys.KEY_CLIENT_ID, "keeper_client_id"),
+            (ConfigKeys.KEY_PRIVATE_KEY, "keeper_private_key"),
+            (ConfigKeys.KEY_APP_KEY, "keeper_app_key"),
+        )
+        missing = ["{} ({})".format(key.value, variable) for key, variable in bound_keys if not config.get(key)]
+        if missing:
+            message = "Check mode requires an initialized Keeper configuration. The configuration from {} has " \
+                      "no {}.".format(source, ", ".join(missing))
+            if config.get(ConfigKeys.KEY_CLIENT_KEY) or os.environ.get(KeeperAnsible.TOKEN_ENV):
+                message += " It has a one-time token, and check mode cannot redeem it. Run keeper_init without " \
+                           "check mode first."
+            raise ValueError(message)
+        return config
+
+    @staticmethod
+    def _read_config_file(path):
+        # The checks of FileKeyValueStorage.read_storage(), without its writes: a warning for a file that other
+        # users can read, UTF-8 text, an empty file as an empty configuration, and a JSON object.
+        check_config_mode(path)
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+        if text.strip() == "":
+            return {}
+        try:
+            config = json.loads(text)
+        except ValueError as err:
+            raise ValueError("The Keeper configuration file {} is not valid JSON: {}".format(path, err)) from err
+        if not isinstance(config, dict):
+            raise ValueError("The Keeper configuration file {} does not contain a JSON object.".format(path))
+        return config
+
+    def _resolve_check_mode(self, check_mode):
+        # A helper is in check mode when its caller asks for it, or when the task is in check mode. So a plugin
+        # that forgets the argument cannot change the vault in a check-mode run.
+        return bool(check_mode) or bool(getattr(self, "check_mode", False))
+
+    @staticmethod
+    def _cache_file_path():
+        # The path that the SDK reads, writes, and removes. SDK 17.3.0 added get_cache_file_path(), and 17.4.0
+        # and later prefer an assigned kms_cache_file_name to KSM_CACHE_DIR. Older SDK versions use
+        # kms_cache_file_name only.
+        get_cache_file_path = getattr(KSMCache, "get_cache_file_path", None)
+        if callable(get_cache_file_path):
+            return get_cache_file_path()
+        return KSMCache.kms_cache_file_name
 
     def _template_value(self, value):
         """Resolve Jinja2 expressions in a task_vars value using Ansible's templar."""
@@ -774,7 +982,7 @@ class KeeperAnsible:
 
         return records[0]
 
-    def create_record(self, new_record, shared_folder_uid, subfolder_uid=None):
+    def create_record(self, new_record, shared_folder_uid, subfolder_uid=None, check_mode=False):
         # KSM-816: use create_secret_with_options() instead of create_secret() so
         # that folder keys are fetched via the get_folders endpoint, which returns
         # all folders including empty ones. create_secret() uses get_secrets() which
@@ -784,7 +992,19 @@ class KeeperAnsible:
         # unconditionally and serializes the whole payload, so an empty string from a
         # playbook would otherwise reach the server as subFolderUid: "".
         subfolder_uid = subfolder_uid or None
+        check_mode = self._resolve_check_mode(check_mode)
         try:
+            if check_mode:
+                folders = self.client.get_folders()
+                shared_folder = next((f for f in folders if f.folder_uid == shared_folder_uid), None)
+                if shared_folder is None or not shared_folder.folder_key:
+                    raise ValueError("Unable to create record - folder key for {} not found".format(shared_folder_uid))
+                # Validate the same local payload as the SDK, without sending it or promising a new UID.
+                self.client.prepare_create_payload(
+                    self.client.config, CreateOptions(shared_folder_uid, subfolder_uid),
+                    new_record.to_json(), shared_folder.folder_key
+                )
+                return None
             record_uid = self.client.create_secret_with_options(
                 CreateOptions(shared_folder_uid, subfolder_uid), new_record
             )
@@ -793,7 +1013,7 @@ class KeeperAnsible:
 
         return record_uid
 
-    def create_folder(self, folder_name, shared_folder_uid, subfolder_uid=None):
+    def create_folder(self, folder_name, shared_folder_uid, subfolder_uid=None, check_mode=False):
         # shared_folder_uid must be the top-level shared folder UID. subfolder_uid, if given,
         # must be an existing folder nested (at any depth) under that shared folder; the new
         # folder is created inside it. If subfolder_uid is omitted, the new folder is created
@@ -804,6 +1024,7 @@ class KeeperAnsible:
         # the module idempotent by treating "a folder with this name already exists directly
         # under the target parent" as success instead of creating a duplicate.
         parent_uid = subfolder_uid if subfolder_uid else shared_folder_uid
+        check_mode = self._resolve_check_mode(check_mode)
 
         try:
             folders = self.client.get_folders()
@@ -818,6 +1039,15 @@ class KeeperAnsible:
             return existing_folder.folder_uid, False
 
         try:
+            if check_mode:
+                shared_folder = next((f for f in folders if f.folder_uid == shared_folder_uid), None)
+                if shared_folder is None or not shared_folder.folder_key:
+                    raise ValueError("Unable to create folder - folder key for {} not found".format(shared_folder_uid))
+                self.client.prepare_create_folder_payload(
+                    self.client.config, CreateOptions(shared_folder_uid, subfolder_uid),
+                    folder_name, shared_folder.folder_key
+                )
+                return None, True
             folder_uid = self.client.create_folder(
                 CreateOptions(shared_folder_uid, subfolder_uid), folder_name, folders=folders
             )
@@ -1072,6 +1302,7 @@ class KeeperAnsible:
         If the folder already has the new name, nothing is sent to the server. In check mode, nothing is sent
         to the server, and changed shows what a real run would do.
         """
+        check_mode = self._resolve_check_mode(check_mode)
         folder_uid = self._check_uid("folder_uid", folder_uid, required=True)
         if new_folder_name is None or str(new_folder_name).strip() == "":
             raise KeeperFolderError("The new_folder_name is blank.")
@@ -1142,6 +1373,7 @@ class KeeperAnsible:
         subfolders is an error, unless force is True. Only the value True enables force, so a string such as
         "false" can never delete a folder's contents. In check mode, nothing is sent to the server.
         """
+        check_mode = self._resolve_check_mode(check_mode)
         folder_uid = self._check_uid("folder_uid", folder_uid, required=True)
         force = force is True
 
@@ -1219,16 +1451,36 @@ class KeeperAnsible:
 
         return result
 
-    def remove_record(self, uids=None, titles=None, cache=None):
+    def remove_record(self, uids=None, titles=None, cache=None, check_mode=False):
 
-        records = self.get_records(cache=cache, uids=uids, titles=titles)
+        with KeeperAnsible._vault_reads_only():
+            records = self.get_records(cache=cache, uids=uids, titles=titles)
         if len(records) > 1 and titles is not None:
             raise AnsibleError("Found multiple records for the Title. To fix, make sure records "
                                "have a unique Title or use a UID.")
 
-        display.vvvvvv(f"removing record UID {records[0].uid}")
+        record = records[0]
+        if self._resolve_check_mode(check_mode):
+            return
 
-        self.client.delete_secret([records[0].uid])
+        display.vvvvvv(f"removing record UID {record.uid}")
+        response = self.client.delete_secret([record.uid])
+
+        # The SDK returns per-record statuses, including refusals, without raising an exception. Only an
+        # unambiguous "ok" status for the requested UID confirms that the delete succeeded.
+        statuses = [
+            status for status in (response if isinstance(response, list) else [])
+            if isinstance(status, dict) and status.get("recordUid") == record.uid
+        ]
+        label = "{} (UID {})".format(self._quote(record.title), record.uid)
+        if len(statuses) != 1:
+            raise RuntimeError("The Keeper server did not confirm the delete of record {}.".format(label))
+        status = statuses[0]
+        if status.get("responseCode") != "ok":
+            detail = status.get("responseCode") or "no response code"
+            if status.get("errorMessage"):
+                detail = "{}: {}".format(detail, status["errorMessage"])
+            raise RuntimeError("The Keeper server did not delete record {}. It returned {}.".format(label, detail))
 
     @staticmethod
     def _gather_secrets(obj):
@@ -1366,9 +1618,24 @@ class KeeperAnsible:
 
         return record_dict
 
-    def set_value(self, field_type, key, value, uid=None, title=None, cache=None):
+    def set_value(self, field_type, key, value, uid=None, title=None, cache=None, check_mode=False):
+        """
+        Set a value in a record and save the record. Return True if the value changed.
 
-        record = self.get_record(uids=uid, titles=title, cache=cache)
+        The record is saved only if the value changed, so a task that sets the value that the record already has
+        reports no change. In check mode, nothing is saved. The record is always read from the vault.
+        """
+
+        # The record comes from the vault, also when a registered cache is given. A cached copy can be older than
+        # the vault: the value could then look unchanged while the vault holds another one, and a save would send
+        # old values of the other fields. keeper_remove reads the vault for the same reason. The cache option is
+        # accepted for compatibility.
+        with KeeperAnsible._vault_reads_only():
+            record = self.get_record(uids=uid, titles=title)
+
+        # The setters below change record.dict, and save() sends the JSON that is made from it. So the same
+        # dictionary after the change means that a save would send the same data.
+        before = copy.deepcopy(record.dict)
 
         if field_type == KeeperFieldType.FIELD:
             record.field(key, value)
@@ -1382,7 +1649,10 @@ class KeeperAnsible:
         else:
             raise AnsibleError("Cannot set_value. The field type ENUM of {} is invalid.".format(field_type))
 
-        self.client.save(record)
+        changed = record.dict != before
+        if changed and not self._resolve_check_mode(check_mode):
+            self.client.save(record)
+        return changed
 
     @staticmethod
     def get_field_type_enum_and_key(args):
@@ -1409,7 +1679,7 @@ class KeeperAnsible:
                 field_key = None if key == "notes" else args.get(key)
 
         if len(field_type) == 0:
-            raise AnsibleError("Either field, custom_field, file, or notes needs to set to a non-blank value for keeper_copy.")
+            raise AnsibleError("Either field, custom_field, file, or notes needs to be set to a non-blank value.")
         if len(field_type) > 1:
             raise AnsibleError("Found multiple field types. Only one of the following key can be set: field, "
                                "custom_field, file, or notes.")
@@ -1587,13 +1857,24 @@ class KeeperAnsible:
 
         return password
 
-    def cleanup(self):
+    def cleanup(self, check_mode=False):
 
-        status = {}
+        status = {"changed": False}
 
         # If we are using the cache, remove the cache file.
         if self.using_cache is True:
-            KSMCache.remove_cache_file()
-            status["removed_ksm_cache"] = True
+            # The prediction uses the cache file as it is now. In a real run, the reads of earlier tasks can
+            # create the file first.
+            cache_exists = os.path.exists(self._cache_file_path())
+            status["changed"] = cache_exists
+            status["removed_ksm_cache"] = False
+            if cache_exists and not self._resolve_check_mode(check_mode):
+                try:
+                    KSMCache.remove_cache_file()
+                except FileNotFoundError:
+                    # Another host that shares the cache file removed it first.
+                    status["changed"] = False
+                else:
+                    status["removed_ksm_cache"] = True
 
         return status

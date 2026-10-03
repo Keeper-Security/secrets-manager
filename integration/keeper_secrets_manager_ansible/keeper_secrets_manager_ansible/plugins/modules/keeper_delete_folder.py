@@ -32,6 +32,12 @@ description:
       for an action group of this collection sets, and that this module does not have, is ignored.
     - The task result and the error messages show folder names and UIDs, also when the values come from
       Ansible Vault. To keep them out of the output and the logs, set no_log to true on the task.
+attributes:
+  check_mode:
+    support: full
+    description: Does all of its checks, but does not delete the folder.
+notes:
+  - Check mode requires an initialized Keeper configuration.
 author:
     - Keeper Security
 options:
