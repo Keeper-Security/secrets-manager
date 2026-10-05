@@ -134,6 +134,14 @@ configuration file or even a playbook.
 # Changes
 
 ## 1.5.0
+* KSM-1559: Made `keeper_remove` idempotent and corrected its task results
+  - A missing record, by UID or title, succeeds with `changed: false`
+  - A confirmed delete reports `changed: true`, `record_uid`, and `record_title`
+  - Duplicate titles fail with the matching UIDs; refused deletes fail with the server's response code and message
+  - Lookup, validation, and delete failures are task results, so `failed_when`, `ignore_errors`, and `rescue` work
+  - Check mode predicts the change without deleting records
+  - Removal reads the current vault even when a registered cache is supplied, so stale caches cannot hide duplicate titles or report false no-ops
+  - Behavior change: missing records no longer fail, and successful deletions now trigger change handlers
 * KSM-845: Added `subfolder_uid` parameter to `keeper_create` for subfolder targeting
   - Records can now be created in a subfolder within a shared folder, rather than always at the shared folder root
   - `shared_folder_uid` remains required; `subfolder_uid` is optional and additive

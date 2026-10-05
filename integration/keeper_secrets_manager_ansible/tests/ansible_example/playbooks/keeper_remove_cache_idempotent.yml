@@ -1,0 +1,47 @@
+---
+- name: Keeper Remove With An Outdated Or Partial Cache
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: Cache only the first record
+      keeper_cache_records:
+        uids:
+          - "{{ uid }}"
+      register: cached
+
+    - name: Remove the cached record
+      keeper_remove:
+        uid: "{{ uid }}"
+        cache: "{{ cached.cache }}"
+      register: first_uid
+
+    - name: Repeat removal with the now outdated cache
+      keeper_remove:
+        uid: "{{ uid }}"
+        cache: "{{ cached.cache }}"
+      register: second_uid
+
+    - name: Remove a record whose title is not in the partial cache
+      keeper_remove:
+        title: "{{ title }}"
+        cache: "{{ cached.cache }}"
+      register: first_title
+
+    - name: Repeat the title removal with the same cache
+      keeper_remove:
+        title: "{{ title }}"
+        cache: "{{ cached.cache }}"
+      register: second_title
+
+    - name: Check that removal used the current vault state
+      assert:
+        that:
+          - first_uid is changed
+          - first_uid.record_uid == uid
+          - second_uid is not changed
+          - second_uid is not failed
+          - first_title is changed
+          - first_title.record_uid == other_uid
+          - second_title is not changed
+          - second_title is not failed

@@ -33,6 +33,14 @@ For more information see our official documentation page https://docs.keeper.io/
 # Changes
 
 ## 1.5.0
+* KSM-1559: Made `keeper_remove` idempotent and corrected its task results
+  - A missing record, by UID or title, succeeds with `changed: false`
+  - A confirmed delete reports `changed: true`, `record_uid`, and `record_title`
+  - Duplicate titles fail with the matching UIDs; refused deletes fail with the server's response code and message
+  - Lookup, validation, and delete failures are task results, so `failed_when`, `ignore_errors`, and `rescue` work
+  - Check mode predicts the change without deleting records
+  - Removal reads the current vault even when a registered cache is supplied, so stale caches cannot hide duplicate titles or report false no-ops
+  - Behavior change: missing records no longer fail, and successful deletions now trigger change handlers
 * **Fix**: `keeper_create` crashed with "Could not create record: list index out of range" when a playbook supplied an unpopulated complex field (address, name, host, etc.) with `value: []`. Empty-value fields are now treated as unpopulated, matching the behavior of the underlying vault schema. Root cause in the Python helper library is tracked as KSM-1119.
 * **Breaking change**: KSM-1561: Raised the minimum ansible-core version to 2.15.13, and excluded the 2.17 series
   - ansible-base 2.10, ansible-core versions before 2.15.13, and ansible-core 2.17.x are no longer supported

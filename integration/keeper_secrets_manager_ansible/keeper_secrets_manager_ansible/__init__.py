@@ -658,7 +658,7 @@ class KeeperAnsible:
         return all_data
 
     @staticmethod
-    def _find_records(records, uids=None, titles=None):
+    def _find_records(records, uids=None, titles=None, allow_missing=False):
         if titles is None:
             titles = []
         if isinstance(titles, list) is False:
@@ -685,14 +685,14 @@ class KeeperAnsible:
                     found_records[record.uid] = record
                     uid_map.pop(uid, None)
 
-        if len(uid_map) > 0:
+        if len(uid_map) > 0 and not allow_missing:
             raise AnsibleError(f"The following record uid(s) could not be found: {list(uid_map.keys())}")
-        if len(title_map) > 0:
+        if len(title_map) > 0 and not allow_missing:
             raise AnsibleError(f"The following record title(s) could not be found: {list(title_map.keys())}")
 
         return [found_records[x] for x in found_records]
 
-    def get_records_from_vault(self, uids=None, titles=None, encrypt=False):
+    def get_records_from_vault(self, uids=None, titles=None, encrypt=False, allow_missing=False):
 
         display.vvvvvv("getting records from the Keeper Vault")
 
@@ -715,7 +715,7 @@ class KeeperAnsible:
         display.vvvvvv(f"got {len(records)} records")
 
         # Filter only the records we need. For UID only, it should be the same list.
-        records = self._find_records(records, uids=uids, titles=titles)
+        records = self._find_records(records, uids=uids, titles=titles, allow_missing=allow_missing)
 
         if encrypt is True:
             records = self.encrypt(records)
@@ -1216,16 +1216,52 @@ class KeeperAnsible:
 
         return result
 
-    def remove_record(self, uids=None, titles=None, cache=None):
+    def remove_record(self, uids=None, titles=None, cache=None, check_mode=False):
+        """
+        Remove one record, reporting whether it changed and the record's UID and title.
 
-        records = self.get_records(cache=cache, uids=uids, titles=titles)
-        if len(records) > 1 and titles is not None:
-            raise AnsibleError("Found multiple records for the Title. To fix, make sure records "
-                               "have a unique Title or use a UID.")
+        A missing record is a no-op. Check mode reports the predicted change without deleting anything.
+        The cache option remains accepted, but a delete must use the current vault: a registered cache can
+        contain a record that was already deleted, or hide another record with the same title.
+        """
+        records = self.get_records_from_vault(uids=uids, titles=titles, allow_missing=True)
+        if not records:
+            return {
+                "changed": False,
+                "msg": "The record was not found, or it is not shared to this KSM application. Nothing was deleted.",
+            }
+        if len(records) > 1:
+            raise ValueError(
+                "Found multiple records for the {} {}: {}. Use a single UID to select the record to delete.".format(
+                    "title" if titles is not None else "UID selection",
+                    self._quote(titles if titles is not None else uids),
+                    ", ".join(record.uid for record in records)))
 
-        display.vvvvvv(f"removing record UID {records[0].uid}")
+        record = records[0]
+        result = {"changed": True, "record_uid": record.uid, "record_title": record.title}
+        if check_mode:
+            return result
 
-        self.client.delete_secret([records[0].uid])
+        display.vvvvvv(f"removing record UID {record.uid}")
+        response = self.client.delete_secret([record.uid])
+
+        # The SDK returns per-record statuses, including refusals, without raising an exception. Only an
+        # unambiguous "ok" status for the requested UID confirms that the delete succeeded.
+        statuses = [
+            status for status in (response if isinstance(response, list) else [])
+            if isinstance(status, dict) and status.get("recordUid") == record.uid
+        ]
+        label = "{} (UID {})".format(self._quote(record.title), record.uid)
+        if len(statuses) != 1:
+            raise RuntimeError("The Keeper server did not confirm the delete of record {}.".format(label))
+        status = statuses[0]
+        if status.get("responseCode") != "ok":
+            detail = status.get("responseCode") or "no response code"
+            if status.get("errorMessage"):
+                detail = "{}: {}".format(detail, status["errorMessage"])
+            raise RuntimeError("The Keeper server did not delete record {}. It returned {}.".format(label, detail))
+
+        return result
 
     @staticmethod
     def _gather_secrets(obj):
