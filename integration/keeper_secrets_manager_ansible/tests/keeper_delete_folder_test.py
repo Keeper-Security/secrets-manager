@@ -75,9 +75,9 @@ def _failure(msg):
 
 
 def _assert_unsupported(test, message, *options):
-    # The message for misspelled options. On ansible-core 2.12 the names after "Supported parameters include:"
-    # are in set order, and on later versions they are sorted, so they are compared as a set. The text before
-    # them is compared exactly.
+    # The message for misspelled options. The names after "Supported parameters include:" are compared as a set, so
+    # the test does not depend on their order (ansible-core releases before 2.15 did not always sort them). The text
+    # before them is compared exactly.
     before, marker, after = message.partition("Supported parameters include: ")
     test.assertEqual(
         before, "Unsupported parameters for (keeper_delete_folder) module: {}. ".format(", ".join(sorted(options))))
@@ -870,9 +870,8 @@ class _Task(object):
 def _action(task_args, check_mode=False, module_defaults=None):
     connection = types.SimpleNamespace(_shell=types.SimpleNamespace(tmpdir="/nonexistent"))
     task = _Task(dict(task_args), check_mode, module_defaults)
-    # ActionBase.run of ansible-core 2.12 reads check_mode from the play context, later versions from the task.
-    play_context = types.SimpleNamespace(check_mode=bool(check_mode))
-    return _plugin().ActionModule(task, connection, play_context, None, None, None)
+    # ActionBase.run reads check_mode from the task, so the play context needs no attributes.
+    return _plugin().ActionModule(task, connection, types.SimpleNamespace(), None, None, None)
 
 
 def _init_with(client):

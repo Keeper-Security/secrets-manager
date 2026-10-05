@@ -142,8 +142,8 @@ def path_item_message(kind):
 def unsupported_names(message):
     """
     The unknown names and the supported names of an "Unsupported parameters" message, as two sets, or None if the
-    message has another form. ansible-core 2.12 lists the names in set order and 2.21 sorts them, so a test must
-    compare them as sets.
+    message has another form. Sets keep a test independent of the order of the names: ansible-core releases before
+    2.15 did not always sort them.
     """
     if not message.startswith(UNSUPPORTED_PREFIX) or not message.endswith(".") or SUPPORTED_SEPARATOR not in message:
         return None
@@ -1303,7 +1303,7 @@ class KeeperGetFolderArgumentSpecTest(unittest.TestCase):
     def test_validator_messages_are_joined_with_a_semicolon(self):
         """
         Two validator errors. The first one does not end with a period, so "; " follows it. The validator reports
-        the exclusive pair first on ansible-core 2.12, 2.15, and 2.21.
+        the exclusive pair first on every supported ansible-core release.
         """
         message = argument_error(self, {"folder_name": "Databases", "folder_path": "Databases", "folder_nmae": "x"})
         exclusive = "parameters are mutually exclusive: folder_name|folder_path"

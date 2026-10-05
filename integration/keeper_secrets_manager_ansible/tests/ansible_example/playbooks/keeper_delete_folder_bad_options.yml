@@ -3,8 +3,8 @@
 # Every task has a wrong option. Each one must fail on its options, before any request reaches the server.
 # force is the old name of force_deletion, and keeper_copy has a force option with another meaning, so a task that
 # writes force must fail, even on a folder that is not empty.
-# The names after "Supported parameters include:" are in set order on ansible-core 2.12, so they are compared as a
-# sorted list; the text before them is compared exactly.
+# The names after "Supported parameters include:" are compared as a sorted list, so the checks do not depend on their
+# order; the text before them is compared exactly.
 - name: Keeper Delete Folder With Wrong Options
   hosts: "my_systems"
   gather_facts: no

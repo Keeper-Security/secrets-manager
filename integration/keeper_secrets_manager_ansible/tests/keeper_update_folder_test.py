@@ -159,9 +159,8 @@ def _padded_message(shown):
 
 def _split_supported(message):
     """
-    The text of a message before the list of supported parameters, and the names in that list as a set.
-    ansible-core 2.12 gives the names in set order, and later versions sort them, so a test must not depend on
-    the order of that list.
+    The text of a message before the list of supported parameters, and the names in that list as a set. The set keeps
+    a test independent of the order of the names: ansible-core releases before 2.15 did not always sort them.
     """
     before, found, names = message.partition(SUPPORTED)
     if not found or not names.endswith("."):
