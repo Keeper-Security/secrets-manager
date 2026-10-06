@@ -21,7 +21,16 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    # The config protections branch on platform (O_NOFOLLOW and process.getuid do not exist on
+    # Windows), and this job never ran there. Windows reports but does not gate until the first
+    # runs show which existing tests assume POSIX modes. Remove this line once that is fixed.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     defaults:
       run:
         working-directory: ./sdk/javascript/packages/gcp
@@ -44,10 +53,12 @@ jobs:
         run: npm test
 
       - name: Load the packed tarball under Yarn Plug'n'Play
+        if: runner.os == 'Linux'
         # npm's flat node_modules hoists an undeclared transitive dependency (KSM-1553) to where a
         # plain require() can still find it. Yarn's default PnP linker refuses that: it only lets a
         # package require what its own package.json declares. This step is the regression guard
-        # for that defect class; npm ci + npm test above cannot catch it.
+        # for that defect class; npm ci + npm test above cannot catch it. Linux only: it checks
+        # dependency layout, not platform behavior, and the script is bash.
         run: |
           set -euo pipefail
           export COREPACK_HOME="${COREPACK_HOME:-$HOME/.cache/node/corepack}"

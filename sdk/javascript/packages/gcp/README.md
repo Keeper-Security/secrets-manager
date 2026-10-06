@@ -24,8 +24,25 @@ Keeper Secrets Manager integrates with GCP KMS in order to provide protection fo
 * **A zero-length config file is now a hard error instead of being treated as an empty config.** A zero-length file means an interrupted or truncated write, not "no config yet". `init()` and `decryptConfig()` now both throw and leave the file untouched, so you can restore it from a backup rather than have it silently re-encrypted over the top (which would have destroyed the client ID, app key, and device private key).
 * **Config file writes land at file mode `0600`** (owner read/write only), including correcting a pre-existing file's mode from an earlier SDK version.
 * **The config directory is created at mode `0700`** (owner read/write/execute only) the first time the SDK creates it. An already-existing directory is left at whatever mode it already had.
-* **On Windows, the file mode and ownership protections above do not apply.** Node.js does not apply POSIX file modes on Windows, so the `0600` and `0700` modes have no effect there. The config read does not check file ownership or mode, and `decryptConfig()` does not refuse a symbolic link. Restrict access to the config directory with Windows ACLs instead.
+* **On Windows, the file mode and ownership protections above do not apply.** Node.js does not apply POSIX file modes on Windows, so the `0600` and `0700` modes have no effect there. The config read does not check file ownership or mode. Another local user who can create files in the config directory can plant a config file where none exists yet, and the SDK uses it. A config file that already exists cannot be replaced this way. The mode of a plaintext file written by `decryptConfig(true)` does not apply either, so who can read it depends on the access list of the directory. Limit the directory as shown in [Restricting the config directory on Windows](#restricting-the-config-directory-on-windows), and set `KSM_CONFIG_FILE` to an absolute path inside it. A symbolic link at the config path is still refused on read and write. Windows has no `O_NOFOLLOW`, so the read-side refusal runs as a check just before the open, and a link swapped in between the two steps is not caught. Anyone who can replace the config file can win that race, so limiting who can write to the config directory is the control that matters.
+* **A save can fail with `EPERM` on Windows if another process, or antivirus software, holds the config file open at that moment.** The SDK replaces the config by renaming a temporary file over it, and Windows refuses that rename while the file is open elsewhere. The existing config file is left intact and the error reaches your code, so retry the save. Await `init()` once per instance before you call other methods, and do not call it twice at the same time.
 * **This package no longer imports `google-auth-library` directly**, so it now installs and loads correctly under Yarn's default Plug'n'Play linker (Yarn 3 and later, run through `yarn node` rather than a bare `node`) and under pnpm with `hoist: false` set in `pnpm-workspace.yaml`. By default, the GCP KMS client uses the Application Default Credentials (ADC), described below, unless you call `createClientFromCredentialsFile()` or `createClientUsingCredentials()`. `getToken()` now returns a valid access token on the ADC path too, which previously silently returned `undefined` and could send a `RAW_ENCRYPT_DECRYPT` key down the wrong crypto path. A `RAW_ENCRYPT_DECRYPT` key with no usable token now raises a named error instead of silently taking the wrong path, and a failed token request now raises only the error message, never the underlying auth-library error object, which can carry credential material.
+
+### Restricting the config directory on Windows
+
+A directory inherits its access list from its parent, and the `0700` mode has no effect on Windows. Under a user profile, the inherited list already limits access to that user, SYSTEM, and Administrators. Elsewhere it can be wider. For example, `BUILTIN\Users` can add files to many non-profile directories, and `Authenticated Users` can modify files under the root of `C:\`.
+
+To create a directory that only the account that runs your application, SYSTEM, and Administrators can use, run this once in an elevated PowerShell before the first `init()`. Replace the account with the one that runs your application, which may not be the account you are logged in with:
+
+```powershell
+$account = "DOMAIN\app-account"
+New-Item -ItemType Directory -Path C:\keeper\config | Out-Null
+icacls C:\keeper\config /inheritance:r /grant:r "${account}:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F"
+```
+
+`*S-1-5-18` is SYSTEM and `*S-1-5-32-544` is Administrators. The SID form works on every Windows language, where the group names are translated.
+
+Then set `KSM_CONFIG_FILE`, or the config file location you pass to the constructor, to an absolute path inside that directory, such as `C:\keeper\config\client-config.json`. Files the SDK creates there inherit the same access. Run `icacls C:\keeper\config` to check the result. It must list only the application account, SYSTEM, and Administrators.
 
 ## Setup
 

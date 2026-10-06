@@ -43,6 +43,7 @@ import { crc32c as calculate } from '@aws-crypto/crc32c';
 import { GCPKeyValueStorage } from '../src/GCPKeyValueStore';
 import { GCPKeyConfig } from '../src/GcpKeyConfig';
 import { GCPKSMClient } from '../src/GcpKmsClient';
+import { expectMode, itUnlessWindows } from './platformSupport';
 
 const KEY_RESOURCE_NAME =
     'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1';
@@ -118,7 +119,7 @@ describe('saveConfig() when the config file is deleted underneath a running proc
 
         expect(fs.existsSync(configPath)).toBe(true);
         expect(await readConfigFromDisk(storage)).toEqual({ clientId: 'ABC' });
-        expect(fileMode(configPath)).toBe(0o600);
+        expectMode(configPath, 0o600);
     });
 
     it('saveStorage() rewrites the real config, not an empty placeholder, when the file is gone', async () => {
@@ -152,7 +153,9 @@ describe('saveConfig() when the config file is deleted underneath a running proc
     // cannot be determined at all, an unchanged save must report the failure rather than resolve
     // on the assumption that the file is still there. Uses ENOTDIR rather than a chmod-based
     // EACCES so the test behaves the same for an unprivileged user and for root.
-    it('rejects instead of skipping when the config file path cannot be checked', async () => {
+    // Windows reports ENOENT, not ENOTDIR, for a path that runs through a regular file, and ENOENT
+    // is the "genuinely missing" answer this test needs to avoid.
+    itUnlessWindows('rejects instead of skipping when the config file path cannot be checked', async () => {
         const subDir = path.join(tmpDir, 'sub');
         fs.mkdirSync(subDir);
         const storage = makeStorage(path.join(subDir, 'config.json'));

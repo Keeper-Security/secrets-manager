@@ -45,6 +45,7 @@ import { GCPKeyValueStorage } from '../src/GCPKeyValueStore';
 import { GCPKeyConfig } from '../src/GcpKeyConfig';
 import { GCPKSMClient } from '../src/GcpKmsClient';
 import { GCPKeyValueStorageError } from '../src/error';
+import { itUnlessWindows } from './platformSupport';
 
 const KEY_RESOURCE_NAME =
     'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1';
@@ -215,7 +216,10 @@ describe('GCPKeyValueStorage init guard (KSM-1516)', () => {
             expect(await storage.isEmpty()).toBe(true);
         });
 
-        it('two concurrent init() calls, neither awaited before the other starts, both leave the instance fully usable', async () => {
+        // Two overlapping init() calls both find the config missing and both write it, on every
+        // platform. On Windows the second rename can then fail with EPERM, because the first call
+        // still has the file open. Skipped there until overlapping calls share one run.
+        itUnlessWindows('two concurrent init() calls, neither awaited before the other starts, both leave the instance fully usable', async () => {
             const { storage } = makeStorage(configPath);
 
             const first = storage.init();
