@@ -68,10 +68,18 @@ const symlinkRefusalMessage = (configPath: string): string =>
 // root-owned, which is a normal provision-as-root-then-run-as-a-service-account layout) or one
 // that grants group or world write access.
 //
-// process.getuid is absent on Windows, which has no equivalent POSIX ownership model; this layer
-// is POSIX-only, the same accepted gap already documented for the O_NOFOLLOW flag above, and for
-// the same reason (CI only runs ubuntu-latest).
+// process.getuid is absent on Windows, which has no POSIX ownership model, and libuv reports mode
+// 0666 for any writable file there, so a mode check cannot stand in for it. The ownership and
+// mode layer is POSIX-only until a Windows ACL check exists.
+//
+// Without O_NOFOLLOW (Windows) the open itself follows a symlink, so the refusal has to come from
+// an lstat first. That leaves a window between the lstat and the open that O_NOFOLLOW closes on
+// POSIX, and Node has no equivalent on Windows. Keep the lstat off POSIX: the open already
+// refuses there, atomically, so the lstat would be redundant.
 async function readConfigFileStrict(configPath: string): Promise<Buffer> {
+  if (!hasNoFollowSupport && (await fs.lstat(configPath)).isSymbolicLink()) {
+    throw new GCPKeyValueStorageError(symlinkRefusalMessage(resolve(configPath)));
+  }
   const handle = await fs.open(configPath, CONFIG_READ_FLAGS);
   try {
     if (typeof process.getuid === "function") {

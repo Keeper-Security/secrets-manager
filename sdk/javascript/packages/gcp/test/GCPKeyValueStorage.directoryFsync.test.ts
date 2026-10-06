@@ -38,6 +38,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { writeFileAtomicSync } from '../src/atomicWrite';
+import { expectMode } from './platformSupport';
 
 function fileMode(filePath: string): number {
     return fs.statSync(filePath).mode & 0o777;
@@ -76,7 +77,7 @@ describe('writeFileAtomicSync() when the containing directory cannot be fsynced'
             expect(() => writeFileAtomicSync(configPath, 'NEW-CONFIG-BYTES')).not.toThrow();
 
             expect(fs.readFileSync(configPath, 'utf8')).toBe('NEW-CONFIG-BYTES');
-            expect(fileMode(configPath)).toBe(0o600);
+            expectMode(configPath, 0o600);
             // A tolerated failure must not leave the temp file behind holding a copy of the config.
             expect(fs.readdirSync(tmpDir)).toEqual(['config.json']);
         }

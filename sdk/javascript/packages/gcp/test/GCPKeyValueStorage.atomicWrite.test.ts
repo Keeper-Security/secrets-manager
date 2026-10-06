@@ -40,6 +40,7 @@ import { crc32c as calculate } from '@aws-crypto/crc32c';
 import { GCPKeyValueStorage } from '../src/GCPKeyValueStore';
 import { GCPKeyConfig } from '../src/GcpKeyConfig';
 import { GCPKSMClient } from '../src/GcpKmsClient';
+import { expectMode, itOnWindows, itUnlessWindows } from './platformSupport';
 
 const KEY_RESOURCE_NAME =
     'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1';
@@ -95,7 +96,9 @@ describe('GCPKeyValueStorage config file writes (real fs)', () => {
     });
 
     describe('writeSecureConfigFile() helper', () => {
-        it('does not leave a reader fd opened against the old (0644) file able to read the rewritten secret', async () => {
+        // Windows has no inodes, so the stale reader keeps no old copy there. The Windows test below
+        // covers what happens instead.
+        itUnlessWindows('does not leave a reader fd opened against the old (0644) file able to read the rewritten secret', async () => {
             fs.writeFileSync(configPath, 'SECRET-OLD', { mode: 0o644 });
             const oldFd = fs.openSync(configPath, 'r');
             const inodeBefore = fs.fstatSync(oldFd).ino;
@@ -113,6 +116,29 @@ describe('GCPKeyValueStorage config file writes (real fs)', () => {
         });
     });
 
+    describe('writeSecureConfigFile() on Windows', () => {
+        // Windows refuses to rename over a file that another handle holds open. The write must fail
+        // loudly, leave the existing config as it was, and leave no temp file behind.
+        itOnWindows('fails and leaves the old file intact when another handle has it open', async () => {
+            fs.writeFileSync(configPath, 'SECRET-OLD');
+            const heldOpen = fs.openSync(configPath, 'r');
+            let error: NodeJS.ErrnoException | null = null;
+            try {
+                const { storage } = makeStorage(configPath);
+                error = await (storage as any)
+                    .writeSecureConfigFile(configPath, 'SECRET-NEW')
+                    .then(() => null, (err: NodeJS.ErrnoException) => err);
+            } finally {
+                fs.closeSync(heldOpen);
+            }
+
+            expect(error).not.toBeNull();
+            expect(['EPERM', 'EACCES', 'EBUSY']).toContain(error!.code);
+            expect(fs.readFileSync(configPath, 'utf8')).toBe('SECRET-OLD');
+            expect(fs.readdirSync(tmpDir)).toEqual(['config.json']);
+        });
+    });
+
     describe('createConfigFileIfMissing()', () => {
         it('creates a real, readable config file when none exists yet', async () => {
             expect(fs.existsSync(configPath)).toBe(false);
@@ -121,14 +147,14 @@ describe('GCPKeyValueStorage config file writes (real fs)', () => {
             await (storage as any).createConfigFileIfMissing();
 
             expect(fs.existsSync(configPath)).toBe(true);
-            expect(fileMode(configPath)).toBe(0o600);
+            expectMode(configPath, 0o600);
             const decrypted = await storage.decryptConfig(false);
             expect(decrypted).toBe('{}');
         });
     });
 
     describe('decryptConfig(autosave=true)', () => {
-        it('writes the decrypted plaintext at mode 0600, even onto a pre-existing 0644 file', async () => {
+        itUnlessWindows('writes the decrypted plaintext at mode 0600, even onto a pre-existing 0644 file', async () => {
             fs.writeFileSync(configPath, '', { mode: 0o644 });
             const { storage } = makeStorage(configPath);
             // Populate a real encrypted config first, using the same identity-wrap crypto mock,
@@ -144,7 +170,7 @@ describe('GCPKeyValueStorage config file writes (real fs)', () => {
     });
 
     describe('saveConfig()', () => {
-        it('corrects a pre-existing 0644 config file to 0600 on an ordinary save', async () => {
+        itUnlessWindows('corrects a pre-existing 0644 config file to 0600 on an ordinary save', async () => {
             fs.writeFileSync(configPath, '', { mode: 0o644 });
             const { storage } = makeStorage(configPath);
             expect(fileMode(configPath)).toBe(0o644);
@@ -172,7 +198,7 @@ describe('GCPKeyValueStorage config file writes (real fs)', () => {
     });
 
     describe('writeFileAtomicSync() under a pathological umask', () => {
-        it('still lands at exactly 0600 even under an owner-stripping umask', async () => {
+        itUnlessWindows('still lands at exactly 0600 even under an owner-stripping umask', async () => {
             const originalUmask = process.umask(0o700);
             try {
                 const { storage } = makeStorage(configPath);

@@ -45,6 +45,7 @@ import { GCPKeyValueStorage } from '../src/GCPKeyValueStore';
 import { GCPKeyConfig } from '../src/GcpKeyConfig';
 import { GCPKSMClient } from '../src/GcpKmsClient';
 import { GCPKeyValueStorageError } from '../src/error';
+import { isWindows, itUnlessWindows } from './platformSupport';
 
 const KEY_RESOURCE_NAME =
     'projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key/cryptoKeyVersions/1';
@@ -230,13 +231,18 @@ describe('GCPKeyValueStorage symlink protection (KSM-1514)', () => {
         });
     });
 
-    describe('TEST 6: the check-then-read window', () => {
-        it('O_NOFOLLOW closes the window by construction: 10,000 iterations, zero attacker adoptions, zero unexpected errors', async () => {
+    describe('TEST 6: a planted symlink is refused on every round', () => {
+        // The symlink is planted before each read and never swapped while a read is running, so this
+        // does not race the check against the open. It shows the refusal is stable round after round,
+        // not that the check-then-open window is closed.
+        it('refuses the planted symlink on every round (10,000, or 300 on Windows): zero adoptions, zero unexpected errors', async () => {
             const attackerPath = path.join(tmpDir, 'attacker-payload.json');
             fs.writeFileSync(attackerPath, 'ATTACKER-PAYLOAD-NOT-VALID-CIPHERTEXT');
             const storage = makeStorage(configPath);
 
-            const ITERATIONS = 10_000;
+            // Symlink creation is slow on Windows, where 10,000 rounds outlast the test timeout and
+            // the loop keeps running into later tests.
+            const ITERATIONS = isWindows ? 300 : 10_000;
             let succeeded = 0;
             let unexpectedErrors = 0;
 
@@ -292,7 +298,7 @@ describe('GCPKeyValueStorage symlink protection (KSM-1514)', () => {
             expect(fs.readFileSync(configPath)).toEqual(contentsBefore);
         });
 
-        it('also refuses on the decryptConfig() read site, not only loadConfig()', async () => {
+        itUnlessWindows('also refuses on the decryptConfig() read site, not only loadConfig()', async () => {
             fs.writeFileSync(configPath, 'never reached: the mode check runs before any parse attempt');
             fs.chmodSync(configPath, 0o620);
             const storage = makeStorage(configPath);
