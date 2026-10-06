@@ -12,7 +12,44 @@ permissions:
   contents: read
 
 jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Extract version
+        id: extract-version
+        run: |
+          VERSION=$(grep -o '"version": "[^"]*"' sdk/javascript/packages/gcp/package.json | cut -d'"' -f4)
+          echo "Version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  validate-version:
+    name: Validate version not yet published
+    needs: get-version
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check version not on npm
+        env:
+          VERSION: ${{ needs.get-version.outputs.version }}
+        run: |
+          PACKAGE="@keeper-security%2Fsecrets-manager-gcp"
+          CHECK_URL="https://registry.npmjs.org/${PACKAGE}/${VERSION}"
+          echo "Checking npm for @keeper-security/secrets-manager-gcp $VERSION..."
+          STATUS=$(curl -sS --retry 3 --retry-delay 2 -o /dev/null -w "%{http_code}" "$CHECK_URL")
+          case "$STATUS" in
+            404) echo "@keeper-security/secrets-manager-gcp $VERSION not yet on npm - ok to proceed" ;;
+            200) echo "::error::@keeper-security/secrets-manager-gcp ${VERSION} is already on npm. Aborting."; exit 1 ;;
+            *)   echo "::error::Unexpected status $STATUS from npm registry. Aborting."; exit 1 ;;
+          esac
+
   generate-sbom:
+    needs: validate-version
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -111,7 +148,7 @@ jobs:
           node-version: '24'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run tests
         run: npm test
@@ -126,43 +163,87 @@ jobs:
           path: |
             ${{ github.workspace }}/sdk/javascript/packages/gcp/dist/
             ${{ github.workspace }}/sdk/javascript/packages/gcp/package.json
+            ${{ github.workspace }}/sdk/javascript/packages/gcp/README.md
+            ${{ github.workspace }}/sdk/javascript/packages/gcp/CHANGELOG.md
+
+      - name: Load the packed tarball under Yarn Plug'n'Play
+        # This job, not test.javascript.storage.gcp.kms.yml, is what gates a release: no branch
+        # ruleset requires that workflow to pass on a release branch. Mirrors its PnP guard here so
+        # an undeclared transitive dependency fails this job instead of reaching npm. It runs after
+        # the upload on purpose: it installs the newest in-range dependencies with no lockfile and
+        # runs their code, so the artifact publish-npm ships must already be fixed by then. A
+        # failure here still fails this job, and publish-npm needs this job.
+        run: |
+          set -euo pipefail
+          export COREPACK_HOME="${COREPACK_HOME:-$HOME/.cache/node/corepack}"
+          TARBALL="$PWD/$(npm pack --silent | tail -n 1)"
+          SMOKE_DIR="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/gcp-pnp-smoke.XXXXXX")"
+          cp "$TARBALL" "$SMOKE_DIR/package.tgz"
+          cd "$SMOKE_DIR"
+          cat > package.json <<'EOF'
+          {
+            "name": "gcp-pnp-smoke",
+            "private": true,
+            "packageManager": "yarn@4.18.1",
+            "dependencies": { "@keeper-security/secrets-manager-gcp": "file:./package.tgz" }
+          }
+          EOF
+          printf 'nodeLinker: pnp\npnpFallbackMode: none\nenableGlobalCache: false\n' > .yarnrc.yml
+          touch yarn.lock
+          COREPACK_ENABLE_DOWNLOAD_PROMPT=0 YARN_ENABLE_IMMUTABLE_INSTALLS=false corepack yarn install
+          cat > smoke.cjs <<'EOF'
+          'use strict';
+          const assert = require('assert');
+          const gcp = require('@keeper-security/secrets-manager-gcp');
+          assert.deepStrictEqual(Object.keys(gcp).sort(), ['GCPKSMClient', 'GCPKeyConfig', 'GCPKeyValueStorage', 'LoggerLogLevelOptions']);
+          const { GCPKSMClient } = gcp;
+          const client = new GCPKSMClient();
+          assert.strictEqual(typeof client.getCryptoClient().auth.getAccessToken, 'function');
+          client.getToken()
+            .then(() => { throw new Error('getToken() unexpectedly resolved with no ADC available'); })
+            .catch((err) => {
+              assert.match(err.message, /Could not load the default credentials/);
+              console.log('SMOKE_OK');
+            });
+          // No process.exit() here: the process ends once the pino-pretty worker has loaded or
+          // failed, so a failure inside the worker still fails this step. The watchdog only turns
+          // a hang into a failure; unref() keeps it from holding the process open.
+          setTimeout(() => { console.error('SMOKE_TIMEOUT'); process.exit(1); }, 60000).unref();
+          EOF
+          env -u GOOGLE_APPLICATION_CREDENTIALS METADATA_SERVER_DETECTION=none GOOGLE_CLOUD_PROJECT=smoke-project \
+            corepack yarn node smoke.cjs 2>&1 | tee smoke.out
+          grep -q '^SMOKE_OK$' smoke.out
 
   publish-npm:
-    needs: build-npm
+    needs: [build-npm, validate-version]
     if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
 
     defaults:
       run:
         working-directory: ./sdk/javascript/packages/gcp
 
     steps:
-      - name: Get the source code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # No checkout, no npm ci, no build: this job holds id-token: write, so any
+      # install-lifecycle script it ran could mint a trusted-publishing token itself.
+      # It publishes exactly the artifact build-npm already tested, unmodified.
+      - name: Download the tested package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0 (same SHA publish.npm.yml already pins)
         with:
-          persist-credentials: false
+          name: npm-package-gcp-kms-${{ github.run_number }}
+          path: ./sdk/javascript/packages/gcp
 
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
+          # Do not lower to Node 22: it bundles npm 10, and OIDC trusted publishing needs npm >=11.5.1 (Node 24.5+).
           node-version: '24'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build package
-        run: npm run build
-
-      - name: Retrieve secrets from KSM
-        id: ksmsecrets
-        uses: Keeper-Security/ksm-action@560d170bea253481a48eae617f0493aab7436c28 # master
-        with:
-          keeper-secret-config: ${{ secrets.KSM_NPM_PUBLISHER_NPM_SDK_CONFIG }}
-          secrets: |
-            2LmZq2z682qhTKYUizehow/field/password > env:NPM_TOKEN
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
 
       - name: Publish package
-        run: npm publish --ignore-scripts
+        run: npm publish --ignore-scripts --provenance
