@@ -29,6 +29,8 @@ description:
     - Has the same options at the normal Ansible copy module.
 author:
     - John Walstra
+notes:
+  - Check mode requires an initialized Keeper configuration.
 options:
   uid:
     description:
@@ -260,6 +262,30 @@ display = Display()
 
 class ActionModule(ActionBase):
 
+    @staticmethod
+    def _hide_diff_content(result):
+        # With --diff, the copy action puts the old and the new file content in the result. That content is the
+        # secret, and the keeper_redact callback does not see a diff. Different texts keep the change visible.
+        diffs = result.get("diff") if isinstance(result, dict) else None
+        if isinstance(diffs, dict):
+            diffs = [diffs]
+        for diff in diffs if isinstance(diffs, list) else []:
+            if not isinstance(diff, dict):
+                continue
+            for key in ("before", "after"):
+                if isinstance(diff.get(key), str) and diff[key] != "":
+                    diff[key] = "<the Keeper secret {} the change is not shown>\n".format(key)
+
+    @staticmethod
+    def _remove_content_from_invocation(result):
+        # Remove the src and content, if they exists, since they are not part of this plugin. Also they could leak
+        # values. With no_log, ansible-core 2.20 and earlier set invocation to a text, "CENSORED: no_log is set".
+        invocation = result.get("invocation")
+        module_args = invocation.get("module_args") if isinstance(invocation, dict) else None
+        if isinstance(module_args, dict):
+            module_args.pop('src', None)
+            module_args.pop('content', None)
+
     def run(self, tmp=None, task_vars=None):
 
         if task_vars is None:
@@ -306,18 +332,11 @@ class ActionModule(ActionBase):
 
         # Call Ansible built-in copy
         result = super(ActionModule, self).run(tmp, task_vars)
+        self._hide_diff_content(result)
 
         # Attempt to add back the keeper values for debug purposes.
         if type(result) is dict:
-            invocation = result.get("invocation")
-            if invocation is not None:
-                module_args = invocation.get("module_args")
-                if module_args is not None:
-                    # Remove the src and content, if they exists, since they are not part of this
-                    # plugin. Also they could leak values.
-                    module_args.pop('src', None)
-                    module_args.pop('content', None)
-
+            self._remove_content_from_invocation(result)
             result = keeper.add_secret_values_to_results(result)
 
         return result

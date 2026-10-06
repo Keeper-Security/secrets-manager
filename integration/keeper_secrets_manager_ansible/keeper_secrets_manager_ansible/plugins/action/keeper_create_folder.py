@@ -33,6 +33,15 @@ description:
       returned and no new folder is created.
 author:
     - John Walstra
+attributes:
+  check_mode:
+    support: full
+    description: Looks for an existing folder and predicts creation without changing the vault.
+notes:
+  - Check mode requires an initialized Keeper configuration.
+  - In check mode, folder_uid is null for a new folder and is the existing UID for a matching folder.
+  - An empty or null subfolder_uid means no subfolder. A later task that runs for real with a null
+    folder_uid from check mode creates its folder in the shared folder.
 options:
   shared_folder_uid:
     description:
@@ -72,11 +81,16 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-value:
-  description: The new (or already-existing) folder uid.
+changed:
+  description: Whether a folder was created, or would be created in check mode.
   returned: success
-  sample: |
-    { "folder_uid": "XXXX" }
+  type: bool
+  sample: true
+folder_uid:
+  description: The new or existing folder UID. Null for a new folder in check mode.
+  returned: success
+  type: str
+  sample: XXXX
 '''
 
 
@@ -104,7 +118,8 @@ class ActionModule(ActionBase):
             folder_uid, changed = keeper.create_folder(
                 folder_name,
                 shared_folder_uid=shared_folder_uid,
-                subfolder_uid=subfolder_uid
+                subfolder_uid=subfolder_uid,
+                check_mode=bool(self._task.check_mode)
             )
         except Exception as err:
             raise AnsibleError("Could not create folder: {}".format(err))

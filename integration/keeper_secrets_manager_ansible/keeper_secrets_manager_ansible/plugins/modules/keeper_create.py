@@ -22,6 +22,17 @@ description:
     - Create a new keeper record in your vault.
 author:
     - John Walstra
+attributes:
+  check_mode:
+    support: full
+    description: Validates the record and the shared folder key without creating a record. Server
+      permissions are checked only in a real run.
+notes:
+  - Check mode requires an initialized Keeper configuration.
+  - The record_uid is null in check mode because no record is created.
+  - An empty or null subfolder_uid means no subfolder. In check mode, keeper_create_folder returns a null
+    folder_uid for a new folder. A later task that runs for real with that UID creates the record in the
+    shared folder.
 options:
   shared_folder_uid:
     description:
@@ -100,6 +111,17 @@ options:
     type: str
     required: no
     aliases: [ note ]
+  version:
+    description:
+    - The record schema version to use.
+    - Defaults to v3 (recommended).
+    type: str
+    required: no
+    default: v3
+    choices:
+      - v2
+      - v3
+    version_added: '1.1.2'
   fields:
     description:
     - The label, or type, of the standard field in record that contains the value.
@@ -223,9 +245,14 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-value:
-  description: The new record uid.
+changed:
+  description: Whether a record was created, or would be created in check mode.
   returned: success
-  sample: |
-    { "record_uid": "XXXX" }
+  type: bool
+  sample: true
+record_uid:
+  description: The new record UID. Null in check mode.
+  returned: success
+  type: str
+  sample: XXXX
 '''

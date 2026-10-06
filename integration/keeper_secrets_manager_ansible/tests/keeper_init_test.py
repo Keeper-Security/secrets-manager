@@ -28,7 +28,7 @@ class KeeperInitTest(unittest.TestCase):
             result, out, err = a.run()
             self.assertEqual(result["ok"], 1, "1 things didn't happen")
             self.assertEqual(result["failed"], 0, "failed was not 0")
-            self.assertEqual(result["changed"], 0, "0 things didn't change")
+            self.assertEqual(result["changed"], 1, "initialization should report changed")
 
             self.assertTrue(os.path.exists(yml_file), "test_keeper.yml does not exist")
             del a
@@ -48,7 +48,7 @@ class KeeperInitTest(unittest.TestCase):
             result, out, err = a.run()
             self.assertEqual(result["ok"], 1, "1 things didn't happen")
             self.assertEqual(result["failed"], 0, "failed was not 0")
-            self.assertEqual(result["changed"], 0, "0 things didn't change")
+            self.assertEqual(result["changed"], 1, "initialization should report changed")
 
             self.assertTrue(os.path.exists(json_file), "test_keeper.json does not exist")
             del a

@@ -1,0 +1,33 @@
+---
+- name: keeper_set with an outdated registered cache
+  hosts: my_systems
+  gather_facts: no
+
+  tasks:
+    - name: Register a cache while the notes are target
+      keeper_cache_records:
+        uids:
+          - "{{ uid }}"
+      register: cached
+
+    - name: Change the notes in the vault without the cache
+      keeper_set:
+        uid: "{{ uid }}"
+        notes: yes
+        value: drifted
+      register: drift
+
+    - name: Set the notes to target with the outdated cache
+      keeper_set:
+        uid: "{{ uid }}"
+        notes: yes
+        value: target
+        cache: "{{ cached.cache }}"
+      register: restore
+
+    - name: Check the results
+      ansible.builtin.assert:
+        that:
+          - drift.changed
+          - restore.changed
+          - restore.updated
