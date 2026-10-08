@@ -1,0 +1,97 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Folder Lifecycle
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Create A Folder In A Subfolder"
+    keeper_create_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      subfolder_uid: "{{ subfolder_uid }}"
+      folder_name: "Staging"
+    register: "created"
+
+  - name: "Look Up The New Folder By Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      subfolder_uid: "{{ subfolder_uid }}"
+      folder_name: "Staging"
+    register: "by_name"
+
+  - name: "Look Up The New Folder By Path From The Top Level"
+    keeper_get_folder:
+      folder_path: "Infrastructure/Databases/Staging"
+    register: "by_path"
+
+  - name: "Check The Lookups"
+    assert:
+      that:
+        - created is changed
+        - by_name is not changed
+        - by_name.folder_uid == created.folder_uid
+        - by_path.folder_uid == created.folder_uid
+        - by_name.folder_name == "Staging"
+        - by_name.parent_uid == subfolder_uid
+        - by_name.shared_folder_uid == shared_folder_uid
+
+  - name: "Rename The Folder"
+    keeper_update_folder:
+      folder_uid: "{{ created.folder_uid }}"
+      new_folder_name: "Production"
+    register: "renamed"
+
+  - name: "Rename The Folder Again"
+    keeper_update_folder:
+      folder_uid: "{{ created.folder_uid }}"
+      new_folder_name: "Production"
+    register: "renamed_again"
+
+  - name: "Look Up The Folder By Its New Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path: "Databases/Production"
+    register: "after_rename"
+
+  - name: "Check The Renames"
+    assert:
+      that:
+        - renamed is changed
+        - renamed.previous_folder_name == "Staging"
+        - renamed.folder_name == "Production"
+        - renamed_again is not changed
+        - after_rename.folder_uid == created.folder_uid
+
+  - name: "Delete The Parent Folder Without Force"
+    keeper_delete_folder:
+      folder_uid: "{{ subfolder_uid }}"
+    register: "delete_not_empty"
+    ignore_errors: yes
+
+  - name: "Delete The Renamed Folder"
+    keeper_delete_folder:
+      folder_uid: "{{ created.folder_uid }}"
+    register: "deleted"
+
+  - name: "Delete The Renamed Folder Again"
+    keeper_delete_folder:
+      folder_uid: "{{ created.folder_uid }}"
+    register: "deleted_again"
+
+  - name: "Look Up The Deleted Folder"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path: "Databases/Production"
+    register: "after_delete"
+    ignore_errors: yes
+
+  - name: "Check The Deletes"
+    assert:
+      that:
+        - delete_not_empty is failed
+        - "'is not empty' in delete_not_empty.msg"
+        - deleted is changed
+        - deleted.folder_name == "Production"
+        - deleted_again is not changed
+        - after_delete is failed
+        - "'No folder named \"Production\" was found' in after_delete.msg"

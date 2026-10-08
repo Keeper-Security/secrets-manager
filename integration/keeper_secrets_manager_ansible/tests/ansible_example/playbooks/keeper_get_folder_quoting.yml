@@ -1,0 +1,78 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+#
+# Folder names in messages are JSON-quoted, so a newline, a tab, or a double quote shows as an escape. The names
+# go through the real SDK: the fake server encrypts them, and the SDK decrypts them. The expected messages are
+# in single quotes, so each backslash in them is a real backslash in the message.
+---
+- name: Keeper Get Folder Quoting
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    expected:
+      newline: 'Could not look up folder: No folder named "Databases\n" was found in the folder "Infrastructure" (UID {{ shared_folder_uid }}).'
+      tab: 'Could not look up folder: No folder named "Data\tbases" was found in the folder "Infrastructure" (UID {{ shared_folder_uid }}).'
+      quote: 'Could not look up folder: No folder named "No \"such\" folder" was found in the folder "Infrastructure" (UID {{ shared_folder_uid }}).'
+      duplicates: 'Could not look up folder: Found 2 folders named "Twin \"A\"" in the folder "Infrastructure" (UID {{ shared_folder_uid }}): TWIN_1_UID, TWIN_2_UID. Rename one of them in the vault. Or set subfolder_uid to the UID of the folder that you want, and remove "Twin \"A\"" from folder_name or folder_path.'
+      label: 'Could not look up folder: No folder named "Nope" was found in the folder "Infrastructure/Ops\tEU" (UID TAB_UID).'
+
+  tasks:
+  - name: "A Folder Name With A Double Quote Is Found Exactly"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: 'Say "hi"'
+    register: "found_quote"
+
+  - name: "A Folder Name With A Tab Is Found Exactly"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Ops\tEU"
+    register: "found_tab"
+
+  - name: "A Missing Name With A Trailing Newline"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Databases\n"
+    register: "newline"
+    ignore_errors: yes
+
+  - name: "A Missing Name With A Tab"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path: ["Data\tbases"]
+    register: "tab"
+    ignore_errors: yes
+
+  - name: "A Missing Name With Double Quotes"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: 'No "such" folder'
+    register: "quote"
+    ignore_errors: yes
+
+  - name: "Two Folders With A Double Quote In The Same Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: 'Twin "A"'
+    register: "duplicates"
+    ignore_errors: yes
+
+  - name: "A Missing Name In A Folder Whose Name Has A Tab"
+    keeper_get_folder:
+      subfolder_uid: "TAB_UID"
+      folder_name: "Nope"
+    register: "label"
+    ignore_errors: yes
+
+  - name: "Check The Quoted Names"
+    assert:
+      that:
+        - found_quote.folder_uid == "QUOTE_UID"
+        - found_quote.folder_name == 'Say "hi"'
+        - found_tab.folder_uid == "TAB_UID"
+        - found_tab.folder_name == "Ops\tEU"
+        - newline.msg == expected.newline
+        - tab.msg == expected.tab
+        - quote.msg == expected.quote
+        - duplicates.msg == expected.duplicates
+        - label.msg == expected.label

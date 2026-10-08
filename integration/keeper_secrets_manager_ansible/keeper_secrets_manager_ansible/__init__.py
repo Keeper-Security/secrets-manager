@@ -13,18 +13,22 @@
 from ansible.utils.display import Display
 from ansible.errors import AnsibleError
 from ansible.module_utils.basic import missing_required_lib
+from ansible.module_utils.common.arg_spec import ArgumentSpecValidator
 from ansible.module_utils.common.text.converters import jsonify
+from ansible.module_utils.errors import UnsupportedError
 import os
 import sys
 import re
 import json
+import copy
+import contextlib
 import random
 from enum import Enum
 import traceback
-import pickle
-import io
 import base64
 import socket
+import datetime
+import logging
 
 # Check if the KSM SDK core has been installed
 KSM_SDK_ERR = None
@@ -34,9 +38,12 @@ except ImportError:
     KSM_SDK_ERR = traceback.format_exc()
 else:
     from keeper_secrets_manager_core import SecretsManager
-    from keeper_secrets_manager_core.core import KSMCache, CreateOptions
+    from keeper_secrets_manager_core.core import KSMCache, CreateOptions, KSMHttpResponse
+    from keeper_secrets_manager_core.configkeys import ConfigKeys
     from keeper_secrets_manager_core.storage import FileKeyValueStorage, InMemoryKeyValueStorage
-    from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password, strtobool
+    from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password, strtobool, \
+        check_config_mode
+    from keeper_secrets_manager_core.dto.dtos import Record as _Record, KeeperFile as _KeeperFile
 
     # If keeper_secrets_manager_core is installed, then these will be installed. They are deps.
     from cryptography.fernet import Fernet
@@ -45,6 +52,38 @@ else:
 
 
 display = Display()
+
+
+class CacheUnusableError(ValueError):
+    """Encrypted record cache cannot be decrypted or deserialized; treat as a cache miss."""
+
+
+class KeeperFolderError(Exception):
+    """A folder lookup, rename, or delete cannot complete as asked. The message is written for the playbook author."""
+
+
+class KeeperArgumentError(ValueError):
+    """The options of a task are not valid. The message is written for the playbook author."""
+
+
+class _UnreadableFolderLog(logging.Handler):
+    """
+    Collect the folders that the SDK skips while it reads the folder list, as {folder UID: error text}.
+
+    keeper-secrets-manager-core 17.4.0 and later skip a folder that they cannot decrypt, for example a folder in a
+    newer format, and only log a warning. So a folder that exists can be missing from get_folders().
+    """
+
+    def __init__(self):
+        super(_UnreadableFolderLog, self).__init__(level=logging.WARNING)
+        self.folders = {}
+
+    def emit(self, record):
+        try:
+            if "skipped due to error" in str(record.msg) and isinstance(record.args, tuple) and record.args:
+                self.folders[str(record.args[0])] = str(record.args[1]) if len(record.args) > 1 else ""
+        except Exception:
+            pass
 
 
 class KeeperFieldType(Enum):
@@ -81,10 +120,145 @@ class KeeperAnsible:
     ENV_CACHE_DIR = "KSM_CACHE_DIR"
     DEFAULT_LOG_LEVEL = "ERROR"
     REDACT_MODULE_MATCH = r"\.keeper_redact$"
+    ACTION_GROUP_PREFIX = "group/keepersecurity.keeper_secrets_manager."
 
     @staticmethod
     def get_client(**kwargs):
         return SecretsManager(**kwargs)
+
+    @staticmethod
+    def _open_private(path, mode="w"):
+        # A configuration file and the DR cache hold keys, so only their owner may read them. open() gives a new
+        # file the umask mode, often 0644, and keeps the mode of an existing file.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+        except (AttributeError, OSError):
+            pass
+        return os.fdopen(fd, mode)
+
+    @staticmethod
+    def _make_cache_file_private():
+        path = KeeperAnsible._cache_file_path()
+        try:
+            if os.path.isfile(path) and os.stat(path).st_mode & 0o077:
+                os.chmod(path, 0o600)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _save_cache(data):
+        # The cache holds the transmission key of the response. The mode of an existing file is fixed first, and
+        # the umask makes a new file private, so the file is never readable by other users. SDK 17.3.0 writes the
+        # cache with the umask mode.
+        KeeperAnsible._make_cache_file_private()
+        old_umask = os.umask(0o077)
+        try:
+            KSMCache.save_cache(data)
+        except OSError as err:
+            # The fresh response is still good. SDK 17.3.0 used the old cached response when the save failed.
+            display.warning("The DR cache {} cannot be saved: {}".format(KeeperAnsible._cache_file_path(), err))
+        finally:
+            os.umask(old_umask)
+
+    # A read that decides a delete or a save must come from the vault. A DR cache that is older than the vault can
+    # hold a record under its old title, so the change could go to a record that no longer matches.
+    _dr_cache_allowed = True
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _vault_reads_only():
+        previous = KeeperAnsible._dr_cache_allowed
+        KeeperAnsible._dr_cache_allowed = False
+        try:
+            yield
+        finally:
+            KeeperAnsible._dr_cache_allowed = previous
+
+    @staticmethod
+    def _cache_fallback(transmission_key, error):
+        # The DR cache replaces a request that fails for any reason, also for a TLS certificate error. So the
+        # warning says that the response is old, and why the request failed. Only the class of the error is in
+        # the warning, because its text can hold the address of a proxy.
+        if not KeeperAnsible._dr_cache_allowed:
+            raise ConnectionError("The request to the Keeper server failed ({}). A delete or a save needs the "
+                                  "current vault, so the DR cache is not used.".format(type(error).__name__)) from error
+        cache_file = KeeperAnsible._cache_file_path()
+        try:
+            cached_data = KSMCache.get_cached_data()
+        except OSError as read_error:
+            raise ConnectionError("The request to the Keeper server failed ({}), and the DR cache {} cannot be "
+                                  "read: {}".format(type(error).__name__, cache_file, read_error)) from error
+        try:
+            written = datetime.datetime.fromtimestamp(os.path.getmtime(cache_file)).isoformat(timespec="seconds")
+        except OSError:
+            written = "an unknown time"
+        display.warning("The request to the Keeper server failed ({}). The response from the DR cache {}, which "
+                        "was written at {}, is used instead.".format(type(error).__name__, cache_file, written))
+        display.vvv("The request to the Keeper server failed: {}".format(error))
+        transmission_key.key = cached_data[:32]
+        return KSMHttpResponse(200, cached_data[32:], None)
+
+    @staticmethod
+    def _caching_post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True,
+                               proxy_url=None):
+        # The SDK caching function, with a private cache file and a warning when the cache replaces a request.
+        try:
+            response = SecretsManager.post_function(
+                url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs, proxy_url
+            )
+        except Exception as err:
+            return KeeperAnsible._cache_fallback(transmission_key, err)
+        if response.status_code == 200:
+            KeeperAnsible._save_cache(transmission_key.key + response.data)
+        return response
+
+    @staticmethod
+    def _check_mode_caching_post_function(url, transmission_key, encrypted_payload_and_signature,
+                                         verify_ssl_certs=True, proxy_url=None):
+        # Keep the DR cache fallback, but never replace the cache after a successful read.
+        try:
+            return SecretsManager.post_function(
+                url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs, proxy_url
+            )
+        except Exception as err:
+            return KeeperAnsible._cache_fallback(transmission_key, err)
+
+    # The KSM_CACHE_DIR value that this plugin set, or None. A lookup in a task name runs in the controller, so a value
+    # that it sets reaches every later worker. A value that the plugin set is not a user setting, so a later task
+    # replaces it with its own keeper_cache_dir, or removes it.
+    _plugin_cache_dir = None
+
+    @staticmethod
+    def _set_cache_dir(cache_dir):
+        # SDK 17.3.0 reads the cache directory only from KSM_CACHE_DIR, so the plugin sets the variable. A value
+        # that the user set wins over keeper_cache_dir.
+        current = os.environ.get(KeeperAnsible.ENV_CACHE_DIR)
+        set_by_plugin = current is not None and current == KeeperAnsible._plugin_cache_dir
+        if current is not None and not set_by_plugin:
+            return
+        if cache_dir is not None:
+            os.environ[KeeperAnsible.ENV_CACHE_DIR] = cache_dir
+            KeeperAnsible._plugin_cache_dir = cache_dir
+            # Update the cache file path after setting the environment variable
+            KSMCache.kms_cache_file_name = os.path.join(cache_dir, 'ksm_cache.bin')
+        elif set_by_plugin:
+            del os.environ[KeeperAnsible.ENV_CACHE_DIR]
+            KeeperAnsible._plugin_cache_dir = None
+            # SDK 17.4.0 and later read KSM_CACHE_DIR again only when the path is their default object.
+            KSMCache.kms_cache_file_name = getattr(KSMCache, "_default_cache_file_name", "ksm_cache.bin")
+
+    @staticmethod
+    def _bool_var(task_vars, key):
+        # A value from -e key=value or an INI inventory is text, and bool("false") is True. So the text is
+        # converted, and a value that is not a boolean fails instead of turning the option on.
+        value = task_vars.get(key)
+        if value is None:
+            return False
+        try:
+            return bool(strtobool(str(value)))
+        except ValueError:
+            raise ValueError("The {} variable must be true or false, not {!r}.".format(key, value))
 
     @staticmethod
     def keeper_key(key):
@@ -97,13 +271,158 @@ class KeeperAnsible:
         print('\n%s' % jsonify(kwargs))
         sys.exit(0)
 
-    def __init__(self, task_vars, action_module=None, task_attributes=None, force_in_memory=False):
+    @staticmethod
+    def _vault_string_types():
+        # A value that Ansible Vault encrypts in the playbook (!vault) is not a str, but str() gives the decrypted
+        # text, so it is a string value. The class is EncryptedString in ansible-core 2.19 and later, and
+        # AnsibleVaultEncryptedUnicode before that. The new name is tried first, because the old one is deprecated.
+        try:
+            from ansible.parsing.vault import EncryptedString
+            return (EncryptedString,)
+        except ImportError:
+            pass
+        try:
+            from ansible.parsing.yaml.objects import AnsibleVaultEncryptedUnicode
+            return (AnsibleVaultEncryptedUnicode,)
+        except ImportError:
+            return ()
+
+    @staticmethod
+    def _is_text(value):
+        # Only a string, or a string that Ansible Vault encrypts, is text. YAML turns some values that have no quotes
+        # into other types, and str() of them does not always give back the text that the playbook author wrote:
+        # 010 becomes 8, 007 becomes 7, 1.10 becomes 1.1, and yes becomes True. A list or a dictionary is never a
+        # name or a UID.
+        return isinstance(value, str) or isinstance(value, KeeperAnsible._vault_string_types())
+
+    @staticmethod
+    def _describe_value(value):
+        if isinstance(value, bool):
+            return "a boolean ({})".format(value)
+        if isinstance(value, (int, float)):
+            return "a number ({})".format(value)
+        if isinstance(value, datetime.datetime):
+            return "a date and time ({})".format(value)
+        if isinstance(value, datetime.date):
+            return "a date ({})".format(value)
+        if isinstance(value, dict):
+            return "a dictionary"
+        if isinstance(value, (list, tuple, set, frozenset)):
+            return "a list"
+        if isinstance(value, (bytes, bytearray)):
+            return "a byte string"
+        return "a value of type {}".format(type(value).__name__)
+
+    @staticmethod
+    def _join_messages(messages):
+        # A space after a message that ends with a period, else a semicolon.
+        text = ""
+        for message in messages:
+            if text:
+                text += " " if text.endswith(".") else "; "
+            text += message
+        return text
+
+    @staticmethod
+    def validate_task_args(module_name, task_args, argument_spec, mutually_exclusive=None, ignore=None):
+        """
+        Check task arguments against an argument spec and return the validated arguments. Raise
+        KeeperArgumentError if they are not valid.
+
+        Unknown (for example misspelled) options are rejected instead of silently ignored, values are
+        converted to their declared type, and defaults are filled in. An option that is set to null is an error,
+        and so is a str option whose value is not a string (see _is_text). The option names in ignore are removed
+        first if the module does not have them (see group_default_options).
+
+        This calls ArgumentSpecValidator directly so the action plugin can handle invalid options as a normal
+        task failure, without ActionBase.validate_argument_spec raising an AnsibleActionFail.
+        """
+        ignore = set(ignore or [])
+        # group_default_options gives names as text, so compare the text of each option name.
+        task_args = {k: v for k, v in dict(task_args).items() if k in argument_spec or str(k) not in ignore}
+
+        # An option name must be a string. YAML reads an unquoted key such as 1 as a number.
+        not_names = sorted(repr(k) for k in task_args if not isinstance(k, str))
+        if not_names:
+            raise KeeperArgumentError("Unsupported parameters for ({}) module: {}. An option name must be a "
+                                      "string.".format(module_name, ", ".join(not_names)))
+
+        # A template variable with no value gives null. If null meant "not set", a lookup would silently start
+        # from a different folder, for example the shared folder instead of a subfolder. ArgumentSpecValidator
+        # also turns any value of a str option into a string, with no warning: a list becomes "['a', 'b']", yes
+        # becomes "True", and 1.10 becomes "1.1". For a UID or a folder name, that is a different value.
+        messages = []
+        for name in sorted(task_args):
+            value = task_args[name]
+            if name not in argument_spec:
+                continue
+            if value is None:
+                # The hint names no filter on purpose. default(omit) does not leave out a variable that is set to
+                # null, and default(omit, true) also leaves out an empty string, which turns off the blank check and
+                # can make a lookup silently return its start folder.
+                messages.append("The {} option is null. Give it a value, or leave the option out of the "
+                                "task.".format(name))
+            elif argument_spec[name].get("type") == "str" and not KeeperAnsible._is_text(value):
+                messages.append("The {} option must be a string, but it is {}. Put quotes around the value, or use "
+                                "the string filter.".format(name, KeeperAnsible._describe_value(value)))
+        if messages:
+            raise KeeperArgumentError(KeeperAnsible._join_messages(messages))
+
+        validator = ArgumentSpecValidator(argument_spec, mutually_exclusive=mutually_exclusive)
+        result = validator.validate(task_args)
+        if result.error_messages:
+            for error in result.errors.errors:
+                if isinstance(error, UnsupportedError):
+                    messages.append("Unsupported parameters for ({}) module: {}".format(module_name, error.msg))
+                else:
+                    messages.append(error.msg)
+            raise KeeperArgumentError(KeeperAnsible._join_messages(messages))
+        return result.validated_parameters
+
+    @staticmethod
+    def group_default_options(task, templar=None):
+        """
+        Get the option names that module_defaults sets for an action group, for the task of an action plugin.
+
+        Ansible gives the defaults of a group to every module in the group, so a group default can hold options
+        that only some modules of the group have. validate_task_args ignores these names for a module that does
+        not have them. A misspelled option in the task itself still fails, unless a group default has the same
+        name.
+
+        Only the groups of this collection are read. Ansible gives a group default only to the modules in that
+        group, so the defaults of another collection's group never reach these modules, and their option names
+        must not hide a mistake in a task.
+        """
+        names = set()
+        module_defaults = getattr(task, "module_defaults", None) or []
+        if isinstance(module_defaults, dict):
+            module_defaults = [module_defaults]
+        for defaults in module_defaults:
+            if not isinstance(defaults, dict):
+                continue
+            for entry, values in defaults.items():
+                if not str(entry).startswith(KeeperAnsible.ACTION_GROUP_PREFIX):
+                    continue
+                if isinstance(values, str) and templar is not None:
+                    try:
+                        values = templar.template(values)
+                    except Exception:
+                        values = None
+                if isinstance(values, dict):
+                    names.update(str(k) for k in values)
+        return names
+
+    def __init__(self, task_vars, action_module=None, task_attributes=None, force_in_memory=False, check_mode=None,
+                 requires_vault=True):
 
         """
         Build the config used by the Keeper Python SDK
 
         The configuration is mainly read from a JSON file.
 
+        An action plugin gets check mode from its task. A lookup has no task, so it passes check_mode. A plugin
+        that never sends a request to the vault sets requires_vault to False: in check mode, it can then run
+        with a configuration that has only a one-time token, because nothing can redeem the token.
         """
 
         if KSM_SDK_ERR is not None:
@@ -114,6 +433,10 @@ class KeeperAnsible:
 
         # This is an instance of ActionModule
         self.action_module = action_module
+        if check_mode is None:
+            check_mode = getattr(getattr(action_module, "_task", None), "check_mode", False)
+        self.check_mode = bool(check_mode)
+        self.requires_vault = requires_vault
 
         # These are the attributes of the task or kwargs of a lookup action
         if task_attributes is None:
@@ -158,7 +481,7 @@ class KeeperAnsible:
             keeper_ssl_verify_skip = KeeperAnsible.keeper_key(KeeperAnsible.KEY_SSL_VERIFY_SKIP)
 
             # By default, we don't want to skip verify the certs.
-            ssl_certs_skip = task_vars.get(keeper_ssl_verify_skip, False)
+            ssl_certs_skip = KeeperAnsible._bool_var(task_vars, keeper_ssl_verify_skip)
 
             # If the config location is defined, or a file exists at the default location.
             self.config_file = self._template_value(task_vars.get(keeper_config_file_key))
@@ -169,15 +492,14 @@ class KeeperAnsible:
             use_cache_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_USE_CACHE)
             custom_post_function = None
             if bool(strtobool(str(task_vars.get(use_cache_key, "False")))) is True:
-                custom_post_function = KSMCache.caching_post_function
+                # A successful read through the DR cache also writes a file.
+                custom_post_function = (KeeperAnsible._check_mode_caching_post_function if self.check_mode
+                                        else KeeperAnsible._caching_post_function)
 
                 # We are using the cache, what directory should the cache file be stored in.
                 cache_dir_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CACHE_DIR)
                 cache_dir_val = self._template_value(task_vars.get(cache_dir_key))
-                if cache_dir_val is not None and os.environ.get(KeeperAnsible.ENV_CACHE_DIR) is None:
-                    os.environ[KeeperAnsible.ENV_CACHE_DIR] = cache_dir_val
-                    # Update the cache file path after setting the environment variable
-                    KSMCache.kms_cache_file_name = os.path.join(os.environ.get(KeeperAnsible.ENV_CACHE_DIR, ""), 'ksm_cache.bin')
+                KeeperAnsible._set_cache_dir(cache_dir_val)
 
                 display.vvv("Keeper Secrets Manager is using DR file cache. Cache directory is {}.".format(
                     os.environ.get(KeeperAnsible.ENV_CACHE_DIR)
@@ -189,8 +511,13 @@ class KeeperAnsible:
 
             if os.path.isfile(self.config_file) is True and force_in_memory is False:
                 display.vvv("Loading keeper config file file {}.".format(self.config_file))
+                if self.check_mode:
+                    # The SDK updates its configuration even when it only reads the vault.
+                    config_instance = InMemoryKeyValueStorage(config=self._read_config_file(self.config_file))
+                else:
+                    config_instance = FileKeyValueStorage(config_file_location=self.config_file)
                 self.client = KeeperAnsible.get_client(
-                    config=FileKeyValueStorage(config_file_location=self.config_file),
+                    config=self._check_mode_config(config_instance, "the file {}".format(self.config_file)),
                     log_level=log_level,
                     custom_post_function=custom_post_function
                 )
@@ -209,9 +536,11 @@ class KeeperAnsible:
                 base64_key = KeeperAnsible.keeper_key(KeeperAnsible.KEY_CONFIG_BASE64)
                 if base64_key in task_vars:
                     config_option = task_vars.get(base64_key)
+                    config_source = "the {} variable".format(base64_key)
                     force_in_memory = True
                 # Else try to discover the config values.
                 else:
+                    config_source = "the keeper_* variables"
 
                     # Config is not a Base64 string, make a dictionary to hold config values.
                     config_option = {}
@@ -242,14 +571,14 @@ class KeeperAnsible:
                                            " Will not be able to connect to the Keeper server.")
 
                     # Does the user want to write the config to a file? Then don't use the in memory storage.
-                    if bool(task_vars.get(KeeperAnsible.keeper_key(KeeperAnsible.FORCE_CONFIG_FILE), False)) is True:
+                    if KeeperAnsible._bool_var(task_vars, KeeperAnsible.keeper_key(KeeperAnsible.FORCE_CONFIG_FILE)):
                         in_memory_storage = False
                     # If the is only 1 key, we want to force the config to write to the file.
                     elif len(config_option) == 1 and KeeperAnsible.CONFIG_CLIENT_KEY in config_option:
                         in_memory_storage = False
 
                 # Sometimes we don't want a JSON file, ever. Force the config to be in memory.
-                if force_in_memory is True:
+                if force_in_memory is True or self.check_mode:
                     in_memory_storage = True
 
                 if in_memory_storage is True:
@@ -264,22 +593,78 @@ class KeeperAnsible:
                     # Write the variables we have to a JSON file.
                     # If we are in here, config_option is a dictionary,
                     # not a Base64 string.
-                    with open(self.config_file, "w") as fh:
+                    with KeeperAnsible._open_private(self.config_file) as fh:
                         json.dump(config_option, fh, indent=4)
-                        fh.close()
 
                     config_instance = FileKeyValueStorage(config_file_location=self.config_file)
                     config_instance.read_storage()
 
                 self.client = KeeperAnsible.get_client(
-                    config=config_instance,
+                    config=self._check_mode_config(config_instance, config_source),
                     verify_ssl_certs=not ssl_certs_skip,
                     log_level=log_level,
                     custom_post_function=custom_post_function
                 )
 
+            # The SDK logs its own warning only when logging is on, and it is off by default.
+            if getattr(self.client, "verify_ssl_certs", True) is False:
+                display.warning("Keeper Secrets Manager does not verify the TLS certificate of the Keeper server, "
+                                "because keeper_verify_ssl_certs_skip or KSM_SKIP_VERIFY turns the check off.")
+
         except Exception as err:
             raise AnsibleError("Keeper Ansible error: {}".format(err))
+
+    def _check_mode_config(self, config, source):
+        # The SDK binds a configuration without an app key on its first request, and that redeems the one-time
+        # token. A plugin that sends no request cannot redeem it, so it does not need a bound configuration.
+        if not self.check_mode or not self.requires_vault:
+            return config
+        bound_keys = (
+            (ConfigKeys.KEY_CLIENT_ID, "keeper_client_id"),
+            (ConfigKeys.KEY_PRIVATE_KEY, "keeper_private_key"),
+            (ConfigKeys.KEY_APP_KEY, "keeper_app_key"),
+        )
+        missing = ["{} ({})".format(key.value, variable) for key, variable in bound_keys if not config.get(key)]
+        if missing:
+            message = "Check mode requires an initialized Keeper configuration. The configuration from {} has " \
+                      "no {}.".format(source, ", ".join(missing))
+            if config.get(ConfigKeys.KEY_CLIENT_KEY) or os.environ.get(KeeperAnsible.TOKEN_ENV):
+                message += " It has a one-time token, and check mode cannot redeem it. Run keeper_init without " \
+                           "check mode first."
+            raise ValueError(message)
+        return config
+
+    @staticmethod
+    def _read_config_file(path):
+        # The checks of FileKeyValueStorage.read_storage(), without its writes: a warning for a file that other
+        # users can read, UTF-8 text, an empty file as an empty configuration, and a JSON object.
+        check_config_mode(path)
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+        if text.strip() == "":
+            return {}
+        try:
+            config = json.loads(text)
+        except ValueError as err:
+            raise ValueError("The Keeper configuration file {} is not valid JSON: {}".format(path, err)) from err
+        if not isinstance(config, dict):
+            raise ValueError("The Keeper configuration file {} does not contain a JSON object.".format(path))
+        return config
+
+    def _resolve_check_mode(self, check_mode):
+        # A helper is in check mode when its caller asks for it, or when the task is in check mode. So a plugin
+        # that forgets the argument cannot change the vault in a check-mode run.
+        return bool(check_mode) or bool(getattr(self, "check_mode", False))
+
+    @staticmethod
+    def _cache_file_path():
+        # The path that the SDK reads, writes, and removes. SDK 17.3.0 added get_cache_file_path(), and 17.4.0
+        # and later prefer an assigned kms_cache_file_name to KSM_CACHE_DIR. Older SDK versions use
+        # kms_cache_file_name only.
+        get_cache_file_path = getattr(KSMCache, "get_cache_file_path", None)
+        if callable(get_cache_file_path):
+            return get_cache_file_path()
+        return KSMCache.kms_cache_file_name
 
     def _template_value(self, value):
         """Resolve Jinja2 expressions in a task_vars value using Ansible's templar."""
@@ -306,16 +691,125 @@ class KeeperAnsible:
 
         return base64.urlsafe_b64encode(kdf.derive(cache_secret.encode()))
 
-    def encrypt(self, data):
+    @staticmethod
+    def _file_to_dict(keeper_file):
+        """Serialize a KeeperFile instance to a JSON-safe dictionary."""
+        d = {
+            "name": keeper_file.name,
+            "title": keeper_file.title,
+            "type": keeper_file.type,
+            "last_modified": keeper_file.last_modified,
+            "size": keeper_file.size,
+            "f": keeper_file.f,
+            "file_key": keeper_file.file_key,
+            "meta_dict": keeper_file.meta_dict,
+        }
+        d["record_key_bytes"] = base64.b64encode(keeper_file.record_key_bytes).decode("ascii") \
+            if keeper_file.record_key_bytes is not None else None
+        d["file_data"] = base64.b64encode(keeper_file.file_data).decode("ascii") \
+            if keeper_file.file_data is not None else None
+        return d
 
+    @staticmethod
+    def _file_from_dict(d):
+        """Reconstruct a KeeperFile instance from a JSON-deserialized dictionary."""
+        f = object.__new__(_KeeperFile)
+        f.name = d["name"]
+        f.title = d["title"]
+        f.type = d["type"]
+        f.last_modified = d["last_modified"]
+        f.size = d["size"]
+        f.f = d["f"]
+        f.file_key = d["file_key"]
+        f.meta_dict = d["meta_dict"]
+        f.record_key_bytes = base64.b64decode(d["record_key_bytes"]) \
+            if d["record_key_bytes"] is not None else None
+        f.file_data = base64.b64decode(d["file_data"]) \
+            if d["file_data"] is not None else None
+        return f
+
+    @staticmethod
+    def _record_to_dict(record):
+        """Serialize a Record instance to a JSON-safe dictionary."""
+        d = {
+            "uid": record.uid,
+            "title": record.title,
+            "type": record.type,
+            "raw_json": record.raw_json,
+            "dict": record.dict,
+            "password": record.password,
+            "revision": record.revision,
+            "is_editable": record.is_editable,
+            "folder_uid": record.folder_uid,
+            "inner_folder_uid": record.inner_folder_uid,
+            "links": record.links,
+            "files": [KeeperAnsible._file_to_dict(f) for f in record.files],
+        }
+        d["record_key_bytes"] = base64.b64encode(record.record_key_bytes).decode("ascii") \
+            if record.record_key_bytes is not None else None
+        return d
+
+    @staticmethod
+    def _record_from_dict(d):
+        """Reconstruct a Record instance from a JSON-deserialized dictionary."""
+        r = object.__new__(_Record)
+        r.uid = d["uid"]
+        r.title = d["title"]
+        r.type = d["type"]
+        r.raw_json = d["raw_json"]
+        r.dict = d["dict"]
+        r.password = d["password"]
+        r.revision = d["revision"]
+        r.is_editable = d["is_editable"]
+        r.folder_uid = d["folder_uid"]
+        r.inner_folder_uid = d["inner_folder_uid"]
+        r.links = d["links"]
+        r.record_key_bytes = base64.b64decode(d["record_key_bytes"]) \
+            if d["record_key_bytes"] is not None else None
+        r.files = [KeeperAnsible._file_from_dict(fd) for fd in d["files"]]
+        return r
+
+    def encrypt(self, data):
         secret_key = self.get_encryption_key()
-        record_fh = io.BytesIO()
-        pickle.dump(data, record_fh)
-        return Fernet(secret_key).encrypt(record_fh.getvalue())
+        serializable = [KeeperAnsible._record_to_dict(r) for r in data]
+        json_bytes = json.dumps(serializable).encode("utf-8")
+        return Fernet(secret_key).encrypt(json_bytes)
 
     def decrypt(self, ciphertext):
         secret_key = self.get_encryption_key()
-        return pickle.loads(Fernet(secret_key).decrypt(ciphertext))
+        try:
+            plaintext = Fernet(secret_key).decrypt(ciphertext)
+        except Exception as err:
+            raise CacheUnusableError(
+                "Unable to decrypt the record cache. Check keeper_record_cache_secret "
+                "or regenerate the cache with keeper_cache_records."
+            ) from err
+
+        # Pickle protocol markers (e.g. 0x80) -- never call pickle.loads (CWE-502 / VM-1452).
+        if plaintext.startswith(b"\x80"):
+            raise CacheUnusableError(
+                "Unable to deserialize the record cache. The cache may be from an older "
+                "plugin version or is invalid. Regenerate the cache with keeper_cache_records."
+            )
+
+        try:
+            payload = json.loads(plaintext.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as err:
+            raise CacheUnusableError(
+                "Unable to deserialize the record cache. The cache may be from an older "
+                "plugin version or is invalid. Regenerate the cache with keeper_cache_records."
+            ) from err
+
+        if not isinstance(payload, list):
+            raise CacheUnusableError(
+                "Unable to deserialize the record cache. Expected a list of records. "
+                "Regenerate the cache with keeper_cache_records."
+            )
+
+        try:
+            return [KeeperAnsible._record_from_dict(d) for d in payload]
+        except (KeyError, TypeError, ValueError) as err:
+            raise CacheUnusableError(str(err)) from err
 
     @staticmethod
     def convert_records_into_dict(records):
@@ -372,7 +866,7 @@ class KeeperAnsible:
         return all_data
 
     @staticmethod
-    def _find_records(records, uids=None, titles=None):
+    def _find_records(records, uids=None, titles=None, allow_missing=False):
         if titles is None:
             titles = []
         if isinstance(titles, list) is False:
@@ -399,14 +893,14 @@ class KeeperAnsible:
                     found_records[record.uid] = record
                     uid_map.pop(uid, None)
 
-        if len(uid_map) > 0:
+        if len(uid_map) > 0 and not allow_missing:
             raise AnsibleError(f"The following record uid(s) could not be found: {list(uid_map.keys())}")
-        if len(title_map) > 0:
+        if len(title_map) > 0 and not allow_missing:
             raise AnsibleError(f"The following record title(s) could not be found: {list(title_map.keys())}")
 
         return [found_records[x] for x in found_records]
 
-    def get_records_from_vault(self, uids=None, titles=None, encrypt=False):
+    def get_records_from_vault(self, uids=None, titles=None, encrypt=False, allow_missing=False):
 
         display.vvvvvv("getting records from the Keeper Vault")
 
@@ -429,7 +923,7 @@ class KeeperAnsible:
         display.vvvvvv(f"got {len(records)} records")
 
         # Filter only the records we need. For UID only, it should be the same list.
-        records = self._find_records(records, uids=uids, titles=titles)
+        records = self._find_records(records, uids=uids, titles=titles, allow_missing=allow_missing)
 
         if encrypt is True:
             records = self.encrypt(records)
@@ -460,7 +954,15 @@ class KeeperAnsible:
     def get_records(self, uids=None, titles=None, cache=None, encrypt=False):
 
         if cache is not None:
-            records = self.get_records_from_cache(cache, uids=uids, titles=titles)
+            try:
+                records = self.get_records_from_cache(cache, uids=uids, titles=titles)
+            except CacheUnusableError:
+                # Invalidate legacy/invalid cache and start from scratch via the vault.
+                display.warning(
+                    "Keeper record cache is unusable (legacy or invalid format) and was ignored. "
+                    "Fetching records from the vault. Regenerate the cache with keeper_cache_records."
+                )
+                records = self.get_records_from_vault(uids=uids, titles=titles, encrypt=encrypt)
         else:
             records = self.get_records_from_vault(uids=uids, titles=titles, encrypt=encrypt)
 
@@ -477,30 +979,523 @@ class KeeperAnsible:
 
         return records[0]
 
-    def create_record(self, new_record, shared_folder_uid):
+    def create_record(self, new_record, shared_folder_uid, subfolder_uid=None, check_mode=False):
         # KSM-816: use create_secret_with_options() instead of create_secret() so
         # that folder keys are fetched via the get_folders endpoint, which returns
         # all folders including empty ones. create_secret() uses get_secrets() which
         # only returns folder keys when the folder already contains records.
+        #
+        # Normalize a falsy subfolder_uid to None: the SDK sets payload.subFolderUid
+        # unconditionally and serializes the whole payload, so an empty string from a
+        # playbook would otherwise reach the server as subFolderUid: "".
+        subfolder_uid = subfolder_uid or None
+        check_mode = self._resolve_check_mode(check_mode)
         try:
+            if check_mode:
+                folders = self.client.get_folders()
+                shared_folder = next((f for f in folders if f.folder_uid == shared_folder_uid), None)
+                if shared_folder is None or not shared_folder.folder_key:
+                    raise ValueError("Unable to create record - folder key for {} not found".format(shared_folder_uid))
+                # Validate the same local payload as the SDK, without sending it or promising a new UID.
+                self.client.prepare_create_payload(
+                    self.client.config, CreateOptions(shared_folder_uid, subfolder_uid),
+                    new_record.to_json(), shared_folder.folder_key
+                )
+                return None
             record_uid = self.client.create_secret_with_options(
-                CreateOptions(shared_folder_uid, None), new_record
+                CreateOptions(shared_folder_uid, subfolder_uid), new_record
             )
         except Exception as err:
             raise Exception("Cannot get create record: {}".format(err))
 
         return record_uid
 
-    def remove_record(self, uids=None, titles=None, cache=None):
+    def create_folder(self, folder_name, shared_folder_uid, subfolder_uid=None, check_mode=False):
+        # shared_folder_uid must be the top-level shared folder UID. subfolder_uid, if given,
+        # must be an existing folder nested (at any depth) under that shared folder; the new
+        # folder is created inside it. If subfolder_uid is omitted, the new folder is created
+        # directly inside the shared folder.
+        #
+        # Keeper allows more than one folder with the same name under the same parent, and the
+        # create_folder API call itself has no create-if-missing behavior, so this method makes
+        # the module idempotent by treating "a folder with this name already exists directly
+        # under the target parent" as success instead of creating a duplicate.
+        parent_uid = subfolder_uid if subfolder_uid else shared_folder_uid
+        check_mode = self._resolve_check_mode(check_mode)
 
-        records = self.get_records(cache=cache, uids=uids, titles=titles)
-        if len(records) > 1 and titles is not None:
-            raise AnsibleError("Found multiple records for the Title. To fix, make sure records "
-                               "have a unique Title or use a UID.")
+        try:
+            folders = self.client.get_folders()
+        except Exception as err:
+            raise Exception("Cannot get existing folders: {}".format(err))
 
-        display.vvvvvv(f"removing record UID {records[0].uid}")
+        existing_folder = next(
+            (f for f in folders if f.parent_uid == parent_uid and f.name == folder_name),
+            None
+        )
+        if existing_folder is not None:
+            return existing_folder.folder_uid, False
 
-        self.client.delete_secret([records[0].uid])
+        try:
+            if check_mode:
+                shared_folder = next((f for f in folders if f.folder_uid == shared_folder_uid), None)
+                if shared_folder is None or not shared_folder.folder_key:
+                    raise ValueError("Unable to create folder - folder key for {} not found".format(shared_folder_uid))
+                self.client.prepare_create_folder_payload(
+                    self.client.config, CreateOptions(shared_folder_uid, subfolder_uid),
+                    folder_name, shared_folder.folder_key
+                )
+                return None, True
+            folder_uid = self.client.create_folder(
+                CreateOptions(shared_folder_uid, subfolder_uid), folder_name, folders=folders
+            )
+        except Exception as err:
+            raise Exception("Cannot create folder: {}".format(err))
+
+        return folder_uid, True
+
+    def get_folders(self):
+        """Get every folder the KSM application can see: its shared folders and all of their subfolders."""
+        return self._read_folders()[0]
+
+    def _read_folders(self):
+        """
+        Get the folder list, and the folders that the SDK could not read ({folder UID: error text}, see
+        _UnreadableFolderLog). The SDK logger is set to WARNING for the call, so the SDK creates its warning, and
+        then set back. The handler that the SDK adds has its own level, so the warning is not shown twice.
+        """
+        try:
+            from keeper_secrets_manager_core.keeper_globals import logger_name
+        except ImportError:
+            logger_name = "ksm"
+        sdk_logger = logging.getLogger(logger_name)
+        unreadable = _UnreadableFolderLog()
+        old_level, old_disabled = sdk_logger.level, sdk_logger.disabled
+        sdk_logger.addHandler(unreadable)
+        sdk_logger.disabled = False
+        if sdk_logger.getEffectiveLevel() > logging.WARNING:
+            sdk_logger.setLevel(logging.WARNING)
+        try:
+            folders = self.client.get_folders() or []
+        except Exception as err:
+            raise KeeperFolderError("Cannot get folders: {}".format(err))
+        finally:
+            sdk_logger.removeHandler(unreadable)
+            sdk_logger.setLevel(old_level)
+            sdk_logger.disabled = old_disabled
+        return folders, unreadable.folders
+
+    @staticmethod
+    def _unreadable_note(unreadable):
+        # For a "not found" message: the folder can be one that the SDK could not read.
+        if not unreadable:
+            return ""
+        return (" keeper-secrets-manager-core could not read {} folder(s) ({}), so the folder can be one of them. "
+                "A newer keeper-secrets-manager-core can read more folder formats.".format(
+                    len(unreadable), ", ".join(sorted(unreadable))))
+
+    @staticmethod
+    def _check_uid(name, value, required=False):
+        # An empty or padded UID usually comes from an empty template variable or a stray newline. Fail on it,
+        # instead of letting it match no folder, which looks the same as a folder that does not exist.
+        if value is None or str(value).strip() == "":
+            if value is None and required is False:
+                return None
+            if required is True:
+                raise KeeperFolderError("The {} is blank.".format(name))
+            raise KeeperFolderError("The {} is set but blank. Set it to a folder UID, or remove it.".format(name))
+        value = str(value)
+        if value != value.strip():
+            raise KeeperFolderError("The {} {!r} has leading or trailing whitespace.".format(name, value))
+        return value
+
+    @staticmethod
+    def _folder_by_uid(folders, folder_uid):
+        return next((f for f in folders if f.folder_uid == folder_uid), None)
+
+    @staticmethod
+    def _folder_children(folders, parent_uid):
+        # A parent_uid of None means the top level: the shared folders, which have no parent.
+        if parent_uid is None:
+            return [f for f in folders if not f.parent_uid]
+        return [f for f in folders if f.parent_uid == parent_uid]
+
+    @staticmethod
+    def _folder_ancestry(folders, folder):
+        # The folder, its parent, and so on up to its shared folder. The walk stops at a parent that is not in
+        # the list, or at a folder that it already visited, so a malformed server response cannot hang it.
+        chain = []
+        visited = set()
+        current = folder
+        while current is not None and current.folder_uid not in visited:
+            chain.append(current)
+            visited.add(current.folder_uid)
+            if not current.parent_uid:
+                break
+            current = KeeperAnsible._folder_by_uid(folders, current.parent_uid)
+        return chain
+
+    @staticmethod
+    def _quote(text):
+        # For messages: the text in double quotes, with a newline, a tab, or a quote in it shown as an escape, so
+        # that a stray character from a template or a file is visible.
+        return json.dumps(str(text), ensure_ascii=False)
+
+    @staticmethod
+    def _folder_label(folders, folder):
+        # For messages: the path of folder names from the shared folder, and the UID.
+        path = "/".join(f.name for f in reversed(KeeperAnsible._folder_ancestry(folders, folder)))
+        return "{} (UID {})".format(KeeperAnsible._quote(path), folder.folder_uid)
+
+    @staticmethod
+    def _folder_subtree(folders, folder_uid):
+        # Every folder below folder_uid, depth first, with each parent before its children. A folder is added
+        # only once, so a cycle in a malformed server response cannot hang the task.
+        children = {}
+        for f in folders:
+            if f.parent_uid:
+                children.setdefault(f.parent_uid, []).append(f)
+
+        subtree = []
+        visited = {folder_uid}
+        stack = [iter(children.get(folder_uid, []))]
+        while stack:
+            child = next(stack[-1], None)
+            if child is None:
+                stack.pop()
+            elif child.folder_uid not in visited:
+                visited.add(child.folder_uid)
+                subtree.append(child)
+                stack.append(iter(children.get(child.folder_uid, [])))
+        return subtree
+
+    @staticmethod
+    def _folder_to_dict(folder):
+        return {
+            "folder_uid": folder.folder_uid,
+            "folder_name": folder.name,
+            "parent_uid": folder.parent_uid or "",
+        }
+
+    @staticmethod
+    def _folder_path_names(folder_path):
+        # A string is split on "/". A list is used as it is, so a folder name that contains "/" can still be
+        # found. An empty name is an error, not skipped: it usually comes from an empty template variable, and
+        # to skip it would silently find a different folder.
+        if KeeperAnsible._is_text(folder_path):
+            names = str(folder_path).split("/")
+        elif isinstance(folder_path, (list, tuple)):
+            names = []
+            for name in folder_path:
+                if name is not None and not KeeperAnsible._is_text(name):
+                    raise KeeperFolderError(
+                        "Each folder_path item must be a folder name, but one item is {}. Put quotes around the "
+                        "folder names.".format(KeeperAnsible._describe_value(name)))
+                names.append("" if name is None else str(name))
+        else:
+            raise KeeperFolderError("The folder_path must be a string or a list of folder names.")
+
+        if len(names) == 0 or "" in names:
+            raise KeeperFolderError(
+                "The folder_path {} has an empty folder name. Look for a leading, trailing, or double \"/\", "
+                "or an empty list item.".format(json.dumps(names, ensure_ascii=False)))
+        return names
+
+    def get_folder(self, shared_folder_uid=None, subfolder_uid=None, folder_name=None, folder_path=None,
+                   include_subfolders=False):
+        """
+        Find one folder and return a dictionary with its folder_uid, folder_name, parent_uid, and
+        shared_folder_uid, and with subfolders if include_subfolders is True.
+
+        The lookup starts at subfolder_uid if it is set, else at shared_folder_uid, else at the top level (the
+        shared folders of the KSM application). If both UIDs are set, the subfolder must be inside the shared
+        folder. Then folder_name finds a folder directly inside the start folder, or folder_path goes down one
+        folder name at a time. With neither, the result is the start folder. Names must match exactly. If no
+        folder matches, or more than one folder matches, this raises KeeperFolderError.
+        """
+        shared_folder_uid = self._check_uid("shared_folder_uid", shared_folder_uid)
+        subfolder_uid = self._check_uid("subfolder_uid", subfolder_uid)
+
+        if folder_name is not None and folder_path is not None:
+            raise KeeperFolderError("The folder_name and folder_path are both set. Set only one of them.")
+        if folder_name is not None:
+            folder_name = str(folder_name)
+            if folder_name == "":
+                raise KeeperFolderError("The folder_name is set but blank. Set it to a folder name, or remove it.")
+            names = [folder_name]
+        elif folder_path is not None:
+            names = self._folder_path_names(folder_path)
+        else:
+            names = []
+
+        if shared_folder_uid is None and subfolder_uid is None and len(names) == 0:
+            raise KeeperFolderError(
+                "There is nothing to look up. Set shared_folder_uid, subfolder_uid, folder_name, or folder_path.")
+
+        folders, unreadable = self._read_folders()
+
+        start = None
+        if shared_folder_uid is not None:
+            start = self._folder_by_uid(folders, shared_folder_uid)
+            if start is None:
+                raise KeeperFolderError(
+                    "The shared folder {} was not found, or it is not shared to this KSM application.{}".format(
+                        shared_folder_uid, self._unreadable_note(unreadable)))
+            if start.parent_uid:
+                raise KeeperFolderError(
+                    "The folder {} is a subfolder, not a shared folder. Set it as subfolder_uid instead.".format(
+                        self._folder_label(folders, start)))
+
+        if subfolder_uid is not None:
+            subfolder = self._folder_by_uid(folders, subfolder_uid)
+            if subfolder is None:
+                raise KeeperFolderError(
+                    "The subfolder {} was not found, or it is not shared to this KSM application.{}".format(
+                        subfolder_uid, self._unreadable_note(unreadable)))
+            if start is not None and self._folder_ancestry(folders, subfolder)[-1].folder_uid != start.folder_uid:
+                raise KeeperFolderError("The subfolder {} is not inside the shared folder {}.".format(
+                    self._folder_label(folders, subfolder), self._folder_label(folders, start)))
+            start = subfolder
+
+        folder = start
+        for name in names:
+            parent_uid = folder.folder_uid if folder is not None else None
+            matches = [f for f in self._folder_children(folders, parent_uid) if f.name == name]
+            if len(matches) == 1:
+                folder = matches[0]
+                continue
+
+            if folder is None:
+                where = "at the top level (the shared folders of this KSM application)"
+                uid_option = "shared_folder_uid"
+            else:
+                where = "in the folder {}".format(self._folder_label(folders, folder))
+                uid_option = "subfolder_uid"
+            if len(matches) == 0:
+                raise KeeperFolderError("No folder named {} was found {}.{}".format(
+                    self._quote(name), where, self._unreadable_note(unreadable)))
+            raise KeeperFolderError(
+                "Found {} folders named {} {}: {}. Rename one of them in the vault. Or set {} to the UID of the "
+                "folder that you want, and remove {} from folder_name or folder_path.".format(
+                    len(matches), self._quote(name), where, ", ".join(f.folder_uid for f in matches), uid_option,
+                    self._quote(name)))
+
+        top = self._folder_ancestry(folders, folder)[-1]
+        result = self._folder_to_dict(folder)
+        result["shared_folder_uid"] = top.folder_uid if not top.parent_uid else None
+        if include_subfolders:
+            result["subfolders"] = [self._folder_to_dict(f) for f in self._folder_subtree(folders, folder.folder_uid)]
+            if unreadable:
+                display.warning(
+                    "keeper-secrets-manager-core could not read {} folder(s) ({}). If they are below the folder {}, "
+                    "they are not in subfolders.".format(len(unreadable), ", ".join(sorted(unreadable)),
+                                                         self._folder_label(folders, folder)))
+        return result
+
+    def update_folder(self, folder_uid, new_folder_name, check_mode=False):
+        """
+        Rename a folder. Return a dictionary with changed, folder_uid, folder_name (the name after this call),
+        and previous_folder_name.
+
+        If the folder already has the new name, nothing is sent to the server. In check mode, nothing is sent
+        to the server, and changed shows what a real run would do.
+        """
+        check_mode = self._resolve_check_mode(check_mode)
+        folder_uid = self._check_uid("folder_uid", folder_uid, required=True)
+        if new_folder_name is None or str(new_folder_name).strip() == "":
+            raise KeeperFolderError("The new_folder_name is blank.")
+        new_folder_name = str(new_folder_name)
+        # A space or a newline at the start or the end usually comes from a template or from YAML, not from the
+        # author: a block scalar (|) keeps the newline at its end. A lookup of the name would then not find the
+        # folder, so this fails like a padded UID does.
+        if new_folder_name != new_folder_name.strip():
+            raise KeeperFolderError(
+                "The new_folder_name {!r} has leading or trailing whitespace. Remove it. In YAML, a block scalar "
+                "(| or >) keeps the newline at its end.".format(new_folder_name))
+
+        folders, unreadable = self._read_folders()
+        folder = self._folder_by_uid(folders, folder_uid)
+        if folder is None:
+            raise KeeperFolderError(
+                "The folder {} was not found, or it is not shared to this KSM application.{}".format(
+                    folder_uid, self._unreadable_note(unreadable)))
+
+        result = {
+            "changed": folder.name != new_folder_name,
+            "folder_uid": folder_uid,
+            "folder_name": new_folder_name,
+            "previous_folder_name": folder.name,
+        }
+        if result["changed"] is False:
+            display.vvv("Folder {} is already named {}. Nothing to rename.".format(
+                folder_uid, self._quote(new_folder_name)))
+            return result
+
+        # Keeper allows two folders with the same name in one parent, so this is not an error. But a later
+        # lookup of the name with keeper_get_folder fails, because the name is no longer unique.
+        same_name = [f for f in self._folder_children(folders, folder.parent_uid or None)
+                     if f.folder_uid != folder_uid and f.name == new_folder_name]
+        if len(same_name) > 0:
+            display.warning(
+                "The parent of the folder {} already has a folder named {} ({}). After the rename, a lookup of "
+                "this name fails because the name is not unique.".format(
+                    self._folder_label(folders, folder), self._quote(new_folder_name),
+                    ", ".join(f.folder_uid for f in same_name)))
+
+        if check_mode:
+            return result
+
+        try:
+            self.client.update_folder(folder_uid, new_folder_name, folders=folders)
+        except Exception as err:
+            raise KeeperFolderError("Cannot rename the folder {}: {}".format(self._folder_label(folders, folder), err))
+
+        return result
+
+    @staticmethod
+    def _folder_delete_statuses(response):
+        # The per-folder results from SecretsManager.delete_folder(), as a list of dictionaries. SDK 17.3.0
+        # returns the server's "folders" list, or {} if the server sent none. Later versions return a list.
+        if isinstance(response, dict):
+            response = response.get("folders", [])
+        if not isinstance(response, list):
+            return []
+        return [status for status in response if isinstance(status, dict)]
+
+    def delete_folder(self, folder_uid, force=False, check_mode=False):
+        """
+        Delete a folder. Return a dictionary with changed, folder_uid, and folder_name.
+
+        A folder that does not exist, or that is not shared to the KSM application, is not an error: changed
+        is False, the same as when an earlier run already deleted the folder. A folder that contains records or
+        subfolders is an error, unless force is True. Only the value True enables force, so a string such as
+        "false" can never delete a folder's contents. In check mode, nothing is sent to the server.
+        """
+        check_mode = self._resolve_check_mode(check_mode)
+        folder_uid = self._check_uid("folder_uid", folder_uid, required=True)
+        force = force is True
+
+        folders, unreadable = self._read_folders()
+        folder = self._folder_by_uid(folders, folder_uid)
+        if folder is None:
+            # A folder that the SDK skipped exists. Reporting it as not found would say that nothing is left to
+            # delete, while the folder is still in the vault.
+            if folder_uid in unreadable:
+                raise KeeperFolderError(
+                    "The folder {} exists, but keeper-secrets-manager-core could not read it ({}). Nothing was "
+                    "deleted. A newer keeper-secrets-manager-core can read more folder formats.".format(
+                        folder_uid, unreadable[folder_uid]))
+            return {
+                "changed": False,
+                "folder_uid": folder_uid,
+                "folder_name": None,
+                "msg": "The folder {} was not found, or it is not shared to this KSM application. Nothing was "
+                       "deleted.".format(folder_uid),
+            }
+
+        label = self._folder_label(folders, folder)
+
+        if force is False:
+            subfolders = self._folder_children(folders, folder_uid)
+            try:
+                records = self.client.get_secrets() or []
+            except Exception as err:
+                raise KeeperFolderError("Cannot get records to check if the folder {} is empty: {}".format(label, err))
+
+            # A record in a subfolder has the subfolder UID in inner_folder_uid. A record at the top of a shared
+            # folder has only folder_uid.
+            records = [r for r in records if r.inner_folder_uid == folder_uid or
+                       (not r.inner_folder_uid and r.folder_uid == folder_uid)]
+            if unreadable:
+                display.warning(
+                    "keeper-secrets-manager-core could not read {} folder(s) ({}), so the module cannot count them. If "
+                    "one of them is inside the folder {}, only the Keeper server check stops the delete.".format(
+                        len(unreadable), ", ".join(sorted(unreadable)), label))
+            if len(subfolders) > 0 or len(records) > 0:
+                raise KeeperFolderError(
+                    "The folder {} is not empty. It contains {} record(s) and {} subfolder(s). Set force_deletion to "
+                    "true to delete the folder and everything in it.".format(label, len(records), len(subfolders)))
+
+        result = {"changed": True, "folder_uid": folder_uid, "folder_name": folder.name}
+        if check_mode:
+            return result
+
+        try:
+            response = self.client.delete_folder([folder_uid], force_deletion=force)
+        except Exception as err:
+            raise KeeperFolderError("Cannot delete the folder {}: {}".format(label, err))
+
+        # The server does not raise an error when it refuses to delete a folder. It returns a responseCode for
+        # each folder, so a refused delete must be found here, or the task would report a delete that did not
+        # happen.
+        status = next((s for s in self._folder_delete_statuses(response) if s.get("folderUid") == folder_uid), None)
+        if status is None:
+            try:
+                folders_after = self.get_folders()
+            except KeeperFolderError as err:
+                raise KeeperFolderError(
+                    "The Keeper server sent no result for the delete of the folder {}, and the check of the folder "
+                    "list after it failed, so the folder can still exist. {}".format(label, err))
+            if self._folder_by_uid(folders_after, folder_uid) is not None:
+                raise KeeperFolderError(
+                    "The Keeper server did not confirm the delete of the folder {}, and the folder still "
+                    "exists.".format(label))
+        elif status.get("responseCode") != "ok":
+            detail = status.get("responseCode") or "no response code"
+            if status.get("errorMessage"):
+                detail = "{}: {}".format(detail, status.get("errorMessage"))
+            raise KeeperFolderError("The Keeper server did not delete the folder {}. It returned {}.".format(
+                label, detail))
+
+        return result
+
+    def remove_record(self, uids=None, titles=None, cache=None, check_mode=False):
+        """
+        Remove one record, reporting whether it changed and the record's UID and title.
+
+        A missing record is a no-op. Check mode reports the predicted change without deleting anything.
+        The cache option remains accepted, but a delete must use the current vault: a registered cache can
+        contain a record that was already deleted, or hide another record with the same title.
+        """
+        check_mode = self._resolve_check_mode(check_mode)
+        with KeeperAnsible._vault_reads_only():
+            records = self.get_records_from_vault(uids=uids, titles=titles, allow_missing=True)
+        if not records:
+            return {
+                "changed": False,
+                "msg": "The record was not found, or it is not shared to this KSM application. Nothing was deleted.",
+            }
+        if len(records) > 1:
+            raise ValueError(
+                "Found multiple records for the {} {}: {}. Use a single UID to select the record to delete.".format(
+                    "title" if titles is not None else "UID selection",
+                    self._quote(titles if titles is not None else uids),
+                    ", ".join(record.uid for record in records)))
+
+        record = records[0]
+        result = {"changed": True, "record_uid": record.uid, "record_title": record.title}
+        if check_mode:
+            return result
+
+        display.vvvvvv(f"removing record UID {record.uid}")
+        response = self.client.delete_secret([record.uid])
+
+        # The SDK returns per-record statuses, including refusals, without raising an exception. Only an
+        # unambiguous "ok" status for the requested UID confirms that the delete succeeded.
+        statuses = [
+            status for status in (response if isinstance(response, list) else [])
+            if isinstance(status, dict) and status.get("recordUid") == record.uid
+        ]
+        label = "{} (UID {})".format(self._quote(record.title), record.uid)
+        if len(statuses) != 1:
+            raise RuntimeError("The Keeper server did not confirm the delete of record {}.".format(label))
+        status = statuses[0]
+        if status.get("responseCode") != "ok":
+            detail = status.get("responseCode") or "no response code"
+            if status.get("errorMessage"):
+                detail = "{}: {}".format(detail, status["errorMessage"])
+            raise RuntimeError("The Keeper server did not delete record {}. It returned {}.".format(label, detail))
+
+        return result
 
     @staticmethod
     def _gather_secrets(obj):
@@ -638,9 +1633,24 @@ class KeeperAnsible:
 
         return record_dict
 
-    def set_value(self, field_type, key, value, uid=None, title=None, cache=None):
+    def set_value(self, field_type, key, value, uid=None, title=None, cache=None, check_mode=False):
+        """
+        Set a value in a record and save the record. Return True if the value changed.
 
-        record = self.get_record(uids=uid, titles=title, cache=cache)
+        The record is saved only if the value changed, so a task that sets the value that the record already has
+        reports no change. In check mode, nothing is saved. The record is always read from the vault.
+        """
+
+        # The record comes from the vault, also when a registered cache is given. A cached copy can be older than
+        # the vault: the value could then look unchanged while the vault holds another one, and a save would send
+        # old values of the other fields. keeper_remove reads the vault for the same reason. The cache option is
+        # accepted for compatibility.
+        with KeeperAnsible._vault_reads_only():
+            record = self.get_record(uids=uid, titles=title)
+
+        # The setters below change record.dict, and save() sends the JSON that is made from it. So the same
+        # dictionary after the change means that a save would send the same data.
+        before = copy.deepcopy(record.dict)
 
         if field_type == KeeperFieldType.FIELD:
             record.field(key, value)
@@ -654,7 +1664,10 @@ class KeeperAnsible:
         else:
             raise AnsibleError("Cannot set_value. The field type ENUM of {} is invalid.".format(field_type))
 
-        self.client.save(record)
+        changed = record.dict != before
+        if changed and not self._resolve_check_mode(check_mode):
+            self.client.save(record)
+        return changed
 
     @staticmethod
     def get_field_type_enum_and_key(args):
@@ -681,7 +1694,7 @@ class KeeperAnsible:
                 field_key = None if key == "notes" else args.get(key)
 
         if len(field_type) == 0:
-            raise AnsibleError("Either field, custom_field, file, or notes needs to set to a non-blank value for keeper_copy.")
+            raise AnsibleError("Either field, custom_field, file, or notes needs to be set to a non-blank value.")
         if len(field_type) > 1:
             raise AnsibleError("Found multiple field types. Only one of the following key can be set: field, "
                                "custom_field, file, or notes.")
@@ -859,13 +1872,24 @@ class KeeperAnsible:
 
         return password
 
-    def cleanup(self):
+    def cleanup(self, check_mode=False):
 
-        status = {}
+        status = {"changed": False}
 
         # If we are using the cache, remove the cache file.
         if self.using_cache is True:
-            KSMCache.remove_cache_file()
-            status["removed_ksm_cache"] = True
+            # The prediction uses the cache file as it is now. In a real run, the reads of earlier tasks can
+            # create the file first.
+            cache_exists = os.path.exists(self._cache_file_path())
+            status["changed"] = cache_exists
+            status["removed_ksm_cache"] = False
+            if cache_exists and not self._resolve_check_mode(check_mode):
+                try:
+                    KSMCache.remove_cache_file()
+                except FileNotFoundError:
+                    # Another host that shares the cache file removed it first.
+                    status["changed"] = False
+                else:
+                    status["removed_ksm_cache"] = True
 
         return status

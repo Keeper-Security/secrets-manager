@@ -1,0 +1,48 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Update Folder
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Rename The Folder"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "Production"
+    register: "renamed"
+
+  - name: "Rename The Folder Again With The Same Name"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "Production"
+    register: "renamed_again"
+
+  - name: "Look Up The Folder By Its New Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Production"
+    register: "by_new_name"
+
+  - name: "Look Up The Folder By Its Old Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Staging"
+    register: "by_old_name"
+    ignore_errors: yes
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - renamed is changed
+        - renamed.folder_uid == folder_uid
+        - renamed.folder_name == "Production"
+        - renamed.previous_folder_name == "Staging"
+        - renamed_again is not changed
+        - renamed_again.folder_uid == folder_uid
+        - renamed_again.folder_name == "Production"
+        - renamed_again.previous_folder_name == "Production"
+        - by_new_name.folder_uid == folder_uid
+        - by_new_name.folder_name == "Production"
+        - by_new_name.parent_uid == shared_folder_uid
+        - by_old_name is failed
+        - "'No folder named \"Staging\" was found' in by_old_name.msg"

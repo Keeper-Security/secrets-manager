@@ -1,5 +1,5 @@
 ---
-requires_ansible: '>=2.10'
+requires_ansible: '>=2.15.13,!=2.17.*'
 action_groups:
   keeper_secrets_manager:
     - keeper_cache_records
@@ -9,6 +9,10 @@ action_groups:
     - keeper_set
     - keeper_cleanup
     - keeper_create
+    - keeper_create_folder
+    - keeper_get_folder
+    - keeper_update_folder
+    - keeper_delete_folder
     - keeper_remove
     - keeper_password
     - keeper_info

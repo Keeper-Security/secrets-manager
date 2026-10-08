@@ -1,0 +1,94 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Update Folder With Null Options
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    no_value: null
+    null_uid_message: "The folder_uid option is null. Give it a value, or leave the option out of the task."
+    null_name_message: "The new_folder_name option is null. Give it a value, or leave the option out of the task."
+
+  tasks:
+  - name: "Rename With A Null Folder UID"
+    keeper_update_folder:
+      folder_uid: null
+      new_folder_name: "Production"
+    register: "null_uid"
+    ignore_errors: yes
+
+  - name: "Rename To A Null Name"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: null
+    register: "null_name"
+    ignore_errors: yes
+
+  - name: "Rename With Both Options Null"
+    keeper_update_folder:
+      folder_uid: ~
+      new_folder_name: ~
+    register: "both_null"
+    ignore_errors: yes
+
+  - name: "Rename To A Variable That Has No Value"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "{{ no_value }}"
+    register: "variable_null"
+    ignore_errors: yes
+
+  - name: "Rename To An Undefined Variable With A Null Default"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "{{ not_defined_anywhere | default(None) }}"
+    register: "default_null"
+    ignore_errors: yes
+
+  - name: "Rename With The Name Left Out By default(omit)"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "{{ not_defined_anywhere | default(omit) }}"
+    register: "omitted_name"
+    ignore_errors: yes
+
+  - name: "Rename To A Variable Defined As Null, With default(omit)"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "{{ no_value | default(omit) }}"
+    register: "omit_of_null"
+    ignore_errors: yes
+
+  - name: "Rename To A Variable Defined As Null, With default(omit, true)"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "{{ no_value | default(omit, true) }}"
+    register: "omit_true_of_null"
+    ignore_errors: yes
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - null_uid is failed
+        - null_uid is not changed
+        - null_uid.msg == null_uid_message
+        - null_name is failed
+        - null_name.msg == null_name_message
+        - both_null is failed
+        # A message that ends with a period is followed by a space.
+        - both_null.msg == null_uid_message ~ " " ~ null_name_message
+        - variable_null is failed
+        - variable_null.msg == null_name_message
+        - default_null is failed
+        # ansible-core 2.19 and later give null here. Earlier versions render a null filter result as "", so there the
+        # task fails later, as a blank name. In both cases it fails before any request.
+        - 'default_null.msg in [null_name_message, "Could not update folder: The new_folder_name is blank."]'
+        - omitted_name is failed
+        - 'omitted_name.msg == "missing required arguments: new_folder_name"'
+        # default(omit) does not leave out a variable that is defined as null. ansible-core 2.19 and later give null
+        # (the null message); earlier versions render it as "" (a blank name). Both fail before any request.
+        - omit_of_null is failed
+        - 'omit_of_null.msg in [null_name_message, "Could not update folder: The new_folder_name is blank."]'
+        # default(omit, true), the hint of the null message, leaves it out, so the required option is missing.
+        - omit_true_of_null is failed
+        - 'omit_true_of_null.msg == "missing required arguments: new_folder_name"'

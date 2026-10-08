@@ -1,0 +1,135 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+#
+# Option errors. The module must reject them before it connects, so the fake server must receive no request.
+# The checks compare the text before "Supported parameters include:" exactly, and the names in that list as a sorted
+# list, so they do not depend on the order of the names.
+---
+- name: Keeper Get Folder Bad Options
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    supported_marker: "Supported parameters include: "
+    supported_names: ["folder_name", "folder_path", "include_subfolders", "shared_folder_uid", "subfolder_uid"]
+    quote_hint: "Put quotes around the value, or use the string filter."
+    expected:
+      typo_name: "Unsupported parameters for (keeper_get_folder) module: folder_nmae. "
+      typo_uid: "Unsupported parameters for (keeper_get_folder) module: sharedfolder_uid. "
+      both_names: "parameters are mutually exclusive: folder_name|folder_path"
+      bool_name: "The folder_name option must be a string, but it is a boolean (True). {{ quote_hint }}"
+      list_uid: "The shared_folder_uid option must be a string, but it is a list. {{ quote_hint }}"
+      float_uid: "The subfolder_uid option must be a string, but it is a number (1.1). {{ quote_hint }}"
+      dict_name: "The folder_name option must be a string, but it is a dictionary. {{ quote_hint }}"
+      int_name: "The folder_name option must be a string, but it is a number (2024). {{ quote_hint }}"
+      octal_name: "The folder_name option must be a string, but it is a number (7). {{ quote_hint }}"
+      date_name: "The folder_name option must be a string, but it is a date (2026-09-29). {{ quote_hint }}"
+
+  tasks:
+  - name: "A Misspelled folder_name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_nmae: "Databases"
+    register: "typo_name"
+    ignore_errors: yes
+
+  - name: "A Misspelled shared_folder_uid"
+    keeper_get_folder:
+      sharedfolder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Databases"
+    register: "typo_uid"
+    ignore_errors: yes
+
+  - name: "Both folder_name And folder_path"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Databases"
+      folder_path: "Databases"
+    register: "both_names"
+    ignore_errors: yes
+
+  - name: "An include_subfolders Value That Is Not A Boolean"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      include_subfolders: "maybe"
+    register: "bad_bool"
+    ignore_errors: yes
+
+  - name: "A folder_name That YAML Reads As A Boolean"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: yes
+    register: "bool_name"
+    ignore_errors: yes
+
+  - name: "A shared_folder_uid That Is A List"
+    keeper_get_folder:
+      shared_folder_uid: ["{{ shared_folder_uid }}", "{{ other_shared_folder_uid }}"]
+    register: "list_uid"
+    ignore_errors: yes
+
+  - name: "A subfolder_uid That YAML Reads As A Number"
+    keeper_get_folder:
+      subfolder_uid: 1.10
+    register: "float_uid"
+    ignore_errors: yes
+
+  - name: "A folder_name That Is A Dictionary"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name:
+        name: "Databases"
+    register: "dict_name"
+    ignore_errors: yes
+
+  - name: "A folder_name That YAML Reads As An Integer"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: 2024
+    register: "int_name"
+    ignore_errors: yes
+
+  - name: "A folder_name 007 That YAML Reads As The Integer 7"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: 007
+    register: "octal_name"
+    ignore_errors: yes
+
+  - name: "A folder_name That YAML Reads As A Date"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: 2026-09-29
+    register: "date_name"
+    ignore_errors: yes
+
+  - name: "Check The Option Errors"
+    assert:
+      that:
+        - typo_name is failed
+        - typo_name.folder_uid is not defined
+        - typo_name.msg.split(supported_marker)[0] == expected.typo_name
+        - typo_name.msg.split(supported_marker)[1].rstrip('.').split(', ') | sort == supported_names
+        - typo_uid is failed
+        - typo_uid.folder_uid is not defined
+        - typo_uid.msg.split(supported_marker)[0] == expected.typo_uid
+        - typo_uid.msg.split(supported_marker)[1].rstrip('.').split(', ') | sort == supported_names
+        - both_names is failed
+        - both_names.folder_uid is not defined
+        - both_names.msg == expected.both_names
+        - bad_bool is failed
+        - bad_bool.folder_uid is not defined
+        - "bad_bool.msg.startswith(\"argument 'include_subfolders' is of type \")"
+        - "\"The value 'maybe' is not a valid boolean.\" in bad_bool.msg"
+        - item.0 is failed
+        - item.0.folder_uid is not defined
+        - item.0.msg == item.1
+    loop:
+      - ["{{ bool_name }}", "{{ expected.bool_name }}"]
+      - ["{{ list_uid }}", "{{ expected.list_uid }}"]
+      - ["{{ float_uid }}", "{{ expected.float_uid }}"]
+      - ["{{ dict_name }}", "{{ expected.dict_name }}"]
+      - ["{{ int_name }}", "{{ expected.int_name }}"]
+      - ["{{ octal_name }}", "{{ expected.octal_name }}"]
+      - ["{{ date_name }}", "{{ expected.date_name }}"]
+    loop_control:
+      label: "{{ item.1 }}"

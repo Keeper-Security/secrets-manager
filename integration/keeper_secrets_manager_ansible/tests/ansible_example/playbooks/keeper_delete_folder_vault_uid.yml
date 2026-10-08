@@ -1,0 +1,41 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# folder_uid encrypted with Ansible Vault, written in the task itself, so the plugin gets the vault value. It is a
+# string, so the option check accepts it, and the module uses the decrypted UID. The vault password is a test value
+# that the test writes to a temp file: "keeper-delete-folder-test-only".
+- name: Keeper Delete Folder With A Vault-Encrypted Folder UID
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete The Empty Folder By Its Encrypted UID"
+    keeper_delete_folder:
+      folder_uid: !vault |
+        $ANSIBLE_VAULT;1.1;AES256
+        32643063643733383636346562626439616362343963313131623532616465616466333136643733
+        6634383035396566346239386339313030393037303136310a333061613837633130613133616131
+        64633630353264376337663466656462306165636635323630633034633162393566373039333938
+        3962303631643733320a326631653965306533623138666131323536336637373762303631376261
+        66666239363832303566353661363562366461316239623366303836363530346363
+    register: "vault_deleted"
+
+  - name: "Delete A Folder That Is Not Empty By Its Encrypted UID"
+    keeper_delete_folder:
+      folder_uid: !vault |
+        $ANSIBLE_VAULT;1.1;AES256
+        35343234386230313436393935303931366538313630356362666535613066353865393665623239
+        6162333764343466396632616232626566356564643161630a626666353661613535343633643131
+        30653130646135323833616531623465303666373064613664313530373062303862363530636535
+        6338633539343232310a633636656639373232663036636132623566343031663733383663393935
+        3134
+    register: "vault_not_empty"
+    ignore_errors: yes
+
+  - name: "Check The Encrypted UIDs"
+    assert:
+      that:
+        - vault_deleted is changed
+        - vault_deleted.folder_uid == empty_folder_uid
+        - vault_deleted.folder_name == "Staging"
+        - vault_not_empty is failed
+        - vault_not_empty.msg == expected.tree_not_empty

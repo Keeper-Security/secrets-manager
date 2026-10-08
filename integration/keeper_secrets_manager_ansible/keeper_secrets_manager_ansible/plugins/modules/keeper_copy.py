@@ -24,6 +24,8 @@ description:
     - Has the same options at the normal Ansible copy module.
 author:
     - John Walstra
+notes:
+  - Check mode requires an initialized Keeper configuration.
 options:
   uid:
     description:
@@ -59,6 +61,15 @@ options:
     - The file name of the file that contains the value.
     type: str
     required: no
+  notes:
+    description:
+    - Set to yes to copy the notes field from the record.
+    - The notes field contains text notes attached to the record.
+    - Notes is a singleton field (only one per record), so it uses a boolean flag instead of a field name.
+    type: bool
+    default: no
+    required: no
+    version_added: '1.3.0'
   notation:
     description:
     - The Keeper notation to access record that contains the value.

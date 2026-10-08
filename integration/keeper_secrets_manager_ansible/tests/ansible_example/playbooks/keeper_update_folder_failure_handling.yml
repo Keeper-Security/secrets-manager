@@ -1,0 +1,71 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Update Folder Failures With failed_when And rescue
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    not_found_message: "Could not update folder: The folder {{ missing_folder_uid }} was not found, or it is not shared to this KSM application."
+    supported: "Supported parameters include: "
+
+  tasks:
+  - name: "Rename A Missing Folder With failed_when False"
+    keeper_update_folder:
+      folder_uid: "{{ missing_folder_uid }}"
+      new_folder_name: "Production"
+    register: "not_failed"
+    failed_when: false
+
+  - name: "Rename A Missing Folder, And Accept Only The Not-Found Failure"
+    keeper_update_folder:
+      folder_uid: "{{ missing_folder_uid }}"
+      new_folder_name: "Production"
+    register: "accepted"
+    failed_when: "'was not found' not in accepted.msg"
+
+  - name: "Rename With A Misspelled Option With failed_when False"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_name: "Production"
+    register: "bad_option"
+    failed_when: false
+
+  - name: "Rename A Missing Folder In A Block"
+    block:
+    - name: "Rename A Missing Folder"
+      keeper_update_folder:
+        folder_uid: "{{ missing_folder_uid }}"
+        new_folder_name: "Production"
+
+    - name: "This Task Must Not Run After The Failure"
+      set_fact:
+        ran_after_failure: true
+    rescue:
+    - name: "Keep The Failure Message"
+      set_fact:
+        rescued_message: "{{ ansible_failed_result.msg }}"
+
+  - name: "Rename With A Null Name In A Block"
+    block:
+    - name: "Rename With A Null Name"
+      keeper_update_folder:
+        folder_uid: "{{ folder_uid }}"
+        new_folder_name: null
+    rescue:
+    - name: "Keep The Option Failure Message"
+      set_fact:
+        rescued_option_message: "{{ ansible_failed_result.msg }}"
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - not_failed is not failed
+        - not_failed is not changed
+        - not_failed.msg == not_found_message
+        - accepted is not failed
+        - accepted.msg == not_found_message
+        - bad_option is not failed
+        - "bad_option.msg.split(supported)[0] == 'missing required arguments: new_folder_name; Unsupported parameters for (keeper_update_folder) module: new_name. '"
+        - ran_after_failure is not defined
+        - rescued_message == not_found_message
+        - rescued_option_message == "The new_folder_name option is null. Give it a value, or leave the option out of the task."

@@ -1,0 +1,54 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Update Folder With Wrong Options
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    # The checks compare the text before the list of supported parameters exactly, and the names in the list as a
+    # set, so they do not depend on the order of the names.
+    supported: "Supported parameters include: "
+    options: ["folder_uid", "new_folder_name"]
+
+  tasks:
+  - name: "Rename With A Misspelled Option"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_name: "Production"
+    register: "misspelled"
+    ignore_errors: yes
+
+  - name: "Rename With An Option Of Another Folder Module"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "Production"
+      folder_name: "Staging"
+    register: "extra_option"
+    ignore_errors: yes
+
+  - name: "Rename With No New Name"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+    register: "no_name"
+    ignore_errors: yes
+
+  - name: "Rename With No Folder UID"
+    keeper_update_folder:
+      new_folder_name: "Production"
+    register: "no_uid"
+    ignore_errors: yes
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - misspelled is failed
+        - misspelled is not changed
+        - "misspelled.msg.split(supported)[0] == 'missing required arguments: new_folder_name; Unsupported parameters for (keeper_update_folder) module: new_name. '"
+        - "misspelled.msg.split(supported)[1].rstrip('.').split(', ') | sort == options"
+        - extra_option is failed
+        - "extra_option.msg.split(supported)[0] == 'Unsupported parameters for (keeper_update_folder) module: folder_name. '"
+        - "extra_option.msg.split(supported)[1].rstrip('.').split(', ') | sort == options"
+        - no_name is failed
+        - 'no_name.msg == "missing required arguments: new_folder_name"'
+        - no_uid is failed
+        - 'no_uid.msg == "missing required arguments: folder_uid"'

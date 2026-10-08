@@ -1,0 +1,21 @@
+---
+- name: Keeper Remove With A Duplicate Title
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: Attempt removal by an ambiguous title
+      keeper_remove:
+        title: "{{ record_title }}"
+      check_mode: "{{ preview }}"
+      register: duplicate
+      ignore_errors: yes
+
+    - name: Check that the failure names both matching UIDs
+      assert:
+        that:
+          - duplicate is failed
+          - duplicate is not changed
+          - "'Found multiple records' in duplicate.msg"
+          - uid in duplicate.msg
+          - other_uid in duplicate.msg

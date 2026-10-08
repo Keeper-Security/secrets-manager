@@ -1,0 +1,20 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Update Folder When The Server Returns An Error
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Rename The Folder"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "Production"
+    register: "renamed"
+    ignore_errors: yes
+
+  - name: "Check The Result"
+    assert:
+      that:
+        - renamed is failed
+        - renamed is not changed
+        - renamed.msg == expected.msg
