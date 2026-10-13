@@ -54,6 +54,7 @@ options:
     - The encrypted cache registered by keeper_cache_records, as a string or byte string.
     - Accepted for compatibility. Removal always reads the current vault, not the registered cache,
       so an outdated or partial cache cannot report a false no-op or hide a duplicate title.
+      A task that sets cache shows a warning. Remove the option.
     type: raw
     required: no
     version_added: '1.2.0'

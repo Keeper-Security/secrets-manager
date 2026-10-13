@@ -47,6 +47,7 @@ options:
     - The cache registered by keeper_get_records_cache
     - Accepted for compatibility. keeper_set reads the record from the vault, not from the cache, so an outdated
       cache cannot hide a needed save or bring back old values of other fields.
+      A task that sets cache shows a warning. Remove the option.
     - Using keeper_set will not update the cache. Use the keeper_get_records_cache action again to get a new cache.
     type: str
     required: no

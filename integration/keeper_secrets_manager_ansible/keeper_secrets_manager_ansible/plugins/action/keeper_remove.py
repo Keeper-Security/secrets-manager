@@ -11,7 +11,7 @@
 #
 
 from ansible.plugins.action import ActionBase
-from keeper_secrets_manager_ansible import KeeperAnsible
+from keeper_secrets_manager_ansible import KeeperAnsible, warn_cache_ignored
 
 DOCUMENTATION = r'''
 ---
@@ -56,6 +56,7 @@ options:
     - The encrypted cache registered by keeper_cache_records, as a string or byte string.
     - Accepted for compatibility. Removal always reads the current vault, not the registered cache,
       so an outdated or partial cache cannot report a false no-op or hide a duplicate title.
+      A task that sets cache shows a warning. Remove the option.
     type: raw
     required: no
     version_added: '1.2.0'
@@ -132,6 +133,9 @@ class ActionModule(ActionBase):
                 raise ValueError("The cache option must be an encrypted cache string or byte string.")
         except Exception as err:
             return {"failed": True, "changed": False, "msg": str(err)}
+
+        if args.get("cache") is not None:
+            warn_cache_ignored("keeper_remove")
 
         try:
             keeper = KeeperAnsible(task_vars=task_vars, action_module=self)

@@ -12,7 +12,7 @@
 
 from ansible.plugins.action import ActionBase
 from ansible.errors import AnsibleError
-from keeper_secrets_manager_ansible import KeeperAnsible
+from keeper_secrets_manager_ansible import KeeperAnsible, warn_cache_ignored
 
 DOCUMENTATION = r'''
 ---
@@ -50,6 +50,7 @@ options:
     - The cache registered by keeper_get_records_cache
     - Accepted for compatibility. keeper_set reads the record from the vault, not from the cache, so an outdated
       cache cannot hide a needed save or bring back old values of other fields.
+      A task that sets cache shows a warning. Remove the option.
     - Using keeper_set will not update the cache. Use the keeper_get_records_cache action again to get a new cache.
     type: str
     required: no
@@ -114,6 +115,8 @@ class ActionModule(ActionBase):
         keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
 
         cache = self._task.args.get("cache")
+        if cache is not None:
+            warn_cache_ignored("keeper_set")
 
         uid = self._task.args.get("uid")
         title = self._task.args.pop("title", None)
