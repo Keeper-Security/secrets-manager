@@ -29,6 +29,7 @@ import base64
 import socket
 import datetime
 import logging
+from urllib.parse import unquote
 
 # Check if the KSM SDK core has been installed
 KSM_SDK_ERR = None
@@ -44,6 +45,10 @@ else:
     from keeper_secrets_manager_core.utils import generate_password as sdk_generate_password, strtobool, \
         check_config_mode
     from keeper_secrets_manager_core.dto.dtos import Record as _Record, KeeperFile as _KeeperFile
+    from requests.exceptions import InvalidProxyURL, InvalidURL, RequestException
+    from requests.utils import get_environ_proxies, prepend_scheme_if_needed, select_proxy
+    from urllib3.exceptions import LocationParseError
+    from urllib3.util import parse_url
 
     # If keeper_secrets_manager_core is installed, then these will be installed. They are deps.
     from cryptography.fernet import Fernet
@@ -52,6 +57,114 @@ else:
 
 
 display = Display()
+
+# Decision log: the userinfo of a URL is found with a regex and a string search, never with urlparse. A proxy
+# password can hold #, /, @ or %, and urlparse then cuts the URL at the wrong place, so it keeps part of the password
+# or drops the host. Do not replace this with urlparse. The userinfo ends at the LAST @ of the URL token.
+_URL_USERINFO = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^\s'\")]*@")
+
+
+def remove_proxy_credentials(text, proxy_url=None):
+    """Return text with the user name and password removed from every URL. Scheme, host and port stay."""
+    if proxy_url and "://" in proxy_url and "@" in proxy_url:
+        scheme, rest = proxy_url.split("://", 1)
+        text = text.replace(proxy_url, "{}://{}".format(scheme, rest[rest.rindex("@") + 1:]))
+    return _URL_USERINFO.sub(r"\g<scheme>", text)
+
+
+_PROXY_VARIABLES = ("https_proxy", "all_proxy", "http_proxy")
+
+
+def _proxy_variables():
+    """The proxy variables that are set, under the exact name in the environment. requests reads any letter case."""
+    return {name: value for name, value in os.environ.items() if name.lower() in _PROXY_VARIABLES and value}
+
+
+def _unparsable(value, as_proxy=False):
+    try:
+        parse_url(prepend_scheme_if_needed(value, "http") if as_proxy else value)
+    except (LocationParseError, ValueError):
+        return True
+    return False
+
+
+def _outside_latin1(proxy):
+    # Same string search as the decision log above, never urlparse: a password can hold #, / or @. requests
+    # percent-decodes the user name and password and then encodes them as latin-1 for the Basic header.
+    rest = proxy.split("://", 1)[-1]
+    if "@" not in rest:
+        return False
+    try:
+        unquote(rest[:rest.rindex("@")]).encode("latin-1")
+    except UnicodeEncodeError:
+        return True
+    return False
+
+
+def _bad_proxy_setting(url, proxy_url):
+    """The name of the proxy setting that requests cannot parse for this request, or None."""
+    held = _proxy_variables()
+    if proxy_url:
+        candidates = {"the proxy URL of the client": proxy_url}
+    elif url:
+        chosen = select_proxy(url, get_environ_proxies(url))
+        candidates = {name: value for name, value in held.items() if value == chosen}
+    else:
+        candidates = held
+    return next((name for name, value in sorted(candidates.items()) if _unparsable(value, as_proxy=True)), None)
+
+
+def _bad_url_message(err, url, proxy_url, kind):
+    # Decision log: the message is built from facts the plugin checked, never from the text of the parse error. That
+    # text holds the whole URL, with the proxy credential or a presigned file link. requests parses the request URL
+    # before the proxy, so the request URL is checked first. The proxy is found by what requests would select for
+    # this URL, so NO_PROXY and a mixed-case variable name give the same answer as requests. An InvalidProxyURL
+    # (for example a proxy with no scheme) carries no proxy text, so its class alone is enough to blame the proxy.
+    if not (url and _unparsable(url)):
+        bad = _bad_proxy_setting(url, proxy_url)
+        if bad or isinstance(err, InvalidProxyURL):
+            return ("The request failed. The proxy URL in {} is not valid. Percent-encode the special characters in "
+                    "the proxy user name and password. For example, write # as %23, / as %2F, @ as %40 and % as "
+                    "%25.".format(bad or "your proxy settings"))
+    if kind == "file":
+        return "The request failed. The URL of the file download is not valid. Check the file in the Keeper record."
+    # A host written as user:password@host keeps only the part after the last @, so the message never repeats it.
+    host = re.match(r"[A-Za-z][A-Za-z0-9+.-]*://([^/?#]*)", url or "")
+    return ("The request failed. The Keeper server URL{} is not valid. The host name comes from KSM_HOSTNAME. If "
+            "KSM_HOSTNAME is not set, it comes from keeper_hostname, the configuration, or the token "
+            "prefix.".format(" https://" + host.group(1).rsplit("@", 1)[-1] if host else ""))
+
+
+@contextlib.contextmanager
+def _proxy_credentials_hidden(proxy_url=None, url=None, kind="keeper"):
+    """Keep the proxy credential out of the error for a failed request made inside the block.
+
+    url is the request URL when the caller has it. kind is "keeper" or "file" and picks the wording for a bad URL.
+    """
+    try:
+        yield
+    except (RequestException, LocationParseError, UnicodeEncodeError) as err:
+        proxies = [value for value in [proxy_url] + list(_proxy_variables().values()) if value]
+        if isinstance(err, UnicodeEncodeError):
+            # The repr of this error holds the whole string that failed to encode, here the proxy password, so the
+            # error must not escape when a configured proxy credential is the cause. Any other source is not hidden.
+            if not any(_outside_latin1(value) for value in proxies):
+                raise
+            raise ConnectionError(
+                "The request failed. The proxy user name or password has a character outside latin-1 that proxy "
+                "authentication cannot send. Use latin-1 characters only in the proxy credentials."
+            ) from None
+        if isinstance(err, (InvalidURL, LocationParseError)):
+            raise ConnectionError(_bad_url_message(err, url, proxy_url, kind)) from None
+        original = "".join(traceback.format_exception(type(err), err, err.__traceback__))
+        chain, message = original, str(err)
+        for proxy in proxies:
+            chain, message = remove_proxy_credentials(chain, proxy), remove_proxy_credentials(message, proxy)
+        if remove_proxy_credentials(chain) == original:
+            # Nothing to hide. The original error keeps its class, which the DR cache warning names.
+            raise
+        # from None, so the original error and its URL stay out of the traceback that -vvv prints.
+        raise ConnectionError(remove_proxy_credentials(message)) from None
 
 
 def warn_cache_ignored(plugin_name):
@@ -185,8 +298,9 @@ class KeeperAnsible:
     @staticmethod
     def _cache_fallback(transmission_key, error):
         # The DR cache replaces a request that fails for any reason, also for a TLS certificate error. So the
-        # warning says that the response is old, and why the request failed. Only the class of the error is in
-        # the warning, because its text can hold the address of a proxy.
+        # warning says that the response is old, and why the request failed. The warning names only the class of the
+        # error. The text that is logged below is safe, because the transport wrapper already removed the proxy
+        # credential from the error before it gets here.
         if not KeeperAnsible._dr_cache_allowed:
             raise ConnectionError("The request to the Keeper server failed ({}). A delete or a save needs the "
                                   "current vault, so the DR cache is not used.".format(type(error).__name__)) from error
@@ -207,11 +321,20 @@ class KeeperAnsible:
         return KSMHttpResponse(200, cached_data[32:], None)
 
     @staticmethod
+    def _transport(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True, proxy_url=None):
+        # SecretsManager.post_function is looked up at call time, because tests patch it. The SDK sends only
+        # get_secret through custom_post_function, so this also stands in for post_function on the client.
+        with _proxy_credentials_hidden(proxy_url, url=url):
+            return SecretsManager.post_function(
+                url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs, proxy_url
+            )
+
+    @staticmethod
     def _caching_post_function(url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs=True,
                                proxy_url=None):
         # The SDK caching function, with a private cache file and a warning when the cache replaces a request.
         try:
-            response = SecretsManager.post_function(
+            response = KeeperAnsible._transport(
                 url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs, proxy_url
             )
         except Exception as err:
@@ -225,7 +348,7 @@ class KeeperAnsible:
                                          verify_ssl_certs=True, proxy_url=None):
         # Keep the DR cache fallback, but never replace the cache after a successful read.
         try:
-            return SecretsManager.post_function(
+            return KeeperAnsible._transport(
                 url, transmission_key, encrypted_payload_and_signature, verify_ssl_certs, proxy_url
             )
         except Exception as err:
@@ -612,6 +735,13 @@ class KeeperAnsible:
                     log_level=log_level,
                     custom_post_function=custom_post_function
                 )
+
+            # Without the cache the SDK sends get_secret through post_function too, so every route needs it. A client
+            # that already has its own post_function (the SDK mock sets one) keeps it.
+            # The SDK upload path (the private __upload_file_function) calls requests.post directly and skips
+            # post_function. The plugin never uploads, so a future upload feature must wrap that call too.
+            if "post_function" not in vars(self.client):
+                self.client.post_function = KeeperAnsible._transport
 
             # The SDK logs its own warning only when logging is on, and it is off by default.
             if getattr(self.client, "verify_ssl_certs", True) is False:
@@ -1534,7 +1664,8 @@ class KeeperAnsible:
                 self.secret_values.append(secret_value)
 
     def get_value_via_notation(self, notation):
-        value = self.client.get_notation(notation)
+        with _proxy_credentials_hidden(kind="file"):
+            value = self.client.get_notation(notation)
         self.stash_secret_value(value)
         return value
 
@@ -1554,7 +1685,8 @@ class KeeperAnsible:
         elif field_type == KeeperFieldType.FILE:
             file = record.find_file_by_title(key)
             if file is not None:
-                values = [file.get_file_data()]
+                with _proxy_credentials_hidden(url=file.f.get("url"), kind="file"):
+                    values = [file.get_file_data()]
                 display.vvvvvv(f"found the file: {key}")
             else:
                 display.vvvvvv(f"cannot find the file: {key}")
