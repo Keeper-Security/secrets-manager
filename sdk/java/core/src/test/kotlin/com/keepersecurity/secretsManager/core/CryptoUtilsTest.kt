@@ -3,6 +3,9 @@ package com.keepersecurity.secretsManager.core
 import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider
 //import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.security.Security
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CyclicBarrier
+import kotlin.concurrent.thread
 import kotlin.test.*
 
 internal class CryptoUtilsTest {
@@ -20,6 +23,42 @@ internal class CryptoUtilsTest {
         val ciphertext = publicEncrypt(data, publicKey)
         val plaintext = privateDecrypt(ciphertext, keyPair.private.encoded)
         assertContentEquals(data, plaintext)
+    }
+
+    @Test(timeout = 60_000)
+    fun publicEncryptProducesDecryptableKeysUnderConcurrentCalls() {
+        // The barrier releases every thread at once, which is what makes a shared MessageDigest,
+        // KeyPairGenerator or KeyFactory fail often enough to catch. Decryption runs on one thread
+        // after the workers finish, so only publicEncrypt is exercised concurrently.
+        val keyPair = generateKeyPair()
+        val publicKey = extractPublicRaw(keyPair.public)
+        val threadCount = 8
+        val bursts = 2_000
+        val barrier = CyclicBarrier(threadCount)
+        val thrown = ConcurrentLinkedQueue<Throwable>()
+        val results = ConcurrentLinkedQueue<Pair<ByteArray, ByteArray>>()
+
+        val workers = List(threadCount) {
+            thread {
+                repeat(bursts) {
+                    barrier.await()
+                    try {
+                        val data = getRandomBytes(32)
+                        results.add(data to publicEncrypt(data, publicKey))
+                    } catch (e: Throwable) {
+                        thrown.add(e)
+                    }
+                }
+            }
+        }
+        workers.forEach { it.join() }
+
+        val privateKey = keyPair.private.encoded
+        val undecryptable = results.count { (data, ciphertext) ->
+            runCatching { privateDecrypt(ciphertext, privateKey) }.getOrNull()?.contentEquals(data) != true
+        }
+        assertEquals(0, thrown.size, "publicEncrypt threw ${thrown.size} times under concurrent calls")
+        assertEquals(0, undecryptable, "$undecryptable of ${results.size} ciphertexts did not decrypt to the original data")
     }
 
     @Test
