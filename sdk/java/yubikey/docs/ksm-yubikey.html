@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>YubiKey support in Keeper Secrets Manager</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #14161a;
+    --panel: #1d2026;
+    --panel-2: #262a32;
+    --line: #353a44;
+    --text: #e8eaee;
+    --muted: #9aa1ad;
+    --accent: #ffc700;
+    --accent-soft: rgba(255, 199, 0, 0.14);
+    --good: #4cc38a;
+    --bad: #ef6b6b;
+    --mono: "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0c0d10; color: var(--text); font-family: var(--sans); }
+  body { overflow: hidden; }
+
+  #deck { position: absolute; width: 1280px; height: 720px; left: 50%; top: 50%; transform-origin: center; }
+  .slide {
+    position: absolute; inset: 0; padding: 64px 80px 56px;
+    background: var(--bg); display: none; flex-direction: column;
+    border-top: 4px solid var(--accent);
+  }
+  .slide.active { display: flex; }
+  .slide h1 { font-size: 46px; margin: 0 0 8px; letter-spacing: -0.5px; }
+  .slide h2 { font-size: 34px; margin: 0 0 28px; letter-spacing: -0.3px; }
+  .slide h2 .tag { font-size: 15px; font-weight: 600; color: var(--accent); display: block; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 8px; }
+  .slide p, .slide li { font-size: 21px; line-height: 1.45; color: var(--text); }
+  .slide ul { margin: 0; padding-left: 26px; }
+  .slide li { margin: 0 0 12px; }
+  .slide li::marker { color: var(--accent); }
+  .muted { color: var(--muted) !important; }
+  .accent { color: var(--accent); }
+  .good { color: var(--good); }
+  .bad { color: var(--bad); }
+  code, .mono { font-family: var(--mono); font-size: 0.88em; }
+  .footer { position: absolute; left: 80px; right: 80px; bottom: 22px; display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; flex: 0 0 auto; }
+  .cols.wide-left { grid-template-columns: 1.25fr 1fr; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px 26px; }
+  .card h3 { margin: 0 0 12px; font-size: 19px; color: var(--accent); }
+  .card p, .card li { font-size: 18px; }
+
+  pre {
+    margin: 0; background: #0f1114; border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 22px; font-family: var(--mono); font-size: 15.5px; line-height: 1.55; color: #d6dae1; overflow: hidden;
+  }
+  pre .k { color: #c792ea; } pre .s { color: #c3e88d; } pre .c { color: #6b7380; } pre .f { color: #82aaff; }
+  pre .hl { background: var(--accent-soft); color: var(--accent); border-radius: 3px; }
+  pre .del { color: var(--bad); }
+
+  /* Title slide */
+  .title { justify-content: center; }
+  .title h1 { font-size: 60px; line-height: 1.1; }
+  .title .sub { font-size: 24px; color: var(--muted); margin-top: 18px; }
+  .title .meta { margin-top: 56px; font-size: 17px; color: var(--muted); }
+  .key-art { position: absolute; right: 90px; top: 190px; width: 300px; height: 300px; }
+
+  /* Flow diagrams */
+  .flow { display: flex; align-items: stretch; gap: 0; margin-top: 4px; }
+  .step { flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 16px 14px; position: relative; }
+  .step .n { font-size: 13px; color: var(--accent); font-weight: 700; letter-spacing: 1px; }
+  .step .t { font-size: 17px; font-weight: 600; margin: 6px 0 6px; }
+  .step .d { font-size: 14.5px; color: var(--muted); line-height: 1.4; }
+  .step.yk { border-color: var(--accent); }
+  .arrow { width: 26px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 22px; }
+  .legend { margin-top: 18px; font-size: 15px; color: var(--muted); }
+  .legend .sw { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--accent); border-radius: 3px; vertical-align: -1px; margin-right: 6px; }
+
+  /* Slot map */
+  .slots { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; }
+  .slot { border: 1px solid var(--line); border-radius: 8px; padding: 10px 6px; text-align: center; background: var(--panel); }
+  .slot .id { font-family: var(--mono); font-size: 16px; font-weight: 700; }
+  .slot .nm { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .slot.free { opacity: 0.55; }
+  .slot.ksm { border-color: var(--accent); background: var(--accent-soft); }
+  .slot.wrap { border-color: var(--good); background: rgba(76, 195, 138, 0.12); }
+  .slot.std { background: #191b20; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 18px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 15px; text-transform: uppercase; letter-spacing: 1px; }
+  td.y { color: var(--good); } td.n { color: var(--bad); }
+
+  .big-stat { font-size: 52px; font-weight: 700; color: var(--accent); line-height: 1; }
+  .stat-label { font-size: 16px; color: var(--muted); margin-top: 6px; }
+
+  .layers { display: flex; flex-direction: column; gap: 12px; }
+  .layer { border-radius: 10px; padding: 16px 22px; border: 1px solid var(--line); background: var(--panel); display: grid; grid-template-columns: 210px 1fr; gap: 18px; align-items: start; }
+  .layer .ln { font-weight: 700; font-size: 18px; }
+  .layer .ld { font-size: 16px; color: var(--muted); line-height: 1.5; }
+  .layer .ld code { color: var(--text); }
+  .layer.core { border-left: 4px solid #82aaff; }
+  .layer.mod { border-left: 4px solid var(--accent); }
+  .layer.hw { border-left: 4px solid var(--good); }
+  .layer.app { border-left: 4px solid #c792ea; }
+
+  .notes { display: none; }
+  body.show-notes .notes {
+    display: block; position: absolute; left: 0; right: 0; bottom: 0; max-height: 40%; overflow: auto;
+    background: rgba(12, 13, 16, 0.96); border-top: 1px solid var(--accent); padding: 16px 80px; font-size: 16px; color: var(--muted); line-height: 1.5;
+  }
+  #hint { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); font-size: 12px; color: #5d636e; font-family: var(--sans); transition: opacity 0.6s; }
+  #hint.gone { opacity: 0; }
+
+  @media print {
+    @page { size: 1280px 720px; margin: 0; }
+    html, body { overflow: visible; background: var(--bg); }
+    #deck { position: static; transform: none !important; width: auto; height: auto; }
+    .slide { display: flex !important; position: relative; width: 1280px; height: 720px; page-break-after: always; break-after: page; }
+    .notes, #hint { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="deck">
+
+<!-- 1. Title -->
+<section class="slide title">
+  <h1>Hardware-backed KSM clients<br><span class="accent">YubiKey support</span> in the Java SDK</h1>
+  <div class="sub">The client private key and the app key stay on the YubiKey.<br>A copied config file is useless on its own.</div>
+  <div class="meta">Keeper Secrets Manager · Java SDK · first iteration</div>
+  <svg class="key-art" viewBox="0 0 300 300" aria-hidden="true">
+    <rect x="95" y="20" width="110" height="240" rx="22" fill="#1d2026" stroke="#ffc700" stroke-width="4"/>
+    <rect x="122" y="255" width="56" height="34" rx="6" fill="#262a32" stroke="#353a44" stroke-width="3"/>
+    <circle cx="150" cy="95" r="32" fill="none" stroke="#ffc700" stroke-width="4"/>
+    <circle cx="150" cy="95" r="12" fill="#ffc700"/>
+    <rect x="125" y="160" width="50" height="8" rx="4" fill="#353a44"/>
+    <rect x="125" y="180" width="50" height="8" rx="4" fill="#353a44"/>
+    <rect x="125" y="200" width="32" height="8" rx="4" fill="#353a44"/>
+  </svg>
+  <aside class="notes">Opening: KSM authenticates machines, and today the machine's identity is a file. This work moves that identity onto a YubiKey, with no server changes.</aside>
+</section>
+
+<!-- 2. Problem -->
+<section class="slide">
+  <h2><span class="tag">The problem</span>The KSM config file is the credential</h2>
+  <div class="cols wide-left">
+    <pre><span class="c">// config.json today</span>
+{
+  "hostname": <span class="s">"keepersecurity.com"</span>,
+  "clientId": <span class="s">"Gx3h…"</span>,
+  <span class="hl">"privateKey": "MIGHAgEAMBMGByqGSM49…"</span>,
+  <span class="hl">"appKey": "q9ZtR2…"</span>,
+  "appOwnerPublicKey": <span class="s">"BGn0…"</span>
+}</pre>
+    <div>
+      <ul>
+        <li><b>privateKey</b> signs every request, so whoever holds it <em>is</em> the client.</li>
+        <li><b>appKey</b> decrypts every record and folder key the application can reach.</li>
+        <li>Both are plain base64 in a JSON file on disk, in CI variables, in backups, in container images.</li>
+        <li>Copy the file and you can impersonate the client from anywhere, until someone notices and revokes the device.</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes">Emphasise that this isn't a bug; it's the normal software-key model. File permissions help, but copies leak through backups, images and CI logs.</aside>
+</section>
+
+<!-- 3. Goals -->
+<section class="slide">
+  <h2><span class="tag">Goals</span>What this adds</h2>
+  <div class="cols">
+    <div class="card">
+      <h3>Key custody</h3>
+      <ul>
+        <li>The client private key is generated <b>on the YubiKey</b> and never leaves it</li>
+        <li>Every KSM request is signed <b>by the YubiKey</b></li>
+        <li>The <b>app key</b> is stored only wrapped by the YubiKey</li>
+        <li>Keys are <b>named after the KSM application</b> in YubiKey tools</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Fit</h3>
+      <ul>
+        <li><b>No server changes</b>: same protocol, same signatures</li>
+        <li>No native libraries and no Yubico tools needed</li>
+        <li>One YubiKey serves <b>many KSM configs</b></li>
+        <li>The config says <b>which YubiKey and slot</b> holds its key</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes">The "no server changes" constraint drove most decisions: PIV over FIDO2, raw P-256 ECDSA, and the public key format.</aside>
+</section>
+
+<!-- 4. Background -->
+<section class="slide">
+  <h2><span class="tag">Background</span>How a KSM client authenticates</h2>
+  <div class="flow">
+    <div class="step"><div class="n">1 · TOKEN</div><div class="t">One-time token</div><div class="d"><code>REGION:clientKey</code>. Its HMAC gives the <code>clientId</code>.</div></div>
+    <div class="arrow">›</div>
+    <div class="step yk"><div class="n">2 · KEY PAIR</div><div class="t">Client P-256 key</div><div class="d">Generated by the client. <b class="accent">Now on the YubiKey.</b></div></div>
+    <div class="arrow">›</div>
+    <div class="step"><div class="n">3 · BINDING</div><div class="t">First get_secret</div><div class="d">Sends the raw public key. Server returns the app key, encrypted with the clientKey.</div></div>
+    <div class="arrow">›</div>
+    <div class="step yk"><div class="n">4 · EVERY CALL</div><div class="t">ECDSA signature</div><div class="d">SHA256withECDSA over transmission key + payload. <b class="accent">Now by the YubiKey.</b></div></div>
+  </div>
+  <div class="cols" style="margin-top: 30px; flex: 0 0 auto;">
+    <div class="card"><h3>Private key: one use</h3><p>It only signs requests. No ECDH, no decryption. So a hardware signer can replace it completely.</p></div>
+    <div class="card"><h3>App key: decrypts data</h3><p>It's an AES key used in software on every call. It can't live on the YubiKey, but it can be stored only wrapped by it.</p></div>
+  </div>
+  <div class="legend"><span class="sw"></span>steps now performed on the YubiKey</div>
+  <aside class="notes">Key insight from reading the SDK: the private key has exactly one use, request signing, in one function. That made a pluggable signer a small, clean change.</aside>
+</section>
+
+<!-- 5. Architecture -->
+<section class="slide">
+  <h2><span class="tag">Design</span>Three layers, small seams</h2>
+  <div class="layers">
+    <div class="layer app"><div class="ln">Application</div><div class="ld">Prompts for the PIN, creates a <code>YubiKeySigner</code>, passes it to <code>SecretsManagerOptions</code>. About 10 lines.</div></div>
+    <div class="layer mod"><div class="ln">yubikey module<br><span class="muted" style="font-weight:400;font-size:14px">new artifact</span></div><div class="ld"><code>YubiKeySigner</code> implements <code>RequestSigner</code> and <code>AppKeyProtector</code>. A minimal PIV client over <code>javax.smartcardio</code>: generate, sign, ECDH, metadata, certificates, device info. Java 8+, no dependencies besides core.</div></div>
+    <div class="layer core"><div class="ln">core SDK</div><div class="ld">Generic, knows nothing about YubiKeys: <code>RequestSigner</code> (sign, <code>keyLocation</code>, <code>onBound</code>), <code>AppKeyProtector</code> (wrap/unwrap), <code>initializeStorage(publicKey = …)</code>. Config fields: <code>publicKey</code>, <code>appKeyWrapped</code>, <code>privateKeyLocation</code>.</div></div>
+    <div class="layer hw"><div class="ln">YubiKey PIV</div><div class="ld">PC/SC is built into macOS and Windows (<code>pcscd</code> on Linux). ECC P-256 required: YubiKey 4 / 5, firmware 5.3+ for automatic slots and app key wrapping.</div></div>
+  </div>
+  <aside class="notes">Core interfaces are hardware-agnostic: a PKCS#11 HSM, a TPM or a cloud KMS signer could plug into the same RequestSigner seam later.</aside>
+</section>
+
+<!-- 6. Slot layout -->
+<section class="slide">
+  <h2><span class="tag">On the YubiKey</span>Slot layout</h2>
+  <div class="slots">
+    <div class="slot std"><div class="id">9A</div><div class="nm">Authentication</div></div>
+    <div class="slot std"><div class="id">9C</div><div class="nm">Signature</div></div>
+    <div class="slot wrap"><div class="id">9D</div><div class="nm">App key wrapping</div></div>
+    <div class="slot std"><div class="id">9E</div><div class="nm">Card auth</div></div>
+    <div class="slot ksm"><div class="id">82</div><div class="nm">Production App</div></div>
+    <div class="slot ksm"><div class="id">83</div><div class="nm">CI Pipeline</div></div>
+    <div class="slot ksm"><div class="id">84</div><div class="nm">Staging</div></div>
+    <div class="slot free"><div class="id">85</div><div class="nm">free</div></div>
+    <div class="slot free"><div class="id">86</div><div class="nm">free</div></div>
+    <div class="slot free"><div class="id">87</div><div class="nm">free</div></div>
+    <div class="slot free"><div class="id">88</div><div class="nm">free</div></div>
+    <div class="slot free"><div class="id">89</div><div class="nm">free</div></div>
+    <div class="slot free"><div class="id">8A</div><div class="nm">free</div></div>
+    <div class="slot free"><div class="id">8B</div><div class="nm">free</div></div>
+    <div class="slot free"><div class="id">8C</div><div class="nm">free</div></div>
+    <div class="slot free"><div class="id">…95</div><div class="nm">free</div></div>
+  </div>
+  <div class="cols" style="margin-top: 26px; grid-template-columns: 1fr 1fr 1fr; flex: 0 0 auto;">
+    <div class="card"><h3>One key per config</h3><p>Each config gets its own P-256 key in the first free retired slot (82–95). A public key can be registered only once.</p></div>
+    <div class="card"><h3>One shared wrapping key</h3><p>9D, the slot PIV defines for key management, holds the ECDH key that wraps every config's app key.</p></div>
+    <div class="card"><h3>Standard slots untouched</h3><p>9A / 9C / 9E stay free for smart-card login, S/MIME and similar. Occupied slots are never overwritten.</p></div>
+  </div>
+  <div class="legend" style="margin-top:14px">Up to <b class="accent">20 KSM configs</b> per YubiKey. Slot names in YubiKey tools come from certificates the SDK writes.</div>
+  <aside class="notes">Retired slots exist on YubiKey 4 and 5. Sharing one wrapping key costs nothing in practice: unwrapping needs the physical key and its PIN, which already unlocks every signing key.</aside>
+</section>
+
+<!-- 7. Adding a device -->
+<section class="slide">
+  <h2><span class="tag">Flow</span>Adding a KSM device with a YubiKey</h2>
+  <div class="flow">
+    <div class="step yk"><div class="n">1</div><div class="t">Verify PIN</div><div class="d">Before anything is written, so a wrong PIN can't leave a stray key.</div></div>
+    <div class="arrow">›</div>
+    <div class="step yk"><div class="n">2</div><div class="t">Generate key</div><div class="d">P-256 in a free retired slot, then a sign/verify self-check.</div></div>
+    <div class="arrow">›</div>
+    <div class="step yk"><div class="n">3</div><div class="t">Wrapping key</div><div class="d">Created in 9D on first use, marked by a certificate.</div></div>
+    <div class="arrow">›</div>
+    <div class="step"><div class="n">4</div><div class="t">initializeStorage</div><div class="d">Stores the public key. No <code>privateKey</code>.</div></div>
+    <div class="arrow">›</div>
+    <div class="step"><div class="n">5</div><div class="t">Bind</div><div class="d">First <code>getSecrets</code>: the app key arrives and is stored wrapped.</div></div>
+    <div class="arrow">›</div>
+    <div class="step yk"><div class="n">6</div><div class="t">Name the key</div><div class="d"><code>onBound</code>: certificate named after the KSM app title.</div></div>
+  </div>
+  <div class="cols" style="margin-top: 30px; flex: 0 0 auto;">
+    <pre><span class="c">// once, with a One-Time Access Token</span>
+<span class="f">YubiKeySigner</span>(pin).<span class="f">use</span> { yk <span class="k">-></span>
+    <span class="f">initializeStorage</span>(storage, token,
+        publicKey = yk.<span class="f">generateKey</span>())
+    <span class="f">getSecrets</span>(<span class="f">SecretsManagerOptions</span>(storage,
+        signer = yk, appKeyProtector = yk))
+}</pre>
+    <div class="card"><h3>Steps 2, 3 and 6 need the management key</h3><p>The factory default is used unless the app passes one. It's kept in memory only until binding names the certificate, then wiped.</p></div>
+  </div>
+  <div class="legend"><span class="sw"></span>performed on the YubiKey</div>
+  <aside class="notes">Everything the SDK does is idempotent or guarded: it refuses to overwrite occupied slots, and if wrapping fails at binding it keeps the plain app key with a warning rather than lose it.</aside>
+</section>
+
+<!-- 8. Every run -->
+<section class="slide">
+  <h2><span class="tag">Flow</span>Every run after that</h2>
+  <div class="flow">
+    <div class="step yk"><div class="n">1</div><div class="t">Find the slot</div><div class="d"><code>forPublicKey</code> matches the config's <code>publicKey</code> against slot metadata.</div></div>
+    <div class="arrow">›</div>
+    <div class="step yk"><div class="n">2</div><div class="t">PIN once</div><div class="d">Per connection. Re-verified automatically if another app resets the card.</div></div>
+    <div class="arrow">›</div>
+    <div class="step yk"><div class="n">3</div><div class="t">Unwrap app key</div><div class="d">ECDH on the YubiKey, once. Then held in memory until <code>close()</code>.</div></div>
+    <div class="arrow">›</div>
+    <div class="step yk"><div class="n">4</div><div class="t">Sign requests</div><div class="d">Each request is signed on the YubiKey. Retries and throttling re-sign transparently.</div></div>
+  </div>
+  <div class="cols" style="margin-top: 30px; flex: 0 0 auto;">
+    <pre><span class="c">// every run</span>
+<span class="k">val</span> publicKey = storage.<span class="f">getBytes</span>(KEY_PUBLIC_KEY)!!
+YubiKeySigner.<span class="f">forPublicKey</span>(pin, publicKey).<span class="f">use</span> { yk <span class="k">-></span>
+    <span class="f">getSecrets</span>(<span class="f">SecretsManagerOptions</span>(storage,
+        signer = yk, appKeyProtector = yk))
+}</pre>
+    <div class="card"><h3>Wrong YubiKey plugged in?</h3><p>A clear error instead of the server's "signature is invalid":</p><p class="mono" style="font-size:14.5px">The key of this config is not on the connected YubiKey. It is on: YubiKey 5C NFC FIPS, serial 34822070, PIV slot 84 (RETIRED3)</p></div>
+  </div>
+  <div class="legend"><span class="sw"></span>performed on the YubiKey</div>
+  <aside class="notes">No slot numbers in app code: the public key in the config identifies the slot. That's why core now keeps publicKey after binding when the private key is external.</aside>
+</section>
+
+<!-- 8b. Unattended -->
+<section class="slide">
+  <h2><span class="tag">Unattended</span>Services, CI and cron: nobody to type the PIN</h2>
+  <div class="cols">
+    <div class="card">
+      <h3>Permanently unattended: PIN-less keys</h3>
+      <ul>
+        <li><code>generateKey(pinPolicy = NEVER)</code>, then <code>YubiKeySigner()</code></li>
+        <li>Own wrapping key: <b>"…App Key Wrapping, no PIN"</b></li>
+        <li>No secret on the host: the factor is <b>having the YubiKey</b></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Temporarily unattended: PIN in the config</h3>
+      <ul>
+        <li><code>savePin(storage)</code> verifies, then saves <code>privateKeyPin</code></li>
+        <li><code>removePin(storage)</code>: attended again</li>
+        <li>The <b>last PIN retry</b> is always left for a person</li>
+      </ul>
+    </div>
+  </div>
+  <div class="cols" style="margin-top: 24px;">
+    <pre><span class="c">// PIN asked for only when needed</span>
+<span class="k">val</span> pin = PinProvider.<span class="f">fromStorage</span>(storage) {
+    <span class="f">readPin</span>()
+}
+YubiKeySigner.<span class="f">forPublicKey</span>(pin, publicKey)</pre>
+    <div class="card"><h3>Trade-off</h3><p>A saved PIN is plain text: config plus YubiKey give full access. PIN policy is fixed at generation.</p></div>
+  </div>
+  <aside class="notes">A PIN stored next to the config protects little: whoever reads the config reads the PIN. PIN-less keys say that honestly and keep the host free of secrets. The saved PIN is for switching an existing attended config to unattended for a while, since the policy of a PIV key cannot change after generation.</aside>
+</section>
+
+
+
+
+
+<!-- 9. Operations -->
+<section class="slide">
+  <h2><span class="tag">Operations</span>What you see in YubiKey tools</h2>
+  <div class="cols" style="grid-template-columns: 1fr 1fr; align-items: start;">
+    <img src="images/yubico-authenticator-certificates.png" alt="Yubico Authenticator showing PIV certificates: slot 9D named &quot;Keeper Secrets Manager App Key Wrapping&quot;, slots 82 and 83 named &quot;App5&quot;" style="max-width:100%; max-height: 500px; border-radius: 10px; border: 1px solid var(--line); display: block;">
+    <div>
+      <ul>
+        <li>PIV keys have no names, so tools show the subject of the slot's certificate.</li>
+        <li>At binding the SDK writes a <b>self-signed certificate named after the KSM application</b> ("App5" here). It's signed by the slot's own key, on the YubiKey.</li>
+        <li>Without it, every slot reads "Retired Key Management".</li>
+        <li>Slot 9D is named <b>"Keeper Secrets Manager App Key Wrapping"</b>, the shared app key wrapping key.</li>
+        <li>The same names appear in ykman and macOS Keychain Access.</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes">Real screenshot from the YubiKey used for this work: slot 82 and 83 hold two KSM configs for the same "App5" application, 9D is the shared wrapping key. Note macOS may offer to pair the smart card once slots hold certificates; that's harmless.</aside>
+</section>
+
+
+
+
+
+
+
+
+
+<!-- Summary -->
+<section class="slide">
+  <h2><span class="tag">Summary</span>Nothing secret is left in the file</h2>
+  <div class="cols">
+    <div>
+      <p class="muted" style="margin:0 0 10px;font-size:17px">Software key</p>
+      <pre>{
+  "hostname": <span class="s">"keepersecurity.com"</span>,
+  "clientId": <span class="s">"Gx3h…"</span>,
+  <span class="del">"privateKey": "MIGHAgEAMBMG…"</span>,
+  <span class="del">"appKey": "q9ZtR2…"</span>,
+  "appOwnerPublicKey": <span class="s">"BGn0…"</span>
+}</pre>
+    </div>
+    <div>
+      <p class="muted" style="margin:0 0 10px;font-size:17px">YubiKey</p>
+      <pre>{
+  "hostname": <span class="s">"keepersecurity.com"</span>,
+  "clientId": <span class="s">"Gx3h…"</span>,
+  <span class="hl">"publicKey": "BHmZ…"</span>,
+  <span class="hl">"privateKeyLocation":</span>
+    <span class="s">"YubiKey 5C NFC FIPS, serial 34822070,</span>
+<span class="s">     PIV slot 84 (RETIRED3)"</span>,
+  <span class="hl">"appKeyWrapped": "AQR5…"</span>,
+  "appOwnerPublicKey": <span class="s">"BGn0…"</span>
+}</pre>
+    </div>
+  </div>
+  <ul style="margin-top: 22px">
+    <li>The public key finds the slot, and the location tells a person which YubiKey to plug in.</li>
+    <li>The model name is the one ykman shows, read from the YubiKey itself. The serial is printed on the key.</li>
+    <li>Without the YubiKey, the config alone can't sign a request or decrypt a single record.</li>
+  </ul>
+  <aside class="notes">privateKeyLocation is informational only; a stale value can't break signing. The SDK rewrites it whenever the signer reports something different.</aside>
+</section>
+
+</div>
+<div id="hint">← → navigate · N notes · P print</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const deck = document.getElementById('deck');
+  slides.forEach((s, i) => {
+    const f = document.createElement('div');
+    f.className = 'footer';
+    f.innerHTML = '<span>YubiKey support in Keeper Secrets Manager</span><span>' + (i + 1) + ' / ' + slides.length + '</span>';
+    s.appendChild(f);
+  });
+  let current = Math.min(Math.max(parseInt(location.hash.slice(1)) - 1 || 0, 0), slides.length - 1);
+  function show(i) {
+    current = Math.min(Math.max(i, 0), slides.length - 1);
+    slides.forEach((s, j) => s.classList.toggle('active', j === current));
+    history.replaceState(null, '', '#' + (current + 1));
+  }
+  function fit() {
+    const scale = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+    deck.style.transform = 'translate(-50%, -50%) scale(' + scale + ')';
+  }
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) show(current + 1);
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) show(current - 1);
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.key === 'n' || e.key === 'N') document.body.classList.toggle('show-notes');
+    else if (e.key === 'p' || e.key === 'P') window.print();
+  });
+  document.addEventListener('click', e => { if (!e.target.closest('pre')) show(current + (e.clientX > window.innerWidth / 3 ? 1 : -1)); });
+  window.addEventListener('resize', fit);
+  setTimeout(() => document.getElementById('hint').classList.add('gone'), 4000);
+  fit();
+  show(current);
+</script>
+</body>
+</html>

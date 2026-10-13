@@ -1,33 +1,30 @@
 plugins {
-    id("org.jetbrains.kotlin.jvm") version "1.5.30-RC"
+    kotlin("jvm") version "2.2.10"
     application
 }
 
 repositories {
     mavenCentral()
-    maven("https://s01.oss.sonatype.org/content/groups/public/")
 }
 
 dependencies {
-    // Align versions of all Kotlin components
-    implementation(platform("org.jetbrains.kotlin:kotlin-bom"))
+    // Resolved from ../../../sdk/java/core and ../../../sdk/java/yubikey via includeBuild in settings.gradle.kts
+    implementation("com.keepersecurity.secrets-manager:core:17.4.0")
+    implementation("com.keepersecurity.secrets-manager:yubikey:1.0.0")
 
-    // Use the Kotlin JDK 8 standard library.
-    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+    implementation("org.bouncycastle:bc-fips:2.1.1")
+//    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+}
 
-    implementation("com.keepersecurity.secrets-manager:core:16.3.0-SNAPSHOT")
-
-    implementation("org.bouncycastle:bc-fips:1.0.2.1")
-
-//    implementation("org.bouncycastle:bcprov-jdk15on:1.70")
-
-    // Use the Kotlin test library.
-    testImplementation("org.jetbrains.kotlin:kotlin-test")
-
-    // Use the Kotlin JUnit integration.
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit")
+kotlin {
+    jvmToolchain(21)
 }
 
 application {
-    mainClassName = "hello.secret.kt.AppKt"
+    mainClass.set("hello.secret.kt.AppKt")
+}
+
+// Lets the app read the YubiKey PIN from stdin under `./gradlew run`, which has no console
+tasks.named<JavaExec>("run") {
+    standardInput = System.`in`
 }

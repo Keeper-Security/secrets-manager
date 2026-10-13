@@ -33,6 +33,53 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
     }
 }
 
+// Multi-release jar: the main sources are compiled a second time for Java 21 and packaged under
+// META-INF/versions/21, so Java 21+ clients load Java 21 bytecode while Java 8-20 clients keep
+// the Java 8 classes at the jar root.
+val java21: SourceSet by sourceSets.creating {
+    kotlin.srcDir("src/main/kotlin")
+}
+
+configurations[java21.implementationConfigurationName].extendsFrom(configurations.implementation.get())
+configurations[java21.compileOnlyConfigurationName].extendsFrom(configurations.compileOnly.get())
+
+tasks.named<JavaCompile>(java21.compileJavaTaskName) {
+    javaCompiler.set(javaToolchains.compilerFor {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    })
+    sourceCompatibility = JavaVersion.VERSION_21.toString()
+    targetCompatibility = JavaVersion.VERSION_21.toString()
+}
+
+tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>(java21.getCompileTaskName("kotlin")) {
+    kotlinJavaToolchain.toolchain.use(javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    })
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_21)
+        // Must match main: internal member names are mangled with the module name, and both class
+        // sets have to expose identical names to the tests and to each other.
+        moduleName.set(project.name)
+    }
+}
+
+// The default test task runs against build/classes and never sees the versioned classes, so this
+// runs the same suite on Java 21 against the multi-release jar.
+val testJava21 by tasks.registering(Test::class) {
+    description = "Runs the tests on Java 21 against the multi-release jar."
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    })
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().output + files(tasks.jar) +
+        (sourceSets.test.get().runtimeClasspath - sourceSets.main.get().output)
+}
+
+tasks.check {
+    dependsOn(testJava21)
+}
+
 repositories {
     // Use jcenter for resolving dependencies.
     // You can declare any Maven/Ivy/file repository here.
@@ -59,10 +106,14 @@ dependencies {
 }
 
 tasks.jar {
+    into("META-INF/versions/21") {
+        from(java21.output) { exclude("META-INF/**") }
+    }
     manifest {
         attributes(
             "Implementation-Title" to "Keeper Secrets Manager Client Library",
-            "Implementation-Version" to archiveVersion
+            "Implementation-Version" to archiveVersion,
+            "Multi-Release" to "true"
         )
     }
 }
@@ -75,11 +126,15 @@ tasks.register<Jar>("fatJar") {
     manifest {
         attributes(
             "Implementation-Title" to "Keeper Secrets Manager Client Library",
-            "Implementation-Version" to archiveVersion
+            "Implementation-Version" to archiveVersion,
+            "Multi-Release" to "true"
         )
     }
 
     from(sourceSets.main.get().output)
+    into("META-INF/versions/21") {
+        from(java21.output) { exclude("META-INF/**") }
+    }
     from(configurations.runtimeClasspath.get().map {
         if (it.isDirectory) it else zipTree(it)
     })

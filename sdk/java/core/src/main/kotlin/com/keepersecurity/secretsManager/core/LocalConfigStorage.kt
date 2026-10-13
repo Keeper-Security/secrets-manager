@@ -65,8 +65,12 @@ class InMemoryStorage(configJson: String? = null) : KeyValueStorage {
         var hostname: String? = null,
         var clientId: String? = null,
         var privateKey: String? = null,
+        var publicKey: String? = null,
+        var privateKeyLocation: String? = null,
+        var privateKeyPin: String? = null,
         var clientKey: String? = null,
         var appKey: String? = null,
+        var appKeyWrapped: String? = null,
         var appOwnerPublicKey: String? = null,
         var serverPublicKeyId: String? = null,
         var serverPublicKey: String? = null
@@ -86,8 +90,12 @@ class InMemoryStorage(configJson: String? = null) : KeyValueStorage {
             optSetFn(KEY_HOSTNAME, config.hostname)
             optSetFn(KEY_CLIENT_ID, config.clientId)
             optSetFn(KEY_PRIVATE_KEY, config.privateKey)
+            optSetFn(KEY_PUBLIC_KEY, config.publicKey)
+            optSetFn(KEY_PRIVATE_KEY_LOCATION, config.privateKeyLocation)
+            optSetFn(KEY_PRIVATE_KEY_PIN, config.privateKeyPin)
             optSetFn(KEY_CLIENT_KEY, config.clientKey)
             optSetFn(KEY_APP_KEY, config.appKey)
+            optSetFn(KEY_APP_KEY_WRAPPED, config.appKeyWrapped)
             optSetFn(KEY_OWNER_PUBLIC_KEY, config.appOwnerPublicKey)
             optSetFn(KEY_SERVER_PUBLIC_KEY_ID, config.serverPublicKeyId)
             optSetFn(KEY_SERVER_PUBLIC_KEY, config.serverPublicKey)
@@ -125,8 +133,12 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
         var hostname: String? = null,
         var clientId: String? = null,
         var privateKey: String? = null,
+        var publicKey: String? = null,
+        var privateKeyLocation: String? = null,
+        var privateKeyPin: String? = null,
         var clientKey: String? = null,
         var appKey: String? = null,
+        var appKeyWrapped: String? = null,
         var appOwnerPublicKey: String? = null,
         var serverPublicKeyId: String? = null,
         var serverPublicKey: String? = null
@@ -172,8 +184,12 @@ class LocalConfigStorage(configName: String? = null) : KeyValueStorage {
                 hostname = storage.getString(KEY_HOSTNAME),
                 clientId = storage.getString(KEY_CLIENT_ID),
                 privateKey = storage.getString(KEY_PRIVATE_KEY),
+                publicKey = storage.getString(KEY_PUBLIC_KEY),
+                privateKeyLocation = storage.getString(KEY_PRIVATE_KEY_LOCATION),
+                privateKeyPin = storage.getString(KEY_PRIVATE_KEY_PIN),
                 clientKey = storage.getString(KEY_CLIENT_KEY),
                 appKey = storage.getString(KEY_APP_KEY),
+                appKeyWrapped = storage.getString(KEY_APP_KEY_WRAPPED),
                 appOwnerPublicKey = storage.getString(KEY_OWNER_PUBLIC_KEY),
                 serverPublicKeyId = storage.getString(KEY_SERVER_PUBLIC_KEY_ID),
                 serverPublicKey = storage.getString(KEY_SERVER_PUBLIC_KEY)
