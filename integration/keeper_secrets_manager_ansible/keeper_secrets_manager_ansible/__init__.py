@@ -54,6 +54,13 @@ else:
 display = Display()
 
 
+def warn_cache_ignored(plugin_name):
+    # These plugins accept cache so existing playbooks keep parsing. Without a warning, a user who passes it
+    # expects fewer vault reads and never learns that every task still reads the live vault.
+    display.warning("The cache option of {} has no effect. {} reads the live vault and does not use the cache. "
+                    "Remove the cache option from this task.".format(plugin_name, plugin_name))
+
+
 class CacheUnusableError(ValueError):
     """Encrypted record cache cannot be decrypted or deserialized; treat as a cache miss."""
 

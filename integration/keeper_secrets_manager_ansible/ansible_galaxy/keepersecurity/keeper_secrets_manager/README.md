@@ -269,6 +269,7 @@ The Changes section names the ticket for each change.
 * **Fix** (KSM-1559, KSM-1560): `keeper_remove` and `keeper_set` read the record from the vault, never from the DR cache. A cached copy can be older than the vault, so a title could select a record that was renamed, and the delete or the save went to that record. During an outage, these tasks now fail, as their delete or save would
 * **Fix**: `keeper_create` crashed with "Could not create record: list index out of range" when a playbook supplied an unpopulated complex field (address, name, host, etc.) with `value: []`. Empty-value fields are now treated as unpopulated, matching the behavior of the underlying vault schema. Root cause in the Python helper library is tracked as KSM-1119.
 * **Fix** (KSM-1614): `ansible-doc -t callback keepersecurity.keeper_secrets_manager.keeper_redact` failed with a YAML error, because one line of the callback documentation was not quoted. The documentation now renders
+* **Fix** (KSM-1613): `keeper_set` and `keeper_remove` now show a warning when a task sets the `cache` option. The option has no effect, because both tasks always read the current vault
 * **Breaking change**: KSM-1561: Raised the minimum ansible-core version to 2.15.13, and excluded the 2.17 series
   - ansible-base 2.10, ansible-core versions before 2.15.13, and ansible-core 2.17.x are no longer supported
   - Python 3.9 stays supported, from Python 3.9.2. A later release removes it
