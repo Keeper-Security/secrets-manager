@@ -1,5 +1,8 @@
 import ast
+import os
+import subprocess
 import sys
+import tempfile
 import unittest
 import types
 from pathlib import Path
@@ -78,6 +81,55 @@ class KeeperDocumentationFormatTest(unittest.TestCase):
         documentation = yaml.safe_load(_blocks(PLUGIN_DIR / "lookup" / "keeper.py")["DOCUMENTATION"])
         self.assertEqual(documentation.get("name"), "keeper")
         self.assertNotIn("module", documentation)
+
+
+# Plugin directory -> (ansible-doc type, environment variable that adds the directory to the search path).
+# Action plugins and the *_utils directories are not documented through ansible-doc.
+DOC_TYPES = {
+    "modules": ("module", "ANSIBLE_LIBRARY"),
+    "lookup": ("lookup", "ANSIBLE_LOOKUP_PLUGINS"),
+    "callback": ("callback", "ANSIBLE_CALLBACK_PLUGINS"),
+    "cache": ("cache", "ANSIBLE_CACHE_PLUGINS"),
+    "filter": ("filter", "ANSIBLE_FILTER_PLUGINS"),
+    "inventory": ("inventory", "ANSIBLE_INVENTORY_PLUGINS"),
+    "test": ("test", "ANSIBLE_TEST_PLUGINS"),
+}
+
+
+def _documented_plugins():
+    # Discovered from the tree, so a plugin added later is covered without editing this test.
+    return sorted((doc_type, path.stem)
+                  for directory, (doc_type, _) in DOC_TYPES.items()
+                  for path in (PLUGIN_DIR / directory).glob("*.py") if path.stem != "__init__")
+
+
+class KeeperAnsibleDocTest(unittest.TestCase):
+
+    def test_ansible_doc_renders_every_plugin(self):
+        # The callback description once held an unquoted "no_log: True" item that YAML read as a mapping. Only
+        # ansible-doc itself fails on that, so run it, against this tree and not an installed copy. Run it as a
+        # module of this interpreter: the ansible-doc script can sit in another bin directory (for example
+        # ~/.local/bin after pip install --user) or belong to a different interpreter.
+        plugins = _documented_plugins()
+        self.assertIn(("callback", "keeper_redact"), plugins)
+        self.assertIn(("lookup", "keeper"), plugins)
+
+        with tempfile.TemporaryDirectory() as home:
+            env = dict(os.environ, HOME=home, ANSIBLE_HOME=home, ANSIBLE_LOCAL_TEMP=home,
+                       ANSIBLE_NOCOLOR="1", PYTHONPATH=str(PLUGIN_DIR.parent.parent))
+            env.pop("ANSIBLE_CONFIG", None)
+            for directory, (_, variable) in DOC_TYPES.items():
+                env[variable] = str(PLUGIN_DIR / directory)
+            for doc_type, name in plugins:
+                with self.subTest(plugin="{}/{}".format(doc_type, name)):
+                    result = subprocess.run([sys.executable, "-m", "ansible.cli.doc", "-t", doc_type, name], env=env,
+                                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                            universal_newlines=True)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    # A plugin that is not on the search path only warns and exits 0. The "not found" warning starts with
+                    # that prefix. Anchor to the line start because option text can contain the same words.
+                    self.assertNotRegex(result.stdout, r"(?m)^\[?(ERROR|WARNING)")
+                    self.assertIn(name, result.stdout)
 
 
 class _Task(object):

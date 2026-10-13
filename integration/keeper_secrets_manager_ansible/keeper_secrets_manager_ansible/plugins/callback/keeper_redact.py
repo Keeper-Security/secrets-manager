@@ -22,7 +22,7 @@ DOCUMENTATION = '''
     version_added: historical
     description:
         - This output callback will hide secret values from the output of a task.
-        - This output callback will not hide secret values from a lookup. Use no_log: True to hide the output.
+        - 'This output callback will not hide secret values from a lookup. Use no_log: True to hide the output.'
     extends_documentation_fragment:
       - default_callback
     requirements:
