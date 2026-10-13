@@ -25,7 +25,7 @@ import java.util.*
 import java.util.concurrent.*
 import kotlin.random.Random
 
-const val KEEPER_CLIENT_VERSION = "mj17.4.0"
+const val KEEPER_CLIENT_VERSION = "mj18.0.0"
 
 // Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
 // per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
@@ -793,7 +793,8 @@ data class KeeperFolder(
     val folderKey: ByteArray,
     val folderUid: String,
     val parentUid: String? = null,
-    val name: String
+    val name: String,
+    val useGcm: Boolean = false
 )
 
 @Serializable
@@ -1187,7 +1188,7 @@ fun createFolder(options: SecretsManagerOptions, createOptions: CreateOptions, f
 fun updateFolder(options: SecretsManagerOptions, folderUid: String, folderName: String, folders: List<KeeperFolder> = getFolders(options)) {
     val folder: KeeperFolder = folders.find { it.folderUid == folderUid }
         ?: throw SecretsManagerException("Unable to update folder - folder key for $folderUid not found")
-    val payload = prepareUpdateFolderPayload(options.storage, folderUid, folderName, folder.folderKey)
+    val payload = prepareUpdateFolderPayload(options.storage, folderUid, folderName, folder.folderKey, folder.useGcm)
     postQuery(options, "update_folder", payload)
 }
 
@@ -1512,19 +1513,43 @@ private fun fetchAndDecryptFolders(
         return emptyList()
     }
     val folders: MutableList<KeeperFolder> = mutableListOf()
-    val appKey = storage.getBytes(KEY_APP_KEY) ?: throw SecretsManagerException("App key is missing from the storage")
+    val appKey: ByteArray
+    if (response.encryptedAppKey != null) {
+        val clientKey = storage.getBytes(KEY_CLIENT_KEY) ?: throw SecretsManagerException("Client key is missing from the storage")
+        appKey = decrypt(response.encryptedAppKey, clientKey)
+        storage.saveBytes(KEY_APP_KEY, appKey)
+        storage.delete(KEY_CLIENT_KEY)
+        storage.delete(KEY_PUBLIC_KEY)
+        response.appOwnerPublicKey?.let {
+            storage.saveString(KEY_OWNER_PUBLIC_KEY, it)
+        }
+    } else {
+        appKey = storage.getBytes(KEY_APP_KEY) ?: throw SecretsManagerException("App key is missing from the storage")
+    }
     response.folders.forEach { folder ->
         try {
+            var useGcm = false
             val folderKey: ByteArray = if (folder.parent == null) {
                 decrypt(folder.folderKey, appKey)
             } else {
                 val sharedFolderKey = getSharedFolderKey(folders, response.folders, folder.parent) ?: throw SecretsManagerException("Folder data inconsistent - unable to locate shared folder")
-                decrypt(folder.folderKey, sharedFolderKey, true)
+                val folderKeyBytes = base64ToBytes(folder.folderKey)
+                // GCM-wrapped subfolder keys are 60 bytes (12-byte nonce + 32-byte key + 16-byte tag);
+                // legacy CBC-wrapped keys are 64 bytes (16-byte IV + 48-byte padded ciphertext) - always
+                // unambiguous, mirrors the dispatch already landed in the Python/JS SDKs (KSM-1043/1058).
+                if (folderKeyBytes.size == 60) {
+                    useGcm = true
+                    decrypt(folderKeyBytes, sharedFolderKey)
+                } else {
+                    decrypt(folderKeyBytes, sharedFolderKey, true)
+                }
             }
-            val decryptedData = decrypt(folder.data!!, folderKey, true)
+            // Root folders keep the existing path: key via GCM (appKey wrap), data via CBC -
+            // all current NSF roots have CBC-encrypted data, so useGcm stays false here.
+            val decryptedData = decrypt(folder.data!!, folderKey, !useGcm)
             val folderNameJson = bytesToString(decryptedData)
             val folderName = nonStrictJson.decodeFromString<KeeperFolderName>(folderNameJson)
-            folders.add(KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name))
+            folders.add(KeeperFolder(folderKey, folder.folderUid, folder.parent, folderName.name, useGcm))
         } catch (e: Exception) {
             if (options.loggingEnabled) {
                 // Same shape as the skip diagnostics in fetchAndDecryptSecrets. The class name
@@ -1669,8 +1694,10 @@ private fun prepareCreateFolderPayload(
     val folderDataBytes = stringToBytes(Json.encodeToString(KeeperFolderName(folderName)))
     val folderKey = getRandomBytes(32)
     val folderUid = generateUid()
-    val encryptedFolderData = encrypt(folderDataBytes, folderKey, true)
-    val encryptedFolderKey = encrypt(folderKey, sharedFolderKey, true)
+    // Drive (NSF) folders require AES-GCM for both the folder key wrap and folder data (KSM-1061);
+    // CBC produces "invalid sharedFolderKey" against NSF-enabled endpoints.
+    val encryptedFolderData = encrypt(folderDataBytes, folderKey)
+    val encryptedFolderKey = encrypt(folderKey, sharedFolderKey)
     return CreateFolderPayload(KEEPER_CLIENT_VERSION, clientId,
         webSafe64FromBytes(folderUid),
         createOptions.folderUid,
@@ -1684,11 +1711,12 @@ private fun prepareUpdateFolderPayload(
     storage: KeyValueStorage,
     folderUid: String,
     folderName: String,
-    folderKey: ByteArray
+    folderKey: ByteArray,
+    useGcm: Boolean = false
 ): UpdateFolderPayload {
     val clientId = storage.getString(KEY_CLIENT_ID) ?: throw SecretsManagerException("Client Id is missing from the configuration")
     val folderDataBytes = stringToBytes(Json.encodeToString(KeeperFolderName(folderName)))
-    val encryptedFolderData = encrypt(folderDataBytes, folderKey, true)
+    val encryptedFolderData = encrypt(folderDataBytes, folderKey, !useGcm)
     return UpdateFolderPayload(KEEPER_CLIENT_VERSION, clientId,
         folderUid,
         webSafe64FromBytes(encryptedFolderData))
