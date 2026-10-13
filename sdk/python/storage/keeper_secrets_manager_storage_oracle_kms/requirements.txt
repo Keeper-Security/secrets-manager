@@ -10,13 +10,13 @@ charset-normalizer==3.4.1
     # via requests
 circuitbreaker==2.0.0
     # via oci
-cryptography==46.0.5
+cryptography==50.0.0
     # via
     #   keeper-secrets-manager-storage-oracle-kms (pyproject.toml)
     #   keeper-secrets-manager-core
     #   oci
     #   pyopenssl
-idna==3.10
+idna==3.15
     # via requests
 keeper-secrets-manager-core==17.2.1
     # via keeper-secrets-manager-storage-oracle-kms (pyproject.toml)
@@ -36,7 +36,7 @@ python-dateutil==2.9.0.post0
     # via oci
 pytz==2025.1
     # via oci
-requests==2.32.4
+requests==2.33.0
     # via
     #   keeper-secrets-manager-storage-oracle-kms (pyproject.toml)
     #   keeper-secrets-manager-core
@@ -46,7 +46,7 @@ typing-extensions==4.15.0 ; python_full_version < '3.13'
     # via
     #   cryptography
     #   pyopenssl
-urllib3==2.6.3
+urllib3==2.7.0
     # via
     #   keeper-secrets-manager-core
     #   oci
