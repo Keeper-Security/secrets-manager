@@ -100,10 +100,6 @@ class ActionModule(ActionBase):
             raise AnsibleError("The uid and title are both blank. keeper_cache_records requires at "
                                "least on to be set. This will not cache your entire Keeper vault.")
 
-        results = {
+        return {
             "cache": keeper.get_records(uids=uid, titles=title, encrypt=True)
         }
-
-        keeper.add_secret_values_to_results(results)
-
-        return results

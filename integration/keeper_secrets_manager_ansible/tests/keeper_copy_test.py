@@ -123,13 +123,6 @@ class KeeperCopyTest(unittest.TestCase):
 class KeeperCopyDiffTest(unittest.TestCase):
 
     def test_keeper_copy_diff_does_not_show_the_secret(self):
-        import sys
-        # keeper_redact_test imports the callback. Then KeeperAnsible adds the _secrets key for it, but these runs
-        # use the default callback, which prints the key.
-        redact_modules = {name: module for name, module in sys.modules.items() if name.endswith(".keeper_redact")}
-        for name in redact_modules:
-            sys.modules.pop(name)
-        self.addCleanup(sys.modules.update, redact_modules)
         for check_mode in (True, False):
             with self.subTest(check_mode=check_mode), tempfile.TemporaryDirectory() as temp_dir, \
                     patch('requests.get', side_effect=mock_download_get):

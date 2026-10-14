@@ -121,12 +121,6 @@ class ActionModule(ActionBase):
 
         password = keeper.generate_password(**complexity)
 
-        keeper.stash_secret_value(password)
-
-        result = {
+        return {
             "password": password
         }
-
-        keeper.add_secret_values_to_results(result)
-
-        return result
