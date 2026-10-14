@@ -85,7 +85,7 @@ The Changes section names the ticket for each change.
 
 * ansible-core
   - Before: ansible-core 2.12.0 or later.
-  - Now: ansible-core 2.15.13 or later, and not 2.17.x. The Python package refuses to install with an unsupported ansible-core. The Galaxy collection shows a warning and still runs.
+  - Now: ansible-core 2.15.13 or later, and not 2.17.x. When pip installs the Python package, it upgrades an unsupported ansible-core, unless another constraint prevents it. The Galaxy collection shows a warning and still runs, unless `collections_on_ansible_version_mismatch = error` is set.
   - To do: upgrade ansible-core before you upgrade the package.
 * Python
   - Before: Python 3.9 or later.
@@ -174,7 +174,7 @@ The Changes section names the ticket for each change.
   - ansible-base 2.10, ansible-core versions before 2.15.13, and ansible-core 2.17.x are no longer supported
   - Python 3.9 stays supported, from Python 3.9.2. A later release removes it
   - The new minimum removes ansible-core releases that are affected by CVE-2023-5115, CVE-2023-5764, CVE-2024-0690, CVE-2024-8775, and CVE-2024-9902
-  - pip can no longer install the package with an unsupported ansible-core. For the Galaxy collection, an unsupported ansible-core shows a warning, and the collection still runs
+  - When pip installs the package, it upgrades an unsupported ansible-core, unless another constraint prevents it. For the Galaxy collection, an unsupported ansible-core shows a warning, and the collection still runs, unless `collections_on_ansible_version_mismatch = error` is set
   - The Tower Execution Environment now uses Python 3.12 and ansible-core 2.16 (2.16.19 or later), instead of Python 3.9 and ansible-core 2.15.13
   - CI tests the 2.15, 2.16, 2.18, 2.19, 2.20, and 2.21 series, and a test checks that every file that declares the ansible-core or Python requirement agrees
 * KSM-1562: Enforced the SDK versions in execution environments
