@@ -189,12 +189,6 @@ class ActionModule(ActionBase):
             value = keeper.get_value(uid=uid, title=title, field_type=field_type_enum, key=field_key,
                                      allow_array=allow_array, array_index=array_index, value_key=value_key, cache=cache)
 
-        keeper.stash_secret_value(value)
-
-        result = {
+        return {
             "value": value
         }
-
-        keeper.add_secret_values_to_results(result)
-
-        return result

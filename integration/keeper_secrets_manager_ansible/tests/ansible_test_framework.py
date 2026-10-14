@@ -32,6 +32,10 @@ class AnsibleTestFramework:
         # is the only way to see the config storage and the post function that the plugin chose.
         self.client_log = kwargs.get("client_log")
 
+        # Name of a stdout callback from this collection, for example "keeper_redact". Without it the run uses
+        # ansible's default callback.
+        self.stdout_callback = kwargs.get("stdout_callback")
+
     def ansible_config(self):
 
         return f"""[defaults]
@@ -39,10 +43,16 @@ inventory=./inventory
 playbook_dir=./playbooks
 action_plugins={self.plugin_base_dir}/action
 lookup_plugins={self.plugin_base_dir}/lookup
-
+{self._callback_config()}
 [inventory]
 enable_plugins=ini,host_list,script
 """
+
+    def _callback_config(self):
+
+        if self.stdout_callback is None:
+            return ""
+        return f"callback_plugins={self.plugin_base_dir}/callback\nstdout_callback={self.stdout_callback}\n"
 
     def generate_ansible_config(self):
 

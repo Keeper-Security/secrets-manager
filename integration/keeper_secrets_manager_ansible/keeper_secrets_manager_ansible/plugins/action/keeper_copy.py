@@ -334,9 +334,7 @@ class ActionModule(ActionBase):
         result = super(ActionModule, self).run(tmp, task_vars)
         self._hide_diff_content(result)
 
-        # Attempt to add back the keeper values for debug purposes.
         if type(result) is dict:
             self._remove_content_from_invocation(result)
-            result = keeper.add_secret_values_to_results(result)
 
         return result

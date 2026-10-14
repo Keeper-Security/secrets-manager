@@ -125,10 +125,6 @@ class ActionModule(ActionBase):
 
         record_dict = keeper.get_dict(uid=uid, title=title, cache=cache, allow=allow)
 
-        result = {
+        return {
             "record": record_dict
         }
-
-        keeper.add_secret_values_to_results(result)
-
-        return result

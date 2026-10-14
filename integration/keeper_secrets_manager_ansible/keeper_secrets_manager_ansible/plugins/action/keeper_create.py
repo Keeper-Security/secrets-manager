@@ -324,7 +324,6 @@ class ActionModule(ActionBase):
                     label=field.get("label"),
                     value=field.get("value") or None
                 ))
-                keeper.stash_secret_value(str(field.get("value")))
 
             for field in self._task.args.get("custom_fields", []):
                 # Same workaround as above for custom fields.
@@ -334,7 +333,6 @@ class ActionModule(ActionBase):
                     label=field.get("label"),
                     value=field.get("value", "text") or None
                 ))
-                keeper.stash_secret_value(str(field.get("value")))
 
             notes = self._task.args.get("notes")
             if notes is None:
