@@ -21,8 +21,9 @@ version_added: "1.0.0"
 description:
     - Retrieve Keeper records from the Vault using UIDs or Titles.
     - The records are then serialized as JSON and encrypted for the playbook run.
-    - The encryption key comes from the variable keeper_record_cache_secret and the name of the host that runs the task.
-      A cache works only on the host that made it.
+    - The encryption key comes from the variable keeper_record_cache_secret and the host name of the machine that runs the plugin.
+      That machine is the Ansible controller or the AWX execution environment container.
+      A cache works only on the machine that made it.
     - Use a long, random value for keeper_record_cache_secret.
     - The encrypted serialization is only valid within the running playbook.
     - To store the encrypted serialized cache, use 'register' within the Task step.

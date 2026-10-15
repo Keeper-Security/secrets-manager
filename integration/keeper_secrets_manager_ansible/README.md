@@ -41,9 +41,12 @@ and only `KSM_SKIP_VERIFY` can turn certificate verification off.
 
 `keeper_cache_records` encrypts the record cache with `keeper_record_cache_secret`.
 Use a long, random value.
-The key also comes from the host name, so a cache works only on the host that made it.
+The key also comes from the host name of the machine that runs the plugins, which is the Ansible controller or the AWX execution environment container.
+A cache works only on the machine that made it.
 
-In AWX and AAP, never set `cache`, `keeper_record_cache_secret`, `keeper_config_file`, or `keeper_cache_dir` from a launch-time extra variable or a survey answer.
+In AWX and AAP, never set `keeper_use_cache`, `keeper_record_cache_secret`, `keeper_config_file`, or `keeper_cache_dir` from a launch-time extra variable or a survey answer.
+Also do not let such a variable supply the value that a task passes to `cache`.
+Extra variables override registered variables, so one with the same name as a registered cache replaces it.
 Extra variables have the highest precedence, so they override the value that the playbook, the inventory, or a credential sets.
 Keep `no_log: true` on the tasks that make or use the cache.
 
