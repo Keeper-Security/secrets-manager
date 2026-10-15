@@ -39,6 +39,17 @@ Keeper SDK. With a configuration file, `keeper_hostname` and
 `keeper_verify_ssl_certs_skip` have no effect: the hostname comes from the file,
 and only `KSM_SKIP_VERIFY` can turn certificate verification off.
 
+`keeper_cache_records` encrypts the record cache with `keeper_record_cache_secret`.
+Use a long, random value.
+The key also comes from the host name of the machine that runs the plugins, which is the Ansible controller or the AWX execution environment container.
+A cache works only on the machine that made it.
+
+In AWX and AAP, never set `keeper_use_cache`, `keeper_record_cache_secret`, `keeper_config_file`, or `keeper_cache_dir` from a launch-time extra variable or a survey answer.
+Also do not let such a variable supply the value that a task passes to `cache`.
+Extra variables override registered variables, so one with the same name as a registered cache replaces it.
+Extra variables have the highest precedence, so they override the value that the playbook, the inventory, or a credential sets.
+Keep `no_log: true` on the tasks that make or use the cache.
+
 # Check mode
 
 Use `ansible-playbook --check` or `check_mode: yes` on a play or task to preview
@@ -129,6 +140,8 @@ The Changes section names the ticket for each change.
 * `keeper_set` and `keeper_remove` read the record from the vault. They never use the DR cache or a registered cache, because an old copy can select a renamed record or hide a needed save.
 * During a Keeper outage, these two tasks now fail instead of using the DR cache.
 * `keeper_set` accepts the `cache` option but ignores it.
+* Versions 1.2.0 to 1.4.0 serialize the registered cache with pickle. Version 1.5.0 uses JSON (VM-1452).
+* A cache that version 1.4.0 or earlier made cannot be used. A task that gets one shows a warning and reads the records from the vault. To do: upgrade to 1.5.0, then make the cache again with `keeper_cache_records`.
 
 ## Variables and files
 
@@ -217,6 +230,7 @@ The Changes section names the ticket for each change.
   - Legacy or invalid registered caches are ignored; records are fetched from the vault until
     `keeper_cache_records` rebuilds a JSON cache
   - Existing playbook-registered caches are ephemeral; regenerate with `keeper_cache_records` after upgrade
+  - Affected versions: 1.2.0 to 1.4.0. Fixed in 1.5.0
 
 ## 1.4.0
 * KSM-827: Fixed Tower Execution Environment Docker image missing system packages required by AAP

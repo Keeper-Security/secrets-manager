@@ -26,6 +26,7 @@ DOCUMENTATION = '''
         - 'This output callback will not hide secret values from a lookup. Use no_log: True to hide the output.'
         - 'This output callback changes only what it prints. It does not change registered results or other callbacks.'
         - 'This output callback does not hide secrets from AWX and AAP job events. Use no_log: True.'
+        - 'AWX and AAP set their own stdout callback, so a stdout_callback setting in ansible.cfg does not load this callback there.'
     extends_documentation_fragment:
       - default_callback
     requirements:
