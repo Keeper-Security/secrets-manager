@@ -5,6 +5,9 @@ For more information see our official documentation page https://docs.keeper.io/
 # Change Log
 
 ## 17.5.0
+**Breaking Changes**
+- `SecretsManagerOptions` gained two constructor parameters (`signer` and `appKeyProtector`). Recompiling is enough. Java call sites keep every constructor form from 17.4.0, because the type carries `@JvmOverloads`. The generated `copy()` method and the synthetic constructor for omitted default arguments changed arity. Kotlin code compiled against 17.4.0 throws `NoSuchMethodError` if you swap in the 17.5.0 jar without recompiling. Rebuild dependent code against 17.5.0.
+
 - KSM-1625 - Raise an error when `HTTPS_PROXY` or `https_proxy` holds a value the SDK cannot parse
   - A malformed value (for example an unbalanced bracket, an unescaped reserved character in the password, or a port above 65535) was ignored, and the SDK connected without the proxy. The SDK now throws `SecretsManagerException` before it opens a connection. The message names the variable and the expected form. It does not include the value, which can carry the proxy password.
   - The SDK checks the whole value. A proxy URL holds a scheme, credentials, a host, and a port. Text after `#`, `/` or `?` used to parse as a fragment, path, or query. A password such as `8080#pw` then made the SDK use the user name as the proxy host. The SDK now rejects such a value. A trailing `/` is still accepted. Percent-encode `#`, `/` and `?` in a password.
@@ -21,6 +24,13 @@ For more information see our official documentation page https://docs.keeper.io/
   - **Behavior change:** if the retries run out, the SDK throws `KeeperThrottleException`, which is not a `SecretsManagerException`. Code that caught `SecretsManagerException` for a throttled call must also catch `KeeperThrottleException`. In Kotlin, catch `KeeperThrottleException` directly. In Java, `catch (KeeperThrottleException e)` does not compile around an SDK call, because the SDK methods declare no `throws` clause. Catch `Exception` and test it with `instanceof KeeperThrottleException`.
   - If the thread is interrupted while the second request of a binding call waits, the call returns the result of the binding. The thread keeps its interrupt status. Before, the SDK cleared the status.
   - No API change.
+- KSM-1626 - Add signer and app key protector hooks for hardware-backed keys
+  - New `RequestSigner` interface. Pass an implementation as `SecretsManagerOptions.signer` to sign requests with a client private key that never enters the config. Java callers can use `SecretsManagerOptions.withSigner(storage, signer, appKeyProtector)`.
+  - New `AppKeyProtector` interface. Pass an implementation as `SecretsManagerOptions.appKeyProtector` to keep the app key in the config only in wrapped form (`appKeyWrapped`).
+  - New overload `initializeStorage(storage, oneTimeToken, hostName, publicKey)`. It binds an external key by its raw P-256 public key and generates no key pair. The three-argument form is unchanged.
+  - If the protector cannot wrap the app key, the SDK stops before it contacts Keeper, or stores nothing at binding. It never stores a plain app key as a fallback. Run the command again after you fix the protector. The same one-time token still works.
+  - If a protector is set and the config holds a plain `appKey`, the SDK stops with an error. Call `migrateAppKeyToProtector(options)` once to wrap the key and delete the plain one.
+  - The config can now hold `publicKey`, `privateKeyLocation`, and `appKeyWrapped`. `publicKey` stays in the config after binding when the private key is external.
 
 ## 17.4.0
 **Breaking Changes**
