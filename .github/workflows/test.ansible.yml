@@ -90,3 +90,40 @@ jobs:
         working-directory: ./integration/keeper_secrets_manager_ansible
         run: |
           PYTHONPATH=$PWD/modules pytest
+
+  sanity-ansible:
+    name: Sanity (ansible-core ${{ matrix.ansible-core }})
+    if: ${{ !startsWith(github.head_ref, 'release/tool/cli/') }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each series needs its own tests/sanity/ignore-<series>.txt in the collection. 2.17 is excluded by
+        # requires_ansible in meta/runtime.yml.
+        ansible-core: ["2.15", "2.16", "2.18", "2.19", "2.20", "2.21"]
+        include:
+          - {ansible-core: "2.15", python-version: "3.11"}
+          - {ansible-core: "2.16", python-version: "3.11"}
+          - {ansible-core: "2.18", python-version: "3.13"}
+          - {ansible-core: "2.19", python-version: "3.13"}
+          - {ansible-core: "2.20", python-version: "3.13"}
+          - {ansible-core: "2.21", python-version: "3.13"}
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install ansible-core
+        env:
+          ANSIBLE_CORE_SERIES: ${{ matrix.ansible-core }}
+        run: python3 -m pip install "ansible-core~=${ANSIBLE_CORE_SERIES}.0"
+
+      - name: Run ansible-test sanity
+        working-directory: ./integration/keeper_secrets_manager_ansible
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: utils/sanity.sh "$RUNNER_TEMP/sanity" --python "$PYTHON_VERSION"

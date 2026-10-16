@@ -83,13 +83,8 @@ class KeeperDocumentationFormatTest(unittest.TestCase):
                 with self.subTest(module=name, block=block):
                     self.assertEqual(yaml.safe_load(module.get(block, "")), yaml.safe_load(action.get(block, "")))
 
-    def test_examples_are_yaml(self):
-        for path in sorted(PLUGIN_DIR.glob("modules/keeper_*.py")) + [PLUGIN_DIR / "lookup" / "keeper.py"]:
-            text = _blocks(path).get("EXAMPLES")
-            if text:
-                with self.subTest(path="{}/{}".format(path.parent.name, path.name)):
-                    self.assertIsInstance(yaml.safe_load(text), list)
-
+    # ansible-test sanity checks EXAMPLES and the module docs. This test stays because it also reads the copies of
+    # the docs in the action plugins, which sanity does not see.
     def test_documentation_has_no_duplicate_keys(self):
         paths = sorted(PLUGIN_DIR.glob("action/keeper_*.py")) + sorted(PLUGIN_DIR.glob("modules/keeper_*.py")) + \
             [PLUGIN_DIR / "lookup" / "keeper.py"]

@@ -15,8 +15,10 @@ cp -R "$here/keeper_secrets_manager_ansible/plugins" "$dest/plugins"
 find "$dest" -name __pycache__ -prune -exec rm -rf {} +
 sed -i.bak 's/VERSION_PLACEHOLDER/0.0.0/' "$dest/galaxy.yml" && rm "$dest/galaxy.yml.bak"
 
-# ansible-test only sees files tracked by git.
+# ansible-test only sees files tracked by git. Before 2.18 it also scans untracked files, including the venv it
+# creates under tests/output, unless git ignores that directory.
 cd "$dest"
+echo "tests/output/" > .gitignore
 git init -q
 git add -A
 
