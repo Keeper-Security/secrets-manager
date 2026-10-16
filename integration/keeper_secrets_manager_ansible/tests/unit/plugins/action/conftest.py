@@ -5,9 +5,10 @@ option checks, the plugin wiring, and the KeeperAnsible method are covered by th
 import importlib
 import sys
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
+from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.dto.dtos import KeeperFolder
 
 from keeper_secrets_manager_ansible import KeeperAnsible
@@ -50,9 +51,11 @@ class FakeSdk(object):
     """
 
     def __init__(self, folders, records=None, delete_response=_DEFAULT_RESPONSE, folders_after=None,
-                 deleted_uids=None, init_error=None):
-        self.client = MagicMock()
+                 deleted_uids=None, init_error=None, autospec=False):
+        # An autospec client fails a call that does not fit the real SDK signature, such as a misspelled keyword.
+        self.client = create_autospec(SecretsManager, instance=True) if autospec else MagicMock()
         self.inits = 0
+        self.action_modules = []
         self.init_error = init_error
         before = list(folders)
         after = list(before if folders_after is None else folders_after)
@@ -77,6 +80,7 @@ class FakeSdk(object):
 
         def __init__(keeper, task_vars, action_module=None, task_attributes=None, force_in_memory=False):
             sdk.inits += 1
+            sdk.action_modules.append(action_module)
             if sdk.init_error is not None:
                 raise sdk.init_error
             keeper.client = sdk.client
@@ -85,7 +89,7 @@ class FakeSdk(object):
 
 @pytest.fixture
 def make_sdk():
-    """make_sdk(folders, records=None, delete_response=ok, folders_after=None, deleted_uids=None).
+    """make_sdk(folders, records=None, delete_response=ok, folders_after=None, deleted_uids=None, autospec=False).
 
     A delete_response of None is a real response value, so the default is a function that answers ok.
     """
@@ -93,19 +97,24 @@ def make_sdk():
 
 
 @pytest.fixture
-def plugin_module():
-    # Imported inside the fixture, not at the top of a test file: see _unload_ansible_after_module.
-    return importlib.import_module("keeper_secrets_manager_ansible.plugins.action.keeper_delete_folder")
+def plugin_name(request):
+    """The module under test: the PLUGIN constant of the test file, keeper_delete_folder if it has none."""
+    return getattr(request.module, "PLUGIN", "keeper_delete_folder")
 
 
 @pytest.fixture
-def run_plugin(plugin_module):
-    """run_plugin(sdk, task_args, check_mode=False, module_defaults=None) returns the plugin's run() result."""
-    def run(sdk, task_args, check_mode=False, module_defaults=None):
+def plugin_module(plugin_name):
+    # Imported inside the fixture, not at the top of a test file: see _unload_ansible_after_module.
+    return importlib.import_module("keeper_secrets_manager_ansible.plugins.action." + plugin_name)
+
+
+@pytest.fixture
+def run_plugin(plugin_module, plugin_name):
+    def run(sdk, task_args, check_mode=False, module_defaults=None, templar=None):
         task = types.SimpleNamespace(args=dict(task_args), check_mode=check_mode, async_val=0,
-                                     action="keeper_delete_folder", module_defaults=module_defaults)
+                                     action=plugin_name, module_defaults=module_defaults)
         connection = types.SimpleNamespace(_shell=types.SimpleNamespace(tmpdir="/nonexistent"))
-        action = plugin_module.ActionModule(task, connection, types.SimpleNamespace(), None, None, None)
+        action = plugin_module.ActionModule(task, connection, types.SimpleNamespace(), None, templar, None)
         with patch.object(KeeperAnsible, "__init__", sdk.init()):
             return action.run(task_vars={})
     return run
