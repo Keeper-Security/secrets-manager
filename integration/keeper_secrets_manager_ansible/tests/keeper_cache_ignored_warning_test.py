@@ -42,17 +42,15 @@ class CacheIgnoredWarningTest(unittest.TestCase):
         self.assertIn("cache", text)
         self.assertIn("no effect", text)
 
-    def test_keeper_set_warns_that_cache_has_no_effect(self):
-        warning = _run_action(
-            "keeper_set", {"uid": UID, "field": "login", "value": "x", "cache": "REGISTERED_CACHE"},
-            "set_value", return_value=False)
-        self._assert_warns_that_cache_is_ignored(warning, "keeper_set")
-
-    def test_keeper_remove_warns_that_cache_has_no_effect(self):
-        warning = _run_action(
-            "keeper_remove", {"uid": UID, "cache": "REGISTERED_CACHE"},
-            "remove_record", return_value={"changed": False})
-        self._assert_warns_that_cache_is_ignored(warning, "keeper_remove")
+    def test_a_task_with_a_cache_warns_that_it_has_no_effect(self):
+        for plugin_name, args, method, result in (
+            ("keeper_set", {"uid": UID, "field": "login", "value": "x", "cache": "REGISTERED_CACHE"}, "set_value",
+             False),
+            ("keeper_remove", {"uid": UID, "cache": "REGISTERED_CACHE"}, "remove_record", {"changed": False}),
+        ):
+            with self.subTest(plugin=plugin_name):
+                warning = _run_action(plugin_name, args, method, return_value=result)
+                self._assert_warns_that_cache_is_ignored(warning, plugin_name)
 
     def test_no_warning_when_cache_is_not_set(self):
         # Guards the conditional, so the warning call cannot become unconditional and fire on every task.

@@ -49,6 +49,19 @@ def _description_items(value, where=""):
     return found
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    # YAML keeps the last value of a duplicate key without an error. A merge can add a second key with no conflict.
+    def construct_mapping(self, node, deep=False):
+        keys = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in keys:
+                raise yaml.constructor.ConstructorError(None, None, "duplicate key {!r}".format(key),
+                                                        key_node.start_mark)
+            keys.add(key)
+        return super(_UniqueKeyLoader, self).construct_mapping(node, deep=deep)
+
+
 class KeeperDocumentationFormatTest(unittest.TestCase):
 
     def test_every_description_item_is_text(self):
@@ -76,6 +89,19 @@ class KeeperDocumentationFormatTest(unittest.TestCase):
             if text:
                 with self.subTest(path="{}/{}".format(path.parent.name, path.name)):
                     self.assertIsInstance(yaml.safe_load(text), list)
+
+    def test_documentation_has_no_duplicate_keys(self):
+        paths = sorted(PLUGIN_DIR.glob("action/keeper_*.py")) + sorted(PLUGIN_DIR.glob("modules/keeper_*.py")) + \
+            [PLUGIN_DIR / "lookup" / "keeper.py"]
+        self.assertGreater(len(paths), 30)
+        for path in paths:
+            for node in ast.parse(path.read_text()).body:
+                if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Constant):
+                    continue
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id in ("DOCUMENTATION", "RETURN"):
+                        with self.subTest(path=path.name, block=target.id):
+                            yaml.load(node.value.value, Loader=_UniqueKeyLoader)
 
     def test_lookup_documents_its_name(self):
         documentation = yaml.safe_load(_blocks(PLUGIN_DIR / "lookup" / "keeper.py")["DOCUMENTATION"])

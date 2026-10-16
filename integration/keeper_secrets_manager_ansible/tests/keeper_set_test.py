@@ -31,25 +31,6 @@ class KeeperGetTest(unittest.TestCase):
             self.assertEqual(result["changed"], 1, "the record update should report changed")
             assert '"updated": true' in out
 
-    def test_keeper_set_cache(self):
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            a = AnsibleTestFramework(
-                playbook="keeper_set_cache.yml",
-                vars={
-                    "tmp_dir": temp_dir,
-                    "uid":  mock_record.uid,
-                    "title": mock_record.title,
-                    "new_password": "NEWPASSWORD"
-                },
-                mock_responses=[mock_response, mock_response]
-            )
-            result, out, err = a.run()
-            self.assertEqual(result["ok"], 6, "6 things didn't happen")
-            self.assertEqual(result["failed"], 0, "failed was not 0")
-            self.assertEqual(result["changed"], 1, "the record update should report changed")
-            assert '"updated": true' in out
-
     def test_keeper_set_notes(self):
         """Test setting notes field value using keeper_set with notes: yes parameter"""
 

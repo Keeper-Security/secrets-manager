@@ -1,4 +1,3 @@
-import ast
 import base64
 import importlib
 import importlib.util
@@ -21,7 +20,6 @@ from keeper_secrets_manager_core.dto.dtos import KeeperFolder
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_helper.record import Record
 
-import keeper_secrets_manager_ansible.plugins
 from keeper_secrets_manager_ansible import KeeperAnsible, KeeperFieldType
 from .ansible_test_framework import AnsibleTestFramework
 
@@ -30,7 +28,6 @@ SHARED_UID = "SHARED_FOLDER_UID"
 SUBFOLDER_UID = "SUBFOLDER_UID"
 CHECK_MODE_POST = "KeeperAnsible._check_mode_caching_post_function"
 NORMAL_POST = "KeeperAnsible._caching_post_function"
-PLUGIN_DIR = Path(keeper_secrets_manager_ansible.plugins.__file__).parent
 PLAYBOOK_DIR = Path(__file__).parent / "ansible_example" / "playbooks"
 
 
@@ -530,35 +527,6 @@ class KeeperInitCheckModeTest(unittest.TestCase):
         # Compare by name: the test framework reloads the ansible modules, so the class object can differ.
         self.assertEqual(type(context.exception).__name__, "AnsibleActionSkip", repr(context.exception))
         init.assert_not_called()
-
-
-class _UniqueKeyLoader(yaml.SafeLoader):
-    # YAML keeps the last value of a duplicate key without an error. A merge can add a second key with no conflict.
-    def construct_mapping(self, node, deep=False):
-        keys = set()
-        for key_node, _ in node.value:
-            key = self.construct_object(key_node, deep=deep)
-            if key in keys:
-                raise yaml.constructor.ConstructorError(None, None, "duplicate key {!r}".format(key),
-                                                        key_node.start_mark)
-            keys.add(key)
-        return super(_UniqueKeyLoader, self).construct_mapping(node, deep=deep)
-
-
-class KeeperDocumentationTest(unittest.TestCase):
-
-    def test_documentation_has_no_duplicate_keys(self):
-        paths = sorted(PLUGIN_DIR.glob("action/keeper_*.py")) + sorted(PLUGIN_DIR.glob("modules/keeper_*.py")) + \
-            [PLUGIN_DIR / "lookup" / "keeper.py"]
-        self.assertGreater(len(paths), 30)
-        for path in paths:
-            for node in ast.parse(path.read_text()).body:
-                if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Constant):
-                    continue
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id in ("DOCUMENTATION", "RETURN"):
-                        with self.subTest(path=path.name, block=target.id):
-                            yaml.load(node.value.value, Loader=_UniqueKeyLoader)
 
 
 class KeeperCheckModePlaybookTest(unittest.TestCase):
