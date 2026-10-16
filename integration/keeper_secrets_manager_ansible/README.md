@@ -26,7 +26,7 @@ This module contains plugins that allow your Ansible automations to use Keeper S
 * ansible-core 2.15.13 or later, but not the 2.17 series.
 * keeper-secrets-manager-core 17.3.0 or later, and keeper-secrets-manager-helper 1.1.2 or later.
 
-We recommend Python 3.12 or later with ansible-core 2.20 or later.
+We test ansible-core 2.15.13 and the 2.16, 2.18, 2.19, 2.20, and 2.21 series. ansible-core versions before 2.15.13, and the 2.17 series, are not supported. For the releases that upstream maintains, see the [ansible-core support matrix](https://docs.ansible.com/projects/ansible/latest/reference_appendices/release_and_maintenance.html).
 
 For more information see our official documentation page https://docs.keeper.io/secrets-manager/secrets-manager/integrations/ansible-plugin
 

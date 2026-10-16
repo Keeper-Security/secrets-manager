@@ -9,8 +9,7 @@ document portal.
 
 # Installation
 
-Python 3.9.2 or later and ansible-core 2.15.13 or later, but not the 2.17 series, are required. We recommend Python
-3.12 or later with ansible-core 2.20 or later.
+Python 3.9.2 or later and ansible-core 2.15.13 or later, but not the 2.17 series, are required. We test ansible-core 2.15.13 and the 2.16, 2.18, 2.19, 2.20, and 2.21 series. For the releases that upstream maintains, see the [ansible-core support matrix](https://docs.ansible.com/projects/ansible/latest/reference_appendices/release_and_maintenance.html).
 
 The collection declares the ansible-core minimum in `meta/runtime.yml`. On an unsupported ansible-core, Ansible shows a
 warning and still runs the collection. To stop with an error, set `collections_on_ansible_version_mismatch = error` in
