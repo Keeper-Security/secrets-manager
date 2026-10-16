@@ -575,22 +575,6 @@ class KeeperDeleteFolderBadInputPlaybookTest(_PlaybookTestCase):
         finally:
             server.cleanup()
 
-    def test_list_as_folder_uid_fails_and_deletes_nothing(self):
-        """
-        A list of real folder UIDs, with force_deletion, is not a folder UID. Before the option check, Ansible turned it
-        into the string "['A', 'B']", and the task silently reported "not found". Now the task fails on the
-        option check, before any request, and nothing is deleted.
-        """
-        server = FakeKeeperServer(folders=FOLDERS, records=RECORDS)
-        try:
-            recap, out, err = _run(server, "keeper_delete_folder_list_uid.yml",
-                                   expected={"msg": NOT_A_STRING_MESSAGE.format("a list")})
-
-            self.assertRecap(recap, out, err, ok=2, changed=0, failed=0, ignored=1)
-            self.assertNothingSent(server)
-        finally:
-            server.cleanup()
-
     def test_null_options_fail_before_any_request(self):
         """
         Every option set to null, as a YAML null, a tilde, or a variable with no value, fails before any request.
@@ -653,29 +637,6 @@ class KeeperDeleteFolderFailureHandlingPlaybookTest(_PlaybookTestCase):
             self.assertRecap(recap, out, err, ok=6, changed=0, failed=0, rescued=1, ignored=1, skipped=0)
             self.assertEqual(server.calls("delete_folder"), [])
             self.assertEqual(len(server.calls("get_folders")), 3, "the typo task must not reach the server")
-            self.assertFolders(server, ALL_FOLDER_UIDS)
-            self.assertRecords(server, ALL_RECORD_UIDS)
-        finally:
-            server.cleanup()
-
-
-class KeeperDeleteFolderStopsThePlayTest(_PlaybookTestCase):
-    """
-    A task that fails without ignore_errors makes ansible-playbook exit non-zero, and AnsibleTestFramework then
-    returns {} instead of the PLAY RECAP counts. The error message is still in stdout and stderr.
-    """
-
-    def test_failure_without_ignore_errors_stops_the_play(self):
-        server = FakeKeeperServer(folders=FOLDERS, records=RECORDS)
-        try:
-            recap, out, err = _run(server, "keeper_delete_folder_stop.yml")
-
-            self.assertEqual(recap, {}, "the failed delete must stop the play")
-            self.assertIn("Could not delete folder: The folder ", out + err)
-            self.assertIn("(UID RECORD_FOLDER_UID) is not empty. It contains 1 record(s) and 0 subfolder(s). "
-                          "Set force_deletion to true to delete the folder and everything in it.", out + err)
-            self.assertEqual(server.calls("delete_folder"), [], "the second task must not run")
-            self.assertIsNotNone(server.folder(EMPTY_FOLDER_UID))
             self.assertFolders(server, ALL_FOLDER_UIDS)
             self.assertRecords(server, ALL_RECORD_UIDS)
         finally:

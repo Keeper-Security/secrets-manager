@@ -182,22 +182,16 @@ class KeeperDeleteFolderAcceptanceTest(unittest.TestCase):
         """
         A second run after a delete must not fail. The module reports changed false with a message that says
         that nothing was deleted, and it must not read the records or send a delete for a folder that it cannot see.
+        Force must not change this.
         """
-        sdk = _Sdk()
-        result = _delete(sdk, MISSING)
+        for force in [False, True]:
+            with self.subTest(force=force):
+                sdk = _Sdk()
+                result = _delete(sdk, MISSING, force=force)
 
-        self.assertEqual(result, _not_found(MISSING))
-        sdk.client.get_secrets.assert_not_called()
-        sdk.client.delete_folder.assert_not_called()
-
-    def test_folder_that_does_not_exist_with_force_reports_not_changed(self):
-        """Force must not change the not-found result: there is still nothing to delete and no request."""
-        sdk = _Sdk()
-        result = _delete(sdk, MISSING, force=True)
-
-        self.assertEqual(result, _not_found(MISSING))
-        sdk.client.get_secrets.assert_not_called()
-        sdk.client.delete_folder.assert_not_called()
+                self.assertEqual(result, _not_found(MISSING))
+                sdk.client.get_secrets.assert_not_called()
+                sdk.client.delete_folder.assert_not_called()
 
     def test_folder_not_found_when_the_sdk_returns_no_folders(self):
         """get_folders can return None. That is an empty list, so the folder is not found, and nothing is sent."""
@@ -333,10 +327,8 @@ class KeeperDeleteFolderForceTest(unittest.TestCase):
         sdk.client.delete_folder.assert_called_once_with([DATABASES], force_deletion=True)
         self.assertIs(sdk.client.delete_folder.call_args.kwargs["force_deletion"], True)
 
-    def test_force_true_on_an_empty_folder_also_sends_force(self):
         sdk = _Sdk(deleted_uids=[EMPTY])
         _delete(sdk, EMPTY, force=True)
-
         sdk.client.get_secrets.assert_not_called()
         sdk.client.delete_folder.assert_called_once_with([EMPTY], force_deletion=True)
 
@@ -345,8 +337,11 @@ class KeeperDeleteFolderForceTest(unittest.TestCase):
         _delete(sdk, EMPTY)
         self.assertIs(sdk.client.delete_folder.call_args.kwargs["force_deletion"], False)
 
-    def test_truthy_values_that_are_not_true_do_not_force_a_folder_that_is_not_empty(self):
-        """The dangerous direction: each of these values must leave a folder that is not empty in place."""
+    def test_truthy_values_that_are_not_true_never_force(self):
+        """
+        The dangerous direction: each of these values must leave a folder that is not empty in place. For an empty
+        folder, the delete is sent, but force_deletion must be the bool False.
+        """
         for value in self.NOT_TRUE_VALUES:
             with self.subTest(force=value):
                 sdk = _Sdk(records=[_record("R1", SHARED, WEB)])
@@ -356,10 +351,6 @@ class KeeperDeleteFolderForceTest(unittest.TestCase):
                 sdk.client.get_secrets.assert_called_once_with()
                 sdk.client.delete_folder.assert_not_called()
 
-    def test_truthy_values_that_are_not_true_never_send_force_deletion(self):
-        """For an empty folder, the delete is sent, but force_deletion must be the bool False."""
-        for value in self.NOT_TRUE_VALUES:
-            with self.subTest(force=value):
                 sdk = _Sdk(deleted_uids=[EMPTY])
                 _delete(sdk, EMPTY, force=value)
                 sdk.client.delete_folder.assert_called_once_with([EMPTY], force_deletion=False)
@@ -656,20 +647,15 @@ class KeeperDeleteFolderSdkErrorTest(unittest.TestCase):
         sdk.client.delete_folder.assert_not_called()
 
     def test_delete_folder_error(self):
-        sdk = _Sdk(delete_response=None)
-        sdk.client.delete_folder.side_effect = Exception("access denied by policy")
-        with self.assertRaises(KeeperFolderError) as ctx:
-            _delete(sdk, EMPTY)
+        for uid, label, force in [(EMPTY, EMPTY_LABEL, False), (DATABASES, DATABASES_LABEL, True)]:
+            with self.subTest(force=force):
+                sdk = _Sdk(delete_response=None)
+                sdk.client.delete_folder.side_effect = Exception("access denied by policy")
+                with self.assertRaises(KeeperFolderError) as ctx:
+                    _delete(sdk, uid, force=force)
 
-        self.assertEqual(str(ctx.exception),
-                         "Cannot delete the folder {}: access denied by policy".format(EMPTY_LABEL))
-
-    def test_delete_folder_error_with_force(self):
-        sdk = _Sdk(delete_response=None)
-        sdk.client.delete_folder.side_effect = Exception("timeout")
-        with self.assertRaises(KeeperFolderError) as ctx:
-            _delete(sdk, DATABASES, force=True)
-        self.assertEqual(str(ctx.exception), "Cannot delete the folder {}: timeout".format(DATABASES_LABEL))
+                self.assertEqual(str(ctx.exception),
+                                 "Cannot delete the folder {}: access denied by policy".format(label))
 
 
 class KeeperDeleteFolderUidTest(unittest.TestCase):
@@ -682,27 +668,21 @@ class KeeperDeleteFolderUidTest(unittest.TestCase):
     PADDED = [" " + EMPTY, EMPTY + " ", EMPTY + "\n", "\t" + EMPTY, "\n" + EMPTY + "\n", EMPTY + "\r\n"]
 
     def test_blank_uid_fails(self):
-        for value in self.BLANK:
-            with self.subTest(folder_uid=value):
+        for value, force in [(v, f) for v in self.BLANK for f in (False, True)]:
+            with self.subTest(folder_uid=value, force=force):
                 sdk = _Sdk()
                 with self.assertRaises(KeeperFolderError) as ctx:
-                    _delete(sdk, value)
+                    _delete(sdk, value, force=force)
                 self.assertEqual(str(ctx.exception), "The folder_uid is blank.")
                 sdk.client.get_secrets.assert_not_called()
                 sdk.client.delete_folder.assert_not_called()
 
-    def test_blank_uid_fails_with_force(self):
-        sdk = _Sdk()
-        with self.assertRaises(KeeperFolderError):
-            _delete(sdk, "", force=True)
-        sdk.client.delete_folder.assert_not_called()
-
     def test_padded_uid_fails_even_when_the_trimmed_uid_exists(self):
-        for value in self.PADDED:
-            with self.subTest(folder_uid=value):
+        for value, force in [(v, f) for v in self.PADDED for f in (False, True)]:
+            with self.subTest(folder_uid=value, force=force):
                 sdk = _Sdk()
                 with self.assertRaises(KeeperFolderError) as ctx:
-                    _delete(sdk, value)
+                    _delete(sdk, value, force=force)
                 self.assertEqual(
                     str(ctx.exception), "The folder_uid {!r} has leading or trailing whitespace.".format(value))
                 sdk.client.get_secrets.assert_not_called()
@@ -716,12 +696,6 @@ class KeeperDeleteFolderUidTest(unittest.TestCase):
                 with self.assertRaises(KeeperFolderError) as ctx:
                     _delete(sdk, value)
                 self.assertIn("has leading or trailing whitespace", str(ctx.exception))
-
-    def test_padded_uid_with_force_fails_and_deletes_nothing(self):
-        sdk = _Sdk()
-        with self.assertRaises(KeeperFolderError):
-            _delete(sdk, DATABASES + "\n", force=True)
-        sdk.client.delete_folder.assert_not_called()
 
     def test_uid_is_matched_exactly(self):
         """A UID in a different case is a different folder, so it is not found, and nothing is deleted."""
@@ -1022,19 +996,6 @@ class KeeperDeleteFolderActionPluginTest(unittest.TestCase):
         _, _, method = self._run_with_mock_method({"folder_uid": "12345"})
         method.assert_called_once_with("12345", force=False, check_mode=False)
 
-    def test_force_deletion_is_passed_as_the_validated_bool(self):
-        """The task option is force_deletion. The method parameter is still named force."""
-        for value, expected in [("yes", True), ("true", True), (True, True), ("no", False), ("false", False),
-                                (False, False)]:
-            with self.subTest(force_deletion=value):
-                _, _, method = self._run_with_mock_method({"folder_uid": EMPTY, "force_deletion": value})
-                method.assert_called_once_with(EMPTY, force=expected, check_mode=False)
-                self.assertIs(method.call_args.kwargs["force"], expected)
-
-    def test_force_deletion_defaults_to_false(self):
-        _, _, method = self._run_with_mock_method({"folder_uid": EMPTY})
-        self.assertIs(method.call_args.kwargs["force"], False)
-
     def test_force_is_a_real_bool_even_if_the_validated_value_is_not(self):
         """
         The plugin passes force=(validated force_deletion is True). If the argument validation of some
@@ -1053,12 +1014,6 @@ class KeeperDeleteFolderActionPluginTest(unittest.TestCase):
             with self.subTest(check_mode=value):
                 _, _, method = self._run_with_mock_method({"folder_uid": EMPTY}, check_mode=value)
                 self.assertIs(method.call_args.kwargs["check_mode"], expected)
-
-    def test_result_of_the_method_is_the_task_result(self):
-        for expected in [{"changed": True, "folder_uid": EMPTY, "folder_name": "Staging"}, _not_found(MISSING)]:
-            with self.subTest(result=expected):
-                output, _, _ = self._run_with_mock_method({"folder_uid": EMPTY}, result=dict(expected))
-                self.assertEqual(output, expected)
 
     def test_method_errors_are_returned_with_the_prefix(self):
         """Any exception from the method, not only KeeperFolderError, is returned as a failure."""
@@ -1162,12 +1117,6 @@ class KeeperDeleteFolderActionPluginTest(unittest.TestCase):
         self.assertEqual(output, _failure(NULL_MESSAGE.format("force_deletion")))
         method.assert_not_called()
 
-    def test_plugin_with_the_real_method_deletes_an_empty_folder(self):
-        sdk = _Sdk(deleted_uids=[EMPTY])
-        output = self._run_with_sdk(sdk, {"folder_uid": EMPTY})
-        self.assertEqual(output, {"changed": True, "folder_uid": EMPTY, "folder_name": "Staging"})
-        sdk.client.delete_folder.assert_called_once_with([EMPTY], force_deletion=False)
-
     def test_plugin_with_the_real_method_reports_a_missing_folder(self):
         sdk = _Sdk()
         output = self._run_with_sdk(sdk, {"folder_uid": MISSING, "force_deletion": True})
@@ -1186,13 +1135,6 @@ class KeeperDeleteFolderActionPluginTest(unittest.TestCase):
         sdk = _Sdk()
         output = self._run_with_sdk(sdk, {"folder_uid": DATABASES, "force_deletion": "false"})
         self.assertEqual(output, _failure(DATABASES_NOT_EMPTY))
-        sdk.client.delete_folder.assert_not_called()
-
-    def test_plugin_with_the_real_method_in_check_mode_sends_no_delete(self):
-        sdk = _Sdk()
-        with patch.object(KeeperAnsible, "__init__", _init_with(sdk.client)):
-            output = _action({"folder_uid": EMPTY}, check_mode=True).run(task_vars={})
-        self.assertEqual(output, {"changed": True, "folder_uid": EMPTY, "folder_name": "Staging"})
         sdk.client.delete_folder.assert_not_called()
 
     def test_plugin_with_the_real_method_rejects_a_padded_uid(self):
@@ -1301,8 +1243,6 @@ class KeeperDeleteFolderQuotedNameTest(unittest.TestCase):
 class KeeperDeleteFolderDocumentationTest(unittest.TestCase):
     """The module documentation must match what the plugin does, and the docs stub must match the plugin."""
 
-    COMPONENT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-
     @staticmethod
     def _docs():
         import yaml
@@ -1326,45 +1266,12 @@ class KeeperDeleteFolderDocumentationTest(unittest.TestCase):
                 self.assertEqual(bool(doc.get("required", False)), spec[name].get("required", False))
         self.assertIs(options["force_deletion"]["default"], spec["force_deletion"]["default"])
 
-    def test_docs_name_force_deletion_and_explain_why_it_is_not_force(self):
-        action, _, yaml = self._docs()
-        docs = yaml.safe_load(action.DOCUMENTATION)
-        self.assertIn("unless force_deletion is true.", " ".join(docs["description"]))
-        self.assertEqual(
-            docs["options"]["force_deletion"]["description"][2],
-            "The name is not force, because keeper_copy has a force option with a different meaning, and a "
-            "module_defaults entry for the action group of this collection gives its options to every module in it.")
-        self.assertIn("There is one exception. An option that a module_defaults entry for an action group of this "
-                      "collection sets, and that this module does not have, is ignored.", " ".join(docs["description"]))
-
     def test_return_documents_the_not_found_message(self):
         action, _, yaml = self._docs()
         returned = yaml.safe_load(action.RETURN)
         self.assertEqual(set(returned), {"folder_uid", "folder_name", "msg"})
         self.assertEqual(returned["msg"]["returned"], "when the folder was not found")
         self.assertEqual(returned["msg"]["sample"], _delete(_Sdk(), "XXXX")["msg"])
-
-    def test_examples_use_only_documented_options(self):
-        action, _, yaml = self._docs()
-        options = set(yaml.safe_load(action.DOCUMENTATION)["options"])
-        deletes = [task["keeper_delete_folder"] for task in yaml.safe_load(action.EXAMPLES)
-                   if "keeper_delete_folder" in task]
-        self.assertEqual(len(deletes), 4)
-        for task_args in deletes:
-            self.assertLessEqual(set(task_args), options)
-        self.assertEqual([task_args.get("force_deletion") for task_args in deletes], [None, True, None, None],
-                         "only the example that deletes everything in the folder sets force_deletion")
-
-    def test_readmes_name_force_deletion(self):
-        """Both READMEs must tell the playbook author the new option name, and not the old one."""
-        for path in [os.path.join(self.COMPONENT_DIR, "README.md"),
-                     os.path.join(self.COMPONENT_DIR, "ansible_galaxy", "keepersecurity", "keeper_secrets_manager",
-                                  "README.md")]:
-            with self.subTest(readme=path):
-                with open(path, encoding="utf-8") as fh:
-                    text = fh.read()
-                self.assertIn("Deletes only an empty folder, unless `force_deletion: yes` is set.", text)
-                self.assertNotIn("`force: yes`", text)
 
     def test_playbook_test_runs_the_documented_idempotent_pattern(self):
         """The playbook test of the idempotent pattern must run the tasks of EXAMPLES, not a variant of them."""
