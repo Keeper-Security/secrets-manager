@@ -1,3 +1,5 @@
+import hashlib
+import sys
 import unittest
 from unittest.mock import patch
 from keeper_secrets_manager_core.mock import Record, Response as MockResponse
@@ -118,6 +120,38 @@ class KeeperCopyTest(unittest.TestCase):
             # Verify the output contains the notes
             self.assertRegex(out, r'NOTES: These are my secret notes',
                            "Output should contain the notes content")
+
+    def test_keeper_copy_output_has_no_digest_of_the_secret(self):
+        # The secret is the file content. A SHA-1 or MD5 of a short secret can be brute-forced offline, so no
+        # digest of it may reach the output on the failed, the changed, or the unchanged path, or when the module
+        # output cannot be parsed. Then Ansible puts the raw output, digests included, in module_stdout.
+        secret = "MYPASSWORD_2".encode()
+        digests = [hashlib.sha1(secret).hexdigest(), hashlib.md5(secret).hexdigest(),
+                   hashlib.sha256(secret).hexdigest()]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Runs every module as usual, except that it breaks the JSON of the copy module.
+            corrupt_copy_python = os.path.join(temp_dir, "corrupt_copy_python")
+            with open(corrupt_copy_python, "w") as fh:
+                fh.write('#!/bin/sh\ncase "$*" in *copy*) {py} "$@" | sed "s/^{{/{{{{/";; *) exec {py} "$@";; esac\n'
+                         .format(py=sys.executable))
+            os.chmod(corrupt_copy_python, 0o755)
+            a = AnsibleTestFramework(
+                playbook="keeper_copy_digests.yml",
+                vars={
+                    "tmp_dir": temp_dir,
+                    "password_uid": mock_record_1.uid,
+                    "corrupt_copy_python": corrupt_copy_python,
+                },
+                mock_responses=[all_respones]
+            )
+            result, out, err = a.run()
+            self.assertEqual(result["failed"], 0, "failed was not 0")
+            self.assertEqual(result["ignored"], 2, "the two copies that should fail did not fail")
+            self.assertEqual(result["changed"], 1, "only the first copy should change")
+            with open(os.path.join(temp_dir, "password"), "rb") as fh:
+                self.assertEqual(fh.read(), secret, "the file is not the secret the digests were made from")
+            for digest in digests:
+                self.assertNotIn(digest, out + err, "a digest of the secret is in the output")
 
 
 class KeeperCopyDiffTest(unittest.TestCase):

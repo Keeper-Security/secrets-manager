@@ -1,0 +1,37 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Copy digests
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Copy to a directory that does not exist (fails)"
+    keeper_copy:
+      uid: "{{ password_uid }}"
+      field: "password"
+      dest: "{{ tmp_dir }}/no_such_dir/password"
+    ignore_errors: true
+
+  - name: "Copy the password (changed)"
+    keeper_copy:
+      uid: "{{ password_uid }}"
+      field: "password"
+      dest: "{{ tmp_dir }}/password"
+      mode: '0600'
+
+  - name: "Copy the password again (unchanged)"
+    keeper_copy:
+      uid: "{{ password_uid }}"
+      field: "password"
+      dest: "{{ tmp_dir }}/password"
+      mode: '0600'
+
+  - name: "Copy with a module whose output cannot be parsed (fails)"
+    keeper_copy:
+      uid: "{{ password_uid }}"
+      field: "password"
+      dest: "{{ tmp_dir }}/unparsed"
+      mode: '0600'
+    vars:
+      ansible_python_interpreter: "{{ corrupt_copy_python }}"
+    ignore_errors: true

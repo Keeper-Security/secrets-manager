@@ -12,6 +12,7 @@
 
 from ansible.plugins.callback.default import CallbackModule as DefaultCallbackBase
 from collections.abc import Mapping
+import hashlib
 import json
 
 
@@ -121,6 +122,10 @@ class CallbackModule(DefaultCallbackBase):
                     # the quotes of a Python repr, which exception messages use.
                     self._forms.extend({leaf, json.dumps(leaf)[1:-1], json.dumps(leaf, ensure_ascii=False)[1:-1],
                                         repr(leaf)[1:-1]} - set(self._forms))
+                    # The built-in copy module returns the SHA-1 of its content, and a hash of a short secret can be
+                    # found by guessing. Hide the common digests of each secret too.
+                    self._forms.extend(hashlib.new(name, leaf.encode("utf-8")).hexdigest()
+                                       for name in ("sha1", "md5", "sha256"))
 
     def _redact_text(self, text):
         # Find every match first, then merge overlaps. Replacing one secret at a time leaves the tail of a secret
