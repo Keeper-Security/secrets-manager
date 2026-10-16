@@ -125,9 +125,9 @@ class KeeperCopyTest(unittest.TestCase):
         # The secret is the file content. A SHA-1 or MD5 of a short secret can be brute-forced offline, so no
         # digest of it may reach the output on the failed, the changed, or the unchanged path, or when the module
         # output cannot be parsed. Then Ansible puts the raw output, digests included, in module_stdout.
-        secret = "MYPASSWORD_2".encode()
-        digests = [hashlib.sha1(secret).hexdigest(), hashlib.md5(secret).hexdigest(),
-                   hashlib.sha256(secret).hexdigest()]
+        file_content = "MYPASSWORD_2".encode()
+        digests = [hashlib.sha1(file_content).hexdigest(), hashlib.md5(file_content).hexdigest(),
+                   hashlib.sha256(file_content).hexdigest()]
         with tempfile.TemporaryDirectory() as temp_dir:
             # Runs every module as usual, except that it breaks the JSON of the copy module.
             corrupt_copy_python = os.path.join(temp_dir, "corrupt_copy_python")
@@ -149,7 +149,7 @@ class KeeperCopyTest(unittest.TestCase):
             self.assertEqual(result["ignored"], 2, "the two copies that should fail did not fail")
             self.assertEqual(result["changed"], 1, "only the first copy should change")
             with open(os.path.join(temp_dir, "password"), "rb") as fh:
-                self.assertEqual(fh.read(), secret, "the file is not the secret the digests were made from")
+                self.assertEqual(fh.read(), file_content, "the file is not the secret the digests were made from")
             for digest in digests:
                 self.assertNotIn(digest, out + err, "a digest of the secret is in the output")
 
