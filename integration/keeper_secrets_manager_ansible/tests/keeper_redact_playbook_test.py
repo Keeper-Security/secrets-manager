@@ -1,3 +1,4 @@
+import hashlib
 import json
 import unittest
 from unittest.mock import patch
@@ -35,7 +36,7 @@ class KeeperRedactPlaybookTest(unittest.TestCase):
 
     def test_the_run_used_keeper_redact(self):
         self.assertEqual(self.result["failed"], 0, self.output)
-        self.assertEqual(self.result["ignored"], 1, self.output)
+        self.assertEqual(self.result["ignored"], 2, self.output)
         self.assertIn("****", self.output)
 
     def assert_secrets_hidden(self, text):
@@ -66,6 +67,13 @@ class KeeperRedactPlaybookTest(unittest.TestCase):
         text = self.task_output("Print a JSON document that holds the secrets")
         self.assertIn("ok: [localhost]", text)
         self.assert_secrets_hidden(text)
+
+    def test_a_hash_of_a_secret_in_a_later_task_is_hidden(self):
+        # A failed built-in copy prints the SHA-1 of its content. A hash of a short secret can be found by guessing.
+        text = self.task_output("Copy a secret to a directory that does not exist")
+        self.assertIn("FAILED", text)
+        for algorithm in (hashlib.sha1, hashlib.md5, hashlib.sha256):
+            self.assertNotIn(algorithm(SPECIAL_PASSWORD.encode()).hexdigest(), text)
 
     def test_a_failure_message_that_holds_a_secret_is_hidden(self):
         text = self.task_output("Fail with a message that holds a secret")

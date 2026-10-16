@@ -116,6 +116,7 @@ The Changes section names the ticket for each change.
 * `keeper_set` reports `changed: true` and `updated: true` only when it saves a new value. Before, it always set `updated: true` and never reported a change. A task that sets the value that the record already has now saves nothing and reports `changed: false`.
 * `keeper_cleanup` reports a change only when the DR cache file exists. `removed_ksm_cache` is `false` when there is no file.
 * `keeper_remove` reports `changed: true` with `record_uid` and `record_title` for a confirmed delete. It reports `changed: false` when the record does not exist.
+* `keeper_copy` no longer returns `checksum`, `md5sum`, or `size`, and `invocation` no longer holds `checksum`. These values come from the copied secret, so a short secret can be found from them. The result keeps the change and error fields, `dest`, `path`, `src`, `mode`, `owner`, `group`, `uid`, `gid`, `state`, `backup_file`, and `diff`. To do: remove any `when:` condition or `register` use that reads the three values. A failed `validate:` no longer returns `exit_status`, `stdout`, or `stderr`, and a failed copy no longer returns `traceback`, because the validate command reads the secret file and its output can show the content. Logs that earlier versions wrote can still hold them. Change a short secret that a `keeper_copy` task printed.
 * To do: review `when:` conditions on these results, `changed_when`, and `notify`. Handlers now run after these tasks, and the play recap counts change.
 
 ## keeper_remove
@@ -148,7 +149,7 @@ The Changes section names the ticket for each change.
 * `keeper_verify_ssl_certs_skip` and `keeper_force_config_write` now accept only boolean values: `true`, `false`, `yes`, `no`, `on`, `off`, `y`, `n`, `t`, `f`, `1`, and `0`, in any case. Any other value, including an empty string, fails the task. Before, any non-empty text counted as true, so `-e keeper_verify_ssl_certs_skip=false` turned certificate verification off. To do: replace other values with a boolean.
 * Configuration files that the plugin writes, and the DR cache file, now have mode 0600. A DR cache file that other users can read is changed to 0600 when the plugin next saves it. Before, they had the umask mode, often 0644. To do: if another user or service account reads these files, change its access.
 * `keeper_copy` with `--diff` shows a placeholder instead of the old and the new file content.
-* `keeper_init` fails with a clear message for a token with more than two parts, such as an IL5 token. Before, it failed with an unpacking error.
+* `keeper_init` fails with a clear message for a token with more than two parts. Before, it failed with an unpacking error.
 
 # Changes
 
@@ -156,68 +157,114 @@ The Changes section names the ticket for each change.
 * KSM-1559: Made `keeper_remove` idempotent and corrected its task results
   - A missing record, by UID or title, succeeds with `changed: false`
   - A confirmed delete reports `changed: true`, `record_uid`, and `record_title`
-  - Duplicate titles fail with the matching UIDs; refused deletes fail with the server's response code and message
+  - Duplicate titles fail with the matching UIDs
+  - A delete that the server refuses fails with the server's response code and message
   - Lookup, validation, and delete failures are task results, so `failed_when`, `ignore_errors`, and `rescue` work
-  - Check mode predicts the change without deleting records
-  - Removal reads the current vault even when a registered cache is supplied, so stale caches cannot hide duplicate titles or report false no-ops
-  - **Breaking change**: missing records no longer fail, and successful deletions now trigger change handlers
-  - **Breaking change**: check mode no longer deletes records. Before this change, `--check` deleted them
-  - An unknown option now fails the task, instead of being ignored
-  - The `cache` option is accepted but ignored
-* KSM-1560: Prevented vault mutations and local file changes in Ansible check mode
+  - Check mode predicts the change and does not delete records
+  - An unknown option fails the task, instead of being ignored
+  - **Breaking change**: a missing record no longer fails the task, and a successful delete now triggers change handlers
+  - **Breaking change**: check mode no longer deletes records. Earlier versions deleted them with `--check`
+* KSM-1560: Prevented vault changes and local file changes in Ansible check mode
   - Added read-only previews for `keeper_create`, `keeper_set`, `keeper_create_folder`, and `keeper_cleanup`
-  - `keeper_init` is skipped in check mode, preserving the one-time token and leaving configuration files untouched
-  - Initialized configurations are loaded into memory, unbound tokens are rejected, and the DR file cache is not refreshed in check mode
+  - `keeper_init` is skipped in check mode, so the one-time token stays unused and no configuration file is written
+  - Initialized configurations load into memory, unbound tokens are rejected, and the DR file cache is not refreshed
   - The `keeper` lookup follows `--check`, and a play or task `check_mode` keyword on ansible-core 2.19 and later
-  - **Breaking change**: record creation and token initialization now report `changed: true` in normal runs. `keeper_set` reports `changed: true` only when the value changes, and does not save a value that the record already has. It reads the record from the vault, also when a registered cache is given. Cache cleanup reports changed only when a cache file exists, and `removed_ksm_cache` is false when there is no cache file. Handlers and play recap counts now reflect these operations
+  - **Breaking change**: `keeper_create` and `keeper_init` report `changed: true` in normal runs. Handlers and play recap counts now include them
+  - **Breaking change**: `keeper_set` reports `changed: true` only when the value changes, and it does not save a value that the record already has
+  - **Breaking change**: `keeper_cleanup` reports a change only when a cache file exists, and `removed_ksm_cache` is `false` when there is no file
   - **Breaking change**: in check mode, modules that read the vault fail with a configuration that has only a one-time token. `keeper_password`, `keeper_info`, and `keeper_cleanup` still run
-* **Security** (KSM-1560): Configuration files that the plugin writes, and the DR cache file, are created with mode 0600. Before, a configuration file that `keeper_init` or the Ansible variables created, and the DR cache with keeper-secrets-manager-core 17.3.0, got the umask mode (often 0644), so other local users could read the keys
-* **Security** (KSM-1560): `keeper_copy` with `--diff` shows a placeholder instead of the old and the new file content. Before, the diff and the task result showed the secret, also with the `keeper_redact` callback
-* **Security** (KSM-1560): `keeper_verify_ssl_certs_skip` and `keeper_force_config_write` read text values correctly. Before, `-e keeper_verify_ssl_certs_skip=false` or an INI inventory gave the text "false", which turned TLS certificate verification off, and `keeper_force_config_write=false` wrote the keys to a file. A value that is not a boolean now fails the task, and a warning shows when certificate verification is off
-* **Fix** (KSM-1560): `keeper_copy` with `no_log: true` failed in check mode on ansible-core 2.15 to 2.20, because those versions replace the invocation of the task result with a text
-* **Fix** (KSM-1560): A `keeper` lookup in a task name runs in the controller, and the `KSM_CACHE_DIR` value that it set reached every later task. So later tasks wrote the DR cache to the directory of the first task, not to their own `keeper_cache_dir`. The plugin now replaces or removes a value that it set for an earlier task. A `KSM_CACHE_DIR` that the user sets still wins over `keeper_cache_dir`
-* **Fix** (KSM-1560): When a request to the Keeper server fails and the DR cache replaces it, a warning shows the type of the error, the cache file, and the time of the cached response. Before, the old data was used with no message, also for a TLS certificate error. Without a cache file, the error names both the failed request and the cache file. A failed save of the cache no longer replaces a fresh response with the old cached one
-* **Fix** (KSM-1560): The documentation of `keeper_get`, `keeper_cache_records`, and the `keeper` lookup renders in ansible-doc, and the module documentation of `keeper_copy`, `keeper_create`, `keeper_get`, and `keeper_set` lists every option. The error messages of the `keeper` lookup and the field check name the right plugin. `keeper_init` fails with a clear message for a token with more than two parts, for example an IL5 token
-* **Fix** (KSM-1559, KSM-1560): `keeper_remove` and `keeper_set` read the record from the vault, never from the DR cache. A cached copy can be older than the vault, so a title could select a record that was renamed, and the delete or the save went to that record. During an outage, these tasks now fail, as their delete or save would
-* **Fix**: `keeper_create` crashed with "Could not create record: list index out of range" when a playbook supplied an unpopulated complex field (address, name, host, etc.) with `value: []`. Empty-value fields are now treated as unpopulated, matching the behavior of the underlying vault schema. Root cause in the Python helper library is tracked as KSM-1119.
-* **Fix** (KSM-1614): `ansible-doc -t callback keepersecurity.keeper_secrets_manager.keeper_redact` failed with a YAML error, because one line of the callback documentation was not quoted. The documentation now renders
-* **Fix** (KSM-1613): `keeper_set` and `keeper_remove` now show a warning when a task sets the `cache` option. The option has no effect, because both tasks always read the current vault
-* **Fix** (KSM-1611): A failed request no longer shows the proxy user name and password in task output or verbose logs. A proxy URL that cannot be parsed fails with a message that asks you to percent-encode special characters in the proxy credentials. A proxy password with a character outside latin-1 fails with a message that says so. A bad Keeper server URL or file URL fails with its own message and does not blame the proxy. An error that held a proxy credential, and every URL parse error, is raised as Python's built-in ConnectionError, not a requests exception
-* **Fix** (KSM-1592): The `keeper_redact` callback hides secret values that contain special characters, for example a multiline key. It hides the values that `keeper_get`, `keeper_get_record`, and `keeper_password` return. It also hides values of four or more characters when later tasks in the same run print them
-* **Fix** (KSM-1592): Task results from the Keeper actions no longer include an internal key for the `keeper_redact` callback
-* **Breaking change**: KSM-1561: Raised the minimum ansible-core version to 2.15.13, and excluded the 2.17 series
-  - ansible-base 2.10, ansible-core versions before 2.15.13, and ansible-core 2.17.x are no longer supported
+* KSM-1559, KSM-1560: Made `keeper_remove` and `keeper_set` read the record from the vault, never from the DR cache
+  - A cached copy can be older than the vault, so a title could select a record that was renamed. The delete or the save then went to that record
+  - **Breaking change**: during a Keeper outage, these two tasks now fail instead of using the DR cache
+* KSM-1613: Added a warning when a task sets the `cache` option on `keeper_set` or `keeper_remove`
+  - Both tasks always read the current vault, so the option has no effect
+* KSM-1560: Fixed the file mode of configuration files and the DR cache file
+  - **Security**: earlier versions used the umask mode, often 0644, so other local users could read the keys
+  - Configuration files that the plugin writes, and the DR cache file, now have mode 0600
+  - This covers a configuration file that `keeper_init` or the Ansible variables created, and the DR cache with keeper-secrets-manager-core 17.3.0
+* KSM-1560: Fixed `keeper_copy` showing the secret with `--diff`
+  - **Security**: the diff and the task result showed the old and the new file content, also with the `keeper_redact` callback
+  - `keeper_copy` now shows a placeholder instead of the file content
+* KSM-1636: Fixed `keeper_copy` returning hashes of the secret in its task result
+  - **Security**: the result held the SHA-1 of the secret, also in a failed copy. A hash of a short secret can be found by guessing, and the `keeper_redact` callback did not hide it
+  - `keeper_copy` no longer returns `checksum`, `md5sum`, or `size`, and `invocation` no longer holds `checksum`
+  - The result now keeps only a fixed list of keys, so a new key that ansible-core adds to the copy result is not shown
+  - **Breaking change**: a playbook that reads `checksum`, `md5sum`, or `size` from a `keeper_copy` result must stop reading them
+  - **Breaking change**: a failed `validate:` no longer returns `exit_status`, `stdout`, or `stderr`, and a failed copy no longer returns `traceback`
+* KSM-1560: Fixed the text values of `keeper_verify_ssl_certs_skip` and `keeper_force_config_write`
+  - **Security**: `-e keeper_verify_ssl_certs_skip=false` or an INI inventory gave the text "false", which turned TLS certificate verification off. `keeper_force_config_write=false` wrote the keys to a file
+  - Both variables now read boolean text correctly
+  - A warning shows when certificate verification is off
+  - **Breaking change**: a value that is not a boolean now fails the task
+* KSM-1560: Fixed `keeper_copy` with `no_log: true` failing in check mode on ansible-core 2.15 to 2.20
+  - Those versions replace the invocation of the task result with a text
+* KSM-1560: Fixed the `KSM_CACHE_DIR` value of a `keeper` lookup reaching later tasks
+  - A `keeper` lookup in a task name runs in the controller. The `KSM_CACHE_DIR` value that it set reached every later task
+  - So later tasks wrote the DR cache to the directory of the first task, not to their own `keeper_cache_dir`
+  - The plugin now replaces or removes a value that it set for an earlier task
+  - A `KSM_CACHE_DIR` that the user sets still wins over `keeper_cache_dir`
+* KSM-1560: Fixed the DR cache replacing a failed Keeper request with no message
+  - A warning now shows the type of the error, the cache file, and the time of the cached response. Earlier versions showed no message, also for a TLS certificate error
+  - Without a cache file, the error names both the failed request and the cache file
+  - A failed save of the cache no longer replaces a fresh response with the old cached one
+* KSM-1560: Fixed documentation and error messages
+  - The documentation of `keeper_get`, `keeper_cache_records`, and the `keeper` lookup renders in ansible-doc
+  - The module documentation of `keeper_copy`, `keeper_create`, `keeper_get`, and `keeper_set` lists every option
+  - The error messages of the `keeper` lookup and the field check name the right plugin
+  - `keeper_init` fails with a clear message for a token with more than two parts
+* Fixed `keeper_create` crashing with "Could not create record: list index out of range"
+  - The crash happened when a playbook supplied an unpopulated complex field (address, name, host, and so on) with `value: []`
+  - Empty-value fields are now treated as unpopulated, which matches the behavior of the underlying vault schema
+  - The root cause is in the Python helper library and is tracked as KSM-1119
+* KSM-1614: Fixed `ansible-doc -t callback keepersecurity.keeper_secrets_manager.keeper_redact` failing with a YAML error
+  - One line of the callback documentation was not quoted. The documentation now renders
+* KSM-1611: Fixed the proxy user name and password showing in task output and verbose logs
+  - **Security**: a failed request showed the proxy credential
+  - A proxy URL that cannot be parsed fails with a message that asks you to percent-encode special characters in the proxy credentials
+  - A proxy password with a character outside latin-1 fails with a message that says so
+  - A bad Keeper server URL or file URL fails with its own message and does not blame the proxy
+  - An error that held a proxy credential, and every URL parse error, is raised as Python's built-in `ConnectionError`, not a requests exception
+* KSM-1592: Fixed the `keeper_redact` callback missing some secrets
+  - The callback hides secret values that contain special characters, for example a multiline key
+  - It hides the values that `keeper_get`, `keeper_get_record`, and `keeper_password` return
+  - It also hides values of four or more characters when later tasks in the same run print them
+  - It also hides the SHA-1, MD5, and SHA-256 hashes of these values, because the built-in `copy` module prints the SHA-1 of its content
+  - Task results from the Keeper actions no longer include an internal key for the callback
+* KSM-1561: Raised the minimum ansible-core version to 2.15.13 and excluded the 2.17 series
+  - **Breaking change**: ansible-base 2.10, ansible-core versions before 2.15.13, and ansible-core 2.17.x are no longer supported
   - Python 3.9 stays supported, from Python 3.9.2. A later release removes it
-  - The new minimum removes ansible-core releases that are affected by CVE-2023-5115, CVE-2023-5764, CVE-2024-0690, CVE-2024-8775, and CVE-2024-9902
-  - When pip installs the package, it upgrades an unsupported ansible-core, unless another constraint prevents it. For the Galaxy collection, an unsupported ansible-core shows a warning, and the collection still runs, unless `collections_on_ansible_version_mismatch = error` is set
+  - The new minimum removes the ansible-core releases that CVE-2023-5115, CVE-2023-5764, CVE-2024-0690, CVE-2024-8775, and CVE-2024-9902 affect
+  - When pip installs the package, it upgrades an unsupported ansible-core, unless another constraint prevents it
+  - For the Galaxy collection, an unsupported ansible-core shows a warning and the collection still runs, unless `collections_on_ansible_version_mismatch = error` is set
   - The Tower Execution Environment now uses Python 3.12 and ansible-core 2.16 (2.16.19 or later), instead of Python 3.9 and ansible-core 2.15.13
-  - CI tests the 2.15, 2.16, 2.18, 2.19, 2.20, and 2.21 series, and a test checks that every file that declares the ansible-core or Python requirement agrees
+  - CI tests the 2.15, 2.16, 2.18, 2.19, 2.20, and 2.21 series. A test checks that every file that declares the ansible-core or Python requirement agrees
 * KSM-1562: Enforced the SDK versions in execution environments
   - The Tower Execution Environment and the collection require keeper-secrets-manager-core 17.3.0 or later and keeper-secrets-manager-helper 1.1.2 or later
   - The collection includes a `requirements.txt` at its root, so `ansible-builder` installs both packages when it builds an image from the collection
   - A test checks that the SDK versions agree in `setup.py`, `requirements.txt`, and the execution environment files
-* KSM-845: Added `subfolder_uid` parameter to `keeper_create` for subfolder targeting
-  - Records can now be created in a subfolder within a shared folder, rather than always at the shared folder root
-  - `shared_folder_uid` remains required; `subfolder_uid` is optional and additive
-  - Matches the `subfolder_uid` parameter name used by `keeper_create_folder` and by the Python SDK's `CreateOptions`
-* KSM-1445: Added `keeper_create_folder` module for idempotent folder creation
+* KSM-845: Added the `subfolder_uid` parameter to `keeper_create` for subfolder targeting
+  - Records can now be created in a subfolder within a shared folder, not only at the shared folder root
+  - `shared_folder_uid` remains required, and `subfolder_uid` is optional
+  - The name matches the `subfolder_uid` parameter of `keeper_create_folder` and of the Python SDK `CreateOptions`
+* KSM-1445: Added the `keeper_create_folder` module for idempotent folder creation
   - Creates a folder directly in a shared folder, or nested inside an existing subfolder of that shared folder
-  - Idempotent: if a folder with the given name already exists directly under the target parent, its UID is returned instead of creating a duplicate
-* KSM-1478: Added `keeper_get_folder` module to look up a folder and get its UID
+  - Idempotent: if a folder with the given name already exists directly under the target parent, the module returns its UID and does not create a duplicate
+* KSM-1478: Added the `keeper_get_folder` module to look up a folder and get its UID
   - Finds a folder by name in a shared folder or in a subfolder, or by a path of names such as `Databases/Production`
   - With no start UID, the first name is the name of a shared folder, so a playbook can find a folder with no UID
   - Returns the folder UID, name, parent UID, and shared folder UID. `include_subfolders: yes` also returns every folder below it
   - Fails with a clear error if no folder matches, or if more than one folder matches. It never returns an empty result
-* KSM-1479: Added `keeper_update_folder` module to rename a folder
-  - Idempotent: if the folder already has the new name, it reports `changed: false` and sends no update
+* KSM-1479: Added the `keeper_update_folder` module to rename a folder
+  - Idempotent: if the folder already has the new name, the module reports `changed: false` and sends no update
   - Fails with a clear error if the folder does not exist or is not shared to the KSM application
-  - A new name with a space, a tab, or a newline at the start or the end fails the task, because a later lookup of the name would not find the folder
+  - A new name with a space, a tab, or a newline at the start or the end fails the task. A later lookup of the name would not find the folder
   - A rename to the name of another folder in the same parent works, with a warning, because a lookup of that name is then not unique
-* KSM-1480: Added `keeper_delete_folder` module to delete a folder
-  - Idempotent: if the folder does not exist, it reports `changed: false` and does not fail
+* KSM-1480: Added the `keeper_delete_folder` module to delete a folder
+  - Idempotent: if the folder does not exist, the module reports `changed: false` and does not fail
   - Deletes only an empty folder, unless `force_deletion: yes` is set. A folder with records or subfolders fails the task
   - Reads the result that the server returns for the folder, so a delete that the server refuses fails the task
-  - A folder that exists, but that keeper-secrets-manager-core cannot read, fails the task and is not deleted. It is not reported as not found. (keeper-secrets-manager-core 17.4.0 and later leave such a folder out of the folder list, with only a warning in the log)
+  - A folder that exists, but that keeper-secrets-manager-core cannot read, fails the task and is not deleted. It is not reported as not found
+  - keeper-secrets-manager-core 17.4.0 and later leave such a folder out of the folder list, with only a warning in the log
   - The option is named `force_deletion`, not `force`, because `keeper_copy` in the same action group has a `force` option with a different meaning
 * KSM-1478, KSM-1479, KSM-1480: The three new folder modules check their options
   - An unknown or misspelled option, an option set to null, or a value of the wrong type fails the task, instead of being ignored
@@ -225,12 +272,11 @@ The Changes section names the ticket for each change.
   - An option that a `module_defaults` entry for the action group of this collection sets, and that the module does not have, is ignored
   - A lookup, rename, or delete failure is a normal task failure, so `failed_when`, `ignore_errors`, and `rescue` work on it. An error in the KSM configuration still stops the task
   - `keeper_update_folder` and `keeper_delete_folder` support check mode
-* **Security**: VM-1452 / CWE-502 — Replaced pickle with JSON for encrypted record cache serialization
-  - Cache encrypt/decrypt no longer uses `pickle.loads`, removing insecure deserialization risk
-  - Legacy or invalid registered caches are ignored; records are fetched from the vault until
-    `keeper_cache_records` rebuilds a JSON cache
-  - Existing playbook-registered caches are ephemeral; regenerate with `keeper_cache_records` after upgrade
-  - Affected versions: 1.2.0 to 1.4.0. Fixed in 1.5.0
+* VM-1452: Replaced pickle with JSON for the encrypted record cache (CWE-502)
+  - **Security**: cache encryption and decryption no longer use `pickle.loads`, which removes an insecure deserialization risk
+  - Affected versions: 1.2.0 to 1.4.0. The fix is in 1.5.0
+  - A legacy or invalid registered cache is ignored, and records come from the vault until `keeper_cache_records` rebuilds a JSON cache
+  - A playbook-registered cache is ephemeral. Regenerate it with `keeper_cache_records` after the upgrade
 
 ## 1.4.0
 * KSM-827: Fixed Tower Execution Environment Docker image missing system packages required by AAP

@@ -197,16 +197,6 @@ dest:
     returned: success
     type: str
     sample: /path/to/file.txt
-md5sum:
-    description: MD5 checksum of the file after running copy.
-    returned: when supported
-    type: str
-    sample: 2a5aeecc61dc98c4d780b14b330e3282
-checksum:
-    description: SHA1 checksum of the file after running copy.
-    returned: success
-    type: str
-    sample: 6e642bb8dd5c2e027bf21dd923337cbb4214f827
 backup_file:
     description: Name of backup file created.
     returned: changed and if backup=yes
@@ -237,11 +227,6 @@ mode:
     returned: success
     type: str
     sample: 0644
-size:
-    description: Size of the target, after execution.
-    returned: success
-    type: int
-    sample: 1220
 state:
     description: State of the target, after execution.
     returned: success

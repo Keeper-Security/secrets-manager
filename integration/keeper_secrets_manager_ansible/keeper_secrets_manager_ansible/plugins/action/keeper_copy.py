@@ -208,16 +208,6 @@ dest:
     returned: success
     type: str
     sample: /path/to/file.txt
-md5sum:
-    description: MD5 checksum of the file after running copy.
-    returned: when supported
-    type: str
-    sample: 2a5aeecc61dc98c4d780b14b330e3282
-checksum:
-    description: SHA1 checksum of the file after running copy.
-    returned: success
-    type: str
-    sample: 6e642bb8dd5c2e027bf21dd923337cbb4214f827
 backup_file:
     description: Name of backup file created.
     returned: changed and if backup=yes
@@ -248,11 +238,6 @@ mode:
     returned: success
     type: str
     sample: 0644
-size:
-    description: Size of the target, after execution.
-    returned: success
-    type: int
-    sample: 1220
 state:
     description: State of the target, after execution.
     returned: success
@@ -279,6 +264,24 @@ class ActionModule(ActionBase):
                 if isinstance(diff.get(key), str) and diff[key] != "":
                     diff[key] = "<the Keeper secret {} the change is not shown>\n".format(key)
 
+    # Keys the copy action may return. Allowlist, do not turn this into a denylist: the copy result carries the
+    # SHA-1 (checksum) and MD5 of the secret, and a denylist of those names already missed the same SHA-1 in
+    # invocation.module_args. A short secret can be brute-forced offline from any digest of it. size is dropped
+    # because it gives the secret length. module_stdout and module_stderr are dropped because they hold the raw
+    # module output, digests included, when that output cannot be parsed. Keys that start with _ansible_ are kept
+    # for the Ansible engine.
+    ALLOWED_RESULT_KEYS = frozenset([
+        "changed", "failed", "skipped", "unreachable", "msg", "exception", "warnings", "deprecations",
+        "dest", "path", "src", "uid", "gid", "owner", "group", "mode", "state", "backup_file",
+        "diff", "invocation", "ansible_facts", "rc",
+    ])
+
+    @classmethod
+    def _keep_allowed_result_keys(cls, result):
+        for key in list(result):
+            if key not in cls.ALLOWED_RESULT_KEYS and not key.startswith("_ansible_"):
+                del result[key]
+
     @staticmethod
     def _remove_content_from_invocation(result):
         # Remove the src and content, if they exists, since they are not part of this plugin. Also they could leak
@@ -288,6 +291,7 @@ class ActionModule(ActionBase):
         if isinstance(module_args, dict):
             module_args.pop('src', None)
             module_args.pop('content', None)
+            module_args.pop('checksum', None)
 
     def run(self, tmp=None, task_vars=None):
 
@@ -339,5 +343,6 @@ class ActionModule(ActionBase):
 
         if type(result) is dict:
             self._remove_content_from_invocation(result)
+            self._keep_allowed_result_keys(result)
 
         return result
