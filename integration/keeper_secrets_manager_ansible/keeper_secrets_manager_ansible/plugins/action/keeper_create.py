@@ -32,7 +32,7 @@ version_added: "1.1.2"
 description:
     - Create a new keeper record in your vault.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
 attributes:
   check_mode:
     support: full
@@ -77,38 +77,39 @@ options:
     required: no
     suboptions:
       length:
-        description: 
+        description:
           - Length of the password. Defaults to 64.
           - The length will be distributes to the allow_* params.
           - For example, the length of 64 will generate 21 lowercase, 21 uppercase, 21 digits, and 21 symbols.
         type: int
         required: no
       allow_lowercase:
-        description: 
+        description:
           - Allow lowercase letters. Defaults to True.
         type: bool
         required: no
       allow_uppercase:
-        description: 
+        description:
           - Allow uppercase letters. Defaults to True.
         type: bool
         required: no
       allow_digits:
-        description: 
+        description:
           - Allow digits. Defaults to True.
         type: bool
         required: no
       allow_symbols:
-        description: 
+        description:
           - Allow symbols. Defaults to True.
           - The symbol set is \"!@#$%()+;<>=?[]{}^.,
         type: bool
         required: no
       filter_characters:
-        description: 
+        description:
           - Character not allowed in the password.
           - Application specific password may not allow certain characters.
         type: list
+        elements: str
         required: no
   title:
     description:
@@ -142,7 +143,7 @@ options:
     suboptions:
       value:
          description: Value
-         required: yes 
+         required: yes
       type:
         description: Field type
         type: str
@@ -188,7 +189,7 @@ options:
       label:
         description: Field label
         type: str
-        required: no        
+        required: no
       type:
         description: Field type
         type: str

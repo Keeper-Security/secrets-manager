@@ -29,7 +29,7 @@ description:
     - Label keys will be normalized.
     - Only alphanumeric values and underscores will be used in the key.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
 notes:
   - Check mode requires an initialized Keeper configuration.
 options:
@@ -48,6 +48,7 @@ options:
     - Only allow this list of keys to be in dictionary.
     - This list must match the keys in the dictionary returned by this action.
     type: list
+    elements: str
     required: no
   cache:
     description:

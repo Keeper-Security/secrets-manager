@@ -45,7 +45,7 @@ attributes:
 notes:
   - Check mode requires an initialized Keeper configuration.
 author:
-    - Keeper Security
+    - Keeper Security (@Keeper-Security)
 options:
   folder_uid:
     description:

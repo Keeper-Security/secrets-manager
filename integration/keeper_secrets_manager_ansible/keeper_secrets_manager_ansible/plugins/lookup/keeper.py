@@ -10,11 +10,6 @@
 # Contact: ops@keepersecurity.com
 #
 
-from keeper_secrets_manager_ansible import KeeperAnsible
-from ansible.errors import AnsibleError
-from ansible.plugins.lookup import LookupBase
-from ansible.utils.display import Display
-
 DOCUMENTATION = r'''
 ---
 name: keeper
@@ -27,7 +22,7 @@ description:
     - Copy a value from the Keeper Vault into a variable.
     - If value is not a literal value, the structure will be retrieved.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
 notes:
   - In check mode, the lookup loads the Keeper configuration into memory, does not refresh the DR cache, and
     fails with a configuration that has only a one-time token.
@@ -53,7 +48,7 @@ options:
       and a wrong keeper_record_cache_secret.
     type: str
     required: no
-    version_added: '1.2.0'  
+    version_added: '1.2.0'
   field:
     description:
     - The label, or type, of the standard field in record that contains the value.
@@ -82,7 +77,7 @@ options:
     - See https://docs.keeper.io/secrets-manager/secrets-manager/about/keeper-notation for more information/
     type: str
     required: no
-    version_added: '1.0.1'  
+    version_added: '1.0.1'
 '''
 
 EXAMPLES = r'''
@@ -103,6 +98,11 @@ RETURN = '''
     type: list
     elements: str
 '''
+
+from keeper_secrets_manager_ansible import KeeperAnsible
+from ansible.errors import AnsibleError
+from ansible.plugins.lookup import LookupBase
+from ansible.utils.display import Display
 
 display = Display()
 

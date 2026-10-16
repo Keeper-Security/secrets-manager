@@ -32,7 +32,7 @@ version_added: "1.1.2"
 description:
     - Get information about the Keeper plugins.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
 '''
 
 EXAMPLES = r'''

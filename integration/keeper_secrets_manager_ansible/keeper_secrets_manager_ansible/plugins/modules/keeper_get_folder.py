@@ -39,7 +39,7 @@ description:
     - The task result and the error messages show folder names and UIDs, also when the values come from
       Ansible Vault. To keep them out of the output and the logs, set no_log to true on the task.
 author:
-    - Keeper Security
+    - Keeper Security (@Keeper-Security)
 options:
   shared_folder_uid:
     description:
