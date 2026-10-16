@@ -1,0 +1,32 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# The lookup of the idempotent pattern from the keeper_delete_folder EXAMPLES, with a lookup failure that is not
+# "No folder named". The failed_when must keep that failure a failure. ignore_errors lets the play go on, so the
+# assert can check the result, and the delete must be skipped.
+- name: Keeper Delete Folder Idempotent Pattern With Another Lookup Failure
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Find A Folder By Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: Temporary
+    register: temporary_folder
+    failed_when:
+      - temporary_folder is failed
+      - "'No folder named' not in temporary_folder.msg"
+    ignore_errors: yes
+
+  - name: "Delete The Folder, If The Lookup Found It"
+    keeper_delete_folder:
+      folder_uid: "{{ temporary_folder.folder_uid }}"
+    when: temporary_folder.folder_uid is defined
+    register: deleted
+
+  - name: "Check That The Lookup Failed, And Nothing Was Deleted"
+    assert:
+      that:
+        - temporary_folder is failed
+        - "expected_text in temporary_folder.msg"
+        - deleted is skipped

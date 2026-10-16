@@ -25,6 +25,13 @@ description:
     - Cleans up the cache file, if they exists.
 author:
     - John Walstra
+attributes:
+  check_mode:
+    support: full
+    description: Reports whether the enabled DR cache file exists without removing it.
+notes:
+  - In check mode, changed shows whether the cache file exists before the run. In a real run, the
+    reads of earlier tasks can create the file first.
 '''
 
 EXAMPLES = r'''
@@ -33,10 +40,16 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-removed_ksm_cache:
-  description: Was the KSM Cache file removed?
+changed:
+  description: Whether a cache file was removed, or would be removed in check mode.
   returned: success
-  sample: true  
+  type: bool
+  sample: true
+removed_ksm_cache:
+  description: Whether the cache file was removed. False in check mode or when the file is absent.
+  returned: when the DR cache is enabled
+  type: bool
+  sample: true
 '''
 
 
@@ -48,5 +61,6 @@ class ActionModule(ActionBase):
         if task_vars is None:
             task_vars = {}
 
-        keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
-        return keeper.cleanup()
+        # The cleanup removes only a local file, so no request reaches the vault.
+        keeper = KeeperAnsible(task_vars=task_vars, action_module=self, requires_vault=False)
+        return keeper.cleanup(check_mode=bool(self._task.check_mode))

@@ -1,0 +1,44 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+#
+# The QA test instructions for keeper_get_folder. Step 1 (a shared folder with a subfolder, shared to the
+# KSM application) is the fake server's folder tree. This playbook runs steps 2 to 4.
+---
+- name: Keeper Get Folder Test Instructions
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    expected_msg: 'Could not look up folder: No folder named "{{ missing_name }}" was found in the folder "{{ shared_folder_name }}" (UID {{ shared_folder_uid }}).'
+
+  tasks:
+  - name: "Step 2: Look Up The Subfolder With The Shared Folder UID And The Subfolder Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "{{ subfolder_name }}"
+    register: "lookup"
+
+  - name: "Step 3: The Task Returns The Subfolder UID"
+    assert:
+      that:
+        - lookup is not failed
+        - lookup is not changed
+        - lookup.folder_uid == subfolder_uid
+        - lookup.folder_name == subfolder_name
+        - lookup.parent_uid == shared_folder_uid
+        - lookup.shared_folder_uid == shared_folder_uid
+
+  - name: "Step 4: The Same Task With A Name That Does Not Exist"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "{{ missing_name }}"
+    register: "missing"
+    ignore_errors: yes
+
+  - name: "Step 4: The Task Fails With A Clear Error, Not An Empty Value"
+    assert:
+      that:
+        - missing is failed
+        - missing is not changed
+        - missing.folder_uid is not defined
+        - missing.folder_name is not defined
+        - missing.msg == expected_msg

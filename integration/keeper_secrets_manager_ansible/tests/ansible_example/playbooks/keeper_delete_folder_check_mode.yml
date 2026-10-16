@@ -1,0 +1,65 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# In check mode every check runs, the result shows what a real run would do, and no delete is sent.
+- name: Keeper Delete Folder In Check Mode
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Check Mode Delete Of An Empty Folder"
+    keeper_delete_folder:
+      folder_uid: "{{ empty_folder_uid }}"
+    check_mode: yes
+    register: "check_empty"
+
+  - name: "Check Mode Delete Of A Folder That Contains A Record"
+    keeper_delete_folder:
+      folder_uid: "{{ record_folder_uid }}"
+    check_mode: yes
+    register: "check_not_empty"
+    ignore_errors: yes
+
+  - name: "Check Mode Delete Of A Folder That Does Not Exist"
+    keeper_delete_folder:
+      folder_uid: "NO_SUCH_FOLDER_UID"
+    check_mode: yes
+    register: "check_missing"
+
+  - name: "Check Mode Forced Delete Of A Folder That Contains A Record And A Subfolder"
+    keeper_delete_folder:
+      folder_uid: "{{ tree_folder_uid }}"
+      force_deletion: yes
+    check_mode: yes
+    register: "check_forced"
+
+  - name: "Check Mode Delete Of A Folder UID With A Trailing Space"
+    keeper_delete_folder:
+      folder_uid: "{{ empty_folder_uid }} "
+    check_mode: yes
+    register: "check_padded"
+    ignore_errors: yes
+
+  - name: "Look Up The Empty Folder After Check Mode"
+    keeper_get_folder:
+      subfolder_uid: "{{ empty_folder_uid }}"
+    register: "lookup_empty"
+
+  - name: "Check The Check Mode Results"
+    assert:
+      that:
+        - check_empty is changed
+        - check_empty is not failed
+        - check_empty.folder_uid == empty_folder_uid
+        - check_empty.folder_name == "Staging"
+        - check_empty.msg is not defined
+        - check_not_empty is failed
+        - check_not_empty.msg == expected.check_not_empty
+        - check_missing is not changed
+        - check_missing.folder_name is none
+        - check_missing.msg == expected.check_missing
+        - check_forced is changed
+        - check_forced.folder_name == "Databases"
+        - check_padded is failed
+        - check_padded.msg == expected.check_padded
+        - lookup_empty.folder_uid == empty_folder_uid
+        - lookup_empty.folder_name == "Staging"

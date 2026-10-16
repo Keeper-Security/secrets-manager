@@ -29,6 +29,8 @@ description:
     - Has the same options at the normal Ansible copy module.
 author:
     - John Walstra
+notes:
+  - Check mode requires an initialized Keeper configuration.
 options:
   uid:
     description:
@@ -43,7 +45,10 @@ options:
     version_added: '1.2.0'
   cache:
     description:
-    - The cache registered by keeper_get_records_cache
+    - The cache registered by keeper_cache_records
+    - If the cache cannot be read, the task shows a warning and reads the records from the vault.
+      Examples are a cache that version 1.4.0 or earlier made, a cache that another machine made,
+      and a wrong keeper_record_cache_secret.
     type: str
     required: no
     version_added: '1.2.0'  
@@ -203,16 +208,6 @@ dest:
     returned: success
     type: str
     sample: /path/to/file.txt
-md5sum:
-    description: MD5 checksum of the file after running copy.
-    returned: when supported
-    type: str
-    sample: 2a5aeecc61dc98c4d780b14b330e3282
-checksum:
-    description: SHA1 checksum of the file after running copy.
-    returned: success
-    type: str
-    sample: 6e642bb8dd5c2e027bf21dd923337cbb4214f827
 backup_file:
     description: Name of backup file created.
     returned: changed and if backup=yes
@@ -243,11 +238,6 @@ mode:
     returned: success
     type: str
     sample: 0644
-size:
-    description: Size of the target, after execution.
-    returned: success
-    type: int
-    sample: 1220
 state:
     description: State of the target, after execution.
     returned: success
@@ -259,6 +249,49 @@ display = Display()
 
 
 class ActionModule(ActionBase):
+
+    @staticmethod
+    def _hide_diff_content(result):
+        # With --diff, the copy action puts the old and the new file content in the result. That content is the
+        # secret, and the keeper_redact callback does not see a diff. Different texts keep the change visible.
+        diffs = result.get("diff") if isinstance(result, dict) else None
+        if isinstance(diffs, dict):
+            diffs = [diffs]
+        for diff in diffs if isinstance(diffs, list) else []:
+            if not isinstance(diff, dict):
+                continue
+            for key in ("before", "after"):
+                if isinstance(diff.get(key), str) and diff[key] != "":
+                    diff[key] = "<the Keeper secret {} the change is not shown>\n".format(key)
+
+    # Keys the copy action may return. Allowlist, do not turn this into a denylist: the copy result carries the
+    # SHA-1 (checksum) and MD5 of the secret, and a denylist of those names already missed the same SHA-1 in
+    # invocation.module_args. A short secret can be brute-forced offline from any digest of it. size is dropped
+    # because it gives the secret length. module_stdout and module_stderr are dropped because they hold the raw
+    # module output, digests included, when that output cannot be parsed. Keys that start with _ansible_ are kept
+    # for the Ansible engine.
+    ALLOWED_RESULT_KEYS = frozenset([
+        "changed", "failed", "skipped", "unreachable", "msg", "exception", "warnings", "deprecations",
+        "dest", "path", "src", "uid", "gid", "owner", "group", "mode", "state", "backup_file",
+        "diff", "invocation", "ansible_facts", "rc",
+    ])
+
+    @classmethod
+    def _keep_allowed_result_keys(cls, result):
+        for key in list(result):
+            if key not in cls.ALLOWED_RESULT_KEYS and not key.startswith("_ansible_"):
+                del result[key]
+
+    @staticmethod
+    def _remove_content_from_invocation(result):
+        # Remove the src and content, if they exists, since they are not part of this plugin. Also they could leak
+        # values. With no_log, ansible-core 2.20 and earlier set invocation to a text, "CENSORED: no_log is set".
+        invocation = result.get("invocation")
+        module_args = invocation.get("module_args") if isinstance(invocation, dict) else None
+        if isinstance(module_args, dict):
+            module_args.pop('src', None)
+            module_args.pop('content', None)
+            module_args.pop('checksum', None)
 
     def run(self, tmp=None, task_vars=None):
 
@@ -306,18 +339,10 @@ class ActionModule(ActionBase):
 
         # Call Ansible built-in copy
         result = super(ActionModule, self).run(tmp, task_vars)
+        self._hide_diff_content(result)
 
-        # Attempt to add back the keeper values for debug purposes.
         if type(result) is dict:
-            invocation = result.get("invocation")
-            if invocation is not None:
-                module_args = invocation.get("module_args")
-                if module_args is not None:
-                    # Remove the src and content, if they exists, since they are not part of this
-                    # plugin. Also they could leak values.
-                    module_args.pop('src', None)
-                    module_args.pop('content', None)
-
-            result = keeper.add_secret_values_to_results(result)
+            self._remove_content_from_invocation(result)
+            self._keep_allowed_result_keys(result)
 
         return result

@@ -1,0 +1,50 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# The idempotent pattern from the keeper_delete_folder EXAMPLES, run two times in one play. The first run finds
+# the folder and deletes it. The second run does not find the folder, and the delete is skipped, with no failure.
+- name: Keeper Delete Folder Idempotent Pattern
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Find A Folder By Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: Temporary
+    register: temporary_folder
+    failed_when:
+      - temporary_folder is failed
+      - "'No folder named' not in temporary_folder.msg"
+
+  - name: "Delete The Folder, If The Lookup Found It"
+    keeper_delete_folder:
+      folder_uid: "{{ temporary_folder.folder_uid }}"
+    when: temporary_folder.folder_uid is defined
+    register: first_delete
+
+  - name: "Find A Folder By Name, Second Run"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: Temporary
+    register: temporary_folder
+    failed_when:
+      - temporary_folder is failed
+      - "'No folder named' not in temporary_folder.msg"
+
+  - name: "Delete The Folder, If The Lookup Found It, Second Run"
+    keeper_delete_folder:
+      folder_uid: "{{ temporary_folder.folder_uid }}"
+    when: temporary_folder.folder_uid is defined
+    register: second_delete
+
+  - name: "Check The Two Runs"
+    assert:
+      that:
+        - first_delete is changed
+        - first_delete.folder_uid == temp_folder_uid
+        - first_delete.folder_name == "Temporary"
+        - second_delete is skipped
+        - second_delete is not failed
+        - temporary_folder is not failed
+        - temporary_folder.folder_uid is not defined
+        - temporary_folder.msg == expected.second_lookup

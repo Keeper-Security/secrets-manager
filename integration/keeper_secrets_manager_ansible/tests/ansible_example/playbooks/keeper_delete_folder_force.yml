@@ -1,0 +1,49 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# force_deletion deletes a folder with everything in it. The quoted "true" is a string in YAML: the argument spec must
+# turn it into True.
+- name: Keeper Delete Folder With Force
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete A Folder And Everything In It"
+    keeper_delete_folder:
+      folder_uid: "{{ tree_folder_uid }}"
+      force_deletion: yes
+    register: "forced"
+
+  - name: "Delete A Folder With force_deletion Set To The String true"
+    keeper_delete_folder:
+      folder_uid: "{{ record_folder_uid }}"
+      force_deletion: "true"
+    register: "forced_string"
+
+  - name: "Delete The Forced Folder Again"
+    keeper_delete_folder:
+      folder_uid: "{{ tree_folder_uid }}"
+      force_deletion: yes
+    register: "forced_again"
+
+  - name: "Look Up A Subfolder Of The Forced Folder"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_path: "Databases/Production"
+    register: "lookup_child"
+    ignore_errors: yes
+
+  - name: "Check The Forced Deletes"
+    assert:
+      that:
+        - forced is changed
+        - forced.folder_uid == tree_folder_uid
+        - forced.folder_name == "Databases"
+        - forced.msg is not defined
+        - forced_string is changed
+        - forced_string.folder_uid == record_folder_uid
+        - forced_string.folder_name == "Web"
+        - forced_again is not changed
+        - forced_again.folder_name is none
+        - forced_again.msg == expected.not_found_tree
+        - lookup_child is failed
+        - lookup_child.msg == expected.lookup_child

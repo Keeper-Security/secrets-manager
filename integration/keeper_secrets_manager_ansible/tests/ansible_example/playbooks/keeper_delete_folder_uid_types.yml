@@ -1,0 +1,82 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# folder_uid must be a string. YAML gives a value with no quotes its own type, and the text of some values changes
+# (0012 becomes the number 10), so the module refuses every value that is not a string, a number too. A UID of
+# digits works with quotes.
+- name: Keeper Delete Folder With A folder_uid That Is Not A String
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete With A YAML List As The Folder UID, With force_deletion"
+    keeper_delete_folder:
+      folder_uid:
+        - "{{ empty_folder_uid }}"
+      force_deletion: yes
+    register: "list_uid"
+    ignore_errors: yes
+
+  - name: "Delete With A YAML Dictionary As The Folder UID"
+    keeper_delete_folder:
+      folder_uid:
+        uid: "{{ empty_folder_uid }}"
+    register: "dict_uid"
+    ignore_errors: yes
+
+  - name: "Delete With A True YAML Boolean As The Folder UID"
+    keeper_delete_folder:
+      folder_uid: yes
+    register: "true_uid"
+    ignore_errors: yes
+
+  - name: "Delete With A False YAML Boolean As The Folder UID"
+    keeper_delete_folder:
+      folder_uid: false
+    register: "false_uid"
+    ignore_errors: yes
+
+  - name: "Delete With A YAML Number With A Decimal Point As The Folder UID"
+    keeper_delete_folder:
+      folder_uid: 1.10
+    register: "float_uid"
+    ignore_errors: yes
+
+  - name: "Delete With A YAML Integer As The Folder UID"
+    keeper_delete_folder:
+      folder_uid: 12345
+    register: "int_uid"
+    ignore_errors: yes
+
+  - name: "Delete With Digits That YAML Reads As Another Number"
+    keeper_delete_folder:
+      folder_uid: 0012
+    register: "octal_uid"
+    ignore_errors: yes
+
+  - name: "Delete With A YAML Date As The Folder UID"
+    keeper_delete_folder:
+      folder_uid: 2026-09-29
+    register: "date_uid"
+    ignore_errors: yes
+
+  - name: "Delete With A Quoted UID Of Digits"
+    keeper_delete_folder:
+      folder_uid: "12345"
+    register: "quoted_uid"
+
+  - name: "Check The Values That Are Not Strings"
+    assert:
+      that:
+        - item.0 is failed
+        - item.0 is not changed
+        - item.0.msg == item.1
+    loop: "{{ [list_uid, dict_uid, true_uid, false_uid, float_uid, int_uid, octal_uid, date_uid] | zip(expected.msgs) | list }}"
+    loop_control:
+      label: "{{ item.1 }}"
+
+  - name: "Check The Quoted UID Of Digits"
+    assert:
+      that:
+        - quoted_uid is changed
+        - quoted_uid.folder_uid == "12345"
+        - quoted_uid.folder_name == "Numbered"

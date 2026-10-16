@@ -1,0 +1,44 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Update Folder To The Name Of A Sibling
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Rename The Folder To The Name That Its Sibling Has"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "Production"
+    register: "renamed"
+
+  - name: "Rename A Folder To A Sibling's Name That Has Double Quotes"
+    keeper_update_folder:
+      folder_uid: "{{ quote_folder_uid }}"
+      new_folder_name: 'Prod "EU"'
+    register: "quote_renamed"
+
+  - name: "Rename A Folder To A Sibling's Name That Has A Newline Inside"
+    keeper_update_folder:
+      folder_uid: "{{ newline_folder_uid }}"
+      new_folder_name: "Prod\nEU"
+    register: "newline_renamed"
+
+  - name: "Look Up The Name That Is Now Used Twice"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Production"
+    register: "duplicate_lookup"
+    ignore_errors: yes
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - renamed is changed
+        - renamed.folder_name == "Production"
+        - renamed.previous_folder_name == "Staging"
+        - quote_renamed is changed
+        - quote_renamed.folder_name == 'Prod "EU"'
+        - newline_renamed is changed
+        - newline_renamed.folder_name == "Prod\nEU"
+        - duplicate_lookup is failed
+        - "'Found 2 folders named \"Production\"' in duplicate_lookup.msg"

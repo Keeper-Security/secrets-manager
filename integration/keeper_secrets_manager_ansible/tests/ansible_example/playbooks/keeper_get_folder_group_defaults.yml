@@ -1,0 +1,70 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+#
+# This playbook needs the collection that keeper_get_folder_playbook_test.py builds in a temporary directory,
+# next to a copy of this file: the Keeper action group from meta/runtime.yml, and keeper_get_folder under the
+# collection name. It does not run from this directory.
+#
+# Ansible gives the defaults of an action group to every module in the group. cache is an option of keeper_get,
+# not of keeper_get_folder, so keeper_get_folder must drop it. include_subfolders is an option of
+# keeper_get_folder, so it applies.
+---
+- name: Keeper Get Folder With Group Defaults
+  hosts: "my_systems"
+  gather_facts: no
+
+  module_defaults:
+    group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager:
+      cache: "{{ records_cache | default('the records from keeper_cache_records') }}"
+      include_subfolders: yes
+
+  vars:
+    supported_marker: "Supported parameters include: "
+    supported_names: ["folder_name", "folder_path", "include_subfolders", "shared_folder_uid", "subfolder_uid"]
+
+  tasks:
+  - name: "A Lookup That Gets The Group Defaults"
+    keepersecurity.keeper_secrets_manager.keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Databases"
+    register: "with_group_defaults"
+
+  - name: "A Misspelled Option Still Fails Next To The Group Defaults"
+    keepersecurity.keeper_secrets_manager.keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_nmae: "Databases"
+    register: "typo_with_group_defaults"
+    ignore_errors: yes
+
+  - name: "Check The Group Defaults"
+    assert:
+      that:
+        - with_group_defaults is not failed
+        - with_group_defaults.folder_uid == databases_uid
+        - "with_group_defaults.subfolders | map(attribute='folder_uid') | list == [production_uid, eu_uid, staging_uid]"
+        - typo_with_group_defaults is failed
+        - "typo_with_group_defaults.msg.split(supported_marker)[0] == 'Unsupported parameters for (keeper_get_folder) module: folder_nmae. '"
+        - typo_with_group_defaults.msg.split(supported_marker)[1].rstrip('.').split(', ') | sort == supported_names
+
+- name: Keeper Get Folder Without Group Defaults
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    supported_marker: "Supported parameters include: "
+    supported_names: ["folder_name", "folder_path", "include_subfolders", "shared_folder_uid", "subfolder_uid"]
+
+  tasks:
+  - name: "The Same Unknown Option Written Only In The Task Fails"
+    keepersecurity.keeper_secrets_manager.keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      cache: "the records from keeper_cache_records"
+    register: "cache_in_task"
+    ignore_errors: yes
+
+  - name: "Check The Unknown Option"
+    assert:
+      that:
+        - cache_in_task is failed
+        - cache_in_task.folder_uid is not defined
+        - "cache_in_task.msg.split(supported_marker)[0] == 'Unsupported parameters for (keeper_get_folder) module: cache. '"
+        - cache_in_task.msg.split(supported_marker)[1].rstrip('.').split(', ') | sort == supported_names

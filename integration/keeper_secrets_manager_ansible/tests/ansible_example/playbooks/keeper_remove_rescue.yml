@@ -1,0 +1,67 @@
+---
+- name: Keeper Remove Failure Handling
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: Handle a refused deletion with rescue
+      block:
+        - name: Attempt a deletion the server refuses
+          keeper_remove:
+            uid: "{{ uid }}"
+
+        - name: Must not run after the refused deletion
+          set_fact:
+            ran_after_failure: true
+      rescue:
+        - name: Check the rescued result
+          assert:
+            that:
+              - ansible_failed_result is failed
+              - ansible_failed_result is not changed
+              - "'access_denied' in ansible_failed_result.msg"
+
+        - name: Record that rescue ran
+          set_fact:
+            rescue_ran: true
+
+    - name: Override a refusal with failed_when false
+      keeper_remove:
+        uid: "{{ uid }}"
+      register: tolerated
+      failed_when: false
+
+    - name: Override only an access denial
+      keeper_remove:
+        uid: "{{ uid }}"
+      register: filtered
+      failed_when: "filtered.failed and 'access_denied' not in filtered.msg"
+
+    - name: Ignore a refused deletion
+      keeper_remove:
+        uid: "{{ uid }}"
+      register: ignored
+      ignore_errors: yes
+
+    - name: Override an argument validation failure
+      keeper_remove:
+        uid: "{{ uid }}"
+        title: "{{ record_title }}"
+      register: invalid
+      failed_when: false
+
+    - name: Check failure handling
+      assert:
+        that:
+          - rescue_ran | default(false)
+          - ran_after_failure is not defined
+          - tolerated is not failed
+          - tolerated is not changed
+          - "'access_denied' in tolerated.msg"
+          - filtered is not failed
+          - filtered is not changed
+          - ignored is failed
+          - ignored is not changed
+          - invalid is not failed
+          - invalid is not changed
+          - "'mutually exclusive' in invalid.msg"

@@ -1,0 +1,68 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Update Folder With Check Mode On The Task
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Rename The Folder In Check Mode"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "Production"
+    check_mode: yes
+    register: "checked"
+
+  - name: "Rename The Folder To Its Current Name In Check Mode"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "Staging"
+    check_mode: yes
+    register: "checked_same"
+
+  - name: "Rename A Folder That Does Not Exist In Check Mode"
+    keeper_update_folder:
+      folder_uid: "{{ missing_folder_uid }}"
+      new_folder_name: "Production"
+    check_mode: yes
+    register: "checked_missing"
+    ignore_errors: yes
+
+  - name: "Look Up The Folder By Its Old Name"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Staging"
+    register: "by_old_name"
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - checked is changed
+        - checked.folder_uid == folder_uid
+        - checked.folder_name == "Production"
+        - checked.previous_folder_name == "Staging"
+        - checked_same is not changed
+        - checked_same.folder_name == "Staging"
+        - checked_same.previous_folder_name == "Staging"
+        - checked_missing is failed
+        - checked_missing is not changed
+        - "checked_missing.msg == 'Could not update folder: The folder ' ~ missing_folder_uid ~ ' was not found, or it is not shared to this KSM application.'"
+        - by_old_name.folder_uid == folder_uid
+
+- name: Keeper Update Folder With Check Mode On The Play
+  hosts: "my_systems"
+  gather_facts: no
+  check_mode: yes
+
+  tasks:
+  - name: "Rename The Folder"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "Production"
+    register: "play_checked"
+
+  - name: "Check The Result"
+    assert:
+      that:
+        - play_checked is changed
+        - play_checked.folder_name == "Production"
+        - play_checked.previous_folder_name == "Staging"

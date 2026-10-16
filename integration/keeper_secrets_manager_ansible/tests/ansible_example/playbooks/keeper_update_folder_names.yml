@@ -1,0 +1,92 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Update Folder Names
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    unicode_name: "Frankfurt am Main \u00e4\u00f6\u00fc\u00df \u6570\u636e \U0001F512"
+
+  tasks:
+  - name: "Change Only The Case Of The Name"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "staging"
+    register: "case_renamed"
+
+  - name: "Rename A Deep Subfolder To A Unicode Name"
+    keeper_update_folder:
+      folder_uid: "{{ deep_folder_uid }}"
+      new_folder_name: "{{ unicode_name }}"
+    register: "unicode_renamed"
+
+  - name: "Rename The Deep Subfolder To The Same Unicode Name"
+    keeper_update_folder:
+      folder_uid: "{{ deep_folder_uid }}"
+      new_folder_name: "{{ unicode_name }}"
+    register: "unicode_again"
+
+  - name: "Rename To A Name That Has A Slash"
+    keeper_update_folder:
+      folder_uid: "{{ middle_folder_uid }}"
+      new_folder_name: "EU/West"
+    register: "slash_renamed"
+
+  - name: "Rename A Folder Whose Name Has A Trailing Space To The Clean Name"
+    keeper_update_folder:
+      folder_uid: "{{ reports_folder_uid }}"
+      new_folder_name: "Reports"
+    register: "space_renamed"
+
+  - name: "Rename To A Name With A Newline And A Tab Inside"
+    keeper_update_folder:
+      folder_uid: "{{ notes_folder_uid }}"
+      new_folder_name: "Line 1\nLine 2\tEnd"
+    register: "inside_renamed"
+
+  - name: "Rename To A Quoted Number"
+    keeper_update_folder:
+      folder_uid: "{{ year_folder_uid }}"
+      new_folder_name: "2026"
+    register: "number_renamed"
+
+  - name: "Rename The Shared Folder"
+    keeper_update_folder:
+      folder_uid: "{{ shared_folder_uid }}"
+      new_folder_name: "Infrastructure 2026"
+    register: "shared_renamed"
+
+  - name: "Look Up The Deep Subfolder By Its New Path"
+    keeper_get_folder:
+      folder_path:
+        - "Infrastructure 2026"
+        - "staging"
+        - "EU/West"
+        - "{{ unicode_name }}"
+    register: "by_new_path"
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - case_renamed is changed
+        - case_renamed.previous_folder_name == "Staging"
+        - case_renamed.folder_name == "staging"
+        - unicode_renamed is changed
+        - unicode_renamed.previous_folder_name == "Frankfurt"
+        - unicode_renamed.folder_name == unicode_name
+        - unicode_again is not changed
+        - unicode_again.previous_folder_name == unicode_name
+        - slash_renamed is changed
+        - slash_renamed.folder_name == "EU/West"
+        - space_renamed is changed
+        - space_renamed.previous_folder_name == "Reports "
+        - space_renamed.folder_name == "Reports"
+        - inside_renamed is changed
+        - inside_renamed.folder_name == "Line 1\nLine 2\tEnd"
+        - number_renamed is changed
+        - number_renamed.previous_folder_name == "2025"
+        - number_renamed.folder_name == "2026"
+        - shared_renamed is changed
+        - shared_renamed.previous_folder_name == "Infrastructure"
+        - by_new_path.folder_uid == deep_folder_uid
+        - by_new_path.shared_folder_uid == shared_folder_uid

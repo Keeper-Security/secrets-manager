@@ -1,0 +1,55 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# Every folder in this play contains a record or a subfolder, and no task sets force_deletion to true. Every delete
+# must fail with the exact message in "expected", and the server must receive no delete request.
+- name: Keeper Delete Folder That Is Not Empty
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete A Folder That Contains A Record"
+    keeper_delete_folder:
+      folder_uid: "{{ record_folder_uid }}"
+    register: "has_record"
+    ignore_errors: yes
+
+  - name: "Delete A Folder That Contains Only A Subfolder"
+    keeper_delete_folder:
+      folder_uid: "{{ parent_folder_uid }}"
+    register: "has_subfolder"
+    ignore_errors: yes
+
+  - name: "Delete A Folder That Contains A Record And A Subfolder, With force_deletion Set To No"
+    keeper_delete_folder:
+      folder_uid: "{{ tree_folder_uid }}"
+      force_deletion: no
+    register: "force_no"
+    ignore_errors: yes
+
+  - name: "Delete A Folder That Contains A Record, With force_deletion Set To The String false"
+    keeper_delete_folder:
+      folder_uid: "{{ record_folder_uid }}"
+      force_deletion: "false"
+    register: "force_false_string"
+    ignore_errors: yes
+
+  - name: "Delete A Shared Folder That Has A Record At Its Top Level"
+    keeper_delete_folder:
+      folder_uid: "{{ ops_shared_uid }}"
+    register: "shared_has_record"
+    ignore_errors: yes
+
+  - name: "Check That Every Delete Failed"
+    assert:
+      that:
+        - has_record is failed
+        - has_record is not changed
+        - has_record.msg == expected.has_record
+        - has_subfolder is failed
+        - has_subfolder.msg == expected.has_subfolder
+        - force_no is failed
+        - force_no.msg == expected.force_no
+        - force_false_string is failed
+        - force_false_string.msg == expected.has_record
+        - shared_has_record is failed
+        - shared_has_record.msg == expected.shared_has_record

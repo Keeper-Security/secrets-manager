@@ -1,0 +1,63 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# A blank, padded, or null folder_uid must fail. It must not be looked up, because it would match no folder, and
+# the task would silently report changed false.
+- name: Keeper Delete Folder With A Bad Folder UID
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete With A Trailing Space In The Folder UID"
+    keeper_delete_folder:
+      folder_uid: "{{ empty_folder_uid }} "
+    register: "trailing_space"
+    ignore_errors: yes
+
+  - name: "Delete With A Leading Space In The Folder UID"
+    keeper_delete_folder:
+      folder_uid: " {{ empty_folder_uid }}"
+    register: "leading_space"
+    ignore_errors: yes
+
+  - name: "Delete With A Trailing Newline In The Folder UID, With force_deletion"
+    keeper_delete_folder:
+      folder_uid: "{{ tree_folder_uid }}\n"
+      force_deletion: yes
+    register: "trailing_newline"
+    ignore_errors: yes
+
+  - name: "Delete A Folder UID That Does Not Exist, With A Trailing Space"
+    keeper_delete_folder:
+      folder_uid: "NO_SUCH_FOLDER_UID "
+    register: "missing_padded"
+    ignore_errors: yes
+
+  - name: "Delete With An Empty Folder UID"
+    keeper_delete_folder:
+      folder_uid: ""
+    register: "empty_uid"
+    ignore_errors: yes
+
+  - name: "Delete With A Folder UID From A Variable That Has Only Spaces"
+    keeper_delete_folder:
+      folder_uid: "{{ blank_variable }}"
+    vars:
+      blank_variable: "   "
+    register: "blank_variable_uid"
+    ignore_errors: yes
+
+  - name: "Delete With A Null Folder UID"
+    keeper_delete_folder:
+      folder_uid: null
+    register: "null_uid"
+    ignore_errors: yes
+
+  - name: "Check That Every Bad Folder UID Failed"
+    assert:
+      that:
+        - item.0 is failed
+        - item.0 is not changed
+        - item.0.msg == item.1
+    loop: "{{ [trailing_space, leading_space, trailing_newline, missing_padded, empty_uid, blank_variable_uid, null_uid] | zip(expected.msgs) | list }}"
+    loop_control:
+      label: "{{ item.1 }}"

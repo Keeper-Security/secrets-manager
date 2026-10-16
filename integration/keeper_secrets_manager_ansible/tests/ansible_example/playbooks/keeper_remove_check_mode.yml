@@ -1,0 +1,40 @@
+---
+- name: Keeper Remove Check Mode
+  hosts: "my_systems"
+  gather_facts: no
+  check_mode: yes
+
+  tasks:
+    - name: Preview removal by UID
+      keeper_remove:
+        uid: "{{ uid }}"
+      register: preview_uid
+
+    - name: Preview removal by title
+      keeper_remove:
+        title: "{{ title }}"
+      register: preview_title
+
+    - name: Preview removal of a missing UID
+      keeper_remove:
+        uid: MISSING_RECORD_UID
+      register: missing_uid
+
+    - name: Preview removal of a missing title
+      keeper_remove:
+        title: Missing Record Title
+      register: missing_title
+
+    - name: Check predicted changes and record identities
+      assert:
+        that:
+          - preview_uid is changed
+          - preview_uid.record_uid == uid
+          - preview_uid.record_title == record_title
+          - preview_title is changed
+          - preview_title.record_uid == other_uid
+          - preview_title.record_title == title
+          - missing_uid is not failed
+          - missing_uid is not changed
+          - missing_title is not failed
+          - missing_title is not changed

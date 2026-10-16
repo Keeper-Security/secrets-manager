@@ -2,47 +2,90 @@ name: Test-Ansible
 
 on:
   pull_request:
-    branches: [ master ]
+    branches: [ master, 'release/integration/ansible/**' ]
+    paths:
+      - 'integration/keeper_secrets_manager_ansible/**'
+      - 'sdk/python/core/**'
+      - '.github/workflows/test.ansible.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   test-ansible:
+    name: Python ${{ matrix.python-version }} (${{ matrix.ansible-core }})
     # Skip ansible tests on CLI release branches (tests fixed on ansible release branch)
     if: ${{ !startsWith(github.head_ref, 'release/tool/cli/') }}
-    runs-on: ubuntu-latest
+    # actions/python-versions has no Python 3.9 build for Ubuntu 26.04, the next ubuntu-latest.
+    runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        ansible-core: ["ansible-core"]
+        include:
+          # pip installs the newest allowed ansible-core for each Python. Python 3.9 already gets the minimum, so the
+          # minimum also runs on the newest Python that supports it, and two jobs add the series pip never picks.
+          - python-version: "3.11"
+            ansible-core: "ansible-core==2.15.13"
+          - python-version: "3.11"
+            ansible-core: "ansible-core<2.19"
+          - python-version: "3.12"
+            ansible-core: "ansible-core<2.21"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ matrix.python-version }}
 
       ########## KSM Python SDK (from source)
 
-      - name: Install SDK dependencies
+      # The next step replaces this build with the SDK from PyPI when its version is below the integration's minimum.
+      - name: Install the KSM Python SDK from source
         working-directory: ./sdk/python/core
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install setuptools
-          python3 -m pip install -r requirements.txt
-          python3 -m pip install -e .
-
-      - name: Install SDK for integrations
-        working-directory: ./sdk/python/core
-        run: |
-          python3 setup.py build install
+          if python3 -m pip install --dry-run --no-deps .; then
+            python3 -m pip install -r requirements.txt
+            python3 -m pip install .
+          else
+            echo "::notice::pip cannot install sdk/python/core on Python $PYTHON_VERSION (see the error above), so the tests use the SDK from PyPI."
+          fi
 
       ########## ANSIBLE
 
-      # Test fail on GitHub. Working on better logging to see what the problem is.
       - name: Install Ansible dependencies
         working-directory: ./integration/keeper_secrets_manager_ansible
+        env:
+          ANSIBLE_CORE_SPEC: ${{ matrix.ansible-core }}
         run: |
-          python3 -m pip install -r requirements.txt
+          python3 -m pip install -r requirements.txt "$ANSIBLE_CORE_SPEC"
           python3 -m pip install pytest pytest-cov
+
+      - name: Show the KSM Python SDK under test
+        run: |
+          python3 - <<'EOF'
+          from importlib import metadata
+
+          dist = metadata.distribution("keeper-secrets-manager-core")
+          # pip writes direct_url.json for a project that it installs from a local directory, not for one from PyPI.
+          origin = "sdk/python/core" if dist.read_text("direct_url.json") else "PyPI"
+          print("keeper-secrets-manager-core {} from {}".format(dist.version, origin))
+          if origin == "PyPI":
+              print("::notice::The tests use keeper-secrets-manager-core {} from PyPI, not from sdk/python/core.".format(
+                  dist.version))
+          EOF
+
       - name: Run Ansible tests
         working-directory: ./integration/keeper_secrets_manager_ansible
         run: |

@@ -1,0 +1,10 @@
+---
+- name: Keeper lookup and check mode
+  hosts: my_systems
+  gather_facts: no
+
+  tasks:
+    - name: Read a password with the lookup
+      ansible.builtin.debug:
+        msg: "Password length {{ lookup('keeper', uid=record_uid, field='password') | length }}"
+      ignore_errors: true

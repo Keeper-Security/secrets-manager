@@ -28,7 +28,7 @@ class KeeperGetTest(unittest.TestCase):
             result, out, err = a.run()
             self.assertEqual(result["ok"], 3, "3 things didn't happen")
             self.assertEqual(result["failed"], 0, "failed was not 0")
-            self.assertEqual(result["changed"], 0, "0 things didn't change")
+            self.assertEqual(result["changed"], 1, "the record update should report changed")
             assert '"updated": true' in out
 
     def test_keeper_set_cache(self):
@@ -47,7 +47,7 @@ class KeeperGetTest(unittest.TestCase):
             result, out, err = a.run()
             self.assertEqual(result["ok"], 6, "6 things didn't happen")
             self.assertEqual(result["failed"], 0, "failed was not 0")
-            self.assertEqual(result["changed"], 0, "0 things didn't change")
+            self.assertEqual(result["changed"], 1, "the record update should report changed")
             assert '"updated": true' in out
 
     def test_keeper_set_notes(self):
@@ -75,6 +75,7 @@ class KeeperGetTest(unittest.TestCase):
             # Verify all tasks succeeded
             self.assertEqual(result["failed"], 0, "Task should not fail")
             self.assertEqual(result["ok"], 4, "4 tasks should succeed")
+            self.assertEqual(result["changed"], 1, "the notes update should report changed")
 
             # Verify the set operation reported success
             self.assertIn('"updated": true', out,

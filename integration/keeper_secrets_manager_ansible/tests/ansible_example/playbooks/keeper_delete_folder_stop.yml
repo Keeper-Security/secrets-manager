@@ -1,0 +1,15 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# No ignore_errors: the failed delete must stop the play, so the second task never runs.
+- name: Keeper Delete Folder That Stops The Play
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete A Folder That Contains A Record"
+    keeper_delete_folder:
+      folder_uid: "{{ record_folder_uid }}"
+
+  - name: "Delete The Empty Folder, Which Must Not Run"
+    keeper_delete_folder:
+      folder_uid: "{{ empty_folder_uid }}"

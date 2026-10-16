@@ -24,6 +24,8 @@ description:
     - Has the same options at the normal Ansible copy module.
 author:
     - John Walstra
+notes:
+  - Check mode requires an initialized Keeper configuration.
 options:
   uid:
     description:
@@ -38,7 +40,10 @@ options:
     version_added: '1.2.0'
   cache:
     description:
-    - The cache registered by keeper_get_records_cache
+    - The cache registered by keeper_cache_records
+    - If the cache cannot be read, the task shows a warning and reads the records from the vault.
+      Examples are a cache that version 1.4.0 or earlier made, a cache that another machine made,
+      and a wrong keeper_record_cache_secret.
     type: str
     required: no
     version_added: '1.2.0'  
@@ -59,6 +64,15 @@ options:
     - The file name of the file that contains the value.
     type: str
     required: no
+  notes:
+    description:
+    - Set to yes to copy the notes field from the record.
+    - The notes field contains text notes attached to the record.
+    - Notes is a singleton field (only one per record), so it uses a boolean flag instead of a field name.
+    type: bool
+    default: no
+    required: no
+    version_added: '1.3.0'
   notation:
     description:
     - The Keeper notation to access record that contains the value.
@@ -183,16 +197,6 @@ dest:
     returned: success
     type: str
     sample: /path/to/file.txt
-md5sum:
-    description: MD5 checksum of the file after running copy.
-    returned: when supported
-    type: str
-    sample: 2a5aeecc61dc98c4d780b14b330e3282
-checksum:
-    description: SHA1 checksum of the file after running copy.
-    returned: success
-    type: str
-    sample: 6e642bb8dd5c2e027bf21dd923337cbb4214f827
 backup_file:
     description: Name of backup file created.
     returned: changed and if backup=yes
@@ -223,11 +227,6 @@ mode:
     returned: success
     type: str
     sample: 0644
-size:
-    description: Size of the target, after execution.
-    returned: success
-    type: int
-    sample: 1220
 state:
     description: State of the target, after execution.
     returned: success

@@ -28,6 +28,10 @@ description:
       JSON file will be created.
 author:
     - John Walstra
+attributes:
+  check_mode:
+    support: none
+    description: Skipped in check mode to avoid redeeming the one-time token or writing configuration files.
 options:
   token:
     description:
@@ -63,29 +67,34 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
+changed:
+  description: Whether the one-time token was initialized.
+  returned: success
+  type: bool
+  sample: true
 keeper_client_id:
   description: Client ID for the application.
-  returned: success
+  returned: when show_config is true
   sample: i31TDFtdZE .... oiCQ
 keeper_private_key:
   description: Private key for the application.
-  returned: success
+  returned: when show_config is true
   sample: MIGHAgEAMB .... JMJRzpE
 keeper_app_key:
   description: Application key for the application.
-  returned: success
+  returned: when show_config is true
   sample: zhLwB .... LPGY
 keeper_app_owner_public_key:
   description: Public key that allows creation of records.
-  returned: success
+  returned: when show_config is true
   version_added: '1.1.2' 
   sample: zhLwB .... LPGY
 keeper_server_public_key_id:
   description: Id of the public key to use when sending request.
-  returned: success
+  returned: when show_config is true
   sample: 10
 keeper_hostname:
   description: Hostname to use ending request.
-  returned: success
+  returned: when show_config is true
   sample: keepersecurity.com
 '''

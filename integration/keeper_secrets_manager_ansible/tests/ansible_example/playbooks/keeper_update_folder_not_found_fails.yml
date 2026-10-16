@@ -1,0 +1,16 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Update Folder That Does Not Exist, With No ignore_errors
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Rename A Folder That Does Not Exist"
+    keeper_update_folder:
+      folder_uid: "{{ missing_folder_uid }}"
+      new_folder_name: "Production"
+
+  - name: "Rename An Existing Folder, Which Must Not Run After The Failure"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "Must Not Be Renamed"

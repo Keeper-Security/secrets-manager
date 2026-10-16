@@ -1,0 +1,63 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# The module returns a failure, it does not raise it, so the error handling of a play works on it: rescue in a
+# block, failed_when, and ignore_errors. Ansible does not apply failed_when to an error that a plugin raises.
+- name: Keeper Delete Folder Failure Handling
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete A Folder That Is Not Empty, In A Block With A Rescue"
+    block:
+      - name: "Delete A Folder That Contains A Record"
+        keeper_delete_folder:
+          folder_uid: "{{ record_folder_uid }}"
+
+      - name: "Must Not Run After The Failed Delete"
+        set_fact:
+          ran_after_failure: true
+    rescue:
+      - name: "Check The Failure In The Rescue"
+        assert:
+          that:
+            - ansible_failed_result is failed
+            - ansible_failed_result is not changed
+            - ansible_failed_result.msg == expected.record_not_empty
+            - ansible_failed_task.name == "Delete A Folder That Contains A Record"
+
+      - name: "Note That The Rescue Ran"
+        set_fact:
+          rescue_ran: true
+
+  - name: "Delete A Folder That Is Not Empty, With failed_when False"
+    keeper_delete_folder:
+      folder_uid: "{{ tree_folder_uid }}"
+    register: "tolerated"
+    failed_when: false
+
+  - name: "Delete A Folder That Is Not Empty, With A failed_when That Accepts Only That Error"
+    keeper_delete_folder:
+      folder_uid: "{{ parent_folder_uid }}"
+    register: "filtered"
+    failed_when: "filtered.failed and 'is not empty' not in filtered.msg"
+
+  - name: "Delete With A Misspelled Option, With The Same failed_when"
+    keeper_delete_folder:
+      folder_uid: "{{ empty_folder_uid }}"
+      forse: yes
+    register: "not_filtered"
+    failed_when: "not_filtered.failed and 'is not empty' not in not_filtered.msg"
+    ignore_errors: yes
+
+  - name: "Check The Failure Handling"
+    assert:
+      that:
+        - rescue_ran | default(false)
+        - ran_after_failure is not defined
+        - tolerated is not failed
+        - tolerated is not changed
+        - tolerated.msg == expected.tree_not_empty
+        - filtered is not failed
+        - filtered.msg == expected.parent_not_empty
+        - not_filtered is failed
+        - not_filtered.msg.startswith(expected.forse_before)

@@ -23,6 +23,13 @@ description:
     - Cleans up the cache file, if they exists.
 author:
     - John Walstra
+attributes:
+  check_mode:
+    support: full
+    description: Reports whether the enabled DR cache file exists without removing it.
+notes:
+  - In check mode, changed shows whether the cache file exists before the run. In a real run, the
+    reads of earlier tasks can create the file first.
 '''
 
 EXAMPLES = r'''
@@ -31,8 +38,14 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-removed_ksm_cache:
-  description: Was the KSM Cache file removed?
+changed:
+  description: Whether a cache file was removed, or would be removed in check mode.
   returned: success
-  sample: true  
+  type: bool
+  sample: true
+removed_ksm_cache:
+  description: Whether the cache file was removed. False in check mode or when the file is absent.
+  returned: when the DR cache is enabled
+  type: bool
+  sample: true
 '''

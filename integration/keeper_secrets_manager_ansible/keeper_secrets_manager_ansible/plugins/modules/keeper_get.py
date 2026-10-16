@@ -24,6 +24,8 @@ description:
     - If value is not a literal value, the structure will be retrieved.
 author:
     - John Walstra
+notes:
+  - Check mode requires an initialized Keeper configuration.
 options:
   uid:
     description:
@@ -38,7 +40,10 @@ options:
     version_added: '1.2.0'
   cache:
     description:
-    - The cache registered by keeper_get_records_cache
+    - The cache registered by keeper_cache_records
+    - If the cache cannot be read, the task shows a warning and reads the records from the vault.
+      Examples are a cache that version 1.4.0 or earlier made, a cache that another machine made,
+      and a wrong keeper_record_cache_secret.
     type: str
     required: no
     version_added: '1.2.0'  
@@ -59,6 +64,14 @@ options:
     - The file name of the file that contains the value.
     type: str
     required: no
+  notes:
+    description:
+    - Set to yes to retrieve the notes field from the record.
+    - The notes field contains text notes attached to the record.
+    type: bool
+    default: no
+    required: no
+    version_added: '1.3.0'
   allow_array:
     description:
     - Allow array of values instead of taking the first value.
@@ -90,7 +103,6 @@ options:
     - The Keeper notation to access record that contains the value.
     - Use notation when you want a specific value.
     - The 'cache' setting currently does not work with notation.
-    - 
     - See https://docs.keeper.io/secrets-manager/secrets-manager/about/keeper-notation for more information/
     type: str
     required: no

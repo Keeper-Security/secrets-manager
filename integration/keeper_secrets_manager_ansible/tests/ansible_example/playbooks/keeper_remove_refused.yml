@@ -1,0 +1,19 @@
+---
+- name: Keeper Remove That Must Fail
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: Attempt removal
+      keeper_remove:
+        uid: "{{ uid }}"
+      register: refused
+      ignore_errors: yes
+
+    - name: Check the failure message and unchanged result
+      assert:
+        that:
+          - refused is failed
+          - refused is not changed
+          - expected_code in refused.msg
+          - expected_message in refused.msg

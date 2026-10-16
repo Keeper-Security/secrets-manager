@@ -78,7 +78,8 @@ class ActionModule(ActionBase):
         if task_vars is None:
             task_vars = {}
 
-        KeeperAnsible(task_vars=task_vars, action_module=self)
+        # The versions and the record types are local, so no request reaches the vault.
+        KeeperAnsible(task_vars=task_vars, action_module=self, requires_vault=False)
 
         # If there are custom record type, load them
         keeper_record_types = task_vars.get("keeper_record_types")

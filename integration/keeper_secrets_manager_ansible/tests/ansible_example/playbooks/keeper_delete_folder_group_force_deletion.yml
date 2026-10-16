@@ -1,0 +1,33 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# A group default force_deletion: yes for the action group of this collection. The module has that option, so the
+# default applies to every keeper_delete_folder task of the play, as module_defaults does for any option of any
+# module: a folder that is not empty is deleted with everything in it. A task can still turn it off.
+- name: Keeper Delete Folder With A Group Default force_deletion
+  hosts: "my_systems"
+  gather_facts: no
+
+  module_defaults:
+    group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager:
+      force_deletion: yes
+
+  tasks:
+  - name: "Delete A Folder That Is Not Empty, With The Group Default force_deletion"
+    keepersecurity.keeper_secrets_manager.keeper_delete_folder:
+      folder_uid: "{{ tree_folder_uid }}"
+    register: "group_forced"
+
+  - name: "Delete A Folder That Is Not Empty, With force_deletion Turned Off In The Task"
+    keepersecurity.keeper_secrets_manager.keeper_delete_folder:
+      folder_uid: "{{ record_folder_uid }}"
+      force_deletion: no
+    register: "task_not_forced"
+    ignore_errors: yes
+
+  - name: "Check The Group Default force_deletion"
+    assert:
+      that:
+        - group_forced is changed
+        - group_forced.folder_name == "Databases"
+        - task_not_forced is failed
+        - task_not_forced.msg == expected.web_not_empty

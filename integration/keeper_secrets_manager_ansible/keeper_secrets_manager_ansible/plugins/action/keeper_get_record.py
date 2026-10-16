@@ -34,6 +34,8 @@ description:
     - Only alphanumeric values and underscores will be used in the key.
 author:
     - John Walstra
+notes:
+  - Check mode requires an initialized Keeper configuration.
 options:
   uid:
     description:
@@ -53,7 +55,10 @@ options:
     required: no
   cache:
     description:
-    - The cache registered by keeper_get_records_cache
+    - The cache registered by keeper_cache_records
+    - If the cache cannot be read, the task shows a warning and reads the records from the vault.
+      Examples are a cache that version 1.4.0 or earlier made, a cache that another machine made,
+      and a wrong keeper_record_cache_secret.
     type: str
     required: no
 '''
@@ -123,10 +128,6 @@ class ActionModule(ActionBase):
 
         record_dict = keeper.get_dict(uid=uid, title=title, cache=cache, allow=allow)
 
-        result = {
+        return {
             "record": record_dict
         }
-
-        keeper.add_secret_values_to_results(result)
-
-        return result

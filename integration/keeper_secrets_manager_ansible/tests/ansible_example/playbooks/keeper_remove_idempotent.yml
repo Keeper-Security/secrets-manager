@@ -1,0 +1,61 @@
+---
+- name: Keeper Remove Idempotency
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+    - name: Remove a UID that does not exist
+      keeper_remove:
+        uid: MISSING_RECORD_UID
+      register: missing_uid
+
+    - name: Remove a title that does not exist
+      keeper_remove:
+        title: Missing Record Title
+      register: missing_title
+
+    - name: Remove by UID
+      keeper_remove:
+        uid: "{{ uid }}"
+      register: first_uid
+
+    - name: Repeat the UID removal
+      keeper_remove:
+        uid: "{{ uid }}"
+      register: second_uid
+
+    - name: Remove the already deleted record by title
+      keeper_remove:
+        title: "{{ record_title }}"
+      register: deleted_title
+
+    - name: Remove by title
+      keeper_remove:
+        title: "{{ title }}"
+      register: first_title
+
+    - name: Repeat the title removal
+      keeper_remove:
+        title: "{{ title }}"
+      register: second_title
+
+    - name: Check idempotency and returned record identities
+      assert:
+        that:
+          - missing_uid is not failed
+          - missing_uid is not changed
+          - missing_title is not failed
+          - missing_title is not changed
+          - first_uid is changed
+          - first_uid.record_uid == uid
+          - first_uid.record_title == record_title
+          - second_uid is not failed
+          - second_uid is not changed
+          - deleted_title is not failed
+          - deleted_title is not changed
+          - first_title is changed
+          - first_title.record_uid == other_uid
+          - first_title.record_title == title
+          - second_title is not failed
+          - second_title is not changed
+          - "'existed' not in first_uid"

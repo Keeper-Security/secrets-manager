@@ -1,0 +1,172 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+- name: Keeper Update Folder With Values That Are Not Strings
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    names_list: ["Prod", "EU"]
+    year: 2025
+    name_message: "The new_folder_name option must be a string, but it is {}. Put quotes around the value, or use the string filter."
+    uid_message: "The folder_uid option must be a string, but it is {}. Put quotes around the value, or use the string filter."
+
+  tasks:
+  - name: "Rename To A List From A Variable"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "{{ names_list }}"
+    register: "list_variable"
+    ignore_errors: yes
+
+  - name: "Rename To A YAML List"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: [Prod, EU]
+    register: "yaml_list"
+    ignore_errors: yes
+
+  - name: "Rename To A Dictionary"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: {name: Prod}
+    register: "yaml_dict"
+    ignore_errors: yes
+
+  - name: "Rename To A YAML Boolean"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: yes
+    register: "yaml_bool"
+    ignore_errors: yes
+
+  - name: "Rename To A YAML Float"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: 1.10
+    register: "yaml_float"
+    ignore_errors: yes
+
+  - name: "Rename To A YAML Integer"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: 2026
+    register: "yaml_int"
+    ignore_errors: yes
+
+  - name: "Rename To A YAML Integer With Leading Zeros"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: 007
+    register: "leading_zeros"
+    ignore_errors: yes
+
+  - name: "Rename To A YAML Octal Integer"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: 010
+    register: "octal"
+    ignore_errors: yes
+
+  - name: "Rename To A YAML Hex Integer"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: 0x1F
+    register: "hex"
+    ignore_errors: yes
+
+  - name: "Rename To A YAML Integer With An Underscore"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: 1_000
+    register: "underscore"
+    ignore_errors: yes
+
+  - name: "Rename To A YAML Date"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: 2026-09-29
+    register: "yaml_date"
+    ignore_errors: yes
+
+  - name: "Rename To A YAML Date And Time"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: 2026-09-29 10:00:00
+    register: "yaml_datetime"
+    ignore_errors: yes
+
+  - name: "Rename With A List As The Folder UID"
+    keeper_update_folder:
+      folder_uid: ["{{ folder_uid }}"]
+      new_folder_name: "Production"
+    register: "list_uid"
+    ignore_errors: yes
+
+  - name: "Rename With A Boolean As The Folder UID"
+    keeper_update_folder:
+      folder_uid: true
+      new_folder_name: "Production"
+    register: "bool_uid"
+    ignore_errors: yes
+
+  - name: "Rename With A Float As The Folder UID"
+    keeper_update_folder:
+      folder_uid: 1.5
+      new_folder_name: "Production"
+    register: "float_uid"
+    ignore_errors: yes
+
+  - name: "Rename With An Integer As The Folder UID"
+    keeper_update_folder:
+      folder_uid: 12345
+      new_folder_name: "Production"
+    register: "int_uid"
+    ignore_errors: yes
+
+  - name: "Rename To A Quoted Number, Which Is Accepted"
+    keeper_update_folder:
+      folder_uid: "{{ folder_uid }}"
+      new_folder_name: "2024"
+    register: "quoted_number"
+
+  - name: "Rename A Folder Whose UID Is A Quoted Number To A Quoted Name With Leading Zeros"
+    keeper_update_folder:
+      folder_uid: "12345"
+      new_folder_name: "007"
+    register: "quoted_zeros"
+
+  - name: "Rename To A Number Variable With The string Filter, Which Is Accepted"
+    keeper_update_folder:
+      folder_uid: "{{ sibling_uid }}"
+      new_folder_name: "{{ year | string }}"
+    register: "string_filter"
+
+  - name: "Check The Results"
+    assert:
+      that:
+        - list_variable is failed
+        - list_variable is not changed
+        - list_variable.msg == name_message.format("a list")
+        - yaml_list.msg == name_message.format("a list")
+        - yaml_dict.msg == name_message.format("a dictionary")
+        - yaml_bool.msg == name_message.format("a boolean (True)")
+        - yaml_float.msg == name_message.format("a number (1.1)")
+        - yaml_int.msg == name_message.format("a number (2026)")
+        - leading_zeros.msg == name_message.format("a number (7)")
+        - octal.msg == name_message.format("a number (8)")
+        - hex.msg == name_message.format("a number (31)")
+        - underscore.msg == name_message.format("a number (1000)")
+        - yaml_date.msg == name_message.format("a date (2026-09-29)")
+        - yaml_datetime.msg == name_message.format("a date and time (2026-09-29 10:00:00)")
+        - list_uid.msg == uid_message.format("a list")
+        - bool_uid.msg == uid_message.format("a boolean (True)")
+        - float_uid.msg == uid_message.format("a number (1.5)")
+        - int_uid.msg == uid_message.format("a number (12345)")
+        - quoted_number is changed
+        - quoted_number.folder_name == "2024"
+        - quoted_number.previous_folder_name == "Staging"
+        - quoted_zeros is changed
+        - quoted_zeros.folder_uid == "12345"
+        - quoted_zeros.folder_name == "007"
+        - string_filter is changed
+        - string_filter.folder_name == "2025"

@@ -1,0 +1,73 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+#
+# The plugin returns a failure instead of raising it, so failed_when and rescue work on a failed lookup and on
+# an option error. Ansible does not apply failed_when to an exception.
+---
+- name: Keeper Get Folder Failed When And Rescue
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    not_found_msg: 'Could not look up folder: No folder named "Nope" was found in the folder "Infrastructure" (UID {{ shared_folder_uid }}).'
+    typo_prefix: "Unsupported parameters for (keeper_get_folder) module: folder_nmae. Supported parameters include: "
+
+  tasks:
+  - name: "A Failed Lookup With failed_when False"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Nope"
+    register: "lookup_not_failed"
+    failed_when: false
+
+  - name: "A Misspelled Option With failed_when False"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_nmae: "Databases"
+    register: "typo_not_failed"
+    failed_when: false
+
+  - name: "A Failed Lookup That Is Expected, With failed_when On The Message"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Nope"
+    register: "expected_miss"
+    failed_when: "'No folder named' not in (expected_miss.msg | default(''))"
+
+  - name: "A Found Folder With failed_when On The Result"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_folder_uid }}"
+      folder_name: "Databases"
+    register: "found"
+    failed_when: "found.folder_uid is not defined"
+
+  - name: "A Block With A Failed Lookup"
+    block:
+      - name: "The Lookup Fails"
+        keeper_get_folder:
+          shared_folder_uid: "{{ shared_folder_uid }}"
+          folder_name: "Nope"
+
+      - name: "A Task After The Failed Lookup"
+        set_fact:
+          after_failed_lookup: true
+    rescue:
+      - name: "Rescue The Failed Lookup"
+        set_fact:
+          rescued_msg: "{{ ansible_failed_result.msg }}"
+          rescued_task: "{{ ansible_failed_task.name }}"
+
+  - name: "Check failed_when And rescue"
+    assert:
+      that:
+        - lookup_not_failed is not failed
+        - lookup_not_failed.msg == not_found_msg
+        - lookup_not_failed.folder_uid is not defined
+        - typo_not_failed is not failed
+        - typo_not_failed.msg.startswith(typo_prefix)
+        - expected_miss is not failed
+        - expected_miss.msg == not_found_msg
+        - found is not failed
+        - found.folder_uid == databases_uid
+        - rescued_msg == not_found_msg
+        - rescued_task == "The Lookup Fails"
+        - after_failed_lookup is not defined

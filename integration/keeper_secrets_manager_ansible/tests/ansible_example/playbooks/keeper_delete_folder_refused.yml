@@ -1,0 +1,23 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# One delete that must fail. The test sets the server behavior, the folder, force_deletion, and the exact message in
+# expected.msg.
+- name: Keeper Delete Folder That Must Fail
+  hosts: "my_systems"
+  gather_facts: no
+
+  tasks:
+  - name: "Delete The Folder"
+    keeper_delete_folder:
+      folder_uid: "{{ target_folder_uid }}"
+      force_deletion: "{{ target_force }}"
+    register: "refused"
+    ignore_errors: yes
+
+  - name: "Check The Failed Delete"
+    assert:
+      that:
+        - refused is failed
+        - refused is not changed
+        - refused.msg == expected.msg
+      fail_msg: "The message is {{ refused.msg | default('(none)') | to_json }}"
