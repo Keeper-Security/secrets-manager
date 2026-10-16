@@ -1,5 +1,4 @@
 import importlib
-import threading
 from unittest.mock import patch
 
 import pytest
@@ -7,7 +6,7 @@ import yaml
 
 from keeper_secrets_manager_ansible import KeeperAnsible, KeeperFolderError
 
-from .conftest import GROUP
+from .conftest import GROUP, bounded
 
 PLUGIN = "keeper_update_folder"
 
@@ -59,23 +58,6 @@ def renamed(uid, new_name, old_name, changed=True):
 def same_name_warning(label, quoted_name, sibling_uids):
     return ("The parent of the folder {} already has a folder named {} ({}). After the rename, a lookup of this name "
             "fails because the name is not unique.".format(label, quoted_name, sibling_uids))
-
-
-def bounded(call):
-    # A parent-chain walk that does not detect a cycle loops forever. A thread turns that into a failed test.
-    outcome = {}
-
-    def target():
-        try:
-            outcome["result"] = call()
-        except Exception as err:
-            outcome["error"] = err
-
-    thread = threading.Thread(target=target, daemon=True)
-    thread.start()
-    thread.join(30)
-    assert not thread.is_alive(), "the call did not end; the parent-chain walk loops"
-    return outcome
 
 
 @pytest.fixture

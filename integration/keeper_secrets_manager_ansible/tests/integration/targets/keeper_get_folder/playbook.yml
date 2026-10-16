@@ -1,0 +1,227 @@
+# vim: set shiftwidth=2 tabstop=2 softtabstop=-1 expandtab:
+---
+# One run against the fake server, in the order of the tasks. test_keeper_get_folder_target.py sets the exact messages
+# in "expected", and checks that every request was a get_folders.
+- name: Keeper Get Folder
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    null_var: ~
+    names_list: ["Prod", "EU"]
+
+  tasks:
+  - name: "Lookups that find a folder"
+    action: keeper_get_folder
+    args: "{{ item.args }}"
+    register: "found"
+    loop:
+      - {args: {shared_folder_uid: "{{ shared_uid }}", folder_name: "Databases"}}
+      - {args: {folder_path: "Infrastructure/Databases/Production/EU"}}
+      - {args: {shared_folder_uid: "{{ shared_uid }}", folder_path: ["Prod/EU"]}}
+      - {args: {subfolder_uid: "{{ databases_uid }}", folder_name: "Production"}}
+      - {args: {shared_folder_uid: "{{ shared_uid }}", subfolder_uid: "{{ production_uid }}", folder_name: "EU"}}
+      - {args: {shared_folder_uid: "{{ shared_uid }}", folder_name: 'Say "hi"'}}
+      - {args: {shared_folder_uid: "{{ shared_uid }}", folder_name: "Données 数据库 🔐"}}
+
+  - name: "A quoted number is a name, and check mode runs the same lookup"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "2024"
+    check_mode: yes
+    register: "number_name"
+
+  - name: "include_subfolders yes and no"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "Databases"
+      include_subfolders: "{{ item }}"
+    register: "subfolders"
+    loop: [yes, no]
+
+  - assert:
+      that:
+        - found.results | map(attribute='folder_uid') | list == [databases_uid, eu_uid, slash_uid, production_uid,
+          eu_uid, quote_uid, unicode_uid]
+        - found.results[0].shared_folder_uid == shared_uid
+        - found.results[0].parent_uid == shared_uid
+        - found.results[1].shared_folder_uid == shared_uid
+        - found.results | map(attribute='changed') | unique | list == [false]
+        - number_name.folder_uid == year_uid
+        - number_name is not changed
+        - number_name is not skipped
+        - "subfolders.results[0].subfolders == [
+            {'folder_uid': production_uid, 'folder_name': 'Production', 'parent_uid': databases_uid},
+            {'folder_uid': eu_uid, 'folder_name': 'EU', 'parent_uid': production_uid},
+            {'folder_uid': staging_uid, 'folder_name': 'Staging', 'parent_uid': databases_uid}]"
+        - subfolders.results[1].subfolders is not defined
+
+  # YAML and Jinja change some values before the plugin sees them. The message shows the value that they made.
+  - name: "Values that are not strings fail, and null is not 'not set'"
+    action: keeper_get_folder
+    args: "{{ item.args }}"
+    register: "bad"
+    ignore_errors: yes
+    loop:
+      - {args: {shared_folder_uid: "{{ shared_uid }}", folder_name: "{{ names_list }}"}}
+      - {args: {shared_folder_uid: "{{ shared_uid }}", include_subfolders: maybe}}
+      - {args: {shared_folder_uid: "{{ shared_uid }}", folder_nme: "Databases"}}
+      - {args: {shared_folder_uid: "{{ null_var }}", folder_name: "Infrastructure"}}
+      - {args: {shared_folder_uid: "{{ shared_uid }}", folder_name: "{{ null_var }}"}}
+      - {args: {shared_folder_uid: "{{ shared_uid }} ", folder_name: "Databases"}}
+      - {args: {shared_folder_uid: "{{ shared_uid }}", folder_name: "Databases", folder_path: "Databases"}}
+
+  - keeper_get_folder: {shared_folder_uid: "{{ shared_uid }}", folder_name: 2024}
+    register: "t_int"
+    ignore_errors: yes
+  - keeper_get_folder: {shared_folder_uid: "{{ shared_uid }}", folder_name: 2026-09-29}
+    register: "t_date"
+    ignore_errors: yes
+  - keeper_get_folder: {shared_folder_uid: "{{ shared_uid }}", folder_name: yes}
+    register: "t_bool"
+    ignore_errors: yes
+  - keeper_get_folder: {shared_folder_uid: "{{ shared_uid }}", folder_path: 2024}
+    register: "t_path_int"
+    ignore_errors: yes
+  - keeper_get_folder: {shared_folder_uid: "{{ shared_uid }}", folder_path: ["Databases", yes]}
+    register: "t_item_bool"
+    ignore_errors: yes
+  - keeper_get_folder: {shared_folder_uid: "{{ shared_uid }}", folder_path: ["Databases", 1.10]}
+    register: "t_item_float"
+    ignore_errors: yes
+  - keeper_get_folder: {folder_path: ["Infrastructure", 2024]}
+    register: "t_item_int"
+    ignore_errors: yes
+
+  - assert:
+      that:
+        - bad.results[0].msg == expected.list
+        - bad.results[1].msg.startswith(expected.not_a_boolean)
+        - bad.results[2].msg.startswith(expected.typo)
+        - bad.results[3].msg == expected.null_shared
+        - bad.results[4].msg == expected.null_name
+        - bad.results[5].msg == expected.padded
+        - bad.results[6].msg.startswith(expected.exclusive)
+        - t_int.msg == expected.int
+        - t_date.msg == expected.date
+        - t_bool.msg == expected.bool
+        - t_path_int.msg == expected.path_type
+        - t_item_bool.msg == expected.item_bool
+        - t_item_float.msg == expected.item_float
+        - t_item_int.msg == expected.item_int
+
+  - name: "default(omit, true) omits a null variable"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "{{ null_var | default(omit, true) }}"
+    register: "omitted"
+
+  - name: "Failed lookups: not found, duplicates, special characters in the message"
+    action: keeper_get_folder
+    args: "{{ item.args }}"
+    register: "failed"
+    ignore_errors: yes
+    loop:
+      - {args: {shared_folder_uid: "{{ shared_uid }}", folder_name: "Nope"}}
+      - {args: {shared_folder_uid: "{{ other_shared_uid }}", folder_name: "Dup"}}
+      - {args: {folder_path: "Applications/Dup/Leaf"}}
+      - {args: {shared_folder_uid: "{{ shared_uid }}", folder_name: 'Twin "A"'}}
+      - {args: {shared_folder_uid: "{{ other_shared_uid }}", folder_name: 'Say "hi"'}}
+      - {args: {shared_folder_uid: "{{ other_shared_uid }}", folder_name: "Ops\tEU"}}
+      - {args: {shared_folder_uid: "{{ databases_uid }}"}}
+
+  - assert:
+      that:
+        - failed.results | map(attribute='failed') | unique | list == [true]
+        - failed.results | map(attribute='changed') | unique | list == [false]
+        - failed.results | map(attribute='msg') | list == expected.failed
+        - omitted.folder_uid == shared_uid
+
+  - name: "rescue sees the failure"
+    block:
+      - keeper_get_folder:
+          shared_folder_uid: "{{ shared_uid }}"
+          folder_name: "Nope"
+      - set_fact:
+          ran_after_failure: true
+    rescue:
+      - assert:
+          that:
+            - ansible_failed_result is failed
+            - ansible_failed_result is not changed
+            - ansible_failed_result.msg == expected.failed[0]
+      - set_fact:
+          rescue_ran: true
+
+  - name: "failed_when works on a failed lookup"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "Nope"
+    register: "filtered"
+    failed_when: "filtered.failed and 'No folder named' not in filtered.msg"
+
+  - name: "A failed_when that accepts only the not found error does not hide a misspelled option"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_nme: "Databases"
+    register: "not_filtered"
+    failed_when: "not_filtered.failed and 'No folder named' not in not_filtered.msg"
+    ignore_errors: yes
+
+  - assert:
+      that:
+        - rescue_ran | default(false)
+        - ran_after_failure is not defined
+        - filtered is not failed
+        - filtered.msg == expected.failed[0]
+        - not_filtered is failed
+        - not_filtered.msg.startswith(expected.typo)
+
+# The action group of this collection gives its module_defaults to every module in the group. keeper_get_folder uses
+# shared_folder_uid, ignores cache, and still fails on a misspelled option.
+- name: Keeper Get Folder With Group Defaults
+  hosts: "my_systems"
+  gather_facts: no
+
+  module_defaults:
+    group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager:
+      shared_folder_uid: "{{ shared_uid }}"
+      cache: "not-a-real-record-cache"
+
+  tasks:
+  - keepersecurity.keeper_secrets_manager.keeper_get_folder:
+      folder_name: "Databases"
+    register: "group_found"
+
+  - keepersecurity.keeper_secrets_manager.keeper_get_folder:
+      folder_nme: "Databases"
+    register: "group_typo"
+    ignore_errors: yes
+
+  - assert:
+      that:
+        - group_found.folder_uid == databases_uid
+        - group_found.shared_folder_uid == shared_uid
+        - group_typo.msg.startswith(expected.typo)
+
+# The same defaults as one template string: the plugin resolves it to know which options to ignore.
+- name: Keeper Get Folder With Group Defaults From A Variable
+  hosts: "my_systems"
+  gather_facts: no
+
+  vars:
+    keeper_group_defaults:
+      shared_folder_uid: "{{ shared_uid }}"
+      cache: "not-a-real-record-cache"
+
+  module_defaults:
+    group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager: "{{ keeper_group_defaults }}"
+
+  tasks:
+  - keepersecurity.keeper_secrets_manager.keeper_get_folder:
+      folder_name: "Databases"
+    register: "templated_found"
+
+  - assert:
+      that:
+        - templated_found.folder_uid == databases_uid

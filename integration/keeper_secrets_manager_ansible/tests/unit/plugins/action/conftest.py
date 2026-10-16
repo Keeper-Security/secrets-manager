@@ -4,6 +4,7 @@ option checks, the plugin wiring, and the KeeperAnsible method are covered by th
 """
 import importlib
 import sys
+import threading
 import types
 from unittest.mock import MagicMock, create_autospec, patch
 
@@ -12,6 +13,23 @@ from keeper_secrets_manager_core.core import SecretsManager
 from keeper_secrets_manager_core.dto.dtos import KeeperFolder
 
 from keeper_secrets_manager_ansible import KeeperAnsible
+
+def bounded(call):
+    # A parent-chain walk that does not detect a cycle loops forever. A thread turns that into a failed test.
+    outcome = {}
+
+    def target():
+        try:
+            outcome["result"] = call()
+        except Exception as err:
+            outcome["error"] = err
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(30)
+    assert not thread.is_alive(), "the call did not end; a loop in the code under test has no guard"
+    return outcome
+
 
 GROUP = "group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager"
 
@@ -89,10 +107,7 @@ class FakeSdk(object):
 
 @pytest.fixture
 def make_sdk():
-    """make_sdk(folders, records=None, delete_response=ok, folders_after=None, deleted_uids=None, autospec=False).
-
-    A delete_response of None is a real response value, so the default is a function that answers ok.
-    """
+    """A delete_response of None is a real response value, so the default is a function that answers ok."""
     return lambda folders, **kwargs: FakeSdk(folders, **kwargs)
 
 
