@@ -24,7 +24,7 @@ version_added: "1.0.1"
 description:
     - Cleans up the cache file, if they exists.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
 attributes:
   check_mode:
     support: full

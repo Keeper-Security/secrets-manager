@@ -34,7 +34,7 @@ attributes:
 notes:
   - Check mode requires an initialized Keeper configuration.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
 options:
   uid:
     description:

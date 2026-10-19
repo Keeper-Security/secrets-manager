@@ -28,7 +28,7 @@ description:
     - Can use Keeper notation or separate uid, field type, and file/field to specify the record.
     - Has the same options at the normal Ansible copy module.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
 notes:
   - Check mode requires an initialized Keeper configuration.
 options:
@@ -51,7 +51,7 @@ options:
       and a wrong keeper_record_cache_secret.
     type: str
     required: no
-    version_added: '1.2.0'  
+    version_added: '1.2.0'
   field:
     description:
     - The label, or type, of the standard field in record that contains the value.

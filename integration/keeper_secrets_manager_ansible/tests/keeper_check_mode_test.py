@@ -1,4 +1,3 @@
-import ast
 import base64
 import importlib
 import importlib.util
@@ -21,7 +20,6 @@ from keeper_secrets_manager_core.dto.dtos import KeeperFolder
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_helper.record import Record
 
-import keeper_secrets_manager_ansible.plugins
 from keeper_secrets_manager_ansible import KeeperAnsible, KeeperFieldType
 from .ansible_test_framework import AnsibleTestFramework
 
@@ -30,7 +28,6 @@ SHARED_UID = "SHARED_FOLDER_UID"
 SUBFOLDER_UID = "SUBFOLDER_UID"
 CHECK_MODE_POST = "KeeperAnsible._check_mode_caching_post_function"
 NORMAL_POST = "KeeperAnsible._caching_post_function"
-PLUGIN_DIR = Path(keeper_secrets_manager_ansible.plugins.__file__).parent
 PLAYBOOK_DIR = Path(__file__).parent / "ansible_example" / "playbooks"
 
 
@@ -357,72 +354,6 @@ class KeeperCheckModeHelperTest(unittest.TestCase):
         keeper.client.custom_post_function = queue.post_method
         return keeper
 
-    def test_create_record_validates_payload_without_creating_a_record(self):
-        keeper = _keeper()
-        record = Record(version="v3").create_from_field_list(
-            record_type="login", title="Dry Run Record", fields=[]
-        )[0].get_record_create_obj()
-        with patch.object(keeper.client, "get_folders", return_value=_folders()), \
-                patch.object(keeper.client, "create_secret_with_options") as create_record, \
-                patch.object(keeper.client, "_post_query") as post:
-            uid = keeper.create_record(
-                record, SHARED_UID, subfolder_uid=SUBFOLDER_UID, check_mode=True
-            )
-            self.assertIsNone(uid)
-            create_record.assert_not_called()
-            post.assert_not_called()
-
-    def test_create_record_reports_missing_folder_and_owner_key_in_check_mode(self):
-        record = Record(version="v3").create_from_field_list(
-            record_type="login", title="Dry Run Record", fields=[]
-        )[0].get_record_create_obj()
-        for missing, message in (("folder", "folder key for SHARED_FOLDER_UID not found"),
-                                 ("owner_key", "owner key is missing")):
-            with self.subTest(missing=missing):
-                keeper = _keeper()
-                if missing == "owner_key":
-                    keeper.client.config.delete(ConfigKeys.KEY_OWNER_PUBLIC_KEY)
-                folders = [] if missing == "folder" else _folders()
-                with patch.object(keeper.client, "get_folders", return_value=folders), \
-                        patch.object(keeper.client, "create_secret_with_options") as create_record:
-                    with self.assertRaisesRegex(Exception, message):
-                        keeper.create_record(record, SHARED_UID, check_mode=True)
-                    create_record.assert_not_called()
-
-    def test_create_folder_predicts_new_and_existing_folders_without_creating(self):
-        for existing in (False, True):
-            with self.subTest(existing=existing):
-                keeper = _keeper()
-                with patch.object(keeper.client, "get_folders", return_value=_folders(existing)), \
-                        patch.object(keeper.client, "create_folder") as create_folder, \
-                        patch.object(keeper.client, "_post_query") as post:
-                    uid, changed = keeper.create_folder(
-                        "New Folder", SHARED_UID, subfolder_uid=SUBFOLDER_UID, check_mode=True
-                    )
-                    self.assertEqual(changed, not existing)
-                    self.assertEqual(uid, "EXISTING_FOLDER_UID" if existing else None)
-                    create_folder.assert_not_called()
-                    post.assert_not_called()
-
-    def test_create_folder_rejects_a_missing_shared_folder_in_check_mode(self):
-        keeper = _keeper()
-        with patch.object(keeper.client, "get_folders", return_value=[]), \
-                patch.object(keeper.client, "create_folder") as create_folder:
-            with self.assertRaisesRegex(Exception, "folder key for SHARED_FOLDER_UID not found"):
-                keeper.create_folder("New Folder", SHARED_UID, check_mode=True)
-            create_folder.assert_not_called()
-
-    def test_create_folder_check_mode_reports_the_sdk_payload_error(self):
-        keeper = _keeper()
-        with patch.object(keeper.client, "get_folders", return_value=_folders()), \
-                patch.object(keeper.client, "prepare_create_folder_payload",
-                             side_effect=ValueError("payload rejected")) as prepare, \
-                patch.object(keeper.client, "create_folder") as create_folder:
-            with self.assertRaisesRegex(Exception, "payload rejected"):
-                keeper.create_folder("New Folder", SHARED_UID, subfolder_uid=SUBFOLDER_UID, check_mode=True)
-            prepare.assert_called_once()
-            create_folder.assert_not_called()
-
     def test_set_validates_each_writable_field_without_saving_in_check_mode(self):
         for field_type in (KeeperFieldType.FIELD, KeeperFieldType.CUSTOM_FIELD, KeeperFieldType.NOTES):
             with self.subTest(field_type=field_type):
@@ -476,50 +407,6 @@ class KeeperCheckModeHelperTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "record not found"):
                 keeper.set_value(KeeperFieldType.FIELD, "password", "value", uid="RECORD_UID", check_mode=True)
             save.assert_not_called()
-
-    def test_remove_reads_record_but_does_not_delete_in_check_mode(self):
-        keeper = _keeper()
-        record = SimpleNamespace(uid="RECORD_UID", title="Record Title")
-        with patch.object(keeper.client, "get_secrets", return_value=[record]) as get_secrets, \
-                patch.object(keeper.client, "delete_secret") as delete:
-            keeper.remove_record(uids="RECORD_UID", check_mode=True)
-            get_secrets.assert_called_once()
-            delete.assert_not_called()
-
-    def test_remove_still_rejects_ambiguous_titles_in_check_mode(self):
-        keeper = _keeper()
-        records = [SimpleNamespace(uid="FIRST_UID", title="Duplicate Title"),
-                   SimpleNamespace(uid="SECOND_UID", title="Duplicate Title")]
-        with patch.object(keeper.client, "get_secrets", return_value=records), \
-                patch.object(keeper.client, "delete_secret") as delete:
-            with self.assertRaisesRegex(Exception, "Found multiple records"):
-                keeper.remove_record(titles="Duplicate Title", check_mode=True)
-            delete.assert_not_called()
-
-    def test_remove_requires_the_server_to_confirm_the_delete(self):
-        record = SimpleNamespace(uid="RECORD_UID", title="Record Title")
-        for response, message in (
-            ([{"recordUid": "RECORD_UID", "responseCode": "ok"}], None),
-            ([{"recordUid": "RECORD_UID", "responseCode": "access_denied", "errorMessage": "Not allowed"}],
-             r'did not delete record "Record Title" \(UID RECORD_UID\). It returned access_denied: Not allowed'),
-            ([{"recordUid": "RECORD_UID", "responseCode": "not_found"}], "It returned not_found"),
-            ([{"recordUid": "RECORD_UID"}], "It returned no response code"),
-            (None, "did not confirm the delete"),
-            ([], "did not confirm the delete"),
-            ({"records": []}, "did not confirm the delete"),
-            ([{"recordUid": "OTHER_UID", "responseCode": "ok"}], "did not confirm the delete"),
-            ([{"recordUid": "RECORD_UID", "responseCode": "ok"}] * 2, "did not confirm the delete"),
-        ):
-            with self.subTest(response=response):
-                keeper = _keeper()
-                with patch.object(keeper.client, "get_secrets", return_value=[record]), \
-                        patch.object(keeper.client, "delete_secret", return_value=response) as delete:
-                    if message is None:
-                        keeper.remove_record(uids="RECORD_UID")
-                    else:
-                        with self.assertRaisesRegex(RuntimeError, message):
-                            keeper.remove_record(uids="RECORD_UID")
-                    delete.assert_called_once_with(["RECORD_UID"])
 
     def test_helpers_use_the_task_check_mode_when_the_argument_is_missing(self):
         keeper = _keeper()
@@ -640,35 +527,6 @@ class KeeperInitCheckModeTest(unittest.TestCase):
         # Compare by name: the test framework reloads the ansible modules, so the class object can differ.
         self.assertEqual(type(context.exception).__name__, "AnsibleActionSkip", repr(context.exception))
         init.assert_not_called()
-
-
-class _UniqueKeyLoader(yaml.SafeLoader):
-    # YAML keeps the last value of a duplicate key without an error. A merge can add a second key with no conflict.
-    def construct_mapping(self, node, deep=False):
-        keys = set()
-        for key_node, _ in node.value:
-            key = self.construct_object(key_node, deep=deep)
-            if key in keys:
-                raise yaml.constructor.ConstructorError(None, None, "duplicate key {!r}".format(key),
-                                                        key_node.start_mark)
-            keys.add(key)
-        return super(_UniqueKeyLoader, self).construct_mapping(node, deep=deep)
-
-
-class KeeperDocumentationTest(unittest.TestCase):
-
-    def test_documentation_has_no_duplicate_keys(self):
-        paths = sorted(PLUGIN_DIR.glob("action/keeper_*.py")) + sorted(PLUGIN_DIR.glob("modules/keeper_*.py")) + \
-            [PLUGIN_DIR / "lookup" / "keeper.py"]
-        self.assertGreater(len(paths), 30)
-        for path in paths:
-            for node in ast.parse(path.read_text()).body:
-                if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Constant):
-                    continue
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id in ("DOCUMENTATION", "RETURN"):
-                        with self.subTest(path=path.name, block=target.id):
-                            yaml.load(node.value.value, Loader=_UniqueKeyLoader)
 
 
 class KeeperCheckModePlaybookTest(unittest.TestCase):

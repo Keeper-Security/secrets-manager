@@ -1,7 +1,9 @@
 import os
+import sys
 import tempfile
+import unittest
 
-from . import keeper_update_folder_playbook_test as playbook_tests
+from .ansible_test_framework import AnsibleTestFramework
 from .folder_fake_server import FakeKeeperServer
 
 
@@ -13,7 +15,7 @@ FOLDER_UID = "FOLDER_UID"
 SIBLING_UID = "SIBLING_UID"
 
 
-class KeeperFolderVaultTest(playbook_tests._PlaybookTestCase):
+class KeeperFolderVaultTest(unittest.TestCase):
     """
     Inline !vault values in the task args of keeper_get_folder, keeper_update_folder, and keeper_delete_folder.
 
@@ -21,6 +23,13 @@ class KeeperFolderVaultTest(playbook_tests._PlaybookTestCase):
     a str. The option check must accept it as a string, and the value must be used decrypted: the right folder must
     be found, renamed, and deleted.
     """
+
+    @classmethod
+    def setUpClass(cls):
+        # A test module that imported a plugin class earlier left ansible's plugin loader with the default paths.
+        for module in list(sys.modules):
+            if module.startswith("ansible"):
+                sys.modules.pop(module, None)
 
     def test_inline_vault_values_find_rename_and_delete_the_right_folder(self):
         server = FakeKeeperServer(folders=[
@@ -36,13 +45,16 @@ class KeeperFolderVaultTest(playbook_tests._PlaybookTestCase):
         # The framework imports ansible again for each run, so the password file takes effect.
         os.environ["ANSIBLE_VAULT_PASSWORD_FILE"] = password_file
         try:
-            result, out, err = self.run_playbook(server, "keeper_folder_vault.yml", {
+            framework = AnsibleTestFramework(playbook="keeper_folder_vault.yml", vars={
                 "shared_folder_uid": SHARED_FOLDER_UID,
                 "folder_uid": FOLDER_UID,
             })
+            with server.patch():
+                result, out, err = framework.run()
 
             # 2 lookups, a rename, a delete, and the assert.
-            self.assert_recap(result, out, err, ok=5, changed=2)
+            self.assertEqual({k: result.get(k) for k in ("ok", "changed", "failed", "skipped", "unreachable")},
+                             {"ok": 5, "changed": 2, "failed": 0, "skipped": 0, "unreachable": 0}, out + err)
             self.assertEqual(server.calls("update_folder"),
                              [{"path": "update_folder", "folder_uid": FOLDER_UID, "folder_name": "Production"}],
                              "the rename must use the decrypted UID and the decrypted new name")

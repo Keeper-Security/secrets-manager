@@ -1,5 +1,4 @@
 import logging
-import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -9,7 +8,6 @@ from keeper_secrets_manager_core.keeper_globals import logger_name
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 
 from keeper_secrets_manager_ansible import KeeperAnsible, KeeperFolderError
-from .ansible_test_framework import AnsibleTestFramework
 from .folder_fake_server import FakeKeeperServer
 
 KEY = b"k" * 32
@@ -222,40 +220,5 @@ class RealSdkUnreadableFolderTest(unittest.TestCase):
                 self.assertEqual(outcome, "failed")
                 self.assertTrue(message.startswith("Cannot get folders: "), message)
                 self.assertIsNotNone(server.folder("GCM_UID"))
-        finally:
-            server.cleanup()
-
-
-class UnreadableFolderPlaybookTest(unittest.TestCase):
-    """The capture also works in the forked Ansible worker, where the action plugin runs."""
-
-    @classmethod
-    def setUpClass(cls):
-        for module in list(sys.modules):
-            if module.startswith("ansible"):
-                sys.modules.pop(module, None)
-
-    def test_delete_task_fails_for_a_folder_that_the_sdk_skipped(self):
-        server = FakeKeeperServer(folders=[
-            {"uid": "SF", "name": "Infrastructure", "parent": None},
-            {"uid": "UNREADABLE_UID", "name": "Hidden", "parent": "SF"},
-        ])
-
-        def get_folders_that_skips(sm):
-            # The real SDK reads the folders from the fake server; then the one folder is dropped, with the same
-            # warning that SDK 17.4.0 logs.
-            folders = SecretsManager.fetch_and_decrypt_folders(sm)
-            sm.logger.warning(SKIP_MESSAGE, "UNREADABLE_UID", "Invalid padding bytes.")
-            return [f for f in folders if f.folder_uid != "UNREADABLE_UID"]
-
-        try:
-            with server.patch(), patch.object(SecretsManager, "get_folders", autospec=True,
-                                              side_effect=get_folders_that_skips):
-                a = AnsibleTestFramework(playbook="keeper_folder_unreadable.yml", vars={"folder_uid": "UNREADABLE_UID"})
-                result, out, err = a.run()
-            self.assertEqual(result.get("failed"), 0, out + err)
-            self.assertEqual(result.get("ignored"), 1, out + err)
-            self.assertEqual(server.calls("delete_folder"), [], "nothing may be deleted")
-            self.assertIsNotNone(server.folder("UNREADABLE_UID"))
         finally:
             server.cleanup()

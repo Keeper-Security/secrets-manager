@@ -30,7 +30,7 @@ description:
     - For action that accept a cache, template the registered value into the cache variables.
     - "To hide the cache string, set 'no_log: True' in the variables."
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
 notes:
   - Check mode requires an initialized Keeper configuration.
 options:
@@ -38,11 +38,13 @@ options:
     description:
     - The UID of the Keeper Vault records.
     type: list
+    elements: str
     required: no
   titles:
     description:
     - The Title of the Keeper Vault records.
     type: list
+    elements: str
     required: no
 '''
 
@@ -61,7 +63,7 @@ EXAMPLES = r'''
 
 - name: Cache records. Will use keeper_record_cache_secret from above.
   keeper_cache_records:
-    uids: 
+    uids:
       - XXX
       - YYYY
     titles:

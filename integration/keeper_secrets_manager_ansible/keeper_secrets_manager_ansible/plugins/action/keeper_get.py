@@ -27,7 +27,7 @@ description:
     - Copy a value from the Keeper Vault into a variable.
     - If value is not a literal value, the structure will be retrieved.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
 notes:
   - Check mode requires an initialized Keeper configuration.
 options:
@@ -50,7 +50,7 @@ options:
       and a wrong keeper_record_cache_secret.
     type: str
     required: no
-    version_added: '1.2.0'  
+    version_added: '1.2.0'
   field:
     description:
     - The label, or type, of the standard field in record that contains the value.
@@ -84,7 +84,7 @@ options:
     - Setting this value 'yes' will cause array_index and value_key to be ignored.
     type: bool
     default: no
-    required: no 
+    required: no
   array_index:
     description:
     - Used to retrieve items from an array value.
@@ -110,7 +110,7 @@ options:
     - See https://docs.keeper.io/secrets-manager/secrets-manager/about/keeper-notation for more information/
     type: str
     required: no
-    version_added: '1.0.1'  
+    version_added: '1.0.1'
 '''
 
 EXAMPLES = r'''
@@ -139,6 +139,7 @@ RETURN = r'''
 value:
   description: The secret value
   returned: success
+  type: raw
   sample: |
     [
       {
@@ -152,7 +153,7 @@ value:
         "region": "AD",
         "type": "Mobile"
       }
-    ]      
+    ]
 '''
 
 display = Display()

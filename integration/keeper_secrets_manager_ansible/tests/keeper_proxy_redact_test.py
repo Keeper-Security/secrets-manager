@@ -193,20 +193,32 @@ class KeeperUnparsableUrlTest(unittest.TestCase):
         keeper.client.custom_post_function = queue.post_method
         return keeper.get_value(KeeperFieldType.FILE, "My File", uid=record.uid)
 
-    def test_a_bad_keeper_url_without_a_proxy_does_not_mention_a_proxy(self):
+    def test_a_bad_keeper_url_does_not_blame_the_proxy(self):
         # The SDK reads the server from KSM_HOSTNAME before the config. A non-numeric port cannot be parsed.
-        os.environ["KSM_HOSTNAME"] = "vault.test:abc"
-        error = self._fail(lambda k: k.get_folders())
-        self.assertIn("vault.test", str(error))
-        self.assertNotIn("proxy", str(error).lower())
+        for proxy in (None, "http://alice:hunter2@127.0.0.1:9"):
+            with self.subTest(proxy=proxy):
+                if proxy is not None:
+                    os.environ["https_proxy"] = proxy
+                os.environ["KSM_HOSTNAME"] = "vault.test:abc"
+                error = self._fail(lambda k: k.get_folders())
+                self.assertIn("vault.test", str(error))
+                self.assertNotIn("proxy", str(error).lower())
+                self.assertNotIn("hunter2", _full_text(error))
+                os.environ.pop("https_proxy", None)
 
-    def test_a_bad_file_url_without_a_proxy_does_not_mention_a_proxy(self):
-        keeper = KeeperAnsible(task_vars={"keeper_config": self.config})
-        error = self._fail(self._file_download, keeper)
-        # A real file URL is a presigned link that works for anyone who holds it, so the message must not echo it.
-        self.assertIn("file", str(error).lower())
-        self.assertNotIn("files.test", str(error))
-        self.assertNotIn("proxy", str(error).lower())
+    def test_a_bad_file_url_does_not_blame_the_proxy(self):
+        for proxy in (None, "http://alice:hunter2@127.0.0.1:9"):
+            with self.subTest(proxy=proxy):
+                if proxy is not None:
+                    os.environ["https_proxy"] = proxy
+                error = self._fail(self._file_download, KeeperAnsible(task_vars={"keeper_config": self.config}))
+                # A real file URL is a presigned link that works for anyone who holds it, so the message must not
+                # echo it.
+                self.assertIn("file", str(error).lower())
+                self.assertNotIn("files.test", str(error))
+                self.assertNotIn("proxy", str(error).lower())
+                self.assertNotIn("hunter2", _full_text(error))
+                os.environ.pop("https_proxy", None)
 
     def test_a_bad_keeper_url_with_a_user_name_and_password_does_not_echo_them(self):
         # The message names the host the user set. A host written as user:password@host must lose the user part.
@@ -215,22 +227,6 @@ class KeeperUnparsableUrlTest(unittest.TestCase):
         self.assertIn("vault.test", str(error))
         self.assertNotIn("hunter2", _full_text(error))
         self.assertNotIn("alice", _full_text(error))
-
-    def test_a_bad_keeper_url_with_a_valid_proxy_does_not_blame_the_proxy(self):
-        os.environ["https_proxy"] = "http://alice:hunter2@127.0.0.1:9"
-        os.environ["KSM_HOSTNAME"] = "vault.test:abc"
-        error = self._fail(lambda k: k.get_folders())
-        self.assertIn("vault.test", str(error))
-        self.assertNotIn("proxy", str(error).lower())
-        self.assertNotIn("hunter2", _full_text(error))
-
-    def test_a_bad_file_url_with_a_valid_proxy_does_not_blame_the_proxy(self):
-        os.environ["https_proxy"] = "http://alice:hunter2@127.0.0.1:9"
-        error = self._fail(self._file_download)
-        self.assertIn("file", str(error).lower())
-        self.assertNotIn("files.test", str(error))
-        self.assertNotIn("proxy", str(error).lower())
-        self.assertNotIn("hunter2", _full_text(error))
 
     def test_a_proxy_in_all_proxy_is_hidden_and_the_message_names_only_that_variable(self):
         os.environ["ALL_PROXY"] = "http://alice:S3c#ret@127.0.0.1:9"

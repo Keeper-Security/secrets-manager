@@ -126,16 +126,13 @@ class TowerExecutionEnvironmentTest(unittest.TestCase):
                     f"setup.py minimum of {expected[package]}",
                 )
 
-    def test_ee_sdk_minimum_versions(self):
-        self._assert_sdk_minimum_versions(
-            EE_PATH / self.spec["dependencies"]["python"]
-        )
-
-    def test_collection_sdk_minimum_versions(self):
-        self._assert_sdk_minimum_versions(COLLECTION_PATH / "requirements.txt")
-
-    def test_integration_sdk_minimum_versions(self):
-        self._assert_sdk_minimum_versions(INTEGRATION_PATH / "requirements.txt")
+    def test_sdk_minimum_versions(self):
+        for requirements_path in (
+            EE_PATH / self.spec["dependencies"]["python"],
+            COLLECTION_PATH / "requirements.txt",
+            INTEGRATION_PATH / "requirements.txt",
+        ):
+            self._assert_sdk_minimum_versions(requirements_path)
 
     def test_required_packages_in_additional_build_steps(self):
         packages = _packages_from_build_steps(self.spec)

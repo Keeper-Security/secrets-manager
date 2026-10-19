@@ -47,24 +47,22 @@ class KeeperFolderLifecycleTest(unittest.TestCase):
                 )
                 result, out, err = a.run()
 
-            # 13 tasks. The 2 that fail on purpose are counted as ok, and as ignored.
+            # 10 tasks. The lookup of the deleted folder fails on purpose, and is counted as ok and as ignored.
             self.assertEqual(result.get("failed"), 0, "a task failed: " + out + err)
-            self.assertEqual(result.get("ignored"), 2, "the 2 expected failures did not happen")
-            self.assertEqual(result.get("ok"), 13, "not every task ran")
+            self.assertEqual(result.get("ignored"), 1, "the expected failure did not happen")
+            self.assertEqual(result.get("ok"), 10, "not every task ran")
             # keeper_create_folder, the first rename, and the first delete.
             self.assertEqual(result.get("changed"), 3, "3 tasks should change the vault")
 
-            self.assertEqual(
-                [c["folder_name"] for c in server.calls("update_folder")], ["Production"],
-                "the second rename must not send an update")
+            self.assertEqual([c["folder_name"] for c in server.calls("update_folder")], ["Production"])
             self.assertEqual(len(server.calls("create_folder")), 1)
             deletes = server.calls("delete_folder")
-            self.assertEqual(len(deletes), 1, "only the first delete of the empty folder may reach the server")
+            self.assertEqual(len(deletes), 1)
             self.assertFalse(deletes[0]["force"])
 
             self.assertEqual(
                 sorted(f["uid"] for f in server.folders()), ["SHARED_FOLDER_UID", "SUBFOLDER_UID"],
-                "the non-empty folder must still exist, and the new folder must be gone")
+                "the new folder must be gone, and the folders it was made in must stay")
             self.assertEqual([r["uid"] for r in server.records()], ["RECORD_UID"])
         finally:
             server.cleanup()

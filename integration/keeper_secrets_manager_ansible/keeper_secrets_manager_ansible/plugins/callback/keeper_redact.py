@@ -10,12 +10,6 @@
 # Contact: ops@keepersecurity.com
 #
 
-from ansible.plugins.callback.default import CallbackModule as DefaultCallbackBase
-from collections.abc import Mapping
-import hashlib
-import json
-
-
 DOCUMENTATION = '''
     name: keeper_redact
     type: stdout
@@ -33,6 +27,11 @@ DOCUMENTATION = '''
     requirements:
       - set as stdout in configuration
 '''
+
+from ansible.plugins.callback.default import CallbackModule as DefaultCallbackBase
+from collections.abc import Mapping
+import hashlib
+import json
 
 REDACTED = "****"
 

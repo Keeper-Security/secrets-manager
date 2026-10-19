@@ -15,6 +15,7 @@ from keeper_secrets_manager_ansible import KeeperAnsible
 
 PLUGIN_DIR = Path(keeper_secrets_manager_ansible.plugins.__file__).parent
 MODULES = sorted(path.stem for path in PLUGIN_DIR.glob("modules/keeper_*.py"))
+FOLDER_MODULES = {"keeper_create_folder", "keeper_delete_folder", "keeper_get_folder", "keeper_update_folder"}
 
 
 def _unload_ansible():
@@ -49,6 +50,19 @@ def _description_items(value, where=""):
     return found
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    # YAML keeps the last value of a duplicate key without an error. A merge can add a second key with no conflict.
+    def construct_mapping(self, node, deep=False):
+        keys = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in keys:
+                raise yaml.constructor.ConstructorError(None, None, "duplicate key {!r}".format(key),
+                                                        key_node.start_mark)
+            keys.add(key)
+        return super(_UniqueKeyLoader, self).construct_mapping(node, deep=deep)
+
+
 class KeeperDocumentationFormatTest(unittest.TestCase):
 
     def test_every_description_item_is_text(self):
@@ -66,16 +80,28 @@ class KeeperDocumentationFormatTest(unittest.TestCase):
         # ansible-doc reads only plugins/modules, and the action plugin has its own copy.
         for name in MODULES:
             module, action = _blocks(PLUGIN_DIR / "modules" / (name + ".py")), _blocks(PLUGIN_DIR / "action" / (name + ".py"))
+            if name in FOLDER_MODULES:
+                with self.subTest(module=name):
+                    self.assertEqual(set(module), {"DOCUMENTATION", "EXAMPLES", "RETURN"})
+                    self.assertEqual(module, action)
             for block in ("DOCUMENTATION", "RETURN"):
                 with self.subTest(module=name, block=block):
                     self.assertEqual(yaml.safe_load(module.get(block, "")), yaml.safe_load(action.get(block, "")))
 
-    def test_examples_are_yaml(self):
-        for path in sorted(PLUGIN_DIR.glob("modules/keeper_*.py")) + [PLUGIN_DIR / "lookup" / "keeper.py"]:
-            text = _blocks(path).get("EXAMPLES")
-            if text:
-                with self.subTest(path="{}/{}".format(path.parent.name, path.name)):
-                    self.assertIsInstance(yaml.safe_load(text), list)
+    # ansible-test sanity checks EXAMPLES and the module docs. This test stays because it also reads the copies of
+    # the docs in the action plugins, which sanity does not see.
+    def test_documentation_has_no_duplicate_keys(self):
+        paths = sorted(PLUGIN_DIR.glob("action/keeper_*.py")) + sorted(PLUGIN_DIR.glob("modules/keeper_*.py")) + \
+            [PLUGIN_DIR / "lookup" / "keeper.py"]
+        self.assertGreater(len(paths), 30)
+        for path in paths:
+            for node in ast.parse(path.read_text()).body:
+                if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Constant):
+                    continue
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id in ("DOCUMENTATION", "RETURN"):
+                        with self.subTest(path=path.name, block=target.id):
+                            yaml.load(node.value.value, Loader=_UniqueKeyLoader)
 
     def test_lookup_documents_its_name(self):
         documentation = yaml.safe_load(_blocks(PLUGIN_DIR / "lookup" / "keeper.py")["DOCUMENTATION"])
@@ -113,6 +139,9 @@ class KeeperAnsibleDocTest(unittest.TestCase):
         plugins = _documented_plugins()
         self.assertIn(("callback", "keeper_redact"), plugins)
         self.assertIn(("lookup", "keeper"), plugins)
+        by_type = {}
+        for doc_type, name in plugins:
+            by_type.setdefault(doc_type, []).append(name)
 
         with tempfile.TemporaryDirectory() as home:
             env = dict(os.environ, HOME=home, ANSIBLE_HOME=home, ANSIBLE_LOCAL_TEMP=home,
@@ -120,16 +149,19 @@ class KeeperAnsibleDocTest(unittest.TestCase):
             env.pop("ANSIBLE_CONFIG", None)
             for directory, (_, variable) in DOC_TYPES.items():
                 env[variable] = str(PLUGIN_DIR / directory)
-            for doc_type, name in plugins:
-                with self.subTest(plugin="{}/{}".format(doc_type, name)):
-                    result = subprocess.run([sys.executable, "-m", "ansible.cli.doc", "-t", doc_type, name], env=env,
+            for doc_type, names in by_type.items():
+                with self.subTest(plugin_type=doc_type):
+                    result = subprocess.run([sys.executable, "-m", "ansible.cli.doc", "-t", doc_type, *names], env=env,
                                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                             universal_newlines=True)
                     self.assertEqual(result.returncode, 0, result.stdout)
                     # A plugin that is not on the search path only warns and exits 0. The "not found" warning starts with
                     # that prefix. Anchor to the line start because option text can contain the same words.
                     self.assertNotRegex(result.stdout, r"(?m)^\[?(ERROR|WARNING)")
-                    self.assertIn(name, result.stdout)
+                    # Older cores render "> KEEPER_GET (path)", newer ones "> MODULE keeper_get (path)".
+                    rendered = [line.split("(", 1)[0].split()[-1].lower() for line in result.stdout.splitlines()
+                                if line.startswith("> ")]
+                    self.assertCountEqual(rendered, names, result.stdout)
 
 
 class _Task(object):

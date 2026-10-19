@@ -34,10 +34,10 @@ description:
     - The token can only be used once, so there is not reason to put it into any configuration file.
     - The configuration file output location can be set using the extra variable 'keeper_config_file'.
     - If 'keeper_config_file' is not defined, the configuration file will be written to the current directory.
-    - By default, the configuration file will be a YAML file. If the extension of the 'keeper_config_file' is JSON, a 
+    - By default, the configuration file will be a YAML file. If the extension of the 'keeper_config_file' is JSON, a
       JSON file will be created.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
 attributes:
   check_mode:
     support: none
@@ -56,7 +56,7 @@ options:
     - File path and name where to write the configuration file.
     - By default, a YAML file is created with key used by Ansible.
     - If the extension is JSON, the standard JSON config will be created.
-    - If not set, a YAML configuration 
+    - If not set, a YAML configuration
     type: str
     required: no
   show_config:
@@ -64,9 +64,9 @@ options:
     - File path and name where to write the configuration file.
     - By default, a YAML file is created with key used by Ansible.
     - If the extension is JSON, the standard JSON config will be created.
-    - If not set, a YAML configuration 
+    - If not set, a YAML configuration
     type: str
-    required: no    
+    required: no
 '''
 
 EXAMPLES = r'''
@@ -85,27 +85,33 @@ changed:
 keeper_client_id:
   description: Client ID for the application.
   returned: when show_config is true
+  type: str
   sample: i31TDFtdZE .... oiCQ
 keeper_private_key:
   description: Private key for the application.
   returned: when show_config is true
+  type: str
   sample: MIGHAgEAMB .... JMJRzpE
 keeper_app_key:
   description: Application key for the application.
   returned: when show_config is true
+  type: str
   sample: zhLwB .... LPGY
 keeper_app_owner_public_key:
   description: Public key that allows creation of records.
   returned: when show_config is true
-  version_added: '1.1.2' 
+  type: str
+  version_added: '1.1.2'
   sample: zhLwB .... LPGY
 keeper_server_public_key_id:
   description: Id of the public key to use when sending request.
   returned: when show_config is true
+  type: str
   sample: 10
 keeper_hostname:
   description: Hostname to use ending request.
   returned: when show_config is true
+  type: str
   sample: keepersecurity.com
 '''
 

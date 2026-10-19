@@ -23,7 +23,7 @@ description:
     - Allows updating a record in an existing record in the Keeper Vault
     - Currently cannot add files to the record.
 author:
-    - John Walstra
+    - John Walstra (@jwalstra-keeper)
 attributes:
   check_mode:
     support: full
@@ -51,7 +51,7 @@ options:
     - Using keeper_set will not update the cache. Use the keeper_cache_records action again to get a new cache.
     type: str
     required: no
-    version_added: '1.2.0'  
+    version_added: '1.2.0'
   field:
     description:
     - The label, or type, of the standard field in record that contains the value.
@@ -81,7 +81,7 @@ options:
     - The new value of the field. A field with more than one value takes a list.
     type: str
     required: no
-    version_added: '1.0.1'  
+    version_added: '1.0.1'
 '''
 
 EXAMPLES = r'''
@@ -112,5 +112,5 @@ updated:
   returned: success
   type: bool
   sample: True
-  version_added: '1.0.1'  
+  version_added: '1.0.1'
 '''
