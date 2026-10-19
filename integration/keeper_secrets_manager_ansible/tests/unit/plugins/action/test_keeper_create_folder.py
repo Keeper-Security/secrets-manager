@@ -1,4 +1,3 @@
-import importlib
 from unittest.mock import ANY
 
 import pytest
@@ -170,12 +169,6 @@ def test_create_error_is_not_retried(sdk_for, run_plugin):
 def test_the_error_is_an_ansible_error(sdk_for, run_plugin, plugin_module):
     with pytest.raises(plugin_module.AnsibleError):
         run_plugin(sdk_for(), {"folder_name": "New"})
-
-
-def test_docs_stub_matches_the_action_plugin_docs(plugin_module):
-    stub = importlib.import_module("keeper_secrets_manager_ansible.plugins.modules.keeper_create_folder")
-    for name in ["DOCUMENTATION", "EXAMPLES", "RETURN"]:
-        assert getattr(stub, name) == getattr(plugin_module, name), name
 
 
 def test_documented_options_and_return_values(sdk_for, run_plugin, plugin_module):

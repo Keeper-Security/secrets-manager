@@ -33,6 +33,11 @@ CONFIRMED = object()
 LABEL = '"Record 1" (UID RECORD_UID)'
 NOT_DELETED = "Could not remove record: The Keeper server did not delete record " + LABEL + ". It returned {}."
 NOT_CONFIRMED = "Could not remove record: The Keeper server did not confirm the delete of record " + LABEL + "."
+NOT_FOUND = {"changed": False,
+             "msg": "The record was not found, or it is not shared to this KSM application. Nothing was deleted."}
+DUPLICATE_TITLE = failure(
+    'Could not remove record: Found multiple records for the title "Record 1": RECORD_UID, TWIN_UID. Use a '
+    'single UID to select the record to delete.')
 
 
 @pytest.fixture
@@ -56,6 +61,7 @@ def test_remove_returns_the_record_and_deletes_only_outside_check_mode(vault, ru
     assert run_plugin(sdk, args, check_mode=check_mode) == removed()
     assert [c.args for c in sdk.client.get_secrets.call_args_list] == [r for r in reads]
     assert [c.args for c in sdk.client.delete_secret.call_args_list] == ([] if check_mode else [([UID],)])
+    assert sdk.action_modules[0]._task.args == args
 
 
 @pytest.mark.parametrize("check_mode", [False, True])
@@ -63,18 +69,14 @@ def test_remove_returns_the_record_and_deletes_only_outside_check_mode(vault, ru
 @pytest.mark.parametrize("args", [{"uid": "MISSING_UID"}, {"title": "Missing Title"}], ids=["uid", "title"])
 def test_a_missing_record_is_a_no_op(vault, run_plugin, args, records, check_mode):
     sdk = vault(records)
-    assert run_plugin(sdk, args, check_mode=check_mode) == {
-        "changed": False,
-        "msg": "The record was not found, or it is not shared to this KSM application. Nothing was deleted."}
+    assert run_plugin(sdk, args, check_mode=check_mode) == NOT_FOUND
     sdk.client.delete_secret.assert_not_called()
 
 
 @pytest.mark.parametrize("check_mode", [False, True])
 def test_a_duplicate_title_fails_with_every_uid_and_deletes_nothing(vault, run_plugin, check_mode):
     sdk = vault([rec(), rec("TWIN_UID")])
-    assert run_plugin(sdk, {"title": TITLE}, check_mode=check_mode) == failure(
-        'Could not remove record: Found multiple records for the title "Record 1": RECORD_UID, TWIN_UID. Use a '
-        'single UID to select the record to delete.')
+    assert run_plugin(sdk, {"title": TITLE}, check_mode=check_mode) == DUPLICATE_TITLE
     sdk.client.delete_secret.assert_not_called()
 
 
@@ -122,13 +124,20 @@ def test_sdk_errors_are_task_failures_not_no_ops(vault, run_plugin):
     assert run_plugin(sdk, {"uid": UID}) == failure("Could not remove record: Connection lost")
 
 
-def test_the_cache_option_is_ignored_with_a_warning(vault, run_plugin):
+@pytest.mark.parametrize("check_mode", [False, True])
+@pytest.mark.parametrize("selector, records, expected, reads", [
+    pytest.param({"uid": UID}, [], NOT_FOUND, ([UID],), id="stale_uid"),
+    pytest.param({"title": TITLE}, [rec(), rec("TWIN_UID")], DUPLICATE_TITLE, (), id="partial_title"),
+])
+def test_the_cache_option_is_ignored_with_a_warning(vault, run_plugin, selector, records, expected, reads, check_mode):
     # A cache can hold a record that is deleted already, or hide a second record with the same title.
-    sdk = vault([rec(), rec("TWIN_UID")])
+    sdk = vault(records)
+    args = dict(selector, cache="stale-cache")
     with patch.object(KeeperAnsible, "decrypt", return_value=[rec()]) as decrypt, \
             patch("keeper_secrets_manager_ansible.display.warning") as warning:
-        result = run_plugin(sdk, {"title": TITLE, "cache": "stale-cache"})
-    assert result["failed"] is True and "TWIN_UID" in result["msg"]
+        assert run_plugin(sdk, args, check_mode=check_mode) == expected
+    sdk.client.get_secrets.assert_called_once_with(*reads)
+    assert sdk.action_modules[0]._task.args == args
     decrypt.assert_not_called()
     warning.assert_called_once()
     assert "The cache option of keeper_remove has no effect" in warning.call_args.args[0]

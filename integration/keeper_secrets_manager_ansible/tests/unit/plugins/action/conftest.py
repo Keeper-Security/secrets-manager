@@ -3,6 +3,7 @@ Fixtures for tests of the folder action plugins. They drive the plugin's run() w
 option checks, the plugin wiring, and the KeeperAnsible method are covered by the same test.
 """
 import importlib
+import signal
 import sys
 import threading
 import types
@@ -14,21 +15,32 @@ from keeper_secrets_manager_core.dto.dtos import KeeperFolder
 
 from keeper_secrets_manager_ansible import KeeperAnsible
 
-def bounded(call):
-    # A parent-chain walk that does not detect a cycle loops forever. A thread turns that into a failed test.
-    outcome = {}
 
-    def target():
+class _CallTimeout(BaseException):
+    """Escape the plugin's exception handler and stop a call that does not detect a folder cycle."""
+
+
+def bounded(call, seconds=2):
+    # A thread cannot safely stop a hung call. Ansible's supported POSIX platforms provide interval timers.
+    if not hasattr(signal, "setitimer") or threading.current_thread() is not threading.main_thread():
+        pytest.skip("bounded folder tests require POSIX interval timers in the main thread")
+
+    def expired(signum, frame):
+        raise _CallTimeout()
+
+    previous_handler = signal.signal(signal.SIGALRM, expired)
+    previous_timer = signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
         try:
-            outcome["result"] = call()
+            return {"result": call()}
         except Exception as err:
-            outcome["error"] = err
-
-    thread = threading.Thread(target=target, daemon=True)
-    thread.start()
-    thread.join(30)
-    assert not thread.is_alive(), "the call did not end; a loop in the code under test has no guard"
-    return outcome
+            return {"error": err}
+    except _CallTimeout:
+        pytest.fail("the call did not end in {} seconds; a loop in the code under test has no guard".format(seconds))
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        signal.setitimer(signal.ITIMER_REAL, *previous_timer)
 
 
 GROUP = "group/keepersecurity.keeper_secrets_manager.keeper_secrets_manager"

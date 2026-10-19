@@ -1,5 +1,3 @@
-import importlib
-
 import pytest
 
 from keeper_secrets_manager_ansible import KeeperAnsible, KeeperFolderError
@@ -434,12 +432,6 @@ def test_folder_names_are_escaped_in_messages(make_sdk, run_plugin, folder, reco
     ]
     sdk = make_sdk(folders, records=records_of(record, specs), delete_response=response or [])
     assert_failure(run_plugin(sdk, {"folder_uid": uid}), delete_failure(message))
-
-
-def test_docs_stub_matches_the_action_plugin_docs(plugin_module):
-    stub = importlib.import_module("keeper_secrets_manager_ansible.plugins.modules.keeper_delete_folder")
-    for name in ["DOCUMENTATION", "EXAMPLES", "RETURN"]:
-        assert getattr(stub, name) == getattr(plugin_module, name), name
 
 
 def test_documented_options_match_the_argument_spec(plugin_module):

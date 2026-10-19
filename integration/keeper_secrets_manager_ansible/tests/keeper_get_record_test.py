@@ -1,7 +1,12 @@
-import unittest
-from keeper_secrets_manager_core.mock import Record, Response
-from .ansible_test_framework import AnsibleTestFramework
 import tempfile
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+import pytest
+from keeper_secrets_manager_core.mock import Record, Response
+
+from keeper_secrets_manager_ansible import KeeperAnsible
+from .ansible_test_framework import AnsibleTestFramework
 
 
 mock_response = Response()
@@ -27,41 +32,39 @@ mock_record.custom_field("This! **I$** A Bad Label...", "BAD", field_type="text"
 mock_record.custom_field("  This! **I$** A Bad Label...", "BAD 2", field_type="text")
 mock_response.add_record(record=mock_record)
 
-class KeeperGetRecordTest(unittest.TestCase):
 
-    def test_keeper_get_record(self):
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            a = AnsibleTestFramework(
-                playbook="keeper_get_record.yml",
-                vars={
-                    "tmp_dir": temp_dir,
-                    "uid": mock_record.uid,
-                    "title": mock_record.title
-                },
-                mock_responses=[mock_response]
-            )
-            result, out, err = a.run()
-            self.assertEqual(result["ok"], 8, "8 things didn't happen")
-            self.assertEqual(result["failed"], 0, "failed was not 0")
-            self.assertEqual(result["changed"], 0, "0 things didn't change")
-
+@pytest.mark.parametrize("playbook, expected_ok", [
+    ("keeper_get_record.yml", 8),
+    ("keeper_get_record_cache.yml", 7),
+])
+def test_keeper_get_record(playbook, expected_ok):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        result, out, err = AnsibleTestFramework(
+            playbook=playbook,
+            vars={"tmp_dir": temp_dir, "uid": mock_record.uid, "title": mock_record.title},
+            mock_responses=[mock_response],
+        ).run()
+    assert result["ok"] == expected_ok, out + err
+    assert result["failed"] == 0, out + err
+    assert result["changed"] == 0, out + err
+    if playbook == "keeper_get_record_cache.yml":
+        assert "MYPASSWORD" in out
 
 
-    def test_keeper_get_record_cache(self):
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            a = AnsibleTestFramework(
-                playbook="keeper_get_record_cache.yml",
-                vars={
-                    "tmp_dir": temp_dir,
-                    "uid":  mock_record.uid,
-                    "title": mock_record.title
-                },
-                mock_responses=[mock_response]
-            )
-            result, out, err = a.run()
-            self.assertEqual(result["ok"], 7, "7 things didn't happen")
-            self.assertEqual(result["failed"], 0, "failed was not 0")
-            self.assertEqual(result["changed"], 0, "0 things didn't change")
-            self.assertRegex(out, r'MYPASSWORD', "Did not find the password in the stdout")
+@pytest.mark.parametrize("selector, attr, missing", [("uids", "uid", "MISSING_UID"), ("titles", "title", "Missing Title")])
+@pytest.mark.parametrize("partial", [False, True], ids=["all_missing", "partial_selection"])
+@pytest.mark.parametrize("allow_missing", [False, True], ids=["strict", "allow_missing"])
+def test_record_selection_completeness(selector, attr, missing, partial, allow_missing):
+    record = SimpleNamespace(uid="FOUND_UID", title="Found Title")
+    keeper = object.__new__(KeeperAnsible)
+    keeper.client = MagicMock()
+    keeper.client.get_secrets.return_value = [record] if partial else []
+    selected = ([getattr(record, attr)] if partial else []) + [missing]
+    kwargs = {selector: selected, "allow_missing": allow_missing}
+    if allow_missing:
+        assert keeper.get_records_from_vault(**kwargs) == ([record] if partial else [])
+    else:
+        with pytest.raises(Exception) as caught:
+            keeper.get_records_from_vault(**kwargs)
+        assert caught.value.args[0] == "The following record {}(s) could not be found: {!r}".format(attr, [missing])
+    keeper.client.get_secrets.assert_called_once_with(*((selected,) if selector == "uids" else ()))
