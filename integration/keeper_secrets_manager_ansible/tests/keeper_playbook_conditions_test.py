@@ -1,10 +1,10 @@
-import glob
-import os
 import unittest
+from pathlib import Path
 
 import yaml
 
-PLAYBOOKS = os.path.join(os.path.dirname(os.path.realpath(__file__)), "ansible_example", "playbooks")
+TESTS_DIR = Path(__file__).resolve().parent
+PLAYBOOKS = (TESTS_DIR / "ansible_example/playbooks", TESTS_DIR / "integration/targets")
 
 # Task keywords whose value is a condition, or a list of conditions.
 CONDITION_KEYWORDS = ("when", "failed_when", "changed_when", "until")
@@ -46,8 +46,9 @@ class PlaybookConditionsTest(unittest.TestCase):
     """
 
     def test_every_condition_is_a_string(self):
-        paths = sorted(glob.glob(os.path.join(PLAYBOOKS, "*.yml")))
+        paths = sorted(path for directory in PLAYBOOKS for path in directory.rglob("*.yml"))
         self.assertGreater(len(paths), 0)
+        self.assertTrue(any(PLAYBOOKS[1] in path.parents for path in paths), "integration targets were not discovered")
         problems = []
         for path in paths:
             with open(path) as fh:
@@ -65,5 +66,5 @@ class PlaybookConditionsTest(unittest.TestCase):
                     for condition in value if isinstance(value, list) else [value]:
                         if not isinstance(condition, (str, bool)):
                             problems.append("{}: task {!r}: {} has a {} condition: {!r}".format(
-                                os.path.basename(path), name, keyword, type(condition).__name__, condition))
+                                path.relative_to(TESTS_DIR), name, keyword, type(condition).__name__, condition))
         self.assertEqual(problems, [])

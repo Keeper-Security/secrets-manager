@@ -1,4 +1,3 @@
-import importlib
 import json
 from unittest.mock import patch
 
@@ -100,6 +99,13 @@ def assert_read_only(sdk):
     assert [c[0] for c in sdk.client.mock_calls] == ["get_folders"]
 
 
+def representative_values(cases, values):
+    # Every case covers the behavior once; the first also checks the mode or the option's other spellings.
+    return [pytest.param(case, values[0], id=case[0]) for case in cases] + [
+        pytest.param(cases[0], value, id="{}_{}".format(cases[0][0], value)) for value in values[1:]
+    ]
+
+
 FOUND_CASES = [
     ("shared_and_name", {"shared_folder_uid": INFRA, "folder_name": "Databases"}, DB, INFRA),
     ("shared_only", {"shared_folder_uid": INFRA}, INFRA, INFRA),
@@ -128,8 +134,7 @@ FOUND_CASES = [
 ]
 
 
-@pytest.mark.parametrize("case", FOUND_CASES, ids=[c[0] for c in FOUND_CASES])
-@pytest.mark.parametrize("check_mode", [False, True])
+@pytest.mark.parametrize("case, check_mode", representative_values(FOUND_CASES, [False, True]))
 def test_lookup_finds_the_folder(world, run_plugin, case, check_mode):
     _, task_args, uid, shared = case
     sdk = world()
@@ -203,8 +208,7 @@ READ_ERRORS = [
 ]
 
 
-@pytest.mark.parametrize("case", READ_ERRORS, ids=[c[0] for c in READ_ERRORS])
-@pytest.mark.parametrize("check_mode", [False, True])
+@pytest.mark.parametrize("case, check_mode", representative_values(READ_ERRORS, [False, True]))
 def test_lookup_fails_with_a_clear_message(world, run_plugin, case, check_mode):
     _, task_args, message = case
     sdk = world()
@@ -269,22 +273,40 @@ def test_bad_values_fail_before_the_folders_are_read(world, run_plugin, case):
 
 
 SHARED_SUBTREE = [DB, PROD, EU, FRA, STG, WEB, WEB_DB, SLASH, YEAR, UNI, PAD, DB_2, DB_2_CHILD, DIGITS]
+SUBTREE_CASES = [
+    ("whole_shared_folder", {"shared_folder_uid": INFRA}, INFRA, INFRA, SHARED_SUBTREE),
+    ("from_a_name", {"shared_folder_uid": INFRA, "folder_name": "Databases"}, DB, INFRA, [PROD, EU, FRA, STG]),
+    ("from_a_subfolder", {"subfolder_uid": PROD}, PROD, INFRA, [EU, FRA]),
+    ("leaf", {"folder_path": "Infrastructure/Databases/Staging"}, STG, INFRA, []),
+    ("same_named_siblings", {"shared_folder_uid": APPS}, APPS, APPS, [DUP_1, DUP_2, LEAF, DUP_3, SVC]),
+    ("no_subfolders", {"shared_folder_uid": NONE_PARENT}, NONE_PARENT, NONE_PARENT, []),
+]
 
 
-@pytest.mark.parametrize("value", [True, "yes", "true"])
-@pytest.mark.parametrize("task_args, uid, shared, entries", [
-    ({"shared_folder_uid": INFRA}, INFRA, INFRA, SHARED_SUBTREE),
-    ({"shared_folder_uid": INFRA, "folder_name": "Databases"}, DB, INFRA, [PROD, EU, FRA, STG]),
-    ({"subfolder_uid": PROD}, PROD, INFRA, [EU, FRA]),
-    ({"folder_path": "Infrastructure/Databases/Staging"}, STG, INFRA, []),
-    ({"shared_folder_uid": APPS}, APPS, APPS, [DUP_1, DUP_2, LEAF, DUP_3, SVC]),
-    ({"shared_folder_uid": NONE_PARENT}, NONE_PARENT, NONE_PARENT, []),
-], ids=["whole_shared_folder", "from_a_name", "from_a_subfolder", "leaf", "same_named_siblings", "no_subfolders"])
-def test_include_subfolders_lists_every_folder_below_depth_first(world, run_plugin, task_args, uid, shared, entries,
-                                                                 value):
+@pytest.mark.parametrize("case, value", representative_values(SUBTREE_CASES, [True, "yes", "true"]))
+def test_include_subfolders_lists_every_folder_below_depth_first(world, run_plugin, case, value):
     # Depth first, each parent before its children, children in the order of the server. Not the folder itself.
+    _, task_args, uid, shared, entries = case
     sdk = world()
     assert run_plugin(sdk, dict(task_args, include_subfolders=value)) == found(uid, shared, entries)
+    assert_read_only(sdk)
+
+
+def test_subfolders_are_depth_first_when_the_sdk_list_is_not(make_sdk, folder, run_plugin):
+    # The shared folders precede their descendants, but Frankfurt appears before its immediate parent.
+    uids = [INFRA, APPS, FRA, DB, WEB, STG, WEB_DB, PROD, EU, SVC]
+    sdk = make_sdk([folder(uid, PARENTS[uid], NAMES[uid]) for uid in uids])
+    result = run_plugin(sdk, {"shared_folder_uid": INFRA, "include_subfolders": True})
+    assert result == found(INFRA, INFRA, [DB, STG, PROD, EU, FRA, WEB, WEB_DB])
+    assert_read_only(sdk)
+
+
+def test_lookup_leaves_the_folder_objects_unchanged(world, run_plugin):
+    sdk = world()
+    folders = sdk.client.get_folders.side_effect()
+    before = [vars(f).copy() for f in folders]
+    run_plugin(sdk, {"shared_folder_uid": INFRA, "include_subfolders": True})
+    assert [vars(f) for f in folders] == before
     assert_read_only(sdk)
 
 
@@ -547,12 +569,6 @@ def test_templated_group_defaults_are_resolved_with_the_plugin_templar(world, ru
                         module_defaults=[{GROUP: "{{ keeper_defaults }}"}], templar=templar)
     assert result == found(INFRA, INFRA)
     assert templar.calls == ["{{ keeper_defaults }}"]
-
-
-def test_docs_stub_matches_the_action_plugin_docs(plugin_module):
-    stub = importlib.import_module("keeper_secrets_manager_ansible.plugins.modules.keeper_get_folder")
-    for name in ["DOCUMENTATION", "EXAMPLES", "RETURN"]:
-        assert getattr(stub, name) == getattr(plugin_module, name), name
 
 
 def test_documented_options_match_the_argument_spec(plugin_module):

@@ -15,6 +15,7 @@ from keeper_secrets_manager_ansible import KeeperAnsible
 
 PLUGIN_DIR = Path(keeper_secrets_manager_ansible.plugins.__file__).parent
 MODULES = sorted(path.stem for path in PLUGIN_DIR.glob("modules/keeper_*.py"))
+FOLDER_MODULES = {"keeper_create_folder", "keeper_delete_folder", "keeper_get_folder", "keeper_update_folder"}
 
 
 def _unload_ansible():
@@ -79,6 +80,10 @@ class KeeperDocumentationFormatTest(unittest.TestCase):
         # ansible-doc reads only plugins/modules, and the action plugin has its own copy.
         for name in MODULES:
             module, action = _blocks(PLUGIN_DIR / "modules" / (name + ".py")), _blocks(PLUGIN_DIR / "action" / (name + ".py"))
+            if name in FOLDER_MODULES:
+                with self.subTest(module=name):
+                    self.assertEqual(set(module), {"DOCUMENTATION", "EXAMPLES", "RETURN"})
+                    self.assertEqual(module, action)
             for block in ("DOCUMENTATION", "RETURN"):
                 with self.subTest(module=name, block=block):
                     self.assertEqual(yaml.safe_load(module.get(block, "")), yaml.safe_load(action.get(block, "")))
@@ -134,6 +139,9 @@ class KeeperAnsibleDocTest(unittest.TestCase):
         plugins = _documented_plugins()
         self.assertIn(("callback", "keeper_redact"), plugins)
         self.assertIn(("lookup", "keeper"), plugins)
+        by_type = {}
+        for doc_type, name in plugins:
+            by_type.setdefault(doc_type, []).append(name)
 
         with tempfile.TemporaryDirectory() as home:
             env = dict(os.environ, HOME=home, ANSIBLE_HOME=home, ANSIBLE_LOCAL_TEMP=home,
@@ -141,16 +149,19 @@ class KeeperAnsibleDocTest(unittest.TestCase):
             env.pop("ANSIBLE_CONFIG", None)
             for directory, (_, variable) in DOC_TYPES.items():
                 env[variable] = str(PLUGIN_DIR / directory)
-            for doc_type, name in plugins:
-                with self.subTest(plugin="{}/{}".format(doc_type, name)):
-                    result = subprocess.run([sys.executable, "-m", "ansible.cli.doc", "-t", doc_type, name], env=env,
+            for doc_type, names in by_type.items():
+                with self.subTest(plugin_type=doc_type):
+                    result = subprocess.run([sys.executable, "-m", "ansible.cli.doc", "-t", doc_type, *names], env=env,
                                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                             universal_newlines=True)
                     self.assertEqual(result.returncode, 0, result.stdout)
                     # A plugin that is not on the search path only warns and exits 0. The "not found" warning starts with
                     # that prefix. Anchor to the line start because option text can contain the same words.
                     self.assertNotRegex(result.stdout, r"(?m)^\[?(ERROR|WARNING)")
-                    self.assertIn(name, result.stdout)
+                    # Older cores render "> KEEPER_GET (path)", newer ones "> MODULE keeper_get (path)".
+                    rendered = [line.split("(", 1)[0].split()[-1].lower() for line in result.stdout.splitlines()
+                                if line.startswith("> ")]
+                    self.assertCountEqual(rendered, names, result.stdout)
 
 
 class _Task(object):

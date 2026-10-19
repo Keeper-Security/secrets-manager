@@ -1,23 +1,13 @@
-import contextlib
 import importlib
 import os
-import shutil
-import sys
-import tempfile
-from unittest.mock import patch
 
 import pytest
 import yaml
 
-import keeper_secrets_manager_ansible.plugins
-from ..ansible_test_framework import AnsibleTestFramework
+from ._helpers import run_target, unload_ansible
 from ..folder_fake_server import FakeKeeperServer
 
 TARGET = os.path.join(os.path.dirname(os.path.realpath(__file__)), "targets", "keeper_delete_folder", "playbook.yml")
-COMPONENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
-RUNTIME_YML = os.path.join(COMPONENT_DIR, "ansible_galaxy", "keepersecurity", "keeper_secrets_manager", "meta",
-                           "runtime.yml")
-PLUGINS_DIR = os.path.dirname(os.path.realpath(keeper_secrets_manager_ansible.plugins.__file__))
 VAULT_PASSWORD = "keeper-delete-folder-test-only"
 
 # Infrastructure (shared) holds every folder below. Records sit in Web, Databases, Production, Ledger, and the
@@ -68,69 +58,12 @@ EXPECTED = {
 }
 
 
-@contextlib.contextmanager
-def _environment(name, value):
-    saved = os.environ.get(name)
-    os.environ[name] = value
-    try:
-        yield
-    finally:
-        if saved is None:
-            os.environ.pop(name, None)
-        else:
-            os.environ[name] = saved
-
-
-@contextlib.contextmanager
-def _collection_path():
-    """A collections path with the real meta/runtime.yml, so Ansible applies the action group module_defaults."""
-    root = tempfile.mkdtemp(prefix="ksm_target_collections_")
-    collection = os.path.join(root, "ansible_collections", "keepersecurity", "keeper_secrets_manager")
-    try:
-        os.makedirs(os.path.join(collection, "meta"))
-        os.makedirs(os.path.join(collection, "plugins"))
-        shutil.copyfile(RUNTIME_YML, os.path.join(collection, "meta", "runtime.yml"))
-        for name in ("action", "modules"):
-            os.symlink(os.path.join(PLUGINS_DIR, name), os.path.join(collection, "plugins", name))
-        with _environment("ANSIBLE_COLLECTIONS_PATH", root):
-            yield
-    finally:
-        # Unlink first, so rmtree can never reach the real plugin files.
-        for name in ("action", "modules"):
-            link = os.path.join(collection, "plugins", name)
-            if os.path.islink(link):
-                os.unlink(link)
-        shutil.rmtree(root)
-
-
-def _unload_ansible():
-    # A loaded ansible plugin loader has the default plugin path, and then the run fails with "couldn't resolve
-    # module/action". AnsibleTestFramework unloads ansible after each run for the same reason.
-    for name in list(sys.modules):
-        if name.startswith("ansible"):
-            sys.modules.pop(name, None)
-
-
 @pytest.fixture(scope="module")
 def run():
-    _unload_ansible()
     server = FakeKeeperServer(folders=FOLDERS, records=RECORDS)
-    fd, password_file = tempfile.mkstemp(prefix="ksm_target_vault_", suffix=".txt")
-    with os.fdopen(fd, "w") as fh:
-        fh.write(VAULT_PASSWORD + "\n")
     variables = dict(UID_VARS, expected=EXPECTED)
-    # keeper_secrets_manager_ansible keeps the AnsibleError class of its first import. A config error raised from a
-    # later run recurses in __str__ on ansible-core 2.19+, so bind the class of this run, as in production.
-    ansible_errors = importlib.import_module("ansible.errors")
-    try:
-        with server.patch(), patch("keeper_secrets_manager_ansible.AnsibleError", ansible_errors.AnsibleError), \
-                _environment("ANSIBLE_VAULT_PASSWORD_FILE", password_file), _collection_path():
-            recap, out, err = AnsibleTestFramework(playbook=TARGET, vars=variables).run()
-        yield server, recap, out, err
-    finally:
-        os.remove(password_file)
-        server.cleanup()
-        _unload_ansible()
+    with run_target(server, TARGET, variables, collection=True, vault_password=VAULT_PASSWORD) as result:
+        yield (server,) + result
 
 
 def test_playbook_passes(run):
@@ -165,9 +98,9 @@ _PlaybookLoader.add_constructor("!vault", lambda loader, node: loader.construct_
 
 
 def test_the_idempotent_tasks_in_the_playbook_are_the_documented_examples():
-    _unload_ansible()
+    unload_ansible()
     plugin = importlib.import_module("keeper_secrets_manager_ansible.plugins.action.keeper_delete_folder")
-    _unload_ansible()
+    unload_ansible()
     examples = yaml.safe_load(plugin.EXAMPLES)
     index = next(i for i, task in enumerate(examples) if "keeper_get_folder" in task)
     lookup, delete = examples[index], examples[index + 1]

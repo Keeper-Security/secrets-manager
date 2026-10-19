@@ -1,12 +1,9 @@
-import importlib
 import os
-import sys
-from unittest.mock import patch
 
 import pytest
 from keeper_secrets_manager_core.exceptions import KeeperError
 
-from ..ansible_test_framework import AnsibleTestFramework
+from ._helpers import run_target
 from ..folder_fake_server import FakeKeeperServer
 
 TARGET = os.path.join(os.path.dirname(os.path.realpath(__file__)), "targets", "keeper_remove", "playbook.yml")
@@ -57,25 +54,12 @@ class RecordDeleteServer(FakeKeeperServer):
             self._save(state)
 
 
-def _unload_ansible():
-    for name in list(sys.modules):
-        if name.startswith("ansible"):
-            sys.modules.pop(name, None)
-
-
 @pytest.fixture(scope="module")
 def run():
-    _unload_ansible()
     server = RecordDeleteServer(folders=[{"uid": SHARED, "name": "Shared", "parent": None}], records=RECORDS,
                                 delete_status={"DENIED_UID": ["access_denied", DENIED_MESSAGE]})
-    try:
-        errors = importlib.import_module("ansible.errors")
-        with server.patch(), patch("keeper_secrets_manager_ansible.AnsibleError", errors.AnsibleError):
-            recap, out, err = AnsibleTestFramework(playbook=TARGET, vars=dict(VARS, expected=EXPECTED)).run()
+    with run_target(server, TARGET, dict(VARS, expected=EXPECTED)) as (recap, out, err):
         yield server, recap, out + err
-    finally:
-        server.cleanup()
-        _unload_ansible()
 
 
 def test_playbook_passes(run):

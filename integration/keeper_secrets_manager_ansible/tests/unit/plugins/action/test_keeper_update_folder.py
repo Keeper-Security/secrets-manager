@@ -1,4 +1,3 @@
-import importlib
 from unittest.mock import patch
 
 import pytest
@@ -131,11 +130,13 @@ def test_no_op_does_not_warn_about_a_sibling_with_the_same_name(sdk_for, warning
 
 # (id, current name, new name): the names are compared exactly. The value stays as written.
 COMPARISON_CASES = [
+    ("empty_current_name", "", "Named"),
     ("case_change", "Staging", "staging"),
     ("inner_whitespace", "Staging", "Sta ging"),
     ("padded_current_name", "Reports ", "Reports"),
     ("unicode_normalization_forms", "Café", "Café"),
     ("digits_of_a_longer_name", "2025", "20250"),
+    ("long_name", "Short", "Long folder name " + "x" * 4096),
 ]
 
 
@@ -478,12 +479,6 @@ def test_the_method_gets_the_validated_values_not_the_raw_task_args(sdk_for, run
         result = run_plugin(sdk, {"folder_uid": Vaulted(EMPTY), "new_folder_name": Vaulted("QA")})
     assert result == renamed(EMPTY, "QA", "Staging")
     assert [type(arg) for arg in method.call_args.args[1:3]] == [str, str]
-
-
-def test_docs_stub_matches_the_action_plugin_docs(plugin_module):
-    stub = importlib.import_module("keeper_secrets_manager_ansible.plugins.modules.keeper_update_folder")
-    for name in ["DOCUMENTATION", "EXAMPLES", "RETURN"]:
-        assert getattr(stub, name) == getattr(plugin_module, name), name
 
 
 def test_documented_options_match_the_argument_spec(plugin_module):

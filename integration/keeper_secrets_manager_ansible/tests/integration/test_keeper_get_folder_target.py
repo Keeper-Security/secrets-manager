@@ -1,22 +1,11 @@
-import contextlib
-import importlib
 import os
-import shutil
-import sys
-import tempfile
-from unittest.mock import patch
 
 import pytest
 
-import keeper_secrets_manager_ansible.plugins
-from ..ansible_test_framework import AnsibleTestFramework
+from ._helpers import run_target
 from ..folder_fake_server import FakeKeeperServer
 
 TARGET = os.path.join(os.path.dirname(os.path.realpath(__file__)), "targets", "keeper_get_folder", "playbook.yml")
-COMPONENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
-RUNTIME_YML = os.path.join(COMPONENT_DIR, "ansible_galaxy", "keepersecurity", "keeper_secrets_manager", "meta",
-                           "runtime.yml")
-PLUGINS_DIR = os.path.dirname(os.path.realpath(keeper_secrets_manager_ansible.plugins.__file__))
 
 # Shared folders come before their subfolders, as the real server sends them.
 FOLDERS = [
@@ -54,6 +43,7 @@ EXPECTED = {
     "exclusive": "parameters are mutually exclusive: folder_name|folder_path",
     "null_shared": "The shared_folder_uid option is null. Give it a value, or leave the option out of the task.",
     "null_name": "The folder_name option is null. Give it a value, or leave the option out of the task.",
+    "blank_name": "Could not look up folder: The folder_name is set but blank. Set it to a folder name, or remove it.",
     "padded": "Could not look up folder: The shared_folder_uid 'SHARED_UID ' has leading or trailing whitespace.",
     "path_type": "Could not look up folder: The folder_path must be a string or a list of folder names.",
     "item_bool": "Could not look up folder: Each folder_path item must be a folder name, but one item is a boolean "
@@ -81,70 +71,18 @@ EXPECTED = {
 }
 
 
-@contextlib.contextmanager
-def _environment(name, value):
-    saved = os.environ.get(name)
-    os.environ[name] = value
-    try:
-        yield
-    finally:
-        if saved is None:
-            os.environ.pop(name, None)
-        else:
-            os.environ[name] = saved
-
-
-@contextlib.contextmanager
-def _collection_path():
-    """A collections path with the real meta/runtime.yml, so Ansible applies the action group module_defaults."""
-    root = tempfile.mkdtemp(prefix="ksm_target_collections_")
-    collection = os.path.join(root, "ansible_collections", "keepersecurity", "keeper_secrets_manager")
-    try:
-        os.makedirs(os.path.join(collection, "meta"))
-        os.makedirs(os.path.join(collection, "plugins"))
-        shutil.copyfile(RUNTIME_YML, os.path.join(collection, "meta", "runtime.yml"))
-        for name in ("action", "modules"):
-            os.symlink(os.path.join(PLUGINS_DIR, name), os.path.join(collection, "plugins", name))
-        with _environment("ANSIBLE_COLLECTIONS_PATH", root):
-            yield
-    finally:
-        # Unlink first, so rmtree can never reach the real plugin files.
-        for name in ("action", "modules"):
-            link = os.path.join(collection, "plugins", name)
-            if os.path.islink(link):
-                os.unlink(link)
-        shutil.rmtree(root)
-
-
-def _unload_ansible():
-    # A loaded ansible plugin loader has the default plugin path, and then the run fails with "couldn't resolve
-    # module/action". AnsibleTestFramework unloads ansible after each run for the same reason.
-    for name in list(sys.modules):
-        if name.startswith("ansible"):
-            sys.modules.pop(name, None)
-
-
 @pytest.fixture(scope="module")
 def run():
-    _unload_ansible()
     server = FakeKeeperServer(folders=FOLDERS)
     variables = dict(UID_VARS, expected=EXPECTED)
-    try:
-        with server.patch(), _collection_path():
-            # Imported after the collections path is set: an import of ansible.utils.display reads that path.
-            errors = importlib.import_module("ansible.errors")
-            with patch("keeper_secrets_manager_ansible.AnsibleError", errors.AnsibleError):
-                recap, out, err = AnsibleTestFramework(playbook=TARGET, vars=variables).run()
-        yield server, recap, out, err
-    finally:
-        server.cleanup()
-        _unload_ansible()
+    with run_target(server, TARGET, variables, collection=True) as result:
+        yield (server,) + result
 
 
 def test_playbook_passes(run):
     _, recap, out, err = run
     summary = "\n".join(l for l in (out + err).splitlines() if "fatal:" in l or "[ERROR]" in l or "FAILED" in l)
-    expected = {"ok": 26, "changed": 0, "failed": 0, "unreachable": 0, "skipped": 0, "rescued": 1, "ignored": 11}
+    expected = {"ok": 27, "changed": 0, "failed": 0, "unreachable": 0, "skipped": 0, "rescued": 1, "ignored": 12}
     assert {k: recap.get(k) for k in expected} == expected, summary
 
 

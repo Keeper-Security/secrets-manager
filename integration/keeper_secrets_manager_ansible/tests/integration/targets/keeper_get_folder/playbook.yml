@@ -110,6 +110,13 @@
         - t_item_float.msg == expected.item_float
         - t_item_int.msg == expected.item_int
 
+  - name: "default(omit) does not omit a null variable"
+    keeper_get_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "{{ null_var | default(omit) }}"
+    register: "not_omitted"
+    ignore_errors: yes
+
   - name: "default(omit, true) omits a null variable"
     keeper_get_folder:
       shared_folder_uid: "{{ shared_uid }}"
@@ -135,6 +142,10 @@
         - failed.results | map(attribute='failed') | unique | list == [true]
         - failed.results | map(attribute='changed') | unique | list == [false]
         - failed.results | map(attribute='msg') | list == expected.failed
+        - not_omitted is failed
+        - not_omitted is not changed
+        - not_omitted.folder_uid is not defined
+        - not_omitted.msg == (expected.null_name if ansible_version.full is version('2.19', '>=') else expected.blank_name)
         - omitted.folder_uid == shared_uid
 
   - name: "rescue sees the failure"

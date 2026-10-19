@@ -1,14 +1,12 @@
-import importlib
 import json
 import os
-import sys
 import tempfile
 from unittest.mock import patch
 
 import pytest
 
 from keeper_secrets_manager_core.core import SecretsManager
-from ..ansible_test_framework import AnsibleTestFramework
+from ._helpers import run_target
 from ..folder_fake_server import FakeKeeperServer
 
 TARGET = os.path.join(os.path.dirname(os.path.realpath(__file__)), "targets", "keeper_create", "playbook.yml")
@@ -19,19 +17,9 @@ FOLDERS = [
 EXPECTED = {"stale_key": "The folder_uid parameter for keeper_create has been renamed to subfolder_uid."}
 
 
-def _unload_ansible():
-    # A loaded ansible plugin loader has the default plugin path, and then the run fails with "couldn't resolve
-    # module/action". AnsibleTestFramework unloads ansible after each run for the same reason.
-    for name in list(sys.modules):
-        if name.startswith("ansible"):
-            sys.modules.pop(name, None)
-
-
 @pytest.fixture(scope="module")
 def run():
-    # Ansible runs each task in a forked worker, so the replacement of the SDK call writes what it received to a
-    # file, which the test reads after the run.
-    _unload_ansible()
+    # Workers write the received SDK options to a file, since each task runs in a forked process.
     server = FakeKeeperServer(folders=FOLDERS)
     fd, capture = tempfile.mkstemp(prefix="ksm_create_capture_", suffix=".jsonl")
     os.close(fd)
@@ -41,21 +29,16 @@ def run():
             fh.write(json.dumps([options.folder_uid, options.subfolder_uid]) + "\n")
         return "NEW_UID"
 
+    variables = {"shared_uid": "SHARED_UID", "subfolder_uid": "SUBFOLDER_UID", "expected": EXPECTED}
+    sdk_patch = patch.object(SecretsManager, "create_secret_with_options", autospec=True,
+                             side_effect=create_secret_with_options)
     try:
-        with server.patch(), patch.object(SecretsManager, "create_secret_with_options", autospec=True,
-                                          side_effect=create_secret_with_options):
-            errors = importlib.import_module("ansible.errors")
-            with patch("keeper_secrets_manager_ansible.AnsibleError", errors.AnsibleError):
-                recap, out, err = AnsibleTestFramework(
-                    playbook=TARGET, vars={"shared_uid": "SHARED_UID", "subfolder_uid": "SUBFOLDER_UID",
-                                           "expected": EXPECTED}).run()
-        with open(capture) as fh:
-            received = [json.loads(line) for line in fh]
-        yield server, recap, out + err, received
+        with run_target(server, TARGET, variables, sdk_patch=sdk_patch) as (recap, out, err):
+            with open(capture) as fh:
+                received = [json.loads(line) for line in fh]
+            yield server, recap, out + err, received
     finally:
         os.remove(capture)
-        server.cleanup()
-        _unload_ansible()
 
 
 def test_playbook_passes(run):
