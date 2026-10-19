@@ -150,7 +150,7 @@ class CallbackModule(DefaultCallbackBase):
         parts.append(text[position:])
         return "".join(parts)
 
-    def _redact(self, obj):
+    def _redact(self, obj, payload_key=None):
         if isinstance(obj, str):
             return self._redact_text(obj)
         if isinstance(obj, (int, float)) and not isinstance(obj, bool):
@@ -158,6 +158,9 @@ class CallbackModule(DefaultCallbackBase):
         if isinstance(obj, Mapping):
             clean = {}
             for key, value in obj.items():
+                # Identify secret payloads before their structural keys become redacted display names.
+                if payload_key is not None and key == payload_key:
+                    value = self._mask(value)
                 name = self._redact_text(key) if isinstance(key, str) else key
                 # Two keys can become the same text. Keep both values.
                 suffix = 1
@@ -165,7 +168,10 @@ class CallbackModule(DefaultCallbackBase):
                 while unique in clean:
                     suffix += 1
                     unique = "{}_{}".format(name, suffix)
-                clean[unique] = self._redact(value)
+                if payload_key is not None and key == "results" and isinstance(value, list):
+                    clean[unique] = [self._redact(item, payload_key=payload_key) for item in value]
+                else:
+                    clean[unique] = self._redact(value)
             return clean
         if isinstance(obj, (list, tuple)):
             return [self._redact(item) for item in obj]
@@ -187,13 +193,7 @@ class CallbackModule(DefaultCallbackBase):
 
         # Rebuild the result instead of editing it. Nested objects in the original can be shared with the registered
         # variable and with other callbacks.
-        clean = self._redact(body)
-        key = self.SECRET_RESULT_KEYS.get(action)
-        if key is not None:
-            loop_results = clean.get("results")
-            for item in [clean] + (loop_results if isinstance(loop_results, list) else []):
-                if isinstance(item, dict) and key in item:
-                    item[key] = self._mask(item[key])
+        clean = self._redact(body, payload_key=self.SECRET_RESULT_KEYS.get(action))
         self._remove_special_keeper_values(clean)
 
         # ansible-core 2.19 and later print the error from an object on the result, not from the dictionary, so the
