@@ -153,7 +153,9 @@ internal class ProxyTest {
 
     @Test
     fun httpsSchemeAmbientProxyDegradesToNull() {
-        // An https:// value in an ambient env var degrades gracefully instead of throwing.
+        // An https:// value in an ambient env var still degrades to null instead of throwing. Raising
+        // here is deliberately left for the next major release: https:// is a form other tools accept,
+        // so a deployment that sets it for them would start failing on a minor upgrade.
         val env = FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to "https://proxy.corp:443"))
         assertNull(resolveProxy(null, target, env))
     }
@@ -173,9 +175,38 @@ internal class ProxyTest {
     }
 
     @Test
-    fun outOfRangePortForAmbientProxyDegradesToNull() {
-        val env = FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to "http://proxy.corp:99999"))
-        assertNull(resolveProxy(null, target, env))
+    fun malformedAmbientProxyRaisesAndDoesNotEchoTheValue() {
+        // Each shape carries the fake password Zq9, so a message that echoes the value fails the
+        // check. The last shape is the out-of-range port that used to degrade to null.
+        val shapes = listOf(
+            "http://usr:Zq9#w@127.0.0.1:9",
+            "http://usr:Zq9/w@127.0.0.1:9",
+            "http://usr:Zq9@ss@127.0.0.1:9",
+            "http://usr:Zq9 ss@127.0.0.1:9",
+            "http://usr:Zq9%zz@127.0.0.1:9",
+            "http://usr:Zq9@[::1:9",
+            "http://usr:Zq9@127.0.0.1:99999"
+        )
+        for (variable in listOf("HTTPS_PROXY", "https_proxy")) {
+            for (value in shapes) {
+                val env = FakeProxyEnvironment(envVars = mapOf(variable to value))
+                val e = assertFailsWith<SecretsManagerException>("expected $variable=$value to be rejected") {
+                    resolveProxy(null, target, env)
+                }
+                val message = e.message.orEmpty()
+                assertTrue(message.contains(variable), "message must name $variable: $message")
+                assertFalse(message.contains("Zq9"), "message must not echo the password: $message")
+                assertFalse(message.contains(value), "message must not echo the value: $message")
+            }
+        }
+    }
+
+    @Test
+    fun malformedAmbientProxyFailsBeforeAConnectionIsOpened() {
+        val env = FakeProxyEnvironment(envVars = mapOf("HTTPS_PROXY" to "http://usr:Zq9@127.0.0.1:99999"))
+        assertFailsWith<SecretsManagerException> {
+            openProxiedConnection(target, null, false, env)
+        }
     }
 
     @Test

@@ -58,12 +58,12 @@ internal fun resolveProxy(
     // HTTP_PROXY / http_proxy are intentionally excluded: all KSM traffic is HTTPS, and routing
     // it through an http-scoped proxy setting would silently proxy traffic the operator may not
     // have intended (same reasoning as the http.proxyHost exclusion above).
-    val candidate = systemPropertyProxy(environment)
-        ?: environment.env("HTTPS_PROXY")?.takeIf { it.isNotBlank() }
-        ?: environment.env("https_proxy")?.takeIf { it.isNotBlank() }
+    systemPropertyProxy(environment)?.let { return parseProxy(it, isExplicit = false) }
+    val (variable, value) = listOf("HTTPS_PROXY", "https_proxy")
+        .firstNotNullOfOrNull { name -> environment.env(name)?.takeIf { it.isNotBlank() }?.let { name to it } }
         ?: return null
 
-    return parseProxy(candidate, isExplicit = false)
+    return parseProxy(value, isExplicit = false, ambientVariable = variable)
 }
 
 private fun systemPropertyProxy(environment: ProxyEnvironment): String? {
@@ -75,10 +75,21 @@ private fun systemPropertyProxy(environment: ProxyEnvironment): String? {
     return "$host:$port"
 }
 
-private fun parseProxy(raw: String, isExplicit: Boolean = false): ResolvedProxy? {
+private fun parseProxy(raw: String, isExplicit: Boolean = false, ambientVariable: String? = null): ResolvedProxy? {
+    // A malformed HTTPS_PROXY / https_proxy value raises: returning null would send the request
+    // direct, past a proxy the operator configured. The message names the variable and never the
+    // value, which can carry the proxy password. A malformed https.proxyHost still returns null:
+    // the JDK's own ProxySelector then acts on the same bad host and the connection fails there.
+    fun malformed(): ResolvedProxy? {
+        if (ambientVariable == null) return null
+        throw SecretsManagerException(
+            "$ambientVariable is not a valid proxy URL. Expected a value like http://host:port or http://user:pass@host:port"
+        )
+    }
+
     val normalized = if (raw.contains("://")) raw else "http://$raw"
-    val uri = runCatching { URI(normalized) }.getOrNull() ?: return null
-    val host = uri.host ?: return null
+    val uri = runCatching { URI(normalized) }.getOrNull() ?: return malformed()
+    val host = uri.host ?: return malformed()
 
     // The JDK's HttpURLConnection cannot speak TLS to a proxy. An https:// proxy URL misleads
     // callers into thinking TLS is used between the client and the proxy when it is not.
@@ -113,7 +124,7 @@ private fun parseProxy(raw: String, isExplicit: Boolean = false): ResolvedProxy?
         Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved(host, port))
     }.getOrElse { e ->
         if (isExplicit) throw SecretsManagerException("Invalid proxy URL: port out of range (0-65535)", e)
-        return null
+        return malformed()
     }
     return ResolvedProxy(proxy, username, password, isExplicit)
 }
@@ -148,8 +159,9 @@ internal fun openProxiedConnection(
 
     // When the host is explicitly excluded by NO_PROXY/http.nonProxyHosts, force a direct
     // connection with Proxy.NO_PROXY so the JDK's default ProxySelector cannot re-introduce a
-    // proxy that the operator has opted out of. An unparseable ambient proxy that falls through
-    // resolveProxy as null is NOT treated as an exclusion — only isExcluded() determines that.
+    // proxy that the operator has opted out of. An ambient https.proxyHost or https:// value that
+    // falls through resolveProxy as null is NOT treated as an exclusion. Only isExcluded()
+    // determines that.
     val isExcluded = resolved == null && targetHost != null && isExcluded(targetHost, environment)
 
     // Only register the JVM-wide Authenticator when the proxy (and its credentials) came from the

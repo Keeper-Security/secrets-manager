@@ -4,6 +4,12 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.5.0
+- KSM-1625 - Raise an error when `HTTPS_PROXY` or `https_proxy` holds a value the SDK cannot parse
+  - A malformed value (for example an unbalanced bracket, an unescaped reserved character in the password, or a port above 65535) was ignored, and the SDK connected without the proxy. The SDK now throws `SecretsManagerException` before it sends anything. The message names the variable and the expected form. It does not include the value, which can carry the proxy password.
+  - **Upgrade note:** a deployment that sets a malformed `HTTPS_PROXY` for other tools starts failing with this release. Correct the value, pass `proxyUrl` in `SecretsManagerOptions` (it takes precedence over the variables), or list the Keeper host in `NO_PROXY`.
+  - Unchanged: an `https://` value in `HTTPS_PROXY` is still ignored, and a malformed `https.proxyHost` system property is still left to the JDK.
+
 ## 17.4.0
 **Breaking Changes**
 - `deleteFolder()` returns `SecretsManagerDeleteFolderResponse` instead of `SecretsManagerDeleteResponse`. The new type exposes a `folders` list, where each entry has `folderUid`, `responseCode`, and an optional `errorMessage`; callers that read `.records` on the old return type must switch to `.folders`. In practice no working code can be affected: the old return type required a `records` field while the backend sends `folders`, so every previous call to `deleteFolder()` threw `MissingFieldException` instead of returning a value.
