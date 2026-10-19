@@ -47,6 +47,8 @@ def _result_action(result):
 
 
 def _leaves(obj):
+    if isinstance(obj, (bytes, bytearray)):
+        obj = bytes(obj).decode("utf-8", "surrogateescape")
     if isinstance(obj, str):
         return [obj] if obj else []
     if isinstance(obj, (int, float)) and not isinstance(obj, bool):
@@ -117,13 +119,15 @@ class CallbackModule(DefaultCallbackBase):
             for leaf in _leaves(item.get(key)):
                 if len(leaf) >= self.MIN_MATCH_LENGTH and leaf not in self._learned:
                     self._learned.add(leaf)
+                    # Reverse attachment decoding, including surrogateescaped text from older Ansible versions.
+                    data = leaf.encode("utf-8", "surrogateescape")
                     # Each secret appears in output as itself, as JSON text (ensure_ascii on and off), and inside
-                    # the quotes of a Python repr, which exception messages use.
+                    # the quotes of a Python text or bytes repr, which exception messages use.
                     self._forms.extend({leaf, json.dumps(leaf)[1:-1], json.dumps(leaf, ensure_ascii=False)[1:-1],
-                                        repr(leaf)[1:-1]} - set(self._forms))
+                                        repr(leaf)[1:-1], repr(data)[2:-1]} - set(self._forms))
                     # The built-in copy module returns the SHA-1 of its content, and a hash of a short secret can be
                     # found by guessing. Hide the common digests of each secret too.
-                    self._forms.extend(hashlib.new(name, leaf.encode("utf-8")).hexdigest()
+                    self._forms.extend(hashlib.new(name, data).hexdigest()
                                        for name in ("sha1", "md5", "sha256"))
 
     def _redact_text(self, text):
@@ -152,6 +156,8 @@ class CallbackModule(DefaultCallbackBase):
     def _redact(self, obj):
         if isinstance(obj, str):
             return self._redact_text(obj)
+        if isinstance(obj, (bytes, bytearray)):
+            return self._redact_text(bytes(obj).decode("utf-8", "surrogateescape"))
         if isinstance(obj, (int, float)) and not isinstance(obj, bool):
             return REDACTED if str(obj) in self._learned else obj
         if isinstance(obj, Mapping):
