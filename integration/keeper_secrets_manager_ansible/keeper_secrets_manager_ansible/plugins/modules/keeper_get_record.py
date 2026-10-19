@@ -68,31 +68,22 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-value:
-  description: The entire record as a dictionary.
+record:
+  description:
+  - The fields of the record, as a dictionary.
+  - The key is the field label, or the field type if the field has no label. Each value is a list.
   returned: success
-  sample: |
-    {
-      "record": {
-        "login": [
-           "MY LOGIN"
-        ],
-        "password": [
-           "XXXX"
-        ],
-        "phone": [
-          {
-            "number": "15551234",
-            "type": "Home"
-          },
-          {
-            "number": "15557890",
-            "type": "Work"
-          }
-        ],
-        "Custom_Field": [
-            "CUSTOM VALUE"
-        ]
-      }
-    }   
+  type: dict
+  sample:
+    login:
+    - MY LOGIN
+    password:
+    - XXXX
+    phone:
+    - number: "15551234"
+      type: Home
+    - number: "15557890"
+      type: Work
+    Custom_Field:
+    - CUSTOM VALUE
 '''

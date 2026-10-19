@@ -83,8 +83,9 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-value:
-  description: The password
+password:
+  description: The generated password.
   returned: success
-  sample: { "password": "XXXX" }
+  type: str
+  sample: XXXX
 '''

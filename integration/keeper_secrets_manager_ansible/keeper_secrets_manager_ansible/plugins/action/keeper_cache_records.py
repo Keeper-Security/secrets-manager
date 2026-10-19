@@ -77,13 +77,11 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-value:
-  description: The serialized encrypted cache.
+cache:
+  description: The encrypted cache of the records. Give it to the cache option of the other Keeper actions.
   returned: success
-  sample: |
-    {
-      "cache": "XXXX .... XXXXX"
-    }
+  type: str
+  sample: XXXX .... XXXXX
 '''
 
 

@@ -84,6 +84,21 @@ options:
     version_added: '1.0.1'  
 '''
 
+EXAMPLES = r'''
+- name: Set the password of a record
+  keeper_set:
+    uid: XXX
+    field: password
+    value: "{{ new_password }}"
+  register: result
+
+- name: Replace the notes of a record
+  keeper_set:
+    uid: XXX
+    notes: yes
+    value: These are the new notes.
+'''
+
 RETURN = r'''
 changed:
   description: Whether the record was saved, or would be saved in check mode. False when the record
