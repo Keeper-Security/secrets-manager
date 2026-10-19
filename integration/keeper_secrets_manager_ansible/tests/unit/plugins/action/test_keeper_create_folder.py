@@ -134,8 +134,6 @@ def test_check_mode_reports_a_payload_error(sdk_for, run_plugin):
     assert str(caught.value) == "Could not create folder: Cannot create folder: bad payload"
 
 
-# --- Errors are raised, with the step that failed ---
-
 @pytest.mark.parametrize("task_args, message", [
     ({"folder_name": "New"}, "The shared_folder_uid is blank. keeper_create_folder requires this value to be set."),
     ({"shared_folder_uid": SHARED},
@@ -173,8 +171,6 @@ def test_the_error_is_an_ansible_error(sdk_for, run_plugin, plugin_module):
     with pytest.raises(plugin_module.AnsibleError):
         run_plugin(sdk_for(), {"folder_name": "New"})
 
-
-# --- Documentation ---
 
 def test_docs_stub_matches_the_action_plugin_docs(plugin_module):
     stub = importlib.import_module("keeper_secrets_manager_ansible.plugins.modules.keeper_create_folder")

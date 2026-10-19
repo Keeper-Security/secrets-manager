@@ -135,8 +135,6 @@ def test_the_cache_option_is_ignored_with_a_warning(vault, run_plugin):
     sdk.client.delete_secret.assert_not_called()
 
 
-# --- Options ---
-
 BAD_OPTIONS = [
     ("nothing", {}, "keeper_remove requires either uid or title to be set."),
     ("both", {"uid": UID, "title": TITLE}, "parameters are mutually exclusive: uid|title"),

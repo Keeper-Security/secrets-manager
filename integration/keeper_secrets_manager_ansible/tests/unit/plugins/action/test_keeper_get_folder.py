@@ -100,8 +100,6 @@ def assert_read_only(sdk):
     assert [c[0] for c in sdk.client.mock_calls] == ["get_folders"]
 
 
-# --- Lookups that find a folder: (id, task args, uid, shared folder uid of the result) ---
-
 FOUND_CASES = [
     ("shared_and_name", {"shared_folder_uid": INFRA, "folder_name": "Databases"}, DB, INFRA),
     ("shared_only", {"shared_folder_uid": INFRA}, INFRA, INFRA),
@@ -139,8 +137,6 @@ def test_lookup_finds_the_folder(world, run_plugin, case, check_mode):
     assert_read_only(sdk)
     assert len(sdk.action_modules) == 1 and sdk.action_modules[0] is not None
 
-
-# --- Lookups that fail: (id, task args, message). A lookup error has the "Could not look up folder: " prefix. ---
 
 READ_ERRORS = [
     ("name_not_found", {"shared_folder_uid": INFRA, "folder_name": "Nope"},
@@ -228,8 +224,6 @@ def test_get_folders_error_and_no_folders(world, run_plugin, make_sdk):
         "The shared folder SF_INFRA was not found, or it is not shared to this KSM application.")
 
 
-# --- Checks before the folder list is read ---
-
 # (id, task args, message)
 PRE_READ_ERRORS = [
     ("nothing_to_look_up", {"include_subfolders": True}, NOTHING),
@@ -274,8 +268,6 @@ def test_bad_values_fail_before_the_folders_are_read(world, run_plugin, case):
     assert sdk.client.mock_calls == []
 
 
-# --- Result: subfolders, include_subfolders ---
-
 SHARED_SUBTREE = [DB, PROD, EU, FRA, STG, WEB, WEB_DB, SLASH, YEAR, UNI, PAD, DB_2, DB_2_CHILD, DIGITS]
 
 
@@ -302,8 +294,6 @@ def test_subfolders_are_left_out_unless_asked_for(world, run_plugin, value):
     assert result == found(INFRA, INFRA)
     assert "subfolders" not in result
 
-
-# --- Folder names with special characters: JSON-quoted in messages, matched exactly ---
 
 SPECIAL = [
     ('Say "hi"', '"Say \\"hi\\""'),
@@ -334,8 +324,6 @@ def test_folder_path_is_quoted_in_the_start_and_not_inside_labels(world, run_plu
         'The subfolder "Infrastructure/A \\"B\\"\\n/Child" (UID QC_UID) is not inside the shared folder '
         '"Applications" (UID SF_APPS).')
 
-
-# --- Malformed folder data must not hang or crash the lookup ---
 
 CYCLE = [("A", "B", "A"), ("B", "A", "B")]
 
@@ -395,8 +383,6 @@ def test_method_called_directly_checks_its_own_arguments(world):
         keeper.get_folder(shared_folder_uid=INFRA, folder_name="Databases", folder_path="Databases")
     assert keeper.get_folder(shared_folder_uid=INFRA, folder_name=2024)["folder_uid"] == YEAR
 
-
-# --- Options and the plugin wiring ---
 
 def test_include_subfolders_default_and_the_result_is_not_a_change(world, run_plugin):
     result = run_plugin(world(), {"shared_folder_uid": INFRA})
@@ -520,8 +506,6 @@ def test_vault_value_for_a_name_with_a_slash_stays_one_name(world, run_plugin, m
     assert run_plugin(world(), {"shared_folder_uid": INFRA, "folder_path": [Vaulted()]})["folder_uid"] == SLASH
 
 
-# --- module_defaults for the action group of this collection ---
-
 def test_group_defaults_of_other_modules_are_ignored(world, run_plugin):
     task_args = {"shared_folder_uid": INFRA, "folder_name": "Databases", "cache": "C", "new_folder_name": "X"}
     defaults = [{GROUP: {"cache": "C", "new_folder_name": "X", "include_subfolders": False}}]
@@ -564,8 +548,6 @@ def test_templated_group_defaults_are_resolved_with_the_plugin_templar(world, ru
     assert result == found(INFRA, INFRA)
     assert templar.calls == ["{{ keeper_defaults }}"]
 
-
-# --- Documentation ---
 
 def test_docs_stub_matches_the_action_plugin_docs(plugin_module):
     stub = importlib.import_module("keeper_secrets_manager_ansible.plugins.modules.keeper_get_folder")

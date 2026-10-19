@@ -83,8 +83,6 @@ def assert_not_sent(sdk):
     sdk.client.update_folder.assert_not_called()
 
 
-# --- Rename, no-op, and the result shape ---
-
 @pytest.mark.parametrize("check_mode", [False, True])
 @pytest.mark.parametrize("uid, new_name, old_name", [
     (EMPTY, "QA", "Staging"),
@@ -169,8 +167,6 @@ def test_all_digit_uid_stays_a_string(sdk_for, run_plugin, uid):
     assert_sent(sdk, uid, "Renamed")
 
 
-# --- Name and UID validation: all of it fails before the folders are read ---
-
 @pytest.mark.parametrize("check_mode", [False, True])
 @pytest.mark.parametrize("name", ["", " ", "\t", "\n", " \t\r\n "])
 def test_blank_name_fails_before_any_sdk_call(sdk_for, run_plugin, name, check_mode):
@@ -237,8 +233,6 @@ def test_first_entry_of_a_uid_is_used_and_a_uid_must_match_in_full(sdk_for, fold
     assert sdk.keeper().update_folder("EM", "S2") == renamed("EM", "S2", "Short")
 
 
-# --- Folder not found ---
-
 @pytest.mark.parametrize("check_mode", [False, True])
 @pytest.mark.parametrize("uid", ["MISSING_UID", EMPTY.lower(), "Staging"], ids=["missing", "case_differs", "a_name"])
 def test_unknown_folder_fails_and_nothing_is_sent(sdk_for, run_plugin, uid, check_mode):
@@ -259,8 +253,6 @@ def test_no_folders_means_not_found(make_sdk, run_plugin, folders):
                    update_failure(NOT_FOUND.format(EMPTY)))
     sdk.client.update_folder.assert_not_called()
 
-
-# --- Sibling with the new name: Keeper allows it, so the rename happens and the module warns ---
 
 # (id, folder, new name, extra folders, the sibling UIDs in the warning or None). Extra folders: (uid, parent, name).
 WARNING_CASES = [
@@ -326,8 +318,6 @@ def test_folder_path_is_quoted_in_the_warning_and_the_error(make_sdk, folder, wa
         'Cannot rename the folder "Infra \\"Main\\"/Data\\nbases/Staging" (UID EMPTY_UID): denied')
 
 
-# --- SDK errors name the step that failed ---
-
 def test_get_folders_error(sdk_for, run_plugin):
     sdk = sdk_for()
     sdk.client.get_folders.side_effect = Exception("network is down")
@@ -369,8 +359,6 @@ def test_config_error_from_keeper_ansible_is_raised(make_sdk, run_plugin, tree):
         run_plugin(sdk, {"folder_uid": EMPTY, "new_folder_name": "QA"})
 
 
-# --- Malformed folder data must not hang or crash the module ---
-
 def test_folder_with_a_missing_parent_can_be_renamed(make_sdk, folder):
     sdk = make_sdk([folder(SHARED, "", "Infrastructure"), folder("ORPHAN_UID", "GONE_UID", "Orphan")], autospec=True)
     outcome = bounded(lambda: sdk.keeper().update_folder("ORPHAN_UID", "Adopted"))
@@ -394,8 +382,6 @@ def test_parent_cycle_does_not_hang_the_error_or_the_warning(make_sdk, folder, w
     assert isinstance(outcome["error"], KeeperFolderError)
     assert "(UID A_UID): denied" in str(outcome["error"])
 
-
-# --- Options: only this module's spec is wired. tests/keeper_folder_args_test.py owns the generic checks. ---
 
 # (id, task args, message)
 OPTION_CASES = [
@@ -434,8 +420,6 @@ def test_unsupported_option_fails_and_renames_nothing(make_sdk, run_plugin, tree
     assert sdk.inits == 0
     assert sdk.client.mock_calls == []
 
-
-# --- module_defaults for the action group of this collection ---
 
 def test_group_defaults_of_other_modules_are_ignored_and_own_options_are_not_replaced(sdk_for, run_plugin):
     sdk = sdk_for()
@@ -495,8 +479,6 @@ def test_the_method_gets_the_validated_values_not_the_raw_task_args(sdk_for, run
     assert result == renamed(EMPTY, "QA", "Staging")
     assert [type(arg) for arg in method.call_args.args[1:3]] == [str, str]
 
-
-# --- Documentation ---
 
 def test_docs_stub_matches_the_action_plugin_docs(plugin_module):
     stub = importlib.import_module("keeper_secrets_manager_ansible.plugins.modules.keeper_update_folder")

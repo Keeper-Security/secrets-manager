@@ -56,8 +56,6 @@ def records_of(record, specs):
     return [record(*spec) for spec in specs]
 
 
-# --- Happy path and the force / check mode dimensions ---
-
 @pytest.mark.parametrize("check_mode", [False, True])
 @pytest.mark.parametrize("force", [False, True])
 def test_empty_folder_is_deleted(make_sdk, run_plugin, tree, force, check_mode):
@@ -107,8 +105,6 @@ def test_uid_is_matched_exactly(make_sdk, run_plugin, tree):
     assert run_plugin(make_sdk(tree), {"folder_uid": EMPTY.lower()}) == not_found(EMPTY.lower())
 
 
-# --- Emptiness rules: only DIRECT content counts ---
-
 # (id, folder, [(record uid, folder_uid, inner_folder_uid)], records, subfolders)
 NOT_EMPTY_CASES = [
     ("subfolder_only", PROD, [], 0, 1),
@@ -152,8 +148,6 @@ def test_content_outside_the_folder_does_not_block_the_delete(make_sdk, run_plug
     sdk.client.delete_folder.assert_called_once_with([uid], force_deletion=False)
 
 
-# --- force_deletion: only the value True forces ---
-
 @pytest.mark.parametrize("value", ["true", "True", "yes", "false", "1", 1, 1.0, [True], (True,), {"force": True},
                                    object(), False, None, 0, "", "no"])
 def test_value_that_is_not_true_never_forces(make_sdk, tree, record, value):
@@ -190,8 +184,6 @@ def test_plugin_passes_a_real_bool_even_if_validation_returns_a_raw_value(make_s
     run_plugin(sdk, {"folder_uid": EMPTY})
     assert sdk.client.delete_folder.call_args.kwargs["force_deletion"] is False
 
-
-# --- Server status: the server does not raise when it refuses a delete ---
 
 OK = {"folderUid": EMPTY, "responseCode": "ok"}
 DENIED_MSG = "User does not have permission to delete this folder"
@@ -270,8 +262,6 @@ def test_fallback_compares_the_exact_folder_uid(make_sdk, run_plugin, tree, fold
     assert run_plugin(sdk, {"folder_uid": EMPTY})["changed"] is True
 
 
-# --- SDK errors name the step that failed ---
-
 def test_get_folders_error(make_sdk, run_plugin, tree):
     sdk = make_sdk(tree)
     sdk.client.get_folders.side_effect = Exception("network is down")
@@ -312,8 +302,6 @@ def test_config_error_from_keeper_ansible_is_raised(make_sdk, run_plugin, tree):
         run_plugin(sdk, {"folder_uid": EMPTY})
 
 
-# --- folder_uid ---
-
 @pytest.mark.parametrize("force", [False, True])
 @pytest.mark.parametrize("value", ["", " ", "\t", "\n", " \r\n "])
 def test_blank_uid_fails(make_sdk, run_plugin, tree, value, force):
@@ -341,8 +329,6 @@ def test_all_digit_uid_reaches_the_sdk_as_a_string(make_sdk, run_plugin, tree, f
     assert run_plugin(sdk, {"folder_uid": uid}) == changed(uid, "Numbered")
     sdk.client.delete_folder.assert_called_once_with([uid], force_deletion=False)
 
-
-# --- Options: only that delete_folder's spec is wired. tests/keeper_folder_args_test.py owns the generic checks. ---
 
 # (id, task args, message)
 OPTION_CASES = [
@@ -381,8 +367,6 @@ def test_force_deletion_that_is_not_a_boolean_fails(make_sdk, run_plugin, tree):
     assert sdk.inits == 0
 
 
-# --- module_defaults for the action group of this collection ---
-
 @pytest.mark.parametrize("uid, task_args, defaults, forced", [
     pytest.param(EMPTY, {"folder_uid": EMPTY, "force": True}, {"force": True}, False, id="group_force_is_ignored"),
     pytest.param(DB, {"folder_uid": DB, "force_deletion": True}, {"force_deletion": True}, True,
@@ -413,8 +397,6 @@ def test_unsupported_option_still_fails_with_group_defaults(make_sdk, run_plugin
     assert_unsupported(run_plugin(sdk, task_args, module_defaults=[defaults]), *options)
     assert sdk.inits == 0
 
-
-# --- Folder names in messages are JSON-quoted, so a stray character stays visible ---
 
 QUOTED_CASES = [
     ("quote_in_not_empty", "QUOTE_UID", [], [],
@@ -453,8 +435,6 @@ def test_folder_names_are_escaped_in_messages(make_sdk, run_plugin, folder, reco
     sdk = make_sdk(folders, records=records_of(record, specs), delete_response=response or [])
     assert_failure(run_plugin(sdk, {"folder_uid": uid}), delete_failure(message))
 
-
-# --- Documentation ---
 
 def test_docs_stub_matches_the_action_plugin_docs(plugin_module):
     stub = importlib.import_module("keeper_secrets_manager_ansible.plugins.modules.keeper_delete_folder")
