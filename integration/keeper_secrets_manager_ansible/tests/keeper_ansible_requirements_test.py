@@ -1,7 +1,9 @@
 """
-The ansible-core and Python requirements of the Python package, the Galaxy collection, and the Tower Execution
-Environment (EE). ANSIBLE_CORE and PYTHON are the only values to change when a requirement changes. Every check
-derives from them, so a change that misses one of the files that declare a requirement fails here.
+The ansible-core and Python requirements of the Galaxy collection, the Tower Execution Environment (EE), and the
+Python package. The Python package does not declare ansible-core: it is GPL-3.0-or-later, so declaring it makes
+pip install it and puts it in the release SBOM. The collection and the EE state the supported range instead.
+ANSIBLE_CORE and PYTHON are the only values to change when a requirement changes. Every check derives from them,
+so a change that misses one of the files that declare a requirement fails here.
 """
 from pathlib import Path
 import re
@@ -89,12 +91,6 @@ def single_requirement(requirements, source):
     return requirement
 
 
-def assert_package_range(requirements, source):
-    requirement = single_requirement(requirements, source)
-    assert requirement.specifier == ANSIBLE_CORE, "{}: expected ansible-core{}, found {}".format(
-        source, ANSIBLE_CORE, requirement)
-
-
 def ee_definition():
     return yaml.safe_load((EE_DIR / "execution-environment.yml").read_text(encoding="utf-8"))
 
@@ -111,13 +107,9 @@ def probe_versions(*specifier_sets):
     return sorted(probes)
 
 
-def test_package_requirement(package_metadata):
-    assert_package_range(ansible_requirements(package_metadata["install_requires"], "setup.py"), "setup.py")
-
-
-def test_requirements_file():
-    lines = requirement_lines(PROJECT_DIR / "requirements.txt")
-    assert_package_range(ansible_requirements(lines, "requirements.txt"), "requirements.txt")
+def test_package_does_not_declare_ansible_core(package_metadata):
+    found = ansible_requirements(package_metadata["install_requires"], "setup.py")
+    assert not found, "setup.py: remove {}".format([str(requirement) for requirement in found])
 
 
 def test_collection_requires_ansible():
@@ -163,15 +155,15 @@ def test_execution_environment_ansible_core_is_inside_the_package_range():
         package_pip, outside)
 
 
-def test_other_requirement_files_leave_ansible_core_out():
+def test_requirement_files_leave_ansible_core_out():
     """
+    The package requirements.txt mirrors install_requires, so it leaves ansible-core out for the same reason.
     ansible-builder installs the EE requirements.txt as it is, so an ansible-core line there overrides the EE's
     ansible_core setting. It also removes only some spellings of the name from the requirements of a collection.
     """
-    main = PROJECT_DIR / "requirements.txt"
     for path in sorted(PROJECT_DIR.rglob("requirements*.txt")):
         relative = path.relative_to(PROJECT_DIR)
-        if path == main or any(part.startswith(".") or part in ("build", "dist") for part in relative.parts):
+        if any(part.startswith(".") or part in ("build", "dist") for part in relative.parts):
             continue
         found = ansible_requirements(requirement_lines(path), str(relative))
         assert not found, "{}: remove {}".format(relative, [str(requirement) for requirement in found])

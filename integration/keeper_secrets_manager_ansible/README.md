@@ -23,7 +23,7 @@ This module contains plugins that allow your Ansible automations to use Keeper S
 ## Requirements
 
 * Python 3.9.2 or later.
-* ansible-core 2.15.13 or later, but not the 2.17 series.
+* ansible-core 2.15.13 or later, but not the 2.17 series. The package does not install ansible-core. Install it before you install the package.
 * keeper-secrets-manager-core 17.3.0 or later, and keeper-secrets-manager-helper 1.1.2 or later.
 
 We test ansible-core 2.15.13 and the 2.16, 2.18, 2.19, 2.20, and 2.21 series. ansible-core versions before 2.15.13, and the 2.17 series, are not supported. For the releases that upstream maintains, see the [ansible-core support matrix](https://docs.ansible.com/projects/ansible/latest/reference_appendices/release_and_maintenance.html).
@@ -96,8 +96,8 @@ The Changes section names the ticket for each change.
 
 * ansible-core
   - Before: ansible-core 2.12.0 or later.
-  - Now: ansible-core 2.15.13 or later, and not 2.17.x. When pip installs the Python package, it upgrades an unsupported ansible-core, unless another constraint prevents it. The Galaxy collection shows a warning and still runs, unless `collections_on_ansible_version_mismatch = error` is set.
-  - To do: upgrade ansible-core before you upgrade the package.
+  - Now: ansible-core 2.15.13 or later, and not 2.17.x. The Python package does not install ansible-core, so pip does not install or upgrade it. The Galaxy collection shows a warning and still runs, unless `collections_on_ansible_version_mismatch = error` is set.
+  - To do: install or upgrade ansible-core yourself before you upgrade the package.
 * Python
   - Before: Python 3.9 or later.
   - Now: Python 3.9.2 or later.
@@ -234,7 +234,6 @@ The Changes section names the ticket for each change.
   - **Breaking change**: ansible-base 2.10, ansible-core versions before 2.15.13, and ansible-core 2.17.x are no longer supported
   - Python 3.9 stays supported, from Python 3.9.2. A later release removes it
   - The new minimum removes the ansible-core releases that CVE-2023-5115, CVE-2023-5764, CVE-2024-0690, CVE-2024-8775, and CVE-2024-9902 affect
-  - When pip installs the package, it upgrades an unsupported ansible-core, unless another constraint prevents it
   - For the Galaxy collection, an unsupported ansible-core shows a warning and the collection still runs, unless `collections_on_ansible_version_mismatch = error` is set
   - The Tower Execution Environment now uses Python 3.12 and ansible-core 2.16 (2.16.19 or later), instead of Python 3.9 and ansible-core 2.15.13
   - CI tests the 2.15, 2.16, 2.18, 2.19, 2.20, and 2.21 series. A test checks that every file that declares the ansible-core or Python requirement agrees
@@ -242,6 +241,12 @@ The Changes section names the ticket for each change.
   - The Tower Execution Environment and the collection require keeper-secrets-manager-core 17.3.0 or later and keeper-secrets-manager-helper 1.1.2 or later
   - The collection includes a `requirements.txt` at its root, so `ansible-builder` installs both packages when it builds an image from the collection
   - A test checks that the SDK versions agree in `setup.py`, `requirements.txt`, and the execution environment files
+* KSM-1649: Removed ansible-core from the dependencies of the Python package
+  - **Breaking change**: `pip install keeper-secrets-manager-ansible` no longer installs ansible-core. Install a supported ansible-core yourself. Before, pip installed it with the package
+  - ansible-core is licensed GPL-3.0-or-later, so the package no longer declares it as a dependency
+  - The supported versions do not change: ansible-core 2.15.13 or later, except the 2.17 series
+  - pip no longer upgrades an unsupported ansible-core when it installs the package. Check your version before you upgrade
+  - The Galaxy collection and the Tower Execution Environment do not change. The Tower Execution Environment image still includes ansible-core
 * KSM-845: Added the `subfolder_uid` parameter to `keeper_create` for subfolder targeting
   - Records can now be created in a subfolder within a shared folder, not only at the shared folder root
   - `shared_folder_uid` remains required, and `subfolder_uid` is optional
