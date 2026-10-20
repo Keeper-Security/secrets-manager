@@ -1,8 +1,11 @@
 from pathlib import Path
 
+import difflib
+
 import pytest
 
 
+PACKAGE_README = Path(__file__).resolve().parents[1] / "README.md"
 COLLECTION_README = (Path(__file__).resolve().parents[1] / "ansible_galaxy" / "keepersecurity"
                      / "keeper_secrets_manager" / "README.md")
 
@@ -33,3 +36,23 @@ def test_galaxy_version_mismatch_still_warns_unless_configured_to_error(upgrade_
     assert "warning" in upgrade_section
     assert "still runs" in upgrade_section
     assert "`collections_on_ansible_version_mismatch = error`" in upgrade_section
+
+
+@pytest.mark.parametrize("start, end", [
+    ("# Configuration notes\n", "# Upgrading to 1.5.0\n"),
+    ("# Upgrading to 1.5.0\n", "# Changes\n"),
+    ("## 1.5.0\n", "## 1.4.0\n"),
+], ids=["configuration-and-check-mode", "migration", "changelog"])
+def test_package_and_collection_readmes_share_the_release_sections(start, end):
+    """The PyPI README and the Galaxy README ship separately, so edit these sections in both."""
+    sections = []
+    for readme in (PACKAGE_README, COLLECTION_README):
+        text = readme.read_text(encoding="utf-8")
+        assert text.count(start) == 1
+        section = text.split(start, 1)[1]
+        assert section.count(end) >= 1
+        sections.append(section.split(end, 1)[0])
+    package, collection = sections
+    diff = "\n".join(difflib.unified_diff(package.splitlines(), collection.splitlines(),
+                                          "package README", "collection README", lineterm="", n=0))
+    assert package == collection, diff
