@@ -16,7 +16,7 @@ import yaml
 from keeper_secrets_manager_core import SecretsManager, mock
 from keeper_secrets_manager_core.configkeys import ConfigKeys
 from keeper_secrets_manager_core.core import KSMCache
-from keeper_secrets_manager_core.dto.dtos import KeeperFolder
+from keeper_secrets_manager_core.dto.dtos import KeeperFolder, SecretsManagerResponse
 from keeper_secrets_manager_core.storage import InMemoryKeyValueStorage
 from keeper_secrets_manager_helper.record import Record
 
@@ -416,9 +416,12 @@ class KeeperCheckModeHelperTest(unittest.TestCase):
         create_object = Record(version="v3").create_from_field_list(
             record_type="login", title="Dry Run Record", fields=[]
         )[0].get_record_create_obj()
+        response = SecretsManagerResponse()
+        response.records = [record]
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(KeeperAnsible, "_cache_file_path", return_value=str(Path(directory) / "ksm_cache.bin")), \
-                patch.object(keeper.client, "get_secrets", return_value=[record]), \
+                patch.object(keeper.client, "get_secrets",
+                             side_effect=lambda *a, **k: response if k.get("full_response") else response.records), \
                 patch.object(keeper.client, "get_folders", return_value=_folders()), \
                 patch.object(keeper.client, "delete_secret") as delete, \
                 patch.object(keeper.client, "save") as save, \

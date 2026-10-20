@@ -1027,6 +1027,41 @@ class KeeperAnsible:
 
         return [found_records[x] for x in found_records]
 
+    @staticmethod
+    def _check_record_read_errors(response, uids, titles):
+        bad_records, bad_folders = response.bad_records or [], response.bad_folders or []
+        raw_records = [error.get("r") for error in bad_records]
+        unidentified = False
+        for error in bad_folders:
+            folder = error.get("f")
+            folder_records = folder.get("records") if isinstance(folder, dict) else None
+            if isinstance(folder_records, list):
+                raw_records.extend(folder_records)
+            else:
+                unidentified = True
+        if titles is not None and (raw_records or unidentified):
+            raise ValueError(
+                "Cannot select a record by title because keeper-secrets-manager-core returned unreadable records "
+                "or folders. Absence and uniqueness cannot be confirmed. Use the UID of a readable record.")
+
+        unreadable = set()
+        for record in raw_records:
+            uid = record.get("recordUid") if isinstance(record, dict) else None
+            if isinstance(uid, str) and uid:
+                unreadable.add(uid)
+            else:
+                unidentified = True
+        requested = set(uids)
+        unreadable &= requested
+        if unreadable:
+            raise ValueError(
+                "The requested record UID(s) {} exist, but are unreadable by keeper-secrets-manager-core. "
+                "Nothing was deleted.".format(", ".join(sorted(unreadable))))
+        if unidentified and requested.difference(record.uid for record in response.records or []):
+            raise ValueError(
+                "Cannot confirm that the requested record is absent because keeper-secrets-manager-core returned "
+                "unreadable records or folders without record UIDs. Nothing was deleted.")
+
     def get_records_from_vault(self, uids=None, titles=None, encrypt=False, allow_missing=False):
 
         display.vvvvvv("getting records from the Keeper Vault")
@@ -1036,16 +1071,28 @@ class KeeperAnsible:
         if isinstance(uids, list) is False:
             uids = [uids]
 
-        try:
-            # If we are getting by titles, we need all the records. Even if getting UID, get all the records.
-            if titles is not None:
-                records = self.client.get_secrets()
+        from keeper_secrets_manager_core.keeper_globals import logger_name
+        sdk_logger = logging.getLogger(logger_name)
 
-            # If we are getting uid, we need only select amount.
-            else:
-                records = self.client.get_secrets(uids)
+        # The SDK's skipped-read messages include arbitrary error text. Report only safe lookup facts below.
+        def safe_log(event):
+            return "skipped due to error" not in str(event.msg)
+
+        if allow_missing:
+            sdk_logger.addFilter(safe_log)
+        try:
+            args = () if titles is not None else (uids,)
+            options = {"full_response": True} if allow_missing else {}
+            records = self.client.get_secrets(*args, **options)
         except Exception as err:
             raise Exception("Cannot get record: {}".format(err))
+        finally:
+            if allow_missing:
+                sdk_logger.removeFilter(safe_log)
+
+        if allow_missing:
+            self._check_record_read_errors(records, uids, titles)
+            records = records.records or []
 
         display.vvvvvv(f"got {len(records)} records")
 
@@ -1579,7 +1626,8 @@ class KeeperAnsible:
         """
         Remove one record, reporting whether it changed and the record's UID and title.
 
-        A missing record is a no-op. Check mode reports the predicted change without deleting anything.
+        A missing record is a no-op. An unreadable or uncertain target fails without deleting anything.
+        Check mode reports the predicted change without deleting anything.
         The cache option remains accepted, but a delete must use the current vault: a registered cache can
         contain a record that was already deleted, or hide another record with the same title.
         """
