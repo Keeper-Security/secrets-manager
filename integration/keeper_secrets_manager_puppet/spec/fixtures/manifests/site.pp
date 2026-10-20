@@ -1,0 +1,2 @@
+# Manifest for lookup_spec.rb test cases (used instead of site.pp to avoid hidden character issues)
+node default {}
