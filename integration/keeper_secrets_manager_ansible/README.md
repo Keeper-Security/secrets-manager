@@ -229,6 +229,7 @@ The Changes section names the ticket for each change.
   - It hides the values that `keeper_get`, `keeper_get_record`, and `keeper_password` return
   - It also hides values of four or more characters when later tasks in the same run print them
   - It also hides the SHA-1, MD5, and SHA-256 hashes of these values, because the built-in `copy` module prints the SHA-1 of its content
+    - A hash that the controller cannot compute is not hidden. The secret value is still hidden.
   - Task results from the Keeper actions no longer include an internal key for the callback
 * KSM-1561: Raised the minimum ansible-core version to 2.15.13 and excluded the 2.17 series
   - **Breaking change**: ansible-base 2.10, ansible-core versions before 2.15.13, and ansible-core 2.17.x are no longer supported

@@ -46,7 +46,7 @@ def test_later_attachment_values_and_raw_byte_digests_are_redacted(content, lega
     callback._scrub(SimpleNamespace(
         result={"value": text if legacy_text else content}, task=SimpleNamespace(action="keeper_get")
     ))
-    digests = [hashlib.new(name, content).hexdigest() for name in ("sha1", "md5", "sha256")]
+    digests = [hashlib.new(name, content, usedforsecurity=False).hexdigest() for name in ("sha1", "md5", "sha256")]
     registered = {
         "raw": content, "mutable": bytearray(content), "text": text,
         "json": json.dumps(text)[1:-1], "repr": repr(text)[1:-1],
@@ -72,20 +72,21 @@ def test_sdk_attachment_action_and_callback_preserve_and_hide_bytes(tmp_path, co
     attachment = record.add_file(name="binary.pem", title="binary.pem", content=content)
     response = mock.Response()
     response.add_record(record=record)
+    digests = [hashlib.new(name, content, usedforsecurity=False).hexdigest() for name in ("sha1", "md5", "sha256")]
     args = ({"uid": "{{ record_uid }}", "file": "binary.pem"} if selector == "file" else
             {"notation": "{{ record_uid }}/file/binary.pem"})
     playbook = tmp_path / "attachments.yml"
     playbook.write_text(yaml.safe_dump([{
         "hosts": "my_systems", "gather_facts": False,
+        "vars": {"attachment_digests": digests},
         "tasks": [
             {"name": "Read attachment", "keeper_get": args, "register": "fetched"},
             {"name": "Verify registered bytes", "assert": {"that": [
                 'fetched.value | b64encode == "{}"'.format(base64.b64encode(content).decode())
             ]}, "no_log": True},
             {"name": "Display attachment", "debug": {"var": "fetched.value"}},
-            {"name": "Display attachment digests", "debug": {"msg":
-                '{{ [fetched.value | hash("sha1"), fetched.value | hash("md5"), '
-                'fetched.value | hash("sha256")] | to_json }}'}},
+            # Ansible's hash filter treats MD5 as a security operation, which a FIPS controller may reject.
+            {"name": "Display attachment digests", "debug": {"msg": "{{ attachment_digests | to_json }}"}},
         ],
     }]), encoding="utf-8")
 
@@ -111,5 +112,5 @@ def test_sdk_attachment_action_and_callback_preserve_and_hide_bytes(tmp_path, co
     text = content.decode("utf-8", "surrogateescape")
     for form in (text, json.dumps(text)[1:-1], repr(text)[1:-1], repr(content)[2:-1]):
         assert form not in output
-    for name in ("sha1", "md5", "sha256"):
-        assert hashlib.new(name, content).hexdigest() not in output
+    for digest in digests:
+        assert digest not in output

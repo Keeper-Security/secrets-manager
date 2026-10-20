@@ -126,8 +126,8 @@ class KeeperCopyTest(unittest.TestCase):
         # digest of it may reach the output on the failed, the changed, or the unchanged path, or when the module
         # output cannot be parsed. Then Ansible puts the raw output, digests included, in module_stdout.
         file_content = "MYPASSWORD_2".encode()
-        digests = [hashlib.sha1(file_content).hexdigest(), hashlib.md5(file_content).hexdigest(),
-                   hashlib.sha256(file_content).hexdigest()]
+        digests = [algorithm(file_content, usedforsecurity=False).hexdigest()
+                   for algorithm in (hashlib.sha1, hashlib.md5, hashlib.sha256)]
         with tempfile.TemporaryDirectory() as temp_dir:
             # Runs every module as usual, except that it breaks the JSON of the copy module.
             corrupt_copy_python = os.path.join(temp_dir, "corrupt_copy_python")

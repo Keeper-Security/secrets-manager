@@ -73,7 +73,7 @@ class KeeperRedactPlaybookTest(unittest.TestCase):
         text = self.task_output("Copy a secret to a directory that does not exist")
         self.assertIn("FAILED", text)
         for algorithm in (hashlib.sha1, hashlib.md5, hashlib.sha256):
-            self.assertNotIn(algorithm(SPECIAL_PASSWORD.encode()).hexdigest(), text)
+            self.assertNotIn(algorithm(SPECIAL_PASSWORD.encode(), usedforsecurity=False).hexdigest(), text)
 
     def test_a_failure_message_that_holds_a_secret_is_hidden(self):
         text = self.task_output("Fail with a message that holds a secret")
