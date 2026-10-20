@@ -229,6 +229,7 @@ The Changes section names the ticket for each change.
   - It hides the values that `keeper_get`, `keeper_get_record`, and `keeper_password` return
   - It also hides values of four or more characters when later tasks in the same run print them
   - It also hides the SHA-1, MD5, and SHA-256 hashes of these values, because the built-in `copy` module prints the SHA-1 of its content
+    - A hash that the controller cannot compute is not hidden. The secret value is still hidden.
   - Task results from the Keeper actions no longer include an internal key for the callback
 * KSM-1638: Fixed `keeper_redact` exposing sensitive configuration variables
   - `keeper_token` and `keeper_record_cache_secret` are now hidden
