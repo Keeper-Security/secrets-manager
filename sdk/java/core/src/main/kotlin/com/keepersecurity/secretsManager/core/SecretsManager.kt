@@ -27,9 +27,10 @@ import kotlin.random.Random
 
 const val KEEPER_CLIENT_VERSION = "mj17.5.0"
 
-// Throttle retry. The backend throttles HTTP 403 {"error":"throttled"}
-// per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every
-// request, so the counter only clears after 10s of silence).
+// Throttle retry. The backend throttles with HTTP 429 {"error":"throttled"} (it was 403 until
+// June 2026) per clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on
+// every request, so the counter only clears after 10s of silence).
+private const val HTTP_TOO_MANY_REQUESTS = 429
 const val MAX_THROTTLE_RETRIES = 5
 const val BASE_THROTTLE_DELAY_SEC = 11 // 1s safety margin over the backend's 10s memcached TTL
 const val MAX_THROTTLE_DELAY_SEC = 176 // caps a backend-supplied retry_after from forcing an excessive wait
@@ -1930,9 +1931,10 @@ private inline fun <reified T> postQuery(
             val errorMessage = String(response.data)
             // Throttle retry with exponential backoff + jitter. Checked before
             // key-rotation so that path (incl. the IL5 custom-key suppression) is untouched, and
-            // gated on the 403 status so a non-403 response carrying a {"error":"throttled"} body
-            // is not mistaken for a throttle and retried.
-            if (response.statusCode == HTTP_FORBIDDEN) {
+            // gated on the status so any other response carrying a {"error":"throttled"} body is
+            // not mistaken for a throttle and retried. 403 stays in the gate even though the backend
+            // now sends 429: removing it would stop retries on any path that still answers 403.
+            if (response.statusCode == HTTP_TOO_MANY_REQUESTS || response.statusCode == HTTP_FORBIDDEN) {
                 val retryAfter = parseThrottle(errorMessage)
                 if (retryAfter != null) {
                     if (throttleAttempt >= MAX_THROTTLE_RETRIES) {

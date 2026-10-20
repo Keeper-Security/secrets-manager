@@ -7,8 +7,9 @@ import kotlin.test.*
 
 // Throttle retry with exponential backoff. Unit tests exercise the internal
 // helpers; e2e tests drive getSecrets through postQuery with a mocked queryFunction returning
-// HTTP 403 {"error":"throttled"} responses and a recording throttleSleepMillis so retries never
-// actually wait.
+// HTTP 403 or 429 {"error":"throttled"} responses and a recording throttleSleepMillis so retries
+// never actually wait. The backend moved from 403 to 429 in June 2026; 403 stays accepted in case
+// a second rate limiter still uses it.
 @ExperimentalSerializationApi
 internal class ThrottleTest {
 
@@ -100,6 +101,27 @@ internal class ThrottleTest {
     }
 
     @Test
+    fun retriesThenSucceedsOn429() {
+        var calls = 0
+        val sleeps = mutableListOf<Long>()
+        val mock: QueryFunction = { _, transmissionKey, _ ->
+            calls++
+            if (calls == 1) {
+                KeeperHttpResponse(429, throttleBody())
+            } else {
+                val body = """{"records":[],"folders":[],"encryptedAppKey":null}""".toByteArray()
+                KeeperHttpResponse(HTTP_OK, encrypt(body, transmissionKey.key))
+            }
+        }
+        val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
+
+        val secrets = getSecrets(options)
+        assertTrue(secrets.records.isEmpty())
+        assertEquals(1, sleeps.size)
+        assertEquals(2, calls)
+    }
+
+    @Test
     fun exhaustionThrowsKeeperThrottleException() {
         var calls = 0
         val sleeps = mutableListOf<Long>()
@@ -145,7 +167,7 @@ internal class ThrottleTest {
 
     @Test
     fun non403ThrottleBodyNotRetried() {
-        // A 502 carrying a {"error":"throttled"} body must NOT be retried (403 gate).
+        // A 502 carrying a {"error":"throttled"} body must NOT be retried (403/429 gate).
         val sleeps = mutableListOf<Long>()
         val mock: QueryFunction = { _, _, _ ->
             KeeperHttpResponse(502, throttleBody())

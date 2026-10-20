@@ -4,6 +4,12 @@ For more information see our official documentation page https://docs.keeper.io/
 
 # Change Log
 
+## 17.5.0
+- KSM-1397 - Retry throttled requests when the backend answers HTTP 429
+  - Since June 2026 the backend answers a throttled request with HTTP 429 `{"error":"throttled"}`. The throttle retry from 17.3.0 matched only HTTP 403, so it never ran, and a throttled call failed at once with the raw error. The SDK now retries on 429 with the same backoff, and it still retries on 403.
+  - **Behavior change:** a throttled call now waits and retries before it fails, with up to 5 retries spaced 11 to 176 seconds apart. If the retries run out, the SDK throws `KeeperThrottleException`, which is not a `SecretsManagerException`. Code that caught `SecretsManagerException` for a throttled call must also catch `KeeperThrottleException`.
+  - No API change.
+
 ## 17.4.0
 **Breaking Changes**
 - `deleteFolder()` returns `SecretsManagerDeleteFolderResponse` instead of `SecretsManagerDeleteResponse`. The new type exposes a `folders` list, where each entry has `folderUid`, `responseCode`, and an optional `errorMessage`; callers that read `.records` on the old return type must switch to `.folders`. In practice no working code can be affected: the old return type required a `records` field while the backend sends `folders`, so every previous call to `deleteFolder()` threw `MissingFieldException` instead of returning a value.
