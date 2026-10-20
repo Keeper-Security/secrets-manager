@@ -25,17 +25,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
-        ansible-core: ["ansible-core"]
+        # Explicit pairs keep every supported engine series covered when pip's newest release changes.
         include:
-          # pip installs the newest allowed ansible-core for each Python. Python 3.9 already gets the minimum, so the
-          # minimum also runs on the newest Python that supports it, and two jobs add the series pip never picks.
+          - python-version: "3.9"
+            ansible-core: "ansible-core==2.15.13"
+          - python-version: "3.10"
+            ansible-core: "ansible-core>=2.16.19,<2.17"
+          # Run the minimum on the newest Python that supports it as well as the oldest supported Python.
           - python-version: "3.11"
             ansible-core: "ansible-core==2.15.13"
           - python-version: "3.11"
-            ansible-core: "ansible-core<2.19"
+            ansible-core: "ansible-core~=2.18.0"
+          - python-version: "3.11"
+            ansible-core: "ansible-core~=2.19.0"
           - python-version: "3.12"
-            ansible-core: "ansible-core<2.21"
+            ansible-core: "ansible-core~=2.20.0"
+          - python-version: "3.12"
+            ansible-core: "ansible-core~=2.21.0"
+          - python-version: "3.13"
+            ansible-core: "ansible-core~=2.21.0"
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -69,7 +77,7 @@ jobs:
         env:
           ANSIBLE_CORE_SPEC: ${{ matrix.ansible-core }}
         run: |
-          python3 -m pip install -r requirements.txt "$ANSIBLE_CORE_SPEC"
+          python3 -m pip install -r requirements.txt "ansible-core>=2.15.13,!=2.17.*" "$ANSIBLE_CORE_SPEC"
           python3 -m pip install pytest pytest-cov
 
       - name: Show the KSM Python SDK under test

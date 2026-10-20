@@ -2,12 +2,14 @@
 The ansible-core and Python requirements of the Galaxy collection, the Tower Execution Environment (EE), and the
 Python package. The Python package does not declare ansible-core: it is GPL-3.0-or-later, so declaring it makes
 pip install it and puts it in the release SBOM. The collection and the EE state the supported range instead.
-ANSIBLE_CORE and PYTHON are the only values to change when a requirement changes. Every check derives from them,
-so a change that misses one of the files that declare a requirement fails here.
+ANSIBLE_CORE and PYTHON define the supported requirements, and CI_SERIES lists the engine series that CI must cover.
+The checks derive from them, so a change that misses a requirement declaration or CI coverage fails here.
 """
+from importlib import metadata
 from pathlib import Path
 import re
 import runpy
+import shlex
 import sys
 import types
 
@@ -23,6 +25,8 @@ import yaml
 ANSIBLE_CORE = SpecifierSet(">=2.15.13,!=2.17.*")
 # Python 3.9.0 and 3.9.1 cannot install the cryptography release that the SDK needs.
 PYTHON = SpecifierSet(">=3.9.2")
+# The supported engine series that the README promises to test.
+CI_SERIES = {(2, 15), (2, 16), (2, 18), (2, 19), (2, 20), (2, 21)}
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 REPO_DIR = PROJECT_DIR.parents[1]
@@ -107,6 +111,20 @@ def probe_versions(*specifier_sets):
     return sorted(probes)
 
 
+@pytest.fixture
+def ci_job():
+    if not WORKFLOW.exists():
+        pytest.skip("the CI workflow is not part of this checkout")
+    return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["test-ansible"]
+
+
+@pytest.fixture
+def ci_entries(ci_job):
+    matrix = ci_job["strategy"]["matrix"]
+    assert set(matrix) == {"include"}, "use explicit Python/ansible-core pairs for supported-series coverage"
+    return matrix["include"]
+
+
 def test_package_does_not_declare_ansible_core(package_metadata):
     found = ansible_requirements(package_metadata["install_requires"], "setup.py")
     assert not found, "setup.py: remove {}".format([str(requirement) for requirement in found])
@@ -169,16 +187,68 @@ def test_requirement_files_leave_ansible_core_out():
         assert not found, "{}: remove {}".format(relative, [str(requirement) for requirement in found])
 
 
-def test_ci_runs_the_minimum_and_the_oldest_python():
-    if not WORKFLOW.exists():
-        pytest.skip("the CI workflow is not part of this checkout")
-    matrix = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["test-ansible"]["strategy"]["matrix"]
+def test_installed_ansible_core_is_supported():
+    installed = Version(metadata.version("ansible-core"))
+    assert installed in ANSIBLE_CORE, "installed ansible-core {} is outside {}".format(installed, ANSIBLE_CORE)
+
+
+def test_ci_installs_with_the_supported_constraint(ci_job):
+    step = next(step for step in ci_job["steps"] if step.get("name") == "Install Ansible dependencies")
+    assert step["env"]["ANSIBLE_CORE_SPEC"] == "${{ matrix.ansible-core }}"
+    commands = [shlex.split(line) for line in step["run"].splitlines() if line.strip()]
+    installs = [command for command in commands
+                if command[:4] == ["python3", "-m", "pip", "install"] and "-r" in command]
+    assert len(installs) == 1, "install requirements.txt and both engine constraints in one pip command"
+    command = installs[0]
+    assert command[command.index("-r") + 1] == "requirements.txt"
+    assert "$ANSIBLE_CORE_SPEC" in command, "the pip command must use the matrix's engine selection"
+    requirements = ansible_requirements([argument for argument in command[4:] if argument.startswith("ansible")],
+                                       "CI pip install")
+    requirement = single_requirement(requirements, "CI pip install")
+    assert requirement.specifier == ANSIBLE_CORE, (
+        "CI must constrain ansible-core independently of requirements.txt: expected {}".format(ANSIBLE_CORE))
+
+
+def test_ci_covers_the_supported_series(ci_entries):
+    covered = set()
+    python310_covers216 = False
+    for entry in ci_entries:
+        source = "CI Python {} ({})".format(entry["python-version"], entry["ansible-core"])
+        requirement = single_requirement(ansible_requirements([entry["ansible-core"]], source), source)
+        allowed = [version for version in probe_versions(ANSIBLE_CORE, requirement.specifier)
+                   if version in requirement.specifier]
+        assert allowed, "{} allows no engine version".format(source)
+        outside = [str(version) for version in allowed if version not in ANSIBLE_CORE]
+        assert not outside, "{} allows unsupported engines: {}".format(source, outside)
+        series = {version.release[:2] for version in allowed}
+        assert len(series) == 1, "{} must select one engine series, found {}".format(source, sorted(series))
+        covered.update(series)
+        if Version(entry["python-version"]).release[:2] == (3, 10) and series == {(2, 16)}:
+            python310_covers216 = True
+    assert CI_SERIES <= covered, "CI is missing supported engine series: {}".format(sorted(CI_SERIES - covered))
+    assert python310_covers216, "CI must run Python 3.10 with ansible-core 2.16"
+
+
+def test_ci_runs_the_minimum_and_the_oldest_python(ci_entries):
     pin = "ansible-core=={}".format(lower_bound(ANSIBLE_CORE))
-    assert any(entry.get("ansible-core") == pin for entry in matrix.get("include", [])), (
+    assert any(entry["ansible-core"] == pin for entry in ci_entries), (
         "the workflow must run {}".format(pin))
-    oldest = min(matrix["python-version"], key=Version)
+    oldest = min((entry["python-version"] for entry in ci_entries), key=Version)
     assert Version(oldest).release[:2] == lower_bound(PYTHON).release[:2], (
         "the oldest CI Python is {}, but python_requires is {}".format(oldest, PYTHON))
+
+
+def test_ci_covers_the_package_python_versions(package_metadata, ci_entries):
+    advertised = set()
+    for classifier in package_metadata["classifiers"]:
+        match = re.fullmatch(r"Programming Language :: Python :: (\d+\.\d+)", classifier)
+        if match:
+            advertised.add(Version(match.group(1)).release[:2])
+    assert advertised, "setup.py must advertise specific Python versions"
+    covered = {Version(entry["python-version"]).release[:2] for entry in ci_entries}
+    missing = advertised - covered
+    assert not missing, "CI is missing Python versions advertised by setup.py: {}".format(
+        ["{}.{}".format(*version) for version in sorted(missing)])
 
 
 def test_python_requirement(package_metadata):
