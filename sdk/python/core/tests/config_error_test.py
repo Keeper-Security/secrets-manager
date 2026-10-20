@@ -159,6 +159,25 @@ class ConfigErrorTest(unittest.TestCase):
         self.assertIn("None", message)
         self.assertIn("configuration", message.lower())
 
+    # ------------------------------------------------------------------
+    # InMemoryKeyValueStorage must raise KeeperError (not a cryptic
+    # TypeError) when given a malformed base64/JSON config string
+    # ------------------------------------------------------------------
+
+    def test_inmemory_storage_malformed_config_raises_keeper_error(self):
+        """A single-char config string must raise KeeperError, not a cryptic TypeError."""
+        with self.assertRaises(KeeperError) as context:
+            InMemoryKeyValueStorage("A")
+        message = str(context.exception)
+        self.assertIn("Could not load config data", message)
+
+    def test_inmemory_storage_non_json_string_raises_keeper_error(self):
+        """A non-JSON, non-base64 config string raises a clear KeeperError."""
+        with self.assertRaises(KeeperError) as context:
+            InMemoryKeyValueStorage("not a valid config")
+        message = str(context.exception)
+        self.assertIn("Could not load config data", message)
+
     def _make_secrets_manager_with_config(self, config_overrides=None, skip_keys=None):
         """Build a SecretsManager whose InMemoryKeyValueStorage is missing the requested keys."""
         skip_keys = skip_keys or []
@@ -217,6 +236,50 @@ class ConfigErrorTest(unittest.TestCase):
         message = str(context.exception)
         self.assertIn("appKey", message)
         self.assertIn("One-Time Token", message)
+
+    def test_fetch_and_decrypt_folders_skips_undecryptable_folder(self):
+        """A folder that fails to decrypt is skipped; the good folder still returns.
+
+        Regression for the getFolders crash-safety fix: per-folder decryption is
+        wrapped in try/except so one bad folder key no longer aborts the whole call.
+        """
+        app_key = CryptoUtils.generate_encryption_key_bytes()
+        sm = self._make_secrets_manager_with_config(
+            config_overrides={"appKey": utils.bytes_to_base64(app_key)}
+        )
+
+        good_folder_key = CryptoUtils.generate_encryption_key_bytes()
+        good_folder_key_enc = utils.bytes_to_base64(
+            CryptoUtils.encrypt_aes(good_folder_key, app_key)
+        )
+        good_folder_data_enc = utils.bytes_to_base64(
+            CryptoUtils.encrypt_aes_cbc(
+                json.dumps({"name": "Good Folder"}).encode("utf-8"), good_folder_key
+            )
+        )
+
+        bad_folder_key_enc = utils.bytes_to_base64(b"this is not a valid folder key")
+
+        folders_response = json.dumps({
+            "folders": [
+                {
+                    "folderUid": "good-uid",
+                    "folderKey": good_folder_key_enc,
+                    "data": good_folder_data_enc,
+                },
+                {
+                    "folderUid": "bad-uid",
+                    "folderKey": bad_folder_key_enc,
+                },
+            ],
+        }).encode("utf-8")
+
+        with patch.object(sm, "_post_query", return_value=folders_response):
+            folders = sm.fetch_and_decrypt_folders()
+
+        self.assertEqual(len(folders), 1)
+        self.assertEqual(folders[0].folder_uid, "good-uid")
+        self.assertEqual(folders[0].name, "Good Folder")
 
 
 if __name__ == '__main__':
