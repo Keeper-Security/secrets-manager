@@ -14,7 +14,6 @@ plugins/action/keeper_password.py import-3.13!skip
 plugins/action/keeper_remove.py import-3.13!skip
 plugins/action/keeper_set.py import-3.13!skip
 plugins/action/keeper_update_folder.py import-3.13!skip
-plugins/callback/keeper_redact.py pylint:unidiomatic-typecheck
 plugins/callback/keeper_redact.py validate-modules:missing-gplv3-license
 plugins/callback/keeper_redact.py validate-modules:module-invalid-version-added
 plugins/lookup/keeper.py import-3.13!skip

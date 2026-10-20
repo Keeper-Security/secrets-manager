@@ -71,7 +71,9 @@ class CallbackModule(DefaultCallbackBase):
         "keeper_config_file",
         "keeper_client_id",
         "keeper_private_key",
-        "keeper_app_key"
+        "keeper_app_key",
+        "keeper_token",
+        "keeper_record_cache_secret",
     ]
 
     # The key of each Keeper action result that holds secret values.
@@ -94,19 +96,6 @@ class CallbackModule(DefaultCallbackBase):
         # Secret values from this run. They stay in this process and must never reach a log line, a repr, or a file.
         self._learned = set()
         self._forms = []
-
-    @staticmethod
-    def _remove_special_keeper_values(obj):
-        if type(obj) is list:
-            for item in obj:
-                CallbackModule._remove_special_keeper_values(item)
-        elif type(obj) is dict:
-            for k, v in obj.items():
-                if type(v) is dict or type(v) is list:
-                    CallbackModule._remove_special_keeper_values(v)
-                else:
-                    if k in CallbackModule.KEEPER_KEYS:
-                        obj[k] = "****"
 
     def _learn(self, action, body):
         key = self.SECRET_RESULT_KEYS.get(action)
@@ -163,8 +152,10 @@ class CallbackModule(DefaultCallbackBase):
         if isinstance(obj, Mapping):
             clean = {}
             for key, value in obj.items():
-                # Identify secret payloads before their structural keys become redacted display names.
-                if payload_key is not None and key == payload_key:
+                # Identify sensitive settings and secret payloads before their keys become redacted display names.
+                if key in self.KEEPER_KEYS:
+                    value = REDACTED
+                elif payload_key is not None and key == payload_key:
                     value = self._mask(value)
                 name = self._redact_text(key) if isinstance(key, str) else key
                 # Two keys can become the same text. Keep both values.
@@ -199,7 +190,6 @@ class CallbackModule(DefaultCallbackBase):
         # Rebuild the result instead of editing it. Nested objects in the original can be shared with the registered
         # variable and with other callbacks.
         clean = self._redact(body, payload_key=self.SECRET_RESULT_KEYS.get(action))
-        self._remove_special_keeper_values(clean)
 
         # ansible-core 2.19 and later print the error from an object on the result, not from the dictionary, so the
         # copy above cannot hide it. Take the error marker out of the copy and print the redacted message instead.
