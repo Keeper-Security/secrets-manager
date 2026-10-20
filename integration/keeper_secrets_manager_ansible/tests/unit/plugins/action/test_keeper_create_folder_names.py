@@ -15,6 +15,8 @@ SHARED, NESTED = "SHARED_UID", "NESTED_UID"
 BLANK = "The folder_name is blank. keeper_create_folder requires this value to be set."
 NOT_TEXT = ("The folder_name option must be a string, but it is {}. Put quotes around the value, or use the "
             "string filter.")
+PADDED = ("The folder_name {!r} has leading or trailing whitespace. Remove it. In YAML, a block scalar (| or >) "
+          "keeps the newline at its end.")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -67,9 +69,64 @@ def test_invalid_names_fail_before_client_initialization(
     assert sdk.client.mock_calls == []
 
 
-def test_unsupported_option_fails_before_client_initialization(make_sdk, run_plugin):
+@pytest.mark.parametrize("check_mode", [False, True], ids=["normal", "check"])
+@pytest.mark.parametrize("vaulted", [False, True], ids=["quoted", "inline_vault"])
+@pytest.mark.parametrize("name", [
+    pytest.param(" Padded ", id="padded_nonblank"),
+    pytest.param(" New", id="leading_space"),
+    pytest.param("New ", id="trailing_space"),
+    pytest.param("\tNew", id="leading_tab"),
+    pytest.param("New\t", id="trailing_tab"),
+    pytest.param("\nNew", id="leading_newline"),
+    pytest.param("New\n", id="trailing_newline"),
+    pytest.param("New\r", id="trailing_carriage_return"),
+    pytest.param("New\r\n", id="trailing_crlf"),
+    pytest.param("\u00a0New", id="leading_unicode_whitespace"),
+    pytest.param("New\u2003", id="trailing_unicode_whitespace"),
+    pytest.param("Bob's folder ", id="quoted_diagnostic"),
+])
+def test_padded_names_fail_before_client_initialization(
+        make_sdk, run_plugin, name_loader, check_mode, name, vaulted):
     sdk = make_sdk([])
-    result = run_plugin(sdk, {"shared_folder_uid": SHARED, "folder_name": "New", "folder_nmae": "Other"})
+    result = run_plugin(sdk, {"shared_folder_uid": SHARED, "folder_name": name_loader(name, vaulted)},
+                        check_mode=check_mode)
+    assert result == {"failed": True, "changed": False, "msg": PADDED.format(name)}
+    assert sdk.inits == 0
+    assert sdk.client.mock_calls == []
+
+
+@pytest.mark.parametrize("check_mode", [False, True], ids=["normal", "check"])
+@pytest.mark.parametrize("scalar", ["|", ">"], ids=["literal", "folded"])
+def test_yaml_block_scalar_newline_fails_before_client_initialization(make_sdk, run_plugin, scalar, check_mode):
+    name = yaml.safe_load("folder_name: {}\n  Foo\n".format(scalar))["folder_name"]
+    assert name == "Foo\n"
+    sdk = make_sdk([])
+    result = run_plugin(sdk, {"shared_folder_uid": SHARED, "folder_name": name}, check_mode=check_mode)
+    assert result == {"failed": True, "changed": False, "msg": PADDED.format(name)}
+    assert sdk.inits == 0
+    assert sdk.client.mock_calls == []
+
+
+@pytest.mark.parametrize("check_mode", [False, True], ids=["normal", "check"])
+@pytest.mark.parametrize("parent", [SHARED, NESTED], ids=["shared", "nested"])
+def test_existing_padded_name_still_fails_before_client_initialization(
+        make_sdk, folder, run_plugin, parent, check_mode):
+    sdk = make_sdk([folder("EXISTING_UID", parent, "Existing ")])
+    args = {"shared_folder_uid": SHARED, "folder_name": "Existing "}
+    if parent == NESTED:
+        args["subfolder_uid"] = NESTED
+    assert run_plugin(sdk, args, check_mode=check_mode) == {
+        "failed": True, "changed": False, "msg": PADDED.format("Existing "),
+    }
+    assert sdk.inits == 0
+    assert sdk.client.mock_calls == []
+
+
+@pytest.mark.parametrize("check_mode", [False, True], ids=["normal", "check"])
+def test_unsupported_option_fails_before_client_initialization(make_sdk, run_plugin, check_mode):
+    sdk = make_sdk([])
+    result = run_plugin(sdk, {"shared_folder_uid": SHARED, "folder_name": "New", "folder_nmae": "Other"},
+                        check_mode=check_mode)
     assert result["failed"] is True and result["changed"] is False
     assert result["msg"].startswith("Unsupported parameters for (keeper_create_folder) module: folder_nmae.")
     assert sdk.inits == 0 and sdk.client.mock_calls == []
@@ -97,7 +154,11 @@ def no_network(*args, **kwargs):
     pytest.param("No", False, id="quoted_false"),
     pytest.param("0", False, id="quoted_zero"),
     pytest.param("2024", False, id="quoted_year"),
-    pytest.param(" Padded ", False, id="padded_nonblank"),
+    pytest.param("Inner  spaces", False, id="inner_spaces"),
+    pytest.param("Inner\ttab", False, id="inner_tab"),
+    pytest.param("Inner\nnewline", False, id="inner_newline"),
+    pytest.param(yaml.safe_load("|-\n  Literal\n"), False, id="literal_strip"),
+    pytest.param(yaml.safe_load(">-\n  Folded\n  name\n"), False, id="folded_strip"),
     pytest.param("Vaulted Name", True, id="inline_vault"),
 ])
 def test_real_sdk_preserves_names_and_repeated_creation_is_idempotent(

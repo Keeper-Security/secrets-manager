@@ -61,6 +61,9 @@ options:
   folder_name:
     description:
     - The name to give the new folder.
+    - Must be a nonblank string without leading or trailing whitespace.
+    - Quote numeric or boolean-looking names so YAML reads them as strings.
+    - Use YAML strip chomping (|- or >-) to avoid a block scalar's trailing newline.
     type: str
     required: yes
 '''
@@ -119,6 +122,10 @@ class ActionModule(ActionBase):
             folder_name = str(args["folder_name"])
             if not folder_name.strip():
                 raise ValueError("The folder_name is blank. keeper_create_folder requires this value to be set.")
+            if folder_name != folder_name.strip():
+                raise ValueError(
+                    "The folder_name {!r} has leading or trailing whitespace. Remove it. In YAML, a block scalar "
+                    "(| or >) keeps the newline at its end.".format(folder_name))
         except Exception as err:
             return {"failed": True, "changed": False, "msg": str(err)}
 

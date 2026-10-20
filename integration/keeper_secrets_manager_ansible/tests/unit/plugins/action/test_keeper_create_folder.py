@@ -1,3 +1,4 @@
+from importlib import import_module
 from unittest.mock import ANY
 
 import pytest
@@ -80,7 +81,6 @@ CREATES_ANYWAY = [
     ("same_name_in_the_shared_folder", {"shared_folder_uid": SHARED, "subfolder_uid": DB, "folder_name": "Staging"}),
     ("name_of_a_shared_folder", {"shared_folder_uid": SHARED, "folder_name": "Operations"}),
     ("different_case", {"shared_folder_uid": SHARED, "folder_name": "staging"}),
-    ("trailing_space", {"shared_folder_uid": SHARED, "folder_name": "Staging "}),
     ("start_of_an_existing_name", {"shared_folder_uid": SHARED, "folder_name": "Stag"}),
     ("same_name_below_a_parent_uid_that_starts_like_the_target", {"shared_folder_uid": SHARED, "subfolder_uid": DB,
                                                                   "folder_name": "Child"}),
@@ -166,7 +166,10 @@ def test_create_error_is_not_retried(sdk_for, run_plugin, plugin_module):
 
 
 def test_documented_options_and_return_values(sdk_for, run_plugin, plugin_module):
-    options = yaml.safe_load(plugin_module.DOCUMENTATION)["options"]
+    documentation = yaml.safe_load(plugin_module.DOCUMENTATION)
+    module_stub = import_module("keeper_secrets_manager_ansible.plugins.modules." + PLUGIN)
+    assert yaml.safe_load(module_stub.DOCUMENTATION) == documentation
+    options = documentation["options"]
     assert {n: bool(o.get("required", False)) for n, o in options.items()} == {
         "shared_folder_uid": True, "subfolder_uid": False, "folder_name": True}
     spec = plugin_module.ActionModule.ARGUMENT_SPEC
