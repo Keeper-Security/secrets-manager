@@ -2,6 +2,7 @@ import types
 from unittest.mock import patch
 
 import pytest
+from keeper_secrets_manager_core.dto.dtos import SecretsManagerResponse
 
 from keeper_secrets_manager_ansible import KeeperAnsible
 
@@ -45,7 +46,9 @@ def vault(make_sdk):
     """A fake SDK with one record, and a delete_secret that confirms the delete unless a response is given."""
     def make(records=None, response=CONFIRMED):
         sdk = make_sdk([])
-        sdk.client.get_secrets.return_value = [rec()] if records is None else records
+        full_response = SecretsManagerResponse()
+        full_response.records = [rec()] if records is None else records
+        sdk.client.get_secrets.return_value = full_response
         sdk.client.delete_secret.return_value = [ok()] if response is CONFIRMED else response
         return sdk
     return make
@@ -136,7 +139,7 @@ def test_the_cache_option_is_ignored_with_a_warning(vault, run_plugin, selector,
     with patch.object(KeeperAnsible, "decrypt", return_value=[rec()]) as decrypt, \
             patch("keeper_secrets_manager_ansible.display.warning") as warning:
         assert run_plugin(sdk, args, check_mode=check_mode) == expected
-    sdk.client.get_secrets.assert_called_once_with(*reads)
+    sdk.client.get_secrets.assert_called_once_with(*reads, full_response=True)
     assert sdk.action_modules[0]._task.args == args
     decrypt.assert_not_called()
     warning.assert_called_once()

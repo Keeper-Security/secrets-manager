@@ -10,6 +10,7 @@ from unittest.mock import patch
 import requests
 from keeper_secrets_manager_core import SecretsManager
 from keeper_secrets_manager_core.core import KSMCache
+from keeper_secrets_manager_core.dto.dtos import SecretsManagerResponse
 
 from keeper_secrets_manager_ansible import KeeperAnsible, KeeperFieldType
 
@@ -156,7 +157,9 @@ class KeeperVaultReadTest(unittest.TestCase):
 
         def get_secrets(*args, **kwargs):
             allowed.append(KeeperAnsible._dr_cache_allowed)
-            return [record]
+            response = SecretsManagerResponse()
+            response.records = [record]
+            return response if kwargs.get("full_response") else response.records
 
         with patch.object(keeper.client, "get_secrets", side_effect=get_secrets), \
                 patch.object(keeper.client, "delete_secret",

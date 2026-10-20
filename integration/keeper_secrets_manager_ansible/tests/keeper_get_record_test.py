@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from keeper_secrets_manager_core.mock import Record, Response
+from keeper_secrets_manager_core.dto.dtos import SecretsManagerResponse
 
 from keeper_secrets_manager_ansible import KeeperAnsible
 from .ansible_test_framework import AnsibleTestFramework
@@ -58,7 +59,9 @@ def test_record_selection_completeness(selector, attr, missing, partial, allow_m
     record = SimpleNamespace(uid="FOUND_UID", title="Found Title")
     keeper = object.__new__(KeeperAnsible)
     keeper.client = MagicMock()
-    keeper.client.get_secrets.return_value = [record] if partial else []
+    response = SecretsManagerResponse()
+    response.records = [record] if partial else []
+    keeper.client.get_secrets.return_value = response if allow_missing else response.records
     selected = ([getattr(record, attr)] if partial else []) + [missing]
     kwargs = {selector: selected, "allow_missing": allow_missing}
     if allow_missing:
@@ -67,4 +70,5 @@ def test_record_selection_completeness(selector, attr, missing, partial, allow_m
         with pytest.raises(Exception) as caught:
             keeper.get_records_from_vault(**kwargs)
         assert caught.value.args[0] == "The following record {}(s) could not be found: {!r}".format(attr, [missing])
-    keeper.client.get_secrets.assert_called_once_with(*((selected,) if selector == "uids" else ()))
+    keeper.client.get_secrets.assert_called_once_with(
+        *((selected,) if selector == "uids" else ()), **({"full_response": True} if allow_missing else {}))
