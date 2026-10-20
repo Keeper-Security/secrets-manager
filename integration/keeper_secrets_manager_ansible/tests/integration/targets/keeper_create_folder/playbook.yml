@@ -96,7 +96,7 @@
         - omitted_subfolder.folder_uid == created.results[0].folder_uid
         - omitted_subfolder is not changed
 
-  - name: "Failures raise: a missing name, a missing shared folder, and a shared folder that does not exist"
+  - name: "Missing names, missing shared folder options, and unavailable shared folders fail"
     keeper_create_folder:
       shared_folder_uid: "{{ shared_uid }}"
     register: "no_name"
@@ -138,7 +138,7 @@
         - ran_after_failure is not defined
 
 # The action group of this collection gives its module_defaults to every module in the group. keeper_create_folder
-# does not check its options, so it reads the default shared_folder_uid and ignores cache.
+# reads the default shared_folder_uid and ignores unrelated group defaults such as cache.
 - name: Keeper Create Folder With Group Defaults
   hosts: "my_systems"
   gather_facts: no

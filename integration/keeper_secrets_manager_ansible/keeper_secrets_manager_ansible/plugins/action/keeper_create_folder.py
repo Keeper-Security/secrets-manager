@@ -96,29 +96,39 @@ folder_uid:
 
 class ActionModule(ActionBase):
 
+    ARGUMENT_SPEC = dict(
+        shared_folder_uid=dict(type="str", required=True),
+        subfolder_uid=dict(type="str"),
+        folder_name=dict(type="str", required=True),
+    )
+
     def run(self, tmp=None, task_vars=None):
         super(ActionModule, self).run(tmp, task_vars)
 
         if task_vars is None:
             task_vars = {}
 
-        keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
+        try:
+            args = dict(self._task.args)
+            # A null subfolder from a preceding check-mode task means the shared folder.
+            if args.get("subfolder_uid") is None:
+                args.pop("subfolder_uid", None)
+            args = KeeperAnsible.validate_task_args(
+                "keeper_create_folder", args, self.ARGUMENT_SPEC,
+                ignore=KeeperAnsible.group_default_options(self._task, self._templar))
+            folder_name = str(args["folder_name"])
+            if not folder_name.strip():
+                raise ValueError("The folder_name is blank. keeper_create_folder requires this value to be set.")
+        except Exception as err:
+            return {"failed": True, "changed": False, "msg": str(err)}
 
-        shared_folder_uid = self._task.args.get("shared_folder_uid")
-        if shared_folder_uid is None:
-            raise AnsibleError(
-                "The shared_folder_uid is blank. keeper_create_folder requires this value to be set."
-            )
-        subfolder_uid = self._task.args.get("subfolder_uid")
-        folder_name = self._task.args.get("folder_name")
-        if folder_name is None:
-            raise AnsibleError("The folder_name is blank. keeper_create_folder requires this value to be set.")
+        keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
 
         try:
             folder_uid, changed = keeper.create_folder(
                 folder_name,
-                shared_folder_uid=shared_folder_uid,
-                subfolder_uid=subfolder_uid,
+                shared_folder_uid=args.get("shared_folder_uid"),
+                subfolder_uid=args.get("subfolder_uid"),
                 check_mode=bool(self._task.check_mode)
             )
         except Exception as err:

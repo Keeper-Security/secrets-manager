@@ -14,8 +14,8 @@ FOLDERS = [
 ]
 UID_VARS = {name + "_uid": name.upper() + "_UID" for name in ["shared", "databases", "production"]}
 EXPECTED = {
-    "no_name": "The folder_name is blank. keeper_create_folder requires this value to be set.",
-    "no_shared": "The shared_folder_uid is blank. keeper_create_folder requires this value to be set.",
+    "no_name": "missing required arguments: folder_name",
+    "no_shared": "missing required arguments: shared_folder_uid",
     "no_such_shared": "Could not create folder: Cannot create folder: ",
 }
 # Every create that reaches the server: (name, shared folder, parent in the request). A folder directly in a shared
