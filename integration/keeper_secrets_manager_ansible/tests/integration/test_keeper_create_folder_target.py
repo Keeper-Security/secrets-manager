@@ -6,6 +6,7 @@ from ._helpers import run_target
 from ..folder_fake_server import FakeKeeperServer
 
 TARGET = os.path.join(os.path.dirname(os.path.realpath(__file__)), "targets", "keeper_create_folder", "playbook.yml")
+VAULT_PASSWORD = "keeper-create-folder-test-only"
 
 FOLDERS = [
     {"uid": "SHARED_UID", "name": "Infrastructure", "parent": None},
@@ -14,8 +15,8 @@ FOLDERS = [
 ]
 UID_VARS = {name + "_uid": name.upper() + "_UID" for name in ["shared", "databases", "production"]}
 EXPECTED = {
-    "no_name": "The folder_name is blank. keeper_create_folder requires this value to be set.",
-    "no_shared": "The shared_folder_uid is blank. keeper_create_folder requires this value to be set.",
+    "no_name": "missing required arguments: folder_name",
+    "no_shared": "missing required arguments: shared_folder_uid",
     "no_such_shared": "Could not create folder: Cannot create folder: ",
 }
 # Every create that reaches the server: (name, shared folder, parent in the request). A folder directly in a shared
@@ -35,14 +36,14 @@ CREATES = [
 def run():
     server = FakeKeeperServer(folders=FOLDERS)
     variables = dict(UID_VARS, expected=EXPECTED)
-    with run_target(server, TARGET, variables, collection=True) as result:
+    with run_target(server, TARGET, variables, collection=True, vault_password=VAULT_PASSWORD) as result:
         yield (server,) + result
 
 
 def test_playbook_passes(run):
     _, recap, out, err = run
     summary = "\n".join(l for l in (out + err).splitlines() if "fatal:" in l or "[ERROR]" in l or "FAILED" in l)
-    expected = {"ok": 19, "changed": 5, "failed": 0, "unreachable": 0, "skipped": 0, "rescued": 1, "ignored": 3}
+    expected = {"ok": 21, "changed": 5, "failed": 0, "unreachable": 0, "skipped": 0, "rescued": 1, "ignored": 4}
     assert {k: recap.get(k) for k in expected} == expected, summary
 
 

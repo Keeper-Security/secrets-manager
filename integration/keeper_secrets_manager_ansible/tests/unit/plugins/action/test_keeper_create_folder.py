@@ -1,3 +1,4 @@
+from importlib import import_module
 from unittest.mock import ANY
 
 import pytest
@@ -80,7 +81,6 @@ CREATES_ANYWAY = [
     ("same_name_in_the_shared_folder", {"shared_folder_uid": SHARED, "subfolder_uid": DB, "folder_name": "Staging"}),
     ("name_of_a_shared_folder", {"shared_folder_uid": SHARED, "folder_name": "Operations"}),
     ("different_case", {"shared_folder_uid": SHARED, "folder_name": "staging"}),
-    ("trailing_space", {"shared_folder_uid": SHARED, "folder_name": "Staging "}),
     ("start_of_an_existing_name", {"shared_folder_uid": SHARED, "folder_name": "Stag"}),
     ("same_name_below_a_parent_uid_that_starts_like_the_target", {"shared_folder_uid": SHARED, "subfolder_uid": DB,
                                                                   "folder_name": "Child"}),
@@ -133,18 +133,17 @@ def test_check_mode_reports_a_payload_error(sdk_for, run_plugin):
     assert str(caught.value) == "Could not create folder: Cannot create folder: bad payload"
 
 
+@pytest.mark.parametrize("check_mode", [False, True])
 @pytest.mark.parametrize("task_args, message", [
-    ({"folder_name": "New"}, "The shared_folder_uid is blank. keeper_create_folder requires this value to be set."),
-    ({"shared_folder_uid": SHARED},
-     "The folder_name is blank. keeper_create_folder requires this value to be set."),
+    ({"folder_name": "New"}, "missing required arguments: shared_folder_uid"),
+    ({"shared_folder_uid": SHARED}, "missing required arguments: folder_name"),
     ({"shared_folder_uid": None, "folder_name": "New"},
-     "The shared_folder_uid is blank. keeper_create_folder requires this value to be set."),
+     "The shared_folder_uid option is null. Give it a value, or leave the option out of the task."),
 ])
-def test_missing_options_raise_before_any_request(sdk_for, run_plugin, task_args, message):
+def test_missing_options_fail_before_client_initialization(sdk_for, run_plugin, task_args, message, check_mode):
     sdk = sdk_for()
-    with pytest.raises(Exception) as caught:
-        run_plugin(sdk, task_args)
-    assert str(caught.value) == message
+    assert run_plugin(sdk, task_args, check_mode=check_mode) == {"failed": True, "changed": False, "msg": message}
+    assert sdk.inits == 0
     assert sdk.client.mock_calls == []
 
 
@@ -157,23 +156,26 @@ def test_get_folders_error(sdk_for, run_plugin):
     sdk.client.create_folder.assert_not_called()
 
 
-def test_create_error_is_not_retried(sdk_for, run_plugin):
+def test_create_error_is_not_retried(sdk_for, run_plugin, plugin_module):
     sdk = sdk_for()
     sdk.client.create_folder.side_effect = Exception("access denied")
-    with pytest.raises(Exception) as caught:
+    with pytest.raises(plugin_module.AnsibleError) as caught:
         run_plugin(sdk, {"shared_folder_uid": SHARED, "folder_name": "New"})
     assert str(caught.value) == "Could not create folder: Cannot create folder: access denied"
     sdk.client.create_folder.assert_called_once()
 
 
-def test_the_error_is_an_ansible_error(sdk_for, run_plugin, plugin_module):
-    with pytest.raises(plugin_module.AnsibleError):
-        run_plugin(sdk_for(), {"folder_name": "New"})
-
-
 def test_documented_options_and_return_values(sdk_for, run_plugin, plugin_module):
-    options = yaml.safe_load(plugin_module.DOCUMENTATION)["options"]
+    documentation = yaml.safe_load(plugin_module.DOCUMENTATION)
+    module_stub = import_module("keeper_secrets_manager_ansible.plugins.modules." + PLUGIN)
+    assert yaml.safe_load(module_stub.DOCUMENTATION) == documentation
+    options = documentation["options"]
     assert {n: bool(o.get("required", False)) for n, o in options.items()} == {
         "shared_folder_uid": True, "subfolder_uid": False, "folder_name": True}
+    spec = plugin_module.ActionModule.ARGUMENT_SPEC
+    assert set(spec) == set(options)
+    for name, option in options.items():
+        assert spec[name]["type"] == option["type"]
+        assert spec[name].get("required", False) == bool(option.get("required", False))
     result = run_plugin(sdk_for(), {"shared_folder_uid": SHARED, "folder_name": "New"})
     assert set(yaml.safe_load(plugin_module.RETURN)) == set(result)

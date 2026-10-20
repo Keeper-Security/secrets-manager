@@ -54,6 +54,9 @@ options:
   folder_name:
     description:
     - The name to give the new folder.
+    - Must be a nonblank string without leading or trailing whitespace.
+    - Quote numeric or boolean-looking names so YAML reads them as strings.
+    - Use YAML strip chomping (|- or >-) to avoid a block scalar's trailing newline.
     type: str
     required: yes
 '''

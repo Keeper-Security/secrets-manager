@@ -7,6 +7,27 @@
   hosts: "my_systems"
   gather_facts: no
 
+  vars:
+    padded_names:
+      - " Staging"
+      - "Staging "
+      - |
+        Staging
+      - >
+        Staging
+      - !vault |
+        $ANSIBLE_VAULT;1.1;AES256
+        66623739376236643665613139373265303932303533383639646639346465626635393138613133
+        3331353139303439613234326639616632363964633437370a393339313833623166346163376637
+        39393931393633396232363763343230353964316435303364323566643639363831306531326537
+        3462336265396639620a666336316562633134356332633235663761313836373330656561323936
+        3438
+    stripped_names:
+      - |-
+        Staging
+      - >-
+        Staging
+
   tasks:
   - name: "Create a folder in a shared folder, then again with the same name"
     keeper_create_folder:
@@ -96,7 +117,7 @@
         - omitted_subfolder.folder_uid == created.results[0].folder_uid
         - omitted_subfolder is not changed
 
-  - name: "Failures raise: a missing name, a missing shared folder, and a shared folder that does not exist"
+  - name: "Missing names, missing shared folder options, and unavailable shared folders fail"
     keeper_create_folder:
       shared_folder_uid: "{{ shared_uid }}"
     register: "no_name"
@@ -113,11 +134,34 @@
     register: "no_such_shared"
     ignore_errors: yes
 
+  - name: "Padded names, block scalar newlines, and decrypted newlines fail in normal and check mode"
+    keeper_create_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "{{ item.0 }}"
+    check_mode: "{{ item.1 }}"
+    register: "padded"
+    ignore_errors: yes
+    loop: "{{ padded_names | product([false, true]) | list }}"
+
+  - name: "Strip chomping keeps the existing name and creates no duplicate"
+    keeper_create_folder:
+      shared_folder_uid: "{{ shared_uid }}"
+      folder_name: "{{ item }}"
+    register: "stripped"
+    loop: "{{ stripped_names }}"
+
   - assert:
       that:
         - expected.no_name in no_name.msg
         - expected.no_shared in no_shared.msg
         - expected.no_such_shared in no_such_shared.msg
+        - padded.results | map(attribute='failed') | unique | list == [true]
+        - padded.results | map(attribute='changed') | unique | list == [false]
+        - >-
+          padded.results | map(attribute='msg') | select('search', 'has leading or trailing whitespace') | list | length ==
+          padded.results | length
+        - stripped.results | map(attribute='changed') | unique | list == [false]
+        - stripped.results | map(attribute='folder_uid') | unique | list == [created.results[0].folder_uid]
 
   - name: "rescue sees the failure"
     block:
@@ -138,7 +182,7 @@
         - ran_after_failure is not defined
 
 # The action group of this collection gives its module_defaults to every module in the group. keeper_create_folder
-# does not check its options, so it reads the default shared_folder_uid and ignores cache.
+# reads the default shared_folder_uid and ignores unrelated group defaults such as cache.
 - name: Keeper Create Folder With Group Defaults
   hosts: "my_systems"
   gather_facts: no
