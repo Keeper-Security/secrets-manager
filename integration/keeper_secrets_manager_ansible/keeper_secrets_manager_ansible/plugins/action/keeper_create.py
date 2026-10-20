@@ -319,20 +319,22 @@ class ActionModule(ActionBase):
                 # Workaround: convert value: [] to None so helper FieldType.__init__ skips the
                 # dict-field index (value[0]) that crashes on empty lists. Remove once helper
                 # ships the "if self.value:" guard in FieldType.__init__.
+                value = field.get("value")
                 fields.append(Field(
                     field_section=FieldSectionEnum.STANDARD,
                     type=field.get("type"),
                     label=field.get("label"),
-                    value=field.get("value") or None
+                    value=None if isinstance(value, list) and not value else value
                 ))
 
             for field in self._task.args.get("custom_fields", []):
                 # Same workaround as above for custom fields.
+                value = field.get("value", "text")
                 fields.append(Field(
                     field_section=FieldSectionEnum.CUSTOM,
                     type=field.get("type"),
                     label=field.get("label"),
-                    value=field.get("value", "text") or None
+                    value=None if isinstance(value, list) and not value else value
                 ))
 
             notes = self._task.args.get("notes")
