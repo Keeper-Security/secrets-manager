@@ -8,10 +8,11 @@ os.chdir(here)
 with open(os.path.join(here, 'README.md'), "r", encoding='utf-8') as fp:
     long_description = fp.read()
 
+# ansible-core is deliberately not listed. It is GPL-3.0-or-later, and a declaration here makes pip install it and
+# puts it in the release SBOM. Do not add it back. The README states the supported range.
 install_requires = [
     'keeper-secrets-manager-core>=17.3.0',
     'keeper-secrets-manager-helper>=1.1.2',
-    'ansible-core>=2.15.13,!=2.17.*'  # Use ansible-core instead of ansible to avoid community collections
 ]
 
 setup(
