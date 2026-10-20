@@ -18,6 +18,8 @@ DOCUMENTATION = '''
     description:
         - This output callback hides the values that keeper_get, keeper_get_record, and keeper_password return.
         - 'It also hides values of four or more characters when later tasks in the same run print them.'
+        - 'It hides the keeper_config, keeper_config_file, keeper_client_id, keeper_private_key, keeper_app_key, keeper_token, and keeper_record_cache_secret variables when a task result shows them by name.'
+        - 'It does not hide these variables when a task shows them under another name, for example in the msg of a debug or fail task. Use no_log: True on such tasks.'
         - 'This output callback will not hide secret values from a lookup. Use no_log: True to hide the output.'
         - 'This output callback changes only what it prints. It does not change registered results or other callbacks.'
         - 'This output callback does not hide secrets from AWX and AAP job events. Use no_log: True.'
