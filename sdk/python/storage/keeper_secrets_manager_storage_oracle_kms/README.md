@@ -102,6 +102,17 @@ Once setup, the Secrets Manager Oracle KMS integration supports all Secrets Mana
 
 ## Change Log
 
+### 1.1.1
+
+**Requirements:**
+- Minimum Python version raised to 3.10 (`urllib3>=2.7.0` requires Python 3.10+); users on Python 3.9 should pin to `<1.1.1`
+- `oci` Python 3.9 split constraint removed; minimum is now `oci>=2.174.0` unconditionally
+
+**Security:**
+- **KSM-1022:** Fixed CVE-2026-44431; upgraded `urllib3` to 2.7.0. Versions before 2.7.0 forward `Authorization` and `Cookie` headers across origins when following redirects via the low-level `assert_same_host=False` code path (CVSS High)
+- **KSM-1215:** Fixed CVE-2026-39892 and CVE-2026-45409; upgraded `cryptography` to 46.0.7+ and `idna` to 3.15+. The prior `cryptography>=46.0.5` floor could resolve to a version vulnerable to a non-contiguous buffer overflow in APIs like `Hash.update()`; the prior lockfile pulled in `idna==3.10` via `requests`, vulnerable to an IDNA encode bypass of the CVE-2024-3651 fix (CVSS Medium)
+- **KSM-1215:** Fixed CVE-2026-25645; upgraded `requests` to 2.33.0+. Versions before 2.33.0 reuse an insecure temp file in `extract_zipped_paths()` (CVSS Medium)
+
 ### 1.1.0
 
 **Requirements:**
