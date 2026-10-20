@@ -18,7 +18,7 @@ ATTACHMENTS = [
     pytest.param(b'attachment"secret\\123', id="text"),
     pytest.param(b"-----BEGIN KEY-----\nprivate-key-material\n-----END KEY-----", id="pem"),
     pytest.param("cl\u00e9-confidentielle".encode(), id="utf8"),
-    pytest.param(b"binary\x00\xff\xfe\x80secret", id="binary"),
+    pytest.param(b"\xffbinary\x00\xfe\x80secret", id="binary"),
 ]
 SHORT_VALUES = [pytest.param(b"~#q", id="short"), pytest.param("\U0001f512".encode(), id="one-character")]
 
@@ -104,7 +104,10 @@ def test_sdk_attachment_action_and_callback_preserve_and_hide_bytes(tmp_path, co
     assert status["ok"] == 4 and status["failed"] == 0, output
     assert "Loading callback plugin keeper_redact" in output
     assert "censored" in output and REDACTED in output
-    assert "Callback dispatch" not in output and "Failure using" not in output
+    own = output.split("TASK [Read attachment]", 1)[1].split("TASK [Verify registered bytes]", 1)[0]
+    assert "ok: [localhost]" in own and '"value": "****"' in own, output
+    for warning in ("Callback dispatch", "Failure using", "surrogates not allowed"):
+        assert warning not in output
     text = content.decode("utf-8", "surrogateescape")
     for form in (text, json.dumps(text)[1:-1], repr(text)[1:-1], repr(content)[2:-1]):
         assert form not in output

@@ -127,8 +127,12 @@ class CallbackModule(DefaultCallbackBase):
                                         repr(leaf)[1:-1], repr(data)[2:-1]} - set(self._forms))
                     # The built-in copy module returns the SHA-1 of its content, and a hash of a short secret can be
                     # found by guessing. Hide the common digests of each secret too.
-                    self._forms.extend(hashlib.new(name, data).hexdigest()
-                                       for name in ("sha1", "md5", "sha256"))
+                    for name in ("sha1", "md5", "sha256"):
+                        try:
+                            self._forms.append(hashlib.new(name, data).hexdigest())
+                        except ValueError:
+                            # An unavailable digest must not stop masking or callback dispatch.
+                            pass
 
     def _redact_text(self, text):
         # Find every match first, then merge overlaps. Replacing one secret at a time leaves the tail of a secret
