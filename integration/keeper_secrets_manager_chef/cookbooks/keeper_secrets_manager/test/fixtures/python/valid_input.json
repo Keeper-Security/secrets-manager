@@ -1,0 +1,10 @@
+{
+  "authentication": [
+    "base64"
+  ],
+  "secrets": [
+    "jnPuLYWXt7b6Ym-_9OCvFA/field/password > APP_PASSWORD",
+    "jnPuLYWXt7b6Ym-_9OCvFA/field/login > LOGIN",
+    "jnPuLYWXt7b6Ym-_9OCvFA/file/dummy.crt > file:/tmp/Certificate.crt"
+  ]
+}
