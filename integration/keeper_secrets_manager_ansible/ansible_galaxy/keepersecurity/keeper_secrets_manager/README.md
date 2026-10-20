@@ -147,8 +147,9 @@ and only `KSM_SKIP_VERIFY` can turn certificate verification off.
 
 The DR (disaster recovery) cache is the file `ksm_cache.bin`.
 When `keeper_use_cache` is on, each successful record read from the Keeper server saves the response in this file.
-When a later record read fails, the plugin uses the saved response and shows a warning.
-`keeper_cache_dir` sets the directory of the file. Without it, the file is in the working directory of `ansible-playbook`.
+When a later record request raises a transport exception, the plugin tries the saved response and warns when it uses it.
+HTTP error responses still fail normally.
+A user-set `KSM_CACHE_DIR` takes precedence. Otherwise `keeper_cache_dir` sets the directory. When neither is set, the file is in the working directory of `ansible-playbook`.
 It is not the record cache that `keeper_cache_records` makes.
 
 `keeper_cache_records` encrypts the record cache with `keeper_record_cache_secret`.
@@ -234,7 +235,7 @@ The Changes section names the ticket for each change.
 
 * A record that does not exist, by UID or by title, now succeeds with `changed: false`. Before, the task failed. Remove `ignore_errors` or `failed_when` workarounds that only tolerated a missing record. If a playbook used the failure to detect a missing record, test `changed` instead.
 * A record that keeper-secrets-manager-core cannot read is not treated as missing. The task fails, and nothing is deleted.
-* With keeper-secrets-manager-core 17.3.0, one record that it cannot read makes its whole shared folder unreadable, subfolders included. A remove by UID of any record in that shared folder then fails.
+* With keeper-secrets-manager-core 17.3.0, one record that it cannot read makes it skip every record that the server returns in the same shared folder. A lookup by UID requests only the selected record, so a readable record in that folder can still be removed.
 * A remove by title fails when keeper-secrets-manager-core cannot read any record or folder of the application. That item can hold a record with the same title. To do: remove the record by its UID.
 * A title that matches more than one record fails the task and lists the matching UIDs. A delete that the server refuses or does not confirm fails the task with the server response code and message.
 * Failures are normal task results, so `failed_when`, `ignore_errors`, and `rescue` work.
