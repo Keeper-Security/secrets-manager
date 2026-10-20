@@ -230,6 +230,10 @@ The Changes section names the ticket for each change.
   - It also hides values of four or more characters when later tasks in the same run print them
   - It also hides the SHA-1, MD5, and SHA-256 hashes of these values, because the built-in `copy` module prints the SHA-1 of its content
   - Task results from the Keeper actions no longer include an internal key for the callback
+* KSM-1638: Fixed `keeper_redact` exposing sensitive configuration variables
+  - `keeper_token` and `keeper_record_cache_secret` are now hidden
+  - Sensitive variables are replaced in full, including a `keeper_config` dictionary or a `keeper_private_key` list
+  - Original keys select sensitive variables before learned secrets change their displayed names
 * KSM-1561: Raised the minimum ansible-core version to 2.15.13 and excluded the 2.17 series
   - **Breaking change**: ansible-base 2.10, ansible-core versions before 2.15.13, and ansible-core 2.17.x are no longer supported
   - Python 3.9 stays supported, from Python 3.9.2. A later release removes it
