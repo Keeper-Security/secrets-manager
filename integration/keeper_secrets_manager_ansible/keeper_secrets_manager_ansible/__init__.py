@@ -1202,18 +1202,33 @@ class KeeperAnsible:
         except Exception as err:
             raise Exception("Cannot get existing folders: {}".format(err))
 
-        existing_folder = next(
-            (f for f in folders if f.parent_uid == parent_uid and f.name == folder_name),
-            None
-        )
-        if existing_folder is not None:
-            return existing_folder.folder_uid, False
-
         try:
+            # Validate the hierarchy before an existing child can bypass the SDK's creation checks.
+            shared_folder = self._folder_by_uid(folders, shared_folder_uid)
+            if shared_folder is None or not shared_folder.folder_key:
+                raise ValueError("Unable to create folder - folder key for {} not found".format(shared_folder_uid))
+            if shared_folder.parent_uid:
+                raise KeeperFolderError(
+                    "The folder {} is a subfolder, not a shared folder. Set it as subfolder_uid instead.".format(
+                        self._folder_label(folders, shared_folder)))
+            if subfolder_uid:
+                subfolder = self._folder_by_uid(folders, subfolder_uid)
+                if subfolder is None:
+                    raise KeeperFolderError(
+                        "The subfolder {} was not found, or it is not shared to this KSM application.".format(
+                            subfolder_uid))
+                if self._folder_ancestry(folders, subfolder)[-1].folder_uid != shared_folder_uid:
+                    raise KeeperFolderError("The subfolder {} is not inside the shared folder {}.".format(
+                        self._folder_label(folders, subfolder), self._folder_label(folders, shared_folder)))
+
+            existing_folder = next(
+                (f for f in folders if f.parent_uid == parent_uid and f.name == folder_name),
+                None
+            )
+            if existing_folder is not None:
+                return existing_folder.folder_uid, False
+
             if check_mode:
-                shared_folder = next((f for f in folders if f.folder_uid == shared_folder_uid), None)
-                if shared_folder is None or not shared_folder.folder_key:
-                    raise ValueError("Unable to create folder - folder key for {} not found".format(shared_folder_uid))
                 self.client.prepare_create_folder_payload(
                     self.client.config, CreateOptions(shared_folder_uid, subfolder_uid),
                     folder_name, shared_folder.folder_key
