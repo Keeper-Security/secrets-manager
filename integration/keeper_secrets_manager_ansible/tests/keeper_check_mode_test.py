@@ -359,8 +359,9 @@ class KeeperCheckModeHelperTest(unittest.TestCase):
             with self.subTest(field_type=field_type):
                 keeper = _keeper()
                 record = MagicMock()
+                record.uid = "RECORD_UID"
                 record.dict = {"notes": "original notes"}
-                with patch.object(keeper, "get_record", return_value=record), \
+                with patch.object(keeper, "get_records_from_vault", return_value=[record]), \
                         patch.object(keeper.client, "save") as save:
                     keeper.set_value(
                         field_type, "password", "new value", uid="RECORD_UID", check_mode=True
@@ -397,12 +398,13 @@ class KeeperCheckModeHelperTest(unittest.TestCase):
 
     def test_set_rejects_invalid_field_and_missing_record_without_saving(self):
         keeper = _keeper()
-        with patch.object(keeper, "get_record", return_value=MagicMock()), \
+        record = MagicMock(uid="RECORD_UID")
+        with patch.object(keeper, "get_records_from_vault", return_value=[record]), \
                 patch.object(keeper.client, "save") as save:
             with self.assertRaisesRegex(Exception, "Cannot save a file"):
                 keeper.set_value(KeeperFieldType.FILE, "file.txt", "value", uid="RECORD_UID", check_mode=True)
             save.assert_not_called()
-        with patch.object(keeper, "get_record", side_effect=ValueError("record not found")), \
+        with patch.object(keeper, "get_records_from_vault", side_effect=ValueError("record not found")), \
                 patch.object(keeper.client, "save") as save:
             with self.assertRaisesRegex(ValueError, "record not found"):
                 keeper.set_value(KeeperFieldType.FIELD, "password", "value", uid="RECORD_UID", check_mode=True)
