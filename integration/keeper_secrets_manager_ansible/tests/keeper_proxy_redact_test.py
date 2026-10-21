@@ -1,15 +1,26 @@
 import os
 import re
+import socket
+import sys
 import tempfile
+import threading
 import traceback
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+import requests
+import yaml
+from urllib3.exceptions import LocationParseError
 from keeper_secrets_manager_core import mock
 from keeper_secrets_manager_core.core import KSMCache
+from keeper_secrets_manager_core.exceptions import KeeperAccessDenied, KeeperError
 
 from keeper_secrets_manager_ansible import KeeperAnsible, KeeperFieldType
+
+from .ansible_test_framework import AnsibleTestFramework
 
 # Passwords that make the request library reject the proxy URL and echo it. "p@ss" and "100%25" still parse, so
 # they never reach the error path here. The scrubber is checked against them directly.
@@ -20,6 +31,10 @@ PROXY_PASSWORDS = ("S3c#ret", "p/ss", "a#b/c@d%e")
 GET_SECRET_ROUTE = ("get_secret route", lambda keeper: keeper.get_records_from_vault(uids=["UID1"]))
 POST_FUNCTION_ROUTE = ("post_function route", lambda keeper: keeper.get_folders())
 ROUTES = (GET_SECRET_ROUTE, POST_FUNCTION_ROUTE)
+FILE_ROUTES = (
+    ("file field", lambda keeper, uid: keeper.get_value(KeeperFieldType.FILE, "My File", uid=uid)),
+    ("file notation", lambda keeper, uid: keeper.get_value_via_notation("{}/file/My File".format(uid))),
+)
 
 
 def _full_text(error):
@@ -88,12 +103,8 @@ class KeeperProxyRedactTest(unittest.TestCase):
     def test_the_proxy_password_stays_out_of_a_file_download_error(self):
         # The SDK downloads a file with its own requests call, not with post_function, so a wrapper on the vault
         # transport does not cover it. Both plugin entry points reach that call: a file field and keeper:// notation.
-        entry_points = (
-            ("file field", lambda keeper, uid: keeper.get_value(KeeperFieldType.FILE, "My File", uid=uid)),
-            ("file notation", lambda keeper, uid: keeper.get_value_via_notation("{}/file/My File".format(uid))),
-        )
         for password in PROXY_PASSWORDS:
-            for entry_point, operation in entry_points:
+            for entry_point, operation in FILE_ROUTES:
                 with self.subTest(password=password, entry_point=entry_point):
                     proxy = "http://alice:{}@127.0.0.1:9".format(password)
                     keeper = self._keeper(proxy)
@@ -106,7 +117,9 @@ class KeeperProxyRedactTest(unittest.TestCase):
                     # The vault read returns the record from the queue. Only the file download uses the proxy.
                     keeper.client.custom_post_function = queue.post_method
                     error = self._fail(keeper, proxy, lambda k: operation(k, record.uid))
-                    self.assertNotIn(password, _full_text(error))
+                    self.assertIsNone(error.__cause__)
+                    self.assertIsNone(error.__context__)
+                    self.assertNotIn(password, _chain_text(error, include_suppressed_context=True))
 
 
 class RemoveProxyCredentialsTest(unittest.TestCase):
@@ -253,14 +266,24 @@ NON_LATIN1_PROXIES = (
 )
 
 
-def _chain_text(error):
-    """str, repr and traceback text of the error and of every error that the traceback shows as its cause."""
-    parts, seen = [], set()
-    while error is not None and id(error) not in seen:
+def _chain_text(error, include_suppressed_context=False):
+    """str, repr and traceback text, optionally following every retained cause/context object."""
+    parts, seen, pending = [], set(), [error]
+    while pending:
+        error = pending.pop()
+        if error is None or id(error) in seen:
+            continue
         seen.add(id(error))
         parts += [str(error), repr(error), _full_text(error)]
-        error = error.__cause__ or (None if error.__suppress_context__ else error.__context__)
+        pending.append(error.__cause__)
+        if include_suppressed_context or not error.__suppress_context__:
+            pending.append(error.__context__)
     return "\n".join(parts)
+
+
+def _error_state(error):
+    # Normal raising updates the traceback; the remaining caller-owned attributes must stay unchanged.
+    return error.args, error.__cause__, error.__context__, error.__suppress_context__, dict(error.__dict__)
 
 
 class KeeperNonLatin1ProxyPasswordTest(unittest.TestCase):
@@ -298,7 +321,11 @@ class KeeperNonLatin1ProxyPasswordTest(unittest.TestCase):
         for form, proxy in NON_LATIN1_PROXIES:
             for route, operation in routes:
                 with self.subTest(form=form, route=route):
-                    text = _chain_text(self._fail(operation, proxy))
+                    error = self._fail(operation, proxy)
+                    if route == "file download":
+                        self.assertIsNone(error.__cause__)
+                        self.assertIsNone(error.__context__)
+                    text = _chain_text(error, include_suppressed_context=route == "file download")
                     self.assertNotIn(NON_LATIN1_PASSWORD, text)
                     self.assertNotIn("\u20ac", text)
                     self.assertNotIn("p%E2%82%ACw", text)
@@ -322,3 +349,198 @@ class KeeperNonLatin1ProxyPasswordTest(unittest.TestCase):
             with self.assertRaises(UnicodeEncodeError) as context:
                 KeeperAnsible._transport("https://vault.test", None, b"", True, None)
         self.assertIs(context.exception, original)
+
+
+SIGNED_MARKERS = ("FAKE_DOWNLOAD_CREDENTIAL_8092", "FAKE_DOWNLOAD_SIGNATURE_8092", "FAKE_CUSTOM_CLAIM_8092")
+SIGNED_TARGET = "/fake.bin?X-Amz-Credential={}&X-Amz-Signature={}&custom-claim={}".format(*SIGNED_MARKERS)
+SIGNED_URL = "https://files.test" + SIGNED_TARGET
+
+
+@pytest.fixture
+def signed_attachment(monkeypatch):
+    for name in list(os.environ):
+        if name.lower() in ("http_proxy", "https_proxy", "all_proxy", "no_proxy") or name == "KSM_HOSTNAME":
+            monkeypatch.delenv(name)
+    # Avoid macOS system proxy discovery in a forked Ansible worker, and keep loopback probes strictly local.
+    monkeypatch.setenv("no_proxy", "*")
+    keeper = KeeperAnsible(task_vars={"keeper_config": mock.MockConfig.make_base64()})
+    record = mock.Record(title="Signed attachment record", record_type="login")
+    attachment = record.add_file(name="My File", title="My File", url=SIGNED_URL, content=b"\x00synthetic-content\xff")
+    response = mock.Response()
+    response.add_record(record=record)
+    queue = mock.ResponseQueue(client=keeper.client)
+    queue.add_response(response)
+    keeper.client.custom_post_function = queue.post_method
+    return keeper, record, attachment, response
+
+
+@pytest.mark.parametrize("entry_point,operation", FILE_ROUTES)
+@pytest.mark.parametrize("error_type,classification", [
+    (requests.exceptions.ConnectionError, "ConnectionError"), (requests.exceptions.SSLError, "SSLError"),
+    (requests.exceptions.ConnectTimeout, "Timeout"), (requests.exceptions.ReadTimeout, "Timeout"),
+    (requests.exceptions.HTTPError, "HTTPError"), (requests.exceptions.RequestException, "RequestException"),
+    (requests.exceptions.InvalidSchema, "RequestException"), (requests.exceptions.MissingSchema, "RequestException"),
+    (requests.exceptions.InvalidURL, None), (LocationParseError, None),
+])
+def test_attachment_request_errors_hide_full_and_relative_signed_urls(
+        signed_attachment, entry_point, operation, error_type, classification):
+    keeper, record, _, _ = signed_attachment
+    original = error_type("Full URL {}; request target {}".format(SIGNED_URL, SIGNED_TARGET))
+    original.__cause__ = ValueError("nested credential " + SIGNED_MARKERS[-1])
+    original.__context__ = LookupError("nested context " + SIGNED_MARKERS[0])
+    original.__suppress_context__ = False
+    state = _error_state(original)
+    with patch("requests.get", side_effect=original), pytest.raises(ConnectionError) as caught:
+        operation(keeper, record.uid)
+    expected = ("The file download failed ({}).".format(classification) if classification else
+                "The request failed. The URL of the file download is not valid. Check the file in the Keeper record.")
+    assert str(caught.value) == expected
+    assert caught.value.__cause__ is None and caught.value.__context__ is None and caught.value.__suppress_context__
+    text = _chain_text(caught.value, include_suppressed_context=True)
+    assert not any(marker in text for marker in SIGNED_MARKERS)
+    assert "files.test" not in text and "/fake.bin" not in text
+    assert _error_state(original) == state
+
+
+@pytest.mark.parametrize("entry_point,operation", FILE_ROUTES)
+def test_attachment_encoding_error_repr_cannot_disclose_a_signed_url(signed_attachment, entry_point, operation):
+    keeper, record, _, _ = signed_attachment
+    original = UnicodeEncodeError("ascii", SIGNED_URL + "\u20ac", len(SIGNED_URL), len(SIGNED_URL) + 1, "non-ascii")
+    state = _error_state(original)
+    with patch("requests.get", side_effect=original), pytest.raises(ConnectionError) as caught:
+        operation(keeper, record.uid)
+    assert str(caught.value) == "The file download failed (UnicodeEncodeError)."
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
+    assert not any(marker in _chain_text(caught.value, include_suppressed_context=True) for marker in SIGNED_MARKERS)
+    assert _error_state(original) == state
+
+
+@pytest.mark.parametrize("entry_point,operation", FILE_ROUTES)
+@pytest.mark.parametrize("error_type", [KeeperError, KeeperAccessDenied, ValueError])
+def test_safe_keeper_and_file_processing_errors_keep_their_original_type(
+        signed_attachment, entry_point, operation, error_type):
+    keeper, record, _, _ = signed_attachment
+    original = error_type("Safe processing failure")
+    with patch("requests.get", side_effect=original), pytest.raises(error_type) as caught:
+        operation(keeper, record.uid)
+    assert caught.value is original
+
+
+def test_non_file_notation_does_not_classify_keeper_transport_failures_as_file_errors(signed_attachment):
+    keeper, record, _, _ = signed_attachment
+    original = requests.exceptions.ConnectionError("Keeper connection failed")
+    with patch.object(keeper.client, "get_notation", side_effect=original), \
+            pytest.raises(requests.exceptions.ConnectionError) as caught:
+        keeper.get_value_via_notation("{}/field/password".format(record.uid))
+    assert caught.value is original
+
+
+@pytest.mark.parametrize("entry_point,operation", FILE_ROUTES)
+def test_successful_signed_attachment_downloads_preserve_decrypted_bytes(signed_attachment, entry_point, operation):
+    keeper, record, attachment, _ = signed_attachment
+
+    def download(*args, **kwargs):
+        response = requests.Response()
+        response.status_code = 200
+        response._content = attachment.downloadable_content()
+        return response
+
+    with patch("requests.get", side_effect=download):
+        assert operation(keeper, record.uid) == attachment.content
+
+
+@pytest.fixture(params=["connection", "tls", "timeout"])
+def failure_transport(request):
+    if request.param == "connection":
+        # Close an unused loopback port before connecting. A bound, non-listening port can time out on macOS.
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            endpoint = "http://127.0.0.1:{}".format(listener.getsockname()[1])
+        yield endpoint, requests.exceptions.ConnectionError, 1
+        return
+
+    release = threading.Event()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            release.wait(1)
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    scheme = "https" if request.param == "tls" else "http"
+    expected = requests.exceptions.SSLError if request.param == "tls" else requests.exceptions.Timeout
+    try:
+        yield "{}://127.0.0.1:{}".format(scheme, server.server_port), expected, 0.1
+    finally:
+        release.set()
+        server.shutdown()
+        server.server_close()
+        worker.join()
+
+
+@pytest.mark.parametrize("entry_point,operation", FILE_ROUTES)
+def test_real_connection_tls_and_timeout_errors_cannot_disclose_attachment_queries(
+        signed_attachment, failure_transport, entry_point, operation):
+    keeper, record, attachment, _ = signed_attachment
+    endpoint, expected, timeout = failure_transport
+    attachment.url = endpoint + SIGNED_TARGET
+    real_get = requests.get
+    originals = []
+
+    def download(*args, **kwargs):
+        try:
+            return real_get(*args, timeout=timeout, **kwargs)
+        except requests.exceptions.RequestException as error:
+            originals.append((error, _error_state(error)))
+            raise
+
+    with patch("requests.get", side_effect=download), \
+            pytest.raises(ConnectionError) as caught:
+        operation(keeper, record.uid)
+    assert len(originals) == 1
+    original, state = originals[0]
+    assert isinstance(original, expected)
+    if expected is requests.exceptions.ConnectionError:
+        assert type(original) is expected
+    assert _error_state(original) == state
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
+    assert not any(marker in _chain_text(caught.value, include_suppressed_context=True) for marker in SIGNED_MARKERS)
+    assert "file download" in str(caught.value)
+
+
+@pytest.mark.parametrize("failure_transport", ["connection"], indirect=True)
+def test_native_attachment_failures_hide_signed_queries_in_verbose_output(
+        tmp_path, signed_attachment, failure_transport):
+    _, record, attachment, response = signed_attachment
+    attachment.url = failure_transport[0] + SIGNED_TARGET
+    tasks = [
+        {"name": "Download through file field", "keeper_get": {"uid": "{{ record_uid }}", "file": "My File"},
+         "ignore_errors": True},
+        {"name": "Download through notation", "keeper_get": {"notation": "{{ record_uid }}/file/My File"},
+         "ignore_errors": True},
+    ]
+    playbook = tmp_path / "attachment-errors.yml"
+    playbook.write_text(yaml.safe_dump([{
+        "hosts": "my_systems", "gather_facts": False, "tasks": tasks,
+    }]), encoding="utf-8")
+    # Capture a real refused connection before the Ansible fork, then exercise the native failure/traceback path.
+    with pytest.raises(requests.exceptions.ConnectionError) as original:
+        requests.get(attachment.url, timeout=failure_transport[2])
+    assert type(original.value) is requests.exceptions.ConnectionError
+    assert all(marker in str(original.value) for marker in SIGNED_MARKERS)
+    with patch("requests.get", side_effect=original.value):
+        status, out, err = AnsibleTestFramework(
+            playbook=str(playbook), mock_responses=[response],
+            vars={"record_uid": record.uid, "ansible_python_interpreter": sys.executable},
+        ).run()
+    output = out + err
+    assert status["failed"] == 0 and status["ignored"] == len(tasks), output
+    assert "The file download failed (ConnectionError)." in output
+    assert not any(marker in output for marker in SIGNED_MARKERS)
