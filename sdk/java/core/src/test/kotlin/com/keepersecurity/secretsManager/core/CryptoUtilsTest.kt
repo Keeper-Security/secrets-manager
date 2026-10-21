@@ -3,8 +3,6 @@ package com.keepersecurity.secretsManager.core
 import org.bouncycastle.jcajce.provider.BouncyCastleFipsProvider
 //import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.security.Security
-import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.CyclicBarrier
 import kotlin.concurrent.thread
 import kotlin.test.*
 
@@ -25,40 +23,37 @@ internal class CryptoUtilsTest {
         assertContentEquals(data, plaintext)
     }
 
+    @Test
+    fun cryptoEnginesAreNotSharedBetweenAccesses() {
+        // The stress test below only fails reliably for a shared digest. A shared KeyPairGenerator or
+        // KeyFactory still round-trips, so the per-call contract is checked directly.
+        assertNotSame(KeeperCryptoParameters.sha256, KeeperCryptoParameters.sha256)
+        assertNotSame(KeeperCryptoParameters.keyGen, KeeperCryptoParameters.keyGen)
+        assertNotSame(KeeperCryptoParameters.keyFactory, KeeperCryptoParameters.keyFactory)
+    }
+
     @Test(timeout = 60_000)
     fun publicEncryptProducesDecryptableKeysUnderConcurrentCalls() {
-        // The barrier releases every thread at once, which is what makes a shared MessageDigest,
-        // KeyPairGenerator or KeyFactory fail often enough to catch. Decryption runs on one thread
-        // after the workers finish, so only publicEncrypt is exercised concurrently.
-        val keyPair = generateKeyPair()
-        val publicKey = extractPublicRaw(keyPair.public)
-        val threadCount = 8
-        val bursts = 2_000
-        val barrier = CyclicBarrier(threadCount)
-        val thrown = ConcurrentLinkedQueue<Throwable>()
-        val results = ConcurrentLinkedQueue<Pair<ByteArray, ByteArray>>()
+        // Provider here depends on which test initialized KeeperCryptoParameters first.
+        // CryptoProviderIsolationTest pins each provider explicitly.
+        val stress = runPublicEncryptStress()
+        assertEquals(0, stress.thrown.size, "publicEncrypt threw ${stress.thrown.size} times under concurrent calls")
+        assertEquals(stress.expected, stress.completed, "only ${stress.completed} of ${stress.expected} calls finished")
+        assertEquals(0, stress.undecryptable, "${stress.undecryptable} of ${stress.completed} ciphertexts did not decrypt to the original data")
+    }
 
-        val workers = List(threadCount) {
-            thread {
-                repeat(bursts) {
-                    barrier.await()
-                    try {
-                        val data = getRandomBytes(32)
-                        results.add(data to publicEncrypt(data, publicKey))
-                    } catch (e: Throwable) {
-                        thrown.add(e)
-                    }
-                }
-            }
-        }
-        workers.forEach { it.join() }
-
-        val privateKey = keyPair.private.encoded
-        val undecryptable = results.count { (data, ciphertext) ->
-            runCatching { privateDecrypt(ciphertext, privateKey) }.getOrNull()?.contentEquals(data) != true
-        }
-        assertEquals(0, thrown.size, "publicEncrypt threw ${thrown.size} times under concurrent calls")
-        assertEquals(0, undecryptable, "$undecryptable of ${results.size} ciphertexts did not decrypt to the original data")
+    @Test(timeout = 60_000)
+    fun stressWorkersStopWhenTheCallerIsInterrupted() {
+        // JUnit's timeout interrupts the test thread only. Without cleanup in the workload helper,
+        // its eight workers keep encrypting in the background after the test has already failed.
+        val before = Thread.getAllStackTraces().keys.toSet()
+        val caller = thread { runCatching { runPublicEncryptStress(bursts = 1_000_000) } }
+        Thread.sleep(500)
+        caller.interrupt()
+        caller.join(30_000)
+        assertFalse(caller.isAlive, "workload did not return after the caller was interrupted")
+        val leaked = Thread.getAllStackTraces().keys.filter { it !in before && it.isAlive && it.name.startsWith("pool-") }
+        assertEquals(emptyList(), leaked, "stress workers still running after interrupt")
     }
 
     @Test
