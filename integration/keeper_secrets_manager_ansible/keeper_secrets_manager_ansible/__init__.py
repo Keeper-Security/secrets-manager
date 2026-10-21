@@ -22,6 +22,8 @@ import re
 import json
 import copy
 import contextlib
+import threading
+import functools
 import random
 from enum import Enum
 import traceback
@@ -204,6 +206,104 @@ class _UnreadableFolderLog(logging.Handler):
                 self.folders[str(record.args[0])] = str(record.args[1]) if len(record.args) > 1 else ""
         except Exception:
             pass
+
+
+class _FolderSdkLogFilter(logging.Filter):
+    """Capture this thread's unreadable folders before suppressing its private SDK diagnostics."""
+
+    def __init__(self, sdk_logger, private, unreadable=None):
+        super(_FolderSdkLogFilter, self).__init__()
+        self.sdk_logger = sdk_logger
+        self.private = private
+        self.unreadable = unreadable
+        self.thread_id = threading.get_ident()
+
+    def filter(self, record):
+        if threading.get_ident() != self.thread_id:
+            return True
+        active = [guard for guard in list(self.sdk_logger.filters)
+                  if isinstance(guard, _FolderSdkLogFilter) and guard.thread_id == self.thread_id]
+        # Share unreadable observations across nested scopes.
+        for guard in active:
+            if guard.unreadable is not None:
+                guard.unreadable.emit(record)
+        return not any(guard.private for guard in active)
+
+
+def _folder_no_log(owner):
+    task = getattr(owner, "_task", None)
+    if task is None:
+        task = getattr(getattr(owner, "action_module", None), "_task", None)
+    if task is not None:
+        return bool(getattr(task, "no_log", False))
+    try:
+        context = sys.modules.get("ansible._internal._task")
+        if context is not None and bool(context.TaskContext.current().task.no_log):
+            return True
+    except Exception:
+        pass
+    return bool((getattr(owner, "task_vars", None) or {}).get("ansible_no_log", False))
+
+
+@contextlib.contextmanager
+def _folder_sdk_logging(owner, unreadable=None):
+    """Scope SDK diagnostics and capture to serial or nested folder operations."""
+    private = _folder_no_log(owner)
+    if not private and unreadable is None:
+        yield
+        return
+    try:
+        from keeper_secrets_manager_core.keeper_globals import logger_name
+    except ImportError:
+        logger_name = "ksm"
+    sdk_logger = logging.getLogger(logger_name)
+    if unreadable is not None and sdk_logger.manager.disable >= logging.WARNING:
+        raise KeeperFolderError("Cannot confirm folder completeness while SDK warnings are globally disabled.")
+    guard = _FolderSdkLogFilter(sdk_logger, private, unreadable)
+    old_level, old_disabled = sdk_logger.level, sdk_logger.disabled
+    try:
+        # Keep completeness capture ahead of caller filters.
+        sdk_logger.filters.insert(0, guard)
+        if unreadable is not None:
+            sdk_logger.disabled = False
+            if sdk_logger.getEffectiveLevel() > logging.WARNING:
+                sdk_logger.setLevel(logging.WARNING)
+        yield
+    finally:
+        sdk_logger.removeFilter(guard)
+        if unreadable is not None:
+            sdk_logger.setLevel(old_level)
+            sdk_logger.disabled = old_disabled
+
+
+_PRIVATE_FOLDER_MESSAGE = (
+    "The folder operation failed. Diagnostic details are hidden because no_log is enabled.")
+
+
+def _raise_private_folder_error():
+    try:
+        raise KeeperFolderError(_PRIVATE_FOLDER_MESSAGE) from None
+    except KeeperFolderError as safe:
+        safe.__context__ = None
+        raise
+
+
+def _private_folder_diagnostics(method):
+    """Apply the resolved task's diagnostic policy at a complete folder-operation boundary."""
+    @functools.wraps(method)
+    def wrapped(self, *args, **kwargs):
+        private = _folder_no_log(self)
+        try:
+            with _folder_sdk_logging(self):
+                result = method(self, *args, **kwargs)
+        except Exception:
+            if not private:
+                raise
+            _raise_private_folder_error()
+        if private and isinstance(result, dict) and result.get("failed"):
+            return {"failed": True, "changed": False, "msg": _PRIVATE_FOLDER_MESSAGE}
+        return result
+    return wrapped
 
 
 class KeeperFieldType(Enum):
@@ -1153,6 +1253,7 @@ class KeeperAnsible:
 
         return records[0]
 
+    @_private_folder_diagnostics
     def create_record(self, new_record, shared_folder_uid, subfolder_uid=None, check_mode=False):
         # KSM-816: use create_secret_with_options() instead of create_secret() so
         # that folder keys are fetched via the get_folders endpoint, which returns
@@ -1184,6 +1285,7 @@ class KeeperAnsible:
 
         return record_uid
 
+    @_private_folder_diagnostics
     def create_folder(self, folder_name, shared_folder_uid, subfolder_uid=None, check_mode=False):
         # shared_folder_uid must be the top-level shared folder UID. subfolder_uid, if given,
         # must be an existing folder nested (at any depth) under that shared folder; the new
@@ -1246,31 +1348,23 @@ class KeeperAnsible:
         """Get every folder the KSM application can see: its shared folders and all of their subfolders."""
         return self._read_folders()[0]
 
+    def _folder_no_log(self):
+        return _folder_no_log(self)
+
+    @contextlib.contextmanager
+    def _folder_sdk_logging(self, unreadable=None):
+        with _folder_sdk_logging(self, unreadable):
+            yield
+
+    @_private_folder_diagnostics
     def _read_folders(self):
-        """
-        Get the folder list, and the folders that the SDK could not read ({folder UID: error text}, see
-        _UnreadableFolderLog). The SDK logger is set to WARNING for the call, so the SDK creates its warning, and
-        then set back. The handler that the SDK adds has its own level, so the warning is not shown twice.
-        """
-        try:
-            from keeper_secrets_manager_core.keeper_globals import logger_name
-        except ImportError:
-            logger_name = "ksm"
-        sdk_logger = logging.getLogger(logger_name)
+        """Return SDK folders and unreadable reports using scoped diagnostic capture."""
         unreadable = _UnreadableFolderLog()
-        old_level, old_disabled = sdk_logger.level, sdk_logger.disabled
-        sdk_logger.addHandler(unreadable)
-        sdk_logger.disabled = False
-        if sdk_logger.getEffectiveLevel() > logging.WARNING:
-            sdk_logger.setLevel(logging.WARNING)
         try:
-            folders = self.client.get_folders() or []
+            with self._folder_sdk_logging(unreadable):
+                folders = self.client.get_folders() or []
         except Exception as err:
             raise KeeperFolderError("Cannot get folders: {}".format(err))
-        finally:
-            sdk_logger.removeHandler(unreadable)
-            sdk_logger.setLevel(old_level)
-            sdk_logger.disabled = old_disabled
         return folders, unreadable.folders
 
     @staticmethod
@@ -1389,6 +1483,7 @@ class KeeperAnsible:
                 "or an empty list item.".format(json.dumps(names, ensure_ascii=False)))
         return names
 
+    @_private_folder_diagnostics
     def get_folder(self, shared_folder_uid=None, subfolder_uid=None, folder_name=None, folder_path=None,
                    include_subfolders=False):
         """
@@ -1475,11 +1570,11 @@ class KeeperAnsible:
             result["subfolders"] = [self._folder_to_dict(f) for f in self._folder_subtree(folders, folder.folder_uid)]
             if unreadable:
                 display.warning(
-                    "keeper-secrets-manager-core could not read {} folder(s) ({}). If they are below the folder {}, "
-                    "they are not in subfolders.".format(len(unreadable), ", ".join(sorted(unreadable)),
-                                                         self._folder_label(folders, folder)))
+                    "Some folders could not be read by keeper-secrets-manager-core. If they are below the requested "
+                    "folder, they are not in subfolders.")
         return result
 
+    @_private_folder_diagnostics
     def update_folder(self, folder_uid, new_folder_name, check_mode=False):
         """
         Rename a folder. Return a dictionary with changed, folder_uid, folder_name (the name after this call),
@@ -1515,8 +1610,7 @@ class KeeperAnsible:
             "previous_folder_name": folder.name,
         }
         if result["changed"] is False:
-            display.vvv("Folder {} is already named {}. Nothing to rename.".format(
-                folder_uid, self._quote(new_folder_name)))
+            display.vvv("Folder already has the requested name. Nothing to rename.")
             return result
 
         # Keeper allows two folders with the same name in one parent, so this is not an error. But a later
@@ -1525,10 +1619,8 @@ class KeeperAnsible:
                      if f.folder_uid != folder_uid and f.name == new_folder_name]
         if len(same_name) > 0:
             display.warning(
-                "The parent of the folder {} already has a folder named {} ({}). After the rename, a lookup of "
-                "this name fails because the name is not unique.".format(
-                    self._folder_label(folders, folder), self._quote(new_folder_name),
-                    ", ".join(f.folder_uid for f in same_name)))
+                "A sibling folder already has the requested name. After the rename, a lookup of this name fails "
+                "because the name is not unique.")
 
         if check_mode:
             return result
@@ -1550,6 +1642,7 @@ class KeeperAnsible:
             return []
         return [status for status in response if isinstance(status, dict)]
 
+    @_private_folder_diagnostics
     def delete_folder(self, folder_uid, force=False, check_mode=False):
         """
         Delete a folder. Return a dictionary with changed, folder_uid, and folder_name.
@@ -1596,9 +1689,8 @@ class KeeperAnsible:
                        (not r.inner_folder_uid and r.folder_uid == folder_uid)]
             if unreadable:
                 display.warning(
-                    "keeper-secrets-manager-core could not read {} folder(s) ({}), so the module cannot count them. If "
-                    "one of them is inside the folder {}, only the Keeper server check stops the delete.".format(
-                        len(unreadable), ", ".join(sorted(unreadable)), label))
+                    "Some folders could not be read by keeper-secrets-manager-core, so the module cannot count them. "
+                    "The Keeper server must check whether the requested folder is empty.")
             if len(subfolders) > 0 or len(records) > 0:
                 raise KeeperFolderError(
                     "The folder {} is not empty. It contains {} record(s) and {} subfolder(s). Set force_deletion to "

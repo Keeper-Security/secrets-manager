@@ -54,9 +54,9 @@ def renamed(uid, new_name, old_name, changed=True):
     return {"changed": changed, "folder_uid": uid, "folder_name": new_name, "previous_folder_name": old_name}
 
 
-def same_name_warning(label, quoted_name, sibling_uids):
-    return ("The parent of the folder {} already has a folder named {} ({}). After the rename, a lookup of this name "
-            "fails because the name is not unique.".format(label, quoted_name, sibling_uids))
+def same_name_warning():
+    return ("A sibling folder already has the requested name. After the rename, a lookup of this name fails "
+            "because the name is not unique.")
 
 
 @pytest.fixture
@@ -111,14 +111,14 @@ def test_same_name_is_a_no_op(sdk_for, run_plugin, check_mode):
     assert result == renamed(EMPTY, "Staging", "Staging", changed=False)
     assert result["changed"] is False
     assert_not_sent(sdk)
-    vvv.assert_called_once_with('Folder EMPTY_UID is already named "Staging". Nothing to rename.')
+    vvv.assert_called_once_with("Folder already has the requested name. Nothing to rename.")
 
 
 def test_no_op_debug_message_quotes_the_name(sdk_for):
     sdk = sdk_for([("NL_UID", SHARED, "Prod\nEU")])
     with patch("keeper_secrets_manager_ansible.display.vvv") as vvv:
         assert sdk.keeper().update_folder("NL_UID", "Prod\nEU")["changed"] is False
-    vvv.assert_called_once_with('Folder NL_UID is already named "Prod\\nEU". Nothing to rename.')
+    vvv.assert_called_once_with("Folder already has the requested name. Nothing to rename.")
 
 
 def test_no_op_does_not_warn_about_a_sibling_with_the_same_name(sdk_for, warning):
@@ -284,14 +284,14 @@ def test_sibling_with_the_new_name_warns_and_still_renames(sdk_for, run_plugin, 
     if siblings is None:
         warning.assert_not_called()
     else:
-        warning.assert_called_once_with(same_name_warning(LABELS[uid], '"{}"'.format(new_name), siblings))
+        warning.assert_called_once_with(same_name_warning())
     if check_mode:
         assert_not_sent(sdk)
     else:
         assert_sent(sdk, uid, new_name)
 
 
-# Folder names in messages are JSON-quoted, so a stray character stays visible. Non-ASCII stays as it is.
+# Warning text must stay generic even when the new name contains characters requiring quoting in an error.
 @pytest.mark.parametrize("name, quoted", [
     ('Prod "EU"', '"Prod \\"EU\\""'),
     ("Prod\nEU", '"Prod\\nEU"'),
@@ -299,18 +299,18 @@ def test_sibling_with_the_new_name_warns_and_still_renames(sdk_for, run_plugin, 
     ("A\tB\\C", '"A\\tB\\\\C"'),
     ("Café 数据 \U0001F512", '"Café 数据 \U0001F512"'),
 ], ids=["double_quote", "newline", "carriage_return", "tab_and_backslash", "non_ascii"])
-def test_new_name_is_quoted_in_the_warning(sdk_for, warning, name, quoted):
+def test_new_name_is_not_in_the_warning(sdk_for, warning, name, quoted):
     sdk_for([("SIB_UID", SHARED, name)]).keeper().update_folder(EMPTY, name)
-    warning.assert_called_once_with(same_name_warning(LABELS[EMPTY], quoted, "SIB_UID"))
+    warning.assert_called_once_with(same_name_warning())
+    assert quoted not in warning.call_args[0][0]
 
 
-def test_folder_path_is_quoted_in_the_warning_and_the_error(make_sdk, folder, warning):
+def test_folder_path_is_omitted_from_the_warning_but_quoted_in_the_error(make_sdk, folder, warning):
     folders = [folder(SHARED, "", 'Infra "Main"'), folder(DB, SHARED, "Data\nbases"), folder(EMPTY, DB, "Staging"),
                folder(PROD, DB, "Production")]
     sdk = make_sdk(folders, autospec=True)
     sdk.keeper().update_folder(EMPTY, "Production")
-    warning.assert_called_once_with(same_name_warning('"Infra \\"Main\\"/Data\\nbases/Staging" (UID EMPTY_UID)',
-                                                      '"Production"', PROD))
+    warning.assert_called_once_with(same_name_warning())
 
     sdk.client.update_folder.side_effect = Exception("denied")
     with pytest.raises(KeeperFolderError) as caught:
@@ -376,7 +376,7 @@ def test_parent_cycle_does_not_hang_the_error_or_the_warning(make_sdk, folder, w
     outcome = bounded(lambda: sdk.keeper().update_folder("A_UID", "C"))
     assert outcome["result"]["changed"] is True
     warning.assert_called_once()
-    assert "C_UID" in warning.call_args[0][0]
+    assert warning.call_args[0][0] == same_name_warning()
 
     sdk.client.update_folder.side_effect = Exception("denied")
     outcome = bounded(lambda: sdk.keeper().update_folder("A_UID", "D"))
