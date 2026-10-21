@@ -1154,9 +1154,8 @@ class KeeperAnsible:
         return records[0]
 
     def create_record(self, new_record, shared_folder_uid, subfolder_uid=None, check_mode=False):
-        # KSM-816: use create_secret_with_options() instead of create_secret() so
-        # that folder keys are fetched via the get_folders endpoint, which returns
-        # all folders including empty ones. create_secret() uses get_secrets() which
+        # Fetch and validate the hierarchy through get_folders, which returns
+        # all folders including empty ones. create_secret() uses get_secrets(), which
         # only returns folder keys when the folder already contains records.
         #
         # Normalize a falsy subfolder_uid to None: the SDK sets payload.subFolderUid
@@ -1165,11 +1164,26 @@ class KeeperAnsible:
         subfolder_uid = subfolder_uid or None
         check_mode = self._resolve_check_mode(check_mode)
         try:
+            folders = self.client.get_folders() or []
+            shared_folder = self._folder_by_uid(folders, shared_folder_uid)
+            if shared_folder is None or not shared_folder.folder_key:
+                raise ValueError("Unable to create record - folder key for {} not found".format(shared_folder_uid))
+            if shared_folder.parent_uid:
+                raise KeeperFolderError(
+                    "The folder {} is a subfolder, not a shared folder. Set it as subfolder_uid instead.".format(
+                        self._folder_label(folders, shared_folder)))
+            if subfolder_uid:
+                subfolder = self._folder_by_uid(folders, subfolder_uid)
+                if subfolder is None:
+                    raise KeeperFolderError(
+                        "The subfolder {} was not found, or it is not shared to this KSM application.".format(
+                            subfolder_uid))
+                if not subfolder.parent_uid or \
+                        self._folder_ancestry(folders, subfolder)[-1].folder_uid != shared_folder_uid:
+                    raise KeeperFolderError("The subfolder {} is not inside the shared folder {}.".format(
+                        self._folder_label(folders, subfolder), self._folder_label(folders, shared_folder)))
+
             if check_mode:
-                folders = self.client.get_folders()
-                shared_folder = next((f for f in folders if f.folder_uid == shared_folder_uid), None)
-                if shared_folder is None or not shared_folder.folder_key:
-                    raise ValueError("Unable to create record - folder key for {} not found".format(shared_folder_uid))
                 # Validate the same local payload as the SDK, without sending it or promising a new UID.
                 self.client.prepare_create_payload(
                     self.client.config, CreateOptions(shared_folder_uid, subfolder_uid),
@@ -1177,7 +1191,7 @@ class KeeperAnsible:
                 )
                 return None
             record_uid = self.client.create_secret_with_options(
-                CreateOptions(shared_folder_uid, subfolder_uid), new_record
+                CreateOptions(shared_folder_uid, subfolder_uid), new_record, folders=folders
             )
         except Exception as err:
             raise Exception("Cannot get create record: {}".format(err))
