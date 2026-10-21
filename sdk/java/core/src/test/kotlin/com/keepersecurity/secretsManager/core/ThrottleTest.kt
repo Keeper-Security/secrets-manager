@@ -5,6 +5,8 @@ import java.net.HttpURLConnection.HTTP_FORBIDDEN
 import java.net.HttpURLConnection.HTTP_OK
 import kotlin.test.*
 
+private const val STATUS_TOO_MANY_REQUESTS = 429
+
 // Throttle retry with exponential backoff. Unit tests exercise the internal
 // helpers; e2e tests drive getSecrets through postQuery with a mocked queryFunction returning
 // HTTP 403 or 429 {"error":"throttled"} responses and a recording throttleSleepMillis so retries
@@ -30,6 +32,10 @@ internal class ThrottleTest {
         }
         return json.toByteArray()
     }
+
+    // A regression that stops the retry loop from ending must fail the test, not hang the build.
+    // The mocks that answer "throttled" forever call this on every request.
+    private fun failIfRunaway(calls: Int) = check(calls <= 50) { "retry loop did not stop after $calls requests" }
 
     // --- unit: throttleDelayMillis ---
 
@@ -70,6 +76,10 @@ internal class ThrottleTest {
 
     // --- e2e via getSecrets ---
 
+    // The backend throttles with 429 today and answered 403 before June 2026. Each case below runs
+    // against both statuses, so a change to the status gate cannot silently drop one of them.
+    private val throttleStatuses = listOf(HTTP_FORBIDDEN, STATUS_TOO_MANY_REQUESTS)
+
     private fun buildStorage(): KeyValueStorage {
         val storage = InMemoryStorage()
         initializeStorage(storage, fakeToken, "fake.keepersecurity.com")
@@ -79,90 +89,89 @@ internal class ThrottleTest {
         return storage
     }
 
-    @Test
-    fun retriesThenSucceeds() {
-        var calls = 0
-        val sleeps = mutableListOf<Long>()
-        val mock: QueryFunction = { _, transmissionKey, _ ->
-            calls++
-            if (calls == 1) {
-                KeeperHttpResponse(HTTP_FORBIDDEN, throttleBody())
-            } else {
-                val body = """{"records":[],"folders":[],"encryptedAppKey":null}""".toByteArray()
-                KeeperHttpResponse(HTTP_OK, encrypt(body, transmissionKey.key))
-            }
-        }
-        val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
-
-        val secrets = getSecrets(options)
-        assertTrue(secrets.records.isEmpty())
-        assertEquals(1, sleeps.size)
-        assertEquals(2, calls)
+    private fun successResponse(transmissionKey: TransmissionKey): KeeperHttpResponse {
+        val body = """{"records":[],"folders":[],"encryptedAppKey":null}""".toByteArray()
+        return KeeperHttpResponse(HTTP_OK, encrypt(body, transmissionKey.key))
     }
 
-    @Test
-    fun retriesThenSucceedsOn429() {
-        var calls = 0
-        val sleeps = mutableListOf<Long>()
-        val mock: QueryFunction = { _, transmissionKey, _ ->
-            calls++
-            if (calls == 1) {
-                KeeperHttpResponse(429, throttleBody())
-            } else {
-                val body = """{"records":[],"folders":[],"encryptedAppKey":null}""".toByteArray()
-                KeeperHttpResponse(HTTP_OK, encrypt(body, transmissionKey.key))
-            }
-        }
-        val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
+    private fun keyRotationResponse() = KeeperHttpResponse(400, """{"error":"key","key_id":10}""".toByteArray())
 
-        val secrets = getSecrets(options)
-        assertTrue(secrets.records.isEmpty())
-        assertEquals(1, sleeps.size)
-        assertEquals(2, calls)
+    @Test
+    fun retriesThenSucceeds() {
+        for (status in throttleStatuses) {
+            var calls = 0
+            val sleeps = mutableListOf<Long>()
+            val mock: QueryFunction = { _, transmissionKey, _ ->
+                calls++
+                if (calls == 1) KeeperHttpResponse(status, throttleBody()) else successResponse(transmissionKey)
+            }
+            val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
+
+            assertTrue(getSecrets(options).records.isEmpty(), "status $status")
+            assertEquals(1, sleeps.size, "status $status")
+            assertEquals(2, calls, "status $status")
+        }
     }
 
     @Test
     fun exhaustionThrowsKeeperThrottleException() {
-        var calls = 0
-        val sleeps = mutableListOf<Long>()
-        val mock: QueryFunction = { _, _, _ ->
-            calls++
-            KeeperHttpResponse(HTTP_FORBIDDEN, throttleBody())
-        }
-        val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
+        for (status in throttleStatuses) {
+            var calls = 0
+            val sleeps = mutableListOf<Long>()
+            val mock: QueryFunction = { _, _, _ ->
+                calls++
+                failIfRunaway(calls)
+                KeeperHttpResponse(status, throttleBody())
+            }
+            val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
 
-        assertFailsWith<KeeperThrottleException> { getSecrets(options) }
-        assertEquals(5, sleeps.size) // five backoff sleeps before giving up
-        assertEquals(6, calls) // 5 retries + the final throttled response
+            assertFailsWith<KeeperThrottleException>("status $status") { getSecrets(options) }
+            assertEquals(5, sleeps.size, "status $status") // five backoff sleeps before giving up
+            assertEquals(6, calls, "status $status") // 5 retries + the final throttled response
+        }
     }
 
     @Test
     fun retryAfterIsHonored() {
-        var calls = 0
-        val sleeps = mutableListOf<Long>()
-        val mock: QueryFunction = { _, _, _ ->
-            calls++
-            if (calls == 1) KeeperHttpResponse(HTTP_FORBIDDEN, throttleBody(3.0))
-            else KeeperHttpResponse(HTTP_FORBIDDEN, throttleBody())
-        }
-        val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
+        for (status in throttleStatuses) {
+            var calls = 0
+            val sleeps = mutableListOf<Long>()
+            val mock: QueryFunction = { _, _, _ ->
+                calls++
+                failIfRunaway(calls)
+                KeeperHttpResponse(status, if (calls == 1) throttleBody(3.0) else throttleBody())
+            }
+            val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
 
-        assertFailsWith<KeeperThrottleException> { getSecrets(options) }
-        // retry_after = 3s with one-sided [0, 0.25) jitter -> [3000ms, 3750ms]
-        assertTrue(sleeps[0] in 3000L..3750L, "first delay was ${sleeps[0]}ms")
+            assertFailsWith<KeeperThrottleException>("status $status") { getSecrets(options) }
+            // retry_after = 3s with one-sided [0, 0.25) jitter -> [3000ms, 3750ms]
+            assertTrue(sleeps[0] in 3000L..3750L, "status $status: first delay was ${sleeps[0]}ms")
+        }
     }
 
     @Test
-    fun nonThrottle403NotRetried() {
-        val sleeps = mutableListOf<Long>()
-        val mock: QueryFunction = { _, _, _ ->
-            KeeperHttpResponse(HTTP_FORBIDDEN, """{"error":"access_denied","message":"nope"}""".toByteArray())
-        }
-        val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
+    fun nonThrottleErrorsNotRetried() {
+        val bodies = listOf(
+            """{"error":"access_denied","message":"nope"}""",
+            // Malformed or non-object bodies must not be read as a throttle.
+            "not json", "[]", "\"throttled\"", "",
+        )
+        for (status in throttleStatuses) {
+            for (body in bodies) {
+                var calls = 0
+                val sleeps = mutableListOf<Long>()
+                val mock: QueryFunction = { _, _, _ ->
+                    calls++
+                    KeeperHttpResponse(status, body.toByteArray())
+                }
+                val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
 
-        val e = assertFailsWith<Exception> { getSecrets(options) }
-        assertFalse(e is KeeperThrottleException, "a non-throttle 403 must not become a throttle error")
-        assertEquals(0, sleeps.size)
+                val e = assertFailsWith<Exception>("status $status body '$body'") { getSecrets(options) }
+                assertFalse(e is KeeperThrottleException, "status $status body '$body' must not become a throttle error")
+                assertEquals(0, sleeps.size, "status $status body '$body'")
+                assertEquals(1, calls, "status $status body '$body'")
+            }
+        }
     }
 
     @Test
@@ -178,52 +187,127 @@ internal class ThrottleTest {
         assertEquals(0, sleeps.size)
     }
 
-    // --- logging gate (PR #1043 review): the throttle warning must respect options.loggingEnabled ---
-
-    // Runs one throttle-then-success getSecrets with the given flag, returning whatever the SDK
-    // wrote to stderr. Tests run sequentially here (shared TestStubs, no parallel config), so
-    // temporarily swapping System.err is safe.
-    private fun captureThrottleStderr(loggingEnabled: Boolean): String {
+    @Test
+    fun mixedStatusesShareOneThrottleBudget() {
         var calls = 0
-        val mock: QueryFunction = { _, transmissionKey, _ ->
+        val sleeps = mutableListOf<Long>()
+        val mock: QueryFunction = { _, _, _ ->
             calls++
-            if (calls == 1) {
-                KeeperHttpResponse(HTTP_FORBIDDEN, throttleBody())
-            } else {
-                val body = """{"records":[],"folders":[],"encryptedAppKey":null}""".toByteArray()
-                KeeperHttpResponse(HTTP_OK, encrypt(body, transmissionKey.key))
-            }
+                failIfRunaway(calls)
+            KeeperHttpResponse(if (calls % 2 == 1) HTTP_FORBIDDEN else STATUS_TOO_MANY_REQUESTS, throttleBody())
         }
-        val options = SecretsManagerOptions(
-            buildStorage(), mock, loggingEnabled = loggingEnabled, throttleSleepMillis = { }
-        )
+        val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
+
+        assertFailsWith<KeeperThrottleException> { getSecrets(options) }
+        assertEquals(5, sleeps.size)
+        assertEquals(6, calls)
+    }
+
+    @Test
+    fun keyRotationDoesNotResetTheThrottleBudget() {
+        // Calls 1-6 alternate throttle/rotation, then the server only throttles. Resetting the
+        // throttle counter on a rotation would allow more than five throttle sleeps.
+        var calls = 0
+        val sleeps = mutableListOf<Long>()
+        val mock: QueryFunction = { _, _, _ ->
+            calls++
+                failIfRunaway(calls)
+            if (calls <= 6 && calls % 2 == 0) keyRotationResponse()
+            else KeeperHttpResponse(STATUS_TOO_MANY_REQUESTS, throttleBody())
+        }
+        val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
+
+        assertFailsWith<KeeperThrottleException> { getSecrets(options) }
+        assertEquals(5, sleeps.size)
+        assertEquals(9, calls) // 6 throttled responses + 3 rotations
+    }
+
+    @Test
+    fun throttleDoesNotResetTheKeyRotationBudget() {
+        // Rotation on odd calls, throttle on even calls. Resetting the rotation counter on a
+        // throttle would let this run past MAX_KEY_ROTATION_RETRIES.
+        var calls = 0
+        val sleeps = mutableListOf<Long>()
+        val mock: QueryFunction = { _, _, _ ->
+            calls++
+                failIfRunaway(calls)
+            if (calls % 2 == 1) keyRotationResponse() else KeeperHttpResponse(STATUS_TOO_MANY_REQUESTS, throttleBody())
+        }
+        val options = SecretsManagerOptions(buildStorage(), mock, throttleSleepMillis = { sleeps.add(it) })
+
+        val e = assertFailsWith<SecretsManagerException> { getSecrets(options) }
+        assertTrue(e.message.orEmpty().contains("key rotation exhausted $MAX_KEY_ROTATION_RETRIES retries"), "got: ${e.message}")
+        assertEquals(MAX_KEY_ROTATION_RETRIES, sleeps.size)
+        assertEquals(2 * MAX_KEY_ROTATION_RETRIES + 1, calls)
+    }
+
+    // --- logging and diagnostics: the throttle warning must respect options.loggingEnabled ---
+
+    // Runs [block] and returns whatever the SDK wrote to stderr. Tests run sequentially here
+    // (shared TestStubs, no parallel config), so temporarily swapping System.err is safe.
+    private fun captureStderr(block: () -> Unit): String {
         val original = System.err
         val buf = java.io.ByteArrayOutputStream()
         System.setErr(java.io.PrintStream(buf, true))
         try {
-            getSecrets(options)
+            block()
         } finally {
             System.setErr(original)
         }
         return buf.toString()
     }
 
+    // One throttle-then-success getSecrets with the given status and flag.
+    private fun captureThrottleStderr(status: Int, loggingEnabled: Boolean): String {
+        var calls = 0
+        val mock: QueryFunction = { _, transmissionKey, _ ->
+            calls++
+            if (calls == 1) KeeperHttpResponse(status, throttleBody()) else successResponse(transmissionKey)
+        }
+        val options = SecretsManagerOptions(
+            buildStorage(), mock, loggingEnabled = loggingEnabled, throttleSleepMillis = { }
+        )
+        return captureStderr { getSecrets(options) }
+    }
+
     @Test
     fun throttleWarning_suppressedWhenLoggingDisabled() {
-        val err = captureThrottleStderr(loggingEnabled = false)
-        assertFalse(
-            err.contains("throttled", ignoreCase = true),
-            "no throttle warning should reach stderr when loggingEnabled=false, got: $err"
-        )
+        for (status in throttleStatuses) {
+            val err = captureThrottleStderr(status, loggingEnabled = false)
+            assertFalse(
+                err.contains("throttled", ignoreCase = true),
+                "status $status: no throttle warning should reach stderr when loggingEnabled=false, got: $err"
+            )
+        }
     }
 
     @Test
     fun throttleWarning_emittedWhenLoggingEnabled() {
-        val err = captureThrottleStderr(loggingEnabled = true)
-        assertTrue(err.contains("throttled", ignoreCase = true), "expected a throttle warning on stderr")
-        assertTrue(
-            Regex("attempt 1/$MAX_THROTTLE_RETRIES").containsMatchIn(err),
-            "expected attempt counter in warning, got: $err"
-        )
+        for (status in throttleStatuses) {
+            val err = captureThrottleStderr(status, loggingEnabled = true)
+            assertTrue(err.contains("throttled", ignoreCase = true), "status $status: expected a throttle warning on stderr")
+            assertTrue(
+                Regex("attempt 1/$MAX_THROTTLE_RETRIES").containsMatchIn(err),
+                "status $status: expected attempt counter in warning, got: $err"
+            )
+        }
+    }
+
+    @Test
+    fun throttleDiagnosticsOmitTheServerResponseBody() {
+        val marker = "SERVER-SUPPLIED-MARKER"
+        for (status in throttleStatuses) {
+            var calls = 0
+            val mock: QueryFunction = { _, _, _ ->
+                failIfRunaway(++calls)
+                KeeperHttpResponse(status, """{"error":"throttled","message":"$marker"}""".toByteArray())
+            }
+            val options = SecretsManagerOptions(buildStorage(), mock, loggingEnabled = true, throttleSleepMillis = { })
+
+            var thrown: KeeperThrottleException? = null
+            val err = captureStderr { thrown = assertFailsWith<KeeperThrottleException>("status $status") { getSecrets(options) } }
+            assertFalse(err.contains(marker), "status $status: stderr echoed the server body: $err")
+            assertFalse(thrown!!.stackTraceToString().contains(marker), "status $status: exception echoed the server body")
+        }
     }
 }
