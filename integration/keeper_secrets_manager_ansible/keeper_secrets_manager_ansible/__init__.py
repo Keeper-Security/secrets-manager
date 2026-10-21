@@ -1449,6 +1449,12 @@ class KeeperAnsible:
         for name in names:
             parent_uid = folder.folder_uid if folder is not None else None
             matches = [f for f in self._folder_children(folders, parent_uid) if f.name == name]
+            if len(matches) < 2 and unreadable:
+                # The skipped UIDs do not identify their names or parents, so even one match is not proof of uniqueness.
+                raise KeeperFolderError(
+                    "Cannot select a folder by name or path because keeper-secrets-manager-core could not read every "
+                    "folder. Absence and uniqueness cannot be confirmed. Use a readable folder UID without "
+                    "folder_name or folder_path.")
             if len(matches) == 1:
                 folder = matches[0]
                 continue

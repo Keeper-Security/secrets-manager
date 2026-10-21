@@ -86,11 +86,9 @@ class UnreadableFolderTest(unittest.TestCase):
             keeper.delete_folder("EMPTY", force=True)
         warning.assert_not_called()
 
-    def test_lookup_not_found_messages_name_the_unreadable_folders(self):
+    def test_uid_lookup_not_found_messages_name_the_unreadable_folders(self):
         keeper = keeper_with(skipping_get_folders)
         cases = [
-            (dict(shared_folder_uid="SF", folder_name="Missing"),
-             'No folder named "Missing" was found in the folder "Infrastructure" (UID SF).'),
             (dict(shared_folder_uid="NO_SF"),
              "The shared folder NO_SF was not found, or it is not shared to this KSM application."),
             (dict(subfolder_uid="NO_SUB"),
@@ -101,6 +99,56 @@ class UnreadableFolderTest(unittest.TestCase):
                 with self.assertRaises(KeeperFolderError) as ctx:
                     keeper.get_folder(**kwargs)
                 self.assertEqual(str(ctx.exception), message + NOTE)
+
+    def test_partial_read_name_and_path_lookups_fail_without_selecting_a_uid(self):
+        """Simulate SDK partial-read behavior, not current public SDK behavior."""
+        cases = [
+            dict(shared_folder_uid="SF", folder_name="Temporary"),
+            dict(subfolder_uid="SF", folder_name="Temporary"),
+            dict(shared_folder_uid="SF", folder_name="Missing"),
+            dict(folder_name="Infrastructure"),
+            dict(folder_path="Infrastructure/Temporary"),
+            dict(folder_path=["Infrastructure", "Temporary"]),
+            dict(shared_folder_uid="SF", folder_path=["Temporary"]),
+            dict(subfolder_uid="EMPTY", folder_path=["Missing"]),
+        ]
+        for options in cases:
+            for include_subfolders in (False, True):
+                with self.subTest(options=options, include_subfolders=include_subfolders):
+                    keeper = keeper_with(skipping_get_folders)
+                    with self.assertRaisesRegex(KeeperFolderError, "Absence and uniqueness cannot be confirmed"):
+                        keeper.get_folder(include_subfolders=include_subfolders, **options)
+                    keeper.client.get_secrets.assert_not_called()
+                    keeper.client.delete_folder.assert_not_called()
+                    keeper.client.update_folder.assert_not_called()
+
+    def test_partial_read_does_not_block_readable_explicit_uid_lookups(self):
+        cases = [
+            (dict(shared_folder_uid="SF"), "SF"),
+            (dict(subfolder_uid="EMPTY"), "EMPTY"),
+            (dict(shared_folder_uid="SF", subfolder_uid="EMPTY"), "EMPTY"),
+        ]
+        for options, expected_uid in cases:
+            for include_subfolders in (False, True):
+                with self.subTest(options=options, include_subfolders=include_subfolders):
+                    keeper = keeper_with(skipping_get_folders)
+                    with patch("keeper_secrets_manager_ansible.display.warning"):
+                        result = keeper.get_folder(include_subfolders=include_subfolders, **options)
+                    self.assertEqual(result["folder_uid"], expected_uid)
+                    self.assertEqual(result["shared_folder_uid"], "SF")
+                    keeper.client.delete_folder.assert_not_called()
+                    keeper.client.update_folder.assert_not_called()
+
+    def test_readable_duplicates_keep_the_explicit_ambiguity_error(self):
+        for partial_read in (False, True):
+            with self.subTest(partial_read=partial_read):
+                def folders():
+                    readable = skipping_get_folders() if partial_read else readable_folders()
+                    return readable + [KeeperFolder(KEY, "TWIN", "SF", "Temporary")]
+
+                keeper = keeper_with(folders)
+                with self.assertRaisesRegex(KeeperFolderError, 'Found 2 folders named "Temporary"'):
+                    keeper.get_folder(shared_folder_uid="SF", folder_name="Temporary")
 
     def test_rename_not_found_message_names_the_unreadable_folders(self):
         keeper = keeper_with(skipping_get_folders)
@@ -185,6 +233,46 @@ class RealSdkUnreadableFolderTest(unittest.TestCase):
     fails to read the folder list, SDK 17.4.0 skips the folder, and SDK 18.0.0 reads it. On every version, a delete of
     that folder must fail or delete it. It must never report "not found" while the folder still exists.
     """
+
+    def test_unreadable_twins_never_produce_a_successful_name_target(self):
+        """Public SDK 17.3 aborts the read; newer skip behavior is covered only by local-source compatibility runs."""
+        class CorruptRootServer(FakeKeeperServer):
+            def _folder_list(self, state, app_key):
+                folders = super()._folder_list(state, app_key)
+                folders[0]["data"] = "invalid-ciphertext"
+                return folders
+
+        cases = [
+            (FakeKeeperServer, [
+                {"uid": "SF", "name": "Infrastructure", "parent": None},
+                {"uid": "CBC_TWIN", "name": "Production", "parent": "SF"},
+                {"uid": "GCM_TWIN", "name": "Production", "parent": "SF", "gcm": True},
+            ], dict(shared_folder_uid="SF", folder_name="Production")),
+            (CorruptRootServer, [
+                {"uid": "NARROW_ROOT", "name": "Infrastructure", "parent": None},
+                {"uid": "BROAD_ROOT", "name": "Infrastructure", "parent": None},
+                {"uid": "NARROW_CHILD", "name": "Production", "parent": "NARROW_ROOT"},
+                {"uid": "BROAD_CHILD", "name": "Production", "parent": "BROAD_ROOT"},
+            ], dict(folder_path="Infrastructure/Production")),
+        ]
+        for server_type, folders, options in cases:
+            for include_subfolders in (False, True):
+                with self.subTest(server=server_type.__name__, include_subfolders=include_subfolders):
+                    server = server_type(folders=folders)
+                    try:
+                        keeper = object.__new__(KeeperAnsible)
+                        keeper.client = SecretsManager(
+                            config=InMemoryKeyValueStorage(config=mock.MockConfig.make_base64()), log_level="ERROR")
+                        with server.patch(), self.assertRaises(KeeperFolderError) as ctx:
+                            keeper.get_folder(include_subfolders=include_subfolders, **options)
+                        message = str(ctx.exception)
+                        self.assertTrue(
+                            message.startswith("Cannot get folders: ") or "uniqueness cannot be confirmed" in message or
+                            'Found 2 folders named "Production"' in message, message)
+                        self.assertEqual({call["path"] for call in server.calls()}, {"get_folders"})
+                        self.assertEqual(len(server.folders()), len(folders))
+                    finally:
+                        server.cleanup()
 
     def test_delete_of_a_gcm_folder_never_reports_a_false_not_found(self):
         server = FakeKeeperServer(folders=[

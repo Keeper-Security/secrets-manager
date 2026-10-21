@@ -1,6 +1,11 @@
+import logging
 import os
+from unittest.mock import patch
 
 import pytest
+import yaml
+from keeper_secrets_manager_core import SecretsManager
+from keeper_secrets_manager_core.keeper_globals import logger_name
 
 from ._helpers import run_target
 from ..folder_fake_server import FakeKeeperServer
@@ -90,3 +95,53 @@ def test_every_request_is_a_read_and_the_vault_is_unchanged(run):
     server, _, _, _ = run
     assert {c["path"] for c in server.calls()} == {"get_folders"}
     assert server.folders() == [dict(f) for f in FOLDERS]
+
+
+def test_action_rejects_simulated_partial_read_names_but_preserves_explicit_uids(tmp_path):
+    """Compatibility simulation around real encrypted folder reads, not a public SDK partial-read reproduction."""
+    hidden = {"uid": "UNREADABLE_TWIN_UID", "name": "Databases", "parent": "SHARED_UID"}
+    server = FakeKeeperServer(folders=FOLDERS + [hidden])
+    original_get = SecretsManager.get_folders
+
+    def partial_read(sm):
+        readable = original_get(sm)
+        logging.getLogger(logger_name).warning("Folder %s skipped due to error: %s", hidden["uid"],
+                                               "simulated unreadable metadata")
+        return [folder for folder in readable if folder.folder_uid != hidden["uid"]]
+
+    names = [
+        {"shared_folder_uid": "SHARED_UID", "folder_name": "Databases"},
+        {"subfolder_uid": "DATABASES_UID", "folder_name": "Production"},
+        {"shared_folder_uid": "SHARED_UID", "folder_path": ["Databases", "Production", "EU"]},
+        {"folder_path": "Infrastructure/Databases"},
+    ]
+    uids = [
+        {"shared_folder_uid": "SHARED_UID", "expected_uid": "SHARED_UID"},
+        {"subfolder_uid": "PRODUCTION_UID", "expected_uid": "PRODUCTION_UID"},
+    ]
+    options = {key: "{{ item." + key + " | default(omit) }}" for key in
+               ("shared_folder_uid", "subfolder_uid", "folder_name", "folder_path")}
+    playbook = tmp_path / "partial_read_lookup.yml"
+    playbook.write_text(yaml.safe_dump([{
+        "hosts": "my_systems", "gather_facts": False, "tasks": [
+            {"name": "Reject uncertain name targets", "keeper_get_folder": options, "loop": "{{ name_targets }}",
+             "register": "names", "ignore_errors": True},
+            {"name": "Keep readable UID targets", "keeper_get_folder": options, "loop": "{{ uid_targets }}",
+             "register": "uids"},
+            {"name": "Check name rejection", "assert": {"that": [
+                "item is failed", "'Absence and uniqueness cannot be confirmed' in item.msg",
+                "'folder_uid' not in item",
+            ]}, "loop": "{{ names.results }}"},
+            {"name": "Check UID controls", "assert": {"that": [
+                "item is not failed", "item is not changed", "item.folder_uid == item.item.expected_uid",
+            ]}, "loop": "{{ uids.results }}"},
+        ],
+    }], sort_keys=False), encoding="utf-8")
+    sdk_patch = patch.object(SecretsManager, "get_folders", autospec=True, side_effect=partial_read)
+    with run_target(server, str(playbook), {"name_targets": names, "uid_targets": uids},
+                    sdk_patch=sdk_patch) as (recap, out, err):
+        assert recap.get("failed") == 0 and recap.get("unreachable") == 0, out + err
+        assert recap.get("ignored") == 1, out + err
+        assert {call["path"] for call in server.calls()} == {"get_folders"}
+        assert len(server.calls()) == len(names) + len(uids)
+        assert server.folders() == FOLDERS + [hidden]
