@@ -77,7 +77,10 @@ class UnreadableFolderTest(unittest.TestCase):
         self.assertEqual(result["changed"], True)
         keeper.client.delete_folder.assert_called_once_with(["EMPTY"], force_deletion=False)
         warning.assert_called_once()
-        self.assertIn("could not read 1 folder(s) (UNREADABLE_UID)", warning.call_args[0][0])
+        self.assertEqual(
+            warning.call_args[0][0],
+            "Some folders could not be read by keeper-secrets-manager-core, so the module cannot count them. "
+            "The Keeper server must check whether the requested folder is empty.")
 
     def test_no_warning_for_a_forced_delete(self):
         # With force, the contents are deleted anyway, so the count of the contents does not matter.
@@ -172,7 +175,10 @@ class UnreadableFolderTest(unittest.TestCase):
             result = keeper.get_folder(shared_folder_uid="SF", include_subfolders=True)
         self.assertEqual([f["folder_uid"] for f in result["subfolders"]], ["EMPTY"])
         warning.assert_called_once()
-        self.assertIn("they are not in subfolders", warning.call_args[0][0])
+        self.assertEqual(
+            warning.call_args[0][0],
+            "Some folders could not be read by keeper-secrets-manager-core. If they are below the requested "
+            "folder, they are not in subfolders.")
 
 
 class SdkLoggerStateTest(unittest.TestCase):

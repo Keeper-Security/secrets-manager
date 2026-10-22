@@ -12,7 +12,7 @@
 
 from ansible.plugins.action import ActionBase
 from ansible.errors import AnsibleError
-from keeper_secrets_manager_ansible import KeeperAnsible
+from keeper_secrets_manager_ansible import KeeperAnsible, _private_folder_diagnostics
 from ansible.utils.display import Display
 
 display = Display()
@@ -105,6 +105,7 @@ class ActionModule(ActionBase):
         folder_name=dict(type="str", required=True),
     )
 
+    @_private_folder_diagnostics
     def run(self, tmp=None, task_vars=None):
         super(ActionModule, self).run(tmp, task_vars)
 

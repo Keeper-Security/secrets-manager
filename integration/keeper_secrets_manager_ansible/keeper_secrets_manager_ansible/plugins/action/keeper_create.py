@@ -12,7 +12,7 @@
 
 from ansible.plugins.action import ActionBase
 from ansible.errors import AnsibleError
-from keeper_secrets_manager_ansible import KeeperAnsible
+from keeper_secrets_manager_ansible import KeeperAnsible, _private_folder_diagnostics
 from keeper_secrets_manager_helper.record_type import RecordType
 from keeper_secrets_manager_helper.record import Record
 from keeper_secrets_manager_helper.field import Field, FieldSectionEnum
@@ -272,6 +272,7 @@ record_uid:
 
 class ActionModule(ActionBase):
 
+    @_private_folder_diagnostics
     def run(self, tmp=None, task_vars=None):
         super(ActionModule, self).run(tmp, task_vars)
 

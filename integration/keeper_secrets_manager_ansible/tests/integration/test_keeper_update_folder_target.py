@@ -57,12 +57,9 @@ EXPECTED = {
                "use the string filter.",
     },
 }
-AFTER = " After the rename, a lookup of this name fails because the name is not unique."
 WARNINGS = [
-    'The parent of the folder "Infrastructure 2026/Old" (UID OLD_UID) already has a folder named "Production" '
-    '(PRODUCTION_UID).' + AFTER,
-    'The parent of the folder "Infrastructure 2026/Older" (UID QUOTE_UID) already has a folder named '
-    '"Prod \\"EU\\"" (QUOTE_SIBLING_UID).' + AFTER,
+    "A sibling folder already has the requested name. After the rename, a lookup of this name fails because "
+    "the name is not unique.",
 ]
 # Every update that reaches the server, in order.
 UPDATES = [
