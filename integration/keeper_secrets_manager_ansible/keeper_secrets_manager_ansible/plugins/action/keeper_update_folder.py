@@ -11,7 +11,7 @@
 #
 
 from ansible.plugins.action import ActionBase
-from keeper_secrets_manager_ansible import KeeperAnsible, _private_folder_diagnostics
+from keeper_secrets_manager_ansible import KeeperAnsible, _folder_failure, _private_folder_diagnostics
 from ansible.utils.display import Display
 
 display = Display()
@@ -114,7 +114,7 @@ class ActionModule(ActionBase):
                 "keeper_update_folder", self._task.args, self.ARGUMENT_SPEC,
                 ignore=KeeperAnsible.group_default_options(self._task, self._templar))
         except Exception as err:
-            return {"failed": True, "changed": False, "msg": str(err)}
+            return _folder_failure(err)
 
         keeper = KeeperAnsible(task_vars=task_vars, action_module=self)
 
@@ -125,6 +125,6 @@ class ActionModule(ActionBase):
                 check_mode=bool(self._task.check_mode)
             )
         except Exception as err:
-            return {"failed": True, "changed": False, "msg": "Could not update folder: {}".format(err)}
+            return _folder_failure(err, "Could not update folder: ")
 
         return result
